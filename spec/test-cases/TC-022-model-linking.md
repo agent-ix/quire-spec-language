@@ -15,7 +15,10 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-Use the shared adapter owner's admitted ambiguous-export fixture with two different stable type IDs under ConfigVersion. Preserve selected package/version/source correspondence; request native resolution. Reorder the candidates and repeat.
+Use the native resolver's admitted export inventory with two distinct
+owner-qualified formal declarations under one source-visible name. Each IR
+environment is valid independently. Preserve exact import/source bindings,
+request native resolution, then reorder the candidates and repeat.
 
 ## Expected Results
 

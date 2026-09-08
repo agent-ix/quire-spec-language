@@ -72,5 +72,8 @@ The installed functional-table Status/Coverage Status conflict remains visible;
 all rows are explicitly planned, and no complete status is being hidden.
 
 This packet specifies evidence for LC02. It does not supply native linking,
-typing, a shared model adapter, runtime observations or qualified projection.
+typing, runtime observations or qualified projection. The accepted IR ADR-0054
+removes the earlier prerequisite for a shared Filament model adapter. The
+generic lane uses the public formal declaration API; A owns concrete native
+projection work for clauses that need additional semantic correspondence.
 The full workflow remains IT-002 and the original Agent A assignment.

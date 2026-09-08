@@ -19,4 +19,4 @@ Start with TC-020's qualified local inputs, then remove the selected model artif
 
 ## Expected Results
 
-Linkage returns missing_import at the import occurrence. No LinkedPackage or logical value is produced. An absent adapter/test setup cannot be used as the missing-import control.
+Linkage returns missing_import at the import occurrence. No LinkedPackage or logical value is produced. An absent native implementation/test setup cannot be used as the missing-import control.

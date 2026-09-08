@@ -15,7 +15,10 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-From TC-020's complete qualified bundle, select a dependency revision/content different from the pinned closure while retaining the original expected binding. Use the adapter owner's stale-closure control and request linking.
+From TC-020's complete qualified inputs, select a dependency revision/content
+different from the pinned native import closure while retaining the original
+expected binding. Use the native resolver's admitted stale control and request
+linking; no Filament package reader is required.
 
 ## Expected Results
 

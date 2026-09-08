@@ -78,7 +78,11 @@ drafts; the completed native readiness reviews and local results are recorded
 in the authoring status. The owner adopted specification PR8 at
 `e897f810a7356d4ce8fd19026221ebda7b65596f` for internal LC02 implementation.
 [LC02's test matrix](spec/model-linking/tests.md) remains planned pending the
-qualified shared model interface and native linking/typechecking implementation.
+native linking/typechecking implementation. Accepted Contract IR ADR-0054 at
+`690bde7f2dc58662cf9ff0595c2c0e3b17107c6f` closes #54 and removes the former
+Filament-reader prerequisite: generic compilation uses the existing public
+DeclarationEnvironment/check_expression and executable binder APIs. A concrete
+archetype projection is specified only for a clause that needs its semantics.
 
 See [architecture review](docs/architecture-review.md) for concrete fixes and
 remaining linking/identity work. The current parser uses declarative Logos tokens
@@ -101,8 +105,9 @@ The shared contracts and LC02–LC05 acceptance remain separate work.
 [production provenance](tests/fixtures/model-output/provenance.json) provide an
 actual synthetic ConfigVersion model from the existing Filament TypeSpec
 frontend: version numbers bounded to 0..1000, an optional parent field, and an
-operation declaration. This is input for the shared typed-model adapter review;
-it supplies no native model binding or evaluated state result.
+operation declaration. These are retained structural/provenance fixtures;
+they supply no native formal-model binding or evaluated state result. Generated
+datatypes do not establish formal bounds, reference or observation semantics.
 
 The Rust `fixture-audit` binary replaces all four Python helpers under
 [Agent A #58](https://github.com/agent-ix/quire-research/issues/58). Model-bytes

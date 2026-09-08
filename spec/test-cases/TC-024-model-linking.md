@@ -15,7 +15,10 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 ## Test Procedure
 
-Generate bounded permutations of a request containing two valid imports and one missing, ambiguous or stale import, using the real adapter's admitted controls. Place the defective import first, middle and last; repeat each valid/invalid family after a successful independent request.
+Generate bounded permutations of a request containing two valid imports and one
+missing, ambiguous or stale import over the real native resolver and public IR
+environments. Place the defective import first, middle and last; repeat each
+valid/invalid family after a successful independent request.
 
 ## Expected Results
 

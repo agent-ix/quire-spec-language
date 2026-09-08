@@ -79,13 +79,13 @@ LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03
 
 ### 2.2 Out of Scope
 
-Temporal/protocol/message semantics, B's portable method/plan/result schemas, C's existing-repository adapter implementation, new model authority, a second executable binder, public publication and standard-wide license selection are outside this repository's implementation ownership. These exclusions do not remove the required coordinated interfaces or the full supported-state workflow.
+Temporal/protocol/message semantics, B's portable method/plan/result schemas, C's existing-repository integration work, a duplicate archetype model or Contract IR type authority, a second executable binder, public publication and standard-wide license selection are outside this repository's implementation ownership. A owns native semantics and concrete source-to-formal projections needed by its proof cases. These boundaries do not remove the full supported-state workflow.
 
 ## 3. System Overview
 
 ### 3.1 System Description
 
-The language defines an explicit finite-state profile. The native pipeline preserves source identity through parsing, model linking, runtime validation, reference evaluation and qualified backend projection. A schema package is distinct from a runtime population. Existing shared-model and executable-IR owners remain authoritative.
+The language defines an explicit finite-state profile. The native pipeline preserves source identity through parsing, model linking, runtime validation, reference evaluation and qualified backend projection. Archetype schemas, explicit formal declarations and runtime populations are distinct. Contract IR owns formal types and its executable binder; the modeling language owns the semantics and qualified projection of concepts its clauses require.
 
 ### 3.2 Intended Users
 
@@ -155,7 +155,7 @@ The user requested /specify and /spec-review for all work. Existing implementati
 
 ## 14. Lifecycle Status
 
-Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. On 2026-09-08 the owner also adopted specification PR8 at e897f810a7356d4ce8fd19026221ebda7b65596f, including FS02/FS03/FS05, for internal implementation. Independent consumer adoption, shared adapter qualification and broader FS acceptance evidence remain open. IT-005 and TM-003 define the planned LC02 integration cases; linking/typechecking is not implemented.
+Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. On 2026-09-08 the owner also adopted specification PR8 at e897f810a7356d4ce8fd19026221ebda7b65596f for internal implementation. Accepted IR ADR-0054 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
 
 ## 15. Governance Notes
 
