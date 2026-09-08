@@ -1,0 +1,49 @@
+---
+id: US-002
+title: "Link clauses to the intended domain model"
+type: US
+relationships:
+  - target: "ix://agent-ix/quire-spec-language/StR-001"
+    type: traces_to
+  - target: "ix://agent-ix/quire-spec-language/FR-004"
+    type: exercises
+  - target: "ix://agent-ix/quire-spec-language/FR-005"
+    type: exercises
+  - target: "ix://agent-ix/quire-spec-language/FR-006"
+    type: exercises
+---
+# US-002: Link clauses to the intended domain model
+
+## Story
+
+**As a** model author
+**I want** to check clauses against the exact domain declarations I selected
+**So that** incorrect or stale model assumptions are caught before execution.
+
+## Context
+
+This story drives the native finite-state work assigned to Agent A. The requirements below remain draft until the requested specification review is completed. Existing implementation observations do not establish the unimplemented pipeline stages.
+
+## Acceptance Examples (Illustrative)
+
+### US-002-EX-1
+
+- **Given** an exact qualified model.
+- **When** I link my clause.
+- **Then** its names resolve to that model.
+
+### US-002-EX-2
+
+- **Given** a stale model binding.
+- **When** I request linking.
+- **Then** the mismatch is reported.
+
+## Priority and Risk (Informative)
+
+Priority: High. Confusing a source/model identity or incomplete execution with a verified result would invalidate the intended assessment.
+
+## Traceability (Informative)
+
+- [FR-004](../functional/FR-004-verify-source-maps.md)
+- [FR-005](../functional/FR-005-link-shared-model.md)
+- [FR-006](../functional/FR-006-check-defined-expressions.md)

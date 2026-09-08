@@ -51,6 +51,11 @@ exhaustion. Wire decoding and existing-repository extraction remain separate.
 
 ## Design and status
 
+The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
+catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
+skills, validation results and outstanding review work. These requirements are
+drafts; the existing syntax implementation remains subject to specification review.
+
 See [architecture review](docs/architecture-review.md) for concrete fixes and
 remaining linking/identity work. The current parser uses declarative Logos tokens
 and a Pratt expression parser; JSON escapes use serde_json. Binding/lowering will
