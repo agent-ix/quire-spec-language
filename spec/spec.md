@@ -54,6 +54,12 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-003
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-012
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-005
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-004
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -67,7 +73,7 @@ This root indexes the discrete requirements for Agent A's assigned native finite
 
 ### 2.1 In Scope
 
-LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration.
+LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned fixture verification under FR-012/NFR-005.
 
 ### 2.2 Out of Scope
 
@@ -184,3 +190,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-001](integration/IT-001-real-model-producer.md) | IT | Draft |
 | [IT-002](integration/IT-002-native-state-workflow.md) | IT | Draft |
 | [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT | Draft |
+
+| [FR-012](functional/FR-012-audit-fixtures-in-rust.md) | FR | Draft Rust verification remediation |
+| [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR | Draft campaign language constraint |
+| [IT-004](integration/IT-004-rust-fixture-audits.md) | IT | Draft real Rust audits |

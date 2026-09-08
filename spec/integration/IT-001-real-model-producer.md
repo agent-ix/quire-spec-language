@@ -18,7 +18,7 @@ Existing Filament TypeSpec frontend invoked as a real process over original mode
 
 ## Preconditions
 
-Select the clean Filament checkout at 3b75e01c652ba00bb07c352ff5467419401e792b and its installed TypeSpec 1.15.0 toolchain. The native fixture source/output files must be present. File I/O and compiler execution are real.
+Fresh execution requires an explicit owner disposition approving the existing TypeSpec/Node producer under the campaign language policy. That disposition is not recorded; the prior successful run remains historical evidence only. After that gate, select the clean Filament checkout at 3b75e01c652ba00bb07c352ff5467419401e792b and its installed TypeSpec 1.15.0 toolchain. The native fixture source/output files must be present. File I/O and compiler execution are real.
 
 ## Inputs
 
@@ -26,7 +26,7 @@ tests/fixtures/model-source and model-output; the stale-lock control modifies a 
 
 ## Test Procedure
 
-1. Run tools/check_model_fixture.py with the pinned Filament checkout (timeout 180 seconds).
+1. Run the separately reviewed and approved producer-verification runner with the pinned Filament checkout (timeout 180 seconds). The former Python helper is being retired by FR-012; its replacement does not bypass the producer-language gate.
    - IT-001-SC-01: Fresh compilation reproduces the selected IR bytes.
 2. Inspect the helper's selected-lock comparison (timeout 10 seconds).
    - IT-001-SC-02: Selected-lock output matches the fresh output.

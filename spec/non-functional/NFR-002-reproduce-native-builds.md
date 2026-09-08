@@ -38,3 +38,10 @@ Run the pinned toolchain with the locked minimal-feature build, tests, formatter
 - [FR-001](../functional/FR-001-read-exact-source.md)
 - [FR-002](../functional/FR-002-parse-native-units.md)
 - [FR-010](../functional/FR-010-report-native-outcomes.md)
+
+## Verification language policy
+
+[NFR-005](NFR-005-rust-verification-paths.md) additionally requires Rust for owned
+verification logic. The previous native-runtime boundary is not an exemption
+for audit helpers. Fresh external TypeSpec/Node producer execution remains
+unapproved under the campaign policy; prior pinned observations stay historical.

@@ -25,6 +25,8 @@ relationships:
     type: satisfied_by
   - target: "ix://agent-ix/quire-spec-language/FR-011"
     type: satisfied_by
+  - target: "ix://agent-ix/quire-spec-language/FR-012"
+    type: satisfied_by
 ---
 # StR-001: Trust native finite-state assessments
 
@@ -53,3 +55,5 @@ Specification authors, model producers, verification operators and existing tool
 - [US-002](../usecase/US-002-link-exact-models.md)
 - [US-003](../usecase/US-003-evaluate-bounded-state.md)
 - [US-004](../usecase/US-004-reuse-existing-toolchain.md)
+
+- [FR-012](../functional/FR-012-audit-fixtures-in-rust.md) covers Rust verification of selected fixtures.

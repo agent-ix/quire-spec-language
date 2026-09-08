@@ -9,6 +9,8 @@ relationships:
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-011"
     type: exercises
+  - target: "ix://agent-ix/quire-spec-language/FR-012"
+    type: exercises
 ---
 # US-004: Use native clauses through the existing toolchain
 
@@ -44,3 +46,5 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 - [FR-009](../functional/FR-009-lower-qualified-projections.md)
 - [FR-011](../functional/FR-011-integrate-opaque-extraction.md)
+
+- [FR-012](../functional/FR-012-audit-fixtures-in-rust.md) covers Rust verification of selected fixtures.
