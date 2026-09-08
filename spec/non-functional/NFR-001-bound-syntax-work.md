@@ -27,15 +27,22 @@ Native source intake, tokenization, parsing, formatting and source-map validatio
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Default source/output ceiling | 1048576 bytes | 1048576 bytes | Boundary tests |
-| Default token ceiling | 100000 tokens | 100000 tokens | Boundary tests |
-| Default syntax-node ceiling | 50000 nodes | 50000 nodes | Boundary tests |
-| Default recursive/delimiter ceiling | 64 levels | 64 levels | Depth tests |
-| Source-map segment ceiling | 50000 segments | 50000 segments | Boundary tests |
+| Default source/output ceiling | 1048576 bytes | 1048576 bytes | negative-abuse-testing |
+| Default token ceiling | 100000 tokens | 100000 tokens | negative-abuse-testing |
+| Default syntax-node ceiling | 50000 nodes | 50000 nodes | negative-abuse-testing |
+| Default recursive/delimiter ceiling | 64 levels | 64 levels | negative-abuse-testing |
+| Source-map segment ceiling | 50000 segments | 50000 segments | negative-abuse-testing |
 
 ## Verification
 
 Run the native boundary and malformed-input tests. Check a 20000-operator flat chain on a 512 KiB stack. Caller-supplied ceilings may be lower; an implementation ceiling is not a domain bound.
+
+Formatter appends check prospective length, including its final newline, against
+the inclusive selected ceiling. Byte limits bound output content, not allocator
+capacity. Existing source-file intake may read one sentinel byte to detect
+overflow; it never admits that oversized source. Native tests use the shared
+canonical trace attribute and resolving TC/AC identifiers. The selected local
+gate requires no hosted run or external producer qualification.
 
 ## Dependencies
 

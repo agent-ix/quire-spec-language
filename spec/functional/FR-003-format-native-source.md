@@ -14,7 +14,7 @@ When validated source is formatted, the formatter shall preserve every token spe
 
 ## Inputs
 
-Parsed unit and output budget.
+Parsed unit and an optional selected output-byte ceiling.
 
 ## Outputs
 
@@ -22,7 +22,15 @@ Formatted UTF-8 source or output-budget incompleteness.
 
 ## Behavior
 
-Formatting changes whitespace and normalizes layout to LF while retaining grouping and original token order. It writes stdout and leaves files untouched. The caller assigns a new source revision before using changed bytes in evidence. Output has a 1 MiB ceiling.
+Formatting changes whitespace and normalizes layout to LF while retaining grouping and original token order. The library returns the complete string; the CLI writes it to stdout and leaves files untouched. The caller assigns a new source revision before using changed bytes in evidence.
+
+The existing format(unit) API retains the default 1 MiB ceiling. An additive
+format_with_limit(unit, output_bytes) API accepts lower limits, including zero;
+larger values are clamped to the implementation ceiling. The byte limit is
+inclusive and counts spaces, indentation, comments and the final newline.
+Every append is checked before its growth; a refused operation returns no
+partial string. Allocation capacity is an implementation detail and is not a
+separate heap-accounting promise. Reuse the existing declarative token vocabulary.
 
 ## Acceptance Criteria
 
@@ -32,6 +40,8 @@ Formatting changes whitespace and normalizes layout to LF while retaining groupi
 | FR-003-AC-2 | Formatting preserves comments. | Test |
 | FR-003-AC-3 | A second formatting pass produces identical bytes. | Test |
 | FR-003-AC-4 | Output beyond its selected ceiling receives resource_exhausted. | Test |
+| FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test |
+| FR-003-AC-6 | format(unit) and format_with_limit(unit, 1048576) return identical bytes, and a larger selected ceiling cannot bypass the 1 MiB maximum. | Test |
 
 ## Dependencies
 
