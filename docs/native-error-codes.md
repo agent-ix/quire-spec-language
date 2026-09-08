@@ -1,0 +1,31 @@
+# Native diagnostic codes
+
+FR-010 exposes one native `Diagnostic` envelope with phase, code, exact caller
+source labels, display path, original span and explanatory message. `Display`
+renders `code: message`; `std::error::Error` has no underlying cause. The public
+`source` field is provenance, so the standard traits are implemented directly:
+the pinned thiserror derive would incorrectly treat that field as an error cause.
+The fixture-audit target retains its separate [audit codes](audit-error-codes.md).
+
+`Code::all()` enumerates this vocabulary, `as_str()` supplies its stable spelling,
+and `from_code()` returns `None` for unknown spellings. Codes are not renamed or
+reused; prose may change without changing classification.
+
+| Code | Meaning |
+| --- | --- |
+| invalid_source_identity | Required source identity, revision or display path is absent. |
+| invalid_source_map | Correspondence, source binding or queried range is invalid. |
+| source_digest_mismatch | Admitted source bytes differ from the supplied raw SHA-256 digest. |
+| invalid_utf8 | Source bytes cannot be decoded as UTF-8. |
+| invalid_syntax | Malformed source, including forbidden source characters. |
+| unsupported_construct | Recognized construct is outside the admitted grammar/profile. |
+| unknown_language | The selected language label is not admitted. |
+| unknown_edition | The selected edition label is not admitted. |
+| unknown_profile | The selected profile label is not admitted. |
+| resource_exhausted | A source, syntax, formatter or map ceiling prevented completion. |
+
+Phase identifies the observing boundary: source, lex, parse, profile, format or
+source_map. Resource exhaustion is incomplete, never false. The CLI exits 1 for
+native refusal, 3 for incompleteness and 2 for usage/I/O failures; usage/I/O text
+does not pretend to be a source diagnostic. A successful parse exits 0 and
+reports parsed, without model-linking or evaluation claims.

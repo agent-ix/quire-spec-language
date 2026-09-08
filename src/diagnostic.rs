@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+//! FR-010: stable source-bound native diagnostics and standard error propagation.
+use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
+
+/// Native processing phase; successful syntax does not imply later execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Phase {
+    /// Immutable source intake and byte integrity.
+    Source,
+    /// Token recognition and delimiter/budget checks.
+    Lex,
+    /// Declaration and expression parsing.
+    Parse,
+    /// Admitted language/edition/profile selection.
+    Profile,
+    /// Token-preserving formatting.
+    Format,
+    /// Extracted-body correspondence validation or mapping.
+    SourceMap,
+}
+
+impl Phase {
+    /// Stable phase label used by the native CLI.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Lex => "lex",
+            Self::Parse => "parse",
+            Self::Profile => "profile",
+            Self::Format => "format",
+            Self::SourceMap => "source_map",
+        }
+    }
+}
+
+/// Stable native code vocabulary; see docs/native-error-codes.md.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Code {
+    /// Required source identity, revision or path is absent.
+    InvalidSourceIdentity,
+    /// Supplied correspondence or query does not match the selected sources.
+    InvalidSourceMap,
+    /// Exact input bytes disagree with the supplied digest.
+    SourceDigestMismatch,
+    /// Input bytes are not valid UTF-8.
+    InvalidUtf8,
+    /// Source is malformed under the admitted grammar.
+    InvalidSyntax,
+    /// Recognized syntax is outside the admitted profile.
+    UnsupportedConstruct,
+    /// Language label is not admitted.
+    UnknownLanguage,
+    /// Edition label is not admitted.
+    UnknownEdition,
+    /// Profile label is not admitted.
+    UnknownProfile,
+    /// A selected implementation budget prevented completion.
+    ResourceExhausted,
+}
+
+impl Code {
+    /// Stable code spelling, independent of the diagnostic message.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidSourceIdentity => "invalid_source_identity",
+            Self::InvalidSourceMap => "invalid_source_map",
+            Self::SourceDigestMismatch => "source_digest_mismatch",
+            Self::InvalidUtf8 => "invalid_utf8",
+            Self::InvalidSyntax => "invalid_syntax",
+            Self::UnsupportedConstruct => "unsupported_construct",
+            Self::UnknownLanguage => "unknown_language",
+            Self::UnknownEdition => "unknown_edition",
+            Self::UnknownProfile => "unknown_profile",
+            Self::ResourceExhausted => "resource_exhausted",
+        }
+    }
+
+    /// Complete code vocabulary for enumeration and compatibility checks.
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::InvalidSourceIdentity,
+            Self::InvalidSourceMap,
+            Self::SourceDigestMismatch,
+            Self::InvalidUtf8,
+            Self::InvalidSyntax,
+            Self::UnsupportedConstruct,
+            Self::UnknownLanguage,
+            Self::UnknownEdition,
+            Self::UnknownProfile,
+            Self::ResourceExhausted,
+        ]
+    }
+
+    /// Resolve a known stable spelling; unknown codes remain explicit absence.
+    pub fn from_code(value: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|code| code.as_str() == value)
+    }
+}
+
+impl std::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A failed native phase with original source coordinates; never a Boolean result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Diagnostic {
+    /// Phase that observed the failure.
+    pub phase: Phase,
+    /// Stable machine-readable classification.
+    pub code: Code,
+    /// Exact caller-selected diagnostic identity and revision labels.
+    pub source: SourceIdentity,
+    /// Display path; not a portable artifact identity or an OS path round trip.
+    pub path: String,
+    /// Half-open original byte range with one-based line/scalar positions.
+    pub span: LocatedSpan,
+    /// Contextual human-readable explanation; code carries stable classification.
+    pub message: String,
+}
+
+// FR-010: thiserror infers `source` as an Error cause, but this public field
+// carries source identity. Preserve the API and implement standard traits.
+impl std::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for Diagnostic {}
+
+impl Diagnostic {
+    /// Whether incomplete work, rather than invalid input, caused this diagnostic.
+    pub fn is_incomplete(&self) -> bool {
+        self.code == Code::ResourceExhausted
+    }
+}
+
+pub(crate) fn error(
+    source: &Source,
+    code: Code,
+    phase: Phase,
+    start: usize,
+    end: usize,
+    message: impl Into<String>,
+) -> Box<Diagnostic> {
+    Box::new(Diagnostic {
+        code,
+        phase,
+        source: source.identity().clone(),
+        path: source.path().into(),
+        span: source
+            .locate(Span { start, end })
+            .expect("internal offsets are UTF-8 boundaries"),
+        message: message.into(),
+    })
+}

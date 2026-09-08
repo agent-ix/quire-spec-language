@@ -1,0 +1,12 @@
+{
+  "contractVersion": "1.0.0",
+  "package": {"identity": "example/config", "version": "1.0.0"},
+  "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "sourceRoots": ["types"],
+  "exports": [{"name": "ConfigVersion", "typeIdentity": "ix://example/config/type/ConfigVersion", "visibility": "public"}],
+  "imports": [],
+  "profiles": [{"name": "default", "version": "1.0.0", "exports": ["ConfigVersion"], "targets": ["json-schema"], "mappings": [], "options": {}, "compatibilityPosture": "strict"}],
+  "targets": ["json-schema"],
+  "mappings": [],
+  "extensions": []
+}
