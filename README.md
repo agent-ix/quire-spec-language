@@ -85,8 +85,17 @@ or repair. It installs nothing and writes only temporary outputs.
 ```sh
 python3 tools/check_model_fixture.py /path/to/pinned/filament-checkout
 python3 tools/audit_role_compositions.py /path/to/specification/proposals/state-core/fixtures
+python3 tools/check_rule_syntax.py /path/to/specification/proposals/state-core
 ```
 
 The second command checks the optional private FS02 review packet's exact
 artifacts and source regions. It is producer bookkeeping, not an independent
-semantic-reference matcher. Neither command belongs in the native runtime.
+semantic-reference matcher. These optional checks run separately from the native
+runtime.
+
+The final command wraps the FS03 rule examples in native source units and checks
+their syntax with the built CLI. It checks the selected rule/profile digests,
+then expects 50 parsed expressions and one explicit unsupported refusal. It
+does not interpret the abstract type environments or execute their 51 authored
+typing/evaluation expectations. FS03 refinements remain separately proposed;
+they do not change the digest-bound original profile by implication.

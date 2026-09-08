@@ -59,7 +59,7 @@ existing Filament checkout and its dependency notices remain under their
 existing grants. Its installed toolchain is used only for optional reproduction;
 this change does not import its JavaScript dependency graph into the Rust crate.
 
-Both new review helpers use Python's standard library. Native CI verifies stored
+The review helpers use Python's standard library. Native CI verifies stored
 artifact bytes without installing Node, TypeSpec, or another private repository.
 The full producer check requires the already installed, explicitly selected
 Filament toolchain and does not qualify its broader dependency distribution or
