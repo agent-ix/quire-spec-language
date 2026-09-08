@@ -4,7 +4,7 @@ title: "Read bounded immutable native source"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-001"
-    type: implements
+    type: traces_to
 ---
 # FR-001: Read bounded immutable native source
 

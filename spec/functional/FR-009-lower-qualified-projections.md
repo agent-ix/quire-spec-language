@@ -4,7 +4,7 @@ title: "Lower through the existing executable binder"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-004"
-    type: implements
+    type: traces_to
 ---
 # FR-009: Lower through the existing executable binder
 

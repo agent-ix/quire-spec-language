@@ -4,7 +4,7 @@ title: "Parse the admitted native source grammar"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-001"
-    type: implements
+    type: traces_to
 ---
 # FR-002: Parse the admitted native source grammar
 

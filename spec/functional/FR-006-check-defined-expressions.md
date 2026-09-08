@@ -4,7 +4,7 @@ title: "Check types and guarded definedness"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-002"
-    type: implements
+    type: traces_to
 ---
 # FR-006: Check types and guarded definedness
 

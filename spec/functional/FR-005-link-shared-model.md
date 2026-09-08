@@ -4,7 +4,7 @@ title: "Link native names through the shared model adapter"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-002"
-    type: implements
+    type: traces_to
 ---
 # FR-005: Link native names through the shared model adapter
 

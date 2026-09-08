@@ -4,7 +4,7 @@ title: "Validate runtime snapshots and invocations"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-003"
-    type: implements
+    type: traces_to
 ---
 # FR-007: Validate runtime snapshots and invocations
 

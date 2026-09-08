@@ -53,3 +53,28 @@ Further dependent implementation waits for specification review and the required
 shared-contract acceptance. Existing Rust tests and integration evidence remain
 scoped to the behavior they actually exercised. No compiler code changed during
 this authoring step.
+
+## Authoring remediation from consumer feedback
+
+FR-008 now traces the standard's FR-006/FR-012 and requires the precondition,
+immutable-parameter and implication-activation examples identified by Agent C's
+FS03 feedback. Interrupted evaluation must preserve observed antecedent events
+without inventing consequent entry or a completed Boolean. These are proposed
+requirements for the unimplemented evaluator, not current runtime capabilities.
+
+FR-to-story relationships use the catalog's `traces_to` verb because its
+`implements` verb denotes interface/contract fulfillment rather than requirement
+lineage. IDs are unchanged. The common SpecReview authoring pack was fetched
+once in preparation for the pending review selection; no analysis was run.
+
+The installed process manifest has SHA-256
+`d08ce71c02ce871fed4c7fb5cea1af1feb5a0b1004f8458fd26deecc2aa7b720`.
+Its ADR/Plan/Review/SpecReview/Standard entries appear in both `archetypes` and
+`artifact_types`, accounting for the duplicate registrations within one module.
+`quire schema --module <process-module> SpecReview` still returns its required
+schema and body assertions. The registry diagnostics remain unresolved.
+
+Hosted native CI also passed at the documentation checkpoint `4581641`:
+https://github.com/agent-ix/quire-spec-language/actions/runs/34185330391.
+This verifies the existing syntax implementation and fixture integrity, not
+the proposed evaluator requirements.

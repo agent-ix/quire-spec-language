@@ -4,7 +4,7 @@ title: "Consume opaque extracted native clauses"
 type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-004"
-    type: implements
+    type: traces_to
 ---
 # FR-011: Consume opaque extracted native clauses
 
