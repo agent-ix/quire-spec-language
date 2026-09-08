@@ -162,3 +162,19 @@ The actual shared typed-model/reference interface and qualified rule-model
 realization remain prerequisites; A will specify its concrete native API and
 resource limits against that shared interface before implementation.
 Broader FS acceptance, independent B/C adoption and publication remain separate.
+
+## Current ownership correction — 2026-09-08
+
+The owner clarified that the retired contract-agent-core's remaining work was
+already reassigned to quire-agent-a/b/c, and indicated that quire-agent-c
+largely assumed that track. The separate contract-agent-c still owns tl-*.
+A's earlier request for a transfer from the retired agent was based on stale
+records and is withdrawn. IR #54 belongs in the current A/B/C work allocation,
+with its concrete inherited-track claim coordinated through quire-agent-c.
+The private CO01 handoff requests that claim and the adapter specification/API.
+It does not assert that C has begun implementation merely because A posted it.
+
+This corrects work ownership only. The adopted semantics, IT-005 prerequisites,
+ten planned LC02 cases and SR-030–037 technical findings are unchanged. Actual
+adapter availability still requires code and qualification evidence; it is no
+longer described as a dependency on the retired core session.
