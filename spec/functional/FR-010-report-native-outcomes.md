@@ -1,0 +1,70 @@
+---
+id: FR-010
+title: "Report phase-specific CLI outcomes"
+type: FR
+relationships:
+  - target: "ix://agent-ix/quire-spec-language/US-001"
+    type: traces_to
+---
+# FR-010: Report phase-specific CLI outcomes
+
+## Description
+
+When the native CLI finishes a request, it shall report the observed pipeline outcome with its source identity.
+
+## Inputs
+
+Command, source labels/file and compiler outcome.
+
+## Outputs
+
+JSON parse/diagnostic output or formatted source plus a documented exit code.
+
+## Behavior
+
+Current parse reports parsed only. Exit codes are 0 for successful syntax, 1 refusal, 2 usage/I/O failure and 3 incomplete resource exhaustion. Source diagnostics preserve original byte and scalar coordinates. Future link/evaluate outcomes cannot be inferred from parse success.
+
+The CLI reads OS arguments without assuming UTF-8. Command, source identity and
+revision labels must be UTF-8; invalid label/command encoding is a usage error
+before opening the path. Empty UTF-8 source labels retain their existing source
+refusal. The file operand remains an OS path for actual I/O, including Unix
+non-UTF-8 paths. JSON path text is display-only and may contain replacement
+characters; it cannot serve as portable source authority. The exact source
+labels and digest remain distinct. Collect at most five arguments so extra
+arguments refuse without unbounded argument allocation.
+
+Native Diagnostic implements standard Display and Error,
+retaining its structured phase/code/source/path/span/message fields and existing
+code spellings. The Copy Code enum exposes as_str, all and from_code; unknown
+spellings return None. The repository owns a stable native-code catalog,
+separate from the fixture-audit catalog. Existing local SourceIdentity string
+labels are documented as opaque, not promoted to shared artifact references.
+
+Retain the public `source: SourceIdentity` field as diagnostic provenance, not
+an underlying error. Implement these two standard traits directly: the pinned
+thiserror derive treats any field named source as an error cause and cannot
+express this existing API. Display renders `{code}: {message}` and Error has
+no underlying cause. This scoped compatibility exception does not introduce
+a second error envelope or alter the audit target's derived errors.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-010-AC-1 | A successful parse emits status parsed. | Test |
+| FR-010-AC-2 | A refused syntax request exits 1. | Test |
+| FR-010-AC-3 | An invalid command invocation exits 2. | Test |
+| FR-010-AC-4 | An exhausted parser request exits 3. | Test |
+| FR-010-AC-5 | A parse result carries the actual source digest. | Test |
+| FR-010-AC-6 | Invalid OS encoding in commands/labels exits 2 without panic; valid source at a non-UTF-8 Unix file path parses with the exact labels and byte digest. | Test |
+| FR-010-AC-7 | A missing or unreadable selected source file exits 2 and emits no parsed output. | Test |
+| FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test |
+
+## Dependencies
+
+- [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
+- [Detailed contract or implementation evidence](../../src/main.rs) supplies the scoped context.
+
+## Status
+
+Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

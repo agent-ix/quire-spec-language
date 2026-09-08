@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Native syntax
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup toolchain install 1.94.1 --profile minimal --component rustfmt --component clippy
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Lints with minimal features
+        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
+      - name: Parser, formatter, diagnostics and CLI
+        run: cargo test --locked --no-default-features
+      - name: Clean build
+        run: cargo build --locked --no-default-features --target-dir target/clean
+      - name: Producer identity negative controls
+        run: cargo run --locked --no-default-features --bin fixture-audit -- self-test
+      - name: Model producer checkpoint integrity
+        run: cargo run --locked --no-default-features --bin fixture-audit -- model-bytes tests/fixtures
+      - name: Parse example
+        run: cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native

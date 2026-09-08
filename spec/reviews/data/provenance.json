@@ -1,0 +1,47 @@
+{
+  "reviewed_repository": "quire-spec-language",
+  "reviewed_revision": "a80a17d1dd303b91712df2023fdba8aba83e89c1",
+  "scope": "/home/peter/dev/worktrees/formalization-a-language",
+  "date": "2026-09-07",
+  "quoin_cli": "0.23.1",
+  "quire_cli": "0.31.0",
+  "quire_cli_revision": "4f6ed024cf27298b2dc49c7051941571197fddff",
+  "quire_engine_version": "0.46.0",
+  "quire_engine_revision": "ca7362d4dacecb96f01d74d1d971327118c25917",
+  "quoin_skill_root": "/home/peter/.claude/plugins/cache/quoin/quoin/0.20.0/skills",
+  "specify_skill_sha256": "6f9075e93e35bb46dc23140bcfe648d9f56d621472f7f567cd0404c1c225cdbd",
+  "spec_review_skill_sha256": "8c23b0f67e77d16a21a034885e7f78c835dff3c819ad9d7b23f121fe4489741d",
+  "iso_manifest_sha256": "f88971dfd4fa86e873c1216a8f607beee79258d2e88e78631a591050580249f0",
+  "process_manifest_sha256": "d08ce71c02ce871fed4c7fb5cea1af1feb5a0b1004f8458fd26deecc2aa7b720",
+  "commands": [
+    "quire coverage --scope /home/peter/dev/worktrees/formalization-a-language --json",
+    "quoin advise --repo /home/peter/dev/worktrees/formalization-a-language --json",
+    "quoin catalog methods --json"
+  ],
+  "command_exit_codes": [
+    0,
+    0,
+    0
+  ],
+  "execution_note": "Advisor child-process launch initially failed with sandbox EPERM. The same invocation succeeded with approved escalation. This was not a version incompatibility.",
+  "selected_spec_analyses": [
+    "base",
+    "failure-domain",
+    "integrity",
+    "dependency",
+    "evidence",
+    "risk-complexity",
+    "scope-boundary",
+    "ears-conformance"
+  ],
+  "optional_gap_semantic_review": "declined by owner; not run",
+  "human_acceptance": "not claimed",
+  "data_sha256": {
+    "advice.json": "64d3e0c9f26b41bf238c92383363a4821bc6795826738fa964ba60de1aea2d35",
+    "advice.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cli-nonutf8.json": "bbcbb2a09243b67681ac225f376acadae2807be452c1e8514185147417e825bd",
+    "coverage.json": "5a269dcb06a8bec0d5a0bc009919e7501d41abe97328e1a1355703796693c4c8",
+    "coverage.stderr.txt": "b490d70ffe44774238fa50820f6579c975ca17aecd4f1b03f8b24ad119f724eb",
+    "verification-methods.json": "a18da36a6e1c3568fe3f9ee691d46a82cf661e0e0e9df2d0686f0ac4b37ab48d"
+  }
+}
