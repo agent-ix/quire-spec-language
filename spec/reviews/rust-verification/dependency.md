@@ -76,3 +76,10 @@ the audit's shared checked I/O/JSON/error layer next; port mode checks; then
 exercise real fixtures, switch CI/docs and retire Python. The NFR is a constraint,
 not a cyclic execution dependency. No B/C change or accepted FS05 native wire
 reader is required to inspect the historical packet honestly.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. No new dependency edge: the profile is already a selected role-audit input. Shared checked I/O remains the prerequisite for all mode reads.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

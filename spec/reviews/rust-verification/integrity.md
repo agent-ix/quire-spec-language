@@ -65,3 +65,10 @@ expectations for the selected fixture packet, not evidence that arbitrary input
 is valid. Missing fields, producer-language status and resource ceilings are
 specified rather than inferred from Python behavior. No multi-source registry
 tie-break, pagination, authenticated API or network retry is introduced.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. The prior profile-location assumption and accepted-byte versus sentinel-read distinction are now explicit. The reviewed Inputs and Behavior agree; ACs remain unchanged.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

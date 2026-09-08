@@ -73,3 +73,10 @@ Inspection discharges the source/CI-language inventory, and actual Rust command
 tests discharge the runtime outcomes. No source tag is treated as a human
 inspection record. No duplicate test implementation in another language is
 introduced to validate the Rust replacement.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. AC and metric statements/methods are unchanged, so the recorded deterministic obligation advice still applies. TC-003 checks the fixed selected profile and TC-008 checks accepted/over-budget behavior; no new benchmark obligation is inferred.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

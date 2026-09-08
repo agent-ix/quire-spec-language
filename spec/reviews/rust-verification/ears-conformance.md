@@ -58,3 +58,10 @@ and observable outcomes. The eleven FR ACs and three NFR measurement rows are
 independently mappable. IT-004 contains concrete per-step success criteria.
 All 35 documents at the specified revision were grammar-clean; known registry
 diagnostics remain separately recorded. No optional semantic review was run.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. The shall statements and ACs are unchanged; the input-location and sentinel clarifications are concrete supporting text.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

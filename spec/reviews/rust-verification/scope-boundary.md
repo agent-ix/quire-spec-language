@@ -80,3 +80,10 @@ The new executable reuses crate hashing/parser code but keeps fixture-specific
 validation in private modules. It does not widen the public compiler API or
 create a production interchange/model authority. The native default CLI command
 remains unambiguous when the audit binary is added.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. Only the fixed historical profile file is additionally named as an input. No broad parent-directory scan, shared-model authority or external producer is introduced.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

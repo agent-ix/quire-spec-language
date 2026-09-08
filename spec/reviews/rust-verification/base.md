@@ -72,3 +72,10 @@ The [test matrix](../../tests.md) and [Plan-001](../../../plan/Plan-001-rust-fix
 record the scoped implementation/test work. They do not claim all old FRs are
 covered. Readiness is satisfied for Rust audit implementation and its refusal
 mode; owner approval is still required before enabling fresh external production.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. The fixed parent profile read preserves the selected historical packet layout; one sentinel byte explicitly bounds detection of growth. No additional mode or executable language is introduced.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

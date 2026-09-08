@@ -64,3 +64,10 @@ The historical producer result remains pinned evidence, not a fresh execution.
 Input mutations are in-memory or isolated test copies; the audit is read-only.
 Timeout/process-lifecycle complexity disappears from the disabled external mode
 and direct parser call. No fault is swallowed into a partial success summary.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. Manifest-controlled locators remain confined to the fixture root. Only the fixed profile.md layout read selects the parent directory, using the same aggregate audit budget. The sentinel detects a violated immutable-input precondition without unbounded allocation.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.

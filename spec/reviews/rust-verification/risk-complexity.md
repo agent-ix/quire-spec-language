@@ -65,3 +65,10 @@ The historical producer result remains pinned evidence, not a fresh execution.
 The [failure-domain review](failure-domain.md) supplies the bounded I/O, purity
 and identity cases. The existing parser is reused; no new grammar, backend,
 model binder or concurrent engine is part of this slice.
+
+## Reviewed implementation clarification
+
+Specification revision `085dd09` clarifies the fixed role-profile layout and
+one-byte growth sentinel before the affected mode implementation. The root-containment risk remains mitigated by separating fixed layout input from manifest-controlled paths and sharing the total work budget.
+The scoped review result remains PASS; no additional blocking finding was
+identified. Existing owner/external qualification gates remain unchanged.
