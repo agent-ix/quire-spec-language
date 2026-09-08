@@ -27,4 +27,12 @@ The standard's document/reusable-artifact license remains deferred. This record
 does not license the separate specification repository, relicense bootstrap
 history, approve public release or close the ecosystem artifact review.
 
+LR02 adds serde 1.0.229 as a direct audit dependency, thiserror 2.0.20 for the
+audit error envelope, and tempfile 3.27.0 for isolated Rust test copies. These
+retain MIT OR Apache-2.0. The shared ix-trace-rs dev-dependency at
+2ce4ebf47f726b9d76388220545cd0abda8a5cfb retains AGPL-3.0-or-later; its use does
+not change the AGPL-3.0-only selection for new repository source. The additional
+resolved dependency grants are listed in docs/dependencies.md. No local trace
+macro implementation or external audit source was copied.
+
 Every release needs an included-file inventory, inbound rights, exact outbound license, dependency compatibility, notices and generated-content review. No implementation source is copied by this initialization. Repository visibility and license are separate decisions.
