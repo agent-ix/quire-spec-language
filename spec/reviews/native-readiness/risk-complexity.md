@@ -15,6 +15,14 @@ owner-selected base plus all seven QUOIN analyses. The reviewed boundary is expl
 
 ## Verdict
 
+### Compatibility amendment reviewed at 5d0c9de
+
+**PASS** for the FR-010/NFR-005 native Error implementation exception.
+Two small standard trait impls preserve compatibility without a wrapper, fake SourceIdentity error implementation or new trait seam. No production concurrency or new resource path is introduced.
+The initial derive attempt failed to compile. This amendment review precedes
+the corrected runtime implementation; other in-progress readiness edits are
+preserved under the earlier reviewed contract.
+
 **PASS** for the bounded specification. This permits the specified cleanup;
 execution and merge readiness require actual local checks and recorded reviews.
 It does not accept future shared model/semantic contracts.
@@ -40,4 +48,3 @@ The source merge at 8751eff reconciles only upstream owner-policy documentation.
 all reports are validated before implementation. The six known installed
 registry diagnostics and functional-table status-header disagreement remain
 external limitations, not an error-free catalog signoff.
-
