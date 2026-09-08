@@ -25,6 +25,10 @@ negative-control mode. Paths are OS paths, not assumed UTF-8 strings. Modes are
 `self-test`, `review`, `roles`, `model-bytes`, `rule-syntax`, and `model-producer`.
 The selected model fixture root contains `model-source/` and `model-output/`.
 The review and roles roots contain their respective manifest JSON files.
+The roles layout additionally selects the fixed `../profile.md` definition
+beside the fixture directory, as in the historical packet. This fixed layout
+read is distinct from manifest-controlled artifact locators, which must remain
+inside the fixture directory.
 The rule-syntax root contains `profile.md`, `state-semantics.md`, and `fixtures/`.
 
 ## Outputs
@@ -68,6 +72,7 @@ invalid UTF-8/scalars, malformed or trailing JSON, and wrongly typed required
 fields. Relative manifest paths must resolve within the selected fixture root;
 absolute paths, traversal outside the root and symlink escapes refuse. Reads
 are limited to 8 MiB per file, 64 MiB total and 10000 files/records per audit;
+one additional sentinel byte may be read to detect a file growing past a ceiling.
 JSON depth is bounded by the decoder and native syntax by its existing Limits.
 Exceeded budgets return incomplete; no partial success summary is emitted.
 Local fixture trees must remain immutable for the duration of an audit; this is
