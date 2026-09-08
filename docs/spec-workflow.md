@@ -143,4 +143,22 @@ build. Quire now binds 41/41 test symbols, 28/28 native ACs and TM-002's 9/9
 cases. This supersedes the earlier native trace debt, while preserving its
 historical reports. The catalog status-header conflict remains visible;
 the final plan audit records its scoped disposition before private landing.
-Linking/typechecking and accepted FS02/FS03/FS05 contracts remain future work.
+At that readiness review, linking/typechecking and FS02/FS03/FS05 adoption
+remained future work. The later adoption below supersedes the decision status.
+
+## LC02 internal adoption and evidence design — 2026-09-08
+
+The owner adopted specification PR8 at
+e897f810a7356d4ce8fd19026221ebda7b65596f for internal implementation.
+The specification repository records that decision in commit 609790e.
+Compiler PR7 merged at 2be73504edff1224d6396da15edca3775905d37b;
+LR02 research issue #58 is closed with the Rust audit implementation and evidence.
+
+LC02's IT-005, TM-003 and TC-020–029 cover the existing ten FR-005/006
+acceptance criteria. SR-030–037 record the retained base plus seven analyses.
+The cases remain planned: Quire reports TM-003 0/10 backed and the existing
+41/41 Rust test symbols bound. No new runtime execution is claimed.
+The actual shared typed-model/reference interface and qualified rule-model
+realization remain prerequisites; A will specify its concrete native API and
+resource limits against that shared interface before implementation.
+Broader FS acceptance, independent B/C adoption and publication remain separate.
