@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+use crate::{ByteDigest, Code, Diagnostic, Phase};
 use std::sync::Arc;
 
 /// Authored identity/revision, separate from path and any later semantic digest.
@@ -41,6 +42,8 @@ struct Document {
     path: String,
     text: Box<str>,
     line_starts: Vec<usize>,
+    indentation_ends: Vec<usize>,
+    digest: ByteDigest,
     // End byte and cumulative excess bytes over Unicode scalar count.
     wide_ends: Vec<(usize, usize)>,
 }
@@ -49,7 +52,110 @@ struct Document {
 #[derive(Clone, Debug)]
 pub struct Source(Arc<Document>);
 
+pub const MAX_SOURCE_BYTES: usize = 1_048_576;
+
 impl Source {
+    /// Read original UTF-8 bytes without normalization. Caller may lower the 1 MiB ceiling.
+    pub fn read(
+        identity: SourceIdentity,
+        path: impl Into<String>,
+        bytes: &[u8],
+        byte_limit: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let path = path.into();
+        let byte_limit = byte_limit.min(MAX_SOURCE_BYTES);
+        let point = Position {
+            byte: 0,
+            line: 1,
+            column: 1,
+        };
+        let refusal = |code, message: &str| {
+            Box::new(Diagnostic {
+                phase: Phase::Source,
+                code,
+                source: identity.clone(),
+                path: path.clone(),
+                span: LocatedSpan {
+                    start: point,
+                    end: point,
+                },
+                message: message.into(),
+            })
+        };
+        if identity.identity.trim().is_empty()
+            || identity.revision.trim().is_empty()
+            || path.is_empty()
+        {
+            return Err(refusal(
+                Code::InvalidSourceIdentity,
+                "source identity, revision and path must be explicit",
+            ));
+        }
+        if bytes.len() > byte_limit {
+            return Err(refusal(
+                Code::ResourceExhausted,
+                "source byte budget exhausted",
+            ));
+        }
+        let text = match std::str::from_utf8(bytes) {
+            Ok(text) => text,
+            Err(error) => {
+                let mut diagnostic = refusal(Code::InvalidUtf8, "source must be valid UTF-8");
+                let prefix =
+                    std::str::from_utf8(&bytes[..error.valid_up_to()]).expect("UTF-8 valid prefix");
+                let source = Source::new(identity.clone(), path.clone(), prefix);
+                diagnostic.span = source
+                    .locate(Span {
+                        start: prefix.len(),
+                        end: prefix.len(),
+                    })
+                    .expect("prefix EOF");
+                return Err(diagnostic);
+            }
+        };
+        let source = Source::new(identity, path, text);
+        if let Some(at) = text.find('\0') {
+            return Err(crate::diagnostic::error(
+                &source,
+                Code::InvalidSyntax,
+                Phase::Source,
+                at,
+                at + 1,
+                "NUL is forbidden in source bytes",
+            ));
+        }
+        Ok(source)
+    }
+
+    /// Verify an independently supplied byte digest before constructing a mapped subject.
+    pub fn read_verified(
+        identity: SourceIdentity,
+        path: impl Into<String>,
+        bytes: &[u8],
+        expected: ByteDigest,
+        byte_limit: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let source = Self::read(identity, path, bytes, byte_limit)?;
+        if source.digest() != expected {
+            return Err(crate::diagnostic::error(
+                &source,
+                Code::SourceDigestMismatch,
+                Phase::Source,
+                0,
+                0,
+                "source bytes differ from the selected digest",
+            ));
+        }
+        Ok(source)
+    }
+    pub fn digest(&self) -> ByteDigest {
+        self.0.digest
+    }
+    pub(crate) fn indentation_end(&self, byte: usize) -> usize {
+        let line = self.0.line_starts.partition_point(|&start| start <= byte) - 1;
+        self.0.indentation_ends[line]
+    }
+
     pub(crate) fn new(identity: SourceIdentity, path: String, text: &str) -> Self {
         let mut line_starts = vec![0];
         let mut wide_ends = Vec::new();
@@ -63,11 +169,23 @@ impl Source {
                 wide_ends.push((at + ch.len_utf8(), excess));
             }
         }
+        let indentation_ends = line_starts
+            .iter()
+            .map(|&start| {
+                start
+                    + text.as_bytes()[start..]
+                        .iter()
+                        .take_while(|&&b| matches!(b, b' ' | b'\t'))
+                        .count()
+            })
+            .collect();
         Self(Arc::new(Document {
             identity,
             path,
             text: text.into(),
             line_starts,
+            indentation_ends,
+            digest: ByteDigest::of(text.as_bytes()),
             wide_ends,
         }))
     }

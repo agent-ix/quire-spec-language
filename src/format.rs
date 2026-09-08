@@ -53,7 +53,7 @@ pub fn format(unit: &ParsedUnit) -> Result<String, Box<Diagnostic>> {
             _ => {}
         }
         if output.len() >= Limits::default().source_bytes {
-            return Err(crate::lexer::error(
+            return Err(crate::diagnostic::error(
                 unit.source(),
                 Code::ResourceExhausted,
                 Phase::Format,

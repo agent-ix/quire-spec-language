@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+use crate::diagnostic::error;
 use crate::syntax::Limits;
 pub(crate) use crate::token::Kind;
 use crate::token::LexError;
@@ -9,26 +10,6 @@ use logos::Logos;
 pub(crate) struct Token {
     pub kind: Kind,
     pub span: Span,
-}
-
-pub(crate) fn error(
-    source: &Source,
-    code: Code,
-    phase: Phase,
-    start: usize,
-    end: usize,
-    message: impl Into<String>,
-) -> Box<Diagnostic> {
-    Box::new(Diagnostic {
-        code,
-        phase,
-        source: source.identity().clone(),
-        path: source.path().into(),
-        span: source
-            .locate(Span { start, end })
-            .expect("internal offsets are UTF-8 boundaries"),
-        message: message.into(),
-    })
 }
 
 pub(crate) fn lex(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {

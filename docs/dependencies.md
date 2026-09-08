@@ -1,15 +1,23 @@
 # Dependency and generated-artifact inventory
 
 LC01 uses pinned Logos 0.16.1 for token recognition and serde_json 1.0.151
-for JSON strings/CLI output. Cargo.lock fixes the transitive resolution below.
+for JSON strings/CLI output. Source correspondence adds sha2 0.10.9 for exact
+byte integrity. Cargo.lock fixes the transitive resolution below.
 This records package metadata, not a public distribution notice bundle.
 Existing dependency grants are preserved. Release remains a separate review.
 
 | Package | Version | Declared grant |
 |---|---|---|
 | aho-corasick | 1.1.5 | `Unlicense OR MIT` |
+| block-buffer | 0.10.4 | `MIT OR Apache-2.0` |
+| cfg-if | 1.0.4 | `MIT OR Apache-2.0` |
+| cpufeatures | 0.2.17 | `MIT OR Apache-2.0` |
+| crypto-common | 0.1.7 | `MIT OR Apache-2.0` |
+| digest | 0.10.7 | `MIT OR Apache-2.0` |
 | fnv | 1.0.7 | `Apache-2.0 / MIT` |
+| generic-array | 0.14.7 | `MIT` |
 | itoa | 1.0.18 | `MIT OR Apache-2.0` |
+| libc | 0.2.189 | `MIT OR Apache-2.0` |
 | logos | 0.16.1 | `MIT OR Apache-2.0` |
 | logos-codegen | 0.16.1 | `MIT OR Apache-2.0` |
 | logos-derive | 0.16.1 | `MIT OR Apache-2.0` |
@@ -22,14 +30,17 @@ Existing dependency grants are preserved. Release remains a separate review.
 | serde_core | 1.0.229 | `MIT OR Apache-2.0` |
 | serde_derive | 1.0.229 | `MIT OR Apache-2.0` |
 | serde_json | 1.0.151 | `MIT OR Apache-2.0` |
+| sha2 | 0.10.9 | `MIT OR Apache-2.0` |
 | syn | 2.0.119 | `MIT OR Apache-2.0` |
 | syn | 3.0.5 | `MIT OR Apache-2.0` |
+| typenum | 1.20.1 | `MIT OR Apache-2.0` |
 | unicode-ident | 1.0.24 | `(MIT OR Apache-2.0) AND Unicode-3.0` |
+| version_check | 0.9.5 | `MIT/Apache-2.0` |
 | zmij | 1.0.23 | `MIT` |
 
 All resolved packages offer MIT, with unicode-ident additionally requiring its
 Unicode-3.0 grant. The legacy `Apache-2.0 / MIT` fnv spelling is retained above
-as declared by its manifest. Original notice/license files stay in dependency
+as declared by its manifest; version_check likewise uses legacy `MIT/Apache-2.0`. Original notice/license files stay in dependency
 packages. No existing project code or external parser corpus is copied.
 New test fixtures and the declarative token specification are authored here
 under AGPL-3.0-only. The Logos derive macro generates recognizer code at build

@@ -2,9 +2,7 @@
 use crate::lexer::{self, Kind, Token};
 use crate::syntax::*;
 use crate::token::Kind as K;
-use crate::{
-    Code, Diagnostic, LocatedSpan, Phase, Position, Source, SourceIdentity, Span, Spanned,
-};
+use crate::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
 
 /// Parse the selected native grammar. Model imports stay unresolved here.
 pub fn parse(
@@ -13,64 +11,22 @@ pub fn parse(
     bytes: &[u8],
     limits: Limits,
 ) -> Result<ParsedUnit, Box<Diagnostic>> {
-    let path = path.into();
     let limits = limits.bounded();
-    let point = Position {
-        byte: 0,
-        line: 1,
-        column: 1,
-    };
-    let refusal = |code, message: &str| {
-        Box::new(Diagnostic {
-            phase: Phase::Source,
-            code,
-            source: identity.clone(),
-            path: path.clone(),
-            span: LocatedSpan {
-                start: point,
-                end: point,
-            },
-            message: message.into(),
-        })
-    };
-    if identity.identity.trim().is_empty() || identity.revision.trim().is_empty() || path.is_empty()
-    {
-        return Err(refusal(
-            Code::InvalidSourceIdentity,
-            "source identity, revision and path must be explicit",
-        ));
-    }
-    if bytes.len() > limits.source_bytes {
-        return Err(refusal(
-            Code::ResourceExhausted,
-            "source byte budget exhausted",
-        ));
-    }
-    let text = match std::str::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(error) => {
-            let mut diagnostic = refusal(Code::InvalidUtf8, "source must be valid UTF-8");
-            let prefix =
-                std::str::from_utf8(&bytes[..error.valid_up_to()]).expect("UTF-8 valid prefix");
-            let source = Source::new(identity.clone(), path.clone(), prefix);
-            diagnostic.span = source
-                .locate(Span {
-                    start: prefix.len(),
-                    end: prefix.len(),
-                })
-                .expect("prefix EOF");
-            return Err(diagnostic);
-        }
-    };
-    let source = Source::new(identity, path, text);
-    if let Some(at) = text.find('\0') {
-        return Err(lexer::error(
+    let source = Source::read(identity, path, bytes, limits.source_bytes)?;
+    parse_source(source, limits)
+}
+
+/// Parse an already loaded (and optionally digest-verified) immutable source.
+pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
+    let limits = limits.bounded();
+    if source.text().len() > limits.source_bytes {
+        return Err(crate::diagnostic::error(
             &source,
-            Code::InvalidSyntax,
+            Code::ResourceExhausted,
             Phase::Source,
-            at,
-            at + 1,
-            "NUL is forbidden in source bytes",
+            0,
+            0,
+            "source byte budget exhausted",
         ));
     }
     let tokens = lexer::lex(&source, limits)?;

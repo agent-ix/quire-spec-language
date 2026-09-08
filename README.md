@@ -32,8 +32,8 @@ not the portable verification result envelope.
 
 The library returns immutable ParsedUnit syntax or a boxed Diagnostic. Source
 identity/revision are opaque diagnostic labels; they do not implement the future
-interchange source reference, numeric IR revision mapping or artifact integrity
-check. Source byte spans are half-open; located lines/columns are one-based.
+interchange source reference or numeric IR revision mapping. Source::read_verified
+checks a selected byte digest; parse_source retains that verified immutable source. Source byte spans are half-open; located lines/columns are one-based.
 
 Default ceilings are 1 MiB source, 100,000 tokens, 50,000 syntax nodes and 64
 nested delimiters/parser frames. Callers can lower these ceilings. Formatting
@@ -41,6 +41,12 @@ also bounds output to 1 MiB and can return incomplete if expansion exceeds it.
 Long flat expressions use an arena; grouping and all original source bytes are
 retained. Balanced reserved forms refuse as unsupported; malformed tokens and
 delimiters are syntax errors. No recovery manufactures a successful partial unit.
+
+The [source correspondence API](docs/source-correspondence.md) checks exact
+body-to-original segments with explicit layout transformations and returns
+original document locations. Maps preserve all corresponding byte regions and
+refuse changed bytes, foreign source bindings, malformed segments and budget
+exhaustion. Wire decoding and existing-repository extraction remain separate.
 
 ## Design and status
 

@@ -17,7 +17,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            source_bytes: 1_048_576,
+            source_bytes: crate::source::MAX_SOURCE_BYTES,
             tokens: 100_000,
             nodes: 50_000,
             nesting: 64,

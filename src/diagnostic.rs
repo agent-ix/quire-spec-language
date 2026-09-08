@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-use crate::source::{LocatedSpan, SourceIdentity};
+use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Phase {
@@ -8,6 +8,7 @@ pub enum Phase {
     Parse,
     Profile,
     Format,
+    SourceMap,
 }
 
 impl Phase {
@@ -18,6 +19,7 @@ impl Phase {
             Self::Parse => "parse",
             Self::Profile => "profile",
             Self::Format => "format",
+            Self::SourceMap => "source_map",
         }
     }
 }
@@ -25,6 +27,8 @@ impl Phase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Code {
     InvalidSourceIdentity,
+    InvalidSourceMap,
+    SourceDigestMismatch,
     InvalidUtf8,
     InvalidSyntax,
     UnsupportedConstruct,
@@ -38,6 +42,8 @@ impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidSourceIdentity => "invalid_source_identity",
+            Self::InvalidSourceMap => "invalid_source_map",
+            Self::SourceDigestMismatch => "source_digest_mismatch",
             Self::InvalidUtf8 => "invalid_utf8",
             Self::InvalidSyntax => "invalid_syntax",
             Self::UnsupportedConstruct => "unsupported_construct",
@@ -63,4 +69,24 @@ impl Diagnostic {
     pub fn is_incomplete(&self) -> bool {
         self.code == Code::ResourceExhausted
     }
+}
+
+pub(crate) fn error(
+    source: &Source,
+    code: Code,
+    phase: Phase,
+    start: usize,
+    end: usize,
+    message: impl Into<String>,
+) -> Box<Diagnostic> {
+    Box::new(Diagnostic {
+        code,
+        phase,
+        source: source.identity().clone(),
+        path: source.path().into(),
+        span: source
+            .locate(Span { start, end })
+            .expect("internal offsets are UTF-8 boundaries"),
+        message: message.into(),
+    })
 }

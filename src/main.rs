@@ -50,7 +50,7 @@ fn run() -> Result<String, (u8, String)> {
         return format(&unit).map_err(|error| diagnostic(&error));
     }
     Ok(
-        json!({"status":"parsed", "source":{"identity":identity,"revision":revision},
+        json!({"status":"parsed", "source":{"identity":identity,"revision":revision,"digest":unit.source().digest().to_string()},
         "path":path, "imports":unit.imports().len(), "clauses":unit.clauses().len() })
         .to_string(),
     )
