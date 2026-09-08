@@ -2,7 +2,7 @@
 id: Plan-001
 title: "Rust fixture audit remediation"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-012
     type: references
@@ -13,8 +13,8 @@ relationships:
 
 ## Requirements Summary
 
-- [ ] FR-012: real Rust fixture identity, correspondence and syntax checks.
-- [ ] NFR-005: Rust-owned verification and explicit unapproved producer refusal.
+- [x] FR-012: real Rust fixture identity, correspondence and syntax checks.
+- [x] NFR-005: Rust-owned verification and explicit unapproved producer refusal.
 
 US-004/StR-001 supply the existing evidence/integration need; the full native
 assessment workflow is not owned or marked complete by this bounded plan.
@@ -44,7 +44,7 @@ The authoritative task edges are in the task files; no cycle exists.
 | TC-009 | CLI encoding and producer refusal | Invoke the real binary with unknown/invalid OS arguments, self-test/model-bytes with external runtimes unavailable, and model-producer. Usage exits 2 without panic; Rust audits execute with no Python/Node; producer mode exits 3 with producer-language-unapproved. |
 | TC-010 | Owned verification language inventory | Inspect all owned executable audit files, CI steps and documented verification commands after migration. No Python audit executable/CI invocation or embedded non-Rust verifier remains; historical records retain their provenance. |
 
-## Remaining Work
+## Delivered Work
 
 ### Track A: serial critical path
 
@@ -60,8 +60,8 @@ additional agents. B/C/TL continue their own work; this plan does not allocate i
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-001 | A | FR-012, NFR-005 | TC-001–TC-009 | not_started |
-| Task-002 | A | FR-012, NFR-005 | TC-002–TC-010 | not_started |
+| Task-001 | A | FR-012, NFR-005 | TC-001–TC-009 | done |
+| Task-002 | A | FR-012, NFR-005 | TC-002–TC-010 | done |
 
 ## Coordination Rules
 

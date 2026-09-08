@@ -2,7 +2,7 @@
 id: Task-001
 title: "Implement Rust audit modes"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P1
 relationships:
@@ -36,8 +36,8 @@ Implement Rust audit modes within FR-012/NFR-005.
 
 ## Subtasks
 
-- [ ] Implement bounded read/strict JSON/typed error helpers and actual mode checks.
-- [ ] Add resolving Rust TC/AC tags and meaningful malformed, identity, path and resource cases.
+- [x] Implement bounded read/strict JSON/typed error helpers and actual mode checks.
+- [x] Add resolving Rust TC/AC tags and meaningful malformed, identity, path and resource cases.
 
 ## Deliverables
 

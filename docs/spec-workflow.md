@@ -6,6 +6,12 @@ These document the existing syntax implementation and the remaining LC02–LC05
 work. The full healthy/violating/refused-or-incomplete state workflow is still
 required; syntax success does not satisfy that acceptance.
 
+This opening count describes the original review checkpoint. LR02 adds FR-012,
+NFR-005 and IT-004, a scoped TestMatrix, ten TCs and Plan-001. The bounded Rust
+audit migration is implemented and locally verified; see the current
+[remediation inventory](rust-verification-remediation.md). Historical review
+counts and hosted observations below retain their original scope.
+
 ## Authoring contract
 
 Authoring follows the installed Quoin plugin 0.20.0 skills:
@@ -103,3 +109,24 @@ helpers, including the two CI paths. This reopens a bounded specification cycle.
 The private LC01 campaign audit also requires a separate owner disposition for
 fresh TypeSpec/Node producer qualification. Historical results retain their pins;
 a Rust runner does not implicitly approve that external executable language.
+
+## LR02 implementation and CI checkpoint
+
+The bounded specify/review/plan cycle preceded Rust implementation. All eight
+scoped reviews are in spec/reviews/rust-verification, with later reviewed layout,
+budget, canonical-marker and manual-CI clarifications. All four Python audit
+helpers and both CI invocations are replaced by Rust. Historical fixture bytes
+remain unchanged. Plan-001 and its scoped matrix record actual local execution.
+
+The real shared agent-skills/rust-review/SKILL.md was applied again. NFR-005's
+canonical ix-trace-rs attributes take precedence over rust-style's old comment
+convention. Quire resolves all 14 new test symbols; FR-012 has 11/11 backed ACs,
+and nine executable TCs have bindings. TC-010 is manual inspection, explicitly
+classified no_source_symbol. The original 21 untagged tests remain separate debt.
+
+The owner subsequently required local CI until stable. The only owned hosted
+workflow now exposes workflow_dispatch exclusively; the specification repository
+has none. No hosted run was dispatched. Local formatter, strict Clippy, tests,
+private-packet lane, release audit unit tests and separate-target build passed.
+Future hosted execution needs access to the private shared trace macro. This
+does not weaken the local gates or approve the external TypeSpec/Node producer.

@@ -16,7 +16,7 @@ and IT-004 at 11a9128. The scoped full review is under
 | tools/check_model_fixture.py --bytes-only | Domain-specific pinned fixture manifest and byte checks. | Rust model-bytes mode with the same five historical digests and producer pin. |
 | tools/check_model_fixture.py producer mode | Rust can own orchestration, but the consumed TypeSpec/Node producer is a separate executable-language dependency. | Fresh execution remains unapproved; Rust model-producer refuses. Preserve original production/stale-lock evidence and producer pin. No Filament edits. |
 | tools/check_rule_syntax.py | Domain-specific rule wrapper/case metadata; actual parsing is an existing shared native capability. | Rust rule-syntax calls the existing parser directly. No expression parser, temp source runner or evaluator duplicate. |
-| CI self-test and model integrity steps | Owned executable verification logic currently invokes Python. | Replace with the Rust audit executable; keep explicit count/claim boundaries. |
+| CI self-test and model integrity steps | Owned executable verification logic previously invoked Python. | Replaced with the Rust audit executable; explicit count/claim boundaries retained. Hosted events are manual-dispatch only. |
 | Cargo, Rust toolchain, GitHub runner/checkout action | Existing external build/CI tooling and host; checkout@v4 is not Rust-owned verification logic. | Inventory retained; this work grants no new host/tool language exemption or broader qualification. No manual CI dispatch. |
 | Quoin/Quire specification and evidence workflows | Existing shared requirement/trace/method/evidence ownership. | Reuse installed workflows. Campaign explicitly retains Quoin for now; no local evidence-store framework or Quoin rewrite. |
 
@@ -49,11 +49,50 @@ supplies standard Rust error traits, and
 [tempfile](https://docs.rs/tempfile/3.27.0/tempfile/) isolates test copies.
 Versions and MIT OR Apache-2.0 grants were inspected in the selected local
 package manifests before adoption. The Cargo lock and included-artifact
-inventory will record the actual resolved closure; existing grants are preserved.
+inventory records the actual resolved closure; existing grants are preserved.
 
 ## Current status
 
-Specification and scoped review are authored; runtime migration and execution
-evidence remain pending. Historical successful producer runs remain labeled
-historical. Nothing here approves new TypeScript/Node execution, changes
-Filament, accepts FS02/FS03/FS05, or completes the full compiler workflow.
+The four Python helpers are removed and both former CI audit commands invoke
+Rust. Six audit unit tests and five default command/file integration tests pass;
+the 21 preexisting compiler tests also pass. All three explicitly selected private
+packet tests passed with independent corruptions. The six audit unit tests pass
+in the optimized release profile as well. Formatter, strict all-feature Clippy
+and a separate-target locked build pass locally.
+
+The selected standard packet revision is
+36293bae7f5bcb7ca3b2389ed166e525dc9dba87. Review reports 23 files/seven cases/six
+controls; roles reports 17 artifacts/four regions; model-bytes reports five
+digests plus the producer pin; rule-syntax reports 50 parsed/one unsupported.
+Integration tests compare all original fixture bytes before/after execution;
+neither repository's historical fixtures changed. Model-producer remains an
+explicit exit-3 refusal with no child-process implementation.
+
+Quire resolves all 14 new Rust test symbols through canonical trace attributes:
+FR-012 is 11/11 backed, TC-001–TC-009 are backed, and TC-010 is a declared Manual
+inspection with no source symbol. This proves binding, not behavioral coverage
+percentages. Old compiler trace debt remains outside Plan-001.
+
+### TC-010 inspection and local CI policy
+
+Inspected every owned file under tools/, tests/, src/, Cargo manifests and the
+single .github/workflows/ci.yml. There are zero remaining Python executable
+helpers or CI invocations and no embedded Node/shell verifier. The audit contains
+no child-process invocation. Test harness processes invoke only the real Rust
+binary; its environment has an empty PATH. Four named historical paths above
+are an inventory of removed files. Original TypeSpec model input and historical
+Python/Node command strings are preserved data; fresh producer execution is
+still unapproved.
+
+The owner requested local CI until stable. NFR-002/IT-004 amendments at 1649ef7
+received all eight review addenda at 2e5cd9a before the workflow change at
+8cf5571. The compiler workflow has only workflow_dispatch; the specification
+repository has no workflows. No hosted run was dispatched or used to qualify
+this remediation. The shared ix-trace-rs dependency is private: a future hosted
+runner needs access to that repository before the test/lint commands can run.
+Local locked builds have that access/cache; hosted credential setup is not
+claimed by local results.
+
+Historical producer runs remain labeled historical. This scope does not accept
+FS02/FS03/FS05 or complete the full compiler workflow. The root code and gap
+reviews record the actual evaluated implementation revision and limitations.

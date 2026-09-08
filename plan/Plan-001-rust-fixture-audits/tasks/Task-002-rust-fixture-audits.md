@@ -2,7 +2,7 @@
 id: Task-002
 title: "Adopt Rust verification in CI and retire Python"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P1
 relationships:
@@ -38,8 +38,8 @@ Adopt Rust verification in CI and retire Python within FR-012/NFR-005.
 
 ## Subtasks
 
-- [ ] Run real selected fixture modes and the Rust code-review gates.
-- [ ] Switch CI/docs, remove all four Python helpers, and record language inventory and evidence pins.
+- [x] Run real selected fixture modes and the Rust code-review gates.
+- [x] Switch CI/docs, remove all four Python helpers, and record language inventory and evidence pins.
 
 ## Deliverables
 
@@ -48,3 +48,5 @@ Rust-only owned verification paths, current workflow documentation and recorded 
 ## Notes
 
 Fresh TypeSpec/Node producer qualification stays unavailable pending explicit owner disposition.
+Hosted CI is manual-dispatch only at the owner's direction. All required checks
+ran locally; future hosted execution also needs private trace-dependency access.

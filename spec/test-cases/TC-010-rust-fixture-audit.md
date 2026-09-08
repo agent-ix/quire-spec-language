@@ -18,3 +18,10 @@ Inspect all owned executable audit files, CI steps and documented verification c
 ## Expected Results
 
 No Python audit executable/CI invocation or embedded non-Rust verifier remains; historical records retain their provenance.
+
+## Execution evidence
+
+Passed local inspection on 2026-09-07. The removed paths, replacement executable,
+CI event/command inspection and preserved provenance are recorded in
+[the remediation inventory](../../docs/rust-verification-remediation.md).
+This is manual evidence; no source-symbol trace or hosted run is claimed.
