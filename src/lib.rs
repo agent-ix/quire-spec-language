@@ -12,5 +12,5 @@ mod token;
 
 pub use diagnostic::{Code, Diagnostic, Phase};
 pub use parser::parse;
-pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span};
+pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};
 pub use syntax::{Limits, ParsedUnit};

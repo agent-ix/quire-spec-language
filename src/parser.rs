@@ -2,7 +2,9 @@
 use crate::lexer::{self, Kind, Token};
 use crate::syntax::*;
 use crate::token::Kind as K;
-use crate::{Code, Diagnostic, LocatedSpan, Phase, Position, Source, SourceIdentity, Span};
+use crate::{
+    Code, Diagnostic, LocatedSpan, Phase, Position, Source, SourceIdentity, Span, Spanned,
+};
 
 /// Parse the selected native grammar. Model imports stay unresolved here.
 pub fn parse(
@@ -158,19 +160,25 @@ impl Parser {
             Err(self.unexpected(expected.description()))
         }
     }
-    fn identifier(&mut self) -> Result<String, Box<Diagnostic>> {
+    fn identifier(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         match &self.peek().kind {
             Kind::Identifier(word) => {
-                let value = word.clone();
+                let value = Spanned {
+                    value: word.clone(),
+                    span: self.peek().span,
+                };
                 self.take();
                 Ok(value)
             }
             _ => Err(self.unexpected("identifier")),
         }
     }
-    fn string(&mut self) -> Result<(String, Span), Box<Diagnostic>> {
+    fn string(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         if let Kind::Text(value) = &self.peek().kind {
-            let result = (value.clone(), self.peek().span);
+            let result = Spanned {
+                value: value.clone(),
+                span: self.peek().span,
+            };
             self.take();
             Ok(result)
         } else {
@@ -179,12 +187,12 @@ impl Parser {
     }
     fn header(&mut self, keyword: K, expected: &str, code: Code) -> Result<(), Box<Diagnostic>> {
         self.expect(keyword.clone())?;
-        let (value, span) = self.string()?;
-        if value != expected {
+        let literal = self.string()?;
+        if literal.value != expected {
             return Err(self.failure(
                 code,
                 Phase::Profile,
-                span,
+                literal.span,
                 format!("supported {} is {expected}", keyword.description()),
             ));
         }
@@ -215,11 +223,11 @@ impl Parser {
         let start = self.expect(K::Model)?.span.start;
         let alias = self.identifier()?;
         self.expect(K::Equal)?;
-        let (package, _) = self.string()?;
+        let package = self.string()?;
         self.expect(K::Version)?;
-        let (version, _) = self.string()?;
+        let version = self.string()?;
         self.expect(K::Digest)?;
-        let (digest, _) = self.string()?;
+        let digest = self.string()?;
         let end = self.expect(K::Semicolon)?.span.end;
         Ok(ModelImport {
             alias,
@@ -469,6 +477,10 @@ impl Parser {
                 }
             }
             Kind::Identifier(model) => {
+                let model = Spanned {
+                    value: model,
+                    span: token.span,
+                };
                 self.take();
                 if self.is(K::OpenParen) {
                     return Err(self.failure(

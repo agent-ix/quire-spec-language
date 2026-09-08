@@ -22,6 +22,13 @@ pub struct Span {
     pub end: usize,
 }
 
+/// A decoded syntax value with the exact original token region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Spanned<T> {
+    pub value: T,
+    pub span: Span,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LocatedSpan {
     pub start: Position,

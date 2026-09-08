@@ -90,10 +90,7 @@ fn all_admitted_constructs_roundtrip_with_comments() {
         let a = unit(expression);
         let text = format(&a).unwrap();
         let b = read(text.as_bytes(), Limits::default()).unwrap();
-        assert_eq!(
-            a.expressions().iter().map(|e| &e.kind).collect::<Vec<_>>(),
-            b.expressions().iter().map(|e| &e.kind).collect::<Vec<_>>()
-        );
+        assert_eq!(syntax_kinds(&a), syntax_kinds(&b));
         assert_eq!(format(&b).unwrap(), text);
         if expression.contains("//") {
             assert!(text.contains("// retained café comment  \n"));
@@ -105,7 +102,7 @@ fn all_admitted_constructs_roundtrip_with_comments() {
 fn declaration_forms_and_keyword_boundaries() {
     let text = document("trueValue = modelled and presentValue = iffy");
     let u = read(text.as_bytes(), Limits::default()).unwrap();
-    assert_eq!(u.imports()[0].alias, "M");
+    assert_eq!(u.imports()[0].alias.value, "M");
     let text = text.replace(
         "invariant Test on M::Thing at current",
         "pre Test on M::Thing::doIt",
@@ -310,4 +307,89 @@ fn deterministic_malformed_corpus_does_not_panic() {
             }
         }
     }
+}
+
+fn syntax_kinds(unit: &ParsedUnit) -> Vec<E> {
+    unit.expressions()
+        .iter()
+        .map(|expression| {
+            let mut kind = expression.kind.clone();
+            let reset = |value: &mut quire_spec_language::Spanned<String>| {
+                value.span = Span { start: 0, end: 0 }
+            };
+            match &mut kind {
+                E::Name(name)
+                | E::Field { name, .. }
+                | E::Let { name, .. }
+                | E::Quantifier { name, .. } => reset(name),
+                E::EnumValue {
+                    model,
+                    name,
+                    variant,
+                } => {
+                    reset(model);
+                    reset(name);
+                    reset(variant);
+                }
+                E::Reaches { field, .. } => reset(field),
+                _ => {}
+            }
+            kind
+        })
+        .collect()
+}
+
+#[test]
+fn every_import_and_name_reference_keeps_its_exact_token_locus() {
+    let text = document("let object = self in forall(item in object.items: item.color = M::Color::Red and reaches(item, object, parent))");
+    let u = read(text.as_bytes(), Limits::default()).unwrap();
+    let check = |name: &quire_spec_language::Spanned<String>| {
+        assert_eq!(u.source().slice(name.span), Some(name.value.as_str()));
+    };
+    let import = &u.imports()[0];
+    check(&import.alias);
+    for literal in [&import.package, &import.version, &import.digest] {
+        let raw = u.source().slice(literal.span).unwrap();
+        assert_eq!(serde_json::from_str::<String>(raw).unwrap(), literal.value);
+        assert!(raw.starts_with('"') && raw.ends_with('"'));
+    }
+    let clause = &u.clauses()[0];
+    for name in [&clause.name, &clause.model, &clause.context] {
+        check(name);
+    }
+    let mut names = 0;
+    for expression in u.expressions() {
+        match &expression.kind {
+            E::Name(name)
+            | E::Field { name, .. }
+            | E::Let { name, .. }
+            | E::Quantifier { name, .. } => {
+                check(name);
+                names += 1;
+            }
+            E::EnumValue {
+                model,
+                name,
+                variant,
+            } => {
+                check(model);
+                check(name);
+                check(variant);
+                names += 3;
+            }
+            E::Reaches { field, .. } => {
+                check(field);
+                names += 1;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(names, 12);
+    let text = text.replace(
+        "invariant Test on M::Thing at current",
+        "post Test on M::Thing::attempt",
+    );
+    let u = read(text.as_bytes(), Limits::default()).unwrap();
+    let operation = u.clauses()[0].operation.as_ref().unwrap();
+    assert_eq!(u.source().slice(operation.span), Some("attempt"));
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-use crate::source::{Source, Span};
+use crate::source::{Source, Span, Spanned};
 
 pub const LANGUAGE: &str = "ix:native";
 pub const EDITION: &str = "0-draft";
@@ -132,17 +132,17 @@ pub enum ExprKind {
     Boolean(bool),
     Integer(String),
     Text(String),
-    Name(String),
+    Name(Spanned<String>),
     SelfValue,
     ResultValue,
     EnumValue {
-        model: String,
-        name: String,
-        variant: String,
+        model: Spanned<String>,
+        name: Spanned<String>,
+        variant: Spanned<String>,
     },
     Field {
         base: ExprId,
-        name: String,
+        name: Spanned<String>,
     },
     Unary {
         op: UnaryOp,
@@ -158,7 +158,7 @@ pub enum ExprKind {
         argument: ExprId,
     },
     Let {
-        name: String,
+        name: Spanned<String>,
         value: ExprId,
         body: ExprId,
     },
@@ -169,14 +169,14 @@ pub enum ExprKind {
     },
     Quantifier {
         universal: bool,
-        name: String,
+        name: Spanned<String>,
         domain: ExprId,
         predicate: ExprId,
     },
     Reaches {
         start: ExprId,
         target: ExprId,
-        field: String,
+        field: Spanned<String>,
     },
 }
 
@@ -188,10 +188,10 @@ pub struct Expr {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelImport {
-    pub alias: String,
-    pub package: String,
-    pub version: String,
-    pub digest: String,
+    pub alias: Spanned<String>,
+    pub package: Spanned<String>,
+    pub version: Spanned<String>,
+    pub digest: Spanned<String>,
     pub span: Span,
 }
 
@@ -205,10 +205,10 @@ pub enum ClauseKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Clause {
     pub kind: ClauseKind,
-    pub name: String,
-    pub model: String,
-    pub context: String,
-    pub operation: Option<String>,
+    pub name: Spanned<String>,
+    pub model: Spanned<String>,
+    pub context: Spanned<String>,
+    pub operation: Option<Spanned<String>>,
     pub expression: ExprId,
     pub span: Span,
 }
