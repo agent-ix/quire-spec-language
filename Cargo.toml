@@ -1,0 +1,28 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+name = "quire-spec-language"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+license = "AGPL-3.0-only"
+description = "Native finite-state specification syntax and source diagnostics"
+
+[features]
+default = []
+
+[dependencies]
+logos = "=0.16.1"
+serde_json = "=1.0.151"
+
+[[bin]]
+name = "quire-spec"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
