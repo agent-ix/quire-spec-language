@@ -43,3 +43,8 @@ and the unchanged 41/41 Rust test symbols bound. All ten new cases are planned;
 there are no reported status lies. These are static observations, not a new
 test run. No Cargo gate was rerun for this documentation-only packet. Raw
 advisor and coverage data are retained in this review directory.
+
+## Adoption and fixture correction review — 2026-09-08
+
+Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
+review set. The correction follows the actual retained TypeSpec source and compiled semantic IR, both with bounds 0..1000; it introduces no fresh producer observation or executed judgment. Repeated scoped Quire coverage remains 57/103 globally backed with 41/41 Rust symbols bound and TM-003 0/10. The ten cases remain planned. FND-001/002 and the conditional verdict remain.

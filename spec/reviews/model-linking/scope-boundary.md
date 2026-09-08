@@ -43,3 +43,8 @@ and the unchanged 41/41 Rust test symbols bound. All ten new cases are planned;
 there are no reported status lies. These are static observations, not a new
 test run. No Cargo gate was rerun for this documentation-only packet. Raw
 advisor and coverage data are retained in this review directory.
+
+## Adoption and fixture correction review — 2026-09-08
+
+Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
+review set. The amendment updates A-owned documentation and the IT-005 input description only. Source, tools, tests, Cargo files, workflow and immutable fixture bytes remain identical to merged main. C's adapter coordination and the other owners' authority are unchanged. FND-001/002 and the conditional verdict remain.
