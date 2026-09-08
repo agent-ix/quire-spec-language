@@ -43,3 +43,8 @@ and the unchanged 41/41 Rust test symbols bound. All ten new cases are planned;
 there are no reported status lies. These are static observations, not a new
 test run. No Cargo gate was rerun for this documentation-only packet. Raw
 advisor and coverage data are retained in this review directory.
+
+## Adoption and fixture correction review — 2026-09-08
+
+Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
+review set. The root lifecycle now agrees with the already recorded owner adoption at specification e897f81. No further semantic-target approval is needed for internal implementation. The shared interface, qualified rule model and native API/resource specification remain the concrete dependencies. Equal scalar bounds do not supply those interfaces. FND-001/002 and the conditional verdict remain.
