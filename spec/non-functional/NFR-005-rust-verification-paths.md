@@ -42,8 +42,9 @@ attributes under the installed Quire/module grammar. Legacy doc-comment tags
 are not the convention for new tests. `#[cfg(test)]` controls compilation only.
 Quire checks actual bindings separately from the macro's argument-shape check.
 Check the producer refusal mode and preserve historical producer provenance.
-Use pinned serde 1.0.229 and thiserror 2.0.20 only for the Rust audit target's
-strict JSON/error envelope, and tempfile 3.27.0 only for isolated Rust test
+Use pinned serde 1.0.229 for the Rust audit target's strict JSON and reuse
+thiserror 2.0.20 for the audit and native Diagnostic error envelopes. Use
+tempfile 3.27.0 only for isolated Rust test
 fixtures; all offer MIT OR Apache-2.0 and retain their original grants.
 Use the existing shared ix-trace-rs marker as a dev-dependency at commit
 2ce4ebf47f726b9d76388220545cd0abda8a5cfb (release tag v0.1.1; crate version
