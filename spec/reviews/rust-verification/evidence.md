@@ -10,6 +10,11 @@ evaluated_revision: "11a9128"
 
 ## Summary
 
+Manual CI addendum: specification revision `1649ef7` was reviewed before
+workflow changes. Local command results must identify their inputs and revision. Earlier hosted CI remains historical evidence; manual-only configuration and no new hosted run are recorded separately. Existing AC and metric methods did not change, so prior advisor findings still apply.
+The bounded review remains PASS. Both changed artifacts validate with the six
+previously recorded installed-registry diagnostics; no clean-registry claim is made.
+
 The bounded Rust audit specification is reviewed under the owner-selected full
 analysis set. Dispositions preserve original fixture evidence and explicitly
 withhold fresh unapproved producer qualification.

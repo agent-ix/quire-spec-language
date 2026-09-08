@@ -10,6 +10,11 @@ evaluated_revision: "11a9128"
 
 ## Summary
 
+Manual CI addendum: specification revision `1649ef7` was reviewed before
+workflow changes. Local Rust and Quire checks retain their existing inputs and version pins. Removing automatic hosted triggers adds no dependency; the specification repository currently contains no hosted workflow to alter.
+The bounded review remains PASS. Both changed artifacts validate with the six
+previously recorded installed-registry diagnostics; no clean-registry claim is made.
+
 The bounded Rust audit specification is reviewed under the owner-selected full
 analysis set. Dispositions preserve original fixture evidence and explicitly
 withhold fresh unapproved producer qualification.

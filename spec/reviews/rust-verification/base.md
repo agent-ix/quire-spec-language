@@ -10,6 +10,11 @@ evaluated_revision: "11a9128"
 
 ## Summary
 
+Manual CI addendum: specification revision `1649ef7` was reviewed before
+workflow changes. The owner selected local execution during stabilization. NFR-002 defines the event allowlist and IT-004-SC-05 makes inspection observable. No review choice or authorization is inferred from a timeout or absent run.
+The bounded review remains PASS. Both changed artifacts validate with the six
+previously recorded installed-registry diagnostics; no clean-registry claim is made.
+
 The bounded Rust audit specification is reviewed under the owner-selected full
 analysis set. Dispositions preserve original fixture evidence and explicitly
 withhold fresh unapproved producer qualification.
