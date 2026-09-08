@@ -22,3 +22,7 @@ No duplicate evidence store, hidden normative dependency, or unqualified backend
 - [Private formalization board](https://github.com/orgs/agent-ix/projects/20)
 
 Read [license decision](LICENSE-DECISION.md) before adding code or normative artifacts. Publication requires a fresh review; do not flip private history public.
+
+## Implementation language — owner directive
+
+Executable implementation, including production and qualification tools/tests, is Rust. New TypeScript choices require explicit owner approval; surface all other executable languages. Quoin remains in its current implementation for now: contain its spread through versioned structured interfaces, do not rewrite it wholesale. Filament changes are excluded. See AGENTS.md and the language gate on the owning issue. Normative prose/schema need not be executable Rust.
