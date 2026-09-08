@@ -44,10 +44,12 @@ changed, and these runs are not recorded as error-free validation.
 
 ## Review and implementation status
 
-`/spec-review` is requested. Its required user selection of base, all, or a subset
-of analyses remains pending. No formal `SpecReview` document, completed review,
-human acceptance, formal TC coverage or test matrix is claimed by this record.
-Existing freeform architecture notes are design inputs to that review.
+The owner selected base plus all seven Quoin analyses. The eight formal
+SpecReview artifacts are linked from [the base review](../spec/reviews/base.md).
+Reviews were performed on the pinned revision recorded in each artifact and
+remain conditional on their findings. Human acceptance, TC coverage and a test
+matrix are not implied. The optional gap-analysis semantic comparison was
+declined and was not run.
 
 Further dependent implementation waits for specification review and the required
 shared-contract acceptance. Existing Rust tests and integration evidence remain
@@ -65,7 +67,7 @@ requirements for the unimplemented evaluator, not current runtime capabilities.
 FR-to-story relationships use the catalog's `traces_to` verb because its
 `implements` verb denotes interface/contract fulfillment rather than requirement
 lineage. IDs are unchanged. The common SpecReview authoring pack was fetched
-once in preparation for the pending review selection; no analysis was run.
+once for the selected review set; the analyses and raw advice are now recorded.
 
 The installed process manifest has SHA-256
 `d08ce71c02ce871fed4c7fb5cea1af1feb5a0b1004f8458fd26deecc2aa7b720`.
@@ -78,3 +80,26 @@ Hosted native CI also passed at the documentation checkpoint `4581641`:
 https://github.com/agent-ix/quire-spec-language/actions/runs/34185330391.
 This verifies the existing syntax implementation and fixture integrity, not
 the proposed evaluator requirements.
+
+## Review validation checkpoint
+
+The eight analysis reports were validated with the explicit repository scope.
+All 32 spec/review documents and the separate root code-review artifact were grammar-clean. Quire still emitted the
+six installed-registry errors described above despite exit 0. Report bodies
+have the required Summary and nonempty Findings tables. No catalog files were
+changed. Raw coverage/advisor output and tool/module provenance are retained in
+spec/reviews/data; numeric-threshold advice is distinguished from reviewer
+method recommendations.
+
+The shared Agent-IX [code/Rust review](../reviews/26-09-07-native-code-review.md)
+used the owner's agent-skills/rust-review/SKILL.md content and its rust-style
+idioms. Formatting, strict all-feature Clippy and all 21 integration tests passed
+at a80a17d. A CLI non-UTF-8 argument panic, formatter-budget discrepancy and
+traceability/idiom findings remain. No plan bundle existed at the gap-analysis
+target-selection step; no plan-completion verdict was invented.
+
+The owner subsequently required Rust remediation of all four Python verification
+helpers, including the two CI paths. This reopens a bounded specification cycle.
+The private LC01 campaign audit also requires a separate owner disposition for
+fresh TypeSpec/Node producer qualification. Historical results retain their pins;
+a Rust runner does not implicitly approve that external executable language.

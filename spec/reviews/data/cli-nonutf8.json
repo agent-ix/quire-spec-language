@@ -1,0 +1,6 @@
+{
+  "command_python": "subprocess.run([b'target/debug/quire-spec', b'parse', b'test:source', b'fixture:1', b'\\xff'], capture_output=True)",
+  "exit_code": 101,
+  "stdout": "",
+  "stderr": "\nthread 'main' (9) panicked at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/env.rs:871:51:\ncalled `Result::unwrap()` on an `Err` value: \"\\xFF\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+}

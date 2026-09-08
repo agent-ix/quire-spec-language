@@ -61,7 +61,7 @@ relationships:
 
 ## 1. Purpose
 
-This root indexes the discrete requirements for Agent A's assigned native finite-state work. It corrects the earlier proposal-only authoring by using the requested /specify catalog contract. All artifacts remain draft pending /spec-review; retrospective documentation does not retroactively approve implementation.
+This root indexes the discrete requirements for Agent A's assigned native finite-state work. It corrects the earlier proposal-only authoring by using the requested /specify catalog contract. All artifacts remain draft with conditional /spec-review findings; retrospective documentation does not retroactively approve implementation.
 
 ## 2. Scope
 
