@@ -65,3 +65,14 @@ Specification revision `085dd09` clarifies the fixed role-profile layout and
 one-byte growth sentinel before the affected mode implementation. The shall statements and ACs are unchanged; the input-location and sentinel clarifications are concrete supporting text.
 The scoped review result remains PASS; no additional blocking finding was
 identified. Existing owner/external qualification gates remain unchanged.
+
+## Canonical trace marker clarification
+
+Reviewed NFR-005 clarification at `86c47c7`: the installed module declares
+`rust-trace-attribute` as canonical, while doc-comment/name tags are legacy.
+New audit tests use the existing shared ix-trace-rs macro at
+2ce4ebf47f726b9d76388220545cd0abda8a5cfb, retaining AGPL-3.0-or-later.
+The macro checks argument shape; actual Quire binding remains a separate gate.
+This resolves the older default skill convention without inventing a grammar
+or a marker crate. No obligation/method identity changed, and the scoped
+review result remains PASS.
