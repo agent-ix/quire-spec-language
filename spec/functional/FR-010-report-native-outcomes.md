@@ -33,12 +33,19 @@ characters; it cannot serve as portable source authority. The exact source
 labels and digest remain distinct. Collect at most five arguments so extra
 arguments refuse without unbounded argument allocation.
 
-Native Diagnostic implements standard Display and Error through thiserror,
+Native Diagnostic implements standard Display and Error,
 retaining its structured phase/code/source/path/span/message fields and existing
 code spellings. The Copy Code enum exposes as_str, all and from_code; unknown
 spellings return None. The repository owns a stable native-code catalog,
 separate from the fixture-audit catalog. Existing local SourceIdentity string
 labels are documented as opaque, not promoted to shared artifact references.
+
+Retain the public `source: SourceIdentity` field as diagnostic provenance, not
+an underlying error. Implement these two standard traits directly: the pinned
+thiserror derive treats any field named source as an error cause and cannot
+express this existing API. Display renders `{code}: {message}` and Error has
+no underlying cause. This scoped compatibility exception does not introduce
+a second error envelope or alter the audit target's derived errors.
 
 ## Acceptance Criteria
 

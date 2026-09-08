@@ -43,7 +43,9 @@ are not the convention for new tests. `#[cfg(test)]` controls compilation only.
 Quire checks actual bindings separately from the macro's argument-shape check.
 Check the producer refusal mode and preserve historical producer provenance.
 Use pinned serde 1.0.229 for the Rust audit target's strict JSON and reuse
-thiserror 2.0.20 for the audit and native Diagnostic error envelopes. Use
+thiserror 2.0.20 for the audit error envelope. Native Diagnostic implements
+standard error traits directly to preserve its source-identity field, as
+specified in FR-010. Use
 tempfile 3.27.0 only for isolated Rust test
 fixtures; all offer MIT OR Apache-2.0 and retain their original grants.
 Use the existing shared ix-trace-rs marker as a dev-dependency at commit
