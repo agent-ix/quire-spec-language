@@ -33,6 +33,14 @@ Rust crate, lockfile, toolchain, CI and optional producer checks.
 
 Run the pinned toolchain with the locked minimal-feature build, tests, formatter and Clippy. The optional Filament model producer check uses its explicitly selected external toolchain and is not part of native runtime qualification.
 
+During stabilization, checks run locally. Every hosted CI workflow shall expose
+only `workflow_dispatch`; push, pull-request, schedule and other automatic
+triggers are disabled. A later return to automatic CI requires the owner's
+direction and specification review. Manual availability does not authorize an
+agent to dispatch a hosted run. Inspect all workflow event declarations and
+record local commands, revisions and outcomes; absence of a hosted run is not a
+passing check.
+
 ## Dependencies
 
 - [FR-001](../functional/FR-001-read-exact-source.md)

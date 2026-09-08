@@ -37,7 +37,7 @@ temporary copies and leave original evidence untouched.
 
 ## Test Procedure
 
-1. Run self-test and model-bytes through the Rust executable (CI job timeout 10 minutes).
+1. Run self-test and model-bytes locally through the Rust executable (the optional manual CI job has a 10-minute timeout).
    - IT-004-SC-01: Self-test controls and all five selected checkpoint digests pass without Python or Node.
 2. Run review and roles against the selected standard fixture directory.
    - IT-004-SC-02: Counts are 23 reviewed files, seven invocation cases, six content/digest controls, 17 role artifacts and four source regions.
@@ -45,6 +45,8 @@ temporary copies and leave original evidence untouched.
    - IT-004-SC-03: The real parser observes 50 parsed cases and one unsupported refusal, with no logical-result claim.
 4. Run malformed-input/path/budget controls and model-producer refusal.
    - IT-004-SC-04: Invalid or incomplete checks never emit a success summary; no external producer is launched.
+5. Inspect every hosted workflow event declaration without dispatching it.
+   - IT-004-SC-05: Each existing workflow exposes only workflow_dispatch; local gate results are recorded separately from historical hosted CI.
 
 ## Expected Results
 
@@ -55,7 +57,8 @@ The historical artifact bytes and provenance are unchanged.
 ## Metadata
 
 Priority: High. Automation: Rust command/file integration tests and explicit
-local packet checks. Default CI needs no private sibling repository or external
+local packet checks. Hosted CI is manual-dispatch only while stabilizing and
+needs no private sibling repository or external
 producer. Existing IT-001 observations remain historical and separately pinned.
 
 ## Dependencies
