@@ -2,7 +2,7 @@
 id: Task-004
 title: "Verify native syntax merge readiness"
 type: Task
-status: not_started
+status: in_progress
 track: A
 priority: P1
 relationships:

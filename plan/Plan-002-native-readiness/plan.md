@@ -20,7 +20,7 @@ relationships:
 
 ## Requirements Summary
 
-- [ ] Reconcile native OS arguments, inclusive formatter budgets and standard diagnostic traits with reviewed requirements.
+- [x] Reconcile native OS arguments, inclusive formatter budgets and standard diagnostic traits with reviewed requirements.
 - [ ] Bind all existing native tests plus the new adverse cases to TM-002 and resolve SR-009 findings for the implemented boundary.
 
 ## Dependency Graph
@@ -37,15 +37,15 @@ private-packet lane and Quire validation/coverage. No hosted CI dispatch.
 
 ## Remaining Work
 
-- Task-003: preserve default formatting API, add selected checked ceiling, use OS arguments, implement standard diagnostics, document native API invariants and attach resolving trace attributes.
+- Task-003 is done: the reviewed source/test/doc changes are implemented. Task-004 owns the final execution and review evidence.
 - Task-004: run actual gates, code/Rust review and scoped gap analysis; reconcile old findings and merge the exact verified compiler PR under the owner's authorization.
 
 ## Task File Mapping
 
 | Task | Owns | Verifies | Status |
 | --- | --- | --- | --- |
-| Task-003 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | not_started |
-| Task-004 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | not_started |
+| Task-003 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | done |
+| Task-004 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | in_progress |
 
 ## Coordination
 
@@ -53,4 +53,3 @@ This is LC01 language#2, on existing Agent A PR7; no competing issue or branch.
 The owner authorized landing when ready on 2026-09-08. Do not infer shared
 semantic contract acceptance or fresh external producer approval from that
 instruction. Preserve local-only CI and all historical fixtures.
-

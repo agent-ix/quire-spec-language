@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! FR-002: apply token budgets and delimiter checks to the generated recognizer.
 use crate::diagnostic::error;
 use crate::syntax::Limits;
 pub(crate) use crate::token::Kind;

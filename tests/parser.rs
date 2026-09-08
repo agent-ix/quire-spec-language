@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+use ix_trace_rs::trace;
 use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
 use quire_spec_language::{format::format, parse, Code, Limits, ParsedUnit, SourceIdentity, Span};
 
@@ -30,6 +31,7 @@ fn binary(unit: &ParsedUnit, id: ExprId, expected: B) -> (ExprId, ExprId) {
     (left, right)
 }
 
+#[trace("TC-012", "FR-002-AC-2")]
 #[test]
 fn precedence_and_associativity() {
     let u = unit("a implies b or c and d = e + f * g");
@@ -57,6 +59,7 @@ fn precedence_and_associativity() {
     }
 }
 
+#[trace("TC-012", "FR-002-AC-5")]
 #[test]
 fn grouping_and_identifier_spans_are_original_bytes() {
     let expression = "((self.parent)).versionNumber + (2 * 3)";
@@ -73,6 +76,7 @@ fn grouping_and_identifier_spans_are_original_bytes() {
             && u.source().slice(node.span) == Some("((self.parent))")));
 }
 
+#[trace("TC-013", "FR-003-AC-1", "FR-003-AC-2", "FR-003-AC-3")]
 #[test]
 fn all_admitted_constructs_roundtrip_with_comments() {
     for expression in [
@@ -95,9 +99,14 @@ fn all_admitted_constructs_roundtrip_with_comments() {
         if expression.contains("//") {
             assert!(text.contains("// retained café comment  \n"));
         }
+        if expression.starts_with('"') {
+            // Literal escape spellings survive even when decoded values agree.
+            assert!(text.contains(expression));
+        }
     }
 }
 
+#[trace("TC-012")]
 #[test]
 fn declaration_forms_and_keyword_boundaries() {
     let text = document("trueValue = modelled and presentValue = iffy");
@@ -126,6 +135,7 @@ fn declaration_forms_and_keyword_boundaries() {
     .is_err());
 }
 
+#[trace("TC-011")]
 #[test]
 fn unicode_crlf_and_checked_regions() {
     let text = document("\"café😀\" = \"café😀\"").replace('\n', "\r\n");
@@ -155,6 +165,7 @@ fn unicode_crlf_and_checked_regions() {
         .is_none());
 }
 
+#[trace("TC-012", "FR-002-AC-3")]
 #[test]
 fn malformed_and_unsupported_are_distinct_and_located() {
     for expression in [
@@ -166,6 +177,7 @@ fn malformed_and_unsupported_are_distinct_and_located() {
         "1.25",
         "1e3",
         "set(x)",
+        "collect(self.items)",
     ] {
         let text = document(expression);
         let e = read(text.as_bytes(), Limits::default()).unwrap_err();
@@ -199,6 +211,7 @@ fn malformed_and_unsupported_are_distinct_and_located() {
     }
 }
 
+#[trace("TC-011", "FR-001-AC-3")]
 #[test]
 fn exact_header_versions_and_source_validation() {
     for (old, new, code) in [
@@ -230,6 +243,7 @@ fn exact_header_versions_and_source_validation() {
     .is_err());
 }
 
+#[trace("TC-011", "TC-012", "FR-001-AC-4", "FR-002-AC-4")]
 #[test]
 fn resource_limits_never_become_boolean_results() {
     for limits in [
@@ -267,6 +281,7 @@ fn resource_limits_never_become_boolean_results() {
         .is_incomplete());
 }
 
+#[trace("TC-012")]
 #[test]
 fn long_flat_chains_parse_format_and_drop_on_a_bounded_stack() {
     std::thread::Builder::new()
@@ -289,21 +304,32 @@ fn long_flat_chains_parse_format_and_drop_on_a_bounded_stack() {
         .unwrap();
 }
 
+#[trace("TC-019", "FR-002-AC-6")]
 #[test]
 fn deterministic_malformed_corpus_does_not_panic() {
+    let check = |bytes: &[u8]| match read(bytes, Limits::default()) {
+        Ok(unit) => assert_eq!(unit.source().text().as_bytes(), bytes),
+        Err(error) => {
+            assert_eq!(error.source.identity, "test:source");
+            assert_eq!(error.source.revision, "test:revision-7");
+            assert!(error.span.start.byte <= error.span.end.byte);
+            assert!(error.span.end.byte <= bytes.len());
+            assert!(error.span.start.line > 0 && error.span.start.column > 0);
+        }
+    };
     let valid = document("let p = self.parent in present(p) implies deref(value(p)).n > 0");
     for end in 0..valid.len() {
-        let _ = read(&valid.as_bytes()[..end], Limits::default());
+        check(&valid.as_bytes()[..end]);
     }
     let alphabet = b"\x00\xff\r\n\\\"{}()[]<>=:/019ae ";
     for &a in alphabet {
         for &b in alphabet {
             for &c in alphabet {
-                let _ = read(&[a, b, c], Limits::default());
+                check(&[a, b, c]);
                 let mut text = document("true").into_bytes();
                 let at = text.len() - 3;
                 text.splice(at..at, [a, b, c]);
-                let _ = read(&text, Limits::default());
+                check(&text);
             }
         }
     }
@@ -339,6 +365,7 @@ fn syntax_kinds(unit: &ParsedUnit) -> Vec<E> {
         .collect()
 }
 
+#[trace("TC-012")]
 #[test]
 fn every_import_and_name_reference_keeps_its_exact_token_locus() {
     let text = document("let object = self in forall(item in object.items: item.color = M::Color::Red and reaches(item, object, parent))");

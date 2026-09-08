@@ -1,38 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! FR-001: immutable exact source bytes, integrity and checked scalar coordinates.
 use crate::{ByteDigest, Code, Diagnostic, Phase};
 use std::sync::Arc;
 
 /// Authored identity/revision, separate from path and any later semantic digest.
+/// These are opaque caller labels, not validated shared artifact references.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceIdentity {
+    /// Caller-selected source label, preserved without normalization.
     pub identity: String,
+    /// Caller-selected revision label, distinct from the byte digest.
     pub revision: String,
 }
 
+/// Original byte offset and one-based line/Unicode scalar column.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Position {
+    /// Zero-based offset into the exact original UTF-8 bytes.
     pub byte: usize,
+    /// One-based line; LF advances the line, including within CRLF.
     pub line: usize,
+    /// One-based Unicode scalar column, not a display-cell or UTF-16 offset.
     pub column: usize,
 }
 
 /// Half-open original UTF-8 bytes. Coordinates are derived only when requested.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Span {
+    /// Inclusive starting byte offset.
     pub start: usize,
+    /// Exclusive ending byte offset; may equal start for an empty range.
     pub end: usize,
 }
 
 /// A decoded syntax value with the exact original token region.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Spanned<T> {
+    /// Decoded value, which need not equal the raw token spelling.
     pub value: T,
+    /// Original token byte range, including literal delimiters.
     pub span: Span,
 }
 
+/// Half-open range after resolving both byte offsets to source coordinates.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LocatedSpan {
+    /// Inclusive range start.
     pub start: Position,
+    /// Exclusive range end.
     pub end: Position,
 }
 
@@ -52,6 +67,7 @@ struct Document {
 #[derive(Clone, Debug)]
 pub struct Source(Arc<Document>);
 
+/// Hard source-content ceiling; callers may select a lower value.
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 
 impl Source {
@@ -148,6 +164,7 @@ impl Source {
         }
         Ok(source)
     }
+    /// SHA-256 of the exact admitted bytes, without normalization.
     pub fn digest(&self) -> ByteDigest {
         self.0.digest
     }
@@ -189,12 +206,15 @@ impl Source {
             wide_ends,
         }))
     }
+    /// Original opaque caller-selected labels.
     pub fn identity(&self) -> &SourceIdentity {
         &self.0.identity
     }
+    /// Display path; not a portable artifact reference or lossless OS path.
     pub fn path(&self) -> &str {
         &self.0.path
     }
+    /// Original UTF-8 content with whitespace and line endings intact.
     pub fn text(&self) -> &str {
         &self.0.text
     }
@@ -202,6 +222,7 @@ impl Source {
         let index = self.0.wide_ends.partition_point(|&(end, _)| end <= byte);
         index.checked_sub(1).map_or(0, |i| self.0.wide_ends[i].1)
     }
+    /// Resolve a UTF-8 boundary, including EOF; reject split scalars/out-of-range offsets.
     pub fn position(&self, byte: usize) -> Option<Position> {
         if !self.text().is_char_boundary(byte) {
             return None;
@@ -215,6 +236,7 @@ impl Source {
             column,
         })
     }
+    /// Resolve both boundaries; reject reversed, split-scalar or out-of-range spans.
     pub fn locate(&self, span: Span) -> Option<LocatedSpan> {
         if span.start > span.end {
             return None;
@@ -224,6 +246,7 @@ impl Source {
             end: self.position(span.end)?,
         })
     }
+    /// Borrow exact bytes at a valid UTF-8 range; invalid ranges return None.
     pub fn slice(&self, span: Span) -> Option<&str> {
         self.text().get(span.start..span.end)
     }

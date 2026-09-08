@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! FR-010: native syntax CLI with OS paths and explicit phase outcomes.
 use quire_spec_language::{format::format, parse, Diagnostic, Limits, SourceIdentity};
 use serde_json::json;
 use std::io::{self, Read, Write};
+use std::path::Path;
 use std::process::ExitCode;
 
 fn diagnostic(value: &Diagnostic) -> (u8, String) {
@@ -19,29 +21,40 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
 }
 
 fn run() -> Result<String, (u8, String)> {
-    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
     let [command, identity, revision, path] = arguments.as_slice() else {
         return Err((
             2,
             "usage: quire-spec <parse|format> <source-id> <source-revision> <file>".into(),
         ));
     };
-    if !matches!(command.as_str(), "parse" | "format") {
+    let Some(command) = command.to_str() else {
+        return Err((2, "command must be UTF-8".into()));
+    };
+    let Some(identity) = identity.to_str() else {
+        return Err((2, "source identity must be UTF-8".into()));
+    };
+    let Some(revision) = revision.to_str() else {
+        return Err((2, "source revision must be UTF-8".into()));
+    };
+    if !matches!(command, "parse" | "format") {
         return Err((2, "command must be parse or format".into()));
     }
     let limits = Limits::default();
-    let file =
-        std::fs::File::open(path).map_err(|error| (2, format!("cannot open {path}: {error}")))?;
+    let path = Path::new(path);
+    let display_path = path.to_string_lossy();
+    let file = std::fs::File::open(path)
+        .map_err(|error| (2, format!("cannot open {display_path}: {error}")))?;
     let mut bytes = Vec::new();
     file.take(limits.source_bytes as u64 + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| (2, format!("cannot read {path}: {error}")))?;
+        .map_err(|error| (2, format!("cannot read {display_path}: {error}")))?;
     let unit = parse(
         SourceIdentity {
-            identity: identity.clone(),
-            revision: revision.clone(),
+            identity: identity.into(),
+            revision: revision.into(),
         },
-        path,
+        display_path.as_ref(),
         &bytes,
         limits,
     )
@@ -51,7 +64,7 @@ fn run() -> Result<String, (u8, String)> {
     }
     Ok(
         json!({"status":"parsed", "source":{"identity":identity,"revision":revision,"digest":unit.source().digest().to_string()},
-        "path":path, "imports":unit.imports().len(), "clauses":unit.clauses().len() })
+        "path":display_path, "imports":unit.imports().len(), "clauses":unit.clauses().len() })
         .to_string(),
     )
 }

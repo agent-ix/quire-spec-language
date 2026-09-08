@@ -2,7 +2,7 @@
 id: Task-003
 title: "Repair native syntax boundaries"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P1
 relationships:
@@ -40,14 +40,13 @@ relationships:
 
 ## Scope
 
-Implement reviewed a10ec80 CLI/formatter/error refinements, API documentation and canonical tracing of existing/new native tests. No model linker/evaluator changes.
+Implemented reviewed a10ec80 CLI/formatter/error refinements, API documentation and canonical tracing of existing/new native tests. FR-010's compatibility amendment was specified at 5d0c9de and reviewed across all eight analyses at 03dfc72 before replacing the failed derive attempt. No model linker/evaluator changes.
 
 ## Subtasks
 
-- [ ] Complete the reviewed source/test changes.
-- [ ] Preserve existing APIs, fixtures and claim boundaries.
+- [x] Complete the reviewed source/test changes.
+- [x] Preserve existing APIs, fixtures and claim boundaries.
 
 ## Deliverables
 
 Native source/test implementation and documentation.
-

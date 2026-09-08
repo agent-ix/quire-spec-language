@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Exact byte integrity, independent of any semantic canonicalization domain.
+//! FR-001/004: exact byte integrity, independent of semantic canonicalization.
 use sha2::{Digest, Sha256};
 use std::{fmt, str::FromStr};
 
+/// SHA-256 value with canonical lowercase, algorithm-prefixed text encoding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ByteDigest([u8; 32]);
 
 impl ByteDigest {
+    /// Hash precisely the supplied bytes, without parsing or normalization.
     pub fn of(bytes: &[u8]) -> Self {
         Self(Sha256::digest(bytes).into())
     }
@@ -22,6 +24,7 @@ impl fmt::Display for ByteDigest {
     }
 }
 
+/// Refusal of a noncanonical or malformed textual byte digest.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidDigest;
 

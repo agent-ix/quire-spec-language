@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+use ix_trace_rs::trace;
 use quire_spec_language::source_map::{Layout, Segment, SourceMap};
 use quire_spec_language::{parse_source, ByteDigest, Code, Limits, Source, SourceIdentity, Span};
 
@@ -47,6 +48,7 @@ fn bytes(source: &Source, locations: &[quire_spec_language::LocatedSpan]) -> Str
         .collect()
 }
 
+#[trace("TC-011", "FR-001-AC-1", "FR-001-AC-2", "FR-001-AC-4")]
 #[test]
 fn exact_bytes_digest_is_checked_before_correspondence() {
     let digest: ByteDigest =
@@ -83,6 +85,7 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
     }
 }
 
+#[trace("TC-014", "FR-004-AC-1")]
 #[test]
 fn verbatim_mapping_retains_original_utf8_crlf_locations() {
     let original = source("original", "header😀\r\nα + β\r\nfooter");
@@ -115,6 +118,7 @@ fn verbatim_mapping_retains_original_utf8_crlf_locations() {
     assert_eq!(mapped[0].start.byte, original.text().find('β').unwrap());
 }
 
+#[trace("TC-014", "FR-004-AC-1", "FR-004-AC-4")]
 #[test]
 fn layout_mapping_returns_discontiguous_exact_regions() {
     let original = source("original", "head😀\r\n  α <= 2\r\n\tβ\r\nend");
@@ -169,6 +173,7 @@ fn layout_mapping_returns_discontiguous_exact_regions() {
     assert!(error.is_incomplete());
 }
 
+#[trace("TC-014", "FR-004-AC-2")]
 #[test]
 fn omitted_keywords_internal_whitespace_and_newlines_refuse() {
     for (original, body, segments) in [
@@ -201,6 +206,7 @@ fn omitted_keywords_internal_whitespace_and_newlines_refuse() {
     }
 }
 
+#[trace("TC-014", "FR-004-AC-3")]
 #[test]
 fn original_and_body_identity_revision_and_bytes_must_match() {
     let body = source("body", "abc");
@@ -237,6 +243,7 @@ fn original_and_body_identity_revision_and_bytes_must_match() {
     assert!(map.map_span(&path, Span { start: 0, end: 1 }).is_err());
 }
 
+#[trace("TC-014")]
 #[test]
 fn boundaries_are_right_biased_and_eof_precedes_trimmed_newline() {
     let original = source("original", "a\n  b\n");
@@ -280,6 +287,7 @@ fn boundaries_are_right_biased_and_eof_precedes_trimmed_newline() {
     );
 }
 
+#[trace("TC-014")]
 #[test]
 fn malformed_segment_and_query_ranges_never_panic_or_partially_succeed() {
     let original = source("original", "aé\nb");
@@ -360,6 +368,7 @@ fn malformed_segment_and_query_ranges_never_panic_or_partially_succeed() {
     }
 }
 
+#[trace("TC-014")]
 #[test]
 fn parser_refusal_maps_back_through_a_real_indented_body() {
     let text = include_str!("fixtures/parent.native")
@@ -418,6 +427,7 @@ fn parser_refusal_maps_back_through_a_real_indented_body() {
     assert_eq!(mapped[0].start.column, error.span.start.column + 2);
 }
 
+#[trace("TC-014")]
 #[test]
 fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
     let original = source("original", "ab");

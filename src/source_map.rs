@@ -1,23 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Checked body-to-document byte correspondence. No Markdown parsing or wire decoding.
+//! FR-004: checked body-to-document byte correspondence; no Markdown or wire decoding.
 use crate::{Code, Diagnostic, LocatedSpan, Phase, Source, Span};
 
+/// Hard ceiling on selected correspondence segments.
 pub const MAX_SEGMENTS: usize = 50_000;
 
+/// Equal byte regions in the extracted body and its original document.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Segment {
+    /// Half-open region of the extracted body.
     pub body: Span,
+    /// Corresponding half-open region of the original document.
     pub original: Span,
 }
 
 /// Only explicitly enabled layout deletions are accepted. No inserted or rewritten bytes.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Layout {
+    /// Permit deletion of leading spaces/tabs at original line boundaries.
     pub strip_indentation: bool,
+    /// Permit deletion of CR immediately before a retained LF.
     pub normalize_crlf: bool,
+    /// Permit deletion of the selected region's final newline.
     pub drop_final_newline: bool,
 }
 
+/// Verified immutable correspondence bound to exact original and body sources.
 #[derive(Clone, Debug)]
 pub struct SourceMap {
     original: Source,
@@ -121,18 +129,23 @@ impl SourceMap {
             layout,
         })
     }
+    /// Original source whose identity and bytes were checked at construction.
     pub fn original(&self) -> &Source {
         &self.original
     }
+    /// Extracted source whose full content the segments cover.
     pub fn body(&self) -> &Source {
         &self.body
     }
+    /// Selected original region enclosing the correspondence.
     pub fn region(&self) -> Span {
         self.region
     }
+    /// Verified segments in body/original order.
     pub fn segments(&self) -> &[Segment] {
         &self.segments
     }
+    /// Explicit layout deletions admitted by this map.
     pub fn layout(&self) -> Layout {
         self.layout
     }

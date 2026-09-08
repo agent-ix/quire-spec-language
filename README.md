@@ -5,6 +5,18 @@ Private native syntax implementation for `ix:native`, edition `0-draft`, profile
 Imports remain unresolved: successful parsing does not establish type correctness,
 model binding, executable projection, or healthy/violating state evaluation.
 
+CLI command and source identity/revision labels must be UTF-8; invalid encoding
+returns usage exit 2. File operands remain OS paths. JSON paths are display text,
+which may contain replacement characters; exact labels and the actual byte
+digest carry the separate source correspondence. See the
+[native diagnostic catalog](docs/native-error-codes.md) for stable outcomes.
+
+Library callers can use `format::format_with_limit(unit, output_bytes)` to lower
+the inclusive 1 MiB output-content ceiling. It counts every emitted byte,
+including the final newline, and refuses before an append would exceed the
+limit. Existing `format::format(unit)` retains the default ceiling. Allocator
+capacity is not an exact content-byte accounting promise.
+
 ## Run and check
 
 Rust 1.94.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
