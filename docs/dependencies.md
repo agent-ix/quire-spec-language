@@ -46,3 +46,22 @@ New test fixtures and the declarative token specification are authored here
 under AGPL-3.0-only. The Logos derive macro generates recognizer code at build
 time; generated build files are not checked in. A shipped binary/package needs
 its own included-artifact and notices inventory before publication.
+
+## Optional model producer toolchain
+
+The original `tests/fixtures/model-source` TypeSpec source/manifest and the
+generated `model-output` records are implementation fixtures under AGPL-3.0-only.
+They contain this fixture's declarations and producer metadata; no external
+model corpus or generated TypeSpec implementation is copied. Provenance pins
+the existing Filament producer to `3b75e01c652ba00bb07c352ff5467419401e792b`,
+TypeSpec compiler 1.15.0 (MIT), and the observed Node v22.15.0 toolchain. The
+existing Filament checkout and its dependency notices remain under their
+existing grants. Its installed toolchain is used only for optional reproduction;
+this change does not import its JavaScript dependency graph into the Rust crate.
+
+Both new review helpers use Python's standard library. Native CI verifies stored
+artifact bytes without installing Node, TypeSpec, or another private repository.
+The full producer check requires the already installed, explicitly selected
+Filament toolchain and does not qualify its broader dependency distribution or
+the missing native typed-model adapter. Exact fixture copies in the private
+specification packet retain this implementation-fixture grant.

@@ -23,5 +23,7 @@ jobs:
         run: cargo build --locked --no-default-features --target-dir target/clean
       - name: Producer identity negative controls
         run: python3 tools/audit_review_fixtures.py --self-test
+      - name: Model producer checkpoint integrity
+        run: python3 tools/check_model_fixture.py --bytes-only
       - name: Parse example
         run: cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native

@@ -19,6 +19,7 @@ cargo clippy --locked --target-dir target --all-targets --no-default-features --
 cargo test --locked --target-dir target --no-default-features
 cargo build --locked --no-default-features --target-dir target/clean
 python3 tools/audit_review_fixtures.py --self-test
+python3 tools/check_model_fixture.py --bytes-only
 ```
 
 CLI arguments are `parse|format`, source identity, source revision, and file path.
@@ -64,3 +65,28 @@ and deferred standard-artifact terms. No public release is authorized.
 Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/2),
 [compiler epic](https://github.com/agent-ix/quire-spec-language/issues/1).
 The shared contracts and LC02–LC05 acceptance remain separate work.
+
+## Model producer review fixture
+
+[Model input](tests/fixtures/model-source/README.md) and
+[production provenance](tests/fixtures/model-output/provenance.json) provide an
+actual synthetic ConfigVersion model from the existing Filament TypeSpec
+frontend: version numbers bounded to 0..1000, an optional parent field, and an
+operation declaration. This is input for the shared typed-model adapter review;
+it supplies no native model binding or evaluated state result.
+
+The default CI checks the five recorded artifact digests. Reproducing compilation
+is a separate optional check with an explicitly selected, clean Filament checkout
+at `3b75e01c652ba00bb07c352ff5467419401e792b` and its installed TypeSpec 1.15.0
+toolchain. The helper checks fresh and selected-lock production against the
+checked-in IR/lock/diagnostic bytes, and verifies stale-lock refusal with no output
+or repair. It installs nothing and writes only temporary outputs.
+
+```sh
+python3 tools/check_model_fixture.py /path/to/pinned/filament-checkout
+python3 tools/audit_role_compositions.py /path/to/specification/proposals/state-core/fixtures
+```
+
+The second command checks the optional private FS02 review packet's exact
+artifacts and source regions. It is producer bookkeeping, not an independent
+semantic-reference matcher. Neither command belongs in the native runtime.
