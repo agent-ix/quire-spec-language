@@ -2,6 +2,14 @@
 
 Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a private bootstrap repository, not a released implementation.
 
+Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
+retired; remaining non-temporal work belongs to the current `quire-agent-a/b/c`
+sessions. Route inherited contract/integration claims through `quire-agent-c`
+and CO01. The distinct `contract-agent-c` retains `tl-*`. Historical ownership
+records do not require another transfer from the retired agent. A keeps the
+native compiler/model-contract scope; confirm actual shared-repository claims
+with C before overlapping edits.
+
 - Preserve authored/source identity and explicit unsupported/incomplete results.
 - Use the first specification issue to establish requirements, acceptance fixtures and scoped implementation/CI work before scaffolding speculative crates.
 - Inspect existing shared model, contract and Quoin interfaces before duplicating them.
