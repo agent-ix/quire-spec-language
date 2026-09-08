@@ -100,14 +100,8 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
     assert!(value["path"].as_str().unwrap().contains('\u{fffd}'));
 }
 
-#[trace(
-    "TC-012",
-    "TC-015",
-    "FR-002-AC-1",
-    "FR-010-AC-1",
-    "FR-010-AC-2",
-    "FR-010-AC-5"
-)]
+#[trace("TC-012", "FR-002-AC-1")]
+#[trace("TC-015", "FR-010-AC-1", "FR-010-AC-2", "FR-010-AC-5")]
 #[test]
 fn cli_parses_and_formats_without_claiming_execution() {
     let parsed = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
