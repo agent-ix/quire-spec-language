@@ -1,6 +1,6 @@
 ---
 id: IT-005
-title: "Qualify native model consumption and static judgments"
+title: "Qualify native formal-declaration consumption and static judgments"
 type: IT
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-005
@@ -11,93 +11,95 @@ relationships:
 
 ## Objective
 
-Exercise real native linking and static typing against qualified shared model
-declarations, preserving source identity and observing each specified refusal.
-This isolates the LC02 prerequisite of IT-002's full state workflow.
+Exercise native resolution and static typing against explicit formal declarations,
+preserving source identity and observing specified refusals. This is an LC02
+integration boundary within IT-002's full state workflow.
 
 ## Target Integration
 
-Native ParsedUnit and its future linker/checker consume the shared typed-model
-adapter owned by contract-IR #54, coordinated by C under the delivery owner.
-The existing #50 BoundPackage decoder is a later executable-projection boundary,
-not an alternative source of model authority. No new CLI shape is specified here.
+The native compiler consumes Contract IR FR-013 DeclarationEnvironment and
+FR-019 public Rust interfaces. FR-023 BoundPackage is the existing later
+executable projection binder. The pinned upstream decision is accepted ADR-0054
+at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f, merged in PR61 with issue #54 closed.
+No Filament reader, internal agent-ix-semantic-ir dependency, universal model
+adapter, or new Contract IR model layer is needed for generic language work.
 
 ## Preconditions
 
-The owner adopted specification PR8 at e897f810a7356d4ce8fd19026221ebda7b65596f
-for internal implementation on 2026-09-08. Its FS02/FS03/FS05 definitions are
-the selected target. Independent B/C adoption and qualification remain separate.
+The owner adopted specification e897f810a7356d4ce8fd19026221ebda7b65596f for
+internal implementation; ADR-0054 subsequently corrects the model-ownership
+assumption. Retain those original bytes and read the ownership correction
+explicitly rather than silently changing their digests.
 
-Before executing this integration lane, record the reviewed shared adapter's
-exact release/commit, actual public entry points, supported object-reference
-representation, finite bounds/units/multiplicity/snapshot contexts, native
-consumer revision and exact source/requirement revision mapping. Current IR
-decc99a430a0894de489102dbab04e83d1fb804f does not supply that typed-model view.
-Its supplied-declaration environment does not qualify model provenance.
+A specifies its concrete native request/result API, source/revision mapping,
+import/closure representation and resource/error limits before implementation.
+The public IR interface already exists; this is native implementation work,
+not a request for another shared model service. Use exact IR and native pins.
+Record qualification with Rust 1.98.1 in accordance with the upstream FR-019
+policy; distinguish actual executed commands from proposed migration metadata.
 
-The native linking/checking implementation and its resource/error contracts
-must be specified and reviewed before code. This test design does not invent
-missing adapter types, a new model decoder or implementation-specific ceilings.
-Missing producer/adapter/native capability leaves this lane unexecuted and
-reported as a setup dependency; it cannot pass by skipping inside a test.
+Missing native implementation leaves a case planned. Failure of an intentionally
+adverse input must be observed through the actual implementation, not substituted
+by a missing setup or a skip. Original source bytes and loci remain immutable.
 
 ## Inputs
 
-Two separately qualified input families are required:
+The generic integration lane constructs admitted formal environments through
+the real public Rust API and records the explicit native source correspondence.
+Its initial positive model is an acyclic BoundedCounter record with a value
+field of signed integer 0..1000, reject overflow, and a reviewed identity under
+its requirement owner. This is an independently authored formal test model,
+not a generated Filament datatype relabeled as proof semantics.
 
-- ConfigVersion: the actual compiled model under tests/fixtures/model-output,
-  its source/manifest/lock/provenance and the selected native import. The
-  declaration IDs include ix://example/config/type/ConfigVersion,
-  ix://example/config/field/ConfigVersion-parent and
-  ix://example/config/field/ConfigVersion-versionNumber. Its historical
-  producer is 3b75e01c652ba00bb07c352ff5467419401e792b. Existing byte audits do
-  not establish typed-model qualification.
-- Rule-model judgments: the exact declaration hypotheses and named cases in
-  specification e897f81 proposals/state-core/fixtures/typing-cases.json.
-  These are abstract independently authored expectations, not model wire or
-  an existing compiled model. The shared model owner must supply a reviewed
-  qualified realization before these integration cases execute. In particular,
-  Version and ConfigVersion's VersionNumber both have bounds 0..1000, but
-  their declaration identities and containing models differ. Equal bounds
-  do not establish interchangeability. Preserve the original expectations and compare actual
-  static judgments separately. No new TypeSpec/Node producer is authorized.
+Use valid exact import/source bindings plus separately admitted missing,
+ambiguous and stale native-resolution controls. Each environment is validated
+by the shared API; ambiguity at native export resolution is distinct from an
+invalid duplicate inside one IR environment. Earlier malformed-input refusals
+cannot impersonate the required native diagnostic.
 
-Original bytes and source locations remain immutable. Missing, ambiguous and
-stale controls use the adapter owner's versioned adverse fixtures so that an
-earlier malformed-wire refusal cannot impersonate the intended linkage failure.
-Synthetic source edits are independently authored Rust test inputs with newly
-computed source digests and recorded original occurrence ranges.
+The existing ConfigVersion source/compiled fixture and the abstract rule-model
+hypotheses in specification typing-cases.json remain separate inputs for the
+concrete object/definedness case. Both VersionNumber and Version have bounds
+0..1000 but different declaration identities and containing models. The actual
+older min-1-only model is a separate refused control. None supplies object or
+reference semantics from layout, and no historical fixture is rewritten.
+
+A, as the native modeling-language owner, specifies and qualifies the narrow
+reference/population and other mappings required by those concrete cases. IR
+refusal is correct for constructs outside FR-013. This work remains part of the
+full state-workflow goal but does not block the generic lane. No new TypeSpec/
+Node producer execution is authorized or required by this integration design.
 
 ## Test Procedure
 
-1. Check all preconditions and record the two qualified input families.
-   - IT-005-SC-01: Every required capability and exact input binding exists;
-     absent qualification is recorded as unexecuted setup, not a passing test.
-2. Run TC-020 through the actual adapter and native linker.
-   - IT-005-SC-02: Exact public type/field IDs and native occurrence spans are
-     retained in a separately constructed LinkedPackage.
-3. Run TC-021–TC-024 with isolated admitted adverse controls.
-   - IT-005-SC-03: Missing/ambiguous/stale requests produce their required
+1. Record exact native/IR revisions, public constructors, formal declarations,
+   source correspondence and compiler version for the selected lane.
+   - IT-005-SC-01: The generic lane uses the existing formal API; a concrete
+     semantic extension is identified only for cases that need it.
+2. Run TC-020 through native resolution over the valid formal environment.
+   - IT-005-SC-02: Owner-qualified type/field identities and native occurrence
+     spans survive in a separately constructed LinkedPackage.
+3. Run TC-021–TC-024 with the admitted native adverse controls.
+   - IT-005-SC-03: Missing/ambiguous/stale requests return the required located
      diagnostics and no partially successful LinkedPackage.
-4. Run TC-025–TC-029 through the native checker using the qualified rule model.
-   - IT-005-SC-04: Each named expected static judgment matches the observed
-     result, including refusal codes and source loci; no evaluator is invoked.
-5. Record exact commands/API harness, revisions, input digests and observations.
-   - IT-005-SC-05: Evidence distinguishes native outcomes, adapter refusals and
-     setup absence; no authored hypothetical evaluation value is an observation.
+4. Run the TC-025–TC-029 judgments when their concrete native semantics exist.
+   - IT-005-SC-04: Compare actual static judgments with the independently
+     authored expectations; unsupported mappings remain explicit, not erased.
+5. Record commands/API harness, revisions, input bindings and observations.
+   - IT-005-SC-05: Distinguish native outcomes, IR projection refusals, remaining
+     native implementation and unexecuted concrete semantic cases.
 
 ## Expected Results
 
-TC-020–TC-029 pass only after real execution with the qualified inputs. Existing
-parser success, audit counts, public constructors or hypothetical judgments
-cannot substitute for LC02 qualification. IT-002 still owns healthy/violating/
-refused or incomplete runtime and backend observations.
+The ten TCs pass only after real execution. A generic lane cannot establish all
+native definedness semantics or replace IT-002's healthy/violating/refused-or-
+incomplete runtime and backend observations. There is no external #54 delivery
+gate; A owns the remaining native specification and implementation.
 
 ## Metadata
 
-Priority: High. Status: planned, setup unavailable. Local Rust verification only.
-The future implementation specification owns bounded native work and runner
-budgets before execution; this packet does not silently borrow syntax ceilings.
+Priority: High. Status: planned native integration. Local Rust verification only.
+The native implementation specification owns its bounded work and runner limits.
 
 ## Dependencies
 

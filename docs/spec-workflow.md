@@ -178,3 +178,23 @@ This corrects work ownership only. The adopted semantics, IT-005 prerequisites,
 ten planned LC02 cases and SR-030–037 technical findings are unchanged. Actual
 adapter availability still requires code and qualification evidence; it is no
 longer described as a dependency on the retired core session.
+
+## IR #54 resolution — 2026-09-08
+
+C landed Contract IR PR61 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f and
+closed #54. Accepted ADR-0054 removes the incorrect universal Filament-model
+reader dependency. FR-005, IT-005, TM-003 and TC-020–024 now describe native
+resolution over public formal declarations. The existing FR-013/019/023 APIs
+are the integration target; no external #54 delivery remains outstanding.
+
+The native request/result API, resource policy and concrete source/revision
+correspondence are A's next specification/implementation work. The selected
+object-reference/state case remains required by the full goal, with its narrow
+semantic mapping owned by A rather than inferred from generated datatypes.
+Earlier conditional reviews are historical and are superseded for the adapter
+prerequisite by the new boundary reviews; no planned TC is marked executed.
+
+IR FR-019 and NFR-005 record Rust 1.98.1; ADR-0055 remains marked proposed at
+the merged revision and the actual IR Cargo/toolchain files have not migrated.
+Native compatibility runs explicitly select +1.98.1. They do not silently
+reattribute older 1.94.1 results or claim upstream policy implementation.
