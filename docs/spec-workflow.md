@@ -130,3 +130,17 @@ has none. No hosted run was dispatched. Local formatter, strict Clippy, tests,
 private-packet lane, release audit unit tests and separate-target build passed.
 Future hosted execution needs access to the private shared trace macro. This
 does not weaken the local gates or approve the external TypeSpec/Node producer.
+
+## Native readiness cleanup — 2026-09-08
+
+Plan-002 now resolves SR-009's native implementation findings. Requirement
+changes a10ec80/afeeb20 received all eight reviews in f1f6c50; the narrow Error
+trait compatibility amendment 5d0c9de received all eight addenda at 03dfc72.
+Candidate cbccbb6 preserves runtime source df2d0b5 and corrects one multiline
+trace attachment. SR-028 records actual Rust/code review, 38 default tests and
+3 selected private tests passing, strict Clippy/rustdoc and a separate-target
+build. Quire now binds 41/41 test symbols, 28/28 native ACs and TM-002's 9/9
+cases. This supersedes the earlier native trace debt, while preserving its
+historical reports. The catalog status-header conflict remains visible;
+the final plan audit records its scoped disposition before private landing.
+Linking/typechecking and accepted FS02/FS03/FS05 contracts remain future work.

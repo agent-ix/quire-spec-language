@@ -2,7 +2,7 @@
 id: Plan-002
 title: "Native syntax merge readiness"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-001
     type: references
@@ -21,7 +21,7 @@ relationships:
 ## Requirements Summary
 
 - [x] Reconcile native OS arguments, inclusive formatter budgets and standard diagnostic traits with reviewed requirements.
-- [ ] Bind all existing native tests plus the new adverse cases to TM-002 and resolve SR-009 findings for the implemented boundary.
+- [x] Bind all existing native tests plus the new adverse cases to TM-002 and resolve SR-009 findings for the implemented boundary.
 
 ## Dependency Graph
 
@@ -37,15 +37,17 @@ private-packet lane and Quire validation/coverage. No hosted CI dispatch.
 
 ## Remaining Work
 
-- Task-003 is done: the reviewed source/test/doc changes are implemented. Task-004 owns the final execution and review evidence.
-- Task-004: run actual gates, code/Rust review and scoped gap analysis; reconcile old findings and merge the exact verified compiler PR under the owner's authorization.
+No implementation or local verification task remains in this plan. Task-003
+delivered the reviewed source/tests; Task-004 records actual gates and SR-028.
+The final read-only plan audit and authorized private merge follow completion.
+Future LC02 linking/typechecking remains a separate prerequisite-gated task.
 
 ## Task File Mapping
 
 | Task | Owns | Verifies | Status |
 | --- | --- | --- | --- |
 | Task-003 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | done |
-| Task-004 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | in_progress |
+| Task-004 | FR-001/002/003/004/010, NFR-001 | TC-011–TC-019 | done |
 
 ## Coordination
 

@@ -2,7 +2,7 @@
 id: Task-004
 title: "Verify native syntax merge readiness"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -46,11 +46,18 @@ Run the actual local runtime, trace and code/Rust review gates, resolve SR-009 d
 
 ## Subtasks
 
-- [ ] Complete local gates and durable reviews.
-- [ ] Record the exact verified candidate and the next LC02 gate.
+- [x] Complete local gates and durable reviews.
+- [x] Record the exact verified candidate and the next LC02 gate.
 
 ## Deliverables
 
 Reproducible local results, resolving matrix and code/Rust review. The final
 plan audit and private merge are follow-on workflow actions, not a circular
 prerequisite for this task's own completion.
+
+Verified source/test candidate cbccbb61e9bf15690af386d857b6255ed2bfb948;
+SR-028 records the actual code/Rust review and commands. TM-002's nine cases
+passed, with all 28 native ACs backed and 41/41 repository test symbols bound.
+The only remaining review conditions are external catalog status interpretation
+and future private hosted dependency access. LC02 needs FS02/FS03/FS05 contract
+acceptance and the existing #54/#50 adapter seam; no state evaluator is claimed.
