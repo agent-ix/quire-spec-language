@@ -60,6 +60,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-004
     type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-005
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -153,7 +155,7 @@ The user requested /specify and /spec-review for all work. Existing implementati
 
 ## 14. Lifecycle Status
 
-Draft. The admitted implementation target and new-code AGPL choice were approved in the task conversation. FS02/FS03/FS05 acceptance, independent consumer adoption, and the existing #36/#54 delivery chain remain open. Code/test presence does not change that status.
+Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. On 2026-09-08 the owner also adopted specification PR8 at e897f810a7356d4ce8fd19026221ebda7b65596f, including FS02/FS03/FS05, for internal implementation. Independent consumer adoption, shared adapter qualification and broader FS acceptance evidence remain open. IT-005 and TM-003 define the planned LC02 integration cases; linking/typechecking is not implemented.
 
 ## 15. Governance Notes
 
@@ -194,3 +196,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-012](functional/FR-012-audit-fixtures-in-rust.md) | FR | Draft Rust verification remediation |
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR | Draft campaign language constraint |
 | [IT-004](integration/IT-004-rust-fixture-audits.md) | IT | Draft real Rust audits |
+| [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT | Planned qualified model consumption |

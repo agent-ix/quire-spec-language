@@ -74,7 +74,11 @@ exhaustion. Wire decoding and existing-repository extraction remain separate.
 The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
 catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
 skills, validation results and outstanding review work. These requirements are
-drafts; the existing syntax implementation remains subject to specification review.
+drafts; the completed native readiness reviews and local results are recorded
+in the authoring status. The owner adopted specification PR8 at
+`e897f810a7356d4ce8fd19026221ebda7b65596f` for internal LC02 implementation.
+[LC02's test matrix](spec/model-linking/tests.md) remains planned pending the
+qualified shared model interface and native linking/typechecking implementation.
 
 See [architecture review](docs/architecture-review.md) for concrete fixes and
 remaining linking/identity work. The current parser uses declarative Logos tokens
@@ -126,8 +130,9 @@ Rule-syntax wraps the FS03 rule examples in native source units and checks
 their syntax with the existing parser library. It checks the selected rule/profile digests,
 then expects 50 parsed expressions and one explicit unsupported refusal. It
 does not interpret the abstract type environments or execute their 51 authored
-typing/evaluation expectations. FS03 refinements remain separately proposed;
-they do not change the digest-bound original profile by implication.
+typing/evaluation expectations. The owner adopted the separately digest-bound
+FS03 refinements for internal implementation; that decision does not rewrite
+the original profile bytes or establish executed typing/evaluation evidence.
 
 The final command runs the three explicitly selected private-packet integration
 tests, including independent corruptions. The normal Rust test suite needs no

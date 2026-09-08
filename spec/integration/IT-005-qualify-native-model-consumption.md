@@ -57,8 +57,9 @@ Two separately qualified input families are required:
   These are abstract independently authored expectations, not model wire or
   an existing compiled model. The shared model owner must supply a reviewed
   qualified realization before these integration cases execute. In particular,
-  Version is 0..1000; it must not be confused with ConfigVersion's different
-  VersionNumber domain. Preserve the original expectations and compare actual
+  Version and ConfigVersion's VersionNumber both have bounds 0..1000, but
+  their declaration identities and containing models differ. Equal bounds
+  do not establish interchangeability. Preserve the original expectations and compare actual
   static judgments separately. No new TypeSpec/Node producer is authorized.
 
 Original bytes and source locations remain immutable. Missing, ambiguous and
