@@ -185,6 +185,23 @@ cases run with `cargo test --features quire-extraction --test quire_source`;
 C's existing-repository CLI/wire adoption remains separate from this working
 compiler-side Rust integration.
 
+The standalone `run` command can select Markdown with `--features quire-extraction`.
+Its optional `program.extraction.body` record supplies `identity`, `revision`,
+`document` and `formal_revision` for the derived native body; `program.source`
+selects the original Markdown bytes and exactly one clause binding selects its
+heading. This uses a validated clause-only Quire context for the selected package,
+with no installed archetype schemas. The result's `extraction` member retains
+original identity, producer observations and verified byte-map segments; ordinary
+source, diagnostic and event coordinates refer to the native body.
+
+Generate runnable Markdown fixtures with the existing `standalone_fixtures`
+example, then run `cargo run --locked --features quire-extraction -- run
+/tmp/native-workflow/markdown-healthy/request.json`. The sibling
+`markdown-violating` and `markdown-refused` requests reproduce false and frame
+refusal. These requests support source compilation through `run`; combining them
+with selected-package execution or `compile`/`lower` export refuses explicitly.
+Default builds reject the extraction field; ordinary native requests are unchanged.
+
 `runtime::execute(package, input, selection, limits, poll)` now runs native
 validation and evaluation in one call. The returned report retains the exact
 package and offered artifacts even on validation failure; `truth()` returns a

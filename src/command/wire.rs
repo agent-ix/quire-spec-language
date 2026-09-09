@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028: closed records; existing constructors own identifier validity.
+//! FR-026–028, FR-031: closed records; existing constructors own identifier validity.
 
 use crate::checking::ClauseBinding;
 use crate::runtime::{
@@ -82,10 +82,38 @@ pub(super) struct Model {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Program {
+    #[cfg(feature = "quire-extraction")]
+    #[serde(default, deserialize_with = "extraction")]
+    pub extraction: Option<Extraction>,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
     #[serde(deserialize_with = "deserialize_objects")]
     pub clauses: Vec<Binding>,
+}
+
+#[cfg(feature = "quire-extraction")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Extraction {
+    #[serde(deserialize_with = "from_object")]
+    pub body: BodyIdentity,
+}
+
+#[cfg(feature = "quire-extraction")]
+fn extraction<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<Extraction>, D::Error> {
+    from_object(decoder).map(Some)
+}
+
+#[cfg(feature = "quire-extraction")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct BodyIdentity {
+    pub identity: String,
+    pub revision: String,
+    pub document: String,
+    pub formal_revision: u64,
 }
 
 #[derive(Deserialize)]

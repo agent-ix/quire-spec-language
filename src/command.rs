@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028, FR-029: local native compiler/runtime orchestration.
+//! FR-026–029, FR-031: local native compiler/runtime orchestration.
 
+#[cfg(feature = "quire-extraction")]
+mod extraction;
 mod output;
 mod wire;
 
@@ -41,6 +43,18 @@ pub struct RunResult {
 /// Original intake failure, without recovering typed data from display messages.
 #[derive(Debug, thiserror::Error)]
 pub enum RunCause {
+    /// A selected extraction mode combination is outside the local run profile.
+    #[cfg(feature = "quire-extraction")]
+    #[error("{0}")]
+    ExtractionMode(&'static str),
+    /// The actual Quire validator refused the selected clause-only context.
+    #[cfg(feature = "quire-extraction")]
+    #[error("Quire refused the selected clause-only context")]
+    QuireContext(Vec<quire_rs::semantic::SemanticFailure>),
+    /// Actual extraction/join/native compiler failure with original source retained.
+    #[cfg(feature = "quire-extraction")]
+    #[error("{0}")]
+    Quire(#[from] Box<crate::quire_source::Error>),
     /// Local file could not be opened or read.
     #[error("cannot read {path}: {error}")]
     Io {
@@ -122,6 +136,16 @@ impl RunError {
     /// Existing usage/refusal/incomplete exit convention.
     pub fn exit_code(&self) -> u8 {
         match &self.cause {
+            #[cfg(feature = "quire-extraction")]
+            RunCause::ExtractionMode(_) | RunCause::QuireContext(_) => 1,
+            #[cfg(feature = "quire-extraction")]
+            RunCause::Quire(error) => {
+                if error.code() == Code::ResourceExhausted {
+                    3
+                } else {
+                    1
+                }
+            }
             RunCause::Io { .. }
             | RunCause::Json(_)
             | RunCause::Digest(_)
@@ -194,6 +218,22 @@ fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>> {
 struct Intake<'a> {
     directory: &'a Path,
     remaining: usize,
+}
+
+enum RunPackage<'model> {
+    Native(Box<NativePackage<'model>>),
+    #[cfg(feature = "quire-extraction")]
+    Extracted(Box<extraction::ExtractedRun<'model>>),
+}
+
+impl<'model> RunPackage<'model> {
+    fn native(&self) -> &NativePackage<'model> {
+        match self {
+            Self::Native(package) => package,
+            #[cfg(feature = "quire-extraction")]
+            Self::Extracted(value) => value.package.mapped().native(),
+        }
+    }
 }
 
 impl Intake<'_> {
@@ -319,6 +359,12 @@ fn compile_with(
 ) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes, _digest| {
         let request: wire::CompileRequest = request(bytes, "native-compile/1")?;
+        #[cfg(feature = "quire-extraction")]
+        if request.program.extraction.is_some() {
+            return Err(RunCause::ExtractionMode(
+                "extraction is supported by run only",
+            ));
+        }
         let mut intake = intake(directory, &[request.models.len()])?;
         let models = intake.models(&request.models)?;
         let package = intake.package(&request.program, &models)?;
@@ -370,6 +416,19 @@ fn intake<'a>(directory: &'a Path, counts: &[usize]) -> Result<Intake<'a>> {
 
 fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
     let request: wire::Request = request(bytes, "native-run/1")?;
+    #[cfg(feature = "quire-extraction")]
+    if request.program.extraction.is_some() {
+        if request.package.is_some() {
+            return Err(RunCause::ExtractionMode(
+                "extraction cannot select a package artifact",
+            ));
+        }
+        if request.program.clauses.len() != 1 {
+            return Err(RunCause::ExtractionMode(
+                "extraction requires exactly one authored clause binding",
+            ));
+        }
+    }
     let mut intake = intake(
         directory,
         &[
@@ -380,10 +439,7 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         ],
     )?;
     let models = intake.models(&request.models)?;
-    let package = match &request.package {
-        Some(selected) => intake.selected_package(selected, &request.program, &models)?,
-        None => intake.package(&request.program, &models)?,
-    };
+    let package = prepare(&mut intake, &request, &models)?;
     let limits = ArtifactLimits::default();
     let snapshots = request
         .snapshots
@@ -418,7 +474,7 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         limits.evaluation.expression_steps = value;
     }
     let report = runtime::execute(
-        &package,
+        package.native(),
         RuntimeInput {
             snapshots,
             invocations,
@@ -427,5 +483,31 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         limits,
         || false,
     );
-    Ok(output::report(digest, &request.selection, &models, &report))
+    let result = output::report(digest, &request.selection, &models, &report);
+    #[cfg(feature = "quire-extraction")]
+    let result = match &package {
+        RunPackage::Native(_) => result,
+        RunPackage::Extracted(value) => value.attach(result),
+    };
+    Ok(result)
+}
+
+fn prepare<'model>(
+    intake: &mut Intake<'_>,
+    request: &wire::Request,
+    models: &'model [NativeModel],
+) -> Result<RunPackage<'model>> {
+    #[cfg(feature = "quire-extraction")]
+    if let Some(selected) = &request.program.extraction {
+        return Ok(RunPackage::Extracted(Box::new(extraction::compile(
+            intake,
+            &request.program,
+            selected,
+            models,
+        )?)));
+    }
+    Ok(RunPackage::Native(Box::new(match &request.package {
+        Some(selected) => intake.selected_package(selected, &request.program, models)?,
+        None => intake.package(&request.program, models)?,
+    })))
 }
