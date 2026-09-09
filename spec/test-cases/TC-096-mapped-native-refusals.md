@@ -12,8 +12,8 @@ Refuse invalid mapped requests and retain located native or package causes.
 
 ## Test Procedure
 
-Change the declared language, native syntax, clause name/count and formal model
-selection. Exercise Unicode and an indentation/CRLF map. Lower each stage's
+Change the declared language, native syntax, clause name/count and referenced
+fields/types. Exercise Unicode and an indentation/CRLF map. Lower each stage's
 budget to exhaustion, then retry with defaults.
 
 ## Expected Results
