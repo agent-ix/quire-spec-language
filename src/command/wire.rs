@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: closed command records; existing constructors own identifier validity.
+//! FR-026/027: closed command records; existing constructors own identifier validity.
 
 use crate::checking::ClauseBinding;
 use crate::runtime::{
@@ -16,6 +16,15 @@ pub(super) struct Envelope<'a> {
     pub format: String,
     #[serde(borrow)]
     pub request: &'a RawValue,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CompileRequest {
+    #[serde(deserialize_with = "deserialize_objects")]
+    pub models: Vec<Model>,
+    #[serde(deserialize_with = "from_object")]
+    pub program: Program,
 }
 
 #[derive(Deserialize)]

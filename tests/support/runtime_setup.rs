@@ -2,7 +2,7 @@
 //! Shared public-API setup for native validation and reference execution tests.
 
 #[path = "native_rule_model.rs"]
-pub(super) mod native_rule_model;
+pub(crate) mod native_rule_model;
 
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{
@@ -30,7 +30,7 @@ pub(super) fn checked<'a>(models: &'a [NativeModel], expression: &str) -> Checke
     checked_kind(models, expression, ClauseKind::Invariant)
 }
 
-pub(super) fn checked_kind<'a>(
+pub(crate) fn checked_kind<'a>(
     models: &'a [NativeModel],
     expression: &str,
     kind: ClauseKind,

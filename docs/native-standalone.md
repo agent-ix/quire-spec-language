@@ -44,3 +44,18 @@ unknown formats and semantic refusals exit 1; budget stops exit 3. Broken pipes
 end quietly with the computed status. Each run starts fresh budgets. The native
 result is local execution output; portable evidence and Quire extraction remain
 separately owned integration work. Contract: FR-026; actual binary tests: TC-103/104.
+
+To export the compiled artifact for another consumer, use the generated
+`compile.json`. Its native-compile/1 request contains only models and program;
+compilation needs no snapshot or invocation files.
+
+```sh
+target/debug/quire-spec compile /tmp/native-workflow-example/healthy/compile.json > /tmp/native-package.json
+```
+
+Successful stdout is the exact native-linked-package/1 byte artifact, with no
+wrapper or extra newline. The existing `NativePackage::read_verified` API reads
+it with explicit source/model bindings and a selected digest. Static failures
+leave stdout empty and use the same command-error JSON/exit convention as run.
+An output I/O failure can leave a partial prefix; exit 2 and digest verification
+distinguish that from a complete artifact. Contract: FR-027; binary tests: TC-105.
