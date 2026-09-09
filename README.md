@@ -178,7 +178,10 @@ Boolean only after completed evaluation. `outcome()` preserves the original
 stage diagnostics, measured work and implication events. The existing separate
 `validate` and `evaluate` APIs remain available. Run
 `cargo test --test runtime_execution` for aggregate, operation and stopped/retried
-requests. This is a native Rust API; a standalone command remains future work.
+requests. The standalone `quire-spec run <request-file>` command now reads selected
+model/program/runtime files and calls these same APIs. See
+[the runnable workflow](docs/native-standalone.md) for healthy, violating,
+operation and refused examples, JSON results and exit codes.
 
 `Snapshot::read_verified` and `Invocation::read_verified` now read selected
 `native-state-input/1` bytes through closed Serde decoding and the existing

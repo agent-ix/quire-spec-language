@@ -2,6 +2,7 @@
 //! FR-010: native syntax CLI with OS paths and explicit phase outcomes.
 use quire_spec_language::{format::format, parse, Diagnostic, Limits, SourceIdentity};
 use serde_json::json;
+use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
@@ -20,12 +21,11 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
     (if incomplete { 3 } else { 1 }, output)
 }
 
-fn run() -> Result<String, (u8, String)> {
-    let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
-    let [command, identity, revision, path] = arguments.as_slice() else {
+fn run(arguments: &[OsString]) -> Result<String, (u8, String)> {
+    let [command, identity, revision, path] = arguments else {
         return Err((
             2,
-            "usage: quire-spec <parse|format> <source-id> <source-revision> <file>".into(),
+            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec run <request-file>".into(),
         ));
     };
     let Some(command) = command.to_str() else {
@@ -70,7 +70,31 @@ fn run() -> Result<String, (u8, String)> {
 }
 
 fn main() -> ExitCode {
-    match run() {
+    let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
+    if let [command, path] = arguments.as_slice() {
+        if command == "run" {
+            return match quire_spec_language::command::run(Path::new(path)) {
+                Ok(result) => match writeln!(io::stdout().lock(), "{}", result.value) {
+                    Ok(()) => ExitCode::from(result.exit_code),
+                    Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {
+                        ExitCode::from(result.exit_code)
+                    }
+                    Err(error) => {
+                        let _ = writeln!(io::stderr().lock(), "output failed: {error}");
+                        ExitCode::from(2)
+                    }
+                },
+                Err(error) => match writeln!(io::stderr().lock(), "{}", error.value()) {
+                    Ok(()) => ExitCode::from(error.exit_code()),
+                    Err(output) if output.kind() == io::ErrorKind::BrokenPipe => {
+                        ExitCode::from(error.exit_code())
+                    }
+                    Err(_) => ExitCode::from(2),
+                },
+            };
+        }
+    }
+    match run(&arguments) {
         Ok(output) => match writeln!(io::stdout().lock(), "{}", output.trim_end_matches('\n')) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
