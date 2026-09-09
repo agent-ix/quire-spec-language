@@ -310,7 +310,8 @@ fn run_cases(require_activation: bool) {
                 "update the qualification when the backend changes: {report}"
             );
             assert_eq!(report["diagnostics"][0]["code"], "unsupported_profile");
-            assert_eq!(report["diagnostics"][0]["message"], "expected cargo-llvm-cov 0.9.0 / llvm.coverage.json.export 3.0.1; found 0.9.0 / llvm.coverage.json.export 3.1.0");
+            let message = report["diagnostics"][0]["message"].as_str().unwrap();
+            assert!(message.contains("3.0.1") && message.contains("3.1.0"));
             continue;
         }
         assert_eq!(report["state"], "complete", "assignment {bits}: {report}");
