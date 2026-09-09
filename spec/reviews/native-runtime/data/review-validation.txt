@@ -1,0 +1,11 @@
+DuplicateArchetype: 'ADR' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'Plan' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'Review' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'SpecReview' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateArchetype: 'Standard' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
+DuplicateInverseEdge: inverse label 'part_of' declared by verbs ["aggregates", "contains"]; first-wins
+/home/peter/dev/worktrees/formalization-a-language/spec/reviews/native-runtime/ears-conformance.md: line 16: [SpecReview] required 'findings' (table_row(under Findings)) is empty [empty]
+/home/peter/dev/worktrees/formalization-a-language/spec/reviews/native-runtime/ears-conformance.md: line 16: [SpecReview] 'findings': table has 0 data row(s) but assert requires at least 1 [assert]
+197/197 docs grammar-clean (100%); 0 grammar finding(s): none
+51/131 criteria property-extractable (38%); 0 candidate (metamorphic, needs review)
+1 document(s) failed structural validation
