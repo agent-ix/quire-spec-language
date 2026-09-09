@@ -23,6 +23,7 @@ pub mod native_model;
 pub mod package;
 mod parser;
 pub mod runtime;
+mod serde_object;
 pub mod source;
 pub mod source_map;
 pub mod syntax;
