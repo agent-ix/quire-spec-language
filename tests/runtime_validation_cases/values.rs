@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! TC-060/063: generated native shapes at each supplied value/capture site.
 
-use super::invocation_cases::{authored_model, qualified, recorded};
+use super::setup::{authored_model, qualified, recorded};
 use super::*;
 use quire_spec_language::runtime::RuntimePathSegment;
 use serde_json::json;

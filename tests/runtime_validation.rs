@@ -7,212 +7,24 @@ mod binding_cases;
 mod invocation_cases;
 #[path = "runtime_validation_cases/limits.rs"]
 mod limit_cases;
-#[path = "support/native_rule_model.rs"]
-mod native_rule_model;
+#[path = "support/runtime_setup.rs"]
+mod setup;
+use setup::*;
 #[path = "runtime_validation_cases/values.rs"]
 mod value_cases;
 
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
-use quire_spec_language::checking::{
-    check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
-};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::DeclarationKey;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
-    validate, ArtifactLimits, ExecutionSelection, FieldBinding, Invocation, InvocationDraft,
-    ModelBinding, ObjectEntry, ObjectIdentity, ObservationSelection, Population, QualifiedName,
-    RuntimeInput, Snapshot, SnapshotDraft, SnapshotRef, ValidationLimits, ValidationStatus,
-    ValueBinding, ValueId, ValueNode,
+    validate, ArtifactLimits, FieldBinding, ModelBinding, ObjectEntry, ObjectIdentity,
+    ObservationSelection, Population, RuntimeInput, Snapshot, SnapshotDraft, SnapshotRef,
+    ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{
-    link_native, parse, ByteDigest, Code, Limits, LinkLimits, Phase, SourceIdentity,
-};
-
-fn symbol(name: &str) -> ir::SymbolName {
-    native_rule_model::symbol(name)
-}
-
-fn authored_owner() -> ir::RequirementRef {
-    ir::RequirementRef::parse("example/runtime-rules", "PopulationRule", 7).unwrap()
-}
-
-fn checked<'a>(models: &'a [NativeModel], expression: &str) -> CheckedPackage<'a> {
-    checked_kind(models, expression, ClauseKind::Invariant)
-}
-
-fn checked_kind<'a>(
-    models: &'a [NativeModel],
-    expression: &str,
-    kind: ClauseKind,
-) -> CheckedPackage<'a> {
-    let (keyword, context, execution_point) = match kind {
-        ClauseKind::Invariant => (
-            "invariant",
-            "M::Node at current",
-            ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
-            },
-        ),
-        ClauseKind::Precondition => (
-            "pre",
-            "M::Node::step",
-            ir::ExecutionPoint::Pre {
-                operation: ir::AnchorName::new("step").unwrap(),
-            },
-        ),
-        ClauseKind::Postcondition => (
-            "post",
-            "M::Node::step",
-            ir::ExecutionPoint::Post {
-                operation: ir::AnchorName::new("step").unwrap(),
-            },
-        ),
-    };
-    let additional_imports: String = models
-        .iter()
-        .skip(1)
-        .enumerate()
-        .map(|(index, model)| {
-            format!(
-                "model N{index} = {} version \"{}\" digest \"{}\";\n",
-                serde_json::to_string(model.environment().owner().package().as_str()).unwrap(),
-                model.environment().owner().revision().get(),
-                model.digest(),
-            )
-        })
-        .collect();
-    let text = format!(
-        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{additional_imports}{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n",
-        models[0].digest()
-    );
-    let unit = parse(
-        SourceIdentity {
-            identity: "test:runtime-rule".into(),
-            revision: "7".into(),
-        },
-        "runtime-rule.native",
-        text.as_bytes(),
-        Limits::default(),
-    )
-    .expect("authored runtime rule parses before validation setup");
-    let source = FormalSource::new(
-        unit.source().clone(),
-        ir::SourceIdentity::new(
-            ir::SourceDocumentId::new("RuntimeRuleSource").unwrap(),
-            ir::SourceRevision::new(7).unwrap(),
-        ),
-    );
-    let linked = link_native(unit, models, LinkLimits::default())
-        .expect("exact native model links before population validation");
-    let clauses = [("Rule", "population_rule"), ("Other", "other_rule")]
-        .into_iter()
-        .map(|(name, clause)| ClauseBinding {
-            name: name.into(),
-            requirement: authored_owner(),
-            clause: ir::ClauseId::new(clause).unwrap(),
-            execution_point: execution_point.clone(),
-        })
-        .collect();
-    let checked = check(
-        linked,
-        CheckBindings { source, clauses },
-        CheckLimits::default(),
-    )
-    .expect("static type/definedness setup must succeed before runtime judgment");
-    assert_eq!(checked.clauses().len(), 2);
-    assert_eq!(checked.clauses()[0].binding().requirement, authored_owner());
-    checked
-}
-
-fn object(model: &NativeModel, key: &str) -> ObjectIdentity {
-    ObjectIdentity {
-        model: model.environment().owner().clone(),
-        record: symbol("Node"),
-        universe: symbol("nodes"),
-        key: key.into(),
-    }
-}
-
-fn field(name: &str, value: u32) -> FieldBinding {
-    FieldBinding {
-        name: symbol(name),
-        value: ValueId::new(value),
-    }
-}
-
-fn draft(model: &NativeModel) -> SnapshotDraft {
-    SnapshotDraft {
-        observation: ir::StateObservation::Current,
-        models: vec![ModelBinding {
-            model: model.environment().owner().clone(),
-            digest: model.digest(),
-        }],
-        populations: vec![Population {
-            model: model.environment().owner().clone(),
-            record: symbol("Node"),
-            universe: symbol("nodes"),
-            complete: true,
-            objects: vec![ObjectEntry {
-                key: "self".into(),
-                fields: vec![
-                    field("n", 0),
-                    field("signed", 1),
-                    field("den", 0),
-                    field("wide", 1),
-                    field("count", 1),
-                    field("distance", 0),
-                    field("duration", 0),
-                    field("parent", 2),
-                    field("peer", 3),
-                    field("items", 4),
-                ],
-            }],
-        }],
-        values: Vec::new(),
-        arena: vec![
-            ValueNode::Integer { value: 1 },
-            ValueNode::Integer { value: 0 },
-            ValueNode::Absent,
-            ValueNode::Reference {
-                identity: object(model, "self"),
-            },
-            ValueNode::Sequence { values: Vec::new() },
-        ],
-    }
-}
-
-fn snapshot(draft: SnapshotDraft) -> Snapshot {
-    Snapshot::new(
-        SourceIdentity {
-            identity: "test:runtime-current".into(),
-            revision: "1".into(),
-        },
-        draft,
-        ArtifactLimits::default(),
-    )
-    .expect("flat input construction must succeed before model-aware validation")
-}
-
-fn selection(model: &NativeModel, snapshot: SnapshotRef) -> ExecutionSelection {
-    ExecutionSelection {
-        requirement: authored_owner(),
-        clause: ir::ClauseId::new("population_rule").unwrap(),
-        observation: ObservationSelection::Current {
-            snapshot,
-            self_object: object(model, "self"),
-        },
-    }
-}
-
-fn input(snapshot: Snapshot) -> RuntimeInput {
-    RuntimeInput {
-        snapshots: vec![snapshot],
-        invocations: Vec::new(),
-    }
-}
+use quire_spec_language::{ByteDigest, Code, Phase, SourceIdentity};
 
 #[test]
 #[trace("TC-058", "TC-059", "FR-007-AC-6", "FR-007-AC-8")]

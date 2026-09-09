@@ -34,7 +34,8 @@ reused; prose may change without changing classification.
 | unavailable_observation | A selected runtime artifact or required State-root counterpart is unavailable. |
 | population_delta_mismatch | Recorded created/deleted identities repeat, intersect or disagree with complete pre/post population differences. |
 | frame_violation | A surviving object field or State root changes without permission, or a created/deleted object type is outside the model frame. |
-| cancelled | The caller's runtime cancellation poll stopped validation with actual prior usage. |
+| cancelled | The caller's runtime cancellation poll stopped validation or evaluation with actual prior usage. |
+| runtime_invariant | Reference evaluation encountered a violated established typing or validated-input invariant; no Boolean is produced. |
 | ill_typed | Native contextual types, nominal identities, units or operator eligibility disagree, or a scalar context is ambiguous. |
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
 | resource_exhausted | A source, syntax, formatter, map, linking, checking/proof or runtime construction/validation ceiling prevented completion. |

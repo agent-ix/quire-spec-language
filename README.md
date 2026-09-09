@@ -39,10 +39,18 @@ package and immutable input; failed reports retain located defects and fresh
 budget usage. Task-013 is qualified at 45ed1b4 by SR-097 with 35 public API tests.
 See [the review](reviews/26-09-09-native-runtime-validation.md) for scope and evidence.
 
-Healthy/violating evaluation, backend projection and Quire integration remain
-downstream work. Construction establishes structure and byte correspondence;
-a checked package establishes static judgments conditional on valid input.
-Validation establishes input conditions without evaluating a predicate.
+`runtime::evaluate` executes the original native AST over a borrowed validated
+context. Reports retain concrete truth or an explicit incomplete/invariant-failure
+outcome, exact reference costs and original implication events. Borrowed values
+preserve pre/post captures, ordered sequence occurrences and object identities.
+Twenty-nine public tests and two private invariant controls cover reference
+execution, including all small functional graphs and independent budget vectors.
+See [native-runtime-evaluation.md](docs/native-runtime-evaluation.md).
+
+Complete native API workflow qualification, backend projection and Quire
+integration remain downstream work. Construction establishes structure and byte
+correspondence; checking establishes static judgments conditional on valid input;
+validation establishes input conditions before predicate execution.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,

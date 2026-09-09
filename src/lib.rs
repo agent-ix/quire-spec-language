@@ -2,6 +2,10 @@
 //! Native syntax, formatting and source diagnostics for the finite-state profile.
 //!
 //! Parsing does not establish model binding, type correctness or execution support.
+// Private unit tests reuse the public fixture producer without exposing a test bypass.
+#[cfg(test)]
+extern crate self as quire_spec_language;
+
 pub mod checking;
 pub mod diagnostic;
 pub mod digest;

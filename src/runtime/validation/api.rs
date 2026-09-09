@@ -11,6 +11,10 @@ use super::super::{
 use crate::checking::{CheckedClause, CheckedPackage};
 use crate::{ByteDigest, Diagnostic, SourceIdentity};
 
+#[cfg(test)]
+#[path = "../../../tests/support/runtime_evaluation_invariants.rs"]
+mod invariant_tests;
+
 /// Owned offered artifacts; validation never mutates their contents.
 #[derive(Clone, Debug, Default)]
 pub struct RuntimeInput {
@@ -253,6 +257,10 @@ impl std::fmt::Debug for ValidatedContext<'_, '_> {
 }
 
 impl<'checked, 'model> ValidatedContext<'checked, 'model> {
+    /// Original source-order position established during complete validation.
+    pub(crate) fn clause_index(&self) -> usize {
+        self.clause_index
+    }
     /// Exact static package this context was validated against.
     pub fn checked(&self) -> &'checked CheckedPackage<'model> {
         self.checked

@@ -2,8 +2,14 @@
 //! FR-018: native input artifacts. Construction does not validate a population.
 
 mod construction;
+mod evaluation;
 mod input;
 mod validation;
+
+pub use evaluation::{
+    evaluate, EvaluationLimits, EvaluationOutcome, EvaluationReport, EvaluationUsage,
+    ImplicationEvent, ImplicationEventKind,
+};
 
 pub use validation::{
     validate, ExecutionSelection, ObservationSelection, RuntimeInput, RuntimeLocation,
