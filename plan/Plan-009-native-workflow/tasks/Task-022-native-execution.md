@@ -2,7 +2,7 @@
 id: Task-022
 title: "Expose native execution with retained request results"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-023
     type: references
@@ -17,3 +17,6 @@ Compose actual native validation/evaluation without duplicating runtime logic.
 Return the complete offered request and native outcome to callers, including
 validation failures. Exercise parent/aggregate, operation, failure and retry
 cases, then submit the next reviewable LC05 PR.
+
+Implemented at 9c3e5ff with four passing integration tests. PR-time spec/code
+reviews are SR-135–143. Standalone file intake and full LC05 remain open.
