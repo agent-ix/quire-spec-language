@@ -30,7 +30,7 @@ fn record_type(name: &str) -> ir::ValueType {
 fn environment(owner: &str, revision: u64, unused_bound: i64) -> ir::DeclarationEnvironment {
     let integer = ir::ValueType::integer(
         ir::IntegerType::new(
-            ir::IntegerDomain::Unsigned,
+            ir::IntegerDomain::Signed,
             0,
             1000,
             ir::OverflowPolicy::Reject,
