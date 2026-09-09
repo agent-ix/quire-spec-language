@@ -26,7 +26,7 @@ fn run(arguments: &[OsString]) -> Result<String, (u8, String)> {
     let [command, identity, revision, path] = arguments else {
         return Err((
             2,
-            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile|lower> <request-file> [--target <boolean-oracle/v1|integer-ir/v1> (lower only)]".into(),
+            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile|lower> <request-file> [--target <boolean-oracle/v1|integer-ir/v1|state-scalar-ir/v1> (lower only)]".into(),
         ));
     };
     let Some(command) = command.to_str() else {
@@ -93,6 +93,7 @@ fn main() -> ExitCode {
             let target = match target.to_str() {
                 Some("boolean-oracle/v1") => ProjectionTarget::BooleanOracleV1,
                 Some("integer-ir/v1") => ProjectionTarget::IntegerIrV1,
+                Some("state-scalar-ir/v1") => ProjectionTarget::StateScalarIrV1,
                 _ => {
                     let _ = writeln!(io::stderr().lock(), "unknown lowering target");
                     return ExitCode::from(2);

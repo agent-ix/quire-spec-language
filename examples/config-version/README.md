@@ -43,3 +43,15 @@ reference-runtime examples. The existing Boolean backend still refuses their
 numeric, reference and graph expressions; compiled backend parity remains open.
 The model declares integer bounds and explicit finite input populations, without
 adding a new schema-level population-cardinality feature.
+
+Export the update rule's primitive state projection:
+
+```sh
+nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- lower /tmp/config-version/unchanged-version/compile.json --target state-scalar-ir/v1
+```
+
+The strict IR binder accepts this rule with separate pre/post version inputs.
+Library consumers use `NativeProjection::inputs` after native runtime validation
+to obtain actual values and their artifact/object provenance. The existing
+numeric codegen limitation still applies; this export does not claim generated
+execution or graph parity.
