@@ -72,3 +72,11 @@ semantics, healthy/violating/refused evaluation, qualified backend lowering and
 Quire integration remain required by the full assignment. Neither B adoption
 of the separately merged specification PR8 nor closed IR #54 is a reason to
 stop this available native work. No broader LC issue or goal is closed here.
+
+## Handoff disposition
+
+FND-001 is resolved for the reviewable-PR deliverable after 3924dbb was pushed,
+compiler PR8 was made ready, and exact LC02/CO01 handoffs were posted. Both
+Plan-003 tasks are now done for that bounded delivery. The original evaluated
+revision and 1/2 rollup above remain historical evidence. FND-002/003 remain;
+the full TM-003 verdict is still FAIL, with five FR-006 cases unimplemented.

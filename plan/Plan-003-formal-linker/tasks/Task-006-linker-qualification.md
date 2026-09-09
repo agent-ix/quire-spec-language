@@ -2,7 +2,7 @@
 id: Task-006
 title: "Review and land native linking qualification"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -26,11 +26,16 @@ gates, reconcile matrix/plan status to executed evidence and land when ready.
 
 ## Subtasks
 
-- [ ] Retain actual test, fmt, Clippy, rustdoc, private-audit and Quire evidence.
-- [ ] Complete Rust/code review and scoped gap analysis without the declined optional semantic review.
-- [ ] Push the exact result and update the private owning/coordination records.
+- [x] Retain actual test, fmt, Clippy, rustdoc, private-audit and Quire evidence.
+- [x] Complete Rust/code review and scoped gap analysis without the declined optional semantic review.
+- [x] Push the exact result and update the private owning/coordination records.
 
 ## Deliverables
 
 Reviewable, tested linker PR with explicit remaining FR-006 and full-workflow
 work. No external model service or repeated owner approval is introduced.
+
+Delivered at 3924dbb260b7ad06e4b002dc5252d7511c024cd1: compiler PR8 is ready
+for review, with the exact implementation/review handoff on LC02 and CO01.
+This task's reviewable-PR deliverable is complete. The final GitHub merge state
+is recorded on those private threads; no full LC02/FR-006 completion is implied.
