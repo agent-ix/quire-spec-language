@@ -32,6 +32,8 @@ adoption and assurance remain explicit acceptance work.
   package artifacts with the existing source/model authority and reader.
 - [Task-028](tasks/Task-028-lowering-export.md): export the existing Boolean
   projection through the standalone compiler for existing IR/backend consumers.
+- [Task-029](tasks/Task-029-quire-consumer.md): join the current real Quire Rust
+  extractor to mapped native compilation and runtime, preserving producer metadata.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;

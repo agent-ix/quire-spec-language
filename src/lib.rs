@@ -25,6 +25,8 @@ pub mod model_source;
 pub mod native_model;
 pub mod package;
 mod parser;
+#[cfg(feature = "quire-extraction")]
+pub mod quire_source;
 pub mod runtime;
 mod serde_object;
 pub mod source;
