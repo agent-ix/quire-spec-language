@@ -1,0 +1,18 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: this function has too many arguments (8/7)
+    --> src/checking/proof.rs:1026:1
+     |
+1026 | / pub(super) fn discharge<'u, 'a>(
+1027 | |     linked: &'u LinkedPackage<'a>,
+1028 | |     catalogs: &'u [Catalog<'a>],
+1029 | |     index: usize,
+...    |
+1034 | |     usage: &'u mut CheckUsage,
+1035 | | ) -> Result<Proven> {
+     | |___________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#too_many_arguments
+     = note: `-D clippy::too-many-arguments` implied by `-D clippy::all`
+     = help: to override `-D clippy::all` add `#[allow(clippy::too_many_arguments)]`
+
+error: could not compile `quire-spec-language` (lib) due to 1 previous error

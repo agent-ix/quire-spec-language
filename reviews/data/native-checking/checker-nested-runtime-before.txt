@@ -1,0 +1,22 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.13s
+     Running tests/native_checking.rs (target/debug/deps/native_checking-cf2f5fdf60595d24)
+
+running 1 test
+test types::tc_052_reachability_requires_one_exact_target_universe_and_observation ... FAILED
+
+failures:
+
+---- types::tc_052_reachability_requires_one_exact_target_universe_and_observation stdout ----
+
+thread 'types::tc_052_reachability_requires_one_exact_target_universe_and_observation' (210) panicked at tests/native_checking_cases/types.rs:207:10:
+references inside structural records still require their target population
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    types::tc_052_reachability_requires_one_exact_target_universe_and_observation
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test native_checking`

@@ -2,9 +2,31 @@
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
-The library also links exact imports and scoped names against supplied Contract
-IR formal environments. Successful linking does not establish type correctness,
-executable projection, or healthy/violating state evaluation.
+The library links exact imports and scoped names against supplied Contract IR
+formal environments. Its native checker establishes contextual types and guarded
+definedness through the existing IR prover under explicit runtime input obligations.
+
+The native model admission API now checks explicit scalar, object and operation
+roles against supplied IR declarations and exact source coordinates, then emits
+a bounded deterministic model artifact. Its source-derived Rust fixture uses
+original parsed JSON occurrences. `link_native` now selects those artifacts,
+resolves explicit references and operations, and rejects conflicting model
+inventory identities. `LinkedPackage::binding_profile`,
+`LinkedModel::native_model` and `LinkedClause::operation` expose that
+correspondence. Model admission and linkage are qualified under Task-008.
+
+`checking::check` consumes a native linked package, exact `CheckBindings` and
+caller-lowered `CheckLimits`. It returns the original source/AST with native
+types, authored clause identities, discharged proof goals and required input
+populations, observations and operation frames. Stable and lexical guard keys
+preserve captured pre/post values; bounded proof expansion precedes actual IR
+checks. The 24 checker tests qualify Task-009. The public library contract is in
+[native-model-checking.md](docs/native-model-checking.md); review and handoff
+are tracked in [Plan-005](plan/Plan-005-native-checking/index.md).
+
+Runtime population validation, healthy/violating evaluation, backend projection
+and Quire integration remain downstream work. A checked package establishes
+static judgments conditional on valid input, without evaluating a population.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,

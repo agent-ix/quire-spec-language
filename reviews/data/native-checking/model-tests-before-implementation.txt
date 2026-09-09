@@ -1,0 +1,55 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved import `quire_spec_language::native_model`
+ --> tests/support/native_rule_model.rs:8:26
+  |
+8 | use quire_spec_language::native_model::{
+  |                          ^^^^^^^^^^^^ could not find `native_model` in `quire_spec_language`
+
+error[E0432]: unresolved import `quire_spec_language::native_model`
+  --> tests/native_model.rs:10:26
+   |
+10 | use quire_spec_language::native_model::{ModelLimits, NativeModel, ScalarKind, ScalarSite, Unit};
+   |                          ^^^^^^^^^^^^ could not find `native_model` in `quire_spec_language`
+
+error[E0599]: no method named `clone` found for type `str` in the current scope
+   --> tests/support/native_rule_model.rs:133:35
+    |
+133 |         assert!(types.insert(name.clone(), ty).is_none());
+    |                                   ^^^^^
+    |
+help: there is a method `clone_into` with a similar name, but with different arguments
+   --> /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/borrow.rs:66:4
+
+error[E0277]: the size for values of type `str` cannot be known at compilation time
+   --> tests/support/native_rule_model.rs:134:25
+    |
+134 |         assert!(scalars.insert(name, role).is_none());
+    |                         ^^^^^^ doesn't have a size known at compile-time
+    |
+    = help: the trait `Sized` is not implemented for `str`
+note: required by a bound in `BTreeMap::<K, V, A>::insert`
+   --> /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/map.rs:1045:4
+
+error[E0277]: the size for values of type `str` cannot be known at compilation time
+   --> tests/support/native_rule_model.rs:126:23
+    |
+126 |     let mut scalars = BTreeMap::new();
+    |                       ^^^^^^^^ doesn't have a size known at compile-time
+    |
+    = help: the trait `Sized` is not implemented for `str`
+note: required by an implicit `Sized` bound in `BTreeMap`
+   --> /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/map.rs:189:0
+
+error[E0277]: the size for values of type `str` cannot be known at compilation time
+   --> tests/support/native_rule_model.rs:126:23
+    |
+126 |     let mut scalars = BTreeMap::new();
+    |                       ^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+    |
+    = help: the trait `Sized` is not implemented for `str`
+note: required by a bound in `BTreeMap::<K, V>::new`
+   --> /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/collections/btree/map.rs:651:4
+
+Some errors have detailed explanations: E0277, E0432, E0599.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `quire-spec-language` (test "native_model") due to 6 previous errors

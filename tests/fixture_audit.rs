@@ -136,7 +136,7 @@ fn non_utf8_mode_refuses_and_non_utf8_root_executes() {
     );
 }
 
-#[trace("TC-004", "FR-012-AC-4", "FR-012-AC-8")]
+#[trace("TC-004", "FR-012-AC-4", "FR-012-AC-8", "FR-017-AC-4")]
 #[test]
 fn model_checkpoint_digest_pin_and_immutable_inputs() {
     let original = fixture_root();
@@ -166,7 +166,7 @@ fn model_checkpoint_digest_pin_and_immutable_inputs() {
     assert_eq!(contents(&original), before);
 }
 
-#[trace("TC-006", "FR-012-AC-6")]
+#[trace("TC-006", "FR-012-AC-6", "FR-017-AC-4")]
 #[test]
 fn model_required_fields_reject_missing_null_and_wrong_types() {
     let temp = tempfile::tempdir().unwrap();
@@ -226,7 +226,7 @@ fn selected_packet() -> PathBuf {
     )
 }
 
-#[trace("TC-002", "FR-012-AC-2")]
+#[trace("TC-002", "FR-012-AC-2", "FR-017-AC-4")]
 #[test]
 #[ignore = "IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory"]
 fn selected_review_packet_and_corrupt_invocation() {
@@ -270,7 +270,7 @@ fn replace_reference(value: &mut Value, old: &Value, new: &Value) {
     }
 }
 
-#[trace("TC-003", "FR-012-AC-3", "FR-012-AC-6")]
+#[trace("TC-003", "FR-012-AC-3", "FR-012-AC-6", "FR-017-AC-4")]
 #[test]
 #[ignore = "IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory"]
 fn selected_roles_packet_and_independent_correspondence_mutations() {
@@ -340,7 +340,7 @@ fn selected_roles_packet_and_independent_correspondence_mutations() {
     assert_eq!(contents(&original), before);
 }
 
-#[trace("TC-005", "FR-012-AC-5", "FR-012-AC-8")]
+#[trace("TC-005", "FR-012-AC-5", "FR-012-AC-8", "FR-017-AC-4")]
 #[test]
 #[ignore = "IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory"]
 fn selected_rule_syntax_and_malformed_case_metadata() {

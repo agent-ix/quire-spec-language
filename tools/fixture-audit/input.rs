@@ -297,7 +297,7 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
-    #[trace("TC-006", "FR-012-AC-6")]
+    #[trace("TC-006", "FR-012-AC-6", "FR-017-AC-4")]
     #[test]
     fn malformed_json_and_fields() {
         for raw in [

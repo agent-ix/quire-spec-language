@@ -1,0 +1,23 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.44s
+     Running tests/native_model_qualification.rs (target/debug/deps/native_model_qualification-b247a466628a3417)
+
+running 16 tests
+test admission::tc_040_all_sites_wrappers_and_operation_roles_match_authored_model ... ok
+test admission::tc_041_incomplete_or_inconsistent_scalar_assignments_refuse ... ok
+test admission::tc_041_operation_inputs_and_all_frame_inventories_are_checked ... ok
+test admission::tc_041_ordinary_text_accepts_zero_and_requires_a_role ... ok
+test admission::tc_041_reference_carriers_and_object_ownership_are_explicit ... ok
+test admission::tc_041_unsupported_representations_include_unused_ir_declarations ... ok
+test identity::tc_042_generated_semantic_mutations_bind_the_changed_payload ... ok
+test identity::tc_042_native_source_labels_and_formal_owner_participate_in_identity ... ok
+test identity::tc_042_set_inventories_are_permutation_invariant_but_parameters_are_ordered ... ok
+test limits::tc_045_entry_ceiling_counts_frames_across_operations ... ok
+test limits::tc_045_every_model_dimension_has_an_inclusive_small_boundary ... ok
+test limits::tc_045_formal_depth_cannot_be_elevated_past_64 ... ok
+test limits::tc_045_formal_node_ceiling_is_reachable_within_artifact_limit ... ok
+test limits::tc_045_role_hard_ceiling_precedes_the_coupled_artifact_ceiling ... ok
+test provenance::tc_043_all_locus_classes_reject_false_coordinates_and_foreign_identity ... ok
+test provenance::tc_043_split_unicode_scalar_is_refused_for_each_locus_class ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
