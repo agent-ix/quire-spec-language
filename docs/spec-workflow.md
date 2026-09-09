@@ -246,3 +246,38 @@ The explicit FormalSource binding retains original bytes and native labels,
 while checking both directions against a separately assigned formal identity.
 Native model semantic roles, actual typing/definedness, reference evaluation,
 backend qualification and existing-extractor integration remain work.
+
+## LC03 reviewed runtime packet — 2026-09-09
+
+PR10 landed the qualified native model/checker at bfac17d; Plan-005 and
+SR-083–087 retain its actual implementation evidence. The next owning task is
+private LC03 language issue #4 on agent-a/lc03-native-runtime.
+
+The actual QUOIN 0.22.5 skills specify, spec-matrix, spec-review and all seven
+selected analysis skills authored the runtime packet at 045025f. It contains
+expanded FR-007/008, new FR-018/NFR-006/IT-006, two concrete API contracts and
+TM-004 with 42 functional criteria, 17 resource metrics and 23 planned cases.
+Quoin 0.23.1 supplied the installed catalog contracts; Quire 0.31.0 validated
+the scoped artifacts. The complete advisor/catalog/properties/coverage output
+is retained in spec/reviews/native-runtime/data.
+
+Reviews SR-088–095 at 1603f97 approve this specified API scope. The first EARS
+review used an empty findings table, which the installed schema rejected;
+f7ed193 records the repair and successful validation while retaining the first
+failure. Resolved contract findings include conditional post self, caller-poll
+panic behavior, exact draft-error provenance, local ValueId meaning and atomic
+entry/event capacity checks. Resource-metric benchmark recommendations and
+parser/temporal characteristic matches have explicit evidence-review dispositions.
+
+The actual QUOIN spec-to-plan skill produced Plan-006 after those reviews.
+Tasks 012–015 cover input construction, model-aware validation, independent
+evaluation and full qualification/handoff in one serial Agent A track.
+No runtime source, executable test or Cargo/CI behavior changed in this packet.
+Runtime rows remain planned; existing tests are not relabeled as runtime evidence.
+The actual local code-review/rust-review skills and non-semantic gap reconciliation
+remain mandatory during implementation qualification.
+
+This native API milestone still requires subsequent LC02/FS03 acceptance,
+compiled ConfigVersion/backend qualification and Quire integration for the
+original assignment. It introduces no B/C/TL/Filament ownership change, new
+portable result authority, decoder, producer-language execution or hosted CI run.
