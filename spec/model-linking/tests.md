@@ -35,6 +35,11 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-013 | FR-013-AC-4 | TC-032 | ✅ Passed |
 | FR-013 | FR-013-AC-5 | TC-033 | ✅ Passed |
 | FR-013 | FR-013-AC-6 | TC-034 | ✅ Passed |
+| FR-014 | FR-014-AC-1 | TC-035 | 🚧 Planned |
+| FR-014 | FR-014-AC-2 | TC-036 | 🚧 Planned |
+| FR-014 | FR-014-AC-3 | TC-037 | 🚧 Planned |
+| FR-014 | FR-014-AC-4 | TC-038 | 🚧 Planned |
+| FR-014 | FR-014-AC-5 | TC-039 | 🚧 Planned |
 
 ## Test Case Summary
 
@@ -55,6 +60,11 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-032 | Unmapped reference and operation forms | Integration | P1 | FR-013-AC-4 | ✅ Passed |
 | TC-033 | Native linking resource ceilings | Property | P1 | FR-013-AC-5 | ✅ Passed |
 | TC-034 | Ambiguity provenance and atomicity | Property | P1 | FR-013-AC-6 | ✅ Passed |
+| TC-035 | Explicit source identity assignment | Integration | P1 | FR-014-AC-1 | 🚧 Planned |
+| TC-036 | Independent formal coordinate examples | Integration | P1 | FR-014-AC-2 | 🚧 Planned |
+| TC-037 | Foreign native source requests | Integration | P1 | FR-014-AC-3 | 🚧 Planned |
+| TC-038 | Inconsistent formal coordinates | Integration | P1 | FR-014-AC-4 | 🚧 Planned |
+| TC-039 | Bounded generated span correspondence | Property | P1 | FR-014-AC-5 | 🚧 Planned |
 
 ## Six coverage rules
 
@@ -95,3 +105,16 @@ FR-013 now defines the concrete formal-environment resolution API and TC-030–0
 cover its six criteria. TC-020–024 consume that same real API. Canonical byte
 selection, explicit self binding, lexical scopes and resource budgets are
 defined before code; FR-006's five static-judgment cases remain separate.
+
+## Formal source bridge qualification
+
+FR-014 adds five planned cases to the same LC02 matrix. TC-035–038 exercise
+actual pinned IR constructors and independent adverse inputs; TC-039 generates
+156 sources and enumerates all valid and invalid offset pairs with a separate
+coordinate oracle. Every FR-014 criterion maps to one case. Boundaries include
+empty input, EOF, CRLF interior, split scalars, the existing source-byte ceiling,
+foreign labels/digests and misleading IR endpoint coordinates. Success after
+failure checks immutable request behavior; there is no runtime state transition
+or callback/concurrency option in this API. Loom and concurrency fault injection
+do not apply to this immutable, single-request bridge. No fuzz result is claimed.
+These tests do not discharge FR-006 or the full IT-005 model/checker integration.

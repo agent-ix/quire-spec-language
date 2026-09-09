@@ -64,6 +64,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-013
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-014
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -199,3 +201,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR | Draft campaign language constraint |
 | [IT-004](integration/IT-004-rust-fixture-audits.md) | IT | Draft real Rust audits |
 | [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT | Planned qualified model consumption |
+| [FR-013](functional/FR-013-link-formal-environments.md) | FR | Implemented formal linking |
+| [FR-014](functional/FR-014-bind-native-formal-source.md) | FR | Planned native/formal source bridge |
