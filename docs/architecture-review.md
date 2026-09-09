@@ -1,5 +1,21 @@
 # Language/core architecture review — 2026-09-07
 
+## Boundary correction — 2026-09-08
+
+Accepted Contract IR ADR-0054 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f
+supersedes this review's earlier global model-adapter prerequisite. Filament
+defines archetype schemas and generates datatypes; it is not the formal model
+authority. FR-013 DeclarationEnvironment, FR-019 Rust APIs and FR-023 binding
+already support generic native compilation. IR #54 is closed by this boundary
+decision; no new Filament reader or universal model layer is expected.
+
+A owns native resolution/typechecking and any concrete, reviewed projection
+needed by its modeling language. Reuse existing integer definedness machinery
+when its correspondence is qualified. Unsupported object/reference, unit or
+archetype semantics remain explicit case-specific work, not a global gate.
+The full parent/state workflow remains the goal. Historical findings below
+retain their original context; FR-005 and IT-005 contain the current boundary.
+
 Scope: Agent A's draft compiler and state-core specification boundary. This
 review was requested by the owner during LC01 implementation. It does not claim
 review of B's implementation, C's adapters or the temporal owner's work.

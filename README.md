@@ -1,9 +1,10 @@
 # quire-spec-language
 
-Private native syntax implementation for `ix:native`, edition `0-draft`, profile
+Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
-Imports remain unresolved: successful parsing does not establish type correctness,
-model binding, executable projection, or healthy/violating state evaluation.
+The library also links exact imports and scoped names against supplied Contract
+IR formal environments. Successful linking does not establish type correctness,
+executable projection, or healthy/violating state evaluation.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
@@ -19,7 +20,7 @@ capacity is not an exact content-byte accounting promise.
 
 ## Run and check
 
-Rust 1.94.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
+Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
 native CLI needs no Node or JVM. There are no optional feature requirements.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
@@ -74,7 +75,18 @@ exhaustion. Wire decoding and existing-repository extraction remain separate.
 The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
 catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
 skills, validation results and outstanding review work. These requirements are
-drafts; the existing syntax implementation remains subject to specification review.
+drafts; the completed native readiness reviews and local results are recorded
+in the authoring status. The owner adopted specification PR8 at
+`e897f810a7356d4ce8fd19026221ebda7b65596f` for internal LC02 implementation.
+[LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
+planned type checking. The new
+[formal linker API](docs/formal-environment-linking.md) owns the exact parsed
+source and borrows immutable models; CLI parse/format still perform syntax work
+only. Accepted Contract IR ADR-0054 at
+`690bde7f2dc58662cf9ff0595c2c0e3b17107c6f` closes #54 and removes the former
+Filament-reader prerequisite: generic compilation uses the existing public
+DeclarationEnvironment/check_expression and executable binder APIs. A concrete
+archetype projection is specified only for a clause that needs its semantics.
 
 See [architecture review](docs/architecture-review.md) for concrete fixes and
 remaining linking/identity work. The current parser uses declarative Logos tokens
@@ -97,8 +109,9 @@ The shared contracts and LC02–LC05 acceptance remain separate work.
 [production provenance](tests/fixtures/model-output/provenance.json) provide an
 actual synthetic ConfigVersion model from the existing Filament TypeSpec
 frontend: version numbers bounded to 0..1000, an optional parent field, and an
-operation declaration. This is input for the shared typed-model adapter review;
-it supplies no native model binding or evaluated state result.
+operation declaration. These are retained structural/provenance fixtures;
+they supply no native formal-model binding or evaluated state result. Generated
+datatypes do not establish formal bounds, reference or observation semantics.
 
 The Rust `fixture-audit` binary replaces all four Python helpers under
 [Agent A #58](https://github.com/agent-ix/quire-research/issues/58). Model-bytes
@@ -126,8 +139,9 @@ Rule-syntax wraps the FS03 rule examples in native source units and checks
 their syntax with the existing parser library. It checks the selected rule/profile digests,
 then expects 50 parsed expressions and one explicit unsupported refusal. It
 does not interpret the abstract type environments or execute their 51 authored
-typing/evaluation expectations. FS03 refinements remain separately proposed;
-they do not change the digest-bound original profile by implication.
+typing/evaluation expectations. The owner adopted the separately digest-bound
+FS03 refinements for internal implementation; that decision does not rewrite
+the original profile bytes or establish executed typing/evaluation evidence.
 
 The final command runs the three explicitly selected private-packet integration
 tests, including independent corruptions. The normal Rust test suite needs no

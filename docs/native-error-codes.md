@@ -22,10 +22,18 @@ reused; prose may change without changing classification.
 | unknown_language | The selected language label is not admitted. |
 | unknown_edition | The selected edition label is not admitted. |
 | unknown_profile | The selected profile label is not admitted. |
-| resource_exhausted | A source, syntax, formatter or map ceiling prevented completion. |
+| missing_import | A selected formal package or native import alias is absent. |
+| stale_dependency | A known package has no exact selected revision and declaration byte digest. |
+| ambiguous_declaration | Multiple exact candidates or visible exports match; related formal loci are retained. |
+| missing_declaration | A required value, field, type or variant cannot be resolved. |
+| invalid_model_binding | A digest, explicit context binding or clause name is invalid. |
+| resource_exhausted | A source, syntax, formatter, map or linking ceiling prevented completion. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
-source_map. Resource exhaustion is incomplete, never false. The CLI exits 1 for
+source_map, or link. Related formal declaration locations are structured fields;
+an upstream IR canonicalization failure is retained in the optional upstream
+field. Legacy diagnostics leave both empty. These fields do not change the
+existing syntax CLI output. Resource exhaustion is incomplete, never false. The CLI exits 1 for
 native refusal, 3 for incompleteness and 2 for usage/I/O failures; usage/I/O text
 does not pretend to be a source diagnostic. A successful parse exits 0 and
 reports parsed, without model-linking or evaluation claims.

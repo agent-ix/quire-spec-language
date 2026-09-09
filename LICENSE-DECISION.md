@@ -36,3 +36,11 @@ resolved dependency grants are listed in docs/dependencies.md. No local trace
 macro implementation or external audit source was copied.
 
 Every release needs an included-file inventory, inbound rights, exact outbound license, dependency compatibility, notices and generated-content review. No implementation source is copied by this initialization. Repository visibility and license are separate decisions.
+
+LC02 consumes quire-contract-ir at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f
+under its existing MIT OR Apache-2.0 grant. Its exact serde 1.0.228 selection
+supersedes the earlier LR02 pin without changing serde's grant. The complete
+resolved metadata inventory includes Unicode-3.0 ICU components and
+ar_archive_writer under Apache-2.0 WITH LLVM-exception; these third-party
+packages retain their own grants. New native linker source and its authored
+Rust qualification fixtures remain AGPL-3.0-only.

@@ -1,0 +1,135 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling version_check v0.9.5
+   Compiling memchr v2.8.3
+   Compiling typenum v1.20.1
+   Compiling regex-syntax v0.8.11
+   Compiling serde_core v1.0.229
+   Compiling fnv v1.0.7
+   Compiling zmij v1.0.23
+   Compiling cfg-if v1.0.4
+   Compiling thiserror v2.0.20
+   Compiling serde_json v1.0.151
+   Compiling serde v1.0.229
+   Compiling itoa v1.0.18
+   Compiling cpufeatures v0.2.17
+   Compiling libc v0.2.189
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling bitflags v2.13.1
+   Compiling linux-raw-sys v0.12.1
+   Compiling fastrand v2.5.0
+   Compiling once_cell v1.21.4
+   Compiling ix-trace-rs v0.1.0 (https://github.com/agent-ix/ix-trace-rs?rev=2ce4ebf47f726b9d76388220545cd0abda8a5cfb#2ce4ebf4)
+   Compiling generic-array v0.14.7
+   Compiling aho-corasick v1.1.5
+   Compiling syn v2.0.119
+   Compiling syn v3.0.5
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling regex-automata v0.4.18
+   Compiling tempfile v3.27.0
+   Compiling thiserror-impl v2.0.20
+   Compiling logos-codegen v0.16.1
+   Compiling logos-derive v0.16.1
+   Compiling logos v0.16.1
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.29s
+     Running unittests src/lib.rs (target/debug/deps/quire_spec_language-48f9c908c93a09c3)
+
+running 1 test
+test format::tests::formatter_preserves_ordered_token_and_comment_spellings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests tools/fixture-audit/main.rs (target/debug/deps/fixture_audit-1f6ea43d1f30896c)
+
+running 6 tests
+test roles::tests::equal_but_malformed_closure_fields_refuse ... ok
+test roles::tests::original_scalar_coordinates_and_mutations ... ok
+test input::tests::malformed_json_and_fields ... ok
+test review::tests::identity_negative_controls ... ok
+test input::tests::contained_and_escaping_paths ... ok
+test input::tests::exact_and_exceeded_budgets ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/quire_spec-989228f7adad9d03)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-43a21f588ebf8288)
+
+running 3 tests
+test cli_parses_and_formats_without_claiming_execution ... ok
+test cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io ... ok
+test cli_usage_io_and_resource_outcomes_are_distinct ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fixture_audit.rs (target/debug/deps/fixture_audit-555cef16c832f359)
+
+running 8 tests
+test selected_review_packet_and_corrupt_invocation ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test selected_roles_packet_and_independent_correspondence_mutations ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test selected_rule_syntax_and_malformed_case_metadata ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test process_budget_failure_emits_no_success_summary ... ok
+test non_utf8_mode_refuses_and_non_utf8_root_executes ... ok
+test cli_usage_and_unapproved_producer_with_no_external_runtime_path ... ok
+test model_checkpoint_digest_pin_and_immutable_inputs ... ok
+test model_required_fields_reject_missing_null_and_wrong_types ... ok
+
+test result: ok. 5 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/native_boundaries.rs (target/debug/deps/native_boundaries-828cb69097f4aff0)
+
+running 3 tests
+test native_diagnostic_propagates_as_an_error_and_codes_roundtrip ... ok
+test formatter_byte_ceiling_is_inclusive_and_counts_final_newline ... ok
+test formatter_cannot_raise_the_hard_content_ceiling ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/parser.rs (target/debug/deps/parser-264ba967bdbe8746)
+
+running 11 tests
+test declaration_forms_and_keyword_boundaries ... ok
+test every_import_and_name_reference_keeps_its_exact_token_locus ... ok
+test grouping_and_identifier_spans_are_original_bytes ... ok
+test exact_header_versions_and_source_validation ... ok
+test precedence_and_associativity ... ok
+test unicode_crlf_and_checked_regions ... ok
+test all_admitted_constructs_roundtrip_with_comments ... ok
+test malformed_and_unsupported_are_distinct_and_located ... ok
+test resource_limits_never_become_boolean_results ... ok
+test long_flat_chains_parse_format_and_drop_on_a_bounded_stack ... ok
+test deterministic_malformed_corpus_does_not_panic ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests/source_map.rs (target/debug/deps/source_map-2b00e03f3c183deb)
+
+running 9 tests
+test boundaries_are_right_biased_and_eof_precedes_trimmed_newline ... ok
+test extracted_bytes_need_a_distinct_identity_and_respect_parse_limits ... ok
+test layout_mapping_returns_discontiguous_exact_regions ... ok
+test original_and_body_identity_revision_and_bytes_must_match ... ok
+test omitted_keywords_internal_whitespace_and_newlines_refuse ... ok
+test exact_bytes_digest_is_checked_before_correspondence ... ok
+test verbatim_mapping_retains_original_utf8_crlf_locations ... ok
+test parser_refusal_maps_back_through_a_real_indented_body ... ok
+test malformed_segment_and_query_ranges_never_panic_or_partially_succeed ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests quire_spec_language
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
