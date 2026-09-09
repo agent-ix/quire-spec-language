@@ -17,7 +17,7 @@ mod token;
 
 pub use diagnostic::{Code, Diagnostic, Phase};
 pub use digest::ByteDigest;
-pub use linking::{link, LinkLimits, LinkedPackage};
+pub use linking::{link, link_native, LinkLimits, LinkedPackage};
 pub use parser::{parse, parse_source};
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};
 pub use syntax::{Limits, ParsedUnit};

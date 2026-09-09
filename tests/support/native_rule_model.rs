@@ -32,6 +32,8 @@ struct RuleModel<'a> {
     scalars: Vec<&'a RawValue>,
     #[serde(borrow)]
     records: Vec<&'a RawValue>,
+    #[serde(default, borrow)]
+    enums: Vec<&'a RawValue>,
     #[serde(borrow)]
     values: Vec<&'a RawValue>,
     #[serde(borrow)]
@@ -73,6 +75,14 @@ struct Field {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Enumeration<'a> {
+    name: String,
+    #[serde(borrow)]
+    variants: Vec<&'a RawValue>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Value {
     name: String,
     kind: ir::ValueDeclarationKind,
@@ -86,6 +96,7 @@ enum Type {
     Boolean,
     Scalar { name: String },
     Record { name: String },
+    Enum { name: String },
     Option { value: Box<Type> },
     Sequence { maximum: u32, value: Box<Type> },
 }
@@ -222,6 +233,7 @@ struct DecodedModel {
     revision: u64,
     scalars: Vec<Located<Scalar>>,
     records: Vec<Located<DecodedRecord>>,
+    enums: Vec<Located<DecodedEnum>>,
     values: Vec<Located<Value>>,
     objects: Vec<Located<Object>>,
     operations: Vec<Located<Operation>>,
@@ -230,6 +242,11 @@ struct DecodedModel {
 struct DecodedRecord {
     name: String,
     fields: Vec<Located<Field>>,
+}
+
+struct DecodedEnum {
+    name: String,
+    variants: Vec<Located<String>>,
 }
 
 fn decode_items<T: DeserializeOwned>(
@@ -251,6 +268,7 @@ fn decode_model(source: &FormalSource) -> Result<DecodedModel> {
     for count in [
         input.scalars.len(),
         input.records.len(),
+        input.enums.len(),
         input.values.len(),
         input.objects.len(),
         input.operations.len(),
@@ -276,12 +294,30 @@ fn decode_model(source: &FormalSource) -> Result<DecodedModel> {
             source: span,
         });
     }
+    let mut enums = Vec::new();
+    for raw in input.enums {
+        let Located {
+            value: enumeration,
+            source: span,
+        } = located_json::decode::<Enumeration<'_>>(source, raw)?;
+        remaining = remaining
+            .checked_sub(enumeration.variants.len())
+            .ok_or(FixtureError::Invalid("variant budget exhausted"))?;
+        enums.push(Located {
+            value: DecodedEnum {
+                name: enumeration.name,
+                variants: decode_items(source, enumeration.variants)?,
+            },
+            source: span,
+        });
+    }
     Ok(DecodedModel {
         package: input.package,
         requirement: input.requirement,
         revision: input.revision,
         scalars: decode_items(source, input.scalars)?,
         records,
+        enums,
         values: decode_items(source, input.values)?,
         objects: decode_items(source, input.objects)?,
         operations: decode_items(source, input.operations)?,
@@ -329,6 +365,9 @@ impl ScalarTable {
                 Ok(binding.representation.clone())
             }
             Type::Record { name } => Ok(ir::ValueType::Record {
+                name: try_symbol(&name)?,
+            }),
+            Type::Enum { name } => Ok(ir::ValueType::Enum {
                 name: try_symbol(&name)?,
             }),
             Type::Option { value } => Ok(ir::ValueType::option(self.lower_type(
@@ -444,6 +483,27 @@ fn lower_value(
     ))
 }
 
+fn lower_enum(declaration: Located<DecodedEnum>) -> Result<ir::TypeDeclaration> {
+    let variants = declaration
+        .value
+        .variants
+        .into_iter()
+        .map(|variant| {
+            Ok(ir::EnumVariantDeclaration::new(
+                try_symbol(&variant.value)?,
+                variant.source,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ir::TypeDeclaration::Enum {
+        declaration: ir::EnumDeclaration::new(
+            try_symbol(&declaration.value.name)?,
+            declaration.source,
+            variants,
+        )?,
+    })
+}
+
 fn lower_object(declaration: Located<Object>) -> Result<ObjectRole> {
     let object = declaration.value;
     Ok(ObjectRole {
@@ -489,11 +549,18 @@ fn lower_model(input: DecodedModel) -> Result<(ir::DeclarationEnvironment, Nativ
         ir::RequirementRevision::new(input.revision)?,
     );
     let mut scalars = ScalarTable::new(input.scalars)?;
-    let records = input
+    let mut declarations = input
         .records
         .into_iter()
         .map(|record| lower_record(record, &mut scalars))
         .collect::<Result<Vec<_>>>()?;
+    declarations.extend(
+        input
+            .enums
+            .into_iter()
+            .map(lower_enum)
+            .collect::<Result<Vec<_>>>()?,
+    );
     let values = input
         .values
         .into_iter()
@@ -512,6 +579,6 @@ fn lower_model(input: DecodedModel) -> Result<(ir::DeclarationEnvironment, Nativ
             .map(lower_operation)
             .collect::<Result<_>>()?,
     };
-    let environment = ir::DeclarationEnvironment::new(owner, records, values, Vec::new())?;
+    let environment = ir::DeclarationEnvironment::new(owner, declarations, values, Vec::new())?;
     Ok((environment, roles))
 }

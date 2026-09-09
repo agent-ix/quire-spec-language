@@ -27,6 +27,7 @@ reused; prose may change without changing classification.
 | ambiguous_declaration | Multiple exact candidates or visible exports match; related formal loci are retained. |
 | missing_declaration | A required value, field, type or variant cannot be resolved. |
 | invalid_model_binding | A digest, explicit context binding or clause name is invalid. |
+| wrong_snapshot | A native invocation result lacks a selected operation binding or is accessed by its hidden IR value name; later checking also owns observation availability. |
 | resource_exhausted | A source, syntax, formatter, map or linking ceiling prevented completion. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
@@ -37,3 +38,10 @@ existing syntax CLI output. Resource exhaustion is incomplete, never false. The 
 native refusal, 3 for incompleteness and 2 for usage/I/O failures; usage/I/O text
 does not pretend to be a source diagnostic. A successful parse exits 0 and
 reports parsed, without model-linking or evaluation claims.
+
+The native model profile resolves operation parameters only in the selected
+operation and results through the result keyword. Early binding refusals use
+the link phase; resolving an actual result in a precondition leaves its
+post-only availability for the checker. Inventory identity conflicts identify
+the conflicting model's source at byte zero and retain both models' related
+formal declarations. Existing formal-profile linking keeps its original codes.

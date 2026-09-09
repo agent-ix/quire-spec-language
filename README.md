@@ -9,9 +9,12 @@ executable projection, or healthy/violating state evaluation.
 The native model admission API now checks explicit scalar, object and operation
 roles against supplied IR declarations and exact source coordinates, then emits
 a bounded deterministic model artifact. Its source-derived Rust fixture uses
-original parsed JSON occurrences. Native model linking and expression checking
-remain in progress under [Plan-005](plan/Plan-005-native-checking/index.md);
-admitting a model alone does not qualify those later stages.
+original parsed JSON occurrences. `link_native` now selects those artifacts,
+resolves explicit references and operations, and rejects conflicting model
+inventory identities. `LinkedPackage::binding_profile`,
+`LinkedModel::native_model` and `LinkedClause::operation` expose that
+correspondence. Full model qualification and expression checking remain in
+progress under [Plan-005](plan/Plan-005-native-checking/index.md).
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
