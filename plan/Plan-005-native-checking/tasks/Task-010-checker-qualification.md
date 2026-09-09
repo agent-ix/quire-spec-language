@@ -29,7 +29,7 @@ for the implemented model/checker, then create a ready private PR.
 ## Subtasks
 
 - [x] Run required README checks serially and retain exact command results.
-- [ ] Apply actual agent-skills/code-review and rust-review; resolve findings.
+- [x] Apply actual agent-skills/code-review and rust-review; resolve findings.
 - [ ] Run gap analysis without the owner-declined semantic comparison.
 - [ ] Reconcile matrix/task status to actual execution and publish private handoff.
 

@@ -7,6 +7,20 @@ description: "Native model/checker lifecycle and evidence."
 
 ## History
 
+- **2026-09-09** — Task-009 is implemented and qualified at cdb6560. SR-086
+  records the actual code/Rust review and its PASS disposition. Twenty-four
+  checker tests execute all thirteen cases; the full suite passes 110 tests and
+  the selected private audit lane passes three. Every documented local gate
+  passes, including both Clippy feature configurations and strict rustdoc.
+  Quire binds 113/113 Rust symbols and TM-003 35/35, without status lies or
+  untracked symbols; the eighteen existing catalog/classifier diagnostics and
+  three extra IT-004 tags remain disclosed. Code review exposed a real nested
+  population omission. Its recorded failing regression now passes with bounded
+  transitive context/frame/invocation requirements, including skipped inputs
+  and reference cycles. No contract change or new language/dependency was needed.
+  Task-010 remains in progress for the final gap report and private PR handoff;
+  runtime validation/evaluation, backend and Quire integration remain required.
+
 - **2026-09-08** — Started Task-009 after Task-008's completed gate at ac36598.
   Initial seven real native checker tests retain TC-025–029 and add TC-047/048
   controls. The preimplementation run fails because the checking API and its
