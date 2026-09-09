@@ -19,4 +19,3 @@ Use the qualified parent, nested-reference and pre/post parameter/result models.
 ## Expected Results
 
 All expected original source occurrences, namespace identities and runtime obligations occur exactly, including transitive/skipped reference requirements and ordered captures. No fabricated declaration identity or omitted frame is accepted.
-
