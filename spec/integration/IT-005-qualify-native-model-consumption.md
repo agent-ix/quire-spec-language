@@ -74,6 +74,21 @@ refusal is correct for constructs outside FR-013. This work remains part of the
 full state-workflow goal but does not block the generic lane. No new TypeSpec/
 Node producer execution is authorized or required by this integration design.
 
+FR-015/016 now define the concrete native-state-model/1 typed Rust producer,
+link_native and check APIs. The separate native-rule-model fixture records the
+same named integer bounds/units, Node reference/sequence fields and step result
+as the original rule hypotheses. Its Rust producer reads that source, constructs
+the actual IR declarations and explicit native roles, and supplies exact source
+loci through FormalSource. TC-040–045 qualify that source-to-formal realization
+before its values are used to execute TC-025–029 and TC-046–052. The historical
+abstract hypotheses are not decoded as a production model interchange format.
+
+Each checked source has an explicit FormalSource and complete authored
+RequirementRef/ClauseId/ExecutionPoint mapping. Guards and arithmetic are checked
+through the existing IR proof API under a source-corresponded symbolic proof
+view. The original native AST is retained for later execution; this integration
+does not relabel that proof view as a backend executable package.
+
 ## Test Procedure
 
 1. Record exact native/IR revisions, public constructors, formal declarations,
