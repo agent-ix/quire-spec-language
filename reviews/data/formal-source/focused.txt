@@ -1,0 +1,13 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.33s
+     Running tests/formal_source.rs (target/debug/deps/formal_source-b6046bb940706caf)
+
+running 5 tests
+test tc_035_retains_explicit_source_assignment ... ok
+test tc_036_matches_independent_coordinates_and_source_boundary ... ok
+test tc_037_refuses_each_foreign_native_binding_dimension ... ok
+test tc_038_refuses_false_constructor_valid_formal_coordinates ... ok
+test tc_039_generated_spans_match_oracle_and_round_trip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
