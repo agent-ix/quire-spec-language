@@ -1,0 +1,64 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved import `quire_spec_language::checking`
+ --> tests/native_checking.rs:9:26
+  |
+9 | use quire_spec_language::checking::{
+  |                          ^^^^^^^^ could not find `checking` in `quire_spec_language`
+
+error[E0599]: no variant, associated function, or constant named `Check` found for enum `Phase` in the current scope
+   --> tests/native_checking.rs:112:36
+    |
+112 |     assert_eq!(error.phase, Phase::Check, "{expression}");
+    |                                    ^^^^^ variant, associated function, or constant not found in `Phase`
+
+error[E0599]: no variant, associated function, or constant named `UndefinedExpression` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:129:22
+    |
+129 |     if code == Code::UndefinedExpression {
+    |                      ^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `UndefinedExpression` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:149:19
+    |
+149 |             Code::UndefinedExpression,
+    |                   ^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `UndefinedExpression` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:180:19
+    |
+180 |             Code::UndefinedExpression,
+    |                   ^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `UndefinedExpression` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:232:19
+    |
+232 |             Code::UndefinedExpression,
+    |                   ^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `IllTyped` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:247:19
+    |
+247 |             Code::IllTyped,
+    |                   ^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `IllTyped` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:267:15
+    |
+267 |         Code::IllTyped,
+    |               ^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `UndefinedExpression` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:293:19
+    |
+293 |             Code::UndefinedExpression,
+    |                   ^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `IllTyped` found for enum `Code` in the current scope
+   --> tests/native_checking.rs:320:19
+    |
+320 |             Code::IllTyped,
+    |                   ^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "native_checking") due to 10 previous errors

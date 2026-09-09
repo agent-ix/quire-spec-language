@@ -7,6 +7,14 @@ description: "Native model/checker lifecycle and evidence."
 
 ## History
 
+- **2026-09-08** — Started Task-009 after Task-008's completed gate at ac36598.
+  Initial seven real native checker tests retain TC-025–029 and add TC-047/048
+  controls. The preimplementation run fails because the checking API and its
+  new phase/codes do not yet exist; checker-before-implementation.txt retains
+  the actual exit-101 result. No model/link setup refusal is counted as a checker
+  judgment and no typing criterion is marked passed. The existing reviewed
+  FR-006/016 contract continues to govern implementation.
+
 - **2026-09-08** — Completed Task-008 qualification at 0cd679c with actual
   code/Rust review SR-085. Seventeen new tests complete the model mutation,
   provenance, deterministic identity and limit families; the full suite passed
