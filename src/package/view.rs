@@ -17,25 +17,25 @@ use crate::{ByteDigest, Span};
 pub(super) const FORMAT: &str = "native-linked-package/1";
 
 #[derive(Serialize)]
-struct Definition {
-    revision: &'static str,
-    digest: &'static str,
+pub(super) struct Definition {
+    pub revision: &'static str,
+    pub digest: &'static str,
 }
 
 #[derive(Serialize)]
-struct Semantics {
-    language: &'static str,
-    edition: &'static str,
-    syntax_profile: &'static str,
-    model_profile: &'static str,
-    checking_contract: &'static str,
-    ir_revision: &'static str,
-    base_definition: Definition,
-    rules_definition: Definition,
+pub(super) struct Semantics {
+    pub language: &'static str,
+    pub edition: &'static str,
+    pub syntax_profile: &'static str,
+    pub model_profile: &'static str,
+    pub checking_contract: &'static str,
+    pub ir_revision: &'static str,
+    pub base_definition: Definition,
+    pub rules_definition: Definition,
 }
 
 impl Semantics {
-    fn selected() -> Self {
+    pub(super) fn selected() -> Self {
         const STANDARD: &str = "e897f810a7356d4ce8fd19026221ebda7b65596f";
         Self {
             language: crate::syntax::LANGUAGE,

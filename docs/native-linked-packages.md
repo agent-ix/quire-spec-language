@@ -5,13 +5,13 @@ Draft LC02 contract for FR-019/020/021 and NFR-007, based on compiler
 inside any separately selected transport/reference envelope. B owns shared
 references/results; Contract IR owns executable binding. Plan-007 tracks
 implementation after all-eight QUOIN review at 69588ad and the source-setup
-correction/re-review at 2c6b9b8/1c3aa50. Package construction is in progress under
-Task-016; verified reconstruction and complete qualification remain Task-017/018.
+correction/re-review at 2c6b9b8/1c3aa50. Construction, verified reconstruction
+and runtime integration are implemented under Task-016/017/018.
 
 ## Purpose and boundaries
 
-A checked in-memory package currently has no versioned artifact that another
-call can select by exact bytes. This contract exports its complete dependency,
+A checked in-memory package can be exported to a versioned artifact selected
+by exact bytes. This contract exports its complete dependency,
 authored-clause, resolution and runtime-obligation manifest. Reading that
 manifest reconstructs through real native compilation; serialized claims never
 construct a CheckedPackage directly.
@@ -34,7 +34,7 @@ the separate execution provenance; a package is not a producer attestation.
 ## Rust API
 
 The new `package` module owns the following public interface; no new crate is
-needed. Names below are part of this proposed contract.
+needed. Names below are part of this contract.
 
 ```rust
 NativePackage::new(checked: CheckedPackage<'model>, limits: PackageLimits)

@@ -7,6 +7,62 @@ use serde_json::{json, Value};
 use super::*;
 
 #[test]
+#[trace("TC-088", "FR-020-AC-9", "FR-021-AC-6")]
+fn comparison_pass_counts_and_limits_are_independent_of_prior_public_passes() {
+    let data = json!({"a": ["é[]", {"b": true}]});
+    let expected = br#"{"a":["\u00e9[]",{"b":true}]}"#;
+    // The typed claim serializer normalizes Unicode escapes before comparison.
+    let decoded: Value = serde_json::from_slice(expected).unwrap();
+    assert_eq!(decoded, data);
+    let canonical = "{\"a\":[\"é[]\",{\"b\":true}]}";
+    let usage = compare(&data, canonical.as_bytes(), PackageLimits::default()).unwrap();
+    assert_eq!(
+        usage,
+        PackagePassUsage {
+            output_bytes: 0,
+            string_bytes: 6,
+            entries: 4,
+            max_depth: 3
+        }
+    );
+    for limits in [
+        PackageLimits {
+            string_bytes: 5,
+            ..PackageLimits::default()
+        },
+        PackageLimits {
+            entries: 3,
+            ..PackageLimits::default()
+        },
+        PackageLimits {
+            depth: 2,
+            ..PackageLimits::default()
+        },
+    ] {
+        let error = compare(&data, canonical.as_bytes(), limits).unwrap_err();
+        assert_eq!(error.code, Code::ResourceExhausted);
+        assert!(error.usage.string_bytes <= limits.string_bytes);
+        assert!(error.usage.entries <= limits.entries);
+        assert!(error.usage.max_depth <= limits.depth);
+        assert_eq!(
+            compare(&data, canonical.as_bytes(), PackageLimits::default()).unwrap(),
+            usage
+        );
+    }
+    let changed = json!({"a": ["é[]", {"b": false}]});
+    let error = compare(&changed, canonical.as_bytes(), PackageLimits::default()).unwrap_err();
+    assert_eq!(error.code, Code::InvalidPackage);
+    assert_eq!(
+        error.path,
+        vec![
+            PackagePathSegment::Field("a".into()),
+            PackagePathSegment::Index(1),
+            PackagePathSegment::Field("b".into())
+        ]
+    );
+}
+
+#[test]
 #[trace("TC-088", "NFR-007-M-2", "NFR-007-M-3", "NFR-007-M-4", "NFR-007-M-5")]
 fn escaped_string_content_is_not_structure_and_failed_paths_are_real() {
     let data = json!({"q\"": ["[{}]\\\n\0é🦀", {"x": true}]});

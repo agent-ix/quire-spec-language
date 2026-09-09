@@ -1,0 +1,78 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved imports `quire_spec_language::package::PackageReadLimits`, `quire_spec_language::package::PackageSupport`
+  --> tests/package_reading.rs:12:54
+   |
+12 | use quire_spec_language::package::{NativePackageRef, PackageReadLimits, PackageSupport, PackageStage};
+   |                                                      ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^ no `PackageSupport` in `package`
+   |                                                      |
+   |                                                      no `PackageReadLimits` in `package`
+   |
+help: a similar name exists in the module
+   |
+12 - use quire_spec_language::package::{NativePackageRef, PackageReadLimits, PackageSupport, PackageStage};
+12 + use quire_spec_language::package::{NativePackageRef, PackageLimits, PackageSupport, PackageStage};
+   |
+
+error[E0599]: no associated function or constant named `read_verified` found for struct `NativePackage<'model>` in the current scope
+   --> tests/package_reading.rs:48:38
+    |
+ 48 |         let package = NativePackage::read_verified(vector.artifact,
+    |                                      ^^^^^^^^^^^^^ associated function or constant not found in `NativePackage<'_>`
+    |
+note: if you're trying to build a new `NativePackage<'_>`, consider using `NativePackage::<'model>::new` which returns `std::result::Result<NativePackage<'_>, Box<PackageError>>`
+   --> src/package.rs:222:5
+    |
+222 | /     pub fn new(
+223 | |         checked: CheckedPackage<'model>,
+224 | |         limits: PackageLimits,
+225 | |     ) -> Result<Self, Box<PackageError>> {
+    | |________________________________________^
+
+error[E0599]: no associated function or constant named `read_verified` found for struct `NativePackage<'model>` in the current scope
+   --> tests/package_reading.rs:79:38
+    |
+ 79 |         let failure = NativePackage::read_verified(bytes, expected, bindings.clone(), &models,
+    |                                      ^^^^^^^^^^^^^ associated function or constant not found in `NativePackage<'_>`
+    |
+note: if you're trying to build a new `NativePackage<'_>`, consider using `NativePackage::<'model>::new` which returns `std::result::Result<NativePackage<'_>, Box<PackageError>>`
+   --> src/package.rs:222:5
+    |
+222 | /     pub fn new(
+223 | |         checked: CheckedPackage<'model>,
+224 | |         limits: PackageLimits,
+225 | |     ) -> Result<Self, Box<PackageError>> {
+    | |________________________________________^
+
+error[E0599]: no associated function or constant named `read_verified` found for struct `NativePackage<'model>` in the current scope
+   --> tests/package_reading.rs:87:38
+    |
+ 87 |         let limited = NativePackage::read_verified(bytes, expected, bindings.clone(), &models,
+    |                                      ^^^^^^^^^^^^^ associated function or constant not found in `NativePackage<'_>`
+    |
+note: if you're trying to build a new `NativePackage<'_>`, consider using `NativePackage::<'model>::new` which returns `std::result::Result<NativePackage<'_>, Box<PackageError>>`
+   --> src/package.rs:222:5
+    |
+222 | /     pub fn new(
+223 | |         checked: CheckedPackage<'model>,
+224 | |         limits: PackageLimits,
+225 | |     ) -> Result<Self, Box<PackageError>> {
+    | |________________________________________^
+
+error[E0599]: no associated function or constant named `read_verified` found for struct `NativePackage<'model>` in the current scope
+   --> tests/package_reading.rs:92:36
+    |
+ 92 |         let stale = NativePackage::read_verified(bytes, NativePackageRef::new(ByteDigest::of(b"wrong")),
+    |                                    ^^^^^^^^^^^^^ associated function or constant not found in `NativePackage<'_>`
+    |
+note: if you're trying to build a new `NativePackage<'_>`, consider using `NativePackage::<'model>::new` which returns `std::result::Result<NativePackage<'_>, Box<PackageError>>`
+   --> src/package.rs:222:5
+    |
+222 | /     pub fn new(
+223 | |         checked: CheckedPackage<'model>,
+224 | |         limits: PackageLimits,
+225 | |     ) -> Result<Self, Box<PackageError>> {
+    | |________________________________________^
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "package_reading") due to 5 previous errors
