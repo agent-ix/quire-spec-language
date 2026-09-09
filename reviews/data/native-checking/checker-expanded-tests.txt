@@ -1,0 +1,17 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.19s
+     Running tests/native_checking.rs (target/debug/deps/native_checking-cf2f5fdf60595d24)
+
+running 9 tests
+test tc_025_actual_reference_unwraps_need_a_preceding_presence_guard ... ok
+test tc_026_actual_pre_post_references_keep_their_captured_observation ... ok
+test tc_027_guarded_version_addition_is_discharged_by_ir ... ok
+test tc_028_literal_and_size_inference_require_an_explicit_nominal_context ... ok
+test tc_029_root_typing_includes_the_real_boolean_operation_result ... ok
+test tc_047_signed_division_and_remainder_keep_ir_definedness ... ok
+test tc_048_nominal_constraints_cover_branches_units_and_operator_eligibility ... ok
+test tc_052_checked_clauses_retain_universe_and_operation_input_requirements ... ok
+test tc_053_native_presence_facts_are_sound_against_independent_boolean_assignments ... independent guard qualification: 202 formulas, 808 assignments, 62 accepted
+ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s

@@ -107,5 +107,9 @@ and contains no healthy/violating assessment of an unsupplied population.
 
 ## Status
 
-Specified for implementation. TC-025–029 retain their full reference/operation
-semantics; a record-only arithmetic demonstration cannot discharge them.
+Implemented and qualified by 24 native checker tests covering TC-025–029 and
+TC-046–053. The original reference/operation judgments execute through actual
+IR proofs. All seven caller budgets, depth-64 expansion and independent guard
+assignments are exercised; nested and skipped runtime input requirements are
+retained. Task-010 owns final review/handoff. Population validation and execution
+remain downstream requirements, not results of this static qualification.

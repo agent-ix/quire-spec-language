@@ -1,0 +1,4 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.77s
+     Running `target/debug/quire-spec parse 'test:parent' 'fixture:1' tests/fixtures/parent.native`
+{"clauses":4,"imports":1,"path":"tests/fixtures/parent.native","source":{"digest":"sha256:bb7a187662ee136b70c27a82204ecd41b446dcac56fbc183d32bc94b8ff28018","identity":"test:parent","revision":"fixture:1"},"status":"parsed"}
