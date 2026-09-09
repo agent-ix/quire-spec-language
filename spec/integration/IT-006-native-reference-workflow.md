@@ -78,7 +78,9 @@ backend parity or Quire integration is claimed from this milestone alone.
 
 ## Metadata
 
-Priority: High. Status: planned. Local Rust Integration tests, one Cargo job and
+Priority: High. Status: qualified at 4ac3597 by SR-099. Five public Rust pipeline
+tests cover all seven steps; workflow-final-tests.txt retains actual observations.
+Local Rust Integration tests, one Cargo job and
 one test thread; no additional agents, hosted dispatch or producer-language work.
 
 ## Dependencies

@@ -38,13 +38,13 @@ written before that gate. Plan-005's checker work is done and remains intact.
 - [x] NFR-006-M-1..17: explicit construction, validation and evaluation ceilings.
 - [x] NFR-003: no Boolean from failed/incomplete runtime stages in this slice.
 - [x] NFR-005: new production and qualification paths remain Rust.
-- [ ] IT-006-SC-01..07: actual source/model/input/reference-result pipeline.
+- [x] IT-006-SC-01..07: actual source/model/input/reference-result pipeline.
 
 The detailed criterion-to-test mapping remains in
 [TM-004](../../spec/native-runtime/tests.md). TC-055–057 are qualified in SR-096;
 the validation portions of TC-058–066 are qualified at 45ed1b4 by SR-097.
 TC-061's evaluation portion and TC-067–076 are qualified at 48f53ae by SR-098.
-TC-077 remains planned.
+TC-077 is qualified at 4ac3597 by SR-099; final plan gap/handoff remains Task-015.
 A native API milestone does not replace IT-002's compiled ConfigVersion and
 existing backend, remaining LC02 strict package/projection, FS03 acceptance
 or LC05 Quire integration.

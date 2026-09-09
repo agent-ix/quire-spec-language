@@ -9,7 +9,8 @@ type: TestMatrix
 LC03 covers FR-018 input construction, FR-007 validation and FR-008 evaluation
 under NFR-006. TC-055–057 are qualified at c8fa41f by SR-096. The validation
 portions of TC-058–066 are qualified at 45ed1b4 by SR-097. TC-061's evaluation
-portion and TC-067–076 are qualified at 48f53ae by SR-098; TC-077 remains planned. TM-001–003 keep their existing scopes and qualification.
+portion and TC-067–076 are qualified at 48f53ae by SR-098; TC-077 is qualified
+at 4ac3597 by SR-099. TM-001–003 keep their existing scopes and qualification.
 US-003 traces these functions to StR-001; IT-006 exercises the real native API.
 IT-002 still owns the full compiled-model/backend workflow.
 
@@ -23,7 +24,7 @@ IT-002 still owns the full compiled-model/backend workflow.
 | FR-007 | FR-007-AC-2 | TC-059 | ✅ Passed |
 | FR-007 | FR-007-AC-3 | TC-058, TC-061 | ✅ Passed |
 | FR-007 | FR-007-AC-4 | TC-062 | ✅ Passed |
-| FR-007 | FR-007-AC-5 | TC-064, TC-077 | ✅ Passed (validation; TC-077 planned) |
+| FR-007 | FR-007-AC-5 | TC-064, TC-077 | ✅ Passed |
 | FR-007 | FR-007-AC-6 | TC-058 | ✅ Passed |
 | FR-007 | FR-007-AC-7 | TC-060 | ✅ Passed |
 | FR-007 | FR-007-AC-8 | TC-059, TC-060 | ✅ Passed |
@@ -34,8 +35,8 @@ IT-002 still owns the full compiled-model/backend workflow.
 | FR-007 | FR-007-AC-13 | TC-064 | ✅ Passed |
 | FR-007 | FR-007-AC-14 | TC-063 | ✅ Passed |
 | FR-007 | FR-007-AC-15 | TC-066 | ✅ Passed |
-| FR-008 | FR-008-AC-1 | TC-067, TC-077 | ✅ Passed (reference execution; TC-077 planned) |
-| FR-008 | FR-008-AC-2 | TC-067, TC-077 | ✅ Passed (reference execution; TC-077 planned) |
+| FR-008 | FR-008-AC-1 | TC-067, TC-077 | ✅ Passed |
+| FR-008 | FR-008-AC-2 | TC-067, TC-077 | ✅ Passed |
 | FR-008 | FR-008-AC-3 | TC-068 | ✅ Passed |
 | FR-008 | FR-008-AC-4 | TC-074 | ✅ Passed |
 | FR-008 | FR-008-AC-5 | TC-075 | ✅ Passed |
@@ -56,7 +57,7 @@ IT-002 still owns the full compiled-model/backend workflow.
 | FR-008 | FR-008-AC-20 | TC-076 | ✅ Passed |
 | FR-018 | FR-018-AC-1 | TC-055 | ✅ Passed |
 | FR-018 | FR-018-AC-2 | TC-055 | ✅ Passed |
-| FR-018 | FR-018-AC-3 | TC-056, TC-077 | ✅ Passed (construction; TC-077 planned) |
+| FR-018 | FR-018-AC-3 | TC-056, TC-077 | ✅ Passed |
 | FR-018 | FR-018-AC-4 | TC-056 | ✅ Passed |
 | FR-018 | FR-018-AC-5 | TC-055 | ✅ Passed |
 | FR-018 | FR-018-AC-6 | TC-057 | ✅ Passed |
@@ -102,7 +103,7 @@ coverage remain in TM-001/002.
 | TC-074 | Qualify exact reference accounting | Integration | P1 | FR-008-AC-4, FR-008-AC-16 | ✅ Passed |
 | TC-075 | Bound evaluation and immutable retries | Property | P1 | FR-008-AC-5, FR-008-AC-17, FR-008-AC-18, FR-008-AC-19 | ✅ Passed |
 | TC-076 | Refuse unsupported collection construction | Integration | P1 | FR-008-AC-20 | ✅ Passed |
-| TC-077 | Qualify the native reference API workflow | Integration | P1 | FR-007-AC-5, FR-008-AC-1, FR-008-AC-2, FR-018-AC-3 | 🚧 Planned |
+| TC-077 | Qualify the native reference API workflow | Integration | P1 | FR-007-AC-5, FR-008-AC-1, FR-008-AC-2, FR-018-AC-3 | ✅ Passed |
 
 ## Test Matrix Rules
 
@@ -178,7 +179,9 @@ Twenty-one constructor tests and a role-separation compile-fail doctest qualify
 TC-055–057 in SR-096. Thirty-five runtime tests qualify FR-007 validation
 and the validation portions of TC-058–066 in SR-097. Twenty-nine public evaluation
 tests and two private invariant controls qualify TC-061's evaluation portion and
-TC-067–076 in SR-098. TC-077/IT-006 and complete plan qualification remain planned.
+TC-067–076 in SR-098. Five public pipeline tests qualify TC-077/IT-006 at
+4ac3597 in SR-099. All 23 runtime cases are backed by actual Rust tests;
+Task-015 retains final plan reconciliation and handoff.
 Root CLI syntax/audit/linker/checker results do not themselves qualify runtime truth. LC02 strict linked-package/projection and FS03 acceptance remain
 issue-level gates; B portable outcomes, backend qualification and Quire consumer
 integration are separately owned downstream work in the full assignment.

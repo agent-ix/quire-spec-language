@@ -33,9 +33,9 @@ Execute the complete native API milestone, required local regression gates, actu
 
 ## Subtasks
 
-- [ ] Run every IT-006 success criterion against real model/source/input bindings; retain healthy, violating, refused and incomplete outcomes with actual counts/events.
-- [ ] Run the documented local Cargo/build/style/rustdoc/CLI/audit checks appropriate to the change, serially using existing caches; inspect terminal exits and retain exact commands/revisions.
-- [ ] Use the actual agent-skills/code-review/SKILL.md and agent-skills/rust-review/SKILL.md, including relevant rust-style and implementation-gap-analysis guidance; fix substantive findings and rerun only affected verification.
+- [x] Run every IT-006 success criterion against real model/source/input bindings; retain healthy, violating, refused and incomplete outcomes with actual counts/events.
+- [x] Run the documented local Cargo/build/style/rustdoc/CLI/audit checks appropriate to the change, serially using existing caches; inspect terminal exits and retain exact commands/revisions.
+- [x] Use the actual agent-skills/code-review/SKILL.md and agent-skills/rust-review/SKILL.md, including relevant rust-style and implementation-gap-analysis guidance; fix substantive findings and rerun only affected verification.
 - [ ] Run QUOIN gap-analysis for this plan and its actual Rust trace attributes, leaving the owner-declined optional semantic comparison off. Reconcile every task, criterion, metric and matrix status with actual evidence.
 - [ ] Update the private owning LC03 issue and PR with exact spec/review/qualification revisions. Merge only when ready, without dispatching hosted CI.
 - [ ] Record the next remaining LC02/FS03/backend/Quire work in its existing owning tickets; do not close issue-level prerequisites or the original assignment merely because IT-006 passes.
@@ -46,7 +46,9 @@ Recorded full runtime API results, validated code/Rust and gap reviews, accurate
 
 ## Notes
 
-Task-014 is qualified at 48f53ae by SR-098. Its dependency is satisfied;
-TC-077/IT-006 and complete plan gap/review handoff are the next bounded work.
+Task-014 is qualified at 48f53ae by SR-098. TC-077/IT-006 is qualified at
+4ac3597 by SR-099: five pipeline tests, the full 202-test regression and a
+compile-fail doctest, three private audits and documented local gates pass.
+Complete plan gap/review handoff is the remaining bounded work.
 
 Run one Cargo phase at a time using nice -n 10, -j 1, --locked --offline, an explicit existing target directory and --test-threads=1. Wait for actual exit before another phase. No additional agents, producer-language runs, public publication or B/C/TL/Filament edits.
