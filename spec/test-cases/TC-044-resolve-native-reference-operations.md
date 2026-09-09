@@ -15,9 +15,8 @@ must use the qualified source-derived Rust producer and actual public IR APIs.
 
 ## Test Procedure
 
-Link invariant parent-field dereference, one-edge reaches syntax, and pre/post step clauses through link_native with the qualified model. Inspect native/model/operation occurrence targets. Send the analogous constructs through original link with its formal-only artifact. Exercise a missing operation/field and an ordinary enum used as a reference.
+Link invariant parent-field dereference, one-edge reaches syntax, and pre/post step clauses through link_native with the qualified model. Inspect native/model/operation occurrence targets. Send the analogous constructs through original link with its formal-only artifact. Exercise a missing operation/field, an ordinary enum used as a reference and direct field access to the hidden reference carrier.
 
 ## Expected Results
 
 Native occurrences retain exact record/field/operation and role source correspondence. Dereference names resolve through the explicitly selected reference role. Missing or unadmitted mappings refuse without a package. Original link keeps its formal digest and unsupported_construct behavior for reference and operation mappings; existing linking tests remain valid.
-

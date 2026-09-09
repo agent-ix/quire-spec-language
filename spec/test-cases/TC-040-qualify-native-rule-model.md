@@ -19,5 +19,4 @@ Produce the separately authored rule-model fixture in Rust through actual IR con
 
 ## Expected Results
 
-The public model preserves Version 0..1000, Signed -10..10, Count 0..3, Wide signed i64 bounds, Distance/metre and Duration/second. Node.n/parent/peer/items and step match the independent FS03 hypotheses. Seq retains max 3 and duplicate-preserving ordered semantics; the Bool result is a real Input declaration assigned to step. Model source identity, digest, IR ownership and all declaration/role loci remain inspectable. Setup failure fails this case.
-
+The public model preserves Version 0..1000, Signed -10..10, Count 0..3, Wide signed i64 bounds, Distance/metre and Duration/second. Node.n/parent/peer/items and step match the independent FS03 hypotheses. Seq retains max 3 and duplicate-preserving ordered semantics; the Bool result is a real Input declaration assigned to step. NodeRef has a single bounded-text ID carrier and an explicit reference role, with no enumerated runtime object identities. Model source identity, digest, IR ownership and all declaration/role loci remain inspectable. Setup failure fails this case.
