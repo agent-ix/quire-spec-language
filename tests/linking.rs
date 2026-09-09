@@ -163,6 +163,7 @@ fn unit(env: &ir::DeclarationEnvironment, expression: &str) -> ParsedUnit {
 }
 
 #[trace("TC-020", "TC-030", "FR-005-AC-1", "FR-013-AC-1", "FR-013-AC-2")]
+#[trace("FR-017-AC-3")]
 #[test]
 fn exact_source_owner_field_and_digest_domains() {
     let envs = [environment("FR-001", 1, 10)];
@@ -237,7 +238,7 @@ fn exact_source_owner_field_and_digest_domains() {
     }
 }
 
-#[trace("TC-021", "TC-023", "FR-005-AC-2", "FR-005-AC-4")]
+#[trace("TC-021", "TC-023", "FR-005-AC-2", "FR-005-AC-4", "FR-017-AC-3")]
 #[test]
 fn missing_stale_unused_declaration_and_malformed_digest() {
     let original = environment("FR-001", 1, 10);
@@ -279,7 +280,7 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
     assert_eq!(error.span.start.byte, parsed.imports()[0].digest.span.start);
 }
 
-#[trace("TC-022", "TC-034", "FR-005-AC-3", "FR-013-AC-6")]
+#[trace("TC-022", "TC-034", "FR-005-AC-3", "FR-013-AC-6", "FR-017-AC-3")]
 #[test]
 fn ambiguity_retains_all_sorted_loci_in_every_order() {
     let a = environment("FR-001", 1, 10);
@@ -319,7 +320,7 @@ fn ambiguity_retains_all_sorted_loci_in_every_order() {
     assert!(error.related.windows(2).all(|pair| pair[0] <= pair[1]));
 }
 
-#[trace("TC-024", "FR-005-AC-5")]
+#[trace("TC-024", "FR-005-AC-5", "FR-017-AC-3")]
 #[test]
 fn failed_import_permutations_never_reuse_successful_state() {
     let envs = [environment("FR-001", 1, 10), environment("FR-002", 2, 10)];
@@ -362,7 +363,7 @@ fn failed_import_permutations_never_reuse_successful_state() {
     }
 }
 
-#[trace("TC-031", "FR-013-AC-3")]
+#[trace("TC-031", "FR-013-AC-3", "FR-017-AC-3")]
 #[test]
 fn lexical_scope_and_formal_shapes_preserve_exact_targets() {
     let envs = [environment("FR-001", 1, 10)];
@@ -454,7 +455,7 @@ fn lexical_scope_and_formal_shapes_preserve_exact_targets() {
     }
 }
 
-#[trace("TC-032", "FR-013-AC-4")]
+#[trace("TC-032", "FR-013-AC-4", "FR-017-AC-3")]
 #[test]
 fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
     let envs = [environment("FR-001", 1, 10)];
@@ -497,7 +498,7 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
     }
 }
 
-#[trace("TC-033", "FR-013-AC-5")]
+#[trace("TC-033", "FR-013-AC-5", "FR-017-AC-3")]
 #[test]
 fn inclusive_lowered_and_zero_limits_are_enforced_independently() {
     let envs = [environment("FR-001", 1, 10), environment("FR-002", 2, 10)];
@@ -609,7 +610,7 @@ fn hard_count_and_traversal_ceilings_cannot_be_raised() {
     );
 }
 
-#[trace("TC-031", "TC-034", "FR-013-AC-3", "FR-013-AC-6")]
+#[trace("TC-031", "TC-034", "FR-013-AC-3", "FR-013-AC-6", "FR-017-AC-3")]
 #[test]
 fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
     let original = environment("FR-001", 1, 10);
