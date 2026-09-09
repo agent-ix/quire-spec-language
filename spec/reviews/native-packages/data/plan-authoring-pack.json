@@ -1,0 +1,44 @@
+{
+  "repoRoot": "/home/peter/dev/worktrees/formalization-a-language",
+  "org": "agent-ix",
+  "orgSource": "git",
+  "types": [
+    {
+      "name": "Plan",
+      "kind": "artifact",
+      "moduleName": "spec-artifacts-process",
+      "moduleRoot": "/home/peter/.ix/filament/modules/spec-artifacts-process",
+      "schemaPath": "/home/peter/.ix/filament/modules/spec-artifacts-process/schemas/plan-frontmatter.schema.json"
+    },
+    {
+      "name": "Task",
+      "kind": "artifact",
+      "moduleName": "spec-artifacts-process",
+      "moduleRoot": "/home/peter/.ix/filament/modules/spec-artifacts-process",
+      "schemaPath": "/home/peter/.ix/filament/modules/spec-artifacts-process/schemas/task-frontmatter.schema.json"
+    },
+    {
+      "name": "index",
+      "kind": "artifact",
+      "moduleName": "spec-artifacts-iso",
+      "moduleRoot": "/home/peter/.ix/filament/modules/spec-artifacts-iso",
+      "schemaPath": "/home/peter/.ix/filament/modules/spec-artifacts-iso/schemas/index-frontmatter.schema.json",
+      "skeletonPath": "/home/peter/.ix/filament/modules/spec-artifacts-iso/skeletons/index.md"
+    },
+    {
+      "name": "log",
+      "kind": "artifact",
+      "moduleName": "spec-artifacts-iso",
+      "moduleRoot": "/home/peter/.ix/filament/modules/spec-artifacts-iso",
+      "schemaPath": "/home/peter/.ix/filament/modules/spec-artifacts-iso/schemas/log-frontmatter.schema.json",
+      "skeletonPath": "/home/peter/.ix/filament/modules/spec-artifacts-iso/skeletons/log.md"
+    }
+  ],
+  "validation": {
+    "command": "quire validate --scope /home/peter/dev/worktrees/formalization-a-language \"spec/**/*.md\"",
+    "scope": "/home/peter/dev/worktrees/formalization-a-language",
+    "globs": [
+      "spec/**/*.md"
+    ]
+  }
+}

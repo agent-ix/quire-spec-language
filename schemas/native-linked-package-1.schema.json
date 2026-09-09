@@ -1,0 +1,840 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:native-linked-package:1",
+  "title": "Native linked package version 1 — structural validation only",
+  "description": "Draft FR-019/020/021 payload. Schema validity does not establish byte or canonical identity, authority, source/model correspondence, feature derivation, runtime validity or executable backend availability. The reader must reconstruct through actual compiler APIs.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only. This structural schema does not enforce lexical integer spelling, duplicate JSON member rejection, decoded byte budgets or constructor correspondence; the Rust reader owns those checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "semantics",
+    "required_features",
+    "source",
+    "models",
+    "clauses",
+    "canonical_identity"
+  ],
+  "properties": {
+    "format": {
+      "const": "native-linked-package/1"
+    },
+    "semantics": {
+      "$ref": "#/$defs/semantics"
+    },
+    "required_features": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "boolean",
+          "integer",
+          "text",
+          "enumeration",
+          "structural-record",
+          "object",
+          "reference",
+          "option",
+          "sequence",
+          "integer-arithmetic",
+          "comparison",
+          "boolean-control",
+          "conditional",
+          "let",
+          "quantification",
+          "reachability",
+          "pre-observation",
+          "precondition",
+          "postcondition"
+        ]
+      },
+      "maxItems": 19,
+      "uniqueItems": true
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/model"
+      },
+      "maxItems": 64
+    },
+    "clauses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/clause"
+      },
+      "maxItems": 256
+    },
+    "canonical_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain", "version", "algorithm", "digest"],
+      "properties": {
+        "domain": {"const": "quire.native.bound-package"},
+        "version": {"const": "v1"},
+        "algorithm": {"const": "sha256"},
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  },
+  "$defs": {
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "requirement",
+        "revision"
+      ],
+      "properties": {
+        "package": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requirement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      }
+    },
+    "formal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document",
+        "revision"
+      ],
+      "properties": {
+        "document": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      }
+    },
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "digest"
+      ],
+      "properties": {
+        "revision": {
+          "const": "e897f810a7356d4ce8fd19026221ebda7b65596f"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "semantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "edition",
+        "syntax_profile",
+        "model_profile",
+        "checking_contract",
+        "ir_revision",
+        "base_definition",
+        "rules_definition"
+      ],
+      "properties": {
+        "language": {
+          "const": "ix:native"
+        },
+        "edition": {
+          "const": "0-draft"
+        },
+        "syntax_profile": {
+          "const": "state-finite/0-draft"
+        },
+        "model_profile": {
+          "const": "native-state-model/1"
+        },
+        "checking_contract": {
+          "const": "native-checked-clauses/1"
+        },
+        "ir_revision": {
+          "const": "690bde7f2dc58662cf9ff0595c2c0e3b17107c6f"
+        },
+        "base_definition": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/definition"
+            },
+            {
+              "properties": {
+                "digest": {
+                  "const": "sha256:8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429"
+                }
+              }
+            }
+          ]
+        },
+        "rules_definition": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/definition"
+            },
+            {
+              "properties": {
+                "digest": {
+                  "const": "sha256:d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "revision",
+        "digest",
+        "formal"
+      ],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "formal": {
+          "$ref": "#/$defs/formal"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "owner",
+        "digest",
+        "artifact"
+      ],
+      "properties": {
+        "alias": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "$ref": "#/$defs/owner"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "artifact": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      }
+    },
+    "source_location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "line",
+        "column",
+        "byte_offset"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/formal"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "byte_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        }
+      }
+    },
+    "source_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/source_location"
+        },
+        "end": {
+          "$ref": "#/$defs/source_location"
+        }
+      }
+    },
+    "declaration_key": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "type"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "value"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "scalar"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "record",
+            "field"
+          ],
+          "properties": {
+            "kind": {
+              "const": "field"
+            },
+            "record": {
+              "type": "string",
+              "minLength": 1
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "enumeration",
+            "variant"
+          ],
+          "properties": {
+            "kind": {
+              "const": "variant"
+            },
+            "enumeration": {
+              "type": "string",
+              "minLength": 1
+            },
+            "variant": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "context",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "operation"
+            },
+            "context": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "source"
+      ],
+      "properties": {
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "owner",
+            "key"
+          ],
+          "properties": {
+            "owner": {
+              "$ref": "#/$defs/owner"
+            },
+            "key": {
+              "$ref": "#/$defs/declaration_key"
+            }
+          }
+        },
+        "source": {
+          "$ref": "#/$defs/source_span"
+        }
+      }
+    },
+    "execution_point": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "initialization"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "handler"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "operation"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pre"
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "operation"
+          ],
+          "properties": {
+            "kind": {
+              "const": "post"
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "expression": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9999
+    },
+    "occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expression",
+        "span",
+        "target"
+      ],
+      "properties": {
+        "expression": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/expression"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "declaration"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "formal"
+                },
+                "declaration": {
+                  "$ref": "#/$defs/declaration"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "binding"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "local"
+                },
+                "binding": {
+                  "$ref": "#/$defs/span"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "current",
+          "pre",
+          "post"
+        ]
+      },
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "universe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "record",
+        "universe",
+        "observations"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/owner"
+        },
+        "record": {
+          "type": "string",
+          "minLength": 1
+        },
+        "universe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observations": {
+          "$ref": "#/$defs/observations"
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "context",
+        "name"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/owner"
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "context_observations",
+        "universes",
+        "operation",
+        "validate_frame"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/declaration"
+        },
+        "context_observations": {
+          "$ref": "#/$defs/observations"
+        },
+        "universes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/universe"
+          },
+          "maxItems": 100000
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/operation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validate_frame": {
+          "type": "boolean"
+        }
+      }
+    },
+    "native_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "status",
+        "cost_model"
+      ],
+      "properties": {
+        "target": {
+          "const": "native-reference/1"
+        },
+        "status": {
+          "const": "available"
+        },
+        "cost_model": {
+          "const": "native-ref-cost/1-draft"
+        }
+      }
+    },
+    "ir_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "status",
+        "code",
+        "span"
+      ],
+      "properties": {
+        "target": {
+          "const": "quire.contract.executable-projection/v1"
+        },
+        "status": {
+          "const": "unlowered"
+        },
+        "code": {
+          "const": "unsupported_construct"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "owner",
+        "clause",
+        "kind",
+        "execution_point",
+        "span",
+        "expression",
+        "context",
+        "operation",
+        "occurrences",
+        "runtime",
+        "projections"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "$ref": "#/$defs/owner"
+        },
+        "clause": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "invariant",
+            "precondition",
+            "postcondition"
+          ]
+        },
+        "execution_point": {
+          "$ref": "#/$defs/execution_point"
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "expression": {
+          "$ref": "#/$defs/expression"
+        },
+        "context": {
+          "$ref": "#/$defs/declaration"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/declaration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "occurrences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/occurrence"
+          },
+          "maxItems": 100000
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtime"
+        },
+        "projections": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/native_projection"
+            },
+            {
+              "$ref": "#/$defs/ir_projection"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    }
+  }
+}

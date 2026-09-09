@@ -1,0 +1,9 @@
+{
+  "package_count": 138,
+  "jsonschema": {
+    "id": "registry+https://github.com/rust-lang/crates.io-index#jsonschema@0.17.1",
+    "features": [
+      "draft202012"
+    ]
+  }
+}

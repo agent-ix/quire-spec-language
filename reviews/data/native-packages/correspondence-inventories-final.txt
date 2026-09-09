@@ -1,0 +1,9 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 2 tests
+test correspondence::nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence ... ok
+test correspondence::skipped_nested_context_parameter_and_result_references_retain_transitive_universes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.04s

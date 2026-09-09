@@ -712,6 +712,7 @@ name = "quire-spec-language"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "jsonschema",
  "logos",
  "quire-contract-ir",
  "serde",

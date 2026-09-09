@@ -1,0 +1,25 @@
+   Compiling jsonschema v0.17.1
+   Compiling quire-contract-ir v0.1.0 (https://github.com/agent-ix/quire-contract-ir?rev=690bde7f2dc58662cf9ff0595c2c0e3b17107c6f#690bde7f)
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.06s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 2 tests
+test schema::structural_schema_accepts_fixed_and_real_producer_manifests ... FAILED
+test schema::structural_schema_rejects_missing_unknown_and_wrong_type_members ... ok
+
+failures:
+
+---- schema::structural_schema_accepts_fixed_and_real_producer_manifests stdout ----
+
+thread 'schema::structural_schema_accepts_fixed_and_real_producer_manifests' (707) panicked at tests/package_construction.rs:70:6:
+actual checker setup before package construction: Diagnostic { phase: Check, code: InvalidModelBinding, source: SourceIdentity { identity: "test:schema", revision: "1" }, path: "schema.native", span: LocatedSpan { start: Position { byte: 197, line: 4, column: 1 }, end: Position { byte: 231, line: 4, column: 35 } }, message: "authored execution point disagrees with the native clause or operation anchor", related: [], upstream: None, runtime: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    schema::structural_schema_accepts_fixed_and_real_producer_manifests
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `--test package_construction`

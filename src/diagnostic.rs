@@ -66,6 +66,12 @@ pub enum Code {
     UnknownEdition,
     /// Profile label is not admitted.
     UnknownProfile,
+    /// Native package encoding, structure or reconstructed claims are invalid.
+    InvalidPackage,
+    /// Native package format selection is not implemented.
+    UnknownWire,
+    /// Native package requires an unknown or unavailable feature.
+    UnknownRequiredFeature,
     /// A selected implementation budget prevented completion.
     ResourceExhausted,
     /// No supplied formal model matches a required package or alias.
@@ -115,6 +121,9 @@ impl Code {
             Self::UnknownLanguage => "unknown_language",
             Self::UnknownEdition => "unknown_edition",
             Self::UnknownProfile => "unknown_profile",
+            Self::InvalidPackage => "invalid_package",
+            Self::UnknownWire => "unknown_wire",
+            Self::UnknownRequiredFeature => "unknown_required_feature",
             Self::ResourceExhausted => "resource_exhausted",
             Self::MissingImport => "missing_import",
             Self::StaleDependency => "stale_dependency",
@@ -147,6 +156,9 @@ impl Code {
             Self::UnknownLanguage,
             Self::UnknownEdition,
             Self::UnknownProfile,
+            Self::InvalidPackage,
+            Self::UnknownWire,
+            Self::UnknownRequiredFeature,
             Self::ResourceExhausted,
             Self::MissingImport,
             Self::StaleDependency,

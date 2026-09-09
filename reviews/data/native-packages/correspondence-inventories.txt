@@ -1,0 +1,21 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0423]: expected value, found struct `ExprId`
+  --> tests/package_construction_cases/correspondence.rs:38:40
+   |
+38 |             expression: expression.map(ExprId),
+   |                                        ^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/package_construction_cases/correspondence.rs:50:30
+   |
+50 |             expression: Some(ExprId(expression)),
+   |                              ^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/syntax.rs:50:19
+   |
+50 | pub struct ExprId(pub(crate) usize);
+   |                   ^^^^^^^^^^^^^^^^ private field
+
+For more information about this error, try `rustc --explain E0423`.
+error: could not compile `quire-spec-language` (test "package_construction") due to 2 previous errors

@@ -1,0 +1,10 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.92s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 3 tests
+test static_changes::independently_changed_static_claims_have_distinct_preimages ... ok
+test static_changes::native_source_bytes_and_formal_document_identity_match_independent_changes ... ok
+test static_changes::used_context_unused_declarations_and_selected_roles_change_the_expected_identity ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.04s

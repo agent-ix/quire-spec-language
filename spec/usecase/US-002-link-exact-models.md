@@ -11,6 +11,12 @@ relationships:
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-006"
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-019
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-020
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-021
+    type: exercises
 ---
 # US-002: Link clauses to the intended domain model
 
@@ -47,3 +53,6 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 - [FR-004](../functional/FR-004-verify-source-maps.md)
 - [FR-005](../functional/FR-005-link-shared-model.md)
 - [FR-006](../functional/FR-006-check-defined-expressions.md)
+- [FR-019](../functional/FR-019-package-checked-native-clauses.md)
+- [FR-020](../functional/FR-020-read-and-rebind-native-packages.md)
+- [FR-021](../functional/FR-021-derive-native-package-identity.md)

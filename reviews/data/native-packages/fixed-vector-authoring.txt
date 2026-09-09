@@ -1,0 +1,18 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+warning: constant `FIXTURE` is never used
+  --> examples/../tests/support/native_rule_model.rs:20:11
+   |
+20 | pub const FIXTURE: &str = include_str!("../fixtures/native-rule-model.json");
+   |           ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `parts` is never used
+   --> examples/../tests/support/native_rule_model.rs:196:8
+    |
+196 | pub fn parts() -> Parts {
+    |        ^^^^^
+
+warning: `quire-spec-language` (example "author_native_package_vectors") generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.67s
+     Running `target/debug/examples/author_native_package_vectors /tmp/agent-a-package-vectors.Wu3ads/candidates`

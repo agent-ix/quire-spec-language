@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! TC-069: private fault controls for invariants public constructors prevent violating.
 
-#[path = "runtime_setup.rs"]
-mod setup;
 use crate::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ValidationLimits, ValueNode,
 };
+use crate::runtime_test_setup as setup;
 use crate::syntax::ClauseKind;
 use crate::{Code, Phase};
 use ix_trace_rs::trace;

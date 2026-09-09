@@ -1,0 +1,95 @@
+Task-016 fixed vectors and structural schema increment, 2026-09-09
+
+Baseline a8d1de51c8543d9eb704583e93629aea80872b18, branch
+agent-a/lc02-linked-packages, private LC02 issue #3 / draft PR #12.
+Reviewed contract: 41da6e5 / all-eight reviews 69588ad, with admitted-source
+correction 2c6b9b8 / all-eight supplements 1c3aa50. No meaning/API/acceptance
+change was made. The exact source commit is recorded by the follow-up review.
+
+Cargo phases ran serially with nice -n 10, --locked --offline --target-dir
+target -j 1, and tests used -- --test-threads=1. The existing cache was reused.
+All final gates below terminated with exit 0. No hosted workflow was dispatched.
+
+- cargo fmt --all -- --check: vector-schema-format.txt.
+- cargo clippy --all-targets --no-default-features -- -D warnings:
+  vector-schema-clippy.txt.
+- cargo test --no-default-features: vector-schema-regression.txt;
+  225 ordinary tests plus one compile-fail doctest passed. Three named private
+  audits were ignored in the normal lane and then passed separately below.
+  The increment adds one public fixed-vector test, two structural schema tests
+  and one private canonical-byte test. Public package tests total 19.
+- cargo build --no-default-features: vector-schema-build.txt; cached build,
+  not a clean-cache qualification.
+- RUSTDOCFLAGS=-D warnings cargo doc --no-default-features --no-deps:
+  vector-schema-rustdoc.txt.
+- cargo run --bin fixture-audit -- self-test:
+  vector-schema-audit-self-test.txt; six digest/content controls and duplicate
+  JSON key refusal passed.
+- cargo run --bin fixture-audit -- model-bytes tests/fixtures:
+  vector-schema-audit-model-bytes.txt; five historical digests/pin passed.
+- cargo test --test fixture_audit -- --ignored --test-threads=1:
+  vector-schema-private-audits.txt; three passed. QUIRE_STATE_CORE selected an
+  immutable temporary git archive of proposals/state-core at adopted standard
+  e897f810a7356d4ce8fd19026221ebda7b65596f. Temporary files were removed.
+
+Fixture author qualification:
+- cargo run --example author_native_package_vectors -- <fresh temp>/candidates:
+  vector-author-final.txt. Every candidate was compared byte-for-byte with its
+  frozen repository file using cmp; all 14 matched. The command never invoked
+  the production NativePackage constructor or compiler parser/linker/checker.
+- The built Rust author returned exit 1 for an existing output directory,
+  missing argument and extra argument; vector-author-existing-directory.txt,
+  vector-author-missing-argument.txt and vector-author-extra-argument.txt.
+  The extra-argument path was not created. The 14 candidate files still matched
+  after the refused calls. The temporary directory was removed.
+- Fixed data comes from the independent recipe after the initial producer;
+  fixed-vector-authoring.txt preserves that first invocation and its two
+  unused convenience-item warnings. The maintained example documents a narrow
+  lint expectation for importing only the generic portion of shared fixture
+  support; strict all-target Clippy passes without a global lint exemption.
+
+Dependency evidence:
+cargo metadata --offline added only the already locked jsonschema 0.17.1 root
+development edge. vector-schema-features.json records 138 packages and only
+draft202012 for jsonschema. No HTTP/file/CLI resolution features are enabled.
+The sorted name/version/license/source inventory was compared with
+docs/dependency-licenses.json using cmp and was identical. Grants are unchanged.
+
+Structural schema evidence:
+structural-schema-final.txt records the focused two-test pass. Draft 2020-12
+compilation, fixed and actual minimal/control/multiple/invariant/pre/post
+manifests pass; local/formal occurrences and operation records are included.
+Each encountered record rejects an added member, removal of every member and
+a wrong-type replacement of every member. Selected domain/selector/feature/
+revision/observation controls also refuse. A structurally valid false model
+artifact claim still passes the schema, explicitly leaving authority checks
+to the future verified reader. These are not reader refusal observations.
+
+Preserved failures and corrections:
+- structural-schema-tests.txt: pre/post fixtures incorrectly supplied Handler
+  bindings; the real checker refused InvalidModelBinding. Explicit Pre/Post
+  execution points corrected the setup without changing production checks.
+- structural-schema-result-setup.txt: the postcondition named the model's
+  result declaration directly; the real linker refused WrongSnapshot. The
+  fixture now uses the specified result keyword.
+- vector-schema-clippy-duplicate-setup.txt: private tests loaded the shared
+  native-model/located-JSON fixture modules twice. The existing runtime setup
+  is now compiled once at the test crate root and reused by both private lanes.
+  No production test bypass or duplicated decoder was introduced.
+
+Trace/document checks:
+quire coverage --scope . --json: vector-schema-coverage.json and stderr log;
+228/228 Rust candidates bound, 221/249 matrix rows backed, 20 previously
+recorded NFR metric references still untracked, 22 catalog diagnostics,
+six registry diagnostics and three historical unmatched IT-004 tags. No
+status lie is reported; package matrix rows remain Planned. This census is
+not full criterion qualification.
+quire validate --scope . 'spec/**/*.md' 'plan/Plan-007-native-packages/**/*.md'
+'reviews/26-09-09-native-package*.md' --summary:
+vector-schema-validation.txt; 234/234 documents grammar-clean at that selection.
+
+Saved logs preserve failed runs separately; only final blank lines are removed
+for git diff --check. Task-016 still needs lexical/parameter/result/transitive
+correspondence, static mutations, runtime-independent identity and type-role
+controls. Task-017/018, independent FS05 acceptance, executable lowering,
+backend/compiled ConfigVersion and Quire integration remain incomplete.

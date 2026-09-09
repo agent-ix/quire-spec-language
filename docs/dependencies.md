@@ -6,12 +6,38 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
+FR-020 selects the reviewed `unbounded_depth` feature on the existing serde_json
+pin. Only package intake disables the library recursion guard; its metered
+traversal enforces the 128-container hard ceiling. Other decoders retain their
+guards. No package version or grant changes.
+
 FR-017 enables the existing pinned serde_json 1.0.151 `raw_value` feature in
 the development dependency for source-aware Rust fixture decoding. Borrowed
 values retain their original occurrences; Serde continues to own JSON grammar.
 The feature adds no package or copied source and preserves serde_json's
 `MIT OR Apache-2.0` grant. Cargo.lock is unchanged. The authored adapter and
 regression fixtures retain AGPL-3.0-only.
+
+The initial FR-019/021 package producer uses existing serde/serde_json Formatter
+hooks and sha2 with unchanged versions, features and grants. Its production,
+fixture composition, assertions and hard-limit controls are Rust under
+AGPL-3.0-only. No new dependency or executable audit helper is introduced.
+The follow-up qualification selects the already locked MIT jsonschema 0.17.1
+as a direct development dependency with default features disabled and only
+draft202012 enabled. Cargo metadata confirms those resolved features: no HTTP,
+file or CLI resolver feature is enabled. The lock changes only the root
+development dependency edge; the 138-package/version/grant inventory remains
+unchanged. Tests compile the local Draft 2020-12 schema and exercise fixed and
+real producer manifests plus structural adverse controls. Semantic readback
+remains Task-017.
+
+The Rust `author_native_package_vectors` maintenance example produces candidate
+test data from the independently authored package recipe and upstream model
+admission. Its fixture generation is domain-specific; it does not duplicate a
+shared evidence engine or call the package encoder under test. It creates a
+fresh output directory and requires deliberate review/promotion. Provenance,
+fixed digests and the local command are recorded in
+tests/fixtures/native-package/README.md. This adds no non-Rust executable path.
 
 This is declared metadata, not a public distribution notice bundle or a
 vulnerability scan. Existing grants remain intact, including ICU Unicode-3.0

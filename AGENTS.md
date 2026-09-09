@@ -34,4 +34,8 @@ Owner directive (2026-09-07): first-party production and possible qualification 
 Before closure: record executable-path inventory, approved dispositions, Rust implementation/test/CI parity and failure-path evidence for the reviewed scope. Existing Quoin retention is the only accommodation recorded here; this block grants no new TypeScript approval.
 <!-- required-language-policy:end -->
 
-/specify and /spec-review are mandatory before implementation. Record the owner-selected review set, reviewed revision, actual review artifacts and finding dispositions. Preserve already-written work; pause further unreviewed implementation/merge and record the true sequence.
+Owner update (2026-09-09): reviews happen at PR readiness, not at intermediate
+implementation checkpoints. This supersedes earlier review-before-implementation
+timing instructions. Keep necessary specification and plan changes scoped; do not
+create a review or detailed log for every increment. Avoid premature optimization.
+Use the requested QUOIN workflows and actual code/Rust review for the PR gate.
