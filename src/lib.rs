@@ -5,6 +5,10 @@
 // Private unit tests reuse the public fixture producer without exposing a test bypass.
 #[cfg(test)]
 extern crate self as quire_spec_language;
+// Compile the public fixture setup once for private runtime and package tests.
+#[cfg(test)]
+#[path = "../tests/support/runtime_setup.rs"]
+mod runtime_test_setup;
 
 pub mod checking;
 pub mod diagnostic;

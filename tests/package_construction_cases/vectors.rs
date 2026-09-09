@@ -38,6 +38,7 @@ const MODEL_SUFFIX: &str = concat!(
 );
 
 pub(super) const CLAUSE: &str = "invariant Rule on M::Node at current { true }";
+pub(super) const SECOND_CLAUSE: &str = "invariant Second on M::Node at current { false }";
 pub(super) const OWNER: &str =
     r#"{"package":"example/package-model","requirement":"PackageModel","revision":1}"#;
 const AUTHOR: &str = r#"{"package":"example/package-rules","requirement":"Rule","revision":2}"#;
@@ -62,6 +63,10 @@ pub(super) fn source(model: &NativeModel) -> String {
     format!("{}{CLAUSE}\n", source_prefix(model))
 }
 
+pub(super) fn source_multiple(model: &NativeModel) -> String {
+    format!("{}{CLAUSE}\n{SECOND_CLAUSE}\n", source_prefix(model))
+}
+
 pub(super) struct Expected {
     pub canonical: String,
     pub artifact: String,
@@ -74,8 +79,31 @@ pub(super) fn expected(
     revision_json: &str,
     formal_revision: u64,
 ) -> Expected {
+    expected_inner(model, identity_json, revision_json, formal_revision, false)
+}
+
+pub(super) fn expected_multiple(
+    model: &NativeModel,
+    identity_json: &str,
+    revision_json: &str,
+    formal_revision: u64,
+) -> Expected {
+    expected_inner(model, identity_json, revision_json, formal_revision, true)
+}
+
+fn expected_inner(
+    model: &NativeModel,
+    identity_json: &str,
+    revision_json: &str,
+    formal_revision: u64,
+    multiple: bool,
+) -> Expected {
     let native_prefix = source_prefix(model);
-    let original = source(model);
+    let original = if multiple {
+        source_multiple(model)
+    } else {
+        source(model)
+    };
     let original_digest = format!("sha256:{:x}", Sha256::digest(original.as_bytes()));
     let record_start = MODEL_PREFIX.len();
     let record_end = record_start + MODEL_NODE.len();
@@ -91,17 +119,27 @@ pub(super) fn expected(
         record_end = record_end,
         record_end_column = record_end_column,
     );
-    let clause_start = native_prefix.len();
-    let clause_end = clause_start + CLAUSE.len();
-    let context_start = clause_start + "invariant Rule on M::".len();
-    let context_end = context_start + "Node".len();
-    let root_start = clause_start + "invariant Rule on M::Node at current { ".len();
-    let root_end = root_start + "true".len();
-    let clause = format!(
+    let mut clause_start = native_prefix.len();
+    let mut canonical_clauses = Vec::new();
+    let mut full_clauses = Vec::new();
+    for (expression, (text, name, id, literal)) in [
+        (CLAUSE, "Rule", "rule", "true"),
+        (SECOND_CLAUSE, "Second", "second", "false"),
+    ]
+    .into_iter()
+    .take(if multiple { 2 } else { 1 })
+    .enumerate()
+    {
+        let clause_end = clause_start + text.len();
+        let context_start = clause_start + format!("invariant {name} on M::").len();
+        let context_end = context_start + "Node".len();
+        let root_start = clause_start + format!("invariant {name} on M::Node at current {{ ").len();
+        let root_end = root_start + literal.len();
+        let clause = format!(
         concat!(
-            "{{\"name\":\"Rule\",\"owner\":{AUTHOR},\"clause\":\"rule\",\"kind\":\"invariant\",",
+            "{{\"name\":\"{name}\",\"owner\":{AUTHOR},\"clause\":\"{id}\",\"kind\":\"invariant\",",
             "\"execution_point\":{{\"kind\":\"handler\",\"name\":\"validate\"}},\"span\":{{\"start\":{clause_start},\"end\":{clause_end}}},",
-            "\"expression\":0,\"context\":{location},\"operation\":null,",
+            "\"expression\":{expression},\"context\":{location},\"operation\":null,",
             "\"occurrences\":[{{\"expression\":null,\"span\":{{\"start\":{context_start},\"end\":{context_end}}},\"target\":{{\"kind\":\"formal\",\"declaration\":{location}}}}}],",
             "\"runtime\":{{\"context\":{location},\"context_observations\":[\"current\"],",
             "\"universes\":[{{\"model\":{OWNER},\"record\":\"Node\",\"universe\":\"nodes\",\"observations\":[\"current\"]}}],",
@@ -109,12 +147,29 @@ pub(super) fn expected(
         ),
         AUTHOR = AUTHOR,
         OWNER = OWNER,
+        name = name,
+        id = id,
+        expression = expression,
         clause_start = clause_start,
         clause_end = clause_end,
         context_start = context_start,
         context_end = context_end,
         location = location,
-    );
+        );
+        let clause_prefix = clause.strip_suffix('}').unwrap();
+        full_clauses.push(format!(
+            concat!(
+                "{clause_prefix},\"projections\":[",
+                "{{\"target\":\"native-reference/1\",\"status\":\"available\",\"cost_model\":\"native-ref-cost/1-draft\"}},",
+                "{{\"target\":\"quire.contract.executable-projection/v1\",\"status\":\"unlowered\",\"code\":\"unsupported_construct\",\"span\":{{\"start\":{root_start},\"end\":{root_end}}}}}]}}"
+            ),
+            clause_prefix = clause_prefix,
+            root_start = root_start,
+            root_end = root_end,
+        ));
+        canonical_clauses.push(clause);
+        clause_start = clause_end + 1;
+    }
     // The complete admitted model is an input to the package under test. Only
     // that opaque input's JSON string quoting is delegated to existing Serde;
     // package fields/order, locations and control-label escaping are literals.
@@ -138,23 +193,18 @@ pub(super) fn expected(
         model_digest = model.digest(),
         model_string = model_string,
     );
-    let canonical = format!("{prefix}{clause}]}}");
+    let canonical = format!("{prefix}{}]}}", canonical_clauses.join(","));
     let mut hash = Sha256::new();
     hash.update(b"quire-spec-language\0quire.native.bound-package/v1\0linked-package\0");
     hash.update(canonical.as_bytes());
     let digest = format!("{:x}", hash.finalize());
-    let clause_prefix = clause.strip_suffix('}').unwrap();
     let artifact = format!(
         concat!(
-            "{prefix}{clause_prefix},\"projections\":[",
-            "{{\"target\":\"native-reference/1\",\"status\":\"available\",\"cost_model\":\"native-ref-cost/1-draft\"}},",
-            "{{\"target\":\"quire.contract.executable-projection/v1\",\"status\":\"unlowered\",\"code\":\"unsupported_construct\",\"span\":{{\"start\":{root_start},\"end\":{root_end}}}}}]}}],",
+            "{prefix}{clauses}],",
             "\"canonical_identity\":{{\"domain\":\"quire.native.bound-package\",\"version\":\"v1\",\"algorithm\":\"sha256\",\"digest\":\"{digest}\"}}}}"
         ),
         prefix = prefix,
-        clause_prefix = clause_prefix,
-        root_start = root_start,
-        root_end = root_end,
+        clauses = full_clauses.join(","),
         digest = digest,
     );
     Expected {

@@ -1,0 +1,9 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 2 tests
+test schema::structural_schema_accepts_fixed_and_real_producer_manifests ... ok
+test schema::structural_schema_rejects_missing_unknown_and_wrong_type_members ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.33s

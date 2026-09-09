@@ -1,0 +1,23 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 2 tests
+test schema::structural_schema_accepts_fixed_and_real_producer_manifests ... FAILED
+test schema::structural_schema_rejects_missing_unknown_and_wrong_type_members ... ok
+
+failures:
+
+---- schema::structural_schema_accepts_fixed_and_real_producer_manifests stdout ----
+
+thread 'schema::structural_schema_accepts_fixed_and_real_producer_manifests' (236) panicked at tests/package_construction.rs:64:10:
+actual native linker setup before package construction: Diagnostic { phase: Link, code: WrongSnapshot, source: SourceIdentity { identity: "test:schema", revision: "1" }, path: "schema.native", span: LocatedSpan { start: Position { byte: 226, line: 4, column: 30 }, end: Position { byte: 237, line: 4, column: 41 } }, message: "operation results are accessed through the result keyword", related: [], upstream: None, runtime: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    schema::structural_schema_accepts_fixed_and_real_producer_manifests
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.26s
+
+error: test failed, to rerun pass `--test package_construction`

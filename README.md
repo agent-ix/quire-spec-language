@@ -60,9 +60,10 @@ validation establishes input conditions before predicate execution.
 models, authored clauses, resolutions, runtime obligations and projection
 dispositions with separate byte and native static identities. Serde owns JSON
 encoding, with independently measured derivation/canonical/output passes.
-Task-016 remains in progress: its initial 16 public tests and three private
-limit controls pass, while complete vector/schema qualification and verified
-readback remain under [Plan-007](plan/Plan-007-native-packages/index.md).
+Task-016 remains in progress: fixed byte vectors and structural schema controls
+now supplement its initial producer tests. Remaining correspondence/identity
+qualification and verified readback are tracked under
+[Plan-007](plan/Plan-007-native-packages/index.md).
 See [the package contract](docs/native-linked-packages.md).
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
