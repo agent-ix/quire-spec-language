@@ -17,6 +17,7 @@ The changed requirement-bearing scope has four singular, named-subject obligatio
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-001 | low | Review-format repair: the first empty Findings table failed the installed catalog's minimum-row rule. This explicit clean-scope record resolves the artifact error; engine and manual checks require no EARS change to the four obligations. | FR-007; FR-008; FR-018; NFR-006 |
 
 
 ## Engine and semantic checks
