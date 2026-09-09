@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-028, FR-029: JSON views of native outcomes and actual provenance.
+//! FR-026, FR-028, FR-029, FR-031: JSON views of native outcomes and provenance.
 
 use super::{wire, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
@@ -15,12 +15,12 @@ fn identity(value: &SourceIdentity) -> Value {
     json!({"identity":value.identity,"revision":value.revision})
 }
 
-fn source(value: &FormalSource) -> Value {
+pub(super) fn source(value: &FormalSource) -> Value {
     json!({"identity":value.source().identity().identity,"revision":value.source().identity().revision,
         "digest":value.source().digest().to_string(),"path":value.source().path(),"formal":value.identity()})
 }
 
-fn span(value: LocatedSpan) -> Value {
+pub(super) fn span(value: LocatedSpan) -> Value {
     json!({"start":{"byte":value.start.byte,"line":value.start.line,"column":value.start.column},
         "end":{"byte":value.end.byte,"line":value.end.line,"column":value.end.column}})
 }
@@ -47,7 +47,7 @@ fn runtime_path(value: &RuntimePathSegment) -> Value {
     }
 }
 
-fn diagnostic(value: &Diagnostic) -> Value {
+pub(super) fn diagnostic(value: &Diagnostic) -> Value {
     json!({"phase":value.phase.as_str(),"code":value.code.as_str(),"message":value.message,
         "source":identity(&value.source),"path":value.path,"span":span(value.span),
         "upstream":value.upstream,
@@ -58,6 +58,22 @@ fn diagnostic(value: &Diagnostic) -> Value {
 
 pub(super) fn error(error: &RunError) -> Value {
     let (stage, code, details) = match &error.cause {
+        #[cfg(feature = "quire-extraction")]
+        RunCause::ExtractionMode(_) => (
+            "extraction-selection",
+            "unsupported-extraction-mode",
+            Value::Null,
+        ),
+        #[cfg(feature = "quire-extraction")]
+        RunCause::QuireContext(failures) => {
+            ("quire-context", "invalid-quire-context", json!(failures))
+        }
+        #[cfg(feature = "quire-extraction")]
+        RunCause::Quire(error) => (
+            "quire",
+            error.code().as_str(),
+            super::extraction::error(error),
+        ),
         RunCause::Io { path, error } => (
             "file",
             "io-error",
