@@ -2,7 +2,7 @@
 id: Task-009
 title: "Implement native type constraints and guarded proofs"
 type: Task
-status: pending
+status: in_progress
 track: A
 priority: P1
 relationships:
@@ -66,3 +66,8 @@ All branches are typed; only potentially evaluated operations need definedness.
 An initializer cannot borrow later guards. Proof carriers never invent native
 object/enum identity facts.
 
+Started after Task-008 completion at ac36598. The initial seven public-API tests
+retain all five TC-025–029 reference/operation judgments and add signed arithmetic
+and nominal/operator controls. Their recorded preimplementation run fails on the
+missing checking API and check-phase diagnostic vocabulary; no checker judgment
+has executed yet. Additional qualification and implementation remain in progress.
