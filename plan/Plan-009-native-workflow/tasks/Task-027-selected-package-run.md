@@ -2,7 +2,7 @@
 id: Task-027
 title: "Execute selected native package artifacts locally"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-028
     type: references
