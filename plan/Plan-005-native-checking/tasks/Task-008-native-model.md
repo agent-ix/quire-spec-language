@@ -6,8 +6,6 @@ status: in_progress
 track: A
 priority: P1
 relationships:
-  - target: ix://agent-ix/quire-spec-language/Task-011
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-015
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-005

@@ -6,6 +6,13 @@ The library also links exact imports and scoped names against supplied Contract
 IR formal environments. Successful linking does not establish type correctness,
 executable projection, or healthy/violating state evaluation.
 
+The native model admission API now checks explicit scalar, object and operation
+roles against supplied IR declarations and exact source coordinates, then emits
+a bounded deterministic model artifact. Its source-derived Rust fixture uses
+original parsed JSON occurrences. Native model linking and expression checking
+remain in progress under [Plan-005](plan/Plan-005-native-checking/index.md);
+admitting a model alone does not qualify those later stages.
+
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
 which may contain replacement characters; exact labels and the actual byte

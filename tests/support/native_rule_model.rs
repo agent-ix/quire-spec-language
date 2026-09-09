@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! IT-005: source-derived, domain-specific Rust qualification producer.
+//! IT-005 / FR-017: source-aware fixture decoding and typed native IR lowering.
 
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
@@ -9,43 +9,76 @@ use quire_spec_language::native_model::{
     Frame, ModelLimits, NativeModel, NativeRoles, ObjectRole, OperationRole, ScalarKind,
     ScalarRole, ScalarSite, Unit,
 };
-use quire_spec_language::{Source, SourceIdentity, Span};
-use serde::Deserialize;
+use quire_spec_language::{Diagnostic, Source, SourceIdentity};
+use serde::{de::DeserializeOwned, Deserialize};
+use serde_json::value::RawValue;
 
+mod located_json;
+use located_json::Located;
+
+/// Separately authored, licensed native rule-model input.
 pub const FIXTURE: &str = include_str!("../fixtures/native-rule-model.json");
+const MAX_DECLARATIONS: usize = 10_000;
+const MAX_TYPE_DEPTH: usize = 64;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RuleModel {
+struct RuleModel<'a> {
     license: String,
     package: String,
     requirement: String,
     revision: u64,
-    scalars: Vec<Scalar>,
-    records: Vec<Record>,
-    values: Vec<Value>,
-    objects: Vec<Object>,
-    operations: Vec<Operation>,
+    #[serde(borrow)]
+    scalars: Vec<&'a RawValue>,
+    #[serde(borrow)]
+    records: Vec<&'a RawValue>,
+    #[serde(borrow)]
+    values: Vec<&'a RawValue>,
+    #[serde(borrow)]
+    objects: Vec<&'a RawValue>,
+    #[serde(borrow)]
+    operations: Vec<&'a RawValue>,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Scalar {
-    Integer { name: String, minimum: i64, maximum: i64, unit: Option<String> },
-    Text { name: String, max_scalars: u32 },
+    Integer {
+        name: String,
+        minimum: i64,
+        maximum: i64,
+        unit: Option<String>,
+    },
+    Text {
+        name: String,
+        max_scalars: u32,
+    },
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Record { name: String, fields: Vec<Field> }
+struct Record<'a> {
+    name: String,
+    #[serde(borrow)]
+    fields: Vec<&'a RawValue>,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Field { name: String, #[serde(rename = "type")] ty: Type }
+struct Field {
+    name: String,
+    #[serde(rename = "type")]
+    ty: Type,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Value { name: String, kind: ir::ValueDeclarationKind, #[serde(rename = "type")] ty: Type }
+struct Value {
+    name: String,
+    kind: ir::ValueDeclarationKind,
+    #[serde(rename = "type")]
+    ty: Type,
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -59,107 +92,426 @@ enum Type {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Object { record: String, reference: String, identity_field: String, universe: String }
+struct Object {
+    record: String,
+    reference: String,
+    identity_field: String,
+    universe: String,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Operation {
-    name: String, context: String, anchor: String, parameters: Vec<String>,
-    result: Option<String>, frame: FrameData,
+    name: String,
+    context: String,
+    anchor: String,
+    parameters: Vec<String>,
+    result: Option<String>,
+    frame: FrameData,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FrameData { fields: Vec<(String, String)>, created: Vec<String>, deleted: Vec<String> }
+struct FrameData {
+    fields: Vec<(String, String)>,
+    created: Vec<String>,
+    deleted: Vec<String>,
+}
 
-pub fn symbol(name: &str) -> ir::SymbolName { ir::SymbolName::new(name).unwrap() }
+/// Fixture setup failure, distinct from a native model or checker judgment.
+#[derive(Debug, thiserror::Error)]
+pub enum FixtureError {
+    /// Original source could not be admitted within its input contract.
+    #[error("fixture source intake failed: {0}")]
+    Source(#[from] Box<Diagnostic>),
+    /// Typed JSON decoding or occurrence correspondence failed.
+    #[error("fixture decoding failed: {0}")]
+    Decode(#[from] located_json::Error),
+    /// Existing IR constructors rejected the supplied declarations.
+    #[error("formal fixture construction failed: {0:?}")]
+    Formal(Vec<ir::Diagnostic>),
+    /// Fixture-specific identity or bounded-construction rules failed.
+    #[error("invalid rule-model fixture: {0}")]
+    Invalid(&'static str),
+}
 
+impl From<ir::Diagnostic> for FixtureError {
+    fn from(error: ir::Diagnostic) -> Self {
+        Self::Formal(vec![error])
+    }
+}
+
+impl From<Vec<ir::Diagnostic>> for FixtureError {
+    fn from(errors: Vec<ir::Diagnostic>) -> Self {
+        Self::Formal(errors)
+    }
+}
+
+type Result<T> = std::result::Result<T, FixtureError>;
+
+/// Construct a known test symbol; fallible producer input uses try_symbol.
+pub fn symbol(name: &str) -> ir::SymbolName {
+    try_symbol(name).expect("valid test symbol")
+}
+
+fn try_symbol(name: &str) -> Result<ir::SymbolName> {
+    Ok(ir::SymbolName::new(name)?)
+}
+
+/// Independently produced input to actual native model admission.
 pub struct Parts {
+    /// Immutable original fixture and explicit formal source identity.
     pub source: FormalSource,
+    /// Declarations produced through the existing IR constructors.
     pub environment: ir::DeclarationEnvironment,
+    /// Explicit nominal, object and operation roles from the same input.
     pub roles: NativeRoles,
 }
 
 impl Parts {
+    /// Admit known valid fixture setup; adverse model tests call the API directly.
     pub fn model(self) -> NativeModel {
-        NativeModel::new(self.source, self.environment, self.roles, ModelLimits::default()).unwrap()
+        NativeModel::new(
+            self.source,
+            self.environment,
+            self.roles,
+            ModelLimits::default(),
+        )
+        .expect("qualified rule-model setup")
     }
 }
 
-fn locus(source: &FormalSource, needle: &str) -> ir::SourceSpan {
-    let start = source.source().text().find(needle).expect("fixture source locus");
-    source.to_ir(source.source(), Span { start, end: start + needle.len() }).unwrap()
-}
-
-fn named_locus(source: &FormalSource, name: &str) -> ir::SourceSpan {
-    locus(source, &format!("\"name\": \"{name}\""))
-}
-
-fn formal_type(ty: &Type, types: &BTreeMap<String, ir::ValueType>, depth: usize) -> (ir::ValueType, Option<String>) {
-    assert!(depth < 64, "qualification input type depth");
-    match ty {
-        Type::Boolean => (ir::ValueType::Boolean, None),
-        Type::Scalar { name } => (types.get(name).expect("authored scalar").clone(), Some(name.clone())),
-        Type::Record { name } => (ir::ValueType::Record { name: symbol(name) }, None),
-        Type::Option { value } => {
-            let (ty, scalar) = formal_type(value, types, depth + 1);
-            (ir::ValueType::option(ty), scalar)
-        }
-        Type::Sequence { maximum, value } => {
-            let (ty, scalar) = formal_type(value, types, depth + 1);
-            (ir::ValueType::collection(ir::CollectionType::new(ty, *maximum).unwrap()), scalar)
-        }
-    }
-}
-
+/// Read the separately authored fixture; setup failures cannot become judgments.
 pub fn parts() -> Parts {
     from_text(FIXTURE, "native-rule-model.json", "draft:1")
+        .expect("valid source-derived rule-model fixture")
 }
 
-pub fn from_text(text: &str, path: &str, revision: &str) -> Parts {
-    let native = Source::read(SourceIdentity { identity: "test:rule-model".into(), revision: revision.into() }, path, text.as_bytes(), 1_048_576).unwrap();
-    let source = FormalSource::new(native, ir::SourceIdentity::new(ir::SourceDocumentId::new("RuleModelSource").unwrap(), ir::SourceRevision::new(1).unwrap()));
-    let input: RuleModel = serde_json::from_str(source.source().text()).unwrap();
-    assert_eq!(input.license, "AGPL-3.0-only");
-    assert!(input.scalars.len() + input.records.len() + input.values.len() + input.objects.len() + input.operations.len() <= 10_000);
-    let mut types = BTreeMap::new();
-    let mut scalars = BTreeMap::new();
-    for scalar in input.scalars {
-        let (name, kind, ty) = match scalar {
-            Scalar::Integer { name, minimum, maximum, unit } => (name, ScalarKind::Integer { unit: unit.map_or(Unit::Dimensionless, |name| Unit::Named(symbol(&name))) }, ir::ValueType::integer(ir::IntegerType::new(ir::IntegerDomain::Signed, minimum, maximum, ir::OverflowPolicy::Reject).unwrap())),
-            Scalar::Text { name, max_scalars } => (name, ScalarKind::Text { max_scalars }, ir::ValueType::Text),
-        };
-        let role = ScalarRole { name: symbol(&name), source: named_locus(&source, &name), kind, sites: Vec::new() };
-        assert!(types.insert(name.clone(), ty).is_none());
-        assert!(scalars.insert(name, role).is_none());
+/// Orchestrate source intake, occurrence-aware decoding and typed lowering.
+pub fn from_text(text: &str, path: &str, revision: &str) -> Result<Parts> {
+    let source = bind_source(text, path, revision)?;
+    let input = decode_model(&source)?;
+    let (environment, roles) = lower_model(input)?;
+    Ok(Parts {
+        source,
+        environment,
+        roles,
+    })
+}
+
+fn bind_source(text: &str, path: &str, revision: &str) -> Result<FormalSource> {
+    let native = Source::read(
+        SourceIdentity {
+            identity: "test:rule-model".into(),
+            revision: revision.into(),
+        },
+        path,
+        text.as_bytes(),
+        quire_spec_language::source::MAX_SOURCE_BYTES,
+    )?;
+    let formal = ir::SourceIdentity::new(
+        ir::SourceDocumentId::new("RuleModelSource")?,
+        ir::SourceRevision::new(1)?,
+    );
+    Ok(FormalSource::new(native, formal))
+}
+
+struct DecodedModel {
+    package: String,
+    requirement: String,
+    revision: u64,
+    scalars: Vec<Located<Scalar>>,
+    records: Vec<Located<DecodedRecord>>,
+    values: Vec<Located<Value>>,
+    objects: Vec<Located<Object>>,
+    operations: Vec<Located<Operation>>,
+}
+
+struct DecodedRecord {
+    name: String,
+    fields: Vec<Located<Field>>,
+}
+
+fn decode_items<T: DeserializeOwned>(
+    source: &FormalSource,
+    items: Vec<&RawValue>,
+) -> Result<Vec<Located<T>>> {
+    items
+        .into_iter()
+        .map(|raw| located_json::decode(source, raw).map_err(FixtureError::from))
+        .collect()
+}
+
+fn decode_model(source: &FormalSource) -> Result<DecodedModel> {
+    let input: RuleModel<'_> = located_json::read(source)?;
+    if input.license != "AGPL-3.0-only" {
+        return Err(FixtureError::Invalid("unexpected fixture license"));
     }
-    let mut declarations = Vec::new();
-    for record in input.records {
-        assert!(record.fields.len() <= 10_000);
-        let mut fields = Vec::new();
-        for field in record.fields {
-            let (ty, scalar) = formal_type(&field.ty, &types, 0);
-            if let Some(scalar) = scalar { scalars.get_mut(&scalar).unwrap().sites.push(ScalarSite::Field { record: symbol(&record.name), field: symbol(&field.name) }); }
-            fields.push(ir::RecordFieldDeclaration::new(symbol(&field.name), ty, named_locus(&source, &field.name)));
+    let mut remaining = MAX_DECLARATIONS;
+    for count in [
+        input.scalars.len(),
+        input.records.len(),
+        input.values.len(),
+        input.objects.len(),
+        input.operations.len(),
+    ] {
+        remaining = remaining
+            .checked_sub(count)
+            .ok_or(FixtureError::Invalid("declaration budget exhausted"))?;
+    }
+    let mut records = Vec::new();
+    for raw in input.records {
+        let Located {
+            value: record,
+            source: span,
+        } = located_json::decode::<Record<'_>>(source, raw)?;
+        remaining = remaining
+            .checked_sub(record.fields.len())
+            .ok_or(FixtureError::Invalid("field budget exhausted"))?;
+        records.push(Located {
+            value: DecodedRecord {
+                name: record.name,
+                fields: decode_items(source, record.fields)?,
+            },
+            source: span,
+        });
+    }
+    Ok(DecodedModel {
+        package: input.package,
+        requirement: input.requirement,
+        revision: input.revision,
+        scalars: decode_items(source, input.scalars)?,
+        records,
+        values: decode_items(source, input.values)?,
+        objects: decode_items(source, input.objects)?,
+        operations: decode_items(source, input.operations)?,
+    })
+}
+
+struct ScalarBinding {
+    representation: ir::ValueType,
+    role: ScalarRole,
+}
+
+/// One owner for a scalar's representation and all its native declaration sites.
+struct ScalarTable(BTreeMap<ir::SymbolName, ScalarBinding>);
+
+impl ScalarTable {
+    fn new(declarations: Vec<Located<Scalar>>) -> Result<Self> {
+        let mut bindings = BTreeMap::new();
+        for declaration in declarations {
+            let binding = lower_scalar(declaration)?;
+            match bindings.entry(binding.role.name.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(binding);
+                }
+                Entry::Occupied(_) => {
+                    return Err(FixtureError::Invalid("duplicate scalar identity"))
+                }
+            }
         }
-        declarations.push(ir::TypeDeclaration::Record { declaration: ir::RecordDeclaration::new(symbol(&record.name), named_locus(&source, &record.name), fields).unwrap() });
+        Ok(Self(bindings))
     }
-    let mut values = Vec::new();
-    for value in input.values {
-        let (ty, scalar) = formal_type(&value.ty, &types, 0);
-        if let Some(scalar) = scalar { scalars.get_mut(&scalar).unwrap().sites.push(ScalarSite::Value { name: symbol(&value.name) }); }
-        values.push(ir::ValueDeclaration::new(symbol(&value.name), value.kind, ty, named_locus(&source, &value.name)));
+
+    fn lower_type(&mut self, ty: Type, site: &ScalarSite, depth: usize) -> Result<ir::ValueType> {
+        if depth >= MAX_TYPE_DEPTH {
+            return Err(FixtureError::Invalid("fixture type depth exhausted"));
+        }
+        match ty {
+            Type::Boolean => Ok(ir::ValueType::Boolean),
+            Type::Scalar { name } => {
+                let name = try_symbol(&name)?;
+                let binding = self
+                    .0
+                    .get_mut(&name)
+                    .ok_or(FixtureError::Invalid("unknown scalar identity"))?;
+                binding.role.sites.push(site.clone());
+                Ok(binding.representation.clone())
+            }
+            Type::Record { name } => Ok(ir::ValueType::Record {
+                name: try_symbol(&name)?,
+            }),
+            Type::Option { value } => Ok(ir::ValueType::option(self.lower_type(
+                *value,
+                site,
+                depth + 1,
+            )?)),
+            Type::Sequence { maximum, value } => {
+                let element = self.lower_type(*value, site, depth + 1)?;
+                Ok(ir::ValueType::collection(ir::CollectionType::new(
+                    element, maximum,
+                )?))
+            }
+        }
     }
-    let objects = input.objects.into_iter().map(|object| ObjectRole {
-        source: locus(&source, &format!("\"record\": \"{}\", \"reference\": \"{}\"", object.record, object.reference)),
-        record: symbol(&object.record), reference: symbol(&object.reference), identity_field: symbol(&object.identity_field), universe: symbol(&object.universe),
-    }).collect();
-    let operations = input.operations.into_iter().map(|operation| OperationRole {
-        source: named_locus(&source, &operation.name), context: symbol(&operation.context), name: symbol(&operation.name), anchor: ir::AnchorName::new(operation.anchor).unwrap(),
-        parameters: operation.parameters.iter().map(|name| symbol(name)).collect(), result: operation.result.map(|name| symbol(&name)),
-        frame: Frame { fields: operation.frame.fields.into_iter().map(|(record, field)| (symbol(&record), symbol(&field))).collect(), created: operation.frame.created.iter().map(|name| symbol(name)).collect(), deleted: operation.frame.deleted.iter().map(|name| symbol(name)).collect() },
-    }).collect();
-    let owner = ir::RequirementRef::new(ir::PackageId::new(input.package).unwrap(), ir::RequirementId::new(input.requirement).unwrap(), ir::RequirementRevision::new(input.revision).unwrap());
-    let environment = ir::DeclarationEnvironment::new(owner, declarations, values, Vec::new()).unwrap();
-    Parts { source, environment, roles: NativeRoles { scalars: scalars.into_values().collect(), objects, operations } }
+
+    fn into_roles(self) -> Vec<ScalarRole> {
+        self.0.into_values().map(|binding| binding.role).collect()
+    }
+}
+
+fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
+    let (name, kind, representation) = match declaration.value {
+        Scalar::Integer {
+            name,
+            minimum,
+            maximum,
+            unit,
+        } => {
+            let unit = unit
+                .as_deref()
+                .map(try_symbol)
+                .transpose()?
+                .map_or(Unit::Dimensionless, Unit::Named);
+            let integer = ir::IntegerType::new(
+                ir::IntegerDomain::Signed,
+                minimum,
+                maximum,
+                ir::OverflowPolicy::Reject,
+            )?;
+            (
+                name,
+                ScalarKind::Integer { unit },
+                ir::ValueType::integer(integer),
+            )
+        }
+        Scalar::Text { name, max_scalars } => {
+            (name, ScalarKind::Text { max_scalars }, ir::ValueType::Text)
+        }
+    };
+    let role = ScalarRole {
+        name: try_symbol(&name)?,
+        source: declaration.source,
+        kind,
+        sites: Vec::new(),
+    };
+    Ok(ScalarBinding {
+        representation,
+        role,
+    })
+}
+
+fn lower_field(
+    declaration: Located<Field>,
+    record: &ir::SymbolName,
+    scalars: &mut ScalarTable,
+) -> Result<ir::RecordFieldDeclaration> {
+    let name = try_symbol(&declaration.value.name)?;
+    let site = ScalarSite::Field {
+        record: record.clone(),
+        field: name.clone(),
+    };
+    let ty = scalars.lower_type(declaration.value.ty, &site, 0)?;
+    Ok(ir::RecordFieldDeclaration::new(
+        name,
+        ty,
+        declaration.source,
+    ))
+}
+
+fn lower_record(
+    declaration: Located<DecodedRecord>,
+    scalars: &mut ScalarTable,
+) -> Result<ir::TypeDeclaration> {
+    let name = try_symbol(&declaration.value.name)?;
+    let fields = declaration
+        .value
+        .fields
+        .into_iter()
+        .map(|field| lower_field(field, &name, scalars))
+        .collect::<Result<Vec<_>>>()?;
+    let record = ir::RecordDeclaration::new(name, declaration.source, fields)?;
+    Ok(ir::TypeDeclaration::Record {
+        declaration: record,
+    })
+}
+
+fn lower_value(
+    declaration: Located<Value>,
+    scalars: &mut ScalarTable,
+) -> Result<ir::ValueDeclaration> {
+    let name = try_symbol(&declaration.value.name)?;
+    let ty = scalars.lower_type(
+        declaration.value.ty,
+        &ScalarSite::Value { name: name.clone() },
+        0,
+    )?;
+    Ok(ir::ValueDeclaration::new(
+        name,
+        declaration.value.kind,
+        ty,
+        declaration.source,
+    ))
+}
+
+fn lower_object(declaration: Located<Object>) -> Result<ObjectRole> {
+    let object = declaration.value;
+    Ok(ObjectRole {
+        record: try_symbol(&object.record)?,
+        reference: try_symbol(&object.reference)?,
+        identity_field: try_symbol(&object.identity_field)?,
+        universe: try_symbol(&object.universe)?,
+        source: declaration.source,
+    })
+}
+
+fn symbols(names: &[String]) -> Result<Vec<ir::SymbolName>> {
+    names.iter().map(|name| try_symbol(name)).collect()
+}
+
+fn lower_operation(declaration: Located<Operation>) -> Result<OperationRole> {
+    let operation = declaration.value;
+    let frame = Frame {
+        fields: operation
+            .frame
+            .fields
+            .into_iter()
+            .map(|(record, field)| Ok((try_symbol(&record)?, try_symbol(&field)?)))
+            .collect::<Result<Vec<_>>>()?,
+        created: symbols(&operation.frame.created)?,
+        deleted: symbols(&operation.frame.deleted)?,
+    };
+    Ok(OperationRole {
+        context: try_symbol(&operation.context)?,
+        name: try_symbol(&operation.name)?,
+        anchor: ir::AnchorName::new(operation.anchor)?,
+        source: declaration.source,
+        parameters: symbols(&operation.parameters)?,
+        result: operation.result.as_deref().map(try_symbol).transpose()?,
+        frame,
+    })
+}
+
+fn lower_model(input: DecodedModel) -> Result<(ir::DeclarationEnvironment, NativeRoles)> {
+    let owner = ir::RequirementRef::new(
+        ir::PackageId::new(input.package)?,
+        ir::RequirementId::new(input.requirement)?,
+        ir::RequirementRevision::new(input.revision)?,
+    );
+    let mut scalars = ScalarTable::new(input.scalars)?;
+    let records = input
+        .records
+        .into_iter()
+        .map(|record| lower_record(record, &mut scalars))
+        .collect::<Result<Vec<_>>>()?;
+    let values = input
+        .values
+        .into_iter()
+        .map(|value| lower_value(value, &mut scalars))
+        .collect::<Result<Vec<_>>>()?;
+    let roles = NativeRoles {
+        scalars: scalars.into_roles(),
+        objects: input
+            .objects
+            .into_iter()
+            .map(lower_object)
+            .collect::<Result<_>>()?,
+        operations: input
+            .operations
+            .into_iter()
+            .map(lower_operation)
+            .collect::<Result<_>>()?,
+    };
+    let environment = ir::DeclarationEnvironment::new(owner, records, values, Vec::new())?;
+    Ok((environment, roles))
 }

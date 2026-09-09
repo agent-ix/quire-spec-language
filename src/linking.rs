@@ -81,6 +81,15 @@ pub enum DeclarationKey {
         /// Selected variant.
         variant: SymbolName,
     },
+    /// Explicit native nominal scalar role.
+    Scalar(SymbolName),
+    /// Explicit native operation under its object context.
+    Operation {
+        /// Object context record.
+        context: SymbolName,
+        /// Operation name.
+        name: SymbolName,
+    },
 }
 
 /// Complete owner-qualified identity of a formal declaration.
@@ -244,21 +253,45 @@ pub fn link(
     limits: LinkLimits,
 ) -> Result<LinkedPackage<'_>, Box<Diagnostic>> {
     let limits = limits.bounded();
+    preflight(&unit, environments.len(), limits)?;
+    let catalog = formal_catalog(&unit, environments, limits)?;
+    let models = select_models(&unit, &catalog)?;
+    let clauses = resolve_clauses(&unit, &models, limits)?;
+    Ok(LinkedPackage {
+        unit,
+        models,
+        clauses,
+    })
+}
+
+fn preflight(
+    unit: &ParsedUnit,
+    model_count: usize,
+    limits: LinkLimits,
+) -> Result<(), Box<Diagnostic>> {
     for (count, limit, dimension) in [
-        (environments.len(), limits.models, "formal environments"),
+        (model_count, limits.models, "formal environments"),
         (unit.imports().len(), limits.imports, "native imports"),
         (unit.clauses().len(), limits.clauses, "native clauses"),
         (unit.expressions().len(), limits.nodes, "native nodes"),
     ] {
         if count > limit {
             return Err(failure(
-                &unit,
+                unit,
                 Code::ResourceExhausted,
                 Span { start: 0, end: 0 },
                 format!("{dimension} limit exceeded"),
             ));
         }
     }
+    Ok(())
+}
+
+fn formal_catalog<'a>(
+    unit: &ParsedUnit,
+    environments: &'a [DeclarationEnvironment],
+    limits: LinkLimits,
+) -> Result<Vec<LinkedModel<'a>>, Box<Diagnostic>> {
     let mut catalog = Vec::with_capacity(environments.len());
     let mut emitted = 0;
     for environment in environments {
@@ -276,7 +309,7 @@ pub fn link(
                     Code::InvalidModelBinding
                 };
                 let mut error = failure(
-                    &unit,
+                    unit,
                     code,
                     Span { start: 0, end: 0 },
                     "formal declaration canonicalization failed",
@@ -290,11 +323,18 @@ pub fn link(
             digest: ByteDigest::of(output.bytes().as_slice()),
         });
     }
+    Ok(catalog)
+}
+
+fn select_models<'a>(
+    unit: &ParsedUnit,
+    catalog: &[LinkedModel<'a>],
+) -> Result<Vec<LinkedModel<'a>>, Box<Diagnostic>> {
     let mut models = Vec::with_capacity(unit.imports().len());
     for import in unit.imports() {
         let expected: ByteDigest = import.digest.value.parse().map_err(|_| {
             failure(
-                &unit,
+                unit,
                 Code::InvalidModelBinding,
                 import.digest.span,
                 "expected a sha256 byte digest",
@@ -306,7 +346,7 @@ pub fn link(
             .collect();
         if same_package.is_empty() {
             return Err(failure(
-                &unit,
+                unit,
                 Code::MissingImport,
                 import.package.span,
                 "selected package is absent",
@@ -322,7 +362,7 @@ pub fn link(
         match exact.as_slice() {
             [] => {
                 return Err(failure(
-                    &unit,
+                    unit,
                     Code::StaleDependency,
                     import.span,
                     format!("package {} revision {} digest {expected} has no exact formal declaration artifact", import.package.value, import.version.value),
@@ -331,7 +371,7 @@ pub fn link(
             [model] => models.push(**model),
             _ => {
                 return Err(ambiguous(
-                    &unit,
+                    unit,
                     import.span,
                     exact
                         .iter()
@@ -349,12 +389,20 @@ pub fn link(
             }
         }
     }
+    Ok(models)
+}
+
+fn resolve_clauses(
+    unit: &ParsedUnit,
+    models: &[LinkedModel<'_>],
+    limits: LinkLimits,
+) -> Result<Vec<LinkedClause>, Box<Diagnostic>> {
     let mut names = BTreeSet::new();
     let mut clauses = Vec::with_capacity(unit.clauses().len());
     for clause in unit.clauses() {
         if !names.insert(&clause.name.value) {
             return Err(failure(
-                &unit,
+                unit,
                 Code::InvalidModelBinding,
                 clause.name.span,
                 "duplicate native clause name",
@@ -362,15 +410,15 @@ pub fn link(
         }
         if clause.kind != ClauseKind::Invariant {
             return Err(failure(
-                &unit,
+                unit,
                 Code::UnsupportedConstruct,
                 clause.span,
                 "operation clauses need an explicit native operation mapping",
             ));
         }
         let mut resolver = Resolver {
-            unit: &unit,
-            models: &models,
+            unit,
+            models,
             current: 0,
             limits,
             locals: Vec::new(),
@@ -386,7 +434,7 @@ pub fn link(
         } = declaration
         else {
             return Err(failure(
-                &unit,
+                unit,
                 Code::InvalidModelBinding,
                 clause.context.span,
                 "native context must select a record",
@@ -408,7 +456,7 @@ pub fn link(
                 && matches!(value.value_type(), ValueType::Record { name } if name == record.name())
         }) {
             return Err(failure(
-                &unit,
+                unit,
                 Code::InvalidModelBinding,
                 clause.context.span,
                 "context requires an explicit self State value of its record type",
@@ -426,11 +474,7 @@ pub fn link(
             occurrences: resolver.occurrences,
         });
     }
-    Ok(LinkedPackage {
-        unit,
-        models,
-        clauses,
-    })
+    Ok(clauses)
 }
 
 #[derive(Clone, Copy)]

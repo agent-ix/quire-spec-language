@@ -84,9 +84,21 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
         "fixtureVersion",
         &json!("agent-a-role-compositions/1-draft"),
     )?;
+    // Preserve admission order before reading any selected artifact.
     let refs = field(&packet, "artifactRefs")?;
     let semantics = field(&packet, "semanticRefs")?;
     let locators = field(&packet, "artifactLocators")?;
+    let raws = load_artifacts(&mut input, refs, locators)?;
+    check_source_compositions(&mut input, refs, semantics, &raws)?;
+    check_model_composition(&mut input, &raws)?;
+    check_run_composition(&mut input, refs, &raws)?;
+    check_role_selections(&packet, refs, semantics)?;
+    Ok(format!("passed: {} exact artifacts and changed-byte controls; four source regions/coordinates; model wrapper consistency; historical syntax output; no semantic matcher or evaluator executed", raws.len()))
+}
+
+type ArtifactBytes = BTreeMap<String, Vec<u8>>;
+
+fn load_artifacts(input: &mut Input, refs: &Value, locators: &Value) -> Result<ArtifactBytes> {
     let mut raws = BTreeMap::new();
     for (key, reference) in object(refs)? {
         let raw = input.read(text(field(locators, key)?)?)?;
@@ -110,12 +122,21 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
         )?;
         raws.insert(key.clone(), raw);
     }
+    Ok(raws)
+}
+
+fn check_source_compositions(
+    input: &mut Input,
+    refs: &Value,
+    semantics: &Value,
+    raws: &ArtifactBytes,
+) -> Result<()> {
     let profile_digest = digest(&input.profile()?);
     for (key, source_key) in [
         ("property-current", "current-source"),
         ("property-post", "operation-source"),
     ] {
-        let payload = input.decode(bytes(&raws, key)?)?;
+        let payload = input.decode(bytes(raws, key)?)?;
         let source = field(&payload, "source")?;
         equal(source, "artifact", field(refs, source_key)?)?;
         ensure(
@@ -129,7 +150,7 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
                 revision: "selected-review-region".into(),
             },
             source_key,
-            bytes(&raws, source_key)?,
+            bytes(raws, source_key)?,
             quire_spec_language::source::MAX_SOURCE_BYTES,
         )
         .map_err(|e| {
@@ -169,9 +190,13 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
             &json!(profile_digest),
         )?;
     }
-    let ir = input.decode(bytes(&raws, "model")?)?;
-    let lock = input.decode(bytes(&raws, "lock")?)?;
-    let manifest = input.decode(bytes(&raws, "manifest")?)?;
+    Ok(())
+}
+
+fn check_model_composition(input: &mut Input, raws: &ArtifactBytes) -> Result<()> {
+    let ir = input.decode(bytes(raws, "model")?)?;
+    let lock = input.decode(bytes(raws, "lock")?)?;
+    let manifest = input.decode(bytes(raws, "manifest")?)?;
     equal(&ir, "contractVersion", &json!("1.1.0"))?;
     let package = field(&ir, "package")?;
     let manifest_package = field(&manifest, "package")?;
@@ -190,23 +215,27 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
     equal(
         package,
         "manifestDigest",
-        &json!(digest(bytes(&raws, "manifest")?)),
+        &json!(digest(bytes(raws, "manifest")?)),
     )?;
-    equal(package, "lockDigest", &json!(digest(bytes(&raws, "lock")?)))?;
-    let closure = input.decode(bytes(&raws, "closure")?)?;
+    equal(package, "lockDigest", &json!(digest(bytes(raws, "lock")?)))?;
+    let closure = input.decode(bytes(raws, "closure")?)?;
     closure_fields(&closure, &lock)?;
     equal(
         field(&closure, "nativeQualification")?,
         "state",
         &json!("unavailable"),
     )?;
-    let output = input.decode(bytes(&raws, "native-output")?)?;
+    Ok(())
+}
+
+fn check_run_composition(input: &mut Input, refs: &Value, raws: &ArtifactBytes) -> Result<()> {
+    let output = input.decode(bytes(raws, "native-output")?)?;
     equal(&output, "status", &json!("parsed"))?;
     let source = field(&output, "source")?;
     equal(
         source,
         "digest",
-        &json!(digest(bytes(&raws, "native-source")?)),
+        &json!(digest(bytes(raws, "native-source")?)),
     )?;
     let native_ref = field(refs, "native-source")?;
     equal(source, "identity", field(native_ref, "identity")?)?;
@@ -220,7 +249,7 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
         "revision",
         field(field(native_ref, "revision")?, "value")?,
     )?;
-    let run = input.decode(bytes(&raws, "run")?)?;
+    let run = input.decode(bytes(raws, "run")?)?;
     equal(&run, "runIdentity", field(field(refs, "run")?, "identity")?)?;
     equal(&run, "observedExitCode", &json!(0))?;
     equal(&run, "logicalOutcome", &json!("not-evaluated"))?;
@@ -238,7 +267,11 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
         Code::InvalidFixture,
         "recorded native arguments mismatch",
     )?;
-    for case in array(field(&packet, "cases")?)? {
+    Ok(())
+}
+
+fn check_role_selections(packet: &Value, refs: &Value, semantics: &Value) -> Result<()> {
+    for case in array(field(packet, "cases")?)? {
         for selected in object(field(case, "roles")?)?.values() {
             ensure(
                 object(refs)?
@@ -250,7 +283,7 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
             )?;
         }
     }
-    Ok(format!("passed: {} exact artifacts and changed-byte controls; four source regions/coordinates; model wrapper consistency; historical syntax output; no semantic matcher or evaluator executed",raws.len()))
+    Ok(())
 }
 
 #[cfg(test)]
