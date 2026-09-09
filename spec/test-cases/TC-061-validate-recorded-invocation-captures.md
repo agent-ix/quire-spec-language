@@ -12,8 +12,8 @@ relationships:
 
 ## Description
 
-Integration, priority P1. Verifies FR-007-AC-3, FR-007-AC-9, FR-007-AC-10, FR-008-AC-6. Planned until actual Rust
-execution. Setup uses qualified public model/checker APIs; unrelated setup
+Integration, priority P1. Verifies FR-007-AC-3, FR-007-AC-9, FR-007-AC-10, FR-008-AC-6. Validation criteria are qualified at 45ed1b4 by SR-097; FR-008-AC-6's
+predicate/captured-read behavior remains planned with TC-071. Setup uses qualified public model/checker APIs; unrelated setup
 failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure

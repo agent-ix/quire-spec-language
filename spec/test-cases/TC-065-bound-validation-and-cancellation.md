@@ -10,8 +10,7 @@ relationships:
 
 ## Description
 
-Property, priority P1. Verifies FR-007-AC-12. Planned until actual Rust
-execution. Setup uses qualified public model/checker APIs; unrelated setup
+Property, priority P1. Verifies FR-007-AC-12. Qualified at 45ed1b4 by SR-097 through the public runtime validation tests. Setup uses qualified public model/checker APIs; unrelated setup
 failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure

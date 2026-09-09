@@ -2,7 +2,7 @@
 id: Task-014
 title: "Execute the native reference semantics and exact cost model"
 type: Task
-status: blocked
+status: not_started
 track: A
 priority: P1
 relationships:
@@ -57,5 +57,8 @@ Implement independent native AST execution over ValidatedContext, retaining capt
 Native Completed/Incomplete/Refused reports tied to exact context; qualified healthy/violating truth, independent graph/cost evidence and source-bound implication events.
 
 ## Notes
+
+Task-013 is qualified at 45ed1b4 by SR-097, so this implementation dependency
+is satisfied. No reference evaluator or completed predicate result exists yet.
 
 No B-owned TechniqueResult or generated backend interpreter is added. Memory/work limits do not become authored number, sequence or path bounds. Defensive runtime-invariant tests stay private and cannot create a public unchecked-context bypass.

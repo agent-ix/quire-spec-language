@@ -118,8 +118,10 @@ no timing sleep, concurrent benchmark or hosted CI run is required.
 ## Qualification status
 
 Construction metrics M-1..5 are qualified at c8fa41f by TC-057 and SR-096,
-including the explicit coupled node/output ceiling. Validation and evaluation
-metrics M-6..17 remain planned; this is partial NFR qualification.
+including the explicit coupled node/output ceiling. Validation metrics M-6..11
+are qualified at 45ed1b4 by TC-065/066 and SR-097, including successful maximum
+inventory/content/object/detail counts and hard work/text stop controls.
+Evaluation metrics M-12..17 remain planned; this is partial NFR qualification.
 
 ## Dependencies
 

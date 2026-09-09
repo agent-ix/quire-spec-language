@@ -2,7 +2,7 @@
 id: Task-013
 title: "Validate finite snapshots and recorded invocations"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -46,11 +46,11 @@ Implement actual model-aware runtime validation over the landed CheckedPackage a
 ## Subtasks
 
 - [x] Write real source-derived model/input tests before implementation; assert successful setup separately from the intended runtime refusal.
-- [ ] Build bounded exact inventory/model/population indexes and validate every supplied selected value, including skipped fields, under each native type and captured observation.
-- [ ] Resolve reference closure, required self/State inputs and invocation parameter/result correspondence without using unavailable data as absence.
-- [ ] Validate complete pre/post identity differences and immutable object/State-root frame permissions with separate storage equality.
-- [ ] Retain structured runtime paths, original native/model loci, deterministic complete diagnostics and honest partial reports; implement fresh budgets and deterministic cancellation/panic behavior.
-- [ ] Run generated shape/permutation/retry and isolated budget controls; repair any observed failures before admitting contexts to evaluation.
+- [x] Build bounded exact inventory/model/population indexes and validate every supplied selected value, including skipped fields, under each native type and captured observation.
+- [x] Resolve reference closure, required self/State inputs and invocation parameter/result correspondence without using unavailable data as absence.
+- [x] Validate complete pre/post identity differences and immutable object/State-root frame permissions with separate storage equality.
+- [x] Retain structured runtime paths, original native/model loci, deterministic complete diagnostics and honest partial reports; implement fresh budgets and deterministic cancellation/panic behavior.
+- [x] Run generated shape/permutation/retry and isolated budget controls; repair any observed failures before admitting contexts to evaluation.
 
 ## Deliverables
 
@@ -63,10 +63,10 @@ The implementation dependencies are satisfied. Reuse exact native roles and
 checked runtime obligations; do not infer a formal model from generated layouts
 or create another type authority.
 
-Current implementation has 27 passing public API tests and retained red/green
-evidence under reviews/data/native-runtime/validation-*.txt. The full regression
-passed at the 25-test checkpoint; later hard work/text/content controls also pass.
-The remaining unchecked subtasks are qualification work, including broader
-population/inventory permutations, maximum admitted object/inventory counts,
-additional nominal/nested mutation controls and complete local code/Rust review.
-No TC-058–066 or NFR validation metric is marked qualified from this checkpoint.
+Qualified at 45ed1b4d11eb162ac6bab9d94e2dca6113545037 by SR-097.
+All fifteen FR-007 criteria and NFR-006 validation metrics M-6..11 have
+executed evidence: 35 validation tests, 166 ordinary tests plus one compile-fail
+doctest, three private audits and strict local Rust gates passed. The review
+retains real failures, fixes, traceability and catalog limitations. TC-061's
+predicate/captured-read portion remains with FR-008/TC-071; validation completion
+does not qualify reference execution or the full Plan-006/backend/Quire workflow.
