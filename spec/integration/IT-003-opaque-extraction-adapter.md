@@ -12,15 +12,18 @@ relationships:
 
 ## Objective
 
-Actual extraction and parsing preserve correspondence without adding an expression compiler to the Markdown extractor. Missing accepted adapter delivery is an unmet prerequisite.
+Actual extraction and parsing preserve correspondence without adding an expression compiler to the Markdown extractor.
 
 ## Target Integration
 
-C-owned real Quire extraction adapter connected to the native compiler producer API.
+Existing Quire Rust extract_clauses connected to A's optional native consumer.
+C retains changes to the producer and existing-repository CLI/wire adoption.
 
 ## Preconditions
 
-Use accepted adapter/source-map contracts and real Markdown extraction. The selected original document and compiler revisions must be available. No manually extracted string substitutes for the adapter.
+Use FR-030 with the pinned Quire producer and accepted source-map contract.
+The selected original document and compiler revisions must be available.
+No manually extracted string substitutes for actual Quire extraction.
 
 ## Inputs
 
@@ -39,7 +42,8 @@ A Markdown document containing an indented native fence, non-ASCII original text
 
 ## Expected Results
 
-Actual extraction and parsing preserve correspondence without adding an expression compiler to the Markdown extractor. Missing accepted adapter delivery is an unmet prerequisite.
+Actual extraction and native compilation preserve original correspondence and
+retain the producer's unchanged availability, diagnostics and clause population.
 
 ## Metadata
 

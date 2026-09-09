@@ -3,7 +3,10 @@
 The native compiler now validates exact body-to-original byte correspondence.
 This is an in-process Rust API, not a registered FS05 wire reader, Markdown
 extractor or model binding. C retains the existing-repository adapter and its
-independent consumer tests.
+independent consumer tests. The optional `quire_source` consumer now calls the
+existing Rust extractor inside this compiler, validates its exact reported body
+and uses this map. Its CRLF adaptation drops only the verified final newline;
+the original Quire output remains available unchanged.
 
 ## Loading and parsing
 

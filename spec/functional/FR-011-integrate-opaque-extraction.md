@@ -22,7 +22,12 @@ Source-addressable native clause outcome with extraction availability retained.
 
 ## Behavior
 
-C owns the existing-repository adapter. The native compiler owns parse/link/lower. A namespaced unchecked language tag is not successful parsing. Missing original source correspondence refuses the join. Adapter adoption preserves the existing consumer wire versions.
+C owns changes to existing-repository adapters and wire adoption. A's optional
+[Quire consumer](FR-030-consume-quire-extraction.md) can call the available Rust
+extractor directly and verify its exact body against original bytes before
+parse/link/lower. A namespaced unchecked language tag is not successful parsing.
+Missing original source correspondence refuses the join. Existing consumer wire
+versions and Quire availability remain unchanged.
 
 ## Acceptance Criteria
 

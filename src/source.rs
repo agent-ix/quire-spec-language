@@ -221,6 +221,11 @@ impl Source {
     pub fn text(&self) -> &str {
         &self.0.text
     }
+    // Quire line loci reuse this source's existing byte index.
+    #[cfg(feature = "quire-extraction")]
+    pub(crate) fn line_start(&self, line: usize) -> Option<usize> {
+        self.0.line_starts.get(line.checked_sub(1)?).copied()
+    }
     fn excess(&self, byte: usize) -> usize {
         let index = self.0.wide_ends.partition_point(|&(end, _)| end <= byte);
         index.checked_sub(1).map_or(0, |i| self.0.wide_ends[i].1)

@@ -100,7 +100,8 @@ capacity is not an exact content-byte accounting promise.
 ## Run and check
 
 Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
-native CLI needs no Node or JVM. There are no optional feature requirements.
+native CLI needs no Node or JVM. Default native commands need no optional features;
+the Quire consumer is enabled explicitly with `quire-extraction`.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
 Backend parity additionally requires Rust 1.98.1's `llvm-tools-preview` component
@@ -169,7 +170,20 @@ exposes the native package for validation, evaluation and lowering while keeping
 the original document available for source locations. Failures preserve the
 native diagnostic or package path; the API does not manufacture source wrappers
 or change extraction availability. Run `cargo test --test mapped` for the mapped
-parent workflow and stage refusals. C's real Quire adapter adoption remains open.
+parent workflow and stage refusals.
+
+With `quire-extraction`, `quire_source::compile(original, context, selection,
+models, limits)` calls Quire's actual pinned Rust extractor and compiles the
+selected native body. Supply a digest-verified original Source, a loaded Quire
+SemanticContext and explicit authored/body/formal identities. The consumer checks
+source coordinates and exact bytes, including Quire's omitted final LF on CRLF
+input, before using the existing source map. It retains Quire's original clause
+population, availability and diagnostics on both success and refusal. Input is
+bounded to 1 MiB and 4096 lines before extraction. Actual healthy/violating/refused
+cases run with `cargo test --features quire-extraction --test quire_source`;
+[the tests](tests/quire_source.rs) show context and identity construction.
+C's existing-repository CLI/wire adoption remains separate from this working
+compiler-side Rust integration.
 
 `runtime::execute(package, input, selection, limits, poll)` now runs native
 validation and evaluation in one call. The returned report retains the exact
