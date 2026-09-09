@@ -47,8 +47,11 @@ Twenty-nine public tests and two private invariant controls cover reference
 execution, including all small functional graphs and independent budget vectors.
 See [native-runtime-evaluation.md](docs/native-runtime-evaluation.md).
 
-Complete native API workflow qualification, backend projection and Quire
-integration remain downstream work. Construction establishes structure and byte
+Five public pipeline tests now exercise healthy, violating, refused and incomplete
+parent/aggregate cases, operation captures/frames and immutable retries through
+actual model admission, parsing, linking, checking, construction, validation and
+evaluation. Task-015 tracks their final review and handoff. Backend projection
+and Quire integration remain downstream work. Construction establishes structure and byte
 correspondence; checking establishes static judgments conditional on valid input;
 validation establishes input conditions before predicate execution.
 

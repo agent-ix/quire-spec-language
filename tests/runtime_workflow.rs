@@ -141,7 +141,7 @@ fn assert_validation_failure(
 #[test]
 #[trace("TC-077", "FR-008-AC-1", "FR-008-AC-2", "FR-018-AC-3")]
 fn native_pipeline_distinguishes_parent_order_cycle_and_duplicate_aggregate_truth() {
-    // IT-006-SC-01/02/03/07: actual setup and independently authored truth/cost expectations.
+    // Workflow steps 1/2/3/7: actual setup and independent truth/cost expectations.
     let models = [native_rule_model::parts().model()];
     for (name, expression, parent_version, cycle, truth, steps, graph_steps) in [
         ("healthy-parent", PARENT, 1, false, true, 12, 0),
@@ -229,7 +229,7 @@ fn native_pipeline_distinguishes_parent_order_cycle_and_duplicate_aggregate_trut
 #[test]
 #[trace("TC-077", "FR-007-AC-5", "FR-018-AC-3")]
 fn native_pipeline_retains_dangling_stale_and_incomplete_input_stages() {
-    // IT-006-SC-04/05/07: construction succeeds; validation supplies each observed result.
+    // Workflow steps 4/5/7: construction succeeds; validation supplies each observed result.
     let models = [native_rule_model::parts().model()];
     let checked = checked(&models, PARENT);
     for (name, complete, stale, status, code) in [
@@ -292,7 +292,7 @@ fn native_pipeline_retains_dangling_stale_and_incomplete_input_stages() {
 #[test]
 #[trace("TC-077", "FR-008-AC-1", "FR-008-AC-2")]
 fn native_aggregate_pipeline_observes_duplicates_empty_input_and_first_violation() {
-    // IT-006-SC-02/03/07: each duplicate contributes work, and false stops at its occurrence.
+    // Workflow steps 2/3/7: each duplicate contributes work; false stops at its occurrence.
     let models = [native_rule_model::parts().model()];
     let checked = checked(&models, "forall(item in self.items: item < self.n)");
     for (name, values, truth, steps, comparisons) in [
@@ -340,7 +340,7 @@ fn native_aggregate_pipeline_observes_duplicates_empty_input_and_first_violation
 #[test]
 #[trace("TC-077", "FR-008-AC-9", "FR-008-AC-19")]
 fn native_pipeline_keeps_actual_event_prefixes_and_fresh_retry_budgets() {
-    // IT-006-SC-05/07: a completed antecedent does not manufacture a clause Boolean.
+    // Workflow steps 5/7: a completed antecedent does not manufacture a clause Boolean.
     let models = [native_rule_model::parts().model()];
     let checked = checked(&models, PARENT);
     let artifact = snapshot(parent_data(&models[0], 1, false));
@@ -403,7 +403,7 @@ fn native_pipeline_keeps_actual_event_prefixes_and_fresh_retry_budgets() {
 #[test]
 #[trace("TC-077", "FR-007-AC-5", "FR-008-AC-6")]
 fn native_operation_pipeline_validates_frames_before_pre_parameter_and_post_result_reads() {
-    // IT-006-SC-04/06/07: the concrete operation records a permitted deletion and changed n.
+    // Workflow steps 4/6/7: the operation records a permitted deletion and changed n.
     #[derive(Clone, Copy)]
     enum Case {
         Healthy,

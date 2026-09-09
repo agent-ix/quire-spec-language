@@ -87,7 +87,8 @@ Diagnostic detail capacity and a separate terminal stop reason follow
 ## Status
 
 Validation is qualified at 45ed1b4 by SR-097: all fifteen acceptance criteria
-have executed evidence in 35 public API tests. Reference execution and the
-complete LC03/backend/Quire workflow remain outstanding.
+have executed evidence in 35 public API tests. Reference execution is qualified
+at 48f53ae by SR-098. Task-015 owns the complete native API review/handoff;
+remaining LC03/backend/Quire issue-level acceptance is separate.
 The adopted standard pin is e897f810a7356d4ce8fd19026221ebda7b65596f.
 Remaining LC02/FS03 issue acceptance is separate from the landed checker API.

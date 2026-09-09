@@ -59,6 +59,7 @@ can select an exact digest. Limits and accounting follow
 
 Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware
-runtime validation and execution remain planned. B retains portable ArtifactRef
+validation and reference execution are qualified by SR-097 and SR-098;
+Task-015 owns the native API review/handoff. B retains portable ArtifactRef
 and result envelopes; this contract creates no new portable authority, semantic
 digest or input decoder.
