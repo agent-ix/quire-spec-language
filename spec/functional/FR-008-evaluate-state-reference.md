@@ -85,5 +85,9 @@ establish all-input validity or backend cost parity.
 
 ## Status
 
-LC03 specification packet; no reference execution or accounting qualification is
-claimed. The historical standard/profile bytes remain unchanged.
+Reference execution and accounting are qualified at
+48f53aed5990f7daf15ae6871c1c081d8974c64f by
+[SR-098](../../reviews/26-09-09-native-reference-evaluation.md), covering all
+twenty criteria through 29 public evaluator tests and two private invariant controls.
+Task-015/IT-006, backend and Quire integration remain required. The historical
+standard/profile bytes remain unchanged.

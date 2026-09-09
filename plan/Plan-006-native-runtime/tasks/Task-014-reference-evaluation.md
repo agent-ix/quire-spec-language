@@ -2,7 +2,7 @@
 id: Task-014
 title: "Execute the native reference semantics and exact cost model"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -45,12 +45,12 @@ Implement independent native AST execution over ValidatedContext, retaining capt
 
 ## Subtasks
 
-- [ ] Author independent parent/aggregate, signed-arithmetic, sequence, observation/capture and event/cost expectations through the actual checked native API.
-- [ ] Implement immutable runtime value views and evaluate-once locals/conditionals, admitted Boolean/scalar/record/reference operations and ordered sequence quantifiers.
-- [ ] Implement positive-length reaches over one validated observation with a local visited set; compare every small functional graph to the separate closure oracle.
-- [ ] Preserve pre/post captures and original expression lineage; preflight expression/depth/event entry together, retaining actual event prefixes on later stops.
-- [ ] Enforce native-ref-cost/1-draft exact vectors plus auxiliary value/text/depth/event limits, deterministic cancellation and fresh retry state.
-- [ ] Run supported and actual frontend-unsupported controls; do not introduce a collect/helper implementation or use the IR proof graph as the reference evaluator.
+- [x] Author independent parent/aggregate, signed-arithmetic, sequence, observation/capture and event/cost expectations through the actual checked native API.
+- [x] Implement immutable runtime value views and evaluate-once locals/conditionals, admitted Boolean/scalar/record/reference operations and ordered sequence quantifiers.
+- [x] Implement positive-length reaches over one validated observation with a local visited set; compare every small functional graph to the separate closure oracle.
+- [x] Preserve pre/post captures and original expression lineage; preflight expression/depth/event entry together, retaining actual event prefixes on later stops.
+- [x] Enforce native-ref-cost/1-draft exact vectors plus auxiliary value/text/depth/event limits, deterministic cancellation and fresh retry state.
+- [x] Run supported and actual frontend-unsupported controls; do not introduce a collect/helper implementation or use the IR proof graph as the reference evaluator.
 
 ## Deliverables
 
@@ -58,9 +58,11 @@ Native Completed/Incomplete/Refused reports tied to exact context; qualified hea
 
 ## Notes
 
-Task-013 is qualified at 45ed1b4 by SR-097. The initial evaluator tests now
-cover all ten independent accounting vectors; evaluation-initial-red.txt records
-the actual missing-API compiler failure before evaluator implementation.
-Reference execution qualification remains outstanding.
+Qualified at 48f53aed5990f7daf15ae6871c1c081d8974c64f by SR-098 (PASS).
+Twenty-nine public evaluator tests and two private invariant controls pass,
+including all ten exact cost vectors, 2,456 graph comparisons and 40 short sequences.
+The review records the complete gate sequence and actual limitations.
+evaluation-initial-red.txt preserves the missing-API failure before implementation.
+Task-015's complete integration and plan qualification remain outstanding.
 
 No B-owned TechniqueResult or generated backend interpreter is added. Memory/work limits do not become authored number, sequence or path bounds. Defensive runtime-invariant tests stay private and cannot create a public unchecked-context bypass.
