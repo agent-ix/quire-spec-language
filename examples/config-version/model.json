@@ -1,0 +1,31 @@
+{
+  "license": "AGPL-3.0-only",
+  "package": "example/config-version",
+  "requirement": "ConfigVersionModel",
+  "revision": 1,
+  "scalars": [
+    {"name": "VersionNumber", "kind": "integer", "minimum": 0, "maximum": 1000, "unit": null},
+    {"name": "ObjectKey", "kind": "text", "max_scalars": 256}
+  ],
+  "records": [
+    {"name": "ConfigVersion", "fields": [
+      {"name": "versionNumber", "type": {"kind": "scalar", "name": "VersionNumber"}},
+      {"name": "parent", "type": {"kind": "option", "value": {"kind": "record", "name": "ConfigVersionRef"}}}
+    ]},
+    {"name": "ConfigVersionRef", "fields": [
+      {"name": "id", "type": {"kind": "scalar", "name": "ObjectKey"}}
+    ]}
+  ],
+  "values": [
+    {"name": "self", "kind": "state", "type": {"kind": "record", "name": "ConfigVersion"}},
+    {"name": "other", "kind": "state", "type": {"kind": "record", "name": "ConfigVersion"}},
+    {"name": "attempt_result", "kind": "input", "type": {"kind": "boolean"}}
+  ],
+  "objects": [
+    {"record": "ConfigVersion", "reference": "ConfigVersionRef", "identity_field": "id", "universe": "config_history"}
+  ],
+  "operations": [
+    {"name": "attemptUpdate", "context": "ConfigVersion", "anchor": "attemptUpdate", "parameters": [], "result": "attempt_result",
+     "frame": {"fields": [["ConfigVersion", "versionNumber"]], "created": [], "deleted": []}}
+  ]
+}

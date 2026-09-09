@@ -61,6 +61,10 @@ FR-030 / TC-108 exercise the actual pinned Rust extractor and native consumer.
 | FR-031 | FR-031-AC-2 | TC-109 | ✅ Tested |
 | FR-031 | FR-031-AC-3 | TC-109 | ✅ Tested |
 | FR-031 | FR-031-AC-4 | TC-109 | ✅ Tested |
+| FR-032 | FR-032-AC-1 | TC-110 | ✅ Tested |
+| FR-032 | FR-032-AC-2 | TC-110 | ✅ Tested |
+| FR-032 | FR-032-AC-3 | TC-110 | ✅ Tested |
+| FR-032 | FR-032-AC-4 | TC-110 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -81,3 +85,4 @@ FR-030 / TC-108 exercise the actual pinned Rust extractor and native consumer.
 | TC-107 | Standalone projection export | Integration | P1 | FR-029 | ✅ Tested |
 | TC-108 | Actual Quire/native workflow | Integration | P1 | FR-030, FR-011 | ✅ Tested |
 | TC-109 | Standalone Markdown execution | Integration | P1 | FR-031 | ✅ Tested |
+| TC-110 | Concrete ConfigVersion workflow | Integration | P1 | FR-032 | ✅ Tested |
