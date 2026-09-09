@@ -104,6 +104,7 @@ pub(super) fn error(error: &RunError) -> Value {
             json!({"stage":e.stage.to_string()}),
         ),
         RunCause::Lowering {
+            target,
             package,
             program,
             error,
@@ -120,7 +121,7 @@ pub(super) fn error(error: &RunError) -> Value {
                 }
             },
             json!({
-                "profile":crate::lowering::PROFILE,
+                "profile":target.name(),
                 "package":{"format":package.format(),"digest":package.digest().to_string()},
                 "source":source(program),"clause":error.clause,
                 "span":error.source.and_then(|value|program.source().locate(value)).map(span),

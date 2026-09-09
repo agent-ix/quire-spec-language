@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026/029/031: selected output directory for synthetic native/Markdown workflows.
+//! FR-026/029/031/033: selected output directory for native/Markdown workflows.
 
 #[path = "../tests/support/standalone_setup.rs"]
 mod setup;
@@ -17,6 +17,8 @@ fn main() {
         ("operation", setup::Case::Operation(false)),
         ("refused", setup::Case::Operation(true)),
         ("boolean", setup::Case::Boolean(true)),
+        ("integer-healthy", setup::Case::Integer(1)),
+        ("integer-violating", setup::Case::Integer(10)),
     ] {
         setup::write(&directory.join(name), case);
     }
