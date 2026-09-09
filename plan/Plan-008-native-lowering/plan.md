@@ -23,6 +23,13 @@ object and compiled ConfigVersion acceptance remains LC04 work.
 2. [Task-020](tasks/Task-020-qualify-boolean-backend.md): actual generated parity,
    local gates, QUOIN spec/code/Rust/gap reviews at PR readiness, then delivery.
 
+Owner direction for the first proof of concept permits engineering delivery with
+generated activation qualification deferred. Complete the scoped PR review and
+land the working Boolean lowering; continue LC05 engineering independently.
+FR-009-AC-5, IT-008-SC-04 and Task-020 remain open until the actual generated
+activation counts pass. C owns the coverage-reader update; it is an assurance
+dependency, not a prerequisite for further compiler implementation.
+
 ## Coordination
 
 A owns compiler changes on `agent-a/lc04-native-projections`; C owns downstream

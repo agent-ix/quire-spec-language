@@ -101,6 +101,8 @@ gate is explicitly separate from the passing truth/refusal checks:
 `cargo test --locked --offline --target-dir target -j 1 --test native_backend required_generated_activation_parity -- --ignored --test-threads=1`.
 It currently fails on the existing backend's explicit LLVM 3.1.0 refusal and is
 required before claiming complete backend parity.
+This assurance qualification is deferred for proof-of-concept engineering
+delivery. Compiler implementation continues while the criterion remains open.
 
 On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
 `-j 1`, and run tests with `-- --test-threads=1`. Check for competing builds
