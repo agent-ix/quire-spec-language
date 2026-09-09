@@ -28,3 +28,8 @@ description: "Actual native linker progress."
   (issuecomment-5594753863) and CO01 (issuecomment-5594757398). Task-006's
   reviewable-PR deliverable is complete. The five FR-006 cases and full workflow
   remain open; the private threads retain the eventual merge state.
+- 2026-09-08: Final IT-005 consistency check found the remaining reserved field
+  spelling and a signed/unsigned fixture mismatch. Specification 3e8d348 and
+  all eight review addenda 5f3707c precede the corrected test fixture 9615b6e.
+  All 48 default tests, formatting and strict Clippy pass again; production
+  source and dependency lock are unchanged. SR-054 retains the review correction.
