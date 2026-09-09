@@ -6,6 +6,7 @@ analysis: failure-domain
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
 evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -19,6 +20,7 @@ cycle termination and all bounded passes are defined before implementation.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-004 | medium | Resolved source-boundary mismatch: serialized empty inventories cannot authorize an empty checked unit that the actual native parser rejects. | TC-078; TC-087; TC-090 |
 | FND-001 | low | Draft ordering defect repaired before the evaluated revision: generic bounded recognition and format selection precede version-specific decoding; multi-defect tests establish precedence. | FR-020-AC-2; FR-020-AC-3; TC-084 |
 | FND-002 | low | Draft cycle omission repaired: feature discovery visits exact model/declaration identities and scans all syntax without recursively expanding object-reference cycles. | FR-019-AC-6; TC-080 |
 | FND-003 | low | Projection-only forgery is excluded from static identity but still rejected by full reconstructed manifest comparison. | FR-021-AC-4; TC-091 |
@@ -50,6 +52,23 @@ Parser/link/check failure keeps its real Diagnostic, phase and source;
 unexposed upstream counters remain absent. Fresh retries cannot inherit a
 feature set, budget or successful check from a prior request. Existing runtime
 closure, frame and graph evaluation contracts remain qualified separately.
+
+## Admitted source setup correction — 2026-09-09
+
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+installed QUOIN lens, superseding the initial review's header-only positive
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
+
+The real parser still runs before successful rebind. Header-only and import-only sources are adverse inputs; no unchecked constructor or alternate grammar bypass is introduced.
+
+Task-016 began under the original completed review gate. Its initial API-red
+run is followed by a first implementation run with one passing nonempty case
+and three parser setup failures. Further implementation paused for this
+specification correction and all-eight re-review; no parser behavior was
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+No claim of executed full package, schema or canonical-vector qualification is
+made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 

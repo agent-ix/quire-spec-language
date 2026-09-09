@@ -6,6 +6,7 @@ analysis: evidence
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
 evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -20,6 +21,7 @@ independent vectors, generated mutations and actual API integration.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-008 | medium | Invalid header-only setup is not canonicalization evidence; replace positive vectors with real checked clauses and retain the actual failed runs. | TC-078; TC-087; TC-090 |
 | FND-001 | low | Judgment: offered-byte admission is an exact bound, not elapsed performance; retain negative-abuse-testing despite benchmark advice. | NFR-007-M-1 |
 | FND-002 | low | Judgment: emitted-byte charge-before-append needs exact boundaries, not a throughput benchmark. | NFR-007-M-2 |
 | FND-003 | low | Judgment: decoded string retention and bounded lexical scratch need adverse byte controls, not elapsed performance. | NFR-007-M-3 |
@@ -70,6 +72,23 @@ dependency with local references and explicit draft feature. No schema execution
 has yet occurred; syntax inspection is not schema qualification. First-party
 assertions and fixtures remain Rust plus static data. Existing cache/serial
 build constraints apply when these suites are implemented.
+
+## Admitted source setup correction — 2026-09-09
+
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+installed QUOIN lens, superseding the initial review's header-only positive
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
+
+Reran quoin advise and catalog methods: 32 scoped records, the same five NFR benchmark mismatches, no inconclusive/uncatalogued records. Existing method judgments stand. Corrected independent canonical oracles must record that they follow this discovered setup defect; original failing fixtures cannot be reported as prior passing vectors.
+
+Task-016 began under the original completed review gate. Its initial API-red
+run is followed by a first implementation run with one passing nonempty case
+and three parser setup failures. Further implementation paused for this
+specification correction and all-eight re-review; no parser behavior was
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+No claim of executed full package, schema or canonical-vector qualification is
+made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 

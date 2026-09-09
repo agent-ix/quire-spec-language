@@ -6,6 +6,7 @@ analysis: dependency
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
 evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -20,6 +21,7 @@ landed; shared consumer acceptance remains downstream.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-003 | medium | Positive package setup explicitly depends on a real imported model and clause; no new producer or external prerequisite is introduced. | TC-078; TC-087; TC-090 |
 | FND-001 | low | Removed a draft identity-to-artifact prerequisite: FR-021 now depends on checked inputs, avoiding an implicit construction/identity cycle. | FR-016; FR-021; FR-019 |
 | FND-002 | low | No unresolved implementation prerequisite requires a new IR/Filament reader, B result envelope or shared repository change. | FR-020; IT-007 |
 
@@ -69,6 +71,23 @@ IR lowering/backend parity remains FR-009/LC04. A/B shared-domain registration
 and independent FS05 consumption remain explicitly separate acceptance.
 No current compiler dependency waits on retired contract-agent-core or on
 closed IR #54. No cycles remain among the new requirements.
+
+## Admitted source setup correction — 2026-09-09
+
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+installed QUOIN lens, superseding the initial review's header-only positive
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
+
+The FR-015/016 → FR-021 → FR-019 → FR-020 order is unchanged. Existing qualified model admission supplies the positive fixture; malformed source remains a downstream reader refusal.
+
+Task-016 began under the original completed review gate. Its initial API-red
+run is followed by a first implementation run with one passing nonempty case
+and three parser setup failures. Further implementation paused for this
+specification correction and all-eight re-review; no parser behavior was
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+No claim of executed full package, schema or canonical-vector qualification is
+made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 

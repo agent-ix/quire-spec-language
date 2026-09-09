@@ -6,6 +6,7 @@ analysis: base
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
 evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -20,6 +21,7 @@ specification is ready for a bounded implementation plan.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-004 | medium | Resolved missed positive-fixture precondition: header-only source cannot reach package construction; minimum positive and adverse cases now follow the adopted grammar. | TC-078; TC-087; TC-090 |
 | FND-001 | low | No unresolved base requirement-quality or scoped traceability defect; planned mappings remain distinct from executed evidence. | FR-019; FR-020; FR-021; TM-005 |
 | FND-002 | low | Installed classifier expects Status where the catalog requires Coverage Status; manually inspected every new row as Planned and retain the diagnostic. | TM-005 |
 | FND-003 | low | Structural JSON parsed successfully and its closed records were inspected; executable Draft 2020-12/schema-counter qualification is explicitly planned, not claimed from Markdown validation. | TC-083 |
@@ -52,6 +54,23 @@ unmatched tags. The added 41 rows are 27 functional mappings plus 14 cases,
 all unexecuted. There are 22 classifier diagnostics and six registry
 diagnostics; absence of a status lie alone cannot qualify TM-005 because of
 the header mismatch. No local/shared module was altered to suppress it.
+
+## Admitted source setup correction — 2026-09-09
+
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+installed QUOIN lens, superseding the initial review's header-only positive
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
+
+The 14 cases still map all 27 criteria. TC-078 and TC-090 now require successful actual import/clause setup; TC-087 owns missing-import/missing-clause refusals. All rows remain planned.
+
+Task-016 began under the original completed review gate. Its initial API-red
+run is followed by a first implementation run with one passing nonempty case
+and three parser setup failures. Further implementation paused for this
+specification correction and all-eight re-review; no parser behavior was
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+No claim of executed full package, schema or canonical-vector qualification is
+made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 
