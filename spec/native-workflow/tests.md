@@ -32,6 +32,11 @@ not claim complete Quire producer integration in IT-003.
 | FR-025 | FR-025-AC-3 | TC-102 | ✅ Tested |
 | FR-025 | FR-025-AC-4 | TC-102 | ✅ Tested |
 | FR-025 | FR-025-AC-5 | TC-101 | ✅ Tested |
+| FR-026 | FR-026-AC-1 | TC-103 | ✅ Tested |
+| FR-026 | FR-026-AC-2 | TC-103 | ✅ Tested |
+| FR-026 | FR-026-AC-3 | TC-104 | ✅ Tested |
+| FR-026 | FR-026-AC-4 | TC-104 | ✅ Tested |
+| FR-026 | FR-026-AC-5 | TC-103 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -45,3 +50,5 @@ not claim complete Quire producer integration in IT-003.
 | TC-100 | Refuse native input reads | Integration | P1 | FR-024 | ✅ Tested |
 | TC-101 | Public model source frontend | Integration | P1 | FR-025 | ✅ Tested |
 | TC-102 | Model source refusals | Integration | P1 | FR-025 | ✅ Tested |
+| TC-103 | Standalone native execution | Integration | P1 | FR-026 | ✅ Tested |
+| TC-104 | Standalone native refusals | Integration | P1 | FR-026 | ✅ Tested |

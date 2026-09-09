@@ -24,6 +24,8 @@ adoption and assurance remain explicit acceptance work.
   byte intake while earlier PRs await review.
 - [Task-024](tasks/Task-024-model-source-frontend.md): production rule-model
   source frontend and thin fixture callers, enabling the standalone CLI.
+- [Task-025](tasks/Task-025-standalone-command.md): bounded standalone file
+  intake, native execution output and a runnable example while earlier PRs await review.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
