@@ -2,7 +2,7 @@
 id: Task-006
 title: "Review and land native linking qualification"
 type: Task
-status: not_started
+status: in_progress
 track: A
 priority: P1
 relationships:

@@ -10,8 +10,8 @@ relationships:
 ## Description
 
 Failed linkage is atomic. Type: Property; priority P1. Traces: FR-005-AC-5.
-Planned, not executed. Requires the qualified inputs and actual native APIs
-specified by IT-005; a setup refusal is not an observed application outcome.
+Executed through the public formal linker and real IR environments in tests/linking.rs.
+The complete typing/projection acceptance of IT-005 remains separate.
 
 ## Test Procedure
 

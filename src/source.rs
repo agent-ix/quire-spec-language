@@ -96,6 +96,8 @@ impl Source {
                     end: point,
                 },
                 message: message.into(),
+                related: Vec::new(),
+                upstream: None,
             })
         };
         if identity.identity.trim().is_empty()

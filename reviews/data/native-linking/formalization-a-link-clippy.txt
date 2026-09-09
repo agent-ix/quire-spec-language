@@ -1,0 +1,4 @@
+    Checking getrandom v0.4.3
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Checking tempfile v3.27.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.86s

@@ -10,7 +10,7 @@ relationships:
 ## Description
 
 Refuse unmapped object and operation forms. Integration/property controls, priority P1. Traces: FR-013-AC-4.
-Planned before implementation; use the public link API and actual IR constructors.
+Authored before implementation; now executed with the public link API and actual IR constructors.
 
 ## Test Procedure
 
@@ -19,4 +19,3 @@ Use otherwise exact formal imports and try native deref, reaches and pre/post op
 ## Expected Results
 
 Unmapped object/operation forms return unsupported_construct at their native spans and no package. Name-resolvable optional/non-Boolean forms can link but carry no reference-evaluable/Boolean/definedness claim; their mandatory FR-006 check remains separate.
-

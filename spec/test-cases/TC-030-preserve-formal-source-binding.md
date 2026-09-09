@@ -10,7 +10,7 @@ relationships:
 ## Description
 
 Preserve exact source and formal artifact binding. Integration/property controls, priority P1. Traces: FR-013-AC-1, FR-013-AC-2.
-Planned before implementation; use the public link API and actual IR constructors.
+Authored before implementation; now executed with the public link API and actual IR constructors.
 
 ## Test Procedure
 

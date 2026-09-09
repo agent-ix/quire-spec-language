@@ -198,3 +198,28 @@ IR FR-019 and NFR-005 record Rust 1.98.1; ADR-0055 remains marked proposed at
 the merged revision and the actual IR Cargo/toolchain files have not migrated.
 Native compatibility runs explicitly select +1.98.1. They do not silently
 reattribute older 1.94.1 results or claim upstream policy implementation.
+
+## Native formal linker qualification — 2026-09-08
+
+FR-013's concrete API was specified at c78792a and reviewed through all eight
+QUOIN analyses at 8dc6b48 before implementation. The fixture corrections at
+ecaf4cf use the actual IR PackageId namespace and nonreserved native count
+field; all eight retained reviews re-evaluated that correction at 01e597d.
+The initial setup failures are explicitly retained in the implementation review.
+
+The actual Rust library now borrows exact IR environments and retains the owned
+source, scoped declarations and typed formal provenance. Ten public linker tests
+qualify TC-020–024/030–034; 48 default tests and three private audit tests pass
+on Rust 1.98.1, alongside strict Clippy and rustdoc. Code::all now includes the
+five specified linkage codes, and the legacy error propagation test checks
+empty related/upstream context. No CLI linking/typing/evaluation is implied.
+
+Actual Quire coverage reports FR-005 5/5, FR-013 6/6 and TM-003 10/15 backed.
+FR-006's five cases remain planned. Current catalog diagnostics also identify
+uncatalogued historical NFR methods and broad property shapes; the global
+coverage rollup does not qualify those methods or complete the full workflow.
+
+Specification PR8 has separately merged at 8ab058b, with the B consumer handoff
+posted. The compiler does not wait on B's complete reader or closed IR #54.
+After the owner's resource report, all Cargo checks use one job, tests use one
+thread, and build/check phases run serially at low process priority.
