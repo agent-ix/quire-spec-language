@@ -23,3 +23,8 @@ description: "Actual native linker progress."
   Cargo job, one test thread, low process priority and no overlapping builds.
   Preserve those resource limits in subsequent work; no cause is attributed from
   the interruption alone and no hosted CI is dispatched.
+- 2026-09-08: Native implementation d44e974 and Rust/gap reviews 3924dbb pushed
+  to compiler PR8. The PR was made ready and the exact handoff posted to LC02
+  (issuecomment-5594753863) and CO01 (issuecomment-5594757398). Task-006's
+  reviewable-PR deliverable is complete. The five FR-006 cases and full workflow
+  remain open; the private threads retain the eventual merge state.
