@@ -3,9 +3,14 @@
 
 mod encoding;
 mod features;
+mod intake;
+mod reading;
 #[cfg(test)]
 mod tests;
 mod view;
+mod wire;
+
+pub use reading::{PackageReadLimits, PackageSupport};
 
 use std::fmt;
 
@@ -81,6 +86,9 @@ pub struct PackageUsage {
     pub encode: Option<PackagePassUsage>,
     /// Regenerated claim comparison.
     pub compare: Option<PackagePassUsage>,
+    /// Actual successful frontend checking work, retained even if comparison fails.
+    /// Parser/linker APIs and failed checks expose no counters to manufacture here.
+    pub checking: Option<crate::checking::CheckUsage>,
 }
 
 /// Boundary that refused a package; native causes preserve their own phase.
@@ -215,6 +223,21 @@ pub struct NativePackage<'model> {
 }
 
 impl<'model> NativePackage<'model> {
+    /// Reconstruct through the actual compiler under explicit external authority.
+    ///
+    /// # Errors
+    /// Refuses malformed or unsupported wire, foreign dependencies, native
+    /// compiler failures, forged derived claims and exhausted selected limits.
+    pub fn read_verified(
+        bytes: &[u8],
+        expected: NativePackageRef,
+        bindings: crate::checking::CheckBindings,
+        models: &'model [crate::native_model::NativeModel],
+        support: &PackageSupport,
+        limits: PackageReadLimits,
+    ) -> Result<Self, Box<PackageError>> {
+        reading::read(bytes, expected, bindings, models, support, limits)
+    }
     /// Encode a real checked package with no runtime inputs or capability overrides.
     ///
     /// # Errors

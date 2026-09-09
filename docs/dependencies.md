@@ -6,6 +6,11 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
+FR-020 selects the reviewed `unbounded_depth` feature on the existing serde_json
+pin. Only package intake disables the library recursion guard; its metered
+traversal enforces the 128-container hard ceiling. Other decoders retain their
+guards. No package version or grant changes.
+
 FR-017 enables the existing pinned serde_json 1.0.151 `raw_value` feature in
 the development dependency for source-aware Rust fixture decoding. Borrowed
 values retain their original occurrences; Serde continues to own JSON grammar.

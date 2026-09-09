@@ -276,3 +276,67 @@ pub(super) fn run(
     })?;
     Ok((output.bytes, meter.usage))
 }
+
+/// Compare decoded typed claims in producer field order without another JSON tree.
+pub(super) fn compare(
+    value: &impl Serialize,
+    expected: &[u8],
+    limits: PackageLimits,
+) -> Result<PackagePassUsage, Failure> {
+    struct Comparison<'a> {
+        expected: &'a [u8],
+        position: usize,
+    }
+    impl Write for Comparison<'_> {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let end = self
+                .position
+                .checked_add(bytes.len())
+                .ok_or_else(|| io::Error::other("package comparison length"))?;
+            if self.expected.get(self.position..end) != Some(bytes) {
+                return Err(io::Error::other(
+                    "package claim differs from reconstructed content",
+                ));
+            }
+            self.position = end;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut output = Comparison {
+        expected,
+        position: 0,
+    };
+    let mut meter = Meter {
+        limits,
+        usage: PackagePassUsage::default(),
+        path: Vec::new(),
+        frames: Vec::new(),
+        exhausted: false,
+    };
+    let result = value.serialize(&mut serde_json::Serializer::with_formatter(
+        &mut output,
+        &mut meter,
+    ));
+    let result = result.and_then(|()| {
+        if output.position == expected.len() {
+            Ok(())
+        } else {
+            Err(serde::ser::Error::custom(
+                "package comparison ended before reconstructed content",
+            ))
+        }
+    });
+    result.map(|()| meter.usage).map_err(|cause| Failure {
+        code: if meter.exhausted {
+            Code::ResourceExhausted
+        } else {
+            Code::InvalidPackage
+        },
+        usage: meter.usage,
+        path: meter.path,
+        cause,
+    })
+}

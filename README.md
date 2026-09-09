@@ -62,8 +62,11 @@ dispositions with separate byte and native static identities. Serde owns JSON
 encoding, with independently measured derivation/canonical/output passes.
 Task-016 is qualified at c195950 / SR-111, with fixed canonical/artifact vectors,
 complete correspondence/capture controls, static dependency mutations and
-runtime-independent identity checks. Verified readback and reconstructed
-execution remain under
+runtime-independent identity checks. `NativePackage::read_verified` now verifies
+selected bytes, closed JSON and external bindings, then repeats actual
+parse/link/check before comparing every serialized claim. Reconstructed packages
+execute the existing parent, aggregate and operation workflows, preserving
+refusal, incomplete outcomes and fresh retry budgets. Qualification is tracked in
 [Plan-007](plan/Plan-007-native-packages/index.md).
 See [the package contract](docs/native-linked-packages.md).
 
