@@ -23,3 +23,37 @@ true sequence. Original missing-API and failed-setup logs remain in
 reviews/data/native-packages/. Additional complete clause/operation vectors and
 adversarial families remain required by Task-016/017; these first vectors do not
 complete TC-090.
+
+## Frozen positive vectors
+
+The `minimal`, `controls` and `multiple` families each contain exact native
+source, canonical JSON bytes, complete package JSON bytes and the expected
+domain-prefixed SHA-256 in a `.sha256` file. JSON files have no final newline;
+digest text has one. `model-source.json` and `model-artifact.json` freeze the
+upstream model input and admitted bytes. The public producer test compares its
+complete output with these files; a private unit test observes the actual
+canonical pass and compares its bytes before hashing. Neither test rewrites
+fixtures or substitutes the package compiler.
+
+| Family | Canonical SHA-256 |
+| --- | --- |
+| minimal | `1f2de52410e43349c2528140e94952e4a888d209dcc8cb2ad783fef0683ebb61` |
+| controls | `a07beb9fa48bc4742df3f51fdc74bc6938c53ad4de4842c3b134c2ef6035ca8f` |
+| multiple | `ebafb411e9a74f33b5685403ae45d8f8b3e6e223c4a0afff5d7ec3485304b2d7` |
+
+The Rust maintenance example `examples/author_native_package_vectors.rs` writes
+candidate files from the independent recipe above. It calls model admission
+for the upstream input, but never the package producer, parser, linker or
+checker. It accepts exactly one fresh output directory and refuses an existing
+directory. Candidate review and promotion are explicit; ordinary tests never
+regenerate expected data. On the shared desktop run it as a separate Cargo phase:
+
+```sh
+nice -n 10 cargo run --locked --offline --target-dir target -j 1 --example author_native_package_vectors -- /tmp/new-package-vector-candidates
+```
+
+This is domain-specific fixture authoring, not a general canonicalizer, model
+authority or replacement for shared Quoin evidence tooling. The recipe, new
+maintenance executable and assertions are Rust under AGPL-3.0-only. Fixed
+positive data was authored after the initial producer, from the corrected
+independent recipe; the earlier failed setup evidence remains unchanged.

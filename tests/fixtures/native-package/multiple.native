@@ -1,0 +1,5 @@
+language "ix:native" edition "0-draft";
+profile "state-finite/0-draft";
+model M = "example/package-model" version "1" digest "sha256:639603a87d9701e1279f796639399a2524f3cabe75897e500260d86f8ef74ea8";
+invariant Rule on M::Node at current { true }
+invariant Second on M::Node at current { false }

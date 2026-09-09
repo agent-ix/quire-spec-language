@@ -17,8 +17,22 @@ The initial FR-019/021 package producer uses existing serde/serde_json Formatter
 hooks and sha2 with unchanged versions, features and grants. Its production,
 fixture composition, assertions and hard-limit controls are Rust under
 AGPL-3.0-only. No new dependency or executable audit helper is introduced.
-The reviewed jsonschema development feature for package-schema qualification
-has not yet been selected; that check remains pending in Task-016.
+The follow-up qualification selects the already locked MIT jsonschema 0.17.1
+as a direct development dependency with default features disabled and only
+draft202012 enabled. Cargo metadata confirms those resolved features: no HTTP,
+file or CLI resolver feature is enabled. The lock changes only the root
+development dependency edge; the 138-package/version/grant inventory remains
+unchanged. Tests compile the local Draft 2020-12 schema and exercise fixed and
+real producer manifests plus structural adverse controls. Semantic readback
+remains Task-017.
+
+The Rust `author_native_package_vectors` maintenance example produces candidate
+test data from the independently authored package recipe and upstream model
+admission. Its fixture generation is domain-specific; it does not duplicate a
+shared evidence engine or call the package encoder under test. It creates a
+fresh output directory and requires deliberate review/promotion. Provenance,
+fixed digests and the local command are recorded in
+tests/fixtures/native-package/README.md. This adds no non-Rust executable path.
 
 This is declared metadata, not a public distribution notice bundle or a
 vulnerability scan. Existing grants remain intact, including ICU Unicode-3.0

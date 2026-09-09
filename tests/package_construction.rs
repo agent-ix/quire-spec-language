@@ -3,6 +3,8 @@
 
 #[path = "package_construction_cases/features.rs"]
 mod features;
+#[path = "package_construction_cases/fixed.rs"]
+mod fixed;
 #[path = "package_construction_cases/identity.rs"]
 mod identity;
 #[path = "package_construction_cases/inventory.rs"]
@@ -11,6 +13,10 @@ mod inventory;
 mod limits;
 #[path = "support/native_rule_model.rs"]
 mod native_rule_model;
+#[path = "support/package_vector_setup.rs"]
+mod package_vector_setup;
+#[path = "package_construction_cases/schema.rs"]
+mod schema;
 #[path = "package_construction_cases/vectors.rs"]
 mod vectors;
 

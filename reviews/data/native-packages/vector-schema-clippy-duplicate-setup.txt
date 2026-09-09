@@ -1,0 +1,16 @@
+    Checking jsonschema v0.17.1
+    Checking quire-contract-ir v0.1.0 (https://github.com/agent-ix/quire-contract-ir?rev=690bde7f2dc58662cf9ff0595c2c0e3b17107c6f#690bde7f)
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: file is loaded as a module multiple times: `src/package/../../tests/support/located_json.rs`
+  |
+  = help: replace all but one `mod` item with `use` items
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#duplicate_mod
+  = note: `-D clippy::duplicate-mod` implied by `-D clippy::all`
+  = help: to override `-D clippy::all` add `#[allow(clippy::duplicate_mod)]`
+
+error: file is loaded as a module multiple times: `src/package/../../tests/support/native_rule_model.rs`
+  |
+  = help: replace all but one `mod` item with `use` items
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#duplicate_mod
+
+error: could not compile `quire-spec-language` (lib test) due to 2 previous errors

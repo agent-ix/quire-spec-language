@@ -3,6 +3,8 @@
 
 mod encoding;
 mod features;
+#[cfg(test)]
+mod tests;
 mod view;
 
 use std::fmt;

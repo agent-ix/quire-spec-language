@@ -23,6 +23,7 @@ thiserror = "=2.0.20"
 quire-contract-ir = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "690bde7f2dc58662cf9ff0595c2c0e3b17107c6f" }
 
 [dev-dependencies]
+jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
 tempfile = "=3.27.0"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }

@@ -49,7 +49,7 @@ cases; readback/refusal portions remain pending until Task-017.
 - [x] Derive the exact feature set with exhaustive source/operator/type mapping and cycle-safe model identity visits; do not infer semantics from carrier spelling.
 - [ ] Encode the native domain-separated canonical bytes and final artifact, with distinct pass counters, exact integers/Unicode, full projected inventories and excluded display/runtime/projection metadata as specified.
 - [ ] Qualify production byte/string/entry/depth limits, unchanged caller inputs, static mutations and repeated construction. Leave impossible coupled maxima explicitly unqualified rather than fabricating passing public paths.
-- [ ] Record selected Rust dependency features/licenses; keep production and qualification in Rust. Compile the selected structural schema locally against producer fixtures when its reviewed development dependency is added.
+- [x] Record selected Rust dependency features/licenses; keep production and qualification in Rust. Compile the selected structural schema locally against producer fixtures when its reviewed development dependency is added.
 - [ ] Run focused producer tests, actual local code/Rust review and relevant existing regression checks; fix findings before reader work depends on this implementation.
 
 ## Deliverables
@@ -70,11 +70,19 @@ independently counted pass limits and admissible source/authored mutations.
 Original API-red, fixture-setup failures and the new-code vocabulary regression
 remain recorded in reviews/data/native-packages/.
 
-Before this task closes: freeze independently authored canonical byte fixtures
-(including multiple clauses); complete lexical/parameter/result/transitive
+Fixed minimal/control/multiple-clause source, canonical content, complete
+manifest and digest files now pass public producer comparisons and a private
+canonical-pass byte comparison. The Rust maintenance author uses the independent
+recipe and requires a fresh candidate directory. The reviewed Draft 2020-12
+development feature now compiles the structural schema and passes fixed/real
+invariant/pre/post manifests plus missing/unknown/type/selector controls.
+These follow the initial producer; the original pre-API and failed-setup
+history is retained, not retroactively marked as successful prior fixtures.
+
+Before this task closes: complete lexical/parameter/result/transitive
 correspondence and static-dependency mutations; exercise runtime-independent
-identity and type-role controls; qualify the structural schema; resolve the
-implementation review's remaining findings. Shared reader cases stay planned.
+identity and type-role controls; resolve the implementation review's remaining
+findings. Shared reader cases stay planned.
 The complete regression is green after updating the explicit code vocabulary
 count from 26 to 29 for the three reviewed package codes. Trace inspection also
 requires recording the installed tool's multiline-marker and NFR metric-binding
