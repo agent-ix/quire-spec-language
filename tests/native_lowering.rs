@@ -221,6 +221,11 @@ fn refuses_checked_features_instead_of_dropping_obligations() {
 #[test]
 #[trace("TC-093", "FR-009-AC-6")]
 fn exact_limits_and_fresh_retries() {
+    let hard = LoweringLimits::default();
+    assert_eq!(
+        (hard.nodes, hard.depth, hard.bytes),
+        (10_000, 64, 16_777_216)
+    );
     let models = [setup::native_rule_model::parts().model()];
     let package = package(&models, "(true and not false)", ClauseKind::Invariant);
     let projection = lower(&package, LoweringLimits::default()).unwrap();

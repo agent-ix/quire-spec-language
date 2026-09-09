@@ -59,6 +59,8 @@ If a limit is exhausted, then the compiler shall return no projection; retrying
 uses fresh counters. The compiler shall serialize through Serde with writes
 stopped before exceeding the byte budget. The existing
 binder and backend retain their own additional refusal limits.
+The native checker also caps source nodes at 10,000 and depth at 64; lowering
+retains these ceilings as an additional guard over already checked packages.
 
 ## Acceptance Criteria
 
