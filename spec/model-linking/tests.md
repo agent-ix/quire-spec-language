@@ -94,6 +94,7 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-051 | Bound constraint checking and shared proof expansion | Property | P1 | FR-016-AC-8 | 🚧 Planned |
 | TC-052 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | 🚧 Planned |
 | TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | 🚧 Planned |
+| TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | 🚧 Planned |
 
 ## Six coverage rules
 
