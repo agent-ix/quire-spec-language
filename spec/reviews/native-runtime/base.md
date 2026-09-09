@@ -64,3 +64,14 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Read the TC-055–057 setup correction at dc63f337fcdaee1320d221383eca38599239f62c.
+The original shared setup sentence incorrectly required a CheckedPackage for
+construction. The corrected cases use the public input constructors and existing
+IR identities, as FR-018 already requires. All seven AC mappings, three case
+procedures, expected results and six coverage-rule dispositions remain intact.
+No ID, relationship, interface or acceptance result changed. Scoped strict
+validation records 204/204 grammar-clean documents and no grammar findings in
+reviews/data/native-runtime/input-setup-validation.txt. PASS for the correction.

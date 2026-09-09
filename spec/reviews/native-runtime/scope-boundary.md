@@ -67,3 +67,12 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. TC-055–057 now explicitly
+exercise A's constructor boundary with existing IR identities. They confer no
+model validity, population closure, runtime Boolean or portable result authority.
+The model/checker owns static admission and later validation consumes it; no
+reader or dependency on B's workspace is added. All component allocations and
+external assumptions above remain unchanged. PASS for this correction.

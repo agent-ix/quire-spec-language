@@ -59,3 +59,13 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. Removing the copied
+CheckedPackage setup prerequisite reduces unnecessary fixture coupling while
+retaining the existing risks: exact bytes, distinct identity roles and bounded
+shared arenas. FR-018's risk/volatility scores and named mitigations remain as
+registered above; FR-007/008 risks are unaffected. Public integration assertions,
+independent byte vectors and hard/lowered boundary controls still address the
+constructor risks. PASS; no new spike, dependency or parallel task is needed.

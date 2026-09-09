@@ -62,3 +62,13 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. The TC-055–057 shared
+CheckedPackage setup sentence contradicted FR-018's pre-validation boundary;
+the correction removes that hidden prerequisite. US-003 → FR-018 → TC-055–057,
+NFR-006-M-1..5 and the existing three-case matrix mapping remain unchanged.
+All behavior remains observable through public constructors and structured
+errors. No norm, alternative interpretation, external call or new fallback was
+introduced. PASS; the setup inconsistency is resolved.
