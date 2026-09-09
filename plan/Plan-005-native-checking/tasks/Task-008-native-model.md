@@ -6,6 +6,8 @@ status: in_progress
 track: A
 priority: P1
 relationships:
+  - target: ix://agent-ix/quire-spec-language/Task-011
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-015
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-005
@@ -46,4 +48,3 @@ fixture, traced model/link tests and actual focused evidence.
 
 No runtime object IDs are enumerated in model metadata. Every unused declaration
 and role is admitted and source-corresponded. No partial model/package escapes.
-
