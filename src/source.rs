@@ -98,6 +98,7 @@ impl Source {
                 message: message.into(),
                 related: Vec::new(),
                 upstream: None,
+                runtime: None,
             })
         };
         if identity.identity.trim().is_empty()

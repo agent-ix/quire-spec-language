@@ -89,6 +89,7 @@ impl Parser {
             message: message.into(),
             related: Vec::new(),
             upstream: None,
+            runtime: None,
         })
     }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {

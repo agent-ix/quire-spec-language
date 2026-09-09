@@ -28,19 +28,34 @@ reused; prose may change without changing classification.
 | missing_declaration | A required value, field, type or variant cannot be resolved. |
 | invalid_model_binding | A digest, explicit context binding or clause name is invalid. |
 | invalid_runtime_input | Native runtime input structure is invalid, including a local root/child outside its admitted arena ordering. |
-| wrong_snapshot | A native invocation result lacks a selected operation binding, is accessed by its hidden IR name, or a checked result/pre expression is unavailable at its observation. |
+| wrong_snapshot | A native result/pre expression has the wrong observation, or a runtime selection's artifact role, observation or invocation context/name/anchor disagrees with its checked clause. |
+| dangling_reference | A runtime object target is absent from its complete required population. |
+| incomplete_population | A required runtime population is absent or explicitly incomplete; missing targets cannot be inferred as dangling. |
+| unavailable_observation | A selected runtime artifact or required State-root counterpart is unavailable. |
+| population_delta_mismatch | Recorded created/deleted identities repeat, intersect or disagree with complete pre/post population differences. |
+| frame_violation | A surviving object field or State root changes without permission, or a created/deleted object type is outside the model frame. |
+| cancelled | The caller's runtime cancellation poll stopped validation with actual prior usage. |
 | ill_typed | Native contextual types, nominal identities, units or operator eligibility disagree, or a scalar context is ambiguous. |
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
-| resource_exhausted | A source, syntax, formatter, map, linking, checking/proof or runtime-construction ceiling prevented completion. |
+| resource_exhausted | A source, syntax, formatter, map, linking, checking/proof or runtime construction/validation ceiling prevented completion. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
-source_map, link or check. Related formal declaration locations are structured fields;
+source_map, link, check or validate. Related formal declaration locations are structured fields;
 an upstream IR canonicalization or proof failure is retained in the optional upstream
-field. Legacy diagnostics leave both empty. These fields do not change the
+field. Runtime diagnostics additionally retain the exact actual/expected artifact,
+authored clause, observation and typed value path in `runtime`. Earlier phases
+leave that field empty. These fields do not change the
 existing syntax CLI output. Resource exhaustion is incomplete, never false. The CLI exits 1 for
 native refusal, 3 for incompleteness and 2 for usage/I/O failures; usage/I/O text
 does not pretend to be a source diagnostic. A successful parse exits 0 and
 reports parsed, without model-linking or evaluation claims.
+
+Validation reports keep each diagnostic's classification. Incomplete population,
+unavailable observation, cancellation and exhausted work are incomplete. A known
+invalid defect makes the overall report Refused even when another defect is
+incomplete or detail capacity is zero. The optional terminal stop reason is
+separate from the detail vector. Neither a failed report nor a successful
+ValidatedContext contains predicate truth.
 
 The native model profile resolves operation parameters only in the selected
 operation and results through the result keyword. Early binding refusals use
