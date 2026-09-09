@@ -168,6 +168,21 @@ impl NativePackageRef {
 }
 
 /// Source-bound static identity in quire.native.bound-package/v1, using SHA-256.
+///
+/// TC-091: a native static identity cannot select raw package bytes:
+/// ```compile_fail,E0308
+/// use quire_spec_language::package::{NativePackageIdentity, NativePackageRef};
+/// fn select(identity: NativePackageIdentity) {
+///     let _ = NativePackageRef::new(identity);
+/// }
+/// ```
+/// Nor can it substitute for the independent Contract IR canonical role:
+/// ```compile_fail,E0308
+/// use quire_spec_language::package::NativePackageIdentity;
+/// fn substitute(identity: NativePackageIdentity) {
+///     let _: quire_contract_ir::CanonicalDigest = identity;
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativePackageIdentity([u8; 32]);
 

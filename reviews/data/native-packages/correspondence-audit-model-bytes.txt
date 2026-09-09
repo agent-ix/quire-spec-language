@@ -1,0 +1,3 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/fixture-audit model-bytes tests/fixtures`
+passed: 5 producer checkpoint byte digests and exact producer pin; historical evidence only; no producer or evaluator executed

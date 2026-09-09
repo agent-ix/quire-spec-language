@@ -1,0 +1,14 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0599]: no variant, associated function, or constant named `ResourceLimit` found for enum `diagnostic::Code` in the current scope
+   --> src/package/tests.rs:104:51
+    |
+104 |                 assert_eq!(diagnostic.code, Code::ResourceLimit);
+    |                                                   ^^^^^^^^^^^^^ variant, associated function, or constant not found in `diagnostic::Code`
+    |
+   ::: src/diagnostic.rs:50:1
+    |
+ 50 | pub enum Code {
+    | ------------- variant, associated function, or constant `ResourceLimit` not found for this enum
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `quire-spec-language` (lib test) due to 1 previous error

@@ -1,0 +1,46 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.24s
+     Running unittests src/lib.rs (target/debug/deps/quire_spec_language-669be8754d7f27d4)
+
+running 8 tests
+test format::tests::formatter_preserves_ordered_token_and_comment_spellings ... ok
+test package::encoding::tests::escaped_string_content_is_not_structure_and_failed_paths_are_real ... ok
+test package::encoding::tests::hard_byte_and_string_limits_are_independent_and_check_before_retention ... ok
+test package::encoding::tests::hard_container_and_entry_ceilings_cannot_be_raised ... ok
+test package::tests::canonical_pass_bytes_match_each_independent_fixed_vector_before_hashing ... ok
+test package::tests::runtime_populations_and_evaluator_budgets_do_not_enter_static_passes ... ok
+test runtime::validation::api::invariant_tests::private_corruption_cannot_turn_failed_checked_arithmetic_into_a_boolean ... ok
+test runtime::validation::api::invariant_tests::private_unavailable_capture_refuses_without_a_public_unchecked_context ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.04s
+
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 25 tests
+test actual_checked_clause_retains_complete_selected_model_and_dispositions ... ok
+test canonical_unicode_controls_and_large_revision_are_exact ... ok
+test construction_byte_limit_is_inclusive_and_failed_retry_has_fresh_usage ... ok
+test correspondence::guarded_parent_reads_export_each_original_field_occurrence ... ok
+test correspondence::nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence ... ok
+test correspondence::skipped_nested_context_parameter_and_result_references_retain_transitive_universes ... ok
+test features::every_operator_and_builtin_has_its_exact_declared_feature ... ok
+test features::finite_recursive_object_families_terminate_with_exact_features ... ok
+test features::repeated_aliases_preserve_source_order_and_unselected_models_stay_out_of_closure ... ok
+test features::unused_selected_types_and_nested_wrappers_contribute_without_spurious_carrier_features ... ok
+test fixed::fixed_minimal_control_and_multiple_clause_vectors_match_the_public_producer ... ok
+test identity::nonconforming_domain_and_encoding_vectors_cannot_match_the_producer ... ok
+test identity::real_authored_identity_and_anchor_changes_match_independent_static_expectations ... ok
+test identity::real_native_and_formal_binding_changes_match_independent_static_expectations ... ok
+test inventory::source_order_preserves_multiple_model_owners_and_complete_invariant_pre_post_records ... ok
+test limits::all_producer_passes_match_independently_counted_workloads ... ok
+test limits::inclusive_limits_refuse_before_excess_and_retry_without_shared_usage ... ok
+test limits::zero_limits_and_coupled_passes_report_only_entered_work ... ok
+test minimum_admitted_unit_has_exact_independent_static_bytes ... ok
+test package_error_codes_extend_the_existing_native_vocabulary ... ok
+test schema::structural_schema_accepts_fixed_and_real_producer_manifests ... ok
+test schema::structural_schema_rejects_missing_unknown_and_wrong_type_members ... ok
+test static_changes::independently_changed_static_claims_have_distinct_preimages ... ok
+test static_changes::native_source_bytes_and_formal_document_identity_match_independent_changes ... ok
+test static_changes::used_context_unused_declarations_and_selected_roles_change_the_expected_identity ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
