@@ -7,6 +7,8 @@ description: "Native package plan lifecycle and evidence."
 
 ## History
 
+- **2026-09-09** — Source cffcaa4 freezes three independent canonical/package byte families and qualifies the reviewed Rust Draft 2020-12 schema. SR-110 resolves SR-109's fixed-vector and structural-schema findings while retaining the remaining correspondence/identity work and metric-tag limitation. The 225-test regression, compile-fail doctest, three private audits and required local gates pass. Task-016 remains in progress; PR #12 remains draft, with Tasks-017/018 still next in order.
+
 - **2026-09-09** — SR-109 applies the actual local code-review/rust-review and implementation-gap discovery to producer source 22e3c5d. Verdict CONDITIONAL: passing local gates establish this increment, while fixed multi-clause canonical vectors, remaining correspondence/identity controls, structural schema qualification and the recorded NFR trace-target discrepancy remain explicit. PR #12 stays draft and Task-016 stays in progress.
 
 - **2026-09-09** — Task-016's initial producer increment passes 16 public package tests, three private encoder controls, the 221-test normal regression plus compile-fail doctest, and three separately selected private audits at adopted standard e897f81. Formatting, strict Clippy, cached minimal-feature build, rustdoc and fixture-audit commands pass. Remaining producer vector/correspondence/schema work is explicit in Task-016; Task-017/018 and all package matrix rows stay planned. The actual code/Rust review will evaluate this source increment before reader work depends on it.
