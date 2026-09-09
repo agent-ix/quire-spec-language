@@ -70,6 +70,13 @@ refusal, incomplete outcomes and fresh retry budgets. Qualification is tracked i
 [Plan-007](plan/Plan-007-native-packages/index.md).
 See [the package contract](docs/native-linked-packages.md).
 
+`lowering::lower` derives complete Boolean executable projections through the
+existing strict IR binder, retaining original native authority and explicit
+model/read/observation correspondence. Numeric and object expressions refuse.
+The LC04 backend qualification uses pinned existing codegen and actual generated
+Rust; activation acceptance is pending the codegen reader's Rust 1.98.1 / LLVM
+3.1.0 migration. [Plan-008](plan/Plan-008-native-lowering/plan.md) retains that gate.
+
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
 which may contain replacement characters; exact labels and the actual byte
@@ -87,6 +94,15 @@ capacity is not an exact content-byte accounting promise.
 Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
 native CLI needs no Node or JVM. There are no optional feature requirements.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
+
+Backend parity additionally requires Rust 1.98.1's `llvm-tools-preview` component
+and cargo-llvm-cov 0.9.0. Missing tools fail the test. The pending LC04 activation
+gate is explicitly separate from the passing truth/refusal checks:
+`cargo test --locked --offline --target-dir target -j 1 --test native_backend required_generated_activation_parity -- --ignored --test-threads=1`.
+It currently fails on the existing backend's explicit LLVM 3.1.0 refusal and is
+required before claiming complete backend parity.
+This assurance qualification is deferred for proof-of-concept engineering
+delivery. Compiler implementation continues while the criterion remains open.
 
 On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
 `-j 1`, and run tests with `-- --test-threads=1`. Check for competing builds

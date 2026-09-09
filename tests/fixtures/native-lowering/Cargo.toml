@@ -1,0 +1,15 @@
+[package]
+name = "native-boolean-parity"
+version = "0.0.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+
+[[bin]]
+name = "native-boolean-parity"
+path = "src/main.rs"
+
+[dependencies]
+quire-contract-runtime = { git = "https://github.com/agent-ix/quire-contract-runtime", rev = "8a4d02b9ff4633cf6d02fd8bdf6ee1b11ad76354" }
+
+[workspace]
