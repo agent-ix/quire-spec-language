@@ -2,7 +2,7 @@
 id: Task-028
 title: "Expose the existing Boolean projection to standalone consumers"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-029
     type: references
