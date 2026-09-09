@@ -2,7 +2,7 @@
 id: Task-013
 title: "Validate finite snapshots and recorded invocations"
 type: Task
-status: not_started
+status: in_progress
 track: A
 priority: P1
 relationships:
@@ -45,7 +45,7 @@ Implement actual model-aware runtime validation over the landed CheckedPackage a
 
 ## Subtasks
 
-- [ ] Write real source-derived model/input tests before implementation; assert successful setup separately from the intended runtime refusal.
+- [x] Write real source-derived model/input tests before implementation; assert successful setup separately from the intended runtime refusal.
 - [ ] Build bounded exact inventory/model/population indexes and validate every supplied selected value, including skipped fields, under each native type and captured observation.
 - [ ] Resolve reference closure, required self/State inputs and invocation parameter/result correspondence without using unavailable data as absence.
 - [ ] Validate complete pre/post identity differences and immutable object/State-root frame permissions with separate storage equality.
@@ -62,3 +62,11 @@ Task-009 is done in Plan-005 and Task-012 is qualified at c8fa41f by SR-096.
 The implementation dependencies are satisfied. Reuse exact native roles and
 checked runtime obligations; do not infer a formal model from generated layouts
 or create another type authority.
+
+Current implementation has 27 passing public API tests and retained red/green
+evidence under reviews/data/native-runtime/validation-*.txt. The full regression
+passed at the 25-test checkpoint; later hard work/text/content controls also pass.
+The remaining unchecked subtasks are qualification work, including broader
+population/inventory permutations, maximum admitted object/inventory counts,
+additional nominal/nested mutation controls and complete local code/Rust review.
+No TC-058–066 or NFR validation metric is marked qualified from this checkpoint.

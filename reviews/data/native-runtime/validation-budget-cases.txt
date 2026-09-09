@@ -1,0 +1,15 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0599]: no method named `bytes` found for struct `quire_spec_language::native_model::NativeModel` in the current scope
+   --> tests/runtime_validation_cases/limits.rs:200:33
+    |
+200 |     let model_bytes = models[0].bytes().to_vec();
+    |                                 ^^^^^ method not found in `quire_spec_language::native_model::NativeModel`
+
+error[E0599]: no method named `bytes` found for struct `quire_spec_language::native_model::NativeModel` in the current scope
+   --> tests/runtime_validation_cases/limits.rs:226:26
+    |
+226 |     assert_eq!(models[0].bytes(), model_bytes);
+    |                          ^^^^^ method not found in `quire_spec_language::native_model::NativeModel`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `quire-spec-language` (test "runtime_validation") due to 2 previous errors

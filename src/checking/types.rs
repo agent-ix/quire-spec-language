@@ -158,12 +158,24 @@ impl<'a> NativeType<'a> {
     }
 }
 
-pub(super) struct Catalog<'a> {
+#[derive(Debug)]
+pub(crate) struct FrameIndex<'a> {
+    pub owner: &'a ir::RequirementRef,
+    pub fields: BTreeSet<(&'a ir::SymbolName, &'a ir::SymbolName)>,
+    pub created: BTreeSet<&'a ir::SymbolName>,
+    pub deleted: BTreeSet<&'a ir::SymbolName>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Catalog<'a> {
     pub model: &'a NativeModel,
     pub records: BTreeMap<&'a ir::SymbolName, &'a ir::RecordDeclaration>,
     pub enumerations: BTreeMap<&'a ir::SymbolName, &'a ir::EnumDeclaration>,
     pub values: BTreeMap<&'a ir::SymbolName, &'a ir::ValueDeclaration>,
     pub objects: BTreeMap<&'a ir::SymbolName, &'a ObjectRole>,
+    pub fields: BTreeMap<(&'a ir::SymbolName, &'a ir::SymbolName), &'a ir::RecordFieldDeclaration>,
+    pub variants: BTreeMap<&'a ir::SymbolName, BTreeSet<&'a ir::SymbolName>>,
+    pub frames: BTreeMap<(&'a ir::SymbolName, &'a ir::SymbolName), FrameIndex<'a>>,
     references: BTreeMap<&'a ir::SymbolName, &'a ObjectRole>,
     scalars: BTreeMap<&'a ScalarSite, &'a ScalarRole>,
 }
@@ -184,6 +196,49 @@ impl<'a> Catalog<'a> {
         }
         Self {
             model,
+            frames: model
+                .roles()
+                .operations
+                .iter()
+                .map(|operation| {
+                    (
+                        (&operation.context, &operation.name),
+                        FrameIndex {
+                            owner: model.environment().owner(),
+                            fields: operation
+                                .frame
+                                .fields
+                                .iter()
+                                .map(|(record, field)| (record, field))
+                                .collect(),
+                            created: operation.frame.created.iter().collect(),
+                            deleted: operation.frame.deleted.iter().collect(),
+                        },
+                    )
+                })
+                .collect(),
+            fields: records
+                .values()
+                .flat_map(|record| {
+                    record
+                        .fields()
+                        .iter()
+                        .map(move |field| ((record.name(), field.name()), field))
+                })
+                .collect(),
+            variants: enumerations
+                .values()
+                .map(|declaration| {
+                    (
+                        declaration.name(),
+                        declaration
+                            .variants()
+                            .iter()
+                            .map(|variant| variant.name())
+                            .collect(),
+                    )
+                })
+                .collect(),
             records,
             enumerations,
             values: model

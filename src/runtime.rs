@@ -3,6 +3,13 @@
 
 mod construction;
 mod input;
+mod validation;
+
+pub use validation::{
+    validate, ExecutionSelection, ObservationSelection, RuntimeInput, RuntimeLocation,
+    RuntimePathSegment, RuntimeReference, ValidatedContext, ValidationLimits, ValidationReport,
+    ValidationStatus, ValidationUsage,
+};
 
 pub use input::{
     ArtifactLimits, ArtifactUsage, DraftPathSegment, FieldBinding, InputError, InvocationDraft,

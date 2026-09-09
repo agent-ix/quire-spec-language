@@ -16,6 +16,7 @@ use crate::syntax::ExprId;
 use crate::{Code, Diagnostic, Phase, Source, Span};
 
 pub use types::NativeType;
+pub(crate) use types::{Catalog, FrameIndex};
 
 type Result<T> = std::result::Result<T, Box<Diagnostic>>;
 
@@ -258,9 +259,13 @@ pub struct CheckedPackage<'a> {
     bindings: CheckBindings,
     clauses: Vec<CheckedClause<'a>>,
     usage: CheckUsage,
+    catalogs: Vec<Catalog<'a>>,
 }
 
 impl<'a> CheckedPackage<'a> {
+    pub(crate) fn catalogs(&self) -> &[Catalog<'a>] {
+        &self.catalogs
+    }
     /// Original native syntax, source, imports and model occurrences.
     pub fn linked(&self) -> &LinkedPackage<'a> {
         &self.linked
@@ -352,5 +357,6 @@ pub fn check<'a>(
         bindings,
         clauses,
         usage,
+        catalogs,
     })
 }

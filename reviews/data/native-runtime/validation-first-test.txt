@@ -1,0 +1,50 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved imports `quire_spec_language::runtime::validate`, `quire_spec_language::runtime::ExecutionSelection`, `quire_spec_language::runtime::ObservationSelection`, `quire_spec_language::runtime::RuntimeInput`, `quire_spec_language::runtime::ValidationLimits`, `quire_spec_language::runtime::ValidationStatus`
+  --> tests/runtime_validation.rs:16:5
+   |
+16 |     validate, ArtifactLimits, ExecutionSelection, FieldBinding, ModelBinding, ObjectEntry,
+   |     ^^^^^^^^                  ^^^^^^^^^^^^^^^^^^ no `ExecutionSelection` in `runtime`
+   |     |
+   |     no `validate` in `runtime`
+17 |     ObjectIdentity, ObservationSelection, Population, RuntimeInput, Snapshot, SnapshotDraft,
+   |                     ^^^^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^ no `RuntimeInput` in `runtime`
+   |                     |
+   |                     no `ObservationSelection` in `runtime`
+18 |     SnapshotRef, ValidationLimits, ValidationStatus, ValueId, ValueNode,
+   |                  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^ no `ValidationStatus` in `runtime`
+   |                  |
+   |                  no `ValidationLimits` in `runtime`
+
+error[E0599]: no variant, associated function, or constant named `Validate` found for enum `Phase` in the current scope
+   --> tests/runtime_validation.rs:215:41
+    |
+215 |     assert_eq!(diagnostic.phase, Phase::Validate);
+    |                                         ^^^^^^^^ variant, associated function, or constant not found in `Phase`
+
+error[E0599]: no variant, associated function, or constant named `DanglingReference` found for enum `Code` in the current scope
+   --> tests/runtime_validation.rs:254:47
+    |
+254 |             (ValidationStatus::Refused, Code::DanglingReference)
+    |                                               ^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `IncompletePopulation` found for enum `Code` in the current scope
+   --> tests/runtime_validation.rs:256:50
+    |
+256 |             (ValidationStatus::Incomplete, Code::IncompletePopulation)
+    |                                                  ^^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `DanglingReference` found for enum `Code` in the current scope
+   --> tests/runtime_validation.rs:267:60
+    |
+267 |                 .all(|diagnostic| diagnostic.code != Code::DanglingReference));
+    |                                                            ^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+error[E0599]: no variant, associated function, or constant named `UnavailableObservation` found for enum `Code` in the current scope
+   --> tests/runtime_validation.rs:308:54
+    |
+308 |                 (ValidationStatus::Incomplete, Code::UnavailableObservation)
+    |                                                      ^^^^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "runtime_validation") due to 6 previous errors

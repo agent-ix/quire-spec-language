@@ -32,10 +32,17 @@ API tests and a role-separation compile-fail doctest cover construction; its
 qualification is tracked in [Plan-006](plan/Plan-006-native-runtime/index.md).
 See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
 
-Runtime population validation, healthy/violating evaluation, backend projection
-and Quire integration remain downstream work. Construction establishes structure
-and byte correspondence; a checked package establishes static judgments
-conditional on valid input. Neither evaluates a population.
+`runtime::validate` now checks exact artifact/clause/model bindings, supplied
+typed values, finite reference closure, operation captures, population deltas
+and immutable frames. Its constructor-private context retains the checked
+package and immutable input; failed reports retain located defects and fresh
+budget usage. Task-013 remains in progress with 27 passing public API tests;
+its complete review and acceptance qualification are still pending.
+
+Healthy/violating evaluation, backend projection and Quire integration remain
+downstream work. Construction establishes structure and byte correspondence;
+a checked package establishes static judgments conditional on valid input.
+Validation establishes input conditions without evaluating a predicate.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,

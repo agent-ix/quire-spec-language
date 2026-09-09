@@ -1,0 +1,17 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.68s
+     Running tests/runtime_validation.rs (target/debug/deps/runtime_validation-d8651dea53b7db35)
+
+running 9 tests
+test complete_current_context_retains_exact_checked_source_and_input ... ok
+test invocation_cases::actual_created_sets_need_both_exact_recording_and_model_permission ... ok
+test invocation_cases::precondition_can_record_permitted_self_deletion_and_pre_captured_parameter ... ok
+test invocation_cases::recorded_input_checks_immutable_field_permissions_before_any_truth ... ok
+test invocation_cases::state_roots_need_preserved_storage_values_and_explicit_counterparts ... ok
+test invocation_cases::unavailable_pre_does_not_become_empty_or_suppress_known_post_and_delta_defects ... ok
+test missing_target_is_dangling_only_when_its_population_is_complete ... ok
+test selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory ... ok
+test skipped_invalid_field_refuses_with_actual_native_and_model_loci ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

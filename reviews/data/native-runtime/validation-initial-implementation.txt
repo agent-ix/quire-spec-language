@@ -1,0 +1,44 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+warning: unused import: `labels`
+ --> src/runtime/validation/inventory.rs:7:5
+  |
+7 |     labels, snapshot_key, Address, ObservationSelection, PopulationIndex, RuntimePathSegment,
+  |     ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Span`
+  --> src/runtime/validation.rs:12:35
+   |
+12 | use crate::{Code, SourceIdentity, Span};
+   |                                   ^^^^
+
+warning: field `population_notices` is never read
+   --> src/runtime/validation.rs:104:5
+    |
+ 92 | struct Validator<'input, 'model, F> {
+    |        --------- field in this struct
+...
+104 |     population_notices: BTreeSet<(usize, PopulationKey)>,
+    |     ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `labels` is never used
+   --> src/runtime/validation.rs:231:4
+    |
+231 | fn labels(identity: &SourceIdentity) -> (&str, &str) {
+    |    ^^^^^^
+
+warning: `quire-spec-language` (lib) generated 4 warnings (run `cargo fix --lib -p quire-spec-language` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.84s
+     Running tests/runtime_validation.rs (target/debug/deps/runtime_validation-d8651dea53b7db35)
+
+running 4 tests
+test complete_current_context_retains_exact_checked_source_and_input ... ok
+test missing_target_is_dangling_only_when_its_population_is_complete ... ok
+test selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory ... ok
+test skipped_invalid_field_refuses_with_actual_native_and_model_loci ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
