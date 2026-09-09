@@ -84,9 +84,12 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
         assert_eq!(Code::from_code(code.as_str()), Some(code));
         assert_eq!(code.to_string(), code.as_str());
     }
-    assert_eq!(seen.len(), 16);
+    assert_eq!(seen.len(), 18);
     assert_eq!(Code::WrongSnapshot.as_str(), "wrong_snapshot");
     assert_eq!(Code::from_code("wrong_snapshot"), Some(Code::WrongSnapshot));
+    assert_eq!(Code::IllTyped.as_str(), "ill_typed");
+    assert_eq!(Code::UndefinedExpression.as_str(), "undefined_expression");
+    assert_eq!(Phase::Check.as_str(), "check");
     for unknown in ["", "INVALID_SYNTAX", "future_code"] {
         assert_eq!(Code::from_code(unknown), None);
     }

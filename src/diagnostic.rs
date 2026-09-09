@@ -19,6 +19,8 @@ pub enum Phase {
     SourceMap,
     /// Exact formal import and native declaration resolution.
     Link,
+    /// Native contextual typing and guarded proof checking.
+    Check,
 }
 
 impl Phase {
@@ -32,6 +34,7 @@ impl Phase {
             Self::Format => "format",
             Self::SourceMap => "source_map",
             Self::Link => "link",
+            Self::Check => "check",
         }
     }
 }
@@ -71,6 +74,10 @@ pub enum Code {
     InvalidModelBinding,
     /// An invocation result or value is unavailable in the requested access form.
     WrongSnapshot,
+    /// Native types, nominal identities or operator constraints disagree.
+    IllTyped,
+    /// An actual IR proof could not establish potentially evaluated definedness.
+    UndefinedExpression,
 }
 
 impl Code {
@@ -93,6 +100,8 @@ impl Code {
             Self::MissingDeclaration => "missing_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
             Self::WrongSnapshot => "wrong_snapshot",
+            Self::IllTyped => "ill_typed",
+            Self::UndefinedExpression => "undefined_expression",
         }
     }
 
@@ -115,6 +124,8 @@ impl Code {
             Self::MissingDeclaration,
             Self::InvalidModelBinding,
             Self::WrongSnapshot,
+            Self::IllTyped,
+            Self::UndefinedExpression,
         ]
     }
 

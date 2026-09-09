@@ -1,0 +1,23 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0502]: cannot borrow `*self` as immutable because it is also borrowed as mutable
+   --> src/checking/proof.rs:433:13
+    |
+429 |         let combined = facts::sequential(
+    |                        ----------------- mutable borrow later used by call
+...
+432 |             &mut self.meter,
+    |             --------------- mutable borrow occurs here
+433 |             self.span(native),
+    |             ^^^^ immutable borrow occurs here
+
+error[E0502]: cannot borrow `*self` as immutable because it is also borrowed as mutable
+   --> src/checking/proof.rs:654:62
+    |
+654 |                         outcomes.rebase(id, &mut self.meter, self.span(id))?;
+    |                                  ------     ---------------  ^^^^ immutable borrow occurs here
+    |                                  |          |
+    |                                  |          mutable borrow occurs here
+    |                                  mutable borrow later used by call
+
+For more information about this error, try `rustc --explain E0502`.
+error: could not compile `quire-spec-language` (lib) due to 2 previous errors

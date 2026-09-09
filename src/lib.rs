@@ -2,6 +2,7 @@
 //! Native syntax, formatting and source diagnostics for the finite-state profile.
 //!
 //! Parsing does not establish model binding, type correctness or execution support.
+pub mod checking;
 pub mod diagnostic;
 pub mod digest;
 pub mod formal_source;

@@ -2,7 +2,7 @@
 id: Task-010
 title: "Review and hand off native model and checker"
 type: Task
-status: pending
+status: in_progress
 track: A
 priority: P1
 relationships:
@@ -28,7 +28,7 @@ for the implemented model/checker, then create a ready private PR.
 
 ## Subtasks
 
-- [ ] Run required README checks serially and retain exact command results.
+- [x] Run required README checks serially and retain exact command results.
 - [ ] Apply actual agent-skills/code-review and rust-review; resolve findings.
 - [ ] Run gap analysis without the owner-declined semantic comparison.
 - [ ] Reconcile matrix/task status to actual execution and publish private handoff.

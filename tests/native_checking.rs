@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-006/016: real native reference/operation judgments under qualified models.
 
+#[path = "native_checking_cases/bindings.rs"]
+mod bindings;
+#[path = "native_checking_cases/flow.rs"]
+mod flow;
+#[path = "native_checking_cases/limits.rs"]
+mod limits;
 #[path = "support/native_rule_model.rs"]
 mod native_rule_model;
+#[path = "native_checking_cases/types.rs"]
+mod types;
 
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
@@ -10,6 +18,7 @@ use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding, NativeType,
 };
 use quire_spec_language::formal_source::FormalSource;
+use quire_spec_language::linking::LinkedPackage;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::syntax::ClauseKind;
 use quire_spec_language::{
@@ -29,6 +38,15 @@ fn request<'a>(
     expression: &str,
     kind: ClauseKind,
 ) -> Result<CheckedPackage<'a>, Box<Diagnostic>> {
+    let (linked, bindings) = prepared(models, expression, kind)?;
+    check(linked, bindings, CheckLimits::default())
+}
+
+fn prepared<'a>(
+    models: &'a [NativeModel],
+    expression: &str,
+    kind: ClauseKind,
+) -> Result<(LinkedPackage<'a>, CheckBindings), Box<Diagnostic>> {
     let (clause, execution_point) = match kind {
         ClauseKind::Invariant => (
             format!("invariant Rule on M::Node at current {{ {expression} }}"),
@@ -49,7 +67,26 @@ fn request<'a>(
             },
         ),
     };
-    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clause}\n", models[0].digest());
+    let (linked, source) = program(models, &clause)?;
+    Ok((
+        linked,
+        CheckBindings {
+            source,
+            clauses: vec![ClauseBinding {
+                name: "Rule".into(),
+                requirement: authored_owner(),
+                clause: ir::ClauseId::new("parent_order").unwrap(),
+                execution_point,
+            }],
+        },
+    ))
+}
+
+fn program<'a>(
+    models: &'a [NativeModel],
+    clauses: &str,
+) -> Result<(LinkedPackage<'a>, FormalSource), Box<Diagnostic>> {
+    let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clauses}\n", models[0].digest());
     let unit = parse(
         SourceIdentity {
             identity: "test:native-checking".into(),
@@ -68,19 +105,16 @@ fn request<'a>(
         ),
     );
     let linked = link_native(unit, models, LinkLimits::default())?;
-    check(
-        linked,
-        CheckBindings {
-            source,
-            clauses: vec![ClauseBinding {
-                name: "Rule".into(),
-                requirement: authored_owner(),
-                clause: ir::ClauseId::new("parent_order").unwrap(),
-                execution_point,
-            }],
-        },
-        CheckLimits::default(),
-    )
+    Ok((linked, source))
+}
+
+fn authored_model(change: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
+    let mut data = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    change(&mut data);
+    let text = serde_json::to_string_pretty(&data).unwrap();
+    native_rule_model::from_text(&text, "checker-model.json", "draft:1")
+        .expect("source-derived IR setup precedes checker judgment")
+        .model()
 }
 
 fn accepted(models: &[NativeModel], expression: &str, kind: ClauseKind) {
@@ -328,4 +362,191 @@ fn tc_048_nominal_constraints_cover_branches_units_and_operator_eligibility() {
     ] {
         accepted(&models, expression, ClauseKind::Invariant);
     }
+}
+
+#[test]
+#[trace("TC-052", "FR-016-AC-9")]
+fn tc_052_checked_clauses_retain_universe_and_operation_input_requirements() {
+    let models = [native_rule_model::parts().model()];
+    let checked = request(
+        &models,
+        "present(self.parent) implies reaches(deref(value(self.parent)), self, parent)",
+        ClauseKind::Invariant,
+    )
+    .unwrap();
+    let runtime = checked.clauses()[0].runtime_requirements();
+    assert_eq!(
+        runtime.context.identity.key,
+        quire_spec_language::linking::DeclarationKey::Type(native_rule_model::symbol("Node"))
+    );
+    assert_eq!(
+        runtime.context_observations,
+        vec![ir::StateObservation::Current]
+    );
+    assert_eq!(runtime.universes.len(), 1);
+    assert_eq!(runtime.universes[0].object.universe.as_str(), "nodes");
+    assert_eq!(
+        runtime.universes[0].observations,
+        vec![ir::StateObservation::Current]
+    );
+    assert!(std::ptr::eq(runtime.model, &models[0]));
+    assert!(!runtime.validate_frame);
+    for expression in ["true", "pre(self) = self"] {
+        let checked = request(&models, expression, ClauseKind::Postcondition).unwrap();
+        let runtime = checked.clauses()[0].runtime_requirements();
+        assert_eq!(
+            runtime.context_observations,
+            vec![ir::StateObservation::Pre, ir::StateObservation::Post]
+        );
+        assert!(runtime.validate_frame);
+        assert_eq!(runtime.operation.unwrap().anchor.as_str(), "step");
+        assert_eq!(
+            runtime.operation.unwrap().frame.fields,
+            vec![(
+                native_rule_model::symbol("Node"),
+                native_rule_model::symbol("n")
+            )]
+        );
+        assert_eq!(
+            runtime.universes[0].observations,
+            vec![ir::StateObservation::Pre, ir::StateObservation::Post]
+        );
+    }
+    refused(
+        &models,
+        "reaches(pre(self), self, parent)",
+        ClauseKind::Postcondition,
+        Code::IllTyped,
+        None,
+    );
+}
+
+#[derive(Clone)]
+enum Formula {
+    Present,
+    Zero,
+    True,
+    False,
+    Not(Box<Self>),
+    And(Box<Self>, Box<Self>),
+    Or(Box<Self>, Box<Self>),
+    Implies(Box<Self>, Box<Self>),
+}
+
+impl Formula {
+    fn evaluate(&self, present: bool, zero: bool) -> bool {
+        match self {
+            Self::Present => present,
+            Self::Zero => zero,
+            Self::True => true,
+            Self::False => false,
+            Self::Not(value) => !value.evaluate(present, zero),
+            Self::And(a, b) => a.evaluate(present, zero) && b.evaluate(present, zero),
+            Self::Or(a, b) => a.evaluate(present, zero) || b.evaluate(present, zero),
+            Self::Implies(a, b) => !a.evaluate(present, zero) || b.evaluate(present, zero),
+        }
+    }
+    fn source(&self) -> String {
+        match self {
+            Self::Present => "present(self.parent)".into(),
+            Self::Zero => "self.n = 0".into(),
+            Self::True => "true".into(),
+            Self::False => "false".into(),
+            Self::Not(value) => format!("not ({})", value.source()),
+            Self::And(a, b) => format!("({}) and ({})", a.source(), b.source()),
+            Self::Or(a, b) => format!("({}) or ({})", a.source(), b.source()),
+            Self::Implies(a, b) => format!("({}) implies ({})", a.source(), b.source()),
+        }
+    }
+}
+
+#[test]
+#[trace("TC-053", "FR-016-AC-1", "FR-016-AC-7")]
+fn tc_053_native_presence_facts_are_sound_against_independent_boolean_assignments() {
+    let models = [native_rule_model::parts().model()];
+    let atoms = [
+        Formula::Present,
+        Formula::Zero,
+        Formula::True,
+        Formula::False,
+    ];
+    let mut base = atoms.to_vec();
+    base.extend(
+        atoms
+            .iter()
+            .cloned()
+            .map(|value| Formula::Not(Box::new(value))),
+    );
+    let mut formulas = base.clone();
+    for a in &base {
+        for b in &base {
+            formulas.extend([
+                Formula::And(Box::new(a.clone()), Box::new(b.clone())),
+                Formula::Or(Box::new(a.clone()), Box::new(b.clone())),
+                Formula::Implies(Box::new(a.clone()), Box::new(b.clone())),
+            ]);
+        }
+    }
+    let join = Formula::Or(
+        Box::new(Formula::And(
+            Box::new(Formula::Present),
+            Box::new(Formula::Zero),
+        )),
+        Box::new(Formula::And(
+            Box::new(Formula::Present),
+            Box::new(Formula::Not(Box::new(Formula::Zero))),
+        )),
+    );
+    let contradiction = Formula::And(
+        Box::new(Formula::Present),
+        Box::new(Formula::Not(Box::new(Formula::Present))),
+    );
+    formulas.extend([join.clone(), contradiction.clone()]);
+    let mut assignments = 0;
+    let mut accepted_count = 0;
+    for formula in &formulas {
+        let expression = format!(
+            "({}) implies deref(value(self.parent)).n < self.n",
+            formula.source()
+        );
+        let result = request(&models, &expression, ClauseKind::Invariant);
+        let safe = [false, true]
+            .into_iter()
+            .flat_map(|p| [false, true].into_iter().map(move |z| (p, z)))
+            .fold(true, |safe, (p, z)| {
+                assignments += 1;
+                safe & (!formula.evaluate(p, z) || p)
+            });
+        match result {
+            Ok(_) => {
+                accepted_count += 1;
+                assert!(safe, "unsafe guard accepted: {expression}");
+            }
+            Err(error) => {
+                assert_eq!(
+                    error.code,
+                    Code::UndefinedExpression,
+                    "{expression}: {error:?}"
+                );
+                assert_eq!(error.phase, Phase::Check);
+                assert_eq!(
+                    error.upstream.as_ref().unwrap().code,
+                    ir::DiagnosticCode::PotentiallyUndefined
+                );
+            }
+        }
+    }
+    assert_eq!((formulas.len(), assignments), (202, 808));
+    assert!(accepted_count > 0);
+    for formula in [Formula::Present, Formula::False, join, contradiction] {
+        accepted(
+            &models,
+            &format!(
+                "({}) implies deref(value(self.parent)).n < self.n",
+                formula.source()
+            ),
+            ClauseKind::Invariant,
+        );
+    }
+    println!("independent guard qualification: {} formulas, {assignments} assignments, {accepted_count} accepted", formulas.len());
 }
