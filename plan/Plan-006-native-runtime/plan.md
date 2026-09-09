@@ -106,7 +106,7 @@ authorized: all work is Agent A, with shared desktop resources and one writer.
 | Task-012 | A | FR-018, NFR-006, NFR-005 | TC-055–057 | done |
 | Task-013 | A | FR-007, NFR-006, NFR-003, NFR-005 | TC-058–066 | done |
 | Task-014 | A | FR-008, NFR-006, NFR-003, NFR-005 | TC-067–076 | done |
-| Task-015 | A | FR-007, FR-008, FR-018, NFR-006, NFR-003, NFR-005, IT-006 | TC-077 | not_started |
+| Task-015 | A | FR-007, FR-008, FR-018, NFR-006, NFR-003, NFR-005, IT-006 | TC-077 | in_progress |
 
 ## Coordination Rules
 
