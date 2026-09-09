@@ -14,3 +14,4 @@ title: "Native package specification"
 - [TM-005](tests.md)
 - [Detailed wire/API contract](../../docs/native-linked-packages.md)
 - [Closed structural schema](../../schemas/native-linked-package-1.schema.json)
+- [Eight specification reviews](../reviews/native-packages/index.md)
