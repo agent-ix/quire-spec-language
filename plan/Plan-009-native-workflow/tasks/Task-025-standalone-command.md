@@ -2,7 +2,7 @@
 id: Task-025
 title: "Execute native workflows from selected local files"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-026
     type: references
