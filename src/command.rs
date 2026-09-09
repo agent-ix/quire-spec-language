@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028: local file orchestration around the native compiler/runtime.
+//! FR-026, FR-027, FR-028, FR-029: local native compiler/runtime orchestration.
 
 mod output;
 mod wire;
 
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
+use crate::lowering::{self, LoweringCode, LoweringError, LoweringLimits};
 use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
 use crate::native_model::{ModelLimits, NativeModel};
 use crate::package::{
@@ -73,6 +74,17 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
+    /// Existing lowering failure, retained with the native authority it refers to.
+    #[error("{error}")]
+    Lowering {
+        /// Exact native artifact from which the projection was requested.
+        package: NativePackageRef,
+        /// Original formal/program source for interpreting the native byte span.
+        program: FormalSource,
+        /// Original lowering classification, authored clause and IR diagnostics.
+        #[source]
+        error: Box<LoweringError>,
+    },
     /// Selected package intake failed against the external source/model authority.
     #[error("selected package {file}: {error}")]
     SelectedPackage {
@@ -116,6 +128,12 @@ impl RunError {
             | RunCause::Identifier(_) => 2,
             RunCause::Limit(_) => 3,
             RunCause::Format => 1,
+            RunCause::Lowering { error, .. } => match error.code {
+                LoweringCode::ResourceExhausted => 3,
+                LoweringCode::Unsupported
+                | LoweringCode::Binding
+                | LoweringCode::InvalidCorrespondence => 1,
+            },
             RunCause::Native(e) => {
                 if e.is_incomplete() {
                     3
@@ -278,12 +296,33 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
 /// Compile a native-compile/1 source-only job into the exact existing package bytes.
 /// No runtime artifact is read or executed; failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    compile_with(path, |package| Ok(package.bytes().to_vec()))
+}
+
+/// Compile native-compile/1 source files and export the existing Boolean IR projection.
+/// Unsupported clauses refuse the complete export; no runtime inputs are needed.
+pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    compile_with(path, |package| {
+        lowering::lower(package, LoweringLimits::default())
+            .map(|projection| projection.bytes().to_vec())
+            .map_err(|error| RunCause::Lowering {
+                package: NativePackageRef::new(package.digest()),
+                program: package.checked().bindings().source.clone(),
+                error,
+            })
+    })
+}
+
+fn compile_with(
+    path: &Path,
+    export: impl FnOnce(&NativePackage<'_>) -> Result<Vec<u8>>,
+) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes, _digest| {
         let request: wire::CompileRequest = request(bytes, "native-compile/1")?;
         let mut intake = intake(directory, &[request.models.len()])?;
         let models = intake.models(&request.models)?;
         let package = intake.package(&request.program, &models)?;
-        Ok(package.bytes().to_vec())
+        export(&package)
     })
 }
 

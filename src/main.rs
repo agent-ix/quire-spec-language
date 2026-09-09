@@ -25,7 +25,7 @@ fn run(arguments: &[OsString]) -> Result<String, (u8, String)> {
     let [command, identity, revision, path] = arguments else {
         return Err((
             2,
-            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile> <request-file>".into(),
+            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile|lower> <request-file>".into(),
         ));
     };
     let Some(command) = command.to_str() else {
@@ -82,8 +82,13 @@ fn command_error(error: &quire_spec_language::command::RunError) -> ExitCode {
 fn main() -> ExitCode {
     let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
     if let [command, path] = arguments.as_slice() {
-        if command == "compile" {
-            return match quire_spec_language::command::compile(Path::new(path)) {
+        if command == "compile" || command == "lower" {
+            let export = if command == "compile" {
+                quire_spec_language::command::compile(Path::new(path))
+            } else {
+                quire_spec_language::command::lower(Path::new(path))
+            };
+            return match export {
                 Ok(bytes) => match io::stdout().lock().write_all(&bytes) {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,

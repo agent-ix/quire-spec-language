@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026/028: explicit JSON views of local native outcomes and actual provenance.
+//! FR-026, FR-028, FR-029: JSON views of native outcomes and actual provenance.
 
 use super::{wire, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
@@ -86,6 +86,30 @@ pub(super) fn error(error: &RunError) -> Value {
             "package",
             e.code.as_str(),
             json!({"stage":e.stage.to_string()}),
+        ),
+        RunCause::Lowering {
+            package,
+            program,
+            error,
+        } => (
+            "lower",
+            match error.code {
+                crate::lowering::LoweringCode::Unsupported => "unsupported_projection",
+                crate::lowering::LoweringCode::ResourceExhausted => {
+                    Code::ResourceExhausted.as_str()
+                }
+                crate::lowering::LoweringCode::Binding => "projection_binding",
+                crate::lowering::LoweringCode::InvalidCorrespondence => {
+                    "invalid_projection_correspondence"
+                }
+            },
+            json!({
+                "profile":crate::lowering::PROFILE,
+                "package":{"format":package.format(),"digest":package.digest().to_string()},
+                "source":source(program),"clause":error.clause,
+                "span":error.source.and_then(|value|program.source().locate(value)).map(span),
+                "upstream":error.upstream,
+            }),
         ),
         RunCause::SelectedPackage {
             file,
