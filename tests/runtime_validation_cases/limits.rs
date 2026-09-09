@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! TC-065/066: independently lowered budgets, deterministic stops and immutable retries.
 
-use super::invocation_cases::{authored_model, recorded};
+use super::setup::{authored_model, recorded};
 use super::*;
 use quire_spec_language::runtime::{ValidationReport, ValidationUsage};
 use serde_json::json;

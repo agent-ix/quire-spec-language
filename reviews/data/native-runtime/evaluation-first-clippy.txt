@@ -1,0 +1,13 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: unused imports: `ExecutionSelection`, `InvocationDraft`, `Invocation`, and `QualifiedName`
+  --> tests/runtime_validation.rs:22:31
+   |
+22 |     validate, ArtifactLimits, ExecutionSelection, FieldBinding, Invocation, InvocationDraft,
+   |                               ^^^^^^^^^^^^^^^^^^                ^^^^^^^^^^  ^^^^^^^^^^^^^^^
+23 |     ModelBinding, ObjectEntry, ObjectIdentity, ObservationSelection, Population, QualifiedName,
+   |                                                                                  ^^^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: could not compile `quire-spec-language` (test "runtime_validation") due to 1 previous error

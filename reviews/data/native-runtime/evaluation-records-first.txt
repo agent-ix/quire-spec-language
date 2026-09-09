@@ -1,0 +1,42 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.46s
+     Running tests/runtime_evaluation.rs (target/debug/deps/runtime_evaluation-d3dfd53c16aaf11e)
+
+running 20 tests
+test events_limits::active_non_group_depth_is_independent_of_other_unused_limits ... ok
+test events_limits::every_actual_poll_can_cancel_or_panic_without_changing_retry_state ... ok
+test events_limits::nested_implications_report_actual_entry_and_completion_order ... ok
+test events_limits::original_grouped_operand_spans_and_atomic_event_capacity ... ok
+test events_limits::unsupported_collect_and_ineligible_equality_refuse_at_the_frontend ... ok
+test graphs_sequences::all_short_sequences_preserve_occurrences_order_and_short_circuit_events ... ok
+test graphs_sequences::every_small_functional_graph_matches_independent_matrix_closure ... ok
+test graphs_sequences::parent_order_and_aggregate_truth_follow_actual_populations ... ok
+test independent_expression_cost_vectors_and_one_below ... ok
+test observations::optional_alias_and_conditional_preserve_capture_while_direct_pre_changes_reads ... ok
+test observations::parameter_reference_keeps_pre_capture_after_its_target_is_deleted ... ok
+test observations::precondition_and_postcondition_select_their_actual_self_observation ... ok
+test observations::result_reference_keeps_post_capture_inside_pre ... ok
+test positive_length_graph_cost_vectors_and_one_below ... ok
+test records::deeply_shared_records_use_separate_comparison_depth_and_exact_pairs ... FAILED
+test records::distinct_equal_valued_objects_remain_unequal_and_enum_literals_are_nominal ... ok
+test records::eligible_nested_record_equality_uses_declared_names_and_types ... ok
+test scalars::comparison_and_text_limits_stop_at_exact_per_side_advances ... ok
+test scalars::exact_unicode_scalar_order_and_equality_use_no_normalization ... ok
+test scalars::independent_signed_arithmetic_vectors_and_actual_static_refusals ... ok
+
+failures:
+
+---- records::deeply_shared_records_use_separate_comparison_depth_and_exact_pairs stdout ----
+
+thread 'records::deeply_shared_records_use_separate_comparison_depth_and_exact_pairs' (240) panicked at tests/runtime_evaluation_cases/records.rs:110:9:
+assertion `left == right` failed
+  left: 0
+ right: 1
+
+
+failures:
+    records::deeply_shared_records_use_separate_comparison_depth_and_exact_pairs
+
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+
+error: test failed, to rerun pass `--test runtime_evaluation`

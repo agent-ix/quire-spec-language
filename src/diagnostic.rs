@@ -23,6 +23,8 @@ pub enum Phase {
     Check,
     /// Model-aware runtime population and invocation validation.
     Validate,
+    /// Independent execution of a checked clause over validated inputs.
+    Evaluate,
 }
 
 impl Phase {
@@ -38,6 +40,7 @@ impl Phase {
             Self::Link => "link",
             Self::Check => "check",
             Self::Validate => "validate",
+            Self::Evaluate => "evaluate",
         }
     }
 }
@@ -95,6 +98,8 @@ pub enum Code {
     FrameViolation,
     /// The caller requested cancellation before the next work unit.
     Cancelled,
+    /// Execution encountered a violated established typing or input invariant.
+    RuntimeInvariant,
 }
 
 impl Code {
@@ -126,6 +131,7 @@ impl Code {
             Self::PopulationDeltaMismatch => "population_delta_mismatch",
             Self::FrameViolation => "frame_violation",
             Self::Cancelled => "cancelled",
+            Self::RuntimeInvariant => "runtime_invariant",
         }
     }
 
@@ -157,6 +163,7 @@ impl Code {
             Self::PopulationDeltaMismatch,
             Self::FrameViolation,
             Self::Cancelled,
+            Self::RuntimeInvariant,
         ]
     }
 

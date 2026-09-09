@@ -174,6 +174,7 @@ pub(crate) struct Catalog<'a> {
     pub values: BTreeMap<&'a ir::SymbolName, &'a ir::ValueDeclaration>,
     pub objects: BTreeMap<&'a ir::SymbolName, &'a ObjectRole>,
     pub fields: BTreeMap<(&'a ir::SymbolName, &'a ir::SymbolName), &'a ir::RecordFieldDeclaration>,
+    pub ordered_fields: BTreeMap<&'a ir::SymbolName, Vec<&'a ir::RecordFieldDeclaration>>,
     pub variants: BTreeMap<&'a ir::SymbolName, BTreeSet<&'a ir::SymbolName>>,
     pub frames: BTreeMap<(&'a ir::SymbolName, &'a ir::SymbolName), FrameIndex<'a>>,
     references: BTreeMap<&'a ir::SymbolName, &'a ObjectRole>,
@@ -196,6 +197,14 @@ impl<'a> Catalog<'a> {
         }
         Self {
             model,
+            ordered_fields: records
+                .values()
+                .map(|record| {
+                    let mut fields: Vec<_> = record.fields().iter().collect();
+                    fields.sort_by_key(|field| field.name());
+                    (record.name(), fields)
+                })
+                .collect(),
             frames: model
                 .roles()
                 .operations

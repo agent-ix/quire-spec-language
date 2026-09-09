@@ -2,7 +2,7 @@
 id: Task-014
 title: "Execute the native reference semantics and exact cost model"
 type: Task
-status: not_started
+status: in_progress
 track: A
 priority: P1
 relationships:
@@ -58,7 +58,9 @@ Native Completed/Incomplete/Refused reports tied to exact context; qualified hea
 
 ## Notes
 
-Task-013 is qualified at 45ed1b4 by SR-097, so this implementation dependency
-is satisfied. No reference evaluator or completed predicate result exists yet.
+Task-013 is qualified at 45ed1b4 by SR-097. The initial evaluator tests now
+cover all ten independent accounting vectors; evaluation-initial-red.txt records
+the actual missing-API compiler failure before evaluator implementation.
+Reference execution qualification remains outstanding.
 
 No B-owned TechniqueResult or generated backend interpreter is added. Memory/work limits do not become authored number, sequence or path bounds. Defensive runtime-invariant tests stay private and cannot create a public unchecked-context bypass.
