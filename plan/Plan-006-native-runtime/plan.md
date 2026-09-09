@@ -2,7 +2,7 @@
 id: Plan-006
 title: "Native runtime validation and independent reference execution"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: references
@@ -44,7 +44,9 @@ The detailed criterion-to-test mapping remains in
 [TM-004](../../spec/native-runtime/tests.md). TC-055–057 are qualified in SR-096;
 the validation portions of TC-058–066 are qualified at 45ed1b4 by SR-097.
 TC-061's evaluation portion and TC-067–076 are qualified at 48f53ae by SR-098.
-TC-077 is qualified at 4ac3597 by SR-099; final plan gap/handoff remains Task-015.
+TC-077 is qualified at 4ac3597 by SR-099. Task-015's qualification and private
+handoff are complete; SR-100 records the final plan audit. The ready-PR merge
+follows that audit; this plan status does not assert a merge or broader closure.
 A native API milestone does not replace IT-002's compiled ConfigVersion and
 existing backend, remaining LC02 strict package/projection, FS03 acceptance
 or LC05 Quire integration.
@@ -106,7 +108,7 @@ authorized: all work is Agent A, with shared desktop resources and one writer.
 | Task-012 | A | FR-018, NFR-006, NFR-005 | TC-055–057 | done |
 | Task-013 | A | FR-007, NFR-006, NFR-003, NFR-005 | TC-058–066 | done |
 | Task-014 | A | FR-008, NFR-006, NFR-003, NFR-005 | TC-067–076 | done |
-| Task-015 | A | FR-007, FR-008, FR-018, NFR-006, NFR-003, NFR-005, IT-006 | TC-077 | in_progress |
+| Task-015 | A | FR-007, FR-008, FR-018, NFR-006, NFR-003, NFR-005, IT-006 | TC-077 | done |
 
 ## Coordination Rules
 

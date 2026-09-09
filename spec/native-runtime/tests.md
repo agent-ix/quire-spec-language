@@ -181,7 +181,8 @@ and the validation portions of TC-058–066 in SR-097. Twenty-nine public evalua
 tests and two private invariant controls qualify TC-061's evaluation portion and
 TC-067–076 in SR-098. Five public pipeline tests qualify TC-077/IT-006 at
 4ac3597 in SR-099. All 23 runtime cases are backed by actual Rust tests;
-Task-015 retains final plan reconciliation and handoff.
+Task-015's qualification and private handoff are complete; SR-100 owns the
+final plan audit. The complete assignment retains the downstream gates below.
 Root CLI syntax/audit/linker/checker results do not themselves qualify runtime truth. LC02 strict linked-package/projection and FS03 acceptance remain
 issue-level gates; B portable outcomes, backend qualification and Quire consumer
 integration are separately owned downstream work in the full assignment.
