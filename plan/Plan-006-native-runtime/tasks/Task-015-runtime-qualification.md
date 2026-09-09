@@ -2,7 +2,7 @@
 id: Task-015
 title: "Qualify review and hand off the complete native runtime slice"
 type: Task
-status: blocked
+status: not_started
 track: A
 priority: P1
 relationships:
@@ -45,5 +45,8 @@ Execute the complete native API milestone, required local regression gates, actu
 Recorded full runtime API results, validated code/Rust and gap reviews, accurate TM-004/task statuses, and private PR/issue handoff with explicit remaining scope.
 
 ## Notes
+
+Task-014 is qualified at 48f53ae by SR-098. Its dependency is satisfied;
+TC-077/IT-006 and complete plan gap/review handoff are the next bounded work.
 
 Run one Cargo phase at a time using nice -n 10, -j 1, --locked --offline, an explicit existing target directory and --test-threads=1. Wait for actual exit before another phase. No additional agents, producer-language runs, public publication or B/C/TL/Filament edits.

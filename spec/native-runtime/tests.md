@@ -8,8 +8,8 @@ type: TestMatrix
 
 LC03 covers FR-018 input construction, FR-007 validation and FR-008 evaluation
 under NFR-006. TC-055–057 are qualified at c8fa41f by SR-096. The validation
-portions of TC-058–066 are qualified at 45ed1b4 by SR-097; TC-061's evaluation
-portion and TC-067–077 remain planned. TM-001–003 keep their existing scopes and qualification.
+portions of TC-058–066 are qualified at 45ed1b4 by SR-097. TC-061's evaluation
+portion and TC-067–076 are qualified at 48f53ae by SR-098; TC-077 remains planned. TM-001–003 keep their existing scopes and qualification.
 US-003 traces these functions to StR-001; IT-006 exercises the real native API.
 IT-002 still owns the full compiled-model/backend workflow.
 
@@ -34,26 +34,26 @@ IT-002 still owns the full compiled-model/backend workflow.
 | FR-007 | FR-007-AC-13 | TC-064 | ✅ Passed |
 | FR-007 | FR-007-AC-14 | TC-063 | ✅ Passed |
 | FR-007 | FR-007-AC-15 | TC-066 | ✅ Passed |
-| FR-008 | FR-008-AC-1 | TC-067, TC-077 | 🚧 Planned |
-| FR-008 | FR-008-AC-2 | TC-067, TC-077 | 🚧 Planned |
-| FR-008 | FR-008-AC-3 | TC-068 | 🚧 Planned |
-| FR-008 | FR-008-AC-4 | TC-074 | 🚧 Planned |
-| FR-008 | FR-008-AC-5 | TC-075 | 🚧 Planned |
-| FR-008 | FR-008-AC-6 | TC-061, TC-071 | 🚧 Planned |
-| FR-008 | FR-008-AC-7 | TC-073 | 🚧 Planned |
-| FR-008 | FR-008-AC-8 | TC-073 | 🚧 Planned |
-| FR-008 | FR-008-AC-9 | TC-073 | 🚧 Planned |
-| FR-008 | FR-008-AC-10 | TC-073 | 🚧 Planned |
-| FR-008 | FR-008-AC-11 | TC-068 | 🚧 Planned |
-| FR-008 | FR-008-AC-12 | TC-069 | 🚧 Planned |
-| FR-008 | FR-008-AC-13 | TC-070 | 🚧 Planned |
-| FR-008 | FR-008-AC-14 | TC-071 | 🚧 Planned |
-| FR-008 | FR-008-AC-15 | TC-072 | 🚧 Planned |
-| FR-008 | FR-008-AC-16 | TC-074 | 🚧 Planned |
-| FR-008 | FR-008-AC-17 | TC-073, TC-075 | 🚧 Planned |
-| FR-008 | FR-008-AC-18 | TC-075 | 🚧 Planned |
-| FR-008 | FR-008-AC-19 | TC-075 | 🚧 Planned |
-| FR-008 | FR-008-AC-20 | TC-076 | 🚧 Planned |
+| FR-008 | FR-008-AC-1 | TC-067, TC-077 | ✅ Passed (reference execution; TC-077 planned) |
+| FR-008 | FR-008-AC-2 | TC-067, TC-077 | ✅ Passed (reference execution; TC-077 planned) |
+| FR-008 | FR-008-AC-3 | TC-068 | ✅ Passed |
+| FR-008 | FR-008-AC-4 | TC-074 | ✅ Passed |
+| FR-008 | FR-008-AC-5 | TC-075 | ✅ Passed |
+| FR-008 | FR-008-AC-6 | TC-061, TC-071 | ✅ Passed |
+| FR-008 | FR-008-AC-7 | TC-073 | ✅ Passed |
+| FR-008 | FR-008-AC-8 | TC-073 | ✅ Passed |
+| FR-008 | FR-008-AC-9 | TC-073 | ✅ Passed |
+| FR-008 | FR-008-AC-10 | TC-073 | ✅ Passed |
+| FR-008 | FR-008-AC-11 | TC-068 | ✅ Passed |
+| FR-008 | FR-008-AC-12 | TC-069 | ✅ Passed |
+| FR-008 | FR-008-AC-13 | TC-070 | ✅ Passed |
+| FR-008 | FR-008-AC-14 | TC-071 | ✅ Passed |
+| FR-008 | FR-008-AC-15 | TC-072 | ✅ Passed |
+| FR-008 | FR-008-AC-16 | TC-074 | ✅ Passed |
+| FR-008 | FR-008-AC-17 | TC-073, TC-075 | ✅ Passed |
+| FR-008 | FR-008-AC-18 | TC-075 | ✅ Passed |
+| FR-008 | FR-008-AC-19 | TC-075 | ✅ Passed |
+| FR-008 | FR-008-AC-20 | TC-076 | ✅ Passed |
 | FR-018 | FR-018-AC-1 | TC-055 | ✅ Passed |
 | FR-018 | FR-018-AC-2 | TC-055 | ✅ Passed |
 | FR-018 | FR-018-AC-3 | TC-056, TC-077 | ✅ Passed (construction; TC-077 planned) |
@@ -66,8 +66,8 @@ IT-002 still owns the full compiled-model/backend workflow.
 
 | Non-Functional Req | Verification Method | Evidence/Test Cases | Status |
 | --- | --- | --- | --- |
-| NFR-006 | Test: negative-abuse-testing with independent work/count controls | TC-057 construction; TC-065 validation; TC-074 exact cost; TC-075 evaluation; TC-066 retries | 🚧 Partial: M-1..11 passed; M-12..17 planned |
-| NFR-005 | Inspection and existing Rust gates | Existing Rust-only policy plus SR-096/097 source/manifest review and actual local gates | 🚧 Construction and validation passed; evaluation pending |
+| NFR-006 | Test: negative-abuse-testing with independent work/count controls | TC-057 construction; TC-065 validation; TC-074 exact cost; TC-075 evaluation; TC-066 retries | ✅ Passed: M-1..17; SR-096/097/098 |
+| NFR-005 | Inspection and existing Rust gates | Existing Rust-only policy plus SR-096/097/098 source/manifest review and actual local gates | ✅ Passed for native runtime scope |
 
 ### Stakeholder and User Story Coverage
 
@@ -86,22 +86,22 @@ coverage remain in TM-001/002.
 | TC-058 | Select exact runtime bindings | Integration | P1 | FR-007-AC-3, FR-007-AC-6 | ✅ Passed |
 | TC-059 | Validate complete population closure | Integration | P1 | FR-007-AC-1, FR-007-AC-2, FR-007-AC-8, FR-007-AC-9 | ✅ Passed |
 | TC-060 | Validate every supplied typed value | Property | P1 | FR-007-AC-7, FR-007-AC-8 | ✅ Passed |
-| TC-061 | Validate recorded invocation captures | Integration | P1 | FR-007-AC-3, FR-007-AC-9, FR-007-AC-10, FR-008-AC-6 | 🚧 Partial: validation passed; evaluation planned |
+| TC-061 | Validate recorded invocation captures | Integration | P1 | FR-007-AC-3, FR-007-AC-9, FR-007-AC-10, FR-008-AC-6 | ✅ Passed |
 | TC-062 | Validate operation effects and deltas | Integration | P1 | FR-007-AC-4, FR-007-AC-11 | ✅ Passed |
 | TC-063 | Compare frame storage values | Integration | P1 | FR-007-AC-14 | ✅ Passed |
 | TC-064 | Retain mixed runtime diagnostics | Property | P1 | FR-007-AC-5, FR-007-AC-13 | ✅ Passed |
 | TC-065 | Bound validation and cancellation | Property | P1 | FR-007-AC-12 | ✅ Passed |
 | TC-066 | Repeat immutable runtime validation | Property | P1 | FR-007-AC-15 | ✅ Passed |
-| TC-067 | Execute parent and aggregate predicates | Integration | P1 | FR-008-AC-1, FR-008-AC-2 | 🚧 Planned |
-| TC-068 | Check reachability against independent closure | Property | P1 | FR-008-AC-3, FR-008-AC-11 | 🚧 Planned |
-| TC-069 | Execute exact signed arithmetic | Integration | P1 | FR-008-AC-12 | 🚧 Planned |
-| TC-070 | Preserve sequence order and multiplicity | Property | P1 | FR-008-AC-13 | 🚧 Planned |
-| TC-071 | Preserve sharing and observation capture | Integration | P1 | FR-008-AC-6, FR-008-AC-14 | 🚧 Planned |
-| TC-072 | Compare native text records and identities | Integration | P1 | FR-008-AC-15 | 🚧 Planned |
-| TC-073 | Retain implication event lineage | Integration | P1 | FR-008-AC-7, FR-008-AC-8, FR-008-AC-9, FR-008-AC-10, FR-008-AC-17 | 🚧 Planned |
-| TC-074 | Qualify exact reference accounting | Integration | P1 | FR-008-AC-4, FR-008-AC-16 | 🚧 Planned |
-| TC-075 | Bound evaluation and immutable retries | Property | P1 | FR-008-AC-5, FR-008-AC-17, FR-008-AC-18, FR-008-AC-19 | 🚧 Planned |
-| TC-076 | Refuse unsupported collection construction | Integration | P1 | FR-008-AC-20 | 🚧 Planned |
+| TC-067 | Execute parent and aggregate predicates | Integration | P1 | FR-008-AC-1, FR-008-AC-2 | ✅ Passed |
+| TC-068 | Check reachability against independent closure | Property | P1 | FR-008-AC-3, FR-008-AC-11 | ✅ Passed |
+| TC-069 | Execute exact signed arithmetic | Integration | P1 | FR-008-AC-12 | ✅ Passed |
+| TC-070 | Preserve sequence order and multiplicity | Property | P1 | FR-008-AC-13 | ✅ Passed |
+| TC-071 | Preserve sharing and observation capture | Integration | P1 | FR-008-AC-6, FR-008-AC-14 | ✅ Passed |
+| TC-072 | Compare native text records and identities | Integration | P1 | FR-008-AC-15 | ✅ Passed |
+| TC-073 | Retain implication event lineage | Integration | P1 | FR-008-AC-7, FR-008-AC-8, FR-008-AC-9, FR-008-AC-10, FR-008-AC-17 | ✅ Passed |
+| TC-074 | Qualify exact reference accounting | Integration | P1 | FR-008-AC-4, FR-008-AC-16 | ✅ Passed |
+| TC-075 | Bound evaluation and immutable retries | Property | P1 | FR-008-AC-5, FR-008-AC-17, FR-008-AC-18, FR-008-AC-19 | ✅ Passed |
+| TC-076 | Refuse unsupported collection construction | Integration | P1 | FR-008-AC-20 | ✅ Passed |
 | TC-077 | Qualify the native reference API workflow | Integration | P1 | FR-007-AC-5, FR-008-AC-1, FR-008-AC-2, FR-018-AC-3 | 🚧 Planned |
 
 ## Test Matrix Rules
@@ -176,8 +176,9 @@ by explicit analysis rather than assuming its catalog is exhaustive.
 
 Twenty-one constructor tests and a role-separation compile-fail doctest qualify
 TC-055–057 in SR-096. Thirty-five runtime tests qualify FR-007 validation
-and the validation portions of TC-058–066 in SR-097. TC-061's evaluation portion,
-reference execution and IT-006 remain planned. Root CLI syntax/audit/linker/checker results do not qualify
-runtime truth. LC02 strict linked-package/projection and FS03 acceptance remain
+and the validation portions of TC-058–066 in SR-097. Twenty-nine public evaluation
+tests and two private invariant controls qualify TC-061's evaluation portion and
+TC-067–076 in SR-098. TC-077/IT-006 and complete plan qualification remain planned.
+Root CLI syntax/audit/linker/checker results do not themselves qualify runtime truth. LC02 strict linked-package/projection and FS03 acceptance remain
 issue-level gates; B portable outcomes, backend qualification and Quire consumer
 integration are separately owned downstream work in the full assignment.

@@ -121,7 +121,10 @@ Construction metrics M-1..5 are qualified at c8fa41f by TC-057 and SR-096,
 including the explicit coupled node/output ceiling. Validation metrics M-6..11
 are qualified at 45ed1b4 by TC-065/066 and SR-097, including successful maximum
 inventory/content/object/detail counts and hard work/text stop controls.
-Evaluation metrics M-12..17 remain planned; this is partial NFR qualification.
+Evaluation metrics M-12..17 are qualified at 48f53ae by TC-074/075 and SR-098.
+The review records exact/lowered/hard work boundaries and the explicit upstream
+coupling of the 65-frame expression control. Complete IT-006/plan qualification
+remains Task-015; these counters do not establish backend fuel parity.
 
 ## Dependencies
 
