@@ -35,11 +35,11 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-013 | FR-013-AC-4 | TC-032 | ✅ Passed |
 | FR-013 | FR-013-AC-5 | TC-033 | ✅ Passed |
 | FR-013 | FR-013-AC-6 | TC-034 | ✅ Passed |
-| FR-014 | FR-014-AC-1 | TC-035 | 🚧 Planned |
-| FR-014 | FR-014-AC-2 | TC-036 | 🚧 Planned |
-| FR-014 | FR-014-AC-3 | TC-037 | 🚧 Planned |
-| FR-014 | FR-014-AC-4 | TC-038 | 🚧 Planned |
-| FR-014 | FR-014-AC-5 | TC-039 | 🚧 Planned |
+| FR-014 | FR-014-AC-1 | TC-035 | ✅ Passed |
+| FR-014 | FR-014-AC-2 | TC-036 | ✅ Passed |
+| FR-014 | FR-014-AC-3 | TC-037 | ✅ Passed |
+| FR-014 | FR-014-AC-4 | TC-038 | ✅ Passed |
+| FR-014 | FR-014-AC-5 | TC-039 | ✅ Passed |
 
 ## Test Case Summary
 
@@ -60,11 +60,11 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-032 | Unmapped reference and operation forms | Integration | P1 | FR-013-AC-4 | ✅ Passed |
 | TC-033 | Native linking resource ceilings | Property | P1 | FR-013-AC-5 | ✅ Passed |
 | TC-034 | Ambiguity provenance and atomicity | Property | P1 | FR-013-AC-6 | ✅ Passed |
-| TC-035 | Explicit source identity assignment | Integration | P1 | FR-014-AC-1 | 🚧 Planned |
-| TC-036 | Independent formal coordinate examples | Integration | P1 | FR-014-AC-2 | 🚧 Planned |
-| TC-037 | Foreign native source requests | Integration | P1 | FR-014-AC-3 | 🚧 Planned |
-| TC-038 | Inconsistent formal coordinates | Integration | P1 | FR-014-AC-4 | 🚧 Planned |
-| TC-039 | Bounded generated span correspondence | Property | P1 | FR-014-AC-5 | 🚧 Planned |
+| TC-035 | Explicit source identity assignment | Integration | P1 | FR-014-AC-1 | ✅ Passed |
+| TC-036 | Independent formal coordinate examples | Integration | P1 | FR-014-AC-2 | ✅ Passed |
+| TC-037 | Foreign native source requests | Integration | P1 | FR-014-AC-3 | ✅ Passed |
+| TC-038 | Inconsistent formal coordinates | Integration | P1 | FR-014-AC-4 | ✅ Passed |
+| TC-039 | Bounded generated span correspondence | Property | P1 | FR-014-AC-5 | ✅ Passed |
 
 ## Six coverage rules
 
@@ -108,7 +108,7 @@ defined before code; FR-006's five static-judgment cases remain separate.
 
 ## Formal source bridge qualification
 
-FR-014 adds five planned cases to the same LC02 matrix. TC-035–038 exercise
+FR-014 adds five executed cases to the same LC02 matrix. TC-035–038 exercise
 actual pinned IR constructors and independent adverse inputs; TC-039 generates
 156 sources and enumerates all valid and invalid offset pairs with a separate
 coordinate oracle. Every FR-014 criterion maps to one case. Boundaries include

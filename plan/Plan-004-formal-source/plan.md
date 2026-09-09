@@ -57,7 +57,7 @@ builds before starting. No hosted workflow dispatch is authorized.
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-007 | A | FR-014, NFR-005 | TC-035–039 | not_started |
+| Task-007 | A | FR-014, NFR-005 | TC-035–039 | in_progress |
 
 ## Coordination Rules
 
