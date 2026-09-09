@@ -89,6 +89,7 @@ Reference execution and accounting are qualified at
 48f53aed5990f7daf15ae6871c1c081d8974c64f by
 [SR-098](../../reviews/26-09-09-native-reference-evaluation.md), covering all
 twenty criteria through 29 public evaluator tests and two private invariant controls.
-IT-006 is qualified at 4ac3597 by SR-099. Task-015's final gap/handoff, backend
-and Quire integration remain required. The historical
+IT-006 is qualified at 4ac3597 by SR-099. Task-015's qualification/handoff is
+complete, with final plan audit in SR-100. Backend and Quire integration remain
+required. The historical
 standard/profile bytes remain unchanged.

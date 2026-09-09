@@ -123,8 +123,9 @@ are qualified at 45ed1b4 by TC-065/066 and SR-097, including successful maximum
 inventory/content/object/detail counts and hard work/text stop controls.
 Evaluation metrics M-12..17 are qualified at 48f53ae by TC-074/075 and SR-098.
 The review records exact/lowered/hard work boundaries and the explicit upstream
-coupling of the 65-frame expression control. Complete IT-006/plan qualification
-remains Task-015; these counters do not establish backend fuel parity.
+coupling of the 65-frame expression control. IT-006 is qualified by SR-099;
+Task-015 records the completed qualification/handoff and SR-100 the plan audit.
+These counters do not establish backend fuel parity.
 
 ## Dependencies
 

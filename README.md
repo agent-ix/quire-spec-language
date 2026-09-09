@@ -50,7 +50,8 @@ See [native-runtime-evaluation.md](docs/native-runtime-evaluation.md).
 Five public pipeline tests now exercise healthy, violating, refused and incomplete
 parent/aggregate cases, operation captures/frames and immutable retries through
 actual model admission, parsing, linking, checking, construction, validation and
-evaluation. Task-015 tracks their final review and handoff. Backend projection
+evaluation. SR-099 records their passing review, and Plan-006 records the
+completed qualification/handoff with its final SR-100 gap audit. Backend projection
 and Quire integration remain downstream work. Construction establishes structure and byte
 correspondence; checking establishes static judgments conditional on valid input;
 validation establishes input conditions before predicate execution.
