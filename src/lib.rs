@@ -17,6 +17,7 @@ pub mod formal_source;
 pub mod format;
 mod lexer;
 pub mod linking;
+pub mod lowering;
 pub mod native_model;
 pub mod package;
 mod parser;
