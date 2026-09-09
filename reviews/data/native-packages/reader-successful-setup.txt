@@ -1,0 +1,29 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+warning: constant `FIXTURE` is never used
+  --> tests/support/native_rule_model.rs:20:11
+   |
+20 | pub const FIXTURE: &str = include_str!("../fixtures/native-rule-model.json");
+   |           ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `symbol` is never used
+   --> tests/support/native_rule_model.rs:164:8
+    |
+164 | pub fn symbol(name: &str) -> ir::SymbolName {
+    |        ^^^^^^
+
+warning: function `parts` is never used
+   --> tests/support/native_rule_model.rs:196:8
+    |
+196 | pub fn parts() -> Parts {
+    |        ^^^^^
+
+warning: `quire-spec-language` (test "package_reading") generated 3 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.72s
+     Running tests/package_reading.rs (target/debug/deps/package_reading-f9a172498b0dfd8d)
+
+running 1 test
+test independent_reader_fixtures_have_successful_real_compiler_setup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

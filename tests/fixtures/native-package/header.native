@@ -1,0 +1,2 @@
+language "ix:native" edition "0-draft";
+profile "state-finite/0-draft";

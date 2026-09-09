@@ -1,0 +1,33 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.28s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-fbb73e67fc659b7d)
+
+running 2 tests
+test correspondence::nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence ... FAILED
+test correspondence::skipped_nested_context_parameter_and_result_references_retain_transitive_universes ... FAILED
+
+failures:
+
+---- correspondence::nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence stdout ----
+
+thread 'correspondence::nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence' (242) panicked at tests/package_construction_cases/correspondence.rs:223:9:
+assertion `left == right` failed
+  left: Object {"context": Object {"identity": Object {"key": Object {"kind": String("type"), "name": String("Node")}, "owner": Object {"package": String("example/rule-tests"), "requirement": String("RuleModel"), "revision": Number(1)}}, "source": Object {"end": Object {"byte_offset": Number(2214), "column": Number(6), "line": Number(116), "source": Object {"document": String("RuleModelSource"), "revision": Number(1)}}, "start": Object {"byte_offset": Number(595), "column": Number(5), "line": Number(35), "source": Object {"document": String("RuleModelSource"), "revision": Number(1)}}}}, "context_observations": Array [String("pre"), String("post")], "operation": Object {"context": String("Node"), "model": Object {"package": String("example/rule-tests"), "requirement": String("RuleModel"), "revision": Number(1)}, "name": String("step")}, "universes": Array [Object {"model": Object {"package": String("example/rule-tests"), "requirement": String("RuleModel"), "revision": Number(1)}, "observations": Array [String("pre"), String("post")], "record": String("Node"), "universe": String("nodes")}], "validate_frame": Bool(true)}
+ right: Object {"context": Object {"identity": Object {"key": Object {"kind": String("type"), "name": String("Node")}, "owner": Object {"package": String("example/rule-tests"), "requirement": String("RuleModel"), "revision": Number(1)}}, "source": Object {"end": Object {"byte_offset": Number(2214), "column": Number(6), "line": Number(116), "source": Object {"document": String("RuleModelSource"), "revision": Number(1)}}, "start": Object {"byte_offset": Number(595), "column": Number(5), "line": Number(35), "source": Object {"document": String("RuleModelSource"), "revision": Number(1)}}}}, "context_observations": Array [String("post")], "operation": Object {"context": String("Node"), "model": Object {"package": String("example/rule-tests"), "requirement": String("RuleModel"), "revision": Number(1)}, "name": String("step")}, "universes": Array [Object {"model": Object {"package": String("example/rule-tests"), "requirement": String("RuleModel"), "revision": Number(1)}, "observations": Array [String("pre"), String("post")], "record": String("Node"), "universe": String("nodes")}], "validate_frame": Bool(true)}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- correspondence::skipped_nested_context_parameter_and_result_references_retain_transitive_universes stdout ----
+
+thread 'correspondence::skipped_nested_context_parameter_and_result_references_retain_transitive_universes' (243) panicked at tests/package_construction_cases/correspondence.rs:353:9:
+assertion `left == right` failed
+  left: Array [String("pre"), String("post")]
+ right: Array [String("post")]
+
+
+failures:
+    correspondence::nested_aliases_and_ordered_unused_parameters_retain_exact_correspondence
+    correspondence::skipped_nested_context_parameter_and_result_references_retain_transitive_universes
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--test package_construction`

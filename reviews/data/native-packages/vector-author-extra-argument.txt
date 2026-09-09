@@ -1,0 +1,1 @@
+Error: Custom { kind: InvalidInput, error: "expected one output directory" }

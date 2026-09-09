@@ -7,6 +7,11 @@ renders `code: message`; `std::error::Error` has no underlying cause. The public
 the pinned thiserror derive would incorrectly treat that field as an error cause.
 The fixture-audit target retains its separate [audit codes](audit-error-codes.md).
 
+Native package APIs use the same Code vocabulary in a separate PackageError
+envelope with a package stage, field/index path and measured pass usage. Its
+typed cause retains the original JSON or native diagnostic. The producer is in
+progress under Task-016; package-reader refusal qualification remains Task-017.
+
 `Code::all()` enumerates this vocabulary, `as_str()` supplies its stable spelling,
 and `from_code()` returns `None` for unknown spellings. Codes are not renamed or
 reused; prose may change without changing classification.
@@ -22,6 +27,9 @@ reused; prose may change without changing classification.
 | unknown_language | The selected language label is not admitted. |
 | unknown_edition | The selected edition label is not admitted. |
 | unknown_profile | The selected profile label is not admitted. |
+| invalid_package | Native package encoding, closed structure or reconstructed claims are invalid. |
+| unknown_wire | The native package format selector is unsupported. |
+| unknown_required_feature | A package feature is unknown or outside the consumer's declared support. |
 | missing_import | A selected formal package or native import alias is absent. |
 | stale_dependency | A known package has no exact selected revision and declaration byte digest. |
 | ambiguous_declaration | Multiple exact candidates or visible exports match; related formal loci are retained. |
@@ -38,7 +46,7 @@ reused; prose may change without changing classification.
 | runtime_invariant | Reference evaluation encountered a violated established typing or validated-input invariant; no Boolean is produced. |
 | ill_typed | Native contextual types, nominal identities, units or operator eligibility disagree, or a scalar context is ambiguous. |
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
-| resource_exhausted | A source, syntax, formatter, map, linking, checking/proof or runtime construction/validation ceiling prevented completion. |
+| resource_exhausted | A source, syntax, formatter, map, linking, checking/proof, package or runtime construction/validation ceiling prevented completion. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
 source_map, link, check or validate. Related formal declaration locations are structured fields;

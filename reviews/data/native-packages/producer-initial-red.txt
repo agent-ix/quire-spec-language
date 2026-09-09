@@ -1,0 +1,21 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved import `quire_spec_language::package`
+  --> tests/package_construction.rs:14:26
+   |
+14 | use quire_spec_language::package::{NativePackage, PackageLimits};
+   |                          ^^^^^^^ could not find `package` in `quire_spec_language`
+
+error[E0599]: no method named `artifact` found for struct `NativeModel` in the current scope
+   --> tests/package_construction.rs:130:77
+    |
+130 |     assert_eq!(wire["models"][0]["artifact"], std::str::from_utf8(models[0].artifact()).unwrap());
+    |                                                                             ^^^^^^^^ private field, not a method
+    |
+help: there is a method `artifact_bytes` with a similar name
+    |
+130 |     assert_eq!(wire["models"][0]["artifact"], std::str::from_utf8(models[0].artifact_bytes()).unwrap());
+    |                                                                                     ++++++
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "package_construction") due to 2 previous errors

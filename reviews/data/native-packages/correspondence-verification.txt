@@ -1,0 +1,89 @@
+Task-016 remaining producer correspondence and identity qualification, 2026-09-09.
+Baseline: 0739cf9a718bd6b5bf024a2db18a233ebf219e50; branch
+agent-a/lc02-linked-packages; private LC02 issue #3 / draft PR #12.
+Reviewed specification 41da6e5 / all-eight 69588ad, with admitted-source
+correction 2c6b9b8 / all-eight supplements 1c3aa50. No production behavior,
+API, semantics or acceptance criterion changed. New source contains tests and
+two type-role compile-fail documentation examples.
+
+Final gates, each terminal exit 0:
+- cargo fmt --all -- --check: correspondence-format.txt.
+- cargo clippy --all-targets --no-default-features -- -D warnings:
+  correspondence-clippy-final.txt.
+- cargo test --no-default-features -- --test-threads=1:
+  correspondence-regression.txt; 232 ordinary tests plus three compile-fail
+  doctests pass. Three private audit tests are selected separately below.
+- cargo test --test package_construction --lib -- --test-threads=1:
+  correspondence-producer-tests-final.txt; 25 public package tests and eight
+  library unit tests pass. Five of the library tests are package controls.
+- cargo build --no-default-features: correspondence-build.txt; cached build,
+  not a clean-cache qualification.
+- RUSTDOCFLAGS=-D warnings cargo doc --no-default-features --no-deps:
+  correspondence-rustdoc.txt.
+- cargo run --bin fixture-audit -- self-test:
+  correspondence-audit-self-test.txt; six controls and duplicate-key refusal.
+- cargo run --bin fixture-audit -- model-bytes tests/fixtures:
+  correspondence-audit-model-bytes.txt; five historical digests and producer pin.
+- cargo test --test fixture_audit -- --ignored --test-threads=1:
+  correspondence-private-audits.txt; three pass against an immutable temporary
+  git archive of proposals/state-core at adopted standard
+  e897f810a7356d4ce8fd19026221ebda7b65596f, selected with QUIRE_STATE_CORE.
+  The temporary snapshot was removed after completion.
+- cargo run -- parse test:parent fixture:1 tests/fixtures/parent.native and
+  cargo run -- format test:parent fixture:1 tests/fixtures/parent.native:
+  correspondence-cli-parse.txt and correspondence-cli-format.txt.
+
+Cargo phases were serial, nice -n 10, --locked --offline --target-dir target
+-j 1. Final test phases used one test thread. The preliminary two-doctest
+invocation in correspondence-type-roles.txt omitted the thread option; both
+are included in the final one-thread regression above. No hosted dispatch ran.
+Inspection confirms the only workflow is .github/workflows/ci.yml and its only
+trigger is workflow_dispatch, matching the owner's renewed local-only directive.
+
+Added evidence: three complete parent/alias/capture/transitive inventory tests,
+three static dependency mutation families, one private runtime-independence
+test and two compile-fail role controls. Parent expectations include the
+implicit dereference target. Captures preserve unused parameter order, exact
+result, frame and both postcondition context observations. Nested optional
+sequences retain otherwise unused reference populations through a finite cycle.
+Three distinct runtime populations and four budgets produce independent truth
+or exhaustion while canonical bytes, full artifact, hashes and pass usage stay
+unchanged under repeated real construction. Six admissible selected-model
+changes and native-byte/formal-document changes match independent complete
+artifact/hash expectations. Sixteen raw claim mutations cover semantic
+selectors, both definition revisions/digests, loci, resolution and obligations;
+they are preimage controls, not unimplemented reader refusal evidence.
+
+Original failures retained:
+- correspondence-runtime-identity.txt: the test named nonexistent ResourceLimit;
+  it now asserts the existing ResourceExhausted code.
+- correspondence-inventories.txt: attempted construction of private ExprId;
+  the test instead compares opaque returned handles with public arena entries.
+- correspondence-inventories-shadowing-setup.txt: active local shadowing was
+  rejected by the actual checker; distinct p/q aliases preserve the adopted rule.
+- correspondence-inventories-observation-setup.txt: the expected postcondition
+  context omitted pre. The established pre/post requirement was retained.
+- correspondence-static-changes.txt: one hand-authored native occurrence offset
+  did not exist in the independent frozen vector; its precondition failed.
+  The actual fixed vector's 221..225 span now supplies that mutation.
+- correspondence-producer-tests.txt: the parent expectation omitted the
+  implicit target-record occurrence for deref; the complete expectation now
+  includes its composed source span after the argument's original occurrences.
+No production admission/checking/refusal path was relaxed by these corrections.
+
+Quire 0.31.0, engine 0.46.0@ca7362d4 (correspondence-quire-version.txt).
+quire coverage --scope . --json: correspondence-coverage.json and stderr;
+235/235 Rust candidates bound, 223/249 matrix rows backed. Existing 20 NFR
+metric references remain untracked; 22 catalog and six registry diagnostics,
+three unmatched historical IT-004 tags and no status lie are recorded.
+quire validate --scope . 'spec/**/*.md' --summary:
+correspondence-matrix-precondition.txt, before matrix reconciliation.
+The broader initial selection is in correspondence-validation.txt.
+The final review records actual reconciled statuses; raw census is not full
+criterion qualification. Only final blank lines in logs are normalized.
+
+No dependency/version/feature/license change, external helper, unsafe, global
+state, concurrency or I/O path was added to production. All new qualification
+is Rust under AGPL-3.0-only. Verified readback, independent FS05 acceptance,
+actual lowering/backend/compiled ConfigVersion and Quire integration remain
+incomplete and outside this producer gate.

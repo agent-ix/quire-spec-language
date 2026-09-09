@@ -1,5 +1,52 @@
 # Quoin specification workflow status
 
+## LC02 native package review — 2026-09-09
+
+The [native package specification](../spec/native-packages/index.md) is authored
+at 9a80805 with the canonical control-escape clarification at
+41da6e5eb86bb727fbad5370fd23b38d330bcfea. It covers FR-019/020/021,
+NFR-007, IT-007 and TM-005's 14 planned cases for 27 functional criteria.
+The owning ticket is private language #3; branch agent-a/lc02-linked-packages
+starts from merged runtime 789c636. No package implementation preceded review.
+
+Agent A used the actual installed QUOIN 0.22.5 specify, spec-matrix,
+spec-review and all seven analysis skills under
+/home/peter/.codex/plugins/cache/quoin/quoin/0.22.5/skills/. The authoring pack
+was fetched once for FR,NFR,IT,TC,TestMatrix,SpecReview; the installed catalog
+resolved agent-ix and supplied the discrete artifact skeletons/schemas.
+No applicable AssuranceProfile was found. The existing owner choice is all
+eight analyses; the optional semantic gap pass remains declined.
+
+[SR-101–108](../spec/reviews/native-packages/index.md) record the actual serial
+reviews at 41da6e5 and PASS for planning/implementation of this slice. Draft
+repairs define format-before-version-shape ordering, exact native canonical
+input, cyclic feature traversal, independent vectors and honest per-pass
+accounting. Native input, static identity, raw bytes and projection availability
+retain distinct roles. No independent B/C acceptance is asserted.
+
+Strict Quire 0.31.0 validation reports 218/218 specification documents clean
+before review and 226/226 after the eight reports. Raw adviser/catalog/coverage
+outputs and the sandboxed adviser failure are retained beside the reviews.
+All 27 FR methods match at Test-class level; five benchmark recommendations for
+exact resource limits have explicit negative-abuse-testing dispositions.
+Coverage still binds 205/205 existing Rust symbols, while all 41 new functional/
+case rows remain unbacked. Twenty-two classifier and six registry diagnostics
+remain disclosed, including the matrix header mismatch and historical IT-004
+tags. The schema has had JSON syntax and structural inspection only; actual
+Rust Draft 2020-12 qualification is planned in TC-083.
+
+[Plan-007](../plan/Plan-007-native-packages/index.md) now carries three serial
+tasks: construction/identity, verified reconstruction and workflow qualification.
+It was authored using QUOIN spec-to-plan after all eight reviews, with the
+installed Plan/Task schemas and index/log skeletons. Strict validation reports
+233/233 scoped specification/review/plan documents grammar-clean; all tasks
+remain not_started. The next executable work is Task-016's independent Rust
+fixtures and genuine missing-API test, followed by implementation.
+Static native-domain
+registration, independent FS05 consumption, compiled ConfigVersion/backend
+parity and Quire integration remain full-assignment acceptance work. No Cargo
+build, additional agent, hosted dispatch or public posting ran in this review.
+
 Recorded 2026-09-07. The [requirements index](../spec/spec.md) contains 24 draft
 artifacts: one master, one StR, four US, eleven FR, four NFR and three IT.
 These document the existing syntax implementation and the remaining LC02–LC05

@@ -1,0 +1,85 @@
+Task-016 initial producer increment, 2026-09-09
+
+Saved command logs normalize only trailing blank lines for git diff --check;
+test outcomes, failures, diagnostics and command output otherwise remain intact.
+
+Specification: 41da6e5; original all-eight review: 69588ad.
+Admitted-source correction: 2c6b9b8; all-eight supplements: 1c3aa50.
+Worktree: /home/peter/dev/worktrees/formalization-a-language.
+Branch: agent-a/lc02-linked-packages; private LC02 issue #3 / draft PR #12.
+Rust: rustc 1.98.1 (48a229cea 2026-09-01).
+
+Every Cargo phase was serial, nice -n 10, --locked --offline --target-dir
+target -j 1; test phases used -- --test-threads=1. No hosted CI was dispatched.
+The existing target cache was reused; the minimal build is not a clean-cache
+claim. No dependency/version/feature or hosted-workflow change was made.
+
+Final successful gates (all terminal exit 0):
+- cargo fmt --all -- --check: producer-format.txt (empty success output).
+- cargo clippy --all-targets --no-default-features -- -D warnings:
+  producer-clippy.txt.
+- cargo test --no-default-features: producer-regression-final.txt;
+  221 ordinary tests and one compile-fail doctest passed; three named private
+  fixture tests were ignored in this normal lane and ran separately below.
+- cargo build --no-default-features: producer-minimal-build.txt.
+- RUSTDOCFLAGS=-D warnings cargo doc --no-default-features --no-deps:
+  producer-rustdoc.txt.
+- cargo run --bin fixture-audit -- self-test: producer-audit-self-test.txt;
+  six content/digest controls and duplicate-key rejection passed.
+- cargo run --bin fixture-audit -- model-bytes tests/fixtures:
+  producer-audit-model-bytes.txt; five historical artifact checks passed.
+- cargo test --test fixture_audit -- --ignored --test-threads=1:
+  producer-private-audits.txt; all three selected private tests passed.
+  QUIRE_STATE_CORE selected a temporary git archive of proposals/state-core at
+  e897f810a7356d4ce8fd19026221ebda7b65596f. The current standard checkout was
+  8ab058beff03cc76c0f39cc06c87ef98f76e8d78; the adopted immutable packet, not
+  that newer checkout's contents, supplied this qualification. The temporary
+  archive was removed after the terminal result.
+
+The package increment adds 16 public tests and three private encoder controls.
+They cover complete minimal and Unicode/u64 composed manifests, exact
+multi-owner invariant/pre/post fields, all unary/binary/builtin feature
+families, unused selected declarations, import aliases, finite reference
+cycles, independent pass workloads/limits, typed references, source/authored
+mutations and nonconforming hash/encoding controls. They do not complete every
+TC-078..091 obligation or Task-016. Fixed independent multi-clause byte vectors,
+full lexical/parameter/result/transitive assertions, further static mutations,
+runtime-independent identity and type-role controls, and actual structural
+schema qualification remain before the producer task closes. Reader and
+integration tasks have not begun.
+
+Failed runs are retained, not replaced by later passing logs:
+- producer-initial-red.txt includes an erroneous upstream helper method call.
+- producer-api-red.txt isolates the intended missing package API.
+- producer-first-build.txt has one passing nonempty case and three invalid
+  header-only setups. Further implementation paused for the correction and
+  all-eight review above. Corrected independent positive oracles follow that
+  first producer implementation; they are not described as prior passing data.
+- producer-features-and-limits.txt exposed conflicting source identities in
+  a two-model setup. The corrected offered models share exact physical source
+  bytes under distinct formal owners; source-conflict refusal was not weakened.
+- producer-code-vocabulary-red.txt exposed new Code variants absent from all()
+  and therefore unresolved by from_code(). Enumeration was corrected.
+- producer-complete-clause-inventory.txt exposed an incomplete test expectation
+  for constant precondition frame populations. Existing checker requirements
+  require both pre/post populations; the expectation was corrected.
+- producer-clippy-initial.txt reported a redundant concat!; it was removed.
+- producer-regression.txt stopped on the old vocabulary count of 26; the
+  explicit count is now 29 for the three reviewed new codes, with separate
+  exact spelling/membership assertions. No error check was removed.
+
+Trace evidence: producer-coverage-final.json and producer-coverage-stderr.txt.
+Quire binds 224/224 Rust candidates; 221/249 matrix rows are backed. No status
+lie is reported. All new package rows remain Planned; syntactic backing is
+not executed full criterion coverage. There are 22 catalog/classifier
+diagnostics, six registry diagnostics, and three historical unmatched IT-004
+tags. Twenty references to NFR-007 metric IDs are reported as untracked even
+though obligations lists those exact IDs; they are absent from minted_targets.
+These valid metric references and this diagnostic are retained. The earlier
+producer-coverage.json also shows six multiline-attribute candidates omitted;
+splitting the same IDs across compact shared #[trace] attributes restored all
+six candidates without changing the shared grammar or deleting trace IDs.
+
+First-party producer and qualification code are Rust under AGPL-3.0-only.
+Existing third-party grants remain unchanged. No new portable reference
+authority, IR executable projection, backend or Quire integration is claimed.
