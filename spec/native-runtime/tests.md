@@ -7,8 +7,8 @@ type: TestMatrix
 ## Overview
 
 LC03 covers FR-018 input construction, FR-007 validation and FR-008 evaluation
-under NFR-006. All 23 cases are planned; specification coverage is distinct from
-executed evidence. TM-001–003 keep their existing scopes and qualification.
+under NFR-006. TC-055–057 are qualified at c8fa41f by SR-096; the other 20 cases
+remain planned. TM-001–003 keep their existing scopes and qualification.
 US-003 traces these functions to StR-001; IT-006 exercises the real native API.
 IT-002 still owns the full compiled-model/backend workflow.
 
@@ -53,20 +53,20 @@ IT-002 still owns the full compiled-model/backend workflow.
 | FR-008 | FR-008-AC-18 | TC-075 | 🚧 Planned |
 | FR-008 | FR-008-AC-19 | TC-075 | 🚧 Planned |
 | FR-008 | FR-008-AC-20 | TC-076 | 🚧 Planned |
-| FR-018 | FR-018-AC-1 | TC-055 | 🚧 Planned |
-| FR-018 | FR-018-AC-2 | TC-055 | 🚧 Planned |
-| FR-018 | FR-018-AC-3 | TC-056, TC-077 | 🚧 Planned |
-| FR-018 | FR-018-AC-4 | TC-056 | 🚧 Planned |
-| FR-018 | FR-018-AC-5 | TC-055 | 🚧 Planned |
-| FR-018 | FR-018-AC-6 | TC-057 | 🚧 Planned |
-| FR-018 | FR-018-AC-7 | TC-055, TC-056 | 🚧 Planned |
+| FR-018 | FR-018-AC-1 | TC-055 | ✅ Passed |
+| FR-018 | FR-018-AC-2 | TC-055 | ✅ Passed |
+| FR-018 | FR-018-AC-3 | TC-056, TC-077 | ✅ Passed (construction; TC-077 planned) |
+| FR-018 | FR-018-AC-4 | TC-056 | ✅ Passed |
+| FR-018 | FR-018-AC-5 | TC-055 | ✅ Passed |
+| FR-018 | FR-018-AC-6 | TC-057 | ✅ Passed |
+| FR-018 | FR-018-AC-7 | TC-055, TC-056 | ✅ Passed |
 
 ### Non-Functional Requirement Coverage
 
 | Non-Functional Req | Verification Method | Evidence/Test Cases | Status |
 | --- | --- | --- | --- |
-| NFR-006 | Test: negative-abuse-testing with independent work/count controls | TC-057 construction; TC-065 validation; TC-074 exact cost; TC-075 evaluation; TC-066 retries | 🚧 Planned |
-| NFR-005 | Inspection and existing Rust gates | Existing Rust-only policy plus review of these test sources and manifest | 🚧 LC03 inspection pending |
+| NFR-006 | Test: negative-abuse-testing with independent work/count controls | TC-057 construction; TC-065 validation; TC-074 exact cost; TC-075 evaluation; TC-066 retries | 🚧 Partial: M-1..5 passed; M-6..17 planned |
+| NFR-005 | Inspection and existing Rust gates | Existing Rust-only policy plus SR-096 source/manifest review and actual local gates | 🚧 Construction passed; later LC03 implementation pending |
 
 ### Stakeholder and User Story Coverage
 
@@ -79,9 +79,9 @@ coverage remain in TM-001/002.
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
-| TC-055 | Preserve flat runtime values | Integration | P1 | FR-018-AC-1, FR-018-AC-2, FR-018-AC-5, FR-018-AC-7 | 🚧 Planned |
-| TC-056 | Bind exact runtime artifact bytes | Property | P1 | FR-018-AC-3, FR-018-AC-4, FR-018-AC-7 | 🚧 Planned |
-| TC-057 | Bound runtime artifact construction | Property | P1 | FR-018-AC-6 | 🚧 Planned |
+| TC-055 | Preserve flat runtime values | Integration | P1 | FR-018-AC-1, FR-018-AC-2, FR-018-AC-5, FR-018-AC-7 | ✅ Passed |
+| TC-056 | Bind exact runtime artifact bytes | Property | P1 | FR-018-AC-3, FR-018-AC-4, FR-018-AC-7 | ✅ Passed |
+| TC-057 | Bound runtime artifact construction | Property | P1 | FR-018-AC-6 | ✅ Passed |
 | TC-058 | Select exact runtime bindings | Integration | P1 | FR-007-AC-3, FR-007-AC-6 | 🚧 Planned |
 | TC-059 | Validate complete population closure | Integration | P1 | FR-007-AC-1, FR-007-AC-2, FR-007-AC-8, FR-007-AC-9 | 🚧 Planned |
 | TC-060 | Validate every supplied typed value | Property | P1 | FR-007-AC-7, FR-007-AC-8 | 🚧 Planned |
@@ -173,8 +173,9 @@ by explicit analysis rather than assuming its catalog is exhaustive.
 
 ## Coverage Gaps
 
-All implementation, tests and evidence for this new runtime packet remain
-planned. Root CLI syntax/audit/linker/checker results do not qualify runtime
-input or truth. LC02 strict linked-package/projection and FS03 acceptance remain
+Twenty-one constructor tests and a role-separation compile-fail doctest qualify
+TC-055–057 in SR-096. Population validation, reference execution and IT-006
+remain planned. Root CLI syntax/audit/linker/checker results do not qualify
+runtime truth. LC02 strict linked-package/projection and FS03 acceptance remain
 issue-level gates; B portable outcomes, backend qualification and Quire consumer
 integration are separately owned downstream work in the full assignment.

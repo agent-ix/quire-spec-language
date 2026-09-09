@@ -57,5 +57,8 @@ can select an exact digest. Limits and accounting follow
 
 ## Status
 
-Planned LC03 native input API. B retains portable ArtifactRef and result envelopes;
-this contract creates no new portable authority, semantic digest or input decoder.
+Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
+21 public API tests and a role-separation compile-fail doctest. Model-aware
+runtime validation and execution remain planned. B retains portable ArtifactRef
+and result envelopes; this contract creates no new portable authority, semantic
+digest or input decoder.
