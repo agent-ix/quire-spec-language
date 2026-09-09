@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-029: actual source-only projection export and existing backend consumption.
+//! FR-029/FR-033: actual source-only projection export and backend boundaries.
 
 #[path = "support/standalone_setup.rs"]
 mod fixtures;
@@ -39,6 +39,49 @@ fn save(directory: &Path, job: &Value) {
 
 fn job(directory: &Path) -> Value {
     serde_json::from_slice(&std::fs::read(directory.join("compile.json")).unwrap()).unwrap()
+}
+
+#[test]
+#[trace("TC-111", "FR-033-AC-4")]
+fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut projections = Vec::new();
+    for (name, amount, truth) in [("healthy", 1, true), ("violating", 10, false)] {
+        let path = directory.path().join(name);
+        fixtures::write(&path, fixtures::Case::Integer(amount));
+        let actual = invoke(&path, "run", "request.json");
+        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 1 }));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&actual.stdout).unwrap()["truth"],
+            truth
+        );
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .arg("lower")
+            .arg(path.join("compile.json"))
+            .args(["--target", "integer-ir/v1"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bound = ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
+        assert_eq!(bound.clauses().len(), 2);
+        projections.push(output.stdout);
+    }
+    assert_eq!(projections[0], projections[1]);
+    let path = directory.path().join("boolean");
+    fixtures::write(&path, fixtures::Case::Boolean(true));
+    let default = invoke(&path, "lower", "compile.json");
+    let explicit = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("lower")
+        .arg(path.join("compile.json"))
+        .args(["--target", "boolean-oracle/v1"])
+        .output()
+        .unwrap();
+    assert!(default.status.success() && explicit.status.success());
+    assert_eq!(default.stdout, explicit.stdout);
 }
 
 #[test]

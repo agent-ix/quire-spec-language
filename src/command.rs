@@ -8,7 +8,7 @@ mod wire;
 
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
-use crate::lowering::{self, LoweringCode, LoweringError, LoweringLimits};
+use crate::lowering::{self, LoweringCode, LoweringError, LoweringLimits, ProjectionTarget};
 use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
 use crate::native_model::{ModelLimits, NativeModel};
 use crate::package::{
@@ -91,6 +91,8 @@ pub enum RunCause {
     /// Existing lowering failure, retained with the native authority it refers to.
     #[error("{error}")]
     Lowering {
+        /// Explicit target whose lowering failed.
+        target: ProjectionTarget,
         /// Exact native artifact from which the projection was requested.
         package: NativePackageRef,
         /// Original formal/program source for interpreting the native byte span.
@@ -342,10 +344,19 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
 /// Compile native-compile/1 source files and export the existing Boolean IR projection.
 /// Unsupported clauses refuse the complete export; no runtime inputs are needed.
 pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    lower_for(path, ProjectionTarget::BooleanOracleV1)
+}
+
+/// Export a source-only job through an explicit IR lowering target (FR-033).
+pub fn lower_for(
+    path: &Path,
+    target: ProjectionTarget,
+) -> std::result::Result<Vec<u8>, Box<RunError>> {
     compile_with(path, |package| {
-        lowering::lower(package, LoweringLimits::default())
+        lowering::lower_for(package, target, LoweringLimits::default())
             .map(|projection| projection.bytes().to_vec())
             .map_err(|error| RunCause::Lowering {
+                target,
                 package: NativePackageRef::new(package.digest()),
                 program: package.checked().bindings().source.clone(),
                 error,

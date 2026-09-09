@@ -81,6 +81,12 @@ See [the package contract](docs/native-linked-packages.md).
 `lowering::lower` derives complete Boolean executable projections through the
 existing strict IR binder, retaining original native authority and explicit
 model/read/observation correspondence. Numeric and object expressions refuse.
+`lowering::lower_for` with `ProjectionTarget::IntegerIrV1` additionally exports
+bounded integer arithmetic and comparisons accepted by the strict IR binder.
+Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
+the existing codegen still refuses numeric expressions. The `standalone_fixtures`
+example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
+Their native runs return true and false; both export the same integer projection.
 The LC04 backend qualification uses pinned existing codegen and actual generated
 Rust; activation acceptance is pending the codegen reader's Rust 1.98.1 / LLVM
 3.1.0 migration. [Plan-008](plan/Plan-008-native-lowering/plan.md) retains that gate.

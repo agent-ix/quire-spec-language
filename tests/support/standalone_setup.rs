@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026–029, FR-031: example setup through public native APIs.
+//! FR-026–029, FR-031/033: example setup through public native APIs.
 
 // The shared fixture module also serves other runtime test targets.
 #[allow(dead_code)]
@@ -21,6 +21,7 @@ pub enum Case {
     Aggregate(i64),
     Operation(bool),
     Boolean(bool),
+    Integer(i64),
 }
 
 fn source(source: &FormalSource, file: &str) -> Value {
@@ -38,6 +39,11 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
                 .unwrap()
                 .push(json!({"name":"flag","kind":"state","type":{"kind":"boolean"}}));
         }),
+        Case::Integer(_) => runtime::authored_model(|model| {
+            model["values"].as_array_mut().unwrap().push(json!({
+                "name":"amount","kind":"state","type":{"kind":"scalar","name":"Version"}
+            }));
+        }),
         Case::Aggregate(_) | Case::Operation(_) => runtime::native_rule_model::parts().model(),
     }];
     let model = &models[0];
@@ -54,6 +60,23 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
             let selection = runtime::selection(model, snapshot.reference());
             (
                 "true implies flag",
+                ClauseKind::Invariant,
+                runtime::input(snapshot),
+                selection,
+            )
+        }
+        Case::Integer(value) => {
+            let mut draft = runtime::draft(model);
+            let id = ValueId::new(u32::try_from(draft.arena.len()).unwrap());
+            draft.arena.push(ValueNode::Integer { value });
+            draft.values.push(ValueBinding {
+                declaration: runtime::qualified(model, "amount"),
+                value: id,
+            });
+            let snapshot = runtime::snapshot(draft);
+            let selection = runtime::selection(model, snapshot.reference());
+            (
+                "amount < 7",
                 ClauseKind::Invariant,
                 runtime::input(snapshot),
                 selection,

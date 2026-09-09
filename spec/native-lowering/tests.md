@@ -26,6 +26,10 @@ SR-114/115; PR specification review is under spec/reviews/native-lowering/.
 | FR-009 | FR-009-AC-5 | TC-094 | 🚧 Generated activation deferred |
 | FR-009 | FR-009-AC-6 | TC-093 | ✅ Tested |
 | FR-009 | FR-009-AC-7 | TC-093 | ✅ Tested |
+| FR-033 | FR-033-AC-1 | TC-111 | ✅ Tested |
+| FR-033 | FR-033-AC-2 | TC-111 | ✅ Tested |
+| FR-033 | FR-033-AC-3 | TC-111 | ✅ Tested |
+| FR-033 | FR-033-AC-4 | TC-111 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -34,3 +38,4 @@ SR-114/115; PR specification review is under spec/reviews/native-lowering/.
 | TC-092 | Complete binding and correspondence | Integration | P1 | FR-009 | ✅ Tested |
 | TC-093 | Unsupported forms and bounded work | Integration | P1 | FR-009 | ✅ Tested |
 | TC-094 | Actual generated truth and activation through IT-008 | Integration | P1 | FR-009 | 🚧 Generated activation deferred |
+| TC-111 | Bounded integer IR and explicit command target | Integration | P1 | FR-033 | ✅ Tested |
