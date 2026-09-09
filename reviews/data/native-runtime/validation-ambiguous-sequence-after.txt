@@ -1,0 +1,9 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.19s
+     Running tests/runtime_validation.rs (target/debug/deps/runtime_validation-d8651dea53b7db35)
+
+running 1 test
+test value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.01s
+

@@ -57,6 +57,7 @@ struct PopulationIndex {
 
 type PopulationIndexes = BTreeMap<usize, BTreeMap<PopulationKey, PopulationIndex>>;
 type StateIndexes = BTreeMap<usize, BTreeMap<QualifiedName, Option<super::ValueId>>>;
+type BoundModels = BTreeMap<usize, BTreeSet<ir::RequirementRef>>;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Selected {
@@ -102,7 +103,7 @@ struct Validator<'input, 'model, F> {
     clause: Option<usize>,
     indexes: PopulationIndexes,
     states: StateIndexes,
-    bound_models: BTreeMap<usize, BTreeSet<ir::RequirementRef>>,
+    bound_models: BoundModels,
     required_states: BTreeSet<(ir::StateObservation, QualifiedName)>,
 }
 
@@ -162,7 +163,13 @@ impl<'input, 'model, F: FnMut() -> bool> Validator<'input, 'model, F> {
         self.index_populations()?;
         self.inspect_values(clause)?;
         self.inspect_invocation(clause)?;
-        self.inspect_frames(clause)
+        // Index construction is finished. Move its ownership out for this
+        // read-only pass, so diagnostics can mutate without cloning the maps.
+        // Restore on every returned outcome; a callback panic unwinds the request.
+        let indexes = std::mem::take(&mut self.indexes);
+        let result = self.inspect_frames(clause, &indexes);
+        self.indexes = indexes;
+        result
     }
 }
 

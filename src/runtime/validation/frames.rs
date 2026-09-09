@@ -3,8 +3,8 @@
 
 use super::super::{FieldBinding, ObjectIdentity, QualifiedName, ValueId, ValueNode};
 use super::budget::{Result, Stage};
-use super::values::locus;
-use super::{PopulationKey, RuntimePathSegment, Validator};
+use super::values::{locus, require_population};
+use super::{PopulationIndexes, PopulationKey, RuntimePathSegment, Validator};
 use crate::checking::FrameIndex;
 use crate::linking::{DeclarationKey, DeclarationLocation};
 use crate::Code;
@@ -70,12 +70,17 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
                 if a.len() != b.len() {
                     return Ok(Some(false));
                 }
+                let mut ambiguous = false;
                 for (a, b) in a.iter().zip(b) {
                     self.budget.visit()?;
                     match self.storage_equal((left.0, *a), (right.0, *b))? {
                         Some(true) => {}
-                        result => return Ok(result),
+                        Some(false) => return Ok(Some(false)),
+                        None => ambiguous = true,
                     }
+                }
+                if ambiguous {
+                    return Ok(None);
                 }
                 true
             }
@@ -172,7 +177,11 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
         Ok((creates, deletes))
     }
 
-    pub(super) fn inspect_frames(&mut self, clause_index: usize) -> Result<()> {
+    pub(super) fn inspect_frames(
+        &mut self,
+        clause_index: usize,
+        indexes: &PopulationIndexes,
+    ) -> Result<()> {
         let Some(invocation_index) = self.selected.invocation else {
             return Ok(());
         };
@@ -209,8 +218,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
         };
         let mut populations = BTreeSet::new();
         for index in [pre, post] {
-            for key in self
-                .indexes
+            for key in indexes
                 .get(&index)
                 .into_iter()
                 .flat_map(|populations| populations.keys())
@@ -225,27 +233,27 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
         for key in populations {
             self.at_snapshot(pre, ir::StateObservation::Pre);
             self.budget.location.path = key.path();
-            let pre_complete = self.require_population(pre, &key)?;
+            let pre_complete =
+                require_population(&mut self.budget, &self.bound_models, indexes, pre, &key)?;
             self.at_snapshot(post, ir::StateObservation::Post);
             self.budget.location.path = key.path();
-            let post_complete = self.require_population(post, &key)?;
+            let post_complete =
+                require_population(&mut self.budget, &self.bound_models, indexes, post, &key)?;
             let population_complete = pre_complete && post_complete;
             complete &= population_complete;
             // Available unique objects can establish field changes even when a
             // population is incomplete. Missing objects establish deltas only
             // when both observations are complete.
-            let before = self
-                .indexes
+            let before = indexes
                 .get(&pre)
                 .and_then(|populations| populations.get(&key))
                 .filter(|index| index.unambiguous)
-                .map(|index| (index.position, index.objects.clone()));
-            let after = self
-                .indexes
+                .map(|index| (index.position, &index.objects));
+            let after = indexes
                 .get(&post)
                 .and_then(|populations| populations.get(&key))
                 .filter(|index| index.unambiguous)
-                .map(|index| (index.position, index.objects.clone()));
+                .map(|index| (index.position, &index.objects));
             let (Some((before_position, before)), Some((after_position, after))) = (before, after)
             else {
                 complete = false;
@@ -277,7 +285,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
                     deleted.insert(identity);
                 }
             }
-            for (name, after_index) in &after {
+            for (name, after_index) in after {
                 self.budget.visit()?;
                 self.at_snapshot(post, ir::StateObservation::Post);
                 self.budget.location.path = key.path();

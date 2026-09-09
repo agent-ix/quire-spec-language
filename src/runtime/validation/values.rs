@@ -2,8 +2,11 @@
 //! FR-007: all supplied typed roots, captured observations and finite closure.
 
 use super::super::{FieldBinding, ObjectIdentity, QualifiedName, ValueId, ValueNode};
-use super::budget::{Result, Stage};
-use super::{snapshot_key, ObservationSelection, PopulationKey, RuntimePathSegment, Validator};
+use super::budget::{Budget, Result, Stage};
+use super::{
+    snapshot_key, BoundModels, ObservationSelection, PopulationIndexes, PopulationKey,
+    RuntimePathSegment, Validator,
+};
 use crate::checking::{NativeType, Observation};
 use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation, ResolutionTarget};
 use crate::native_model::{NativeModel, ObjectRole, ScalarKind, ScalarSite};
@@ -26,6 +29,48 @@ pub(super) fn locus(
     }
 }
 
+pub(super) fn require_population<F: FnMut() -> bool>(
+    budget: &mut Budget<'_, F>,
+    bound_models: &BoundModels,
+    indexes: &PopulationIndexes,
+    snapshot: usize,
+    key: &PopulationKey,
+) -> Result<bool> {
+    budget.visit()?;
+    if !bound_models
+        .get(&snapshot)
+        .is_some_and(|models| models.contains(&key.model))
+    {
+        budget.issue(
+            Stage::Binding,
+            Code::InvalidModelBinding,
+            "required population lacks an exact input model binding",
+        )?;
+    }
+    match indexes
+        .get(&snapshot)
+        .and_then(|populations| populations.get(key))
+    {
+        None => {
+            budget.issue(
+                Stage::Population,
+                Code::IncompletePopulation,
+                "required population is unavailable",
+            )?;
+            Ok(false)
+        }
+        Some(population) if !population.complete => {
+            budget.issue(
+                Stage::Population,
+                Code::IncompletePopulation,
+                "required population is declared incomplete",
+            )?;
+            Ok(false)
+        }
+        Some(population) => Ok(population.unambiguous),
+    }
+}
+
 impl<'model, F: FnMut() -> bool> Validator<'_, 'model, F> {
     pub(super) fn related(
         &mut self,
@@ -44,41 +89,13 @@ impl<'model, F: FnMut() -> bool> Validator<'_, 'model, F> {
         snapshot: usize,
         key: &PopulationKey,
     ) -> Result<bool> {
-        self.budget.visit()?;
-        if !self
-            .bound_models
-            .get(&snapshot)
-            .is_some_and(|models| models.contains(&key.model))
-        {
-            self.budget.issue(
-                Stage::Binding,
-                Code::InvalidModelBinding,
-                "required population lacks an exact input model binding",
-            )?;
-        }
-        match self
-            .indexes
-            .get(&snapshot)
-            .and_then(|populations| populations.get(key))
-        {
-            None => {
-                self.budget.issue(
-                    Stage::Population,
-                    Code::IncompletePopulation,
-                    "required population is unavailable",
-                )?;
-                Ok(false)
-            }
-            Some(population) if !population.complete => {
-                self.budget.issue(
-                    Stage::Population,
-                    Code::IncompletePopulation,
-                    "required population is declared incomplete",
-                )?;
-                Ok(false)
-            }
-            Some(population) => Ok(population.unambiguous),
-        }
+        require_population(
+            &mut self.budget,
+            &self.bound_models,
+            &self.indexes,
+            snapshot,
+            key,
+        )
     }
 
     fn key_maximum(&self, model: &NativeModel, role: &ObjectRole) -> Option<u32> {

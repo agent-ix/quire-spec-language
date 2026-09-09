@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! TC-065/066: independently lowered budgets, deterministic stops and immutable retries.
 
-use super::invocation_cases::authored_model;
+use super::invocation_cases::{authored_model, recorded};
 use super::*;
 use quire_spec_language::runtime::{ValidationReport, ValidationUsage};
 use serde_json::json;
@@ -238,65 +238,98 @@ fn detail_capacity_retains_invalid_classification_even_at_zero() {
             compare_reports(&report, &baseline);
         }
     }
+    let mut data = draft(&models[0]);
+    data.populations[0].complete = false;
+    let artifact = snapshot(data);
+    let selected = super::selection(&models[0], artifact.reference());
+    let report = validate(
+        &checked,
+        input(artifact),
+        selected,
+        Counter::Diagnostics.limits(0),
+        || false,
+    )
+    .unwrap_err();
+    assert_eq!(report.status, ValidationStatus::Incomplete);
+    assert!(report.diagnostics.is_empty());
+    assert_eq!(report.usage.diagnostics, 0);
+    assert_eq!(
+        report.terminal.as_ref().unwrap().code,
+        Code::ResourceExhausted
+    );
 }
 
 #[test]
 #[trace("TC-065", "TC-066", "FR-007-AC-12", "FR-007-AC-15")]
 fn cancellation_at_each_observed_poll_is_repeatable_and_preserves_known_defects() {
     let models = [native_rule_model::parts().model()];
-    let checked = checked(&models, "false");
-    for invalid in [false, true] {
-        let mut data = draft(&models[0]);
-        if invalid {
-            data.arena[0] = ValueNode::Integer { value: 1001 };
-        }
-        let artifact = snapshot(data);
-        let selected = selection(&models[0], artifact.reference());
-        let offered = input(artifact);
-        let observed = Cell::new(0);
-        let baseline = validate(
-            &checked,
-            offered.clone(),
-            selected.clone(),
-            ValidationLimits::default(),
-            || {
-                observed.set(observed.get() + 1);
-                false
+    for operation in [false, true] {
+        let checked = checked_kind(
+            &models,
+            "false",
+            if operation {
+                ClauseKind::Postcondition
+            } else {
+                ClauseKind::Invariant
             },
         );
-        assert_eq!(baseline.is_err(), invalid);
-        let mut retained_invalid = false;
-        for stop in 1..=observed.get() {
-            let run = || {
-                let polls = Cell::new(0);
-                let report = validate(
-                    &checked,
-                    offered.clone(),
-                    selected.clone(),
-                    ValidationLimits::default(),
-                    || {
-                        polls.set(polls.get() + 1);
-                        polls.get() == stop
-                    },
-                )
-                .unwrap_err();
-                assert_eq!(polls.get(), stop, "no callback after a true poll");
-                assert_eq!(report.terminal.as_ref().unwrap().code, Code::Cancelled);
-                report
+        for invalid in [false, true] {
+            let mut data = draft(&models[0]);
+            if invalid {
+                data.arena[0] = ValueNode::Integer { value: 1001 };
+            }
+            let (offered, selected) = if operation {
+                recorded(&models[0], data.clone(), data, |_| {})
+            } else {
+                let artifact = snapshot(data);
+                let selected = selection(&models[0], artifact.reference());
+                (input(artifact), selected)
             };
-            let report = run();
-            compare_reports(&report, &run());
-            if stop == 1 {
-                assert_eq!(report.usage, ValidationUsage::default());
-                assert_eq!(report.status, ValidationStatus::Incomplete);
+            let observed = Cell::new(0);
+            let baseline = validate(
+                &checked,
+                offered.clone(),
+                selected.clone(),
+                ValidationLimits::default(),
+                || {
+                    observed.set(observed.get() + 1);
+                    false
+                },
+            );
+            assert_eq!(baseline.is_err(), invalid);
+            let mut retained_invalid = false;
+            for stop in 1..=observed.get() {
+                let run = || {
+                    let polls = Cell::new(0);
+                    let report = validate(
+                        &checked,
+                        offered.clone(),
+                        selected.clone(),
+                        ValidationLimits::default(),
+                        || {
+                            polls.set(polls.get() + 1);
+                            polls.get() == stop
+                        },
+                    )
+                    .unwrap_err();
+                    assert_eq!(polls.get(), stop, "no callback after a true poll");
+                    assert_eq!(report.terminal.as_ref().unwrap().code, Code::Cancelled);
+                    report
+                };
+                let report = run();
+                compare_reports(&report, &run());
+                if stop == 1 {
+                    assert_eq!(report.usage, ValidationUsage::default());
+                    assert_eq!(report.status, ValidationStatus::Incomplete);
+                }
+                if !report.diagnostics.is_empty() {
+                    assert!(invalid);
+                    assert_eq!(report.status, ValidationStatus::Refused);
+                    retained_invalid = true;
+                }
             }
-            if !report.diagnostics.is_empty() {
-                assert!(invalid);
-                assert_eq!(report.status, ValidationStatus::Refused);
-                retained_invalid = true;
-            }
+            assert_eq!(retained_invalid, invalid);
         }
-        assert_eq!(retained_invalid, invalid);
     }
 }
 
@@ -585,4 +618,130 @@ fn exact_aggregate_hard_bytes_succeed_and_next_byte_stops_before_indexing() {
         report.terminal.as_ref().unwrap().message,
         "validation inventory content limit"
     );
+}
+
+#[test]
+#[trace("TC-065", "FR-007-AC-12")]
+fn maximum_inventory_and_selected_object_counts_can_complete() {
+    let models = [native_rule_model::parts().model()];
+    let checked_current = checked(&models, "false");
+    let artifact = snapshot(draft(&models[0]));
+    let selected = selection(&models[0], artifact.reference());
+    let mut offered = input(artifact);
+    for index in 1..64 {
+        offered.snapshots.push(
+            Snapshot::new(
+                SourceIdentity {
+                    identity: format!("test:extra-{index}"),
+                    revision: "1".into(),
+                },
+                draft(&models[0]),
+                ArtifactLimits::default(),
+            )
+            .unwrap(),
+        );
+    }
+    let context = validate(
+        &checked_current,
+        offered,
+        selected,
+        Counter::Artifacts.limits(usize::MAX),
+        || false,
+    )
+    .unwrap();
+    assert_eq!(context.usage().artifacts, 64);
+    assert_eq!(
+        context.usage().objects,
+        1,
+        "unselected inventories do not inflate selected objects"
+    );
+
+    let models = [authored_model(|data| {
+        data["records"][0]["fields"] = json!([{"name": "flag", "type": {"kind": "boolean"}}]);
+        data["operations"][0]["frame"]["fields"] = json!([]);
+        data["scalars"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|scalar| scalar["name"] == "ObjectId");
+    })];
+    let checked = checked_kind(&models, "false", ClauseKind::Postcondition);
+    let mut before = draft(&models[0]);
+    before.arena = vec![ValueNode::Boolean { value: false }];
+    before.populations[0].objects = (0..5_000)
+        .map(|index| ObjectEntry {
+            key: if index == 0 {
+                "self".into()
+            } else {
+                format!("object-{index}")
+            },
+            fields: vec![field("flag", 0)],
+        })
+        .collect();
+    let (offered, selected) = recorded(&models[0], before.clone(), before, |_| {});
+    let context = validate(
+        &checked,
+        offered,
+        selected,
+        Counter::Objects.limits(usize::MAX),
+        || false,
+    )
+    .unwrap();
+    assert_eq!(context.usage().objects, 10_000);
+    assert_eq!(
+        context
+            .object(
+                ir::StateObservation::Post,
+                &object(&models[0], "object-4999")
+            )
+            .unwrap()
+            .fields,
+        [field("flag", 0)]
+    );
+}
+
+#[test]
+#[trace("TC-065", "FR-007-AC-12")]
+fn maximum_detail_count_is_complete_until_an_additional_defect_needs_storage() {
+    let models = [native_rule_model::parts().model()];
+    let checked = checked(&models, "false");
+    for count in [256, 257] {
+        let mut data = draft(&models[0]);
+        data.arena.push(ValueNode::Boolean { value: false });
+        data.populations[0].objects[0].fields[0].value = ValueId::new(5);
+        let template = data.populations[0].objects[0].clone();
+        for index in 1..count {
+            data.populations[0].objects.push(ObjectEntry {
+                key: format!("object-{index}"),
+                fields: template.fields.clone(),
+            });
+        }
+        let artifact = snapshot(data);
+        let selected = selection(&models[0], artifact.reference());
+        let report = validate(
+            &checked,
+            input(artifact),
+            selected,
+            Counter::Diagnostics.limits(usize::MAX),
+            || false,
+        )
+        .unwrap_err();
+        assert_eq!(report.status, ValidationStatus::Refused);
+        assert_eq!(report.diagnostics.len(), 256);
+        assert_eq!(report.usage.diagnostics, 256);
+        assert!(report
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput));
+        if count == 256 {
+            assert!(
+                report.terminal.is_none(),
+                "exact maximum is a complete enumeration"
+            );
+        } else {
+            assert_eq!(
+                report.terminal.as_ref().unwrap().code,
+                Code::ResourceExhausted
+            );
+        }
+    }
 }
