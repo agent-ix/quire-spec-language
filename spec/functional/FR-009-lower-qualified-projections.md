@@ -81,4 +81,7 @@ retains these ceilings as an additional guard over already checked packages.
 
 ## Status
 
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.
+Proof-of-concept engineering delivery is permitted with the generated activation
+part of FR-009-AC-5 still open, per the owner's 2026-09-09 direction. The full
+criterion and its test remain required for backend qualification; passing truth
+results do not claim activation parity or production readiness.

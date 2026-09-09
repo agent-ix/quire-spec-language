@@ -17,18 +17,23 @@ relationships:
 
 ## Scope
 
-Execute IT-008 through pinned existing producers, then complete serial local
-checks and the required QUOIN and actual code/Rust PR reviews. Record dependency
+Deliver the working Boolean projection after routine local checks and the
+required QUOIN and actual code/Rust PR reviews. Retain unfinished IT-008
+activation qualification for the later assurance effort. Record dependency
 licenses and generated provenance. Keep full LC04 acceptance open.
 
 ## Subtasks
 
-- [ ] Execute actual generated truth and source-activation parity.
-- [ ] Run required local gates and resolve PR-time review findings.
-- [ ] Deliver the reviewable compiler PR and concrete downstream handoff.
+- [x] Execute actual generated truth parity and native source-activation counts.
+- [ ] Complete generated source-activation parity during assurance qualification.
+- [x] Run required local gates and resolve PR-time review findings for engineering delivery.
+- [x] Deliver the reviewable compiler PR and concrete downstream handoff.
 
 Truth parity and native implication counts pass for all eight assignments.
 Generated activation remains blocked by codegen `240fad84` refusing Rust 1.98.1's
 actual LLVM 3.1.0 report. The explicit required test lane fails on that refusal;
 the default test retains the refusal without claiming activation acceptance.
-C's producer handoff is on private CO01. Reviews wait for PR readiness.
+C's producer handoff is on private CO01. The owner has deferred this assurance
+dependency for proof-of-concept engineering delivery. SR-115 closes the two
+actioned code-review findings; specification/gap review records the remaining
+qualification gap without treating it as a compiler implementation dependency.

@@ -39,3 +39,8 @@ implementation checkpoints. This supersedes earlier review-before-implementation
 timing instructions. Keep necessary specification and plan changes scoped; do not
 create a review or detailed log for every increment. Avoid premature optimization.
 Use the requested QUOIN workflows and actual code/Rust review for the PR gate.
+
+Owner update (2026-09-09): prioritize engineering toward the first proof of
+concept. Track incomplete assurance separately from implementation dependencies;
+it need not block engineering delivery. Keep routine local checks and PR reviews,
+and retain unmet acceptance criteria for the later testing/assurance campaign.
