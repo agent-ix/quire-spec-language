@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: local file orchestration around the existing native compiler and runtime.
+//! FR-026/027: local file orchestration around the existing native compiler and runtime.
 
 mod output;
 mod wire;
@@ -7,7 +7,7 @@ mod wire;
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
 use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
-use crate::native_model::ModelLimits;
+use crate::native_model::{ModelLimits, NativeModel};
 use crate::package::{NativePackage, PackageError, PackageLimits};
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
@@ -51,7 +51,7 @@ pub enum RunCause {
     #[error("invalid request: {0}")]
     Json(#[from] serde_json::Error),
     /// Request format was not selected.
-    #[error("unsupported native run format")]
+    #[error("unsupported native command format")]
     Format,
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
@@ -166,6 +166,40 @@ struct Intake<'a> {
 }
 
 impl Intake<'_> {
+    fn models(&mut self, selected: &[wire::Model]) -> Result<Vec<NativeModel>> {
+        selected
+            .iter()
+            .map(|selected| {
+                let source = self.source(&selected.source)?;
+                Ok(
+                    model_source::read(source, &selected.format, ModelSourceLimits::default())?
+                        .admit(ModelLimits::default())?,
+                )
+            })
+            .collect()
+    }
+
+    fn package<'model>(
+        &mut self,
+        program: &wire::Program,
+        models: &'model [NativeModel],
+    ) -> Result<NativePackage<'model>> {
+        let source = self.source(&program.source)?;
+        let unit = crate::parse_source(source.source().clone(), Limits::default())?;
+        let linked = crate::link_native(unit, models, crate::LinkLimits::default())?;
+        let clauses = program
+            .clauses
+            .iter()
+            .map(wire::Binding::bind)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let checked = check(
+            linked,
+            CheckBindings { source, clauses },
+            CheckLimits::default(),
+        )?;
+        Ok(NativePackage::new(checked, PackageLimits::default())?)
+    }
+
     fn file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
         let bytes = read_file(&self.directory.join(path), ceiling.min(self.remaining))?;
         self.remaining -= bytes.len();
@@ -195,6 +229,26 @@ impl Intake<'_> {
 
 /// Read a native-run/1 job and execute it locally with fresh, bounded stage state.
 pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
+    with_request(path, run_bytes)
+}
+
+/// Compile a native-compile/1 source-only job into the exact existing package bytes.
+/// No runtime artifact is read or executed; failures expose no partial artifact.
+pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    with_request(path, |directory, bytes, _digest| {
+        let request: wire::CompileRequest = request(bytes, "native-compile/1")?;
+        let mut intake = intake(directory, &[request.models.len()])?;
+        let models = intake.models(&request.models)?;
+        let package = intake.package(&request.program, &models)?;
+        Ok(package.bytes().to_vec())
+    })
+}
+
+// Both commands retain the same exact request identity on any later failure.
+fn with_request<T>(
+    path: &Path,
+    action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,
+) -> std::result::Result<T, Box<RunError>> {
     let bytes = read_file(path, REQUEST_BYTES).map_err(|cause| {
         Box::new(RunError {
             request_digest: None,
@@ -202,7 +256,7 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
         })
     })?;
     let digest = ByteDigest::of(&bytes);
-    run_bytes(path.parent().unwrap_or(Path::new(".")), &bytes, digest).map_err(|cause| {
+    action(path.parent().unwrap_or(Path::new(".")), &bytes, digest).map_err(|cause| {
         Box::new(RunError {
             request_digest: Some(digest),
             cause,
@@ -210,52 +264,40 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
     })
 }
 
-fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
+fn request<T: serde::de::DeserializeOwned>(bytes: &[u8], format: &str) -> Result<T> {
     let Object(envelope): Object<wire::Envelope<'_>> = serde_json::from_slice(bytes)?;
-    if envelope.format != "native-run/1" {
+    if envelope.format != format {
         return Err(RunCause::Format);
     }
-    let Object(request): Object<wire::Request> = serde_json::from_str(envelope.request.get())?;
+    let Object(request) = serde_json::from_str(envelope.request.get())?;
+    Ok(request)
+}
+
+fn intake<'a>(directory: &'a Path, counts: &[usize]) -> Result<Intake<'a>> {
     let mut remaining_files = FILES - 1; // The selected native program also counts.
-    for count in [
-        request.models.len(),
-        request.snapshots.len(),
-        request.invocations.len(),
-    ] {
+    for &count in counts {
         remaining_files = remaining_files
             .checked_sub(count)
             .ok_or(RunCause::Limit("selected files"))?;
     }
-    let mut intake = Intake {
+    Ok(Intake {
         directory,
         remaining: TOTAL_BYTES,
-    };
-    let models = request
-        .models
-        .iter()
-        .map(|selected| {
-            let source = intake.source(&selected.source)?;
-            Ok(
-                model_source::read(source, &selected.format, ModelSourceLimits::default())?
-                    .admit(ModelLimits::default())?,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let source = intake.source(&request.program.source)?;
-    let unit = crate::parse_source(source.source().clone(), Limits::default())?;
-    let linked = crate::link_native(unit, &models, crate::LinkLimits::default())?;
-    let clauses = request
-        .program
-        .clauses
-        .iter()
-        .map(wire::Binding::bind)
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    let checked = check(
-        linked,
-        CheckBindings { source, clauses },
-        CheckLimits::default(),
+    })
+}
+
+fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
+    let request: wire::Request = request(bytes, "native-run/1")?;
+    let mut intake = intake(
+        directory,
+        &[
+            request.models.len(),
+            request.snapshots.len(),
+            request.invocations.len(),
+        ],
     )?;
-    let package = NativePackage::new(checked, PackageLimits::default())?;
+    let models = intake.models(&request.models)?;
+    let package = intake.package(&request.program, &models)?;
     let limits = ArtifactLimits::default();
     let snapshots = request
         .snapshots

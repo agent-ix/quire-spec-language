@@ -25,7 +25,7 @@ fn run(arguments: &[OsString]) -> Result<String, (u8, String)> {
     let [command, identity, revision, path] = arguments else {
         return Err((
             2,
-            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec run <request-file>".into(),
+            "usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile> <request-file>".into(),
         ));
     };
     let Some(command) = command.to_str() else {
@@ -69,9 +69,32 @@ fn run(arguments: &[OsString]) -> Result<String, (u8, String)> {
     )
 }
 
+fn command_error(error: &quire_spec_language::command::RunError) -> ExitCode {
+    match writeln!(io::stderr().lock(), "{}", error.value()) {
+        Ok(()) => ExitCode::from(error.exit_code()),
+        Err(output) if output.kind() == io::ErrorKind::BrokenPipe => {
+            ExitCode::from(error.exit_code())
+        }
+        Err(_) => ExitCode::from(2),
+    }
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
     if let [command, path] = arguments.as_slice() {
+        if command == "compile" {
+            return match quire_spec_language::command::compile(Path::new(path)) {
+                Ok(bytes) => match io::stdout().lock().write_all(&bytes) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+                    Err(error) => {
+                        let _ = writeln!(io::stderr().lock(), "output failed: {error}");
+                        ExitCode::from(2)
+                    }
+                },
+                Err(error) => command_error(&error),
+            };
+        }
         if command == "run" {
             return match quire_spec_language::command::run(Path::new(path)) {
                 Ok(result) => match writeln!(io::stdout().lock(), "{}", result.value) {
@@ -84,13 +107,7 @@ fn main() -> ExitCode {
                         ExitCode::from(2)
                     }
                 },
-                Err(error) => match writeln!(io::stderr().lock(), "{}", error.value()) {
-                    Ok(()) => ExitCode::from(error.exit_code()),
-                    Err(output) if output.kind() == io::ErrorKind::BrokenPipe => {
-                        ExitCode::from(error.exit_code())
-                    }
-                    Err(_) => ExitCode::from(2),
-                },
+                Err(error) => command_error(&error),
             };
         }
     }
