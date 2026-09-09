@@ -35,7 +35,7 @@ linker. Qualify the source-derived Rust model producer before checker use.
 - [x] Write initial public API model/source tests and record missing-API failure.
 - [x] Implement immutable model roles, admission and bounded artifact identity.
 - [ ] Complete model mutations/boundaries and write native link qualification tests.
-- [ ] Extend shared resolution for explicit native references and operations.
+- [x] Extend shared resolution for explicit native references and operations.
 - [ ] Execute TC-040–045 and preserve original linker compatibility.
 
 ## Deliverables
@@ -49,6 +49,13 @@ No runtime object IDs are enumerated in model metadata. Every unused declaration
 and role is admitted and source-corresponded. No partial model/package escapes.
 
 Admission and the repaired source-derived producer are implemented at d1168dd.
-Five initial model tests pass through the real API. TC-040–045 remain planned
-until their full authored cases, including link_native, run. Task-011 is complete;
-native reference/operation resolution is the next serial implementation step.
+Five initial model tests pass through the real API. Native linkage is implemented
+at 667bf07 and TC-044 is qualified by SR-084. Eight new link tests cover exact
+selection, inventory conflicts, reference/operation/enum/parameter correspondence,
+legacy compatibility and native-link limits. The default suite passed 69 tests;
+the three selected private audits and required local gates passed.
+
+TC-040–043 and TC-045 remain planned until their broader model criteria run.
+Remaining work is full role/carrier/operation mutation qualification, all model
+locus classes, artifact mutation/permutation coverage and remaining model-limit
+controls. Complete these before starting Task-009. Task-011 remains complete.

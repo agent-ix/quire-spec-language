@@ -7,6 +7,19 @@ description: "Native model/checker lifecycle and evidence."
 
 ## History
 
+- **2026-09-08** — Implemented native linkage at 667bf07 under the existing
+  reviewed FR-015 contract. TC-044 is qualified by actual code/Rust review
+  SR-084; Task-008 remains in progress. Shared exact import/lexical stages now
+  resolve explicit native references and operations, retain model/operation
+  provenance and reject conflicting inventory identities. Eight native-link
+  tests pass, including actual enum/parameter fixtures, legacy compatibility,
+  source-conflict diagnostics and hard-limit controls. The default suite passed
+  69 tests; three selected private audits and all required local gates passed.
+  Missing-API, expanded source/digest-control and old diagnostic-count failures
+  are retained with the final passing results. Full model admission/source/
+  artifact/limit qualification precedes the still-pending checker task. Work
+  remains on draft PR #10 under LC02 #3, with no hosted dispatch.
+
 - **2026-09-08** — Completed Task-011 at 08a4fe7 with actual code/Rust review
   SR-083 and validated evidence. All four SR-074 findings are resolved. The
   full local suite passed 61 tests; all three selected private audits passed;

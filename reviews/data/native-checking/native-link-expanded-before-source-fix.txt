@@ -1,0 +1,38 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.64s
+     Running tests/native_linking.rs (target/debug/deps/native_linking-bf981f0ef6a96e36)
+
+running 7 tests
+test tc_042_native_selection_requires_its_own_exact_artifact_and_revision ... FAILED
+test tc_043_inventory_conflicts_refuse_before_import_selection ... FAILED
+test tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped ... ok
+test tc_044_native_reference_fields_and_operations_keep_declared_targets ... ok
+test tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved ... ok
+test tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised ... ok
+test tc_045_native_link_limits_are_effective_and_inclusive ... ok
+
+failures:
+
+---- tc_042_native_selection_requires_its_own_exact_artifact_and_revision stdout ----
+
+thread 'tc_042_native_selection_requires_its_own_exact_artifact_and_revision' (151) panicked at tests/native_linking.rs:254:5:
+assertion `left == right` failed
+  left: InvalidModelBinding
+ right: StaleDependency
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tc_043_inventory_conflicts_refuse_before_import_selection stdout ----
+
+thread 'tc_043_inventory_conflicts_refuse_before_import_selection' (152) panicked at tests/native_linking.rs:360:9:
+assertion `left == right` failed
+  left: SourceIdentity { identity: "test:native-linking", revision: "draft:1" }
+ right: SourceIdentity { identity: "test:rule-model:foreign", revision: "draft:1" }
+
+
+failures:
+    tc_042_native_selection_requires_its_own_exact_artifact_and_revision
+    tc_043_inventory_conflicts_refuse_before_import_selection
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `--test native_linking`

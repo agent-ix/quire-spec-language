@@ -92,5 +92,7 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 
 ## Status
 
-Specified for implementation. Neither NativeModel nor successful name resolution
+Model admission and native linkage are implemented through 667bf07. TC-044 /
+AC-5 is qualified in SR-084; broader admission, artifact, source and model-limit
+criteria remain open. Neither NativeModel nor successful name resolution
 establishes a reference-evaluable clause or an executable backend package.

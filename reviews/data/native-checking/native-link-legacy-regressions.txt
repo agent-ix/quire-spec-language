@@ -1,0 +1,17 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.04s
+     Running tests/linking.rs (target/debug/deps/linking-f697f359a3c58cad)
+
+running 10 tests
+test ambiguity_retains_all_sorted_loci_in_every_order ... ok
+test exact_source_owner_field_and_digest_domains ... ok
+test explicit_context_and_neighboring_clauses_cannot_be_guessed ... ok
+test failed_import_permutations_never_reuse_successful_state ... ok
+test hard_canonical_byte_budgets_admit_equality_and_refuse_one_more ... ok
+test hard_count_and_traversal_ceilings_cannot_be_raised ... ok
+test inclusive_lowered_and_zero_limits_are_enforced_independently ... ok
+test lexical_scope_and_formal_shapes_preserve_exact_targets ... ok
+test missing_stale_unused_declaration_and_malformed_digest ... ok
+test unmapped_forms_refuse_while_linking_makes_no_type_judgment ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.49s
