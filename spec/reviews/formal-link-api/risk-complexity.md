@@ -38,6 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
+The mismatch escaped earlier fixture review. Cross-checking the complete IT input declaration, not only API calls and TC titles, is required before claiming that lane qualified.
+
+
 Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 The setup failures exposed a review blind spot: descriptive API names had been mistaken for admitted identifier syntax. Explicit actual-constructor fixtures and the existing lexer prevent that mistake from becoming compatibility behavior.

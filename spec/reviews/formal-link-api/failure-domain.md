@@ -38,6 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
+The unsigned fixture was a qualification-input mismatch, not an accepted alternate numeric policy. Preserve the selected signed domain and reject silent fixture substitution.
+
+
 Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 This correction does not admit URI coercion or reserved field names. Invalid fixture setup remains a failing setup, never a successful missing-import/name control.
