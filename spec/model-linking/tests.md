@@ -40,6 +40,21 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-014 | FR-014-AC-3 | TC-037 | ✅ Passed |
 | FR-014 | FR-014-AC-4 | TC-038 | ✅ Passed |
 | FR-014 | FR-014-AC-5 | TC-039 | ✅ Passed |
+| FR-015 | FR-015-AC-1 | TC-40 | 🚧 Planned |
+| FR-015 | FR-015-AC-2 | TC-41 | 🚧 Planned |
+| FR-015 | FR-015-AC-3 | TC-42 | 🚧 Planned |
+| FR-015 | FR-015-AC-4 | TC-43 | 🚧 Planned |
+| FR-015 | FR-015-AC-5 | TC-44 | 🚧 Planned |
+| FR-015 | FR-015-AC-6 | TC-45 | 🚧 Planned |
+| FR-016 | FR-016-AC-1 | TC-025 | 🚧 Planned |
+| FR-016 | FR-016-AC-2 | TC-026, TC-046 | 🚧 Planned |
+| FR-016 | FR-016-AC-3 | TC-027, TC-047 | 🚧 Planned |
+| FR-016 | FR-016-AC-4 | TC-028, TC-048 | 🚧 Planned |
+| FR-016 | FR-016-AC-5 | TC-029, TC-048 | 🚧 Planned |
+| FR-016 | FR-016-AC-6 | TC-049 | 🚧 Planned |
+| FR-016 | FR-016-AC-7 | TC-050 | 🚧 Planned |
+| FR-016 | FR-016-AC-8 | TC-051 | 🚧 Planned |
+| FR-016 | FR-016-AC-9 | TC-052 | 🚧 Planned |
 
 ## Test Case Summary
 
@@ -65,6 +80,19 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-037 | Foreign native source requests | Integration | P1 | FR-014-AC-3 | ✅ Passed |
 | TC-038 | Inconsistent formal coordinates | Integration | P1 | FR-014-AC-4 | ✅ Passed |
 | TC-039 | Bounded generated span correspondence | Property | P1 | FR-014-AC-5 | ✅ Passed |
+| TC-40 | Qualify the source-derived native rule model | Integration | P1 | FR-015-AC-1 | 🚧 Planned |
+| TC-41 | Refuse missing or inconsistent native model roles | Integration | P1 | FR-015-AC-2 | 🚧 Planned |
+| TC-42 | Bind all native model semantics and provenance | Property | P1 | FR-015-AC-3 | 🚧 Planned |
+| TC-43 | Verify model loci and inventory identity consistency | Integration | P1 | FR-015-AC-4 | 🚧 Planned |
+| TC-44 | Resolve explicit references and operation declarations | Integration | P1 | FR-015-AC-5 | 🚧 Planned |
+| TC-45 | Bound model construction and native linkage | Property | P1 | FR-015-AC-6 | 🚧 Planned |
+| TC-46 | Check observation and operation value availability | Integration | P1 | FR-016-AC-2 | 🚧 Planned |
+| TC-47 | Prove signed arithmetic through the actual IR API | Integration | P1 | FR-016-AC-3 | 🚧 Planned |
+| TC-48 | Solve exact native contextual types | Integration | P1 | FR-016-AC-4, FR-016-AC-5 | 🚧 Planned |
+| TC-49 | Retain exact checked source and authored clause bindings | Integration | P1 | FR-016-AC-6 | 🚧 Planned |
+| TC-50 | Check lexical scope and guarded evaluation order | Integration | P1 | FR-016-AC-7 | 🚧 Planned |
+| TC-51 | Bound constraint checking and shared proof expansion | Property | P1 | FR-016-AC-8 | 🚧 Planned |
+| TC-52 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | 🚧 Planned |
 
 ## Six coverage rules
 
@@ -118,3 +146,25 @@ failure checks immutable request behavior; there is no runtime state transition
 or callback/concurrency option in this API. Loom and concurrency fault injection
 do not apply to this immutable, single-request bridge. No fuzz result is claimed.
 These tests do not discharge FR-006 or the full IT-005 model/checker integration.
+
+## Native model and checker qualification
+
+FR-015/016 define the actual native model-role and checker interfaces for the
+unchanged TC-025–029 judgments. TC-040–045 qualify the real source-derived Rust
+model producer, exact artifact/provenance and native link compatibility.
+TC-046–052 cover additional observation, type-constraint, source/anchor, lexical,
+proof-budget and runtime-input-obligation behavior. Every new criterion has
+explicit planned tests; the five old typing cases keep their reference and
+operation semantics. All execution statuses remain planned until real runs.
+
+The six coverage rules include valid/adverse role dimensions, nominal/unit and
+context permutations, zero/equal/one-over budget boundaries, exact and foreign
+source/anchor bindings, immutable success-after-failure behavior, unreachable
+branches and scope transitions. Runtime invocation/population transitions are
+recorded as FR-007 input requirements; static checking cannot claim to execute
+them. Bounded generated mutation/permutation and proof-expansion families cover
+the property-shaped artifact and resource criteria. Native tests use the actual
+IR checker and exact model producer; no mock bypass or abstract fixture setup
+failure can count as application refusal. No concurrency or Loom claim is
+needed for this serial immutable checker; no fuzz or whole-workflow proof is
+inferred from its unit/integration/property suites.
