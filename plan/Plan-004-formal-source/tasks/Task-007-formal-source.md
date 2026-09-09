@@ -33,7 +33,7 @@ model semantics. Preserve exact identities and reject inconsistent loci.
 - [x] Write the five specified public API tests and observe missing API failure.
 - [x] Implement the documented FormalSource API using existing Source lookup.
 - [x] Run focused and required regression/style/build checks with one-job limits.
-- [ ] Complete actual Rust/code review and scoped gap analysis.
+- [x] Complete actual Rust/code review and scoped gap analysis.
 - [ ] Update matrix and evidence; create a reviewable private PR and land if ready.
 
 ## Deliverables
