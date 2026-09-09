@@ -8,8 +8,10 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 5a7e5db using actual code-review, rust-review and
-rust-style skills. No applicable AssuranceProfile or deny.toml exists.
+Author PR-readiness review of 7b5b663 using actual code-review, rust-review and
+rust-style skills. Numeric implementation is unchanged from 5a7e5db; this
+revision corrects generator I/O handling. No applicable AssuranceProfile or
+deny.toml exists.
 
 ## Verdict
 
@@ -34,9 +36,12 @@ source/observation correspondence and complete-package limits stay in the shared
 path. Unsupported fields/locals/calls/objects refuse; numeric literal conversion
 is fallible. No dependency, unsafe block, production panic, shared mutable state
 or permissive request decoder was added. Target selection validates before I/O.
-The existing example helper remains static test setup; it is not a source reader.
+The example helper now returns io::Result for every filesystem operation.
+The executable reports selected-path failures with exit 2; only known static
+fixture constructor defects retain assertions. Both native and Markdown paths
+handle early and later write failure without panic.
 
-Six new tests carry real trace attributes. Assertions independently name numeric
+Seven new tests carry real trace attributes. Assertions independently name numeric
 operators/bounds, compare original source fragments, check model/observation
 identity and exact limits, exercise actual command output and current backend
 unsupported-expression diagnostics. Healthy/violating runtime results have the
@@ -48,3 +53,8 @@ minimal build; rustdoc with warnings denied. Four existing assurance tests remai
 ignored. Fresh example files also produced true/false and identical integer IR
 outside the harness. Boolean lowering and existing generated tests passed.
 
+Those full-suite results are the unchanged numeric implementation baseline at
+5a7e5db. For 7b5b663, all 19 affected command tests, six minimal-feature tests,
+fmt, strict all-target Clippy and the actual example build pass. Invalid output
+directories and a late Markdown write return exit 2; fresh generation and native
+execution succeed. The core compiler/runtime source did not change.

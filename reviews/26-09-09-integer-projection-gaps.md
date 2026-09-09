@@ -13,7 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-032 is implemented and locally tested at 5a7e5db. Tasks 019/032 are done;
+Task-032 is implemented and locally tested, with generator correction at 7b5b663.
+Tasks 019/032 are done;
 Task-020 retains generated activation qualification. The owner permits this
 engineering delivery while preserving incomplete full-plan acceptance.
 
@@ -31,8 +32,10 @@ The integer IR PR is ready for review under the owner's delivery direction.
 
 ## Coverage
 
-Quire reports FR-033 4/4 criteria, TM-006 4/4 test cases and global 318/322.
-Six new traced tests pass, including both pinned IR readers and actual commands.
+Quire reports FR-033 5/5 criteria, TM-006 4/4 test cases and global 319/323.
+Seven new traced tests pass, including both pinned IR readers, actual commands
+and filesystem failure propagation. The unchanged numeric tests retain their
+5a7e5db baseline; the 19 affected command tests pass at 7b5b663.
 TC-094 remains visibly deferred in the matrix; empty status_lies is not proof
 that this existing status-selector mismatch disappeared.
 
@@ -42,4 +45,3 @@ reusing FR-009/029's existing package/intake behavior. No scoped unbacked row,
 unowned behavior or stub was found. Optional semantic gap review was declined
 and skipped. Neither trace backing nor native runtime success completes backend
 assurance or the LC04 epic.
-
