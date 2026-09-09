@@ -15,3 +15,4 @@ title: "Native package specification"
 - [Detailed wire/API contract](../../docs/native-linked-packages.md)
 - [Closed structural schema](../../schemas/native-linked-package-1.schema.json)
 - [Eight specification reviews](../reviews/native-packages/index.md)
+- [Plan-007 implementation tasks](../../plan/Plan-007-native-packages/index.md)

@@ -19,4 +19,3 @@ Prepare matching byte-selected package metadata and externally selected source v
 ## Expected Results
 
 Each failure retains its original native code/phase/source span and returns no package. A serialized checked claim cannot bypass the failing compiler stage; resource limits are incomplete rather than logical false.
-

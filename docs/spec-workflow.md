@@ -35,7 +35,14 @@ remain disclosed, including the matrix header mismatch and historical IT-004
 tags. The schema has had JSON syntax and structural inspection only; actual
 Rust Draft 2020-12 qualification is planned in TC-083.
 
-The next step is the bounded package implementation plan. Static native-domain
+[Plan-007](../plan/Plan-007-native-packages/index.md) now carries three serial
+tasks: construction/identity, verified reconstruction and workflow qualification.
+It was authored using QUOIN spec-to-plan after all eight reviews, with the
+installed Plan/Task schemas and index/log skeletons. Strict validation reports
+233/233 scoped specification/review/plan documents grammar-clean; all tasks
+remain not_started. The next executable work is Task-016's independent Rust
+fixtures and genuine missing-API test, followed by implementation.
+Static native-domain
 registration, independent FS05 consumption, compiled ConfigVersion/backend
 parity and Quire integration remain full-assignment acceptance work. No Cargo
 build, additional agent, hosted dispatch or public posting ran in this review.

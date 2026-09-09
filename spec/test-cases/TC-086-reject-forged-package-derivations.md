@@ -19,4 +19,3 @@ Mutate one validly encoded resolution target, span, root ExprId, runtime context
 ## Expected Results
 
 Complete regeneration catches every forged/omitted claim. An outer byte digest or successful wire decode never substitutes for correspondence. Semantic comparison retains meaningful ordered arrays and exact model artifact strings.
-

@@ -21,4 +21,3 @@ Execute every step of IT-007 with the real admitted model and current/pre/post i
 ## Expected Results
 
 Healthy/violating, refused/incomplete, operation capture/frame and fresh-budget results match the independent expected observations after reconstruction. No original object cache, shared lowering oracle or authored expected JSON supplies the execution result.
-
