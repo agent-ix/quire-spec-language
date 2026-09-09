@@ -65,11 +65,11 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-022 | Ambiguous exported declaration | Integration | P1 | FR-005-AC-3 | ✅ Passed |
 | TC-023 | Stale package closure | Integration | P1 | FR-005-AC-4 | ✅ Passed |
 | TC-024 | Failed linkage is atomic | Property | P1 | FR-005-AC-5 | ✅ Passed |
-| TC-025 | Unguarded optional unwrap | Integration | P1 | FR-006-AC-1 | 🚧 Planned |
-| TC-026 | Presence facts stay with their observation | Integration | P1 | FR-006-AC-2 | 🚧 Planned |
-| TC-027 | Guarded bounded addition | Integration | P1 | FR-006-AC-3 | 🚧 Planned |
-| TC-028 | Ambiguous scalar inference | Integration | P1 | FR-006-AC-4 | 🚧 Planned |
-| TC-029 | Clause roots are Boolean | Integration | P1 | FR-006-AC-5 | 🚧 Planned |
+| TC-025 | Unguarded optional unwrap | Integration | P1 | FR-006-AC-1, FR-016-AC-1 | 🚧 Planned |
+| TC-026 | Presence facts stay with their observation | Integration | P1 | FR-006-AC-2, FR-016-AC-2 | 🚧 Planned |
+| TC-027 | Guarded bounded addition | Integration | P1 | FR-006-AC-3, FR-016-AC-3 | 🚧 Planned |
+| TC-028 | Ambiguous scalar inference | Integration | P1 | FR-006-AC-4, FR-016-AC-4 | 🚧 Planned |
+| TC-029 | Clause roots are Boolean | Integration | P1 | FR-006-AC-5, FR-016-AC-5 | 🚧 Planned |
 | TC-030 | Exact source and formal artifact binding | Integration | P1 | FR-013-AC-1, FR-013-AC-2 | ✅ Passed |
 | TC-031 | Lexical and formal declaration occurrences | Integration | P1 | FR-013-AC-3 | ✅ Passed |
 | TC-032 | Unmapped reference and operation forms | Integration | P1 | FR-013-AC-4 | ✅ Passed |
@@ -118,8 +118,10 @@ The source of truth for preconditions is
 The independently authored rule-model hypotheses require their own qualified
 realization; the existing ConfigVersion model is not interchangeable with them.
 Linker tests use imported single-line ix-trace-rs attributes and real APIs.
-Actual Quire reconciliation reports TM-003 10/15 backed, FR-005 5/5 and FR-013
-6/6. FR-006 remains 0/5. There are no status lies or untracked symbols. The
+At the PR8 linker baseline, Quire reconciliation reported TM-003 10/15 backed,
+FR-005 5/5 and FR-013 6/6, with no status lies or untracked symbols. The PR9
+source bridge subsequently added five executed cases. The current matrix has
+15 executed and 19 planned cases; FR-006 remains 0/5. The
 known functional-table Status/Coverage Status classifier limitation is retained;
 explicit TC statuses and executed logs supply the separate completion evidence.
 
