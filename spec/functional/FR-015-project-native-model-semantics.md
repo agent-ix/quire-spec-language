@@ -68,7 +68,7 @@ The artifact includes existing canonical IR declaration bytes, sorted declaratio
 loci, the native roles and the exact model source binding. Changes to units,
 nominal identities, frames, model source bytes/revision or any declaration affect
 the selected artifact. The raw SHA-256 ByteDigest is distinct from IR semantic
-CanonicalDigest and the original formal-environment/1 artifact. Existing link
+CanonicalDigest and the original native-formal-environment/1 artifact. Existing link
 keeps its original digest and refusal behavior; new semantics require link_native.
 
 ## Acceptance Criteria
