@@ -1,9 +1,10 @@
 # quire-spec-language
 
-Private native syntax implementation for `ix:native`, edition `0-draft`, profile
+Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
-Imports remain unresolved: successful parsing does not establish type correctness,
-model binding, executable projection, or healthy/violating state evaluation.
+The library also links exact imports and scoped names against supplied Contract
+IR formal environments. Successful linking does not establish type correctness,
+executable projection, or healthy/violating state evaluation.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
@@ -19,7 +20,7 @@ capacity is not an exact content-byte accounting promise.
 
 ## Run and check
 
-Rust 1.94.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
+Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
 native CLI needs no Node or JVM. There are no optional feature requirements.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
@@ -77,8 +78,11 @@ skills, validation results and outstanding review work. These requirements are
 drafts; the completed native readiness reviews and local results are recorded
 in the authoring status. The owner adopted specification PR8 at
 `e897f810a7356d4ce8fd19026221ebda7b65596f` for internal LC02 implementation.
-[LC02's test matrix](spec/model-linking/tests.md) remains planned pending the
-native linking/typechecking implementation. Accepted Contract IR ADR-0054 at
+[LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
+planned type checking. The new
+[formal linker API](docs/formal-environment-linking.md) owns the exact parsed
+source and borrows immutable models; CLI parse/format still perform syntax work
+only. Accepted Contract IR ADR-0054 at
 `690bde7f2dc58662cf9ff0595c2c0e3b17107c6f` closes #54 and removes the former
 Filament-reader prerequisite: generic compilation uses the existing public
 DeclarationEnvironment/check_expression and executable binder APIs. A concrete

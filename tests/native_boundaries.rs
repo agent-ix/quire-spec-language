@@ -71,6 +71,8 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
     let diagnostic = error.downcast_ref::<Box<Diagnostic>>().unwrap();
     assert_eq!(diagnostic.code, Code::UnknownLanguage);
     assert_eq!(diagnostic.source.identity, "test:boundary");
+    assert!(diagnostic.related.is_empty());
+    assert!(diagnostic.upstream.is_none());
     assert_eq!(
         error.to_string(),
         format!("unknown_language: {}", diagnostic.message)
@@ -82,7 +84,7 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
         assert_eq!(Code::from_code(code.as_str()), Some(code));
         assert_eq!(code.to_string(), code.as_str());
     }
-    assert_eq!(seen.len(), 10);
+    assert_eq!(seen.len(), 15);
     for unknown in ["", "INVALID_SYNTAX", "future_code"] {
         assert_eq!(Code::from_code(unknown), None);
     }

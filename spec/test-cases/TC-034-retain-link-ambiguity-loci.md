@@ -10,7 +10,7 @@ relationships:
 ## Description
 
 Retain ambiguity provenance without partial linkage. Integration/property controls, priority P1. Traces: FR-013-AC-6.
-Planned before implementation; use the public link API and actual IR constructors.
+Authored before implementation; now executed with the public link API and actual IR constructors.
 
 ## Test Procedure
 
@@ -19,4 +19,3 @@ Construct two independently valid environments with distinct RequirementRef owne
 ## Expected Results
 
 Ambiguity returns the authored occurrence and all conflicting typed declaration identities/IR source spans, in deterministic identity order. No candidate wins and no partial package escapes, regardless of order or prior calls.
-

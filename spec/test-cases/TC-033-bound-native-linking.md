@@ -10,7 +10,7 @@ relationships:
 ## Description
 
 Enforce native linking resource ceilings. Integration/property controls, priority P1. Traces: FR-013-AC-5.
-Planned before implementation; use the public link API and actual IR constructors.
+Authored before implementation; now executed with the public link API and actual IR constructors.
 
 ## Test Procedure
 
@@ -19,4 +19,3 @@ Exercise model/import/clause/node/depth and per-model/aggregate canonical byte b
 ## Expected Results
 
 An exact permitted boundary succeeds where all other prerequisites hold. A needed operation above a lowered or hard ceiling returns resource_exhausted with is_incomplete true and no package; zero never disables a limit. Later healthy requests are unchanged. Emitted-byte bounds are not described as allocator-capacity bounds.
-

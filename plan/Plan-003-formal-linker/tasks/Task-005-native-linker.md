@@ -2,7 +2,7 @@
 id: Task-005
 title: "Implement exact native formal-environment linkage"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -41,9 +41,9 @@ Use borrowed immutable models, owned parsed source and no cross-request cache.
 
 ## Subtasks
 
-- [ ] Integrate the exact IR dependency and Rust 1.98.1/serde policy changes.
-- [ ] Implement import selection, scoped references, shape lookup and atomic output.
-- [ ] Exercise every listed public-API test and existing parser/audit regressions.
+- [x] Integrate the exact IR dependency and Rust 1.98.1/serde policy changes.
+- [x] Implement import selection, scoped references, shape lookup and atomic output.
+- [x] Exercise every listed public-API test and existing parser/audit regressions.
 
 ## Deliverables
 

@@ -10,7 +10,7 @@ relationships:
 ## Description
 
 Resolve lexical and formal declaration occurrences. Integration/property controls, priority P1. Traces: FR-013-AC-3.
-Planned before implementation; use the public link API and actual IR constructors.
+Authored before implementation; now executed with the public link API and actual IR constructors.
 
 ## Test Procedure
 
@@ -19,4 +19,3 @@ Construct valid acyclic nested records, an optional record, a bounded collection
 ## Expected Results
 
 Occurrences identify their exact formal owner or native binding-name span. Shadowing selects the nearest binding without leaking. Every missing or unresolvable field/name refuses atomically; successful linkage makes no typing/definedness judgment.
-

@@ -6,11 +6,12 @@ type: TestMatrix
 
 ## Overview
 
-Planned LC02 verification for the existing FR-005/006 acceptance criteria,
-following the owner's internal adoption of specification PR8 at e897f81.
-IT-005 names the actual adapter/input qualification still needed. All ten
-cases are unexecuted; no binding tag, passed state or completed plan is invented.
-TM-001/002 and their completed native/audit evidence remain unchanged.
+LC02 verification after the owner's internal adoption of specification PR8 at
+e897f81. Ten linking cases, TC-020–024 and TC-030–034, now execute through the
+public formal linker API. Their eleven FR-005/013 criteria are backed by the
+Rust tests in tests/linking.rs. The five FR-006 typing cases remain planned.
+IT-005's complete typing/projection qualification and the full workflow remain
+open. TM-001/002 retain their existing native/audit evidence.
 
 ## Requirements Traceability
 
@@ -18,42 +19,42 @@ TM-001/002 and their completed native/audit evidence remain unchanged.
 
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| FR-005 | FR-005-AC-1 | TC-020 | 🚧 Planned |
-| FR-005 | FR-005-AC-2 | TC-021 | 🚧 Planned |
-| FR-005 | FR-005-AC-3 | TC-022 | 🚧 Planned |
-| FR-005 | FR-005-AC-4 | TC-023 | 🚧 Planned |
-| FR-005 | FR-005-AC-5 | TC-024 | 🚧 Planned |
+| FR-005 | FR-005-AC-1 | TC-020 | ✅ Passed |
+| FR-005 | FR-005-AC-2 | TC-021 | ✅ Passed |
+| FR-005 | FR-005-AC-3 | TC-022 | ✅ Passed |
+| FR-005 | FR-005-AC-4 | TC-023 | ✅ Passed |
+| FR-005 | FR-005-AC-5 | TC-024 | ✅ Passed |
 | FR-006 | FR-006-AC-1 | TC-025 | 🚧 Planned |
 | FR-006 | FR-006-AC-2 | TC-026 | 🚧 Planned |
 | FR-006 | FR-006-AC-3 | TC-027 | 🚧 Planned |
 | FR-006 | FR-006-AC-4 | TC-028 | 🚧 Planned |
 | FR-006 | FR-006-AC-5 | TC-029 | 🚧 Planned |
-| FR-013 | FR-013-AC-1 | TC-030 | 🚧 Planned |
-| FR-013 | FR-013-AC-2 | TC-030 | 🚧 Planned |
-| FR-013 | FR-013-AC-3 | TC-031 | 🚧 Planned |
-| FR-013 | FR-013-AC-4 | TC-032 | 🚧 Planned |
-| FR-013 | FR-013-AC-5 | TC-033 | 🚧 Planned |
-| FR-013 | FR-013-AC-6 | TC-034 | 🚧 Planned |
+| FR-013 | FR-013-AC-1 | TC-030 | ✅ Passed |
+| FR-013 | FR-013-AC-2 | TC-030 | ✅ Passed |
+| FR-013 | FR-013-AC-3 | TC-031 | ✅ Passed |
+| FR-013 | FR-013-AC-4 | TC-032 | ✅ Passed |
+| FR-013 | FR-013-AC-5 | TC-033 | ✅ Passed |
+| FR-013 | FR-013-AC-6 | TC-034 | ✅ Passed |
 
 ## Test Case Summary
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
-| TC-020 | Exact qualified import | Integration | P1 | FR-005-AC-1 | 🚧 Planned |
-| TC-021 | Missing selected import | Integration | P1 | FR-005-AC-2 | 🚧 Planned |
-| TC-022 | Ambiguous exported declaration | Integration | P1 | FR-005-AC-3 | 🚧 Planned |
-| TC-023 | Stale package closure | Integration | P1 | FR-005-AC-4 | 🚧 Planned |
-| TC-024 | Failed linkage is atomic | Property | P1 | FR-005-AC-5 | 🚧 Planned |
+| TC-020 | Exact qualified import | Integration | P1 | FR-005-AC-1 | ✅ Passed |
+| TC-021 | Missing selected import | Integration | P1 | FR-005-AC-2 | ✅ Passed |
+| TC-022 | Ambiguous exported declaration | Integration | P1 | FR-005-AC-3 | ✅ Passed |
+| TC-023 | Stale package closure | Integration | P1 | FR-005-AC-4 | ✅ Passed |
+| TC-024 | Failed linkage is atomic | Property | P1 | FR-005-AC-5 | ✅ Passed |
 | TC-025 | Unguarded optional unwrap | Integration | P1 | FR-006-AC-1 | 🚧 Planned |
 | TC-026 | Presence facts stay with their observation | Integration | P1 | FR-006-AC-2 | 🚧 Planned |
 | TC-027 | Guarded bounded addition | Integration | P1 | FR-006-AC-3 | 🚧 Planned |
 | TC-028 | Ambiguous scalar inference | Integration | P1 | FR-006-AC-4 | 🚧 Planned |
 | TC-029 | Clause roots are Boolean | Integration | P1 | FR-006-AC-5 | 🚧 Planned |
-| TC-030 | Exact source and formal artifact binding | Integration | P1 | FR-013-AC-1, FR-013-AC-2 | 🚧 Planned |
-| TC-031 | Lexical and formal declaration occurrences | Integration | P1 | FR-013-AC-3 | 🚧 Planned |
-| TC-032 | Unmapped reference and operation forms | Integration | P1 | FR-013-AC-4 | 🚧 Planned |
-| TC-033 | Native linking resource ceilings | Property | P1 | FR-013-AC-5 | 🚧 Planned |
-| TC-034 | Ambiguity provenance and atomicity | Property | P1 | FR-013-AC-6 | 🚧 Planned |
+| TC-030 | Exact source and formal artifact binding | Integration | P1 | FR-013-AC-1, FR-013-AC-2 | ✅ Passed |
+| TC-031 | Lexical and formal declaration occurrences | Integration | P1 | FR-013-AC-3 | ✅ Passed |
+| TC-032 | Unmapped reference and operation forms | Integration | P1 | FR-013-AC-4 | ✅ Passed |
+| TC-033 | Native linking resource ceilings | Property | P1 | FR-013-AC-5 | ✅ Passed |
+| TC-034 | Ambiguity provenance and atomicity | Property | P1 | FR-013-AC-6 | ✅ Passed |
 
 ## Six coverage rules
 
@@ -77,13 +78,14 @@ The source of truth for preconditions is
 [IT-005](../integration/IT-005-qualify-native-model-consumption.md).
 The independently authored rule-model hypotheses require their own qualified
 realization; the existing ConfigVersion model is not interchangeable with them.
-Future tests use imported canonical ix-trace-rs attributes and actual APIs.
-Current Quire reports these rows as unbacked, which is correct for this plan.
-The installed functional-table Status/Coverage Status conflict remains visible;
-all rows are explicitly planned, and no complete status is being hidden.
+Linker tests use imported single-line ix-trace-rs attributes and real APIs.
+Actual Quire reconciliation reports TM-003 10/15 backed, FR-005 5/5 and FR-013
+6/6. FR-006 remains 0/5. There are no status lies or untracked symbols. The
+known functional-table Status/Coverage Status classifier limitation is retained;
+explicit TC statuses and executed logs supply the separate completion evidence.
 
-This packet specifies evidence for LC02. It does not supply native linking,
-typing, runtime observations or qualified projection. The accepted IR ADR-0054
+This packet specifies evidence for LC02. Native linking is implemented; typing,
+runtime observations and qualified projection remain incomplete. The accepted IR ADR-0054
 removes the earlier prerequisite for a shared Filament model adapter. The
 generic lane uses the public formal declaration API; A owns concrete native
 projection work for clauses that need additional semantic correspondence.
