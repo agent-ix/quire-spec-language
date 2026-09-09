@@ -1,0 +1,27 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.66s
+     Running tests/runtime_inputs.rs (target/debug/deps/runtime_inputs-bc8de1781c3759c2)
+
+running 19 tests
+test empty_snapshot_has_exact_independently_authored_envelope ... ok
+test identity_cases::each_snapshot_component_is_byte_bound_and_vectors_keep_order ... ok
+test identity_cases::expected_refs_and_invocation_mutations_retain_complete_correspondence ... ok
+test identity_cases::invalid_labels_have_source_free_errors_for_both_artifacts_and_refs ... ok
+test identity_cases::label_and_observation_family_preserves_exact_bytes_on_repeat ... ok
+test limits::empty_dimensions_and_flat_destruction_do_not_require_recursive_work ... ok
+test limits::every_metadata_entry_class_is_counted_before_its_work ... ok
+test limits::exact_hard_output_bytes_and_escaped_text_expansion_are_bounded ... ok
+test limits::generated_shared_arenas_obey_each_exact_lowered_dimension ... ok
+test limits::hard_entry_and_depth_limits_ignore_elevated_options ... ok
+test limits::hard_node_limit_and_coupled_byte_limit_remain_distinct ... ok
+test limits::oversized_text_stops_before_encoding_and_retains_original_labels ... ok
+test output_limit_admits_exact_bytes_and_refuses_one_below ... ok
+test unused_self_edge_refuses_at_its_actual_draft_path ... ok
+test values::all_snapshot_and_invocation_root_positions_are_checked ... ok
+test values::every_container_rejects_forward_self_and_out_of_range_children ... ok
+test values::every_value_kind_has_its_exact_tag_and_payload ... ok
+test values::invocation_encodes_every_original_binding_without_claiming_validity ... ok
+test values::snapshot_metadata_preserves_duplicates_for_the_model_validator ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+

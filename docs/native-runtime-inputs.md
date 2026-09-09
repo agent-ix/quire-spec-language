@@ -1,6 +1,7 @@
 # Native runtime input and validation contract
 
-Draft for LC03 specify/review; no runtime implementation is claimed. This
+LC03 contract reviewed before implementation. FR-018's structural constructors
+are implemented; model-aware validation remains planned under Task-013. This
 contract consumes the internally adopted state-finite rules at specification
 e897f81 and the native model/checker landed in PR10 at bfac17d. It does not
 modify the historical profile or fixture bytes. FR-018 owns input construction,

@@ -24,9 +24,18 @@ checks. The 24 checker tests qualify Task-009. The public library contract is in
 [native-model-checking.md](docs/native-model-checking.md); review and handoff
 are tracked in [Plan-005](plan/Plan-005-native-checking/index.md).
 
+`runtime::Snapshot::new` and `runtime::Invocation::new` now construct immutable
+inputs with exact bytes/digests, distinct reference types, structured errors
+and caller-lowered byte/node/entry/depth limits. Flat arenas preserve duplicate
+entries and shared values for later model-aware diagnosis. Twenty-one public
+API tests and a role-separation compile-fail doctest cover construction; its
+qualification is tracked in [Plan-006](plan/Plan-006-native-runtime/index.md).
+See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
+
 Runtime population validation, healthy/violating evaluation, backend projection
-and Quire integration remain downstream work. A checked package establishes
-static judgments conditional on valid input, without evaluating a population.
+and Quire integration remain downstream work. Construction establishes structure
+and byte correspondence; a checked package establishes static judgments
+conditional on valid input. Neither evaluates a population.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,

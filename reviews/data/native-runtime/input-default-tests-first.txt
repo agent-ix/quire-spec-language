@@ -1,0 +1,110 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.85s
+     Running unittests src/lib.rs (target/debug/deps/quire_spec_language-6819e4e3cb1b42a0)
+
+running 1 test
+test format::tests::formatter_preserves_ordered_token_and_comment_spellings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests tools/fixture-audit/main.rs (target/debug/deps/fixture_audit-eacfaccd9d48029c)
+
+running 6 tests
+test input::tests::contained_and_escaping_paths ... ok
+test input::tests::exact_and_exceeded_budgets ... ok
+test input::tests::malformed_json_and_fields ... ok
+test review::tests::identity_negative_controls ... ok
+test roles::tests::equal_but_malformed_closure_fields_refuse ... ok
+test roles::tests::original_scalar_coordinates_and_mutations ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/quire_spec-e97760b3821c5b2e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-bebcde53335b131f)
+
+running 3 tests
+test cli_parses_and_formats_without_claiming_execution ... ok
+test cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io ... ok
+test cli_usage_io_and_resource_outcomes_are_distinct ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/fixture_audit.rs (target/debug/deps/fixture_audit-48da47e2cd1dc275)
+
+running 8 tests
+test cli_usage_and_unapproved_producer_with_no_external_runtime_path ... ok
+test model_checkpoint_digest_pin_and_immutable_inputs ... ok
+test model_required_fields_reject_missing_null_and_wrong_types ... ok
+test non_utf8_mode_refuses_and_non_utf8_root_executes ... ok
+test process_budget_failure_emits_no_success_summary ... ok
+test selected_review_packet_and_corrupt_invocation ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test selected_roles_packet_and_independent_correspondence_mutations ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test selected_rule_syntax_and_malformed_case_metadata ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+
+test result: ok. 5 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/formal_source.rs (target/debug/deps/formal_source-58cb17bd8497194d)
+
+running 5 tests
+test tc_035_retains_explicit_source_assignment ... ok
+test tc_036_matches_independent_coordinates_and_source_boundary ... ok
+test tc_037_refuses_each_foreign_native_binding_dimension ... ok
+test tc_038_refuses_false_constructor_valid_formal_coordinates ... ok
+test tc_039_generated_spans_match_oracle_and_round_trip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/linking.rs (target/debug/deps/linking-e9d432418909763f)
+
+running 10 tests
+test ambiguity_retains_all_sorted_loci_in_every_order ... ok
+test exact_source_owner_field_and_digest_domains ... ok
+test explicit_context_and_neighboring_clauses_cannot_be_guessed ... ok
+test failed_import_permutations_never_reuse_successful_state ... ok
+test hard_canonical_byte_budgets_admit_equality_and_refuse_one_more ... ok
+test hard_count_and_traversal_ceilings_cannot_be_raised ... ok
+test inclusive_lowered_and_zero_limits_are_enforced_independently ... ok
+test lexical_scope_and_formal_shapes_preserve_exact_targets ... ok
+test missing_stale_unused_declaration_and_malformed_digest ... ok
+test unmapped_forms_refuse_while_linking_makes_no_type_judgment ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.58s
+
+     Running tests/located_json.rs (target/debug/deps/located_json-c540efb9506da077)
+
+running 3 tests
+test tc_054_identical_foreign_buffers_are_not_source_occurrences ... ok
+test tc_054_locations_follow_occurrences_not_spelling ... ok
+test tc_054_malformed_and_ambiguous_typed_input_refuse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/native_boundaries.rs (target/debug/deps/native_boundaries-ff84373786832323)
+
+running 3 tests
+test formatter_byte_ceiling_is_inclusive_and_counts_final_newline ... ok
+test formatter_cannot_raise_the_hard_content_ceiling ... ok
+test native_diagnostic_propagates_as_an_error_and_codes_roundtrip ... FAILED
+
+failures:
+
+---- native_diagnostic_propagates_as_an_error_and_codes_roundtrip stdout ----
+
+thread 'native_diagnostic_propagates_as_an_error_and_codes_roundtrip' (2283) panicked at tests/native_boundaries.rs:87:5:
+assertion `left == right` failed
+  left: 19
+ right: 18
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    native_diagnostic_propagates_as_an_error_and_codes_roundtrip
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `--test native_boundaries`

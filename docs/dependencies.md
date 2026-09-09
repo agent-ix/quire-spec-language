@@ -167,6 +167,12 @@ are not checked in. Original dependency notices remain in their packages.
 Target-specific packages in the inventory do not imply those targets were run.
 No external parser corpus or model implementation was copied.
 
+LC03's input constructors explicitly enable serde's existing derive feature on
+the direct pinned serde 1.0.228 dependency. The pinned IR already enabled that
+feature, so Cargo.lock and the resolved package/grant inventory are unchanged.
+The authored runtime modules and Rust tests are AGPL-3.0-only; serde derives
+generate only build output, and no external input reader was copied or added.
+
 ## Optional model producer toolchain
 
 The original `tests/fixtures/model-source` TypeSpec source/manifest and the

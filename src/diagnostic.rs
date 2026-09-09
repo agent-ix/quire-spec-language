@@ -72,6 +72,8 @@ pub enum Code {
     MissingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
+    /// Native runtime artifact structure or selected runtime data is invalid.
+    InvalidRuntimeInput,
     /// An invocation result or value is unavailable in the requested access form.
     WrongSnapshot,
     /// Native types, nominal identities or operator constraints disagree.
@@ -99,6 +101,7 @@ impl Code {
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
+            Self::InvalidRuntimeInput => "invalid_runtime_input",
             Self::WrongSnapshot => "wrong_snapshot",
             Self::IllTyped => "ill_typed",
             Self::UndefinedExpression => "undefined_expression",
@@ -123,6 +126,7 @@ impl Code {
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
             Self::InvalidModelBinding,
+            Self::InvalidRuntimeInput,
             Self::WrongSnapshot,
             Self::IllTyped,
             Self::UndefinedExpression,
