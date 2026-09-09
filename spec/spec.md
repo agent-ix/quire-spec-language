@@ -209,4 +209,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-014](functional/FR-014-bind-native-formal-source.md) | FR | Implemented native/formal source bridge |
 | [FR-015](functional/FR-015-project-native-model-semantics.md) | FR | Planned native semantic roles |
 | [FR-016](functional/FR-016-check-native-clauses.md) | FR | Planned type/definedness checker |
-| [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Planned qualification/linkage stage repairs |
+| [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Qualified construction-stage repairs; SR-083 |

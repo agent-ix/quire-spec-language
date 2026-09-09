@@ -2,7 +2,7 @@
 id: Task-011
 title: "Repair qualification and linkage construction boundaries"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -24,16 +24,17 @@ selected reviews, SR-075–082. This task is added under QUOIN spec-to-plan.
 
 ## Subtasks
 
-- [ ] Carry exact borrowed JSON occurrences; write independent provenance controls.
-- [ ] Split source intake, typed decoding and IR lowering; unify scalar storage.
-- [ ] Separate existing linker inventory/import/clause stages without policy drift.
-- [ ] Separate role and syntax audit orchestration stages without policy drift.
-- [ ] Execute focused and existing regressions; complete actual code/Rust review.
+- [x] Carry exact borrowed JSON occurrences; write independent provenance controls.
+- [x] Split source intake, typed decoding and IR lowering; unify scalar storage.
+- [x] Separate existing linker inventory/import/clause stages without policy drift.
+- [x] Separate role and syntax audit orchestration stages without policy drift.
+- [x] Execute focused and existing regressions; complete actual code/Rust review.
 
 ## Deliverables
 
 Corrected Rust helpers, traced TC-054, preserved linker/audit behavior and evidence.
-Missing NativeModel/checker APIs remain explicit ongoing Task-008/009 work.
+Native link integration, full model qualification and checking remain explicit
+ongoing Task-008/009 work.
 
 Producer qualification consumes Task-008's real model API. Task-008 and this
 repair therefore share the final Task-010 gate; an artificial Task-011-before-
@@ -44,3 +45,10 @@ Task-008 completion dependency would create a cycle. Work remains serial.
 Source borrowing uses the pinned serde_json raw_value development feature.
 No new package, language, lexer or unsafe code. All checks run serially at nice
 10 with one build job/test thread and explicit cached target directory.
+
+Completed at source 08a4fe79a0ed734c2b96acc831ac750a8c1eb56f. SR-083 records
+the actual code/Rust inspection and all four SR-074 dispositions. Local evidence
+includes 61 default tests, three selected private audit tests, strict Clippy,
+formatting, minimal build, strict rustdoc and documented CLI/audit commands.
+The quire-validated review is reviews/26-09-08-pipeline-code-review.md; actual
+command logs are retained under reviews/data/native-checking/.

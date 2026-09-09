@@ -55,6 +55,13 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-016 | FR-016-AC-7 | TC-050, TC-053 | 🚧 Planned |
 | FR-016 | FR-016-AC-8 | TC-051 | 🚧 Planned |
 | FR-016 | FR-016-AC-9 | TC-052 | 🚧 Planned |
+| FR-017 | FR-017-AC-1 | TC-054 | ✅ Passed |
+| FR-017 | FR-017-AC-3 | TC-030, TC-031, TC-032, TC-033, TC-034 | ✅ Passed |
+| FR-017 | FR-017-AC-4 | TC-001, TC-002, TC-003, TC-004, TC-006 | ✅ Passed |
+
+FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
+structural ownership inspection and its PASS disposition; no test symbol is
+invented for that criterion.
 
 ## Test Case Summary
 
@@ -94,7 +101,7 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-051 | Bound constraint checking and shared proof expansion | Property | P1 | FR-016-AC-8 | 🚧 Planned |
 | TC-052 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | 🚧 Planned |
 | TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | 🚧 Planned |
-| TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | 🚧 Planned |
+| TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
 
 ## Six coverage rules
 
@@ -122,7 +129,8 @@ Linker tests use imported single-line ix-trace-rs attributes and real APIs.
 At the PR8 linker baseline, Quire reconciliation reported TM-003 10/15 backed,
 FR-005 5/5 and FR-013 6/6, with no status lies or untracked symbols. The PR9
 source bridge subsequently added five executed cases. The current matrix has
-15 executed and 19 planned cases; FR-006 remains 0/5. The
+16 fully qualified and 19 planned cases; five of those planned model cases have
+initial executed tests but incomplete authored qualification. FR-006 remains 0/5. The
 known functional-table Status/Coverage Status classifier limitation is retained;
 explicit TC statuses and executed logs supply the separate completion evidence.
 
@@ -177,3 +185,14 @@ TC-053 independently checks accepted presence proofs over a bounded generated
 Boolean formula family and all assignments, including mandatory positive
 controls. It addresses the native alternative-join fact calculation rather than
 assuming the existing IR proof implementation qualifies that added logic.
+
+## Construction repair qualification
+
+FR-017 / Task-011 is complete at 08a4fe7. TC-054 has three executed tests for
+original occurrences and strict/foreign refusals. Existing linker and audit
+regressions carry FR-017-AC-3/4 attributes and retain their actual outcomes.
+SR-083 supplies the separate FR-017-AC-2 ownership inspection. The default
+suite passed 61 tests and the selected private lane passed three tests.
+These results qualify the four scoped construction repairs. Task-008/009 and
+the full-plan gap gate remain open; trace presence is not completion evidence
+for the remaining model and checker cases.
