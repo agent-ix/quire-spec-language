@@ -24,6 +24,11 @@ Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
 native CLI needs no Node or JVM. There are no optional feature requirements.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
+On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
+`-j 1`, and run tests with `-- --test-threads=1`. Check for competing builds
+before starting and reuse existing worktree target caches. Do not start another
+phase until the previous command has completed.
+
 ```sh
 cargo run --locked --target-dir target -- parse test:parent fixture:1 tests/fixtures/parent.native
 cargo run --locked --target-dir target -- format test:parent fixture:1 tests/fixtures/parent.native
@@ -69,6 +74,13 @@ body-to-original segments with explicit layout transformations and returns
 original document locations. Maps preserve all corresponding byte regions and
 refuse changed bytes, foreign source bindings, malformed segments and budget
 exhaustion. Wire decoding and existing-repository extraction remain separate.
+
+The [formal source bridge](docs/formal-source-binding.md) retains exact native
+source under an explicitly supplied Contract IR source identity. Its forward
+and reverse mappings check byte, line and scalar-column correspondence,
+including constructor-valid IR spans whose coordinates disagree with the bytes.
+Native revision labels remain opaque. This API supplies location correspondence
+for later checking; the caller owns assigning the formal identity.
 
 ## Design and status
 
