@@ -62,6 +62,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-005
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-013
+    type: contains
 ---
 # Master Requirements Specification
 

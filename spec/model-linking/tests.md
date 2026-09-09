@@ -28,6 +28,12 @@ TM-001/002 and their completed native/audit evidence remain unchanged.
 | FR-006 | FR-006-AC-3 | TC-027 | 🚧 Planned |
 | FR-006 | FR-006-AC-4 | TC-028 | 🚧 Planned |
 | FR-006 | FR-006-AC-5 | TC-029 | 🚧 Planned |
+| FR-013 | FR-013-AC-1 | TC-030 | 🚧 Planned |
+| FR-013 | FR-013-AC-2 | TC-030 | 🚧 Planned |
+| FR-013 | FR-013-AC-3 | TC-031 | 🚧 Planned |
+| FR-013 | FR-013-AC-4 | TC-032 | 🚧 Planned |
+| FR-013 | FR-013-AC-5 | TC-033 | 🚧 Planned |
+| FR-013 | FR-013-AC-6 | TC-034 | 🚧 Planned |
 
 ## Test Case Summary
 
@@ -43,6 +49,11 @@ TM-001/002 and their completed native/audit evidence remain unchanged.
 | TC-027 | Guarded bounded addition | Integration | P1 | FR-006-AC-3 | 🚧 Planned |
 | TC-028 | Ambiguous scalar inference | Integration | P1 | FR-006-AC-4 | 🚧 Planned |
 | TC-029 | Clause roots are Boolean | Integration | P1 | FR-006-AC-5 | 🚧 Planned |
+| TC-030 | Exact source and formal artifact binding | Integration | P1 | FR-013-AC-1, FR-013-AC-2 | 🚧 Planned |
+| TC-031 | Lexical and formal declaration occurrences | Integration | P1 | FR-013-AC-3 | 🚧 Planned |
+| TC-032 | Unmapped reference and operation forms | Integration | P1 | FR-013-AC-4 | 🚧 Planned |
+| TC-033 | Native linking resource ceilings | Property | P1 | FR-013-AC-5 | 🚧 Planned |
+| TC-034 | Ambiguity provenance and atomicity | Property | P1 | FR-013-AC-6 | 🚧 Planned |
 
 ## Six coverage rules
 
@@ -77,3 +88,8 @@ removes the earlier prerequisite for a shared Filament model adapter. The
 generic lane uses the public formal declaration API; A owns concrete native
 projection work for clauses that need additional semantic correspondence.
 The full workflow remains IT-002 and the original Agent A assignment.
+
+FR-013 now defines the concrete formal-environment resolution API and TC-030–034
+cover its six criteria. TC-020–024 consume that same real API. Canonical byte
+selection, explicit self binding, lexical scopes and resource budgets are
+defined before code; FR-006's five static-judgment cases remain separate.
