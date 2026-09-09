@@ -10,6 +10,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-016
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-017
+    type: references
   - target: ix://agent-ix/quire-spec-language/NFR-005
     type: references
 ---
@@ -70,5 +72,6 @@ the handoff deliverable; broader goal completion is not inferred from its merge.
 ## Task Mapping
 
 See task frontmatter for ownership, dependencies and exact test traces. This
-bundle has one model task, one checker task and one qualification/handoff task.
-
+bundle has one model task, one checker task, one qualification/handoff task
+and the owner's scoped construction-repair task. Task-011 is complete; the
+remaining tasks continue to own native linking, checking and final handoff.

@@ -1,0 +1,19 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running `target/debug/quire-spec format 'test:parent' 'fixture:1' tests/fixtures/parent.native`
+// SPDX-License-Identifier: AGPL-3.0-only
+// Newly authored syntax fixture; model import intentionally unresolved.
+language "ix:native" edition "0-draft";
+profile "state-finite/0-draft";
+model Config = "test/config" version "1" digest "unresolved";
+invariant ParentOrder on Config::Version at current {
+  let parent = self.parent in present(parent) implies deref(value(parent)).number < self.number
+}
+invariant NoCycle on Config::Version at current {
+  not reaches(self, self, parent)
+}
+pre CanAttempt on Config::Version::attempt {
+  self.number >= 0
+}
+post KeptNumber on Config::Version::attempt {
+  self.number = pre(self.number)
+}
