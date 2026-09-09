@@ -50,7 +50,7 @@ by a missing setup or a skip. Original source bytes and loci remain immutable.
 
 The generic integration lane constructs admitted formal environments through
 the real public Rust API and records the explicit native source correspondence.
-Its initial positive model is an acyclic BoundedCounter record with a value
+Its initial positive model is an acyclic BoundedCounter record with a count
 field of signed integer 0..1000, reject overflow, and a reviewed identity under
 its requirement owner. This is an independently authored formal test model,
 not a generated Filament datatype relabeled as proof semantics.
