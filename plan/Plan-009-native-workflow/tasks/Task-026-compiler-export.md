@@ -2,7 +2,7 @@
 id: Task-026
 title: "Export exact native compiler artifact bytes"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-027
     type: references
