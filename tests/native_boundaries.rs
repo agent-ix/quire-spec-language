@@ -84,7 +84,12 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
         assert_eq!(Code::from_code(code.as_str()), Some(code));
         assert_eq!(code.to_string(), code.as_str());
     }
-    assert_eq!(seen.len(), 18);
+    assert_eq!(seen.len(), 26);
+    assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");
+    assert_eq!(
+        Code::from_code("invalid_runtime_input"),
+        Some(Code::InvalidRuntimeInput)
+    );
     assert_eq!(Code::WrongSnapshot.as_str(), "wrong_snapshot");
     assert_eq!(Code::from_code("wrong_snapshot"), Some(Code::WrongSnapshot));
     assert_eq!(Code::IllTyped.as_str(), "ill_typed");

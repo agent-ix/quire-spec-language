@@ -1,0 +1,7 @@
+{"kind":"DuplicateArchetype","message":"DuplicateArchetype: 'ADR' contributed by modules [\"spec-artifacts-process\", \"spec-artifacts-process\"]; first-wins","severity":"error"}
+{"kind":"DuplicateArchetype","message":"DuplicateArchetype: 'Plan' contributed by modules [\"spec-artifacts-process\", \"spec-artifacts-process\"]; first-wins","severity":"error"}
+{"kind":"DuplicateArchetype","message":"DuplicateArchetype: 'Review' contributed by modules [\"spec-artifacts-process\", \"spec-artifacts-process\"]; first-wins","severity":"error"}
+{"kind":"DuplicateArchetype","message":"DuplicateArchetype: 'SpecReview' contributed by modules [\"spec-artifacts-process\", \"spec-artifacts-process\"]; first-wins","severity":"error"}
+{"kind":"DuplicateArchetype","message":"DuplicateArchetype: 'Standard' contributed by modules [\"spec-artifacts-process\", \"spec-artifacts-process\"]; first-wins","severity":"error"}
+{"kind":"DuplicateInverseEdge","message":"DuplicateInverseEdge: inverse label 'part_of' declared by verbs [\"aggregates\", \"contains\"]; first-wins","severity":"error"}
+7/7 docs grammar-clean (100%); 0 grammar finding(s): none

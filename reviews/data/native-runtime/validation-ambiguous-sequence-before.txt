@@ -1,0 +1,22 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.32s
+     Running tests/runtime_validation.rs (target/debug/deps/runtime_validation-d8651dea53b7db35)
+
+running 1 test
+test value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements ... FAILED
+
+failures:
+
+---- value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements stdout ----
+
+thread 'value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements' (211) panicked at tests/runtime_validation_cases/invocation.rs:44:14:
+operation snapshot structure must be valid: InputError { code: InvalidRuntimeInput, identity: SourceIdentity { identity: "test:runtime-pre", revision: "1" }, path: [Field("arena"), Index(8), Field("values"), Index(1)], usage: ArtifactUsage { artifact_bytes: 0, text_bytes: 323, nodes: 9, entries: 25, depth: 0 }, message: "local root is out of range or child does not precede its parent" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test runtime_validation`

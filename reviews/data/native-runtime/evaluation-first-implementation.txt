@@ -1,0 +1,10 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.79s
+     Running tests/runtime_evaluation.rs (target/debug/deps/runtime_evaluation-d3dfd53c16aaf11e)
+
+running 2 tests
+test independent_expression_cost_vectors_and_one_below ... ok
+test positive_length_graph_cost_vectors_and_one_below ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

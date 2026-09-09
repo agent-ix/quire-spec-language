@@ -1,0 +1,42 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.83s
+     Running tests/runtime_validation.rs (target/debug/deps/runtime_validation-d8651dea53b7db35)
+
+running 34 tests
+test binding_cases::conflicting_field_permutations_retain_the_same_sorted_diagnostics ... ok
+test binding_cases::each_model_operation_and_observation_binding_is_exact ... ok
+test binding_cases::missing_required_state_and_operation_capture_correspondence_are_diagnosed ... ok
+test binding_cases::object_identity_uses_exact_unicode_keys_and_complete_membership ... ok
+test complete_current_context_retains_exact_checked_source_and_input ... ok
+test conflicting_population_order_preserves_defects_and_actual_byte_provenance ... ok
+test foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_defects ... ok
+test invocation_cases::actual_created_sets_need_both_exact_recording_and_model_permission ... ok
+test invocation_cases::deletion_requires_both_exact_recording_and_model_permission ... ok
+test invocation_cases::field_and_population_permissions_do_not_extend_to_other_supplied_models ... ok
+test invocation_cases::incomplete_population_retains_known_unauthorized_field_change ... ok
+test invocation_cases::precondition_can_record_permitted_self_deletion_and_pre_captured_parameter ... ok
+test invocation_cases::recorded_input_checks_immutable_field_permissions_before_any_truth ... ok
+test invocation_cases::state_roots_need_preserved_storage_values_and_explicit_counterparts ... ok
+test invocation_cases::unavailable_pre_does_not_become_empty_or_suppress_known_post_and_delta_defects ... ok
+test invocation_cases::unrelated_duplicate_objects_or_fields_do_not_hide_known_frame_changes ... ok
+test limit_cases::cancellation_at_each_observed_poll_is_repeatable_and_preserves_known_defects ... ok
+test limit_cases::detail_capacity_retains_invalid_classification_even_at_zero ... ok
+test limit_cases::elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings ... ok
+test limit_cases::exact_aggregate_hard_bytes_succeed_and_next_byte_stops_before_indexing ... ok
+test limit_cases::fresh_requests_preserve_success_after_refusal_exhaustion_cancellation_and_panic ... ok
+test limit_cases::maximum_detail_count_is_complete_until_an_additional_defect_needs_storage ... ok
+test limit_cases::maximum_inventory_and_selected_object_counts_can_complete ... ok
+test limit_cases::measured_required_counters_accept_exact_and_stop_one_below_or_zero ... ok
+test limit_cases::shared_values_cannot_raise_hard_work_or_unicode_limits ... ok
+test limit_cases::unselected_artifact_bytes_count_but_their_objects_are_not_inspected ... ok
+test missing_target_is_dangling_only_when_its_population_is_complete ... ok
+test selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory ... ok
+test skipped_invalid_field_refuses_with_actual_native_and_model_loci ... ok
+test value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements ... ok
+test value_cases::every_native_shape_is_checked_at_fields_state_parameters_and_results ... ok
+test value_cases::mixed_defects_preserve_diagnostics_under_inventory_population_object_and_field_permutations ... ok
+test value_cases::nominal_owners_record_shapes_and_signed_lower_bounds_are_not_inferred_from_values ... ok
+test value_cases::storage_frames_detect_each_value_kind_and_ignore_record_field_order ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.71s
+

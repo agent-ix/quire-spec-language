@@ -1,0 +1,15 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: unneeded use of `concat!` macro
+  --> tests/runtime_input_cases/identity.rs:11:20
+   |
+11 |       let expected = concat!(
+   |  ____________________^
+12 | |         r#"{"version":"native-state-input/1","kind":"invocation","identity":{"identity":"snapshot:current","revision":"1"},"body":...
+13 | |     );
+   | |_____^ help: replace with: `"{\"version\":\"native-state-input/1\",\"kind\":\"invocation\",\"identity\":{\"identity\":\"snapshot:current\",\"revision\":\"1\"},\"body\":{\"models\":[],\"context\":{\"model\":{\"package\":\"example/runtime\",\"requirement\":\"RuntimeModel\",\"revision\":1},\"name\":\"Node\"},\"operation\":\"step\",\"anchor\":\"step\",\"self_object\":{\"model\":{\"package\":\"example/runtime\",\"requirement\":\"RuntimeModel\",\"revision\":1},\"record\":\"Node\",\"universe\":\"nodes\",\"key\":\"\"},\"pre\":{\"identity\":{\"identity\":\"snapshot:current\",\"revision\":\"1\"},\"digest\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"post\":{\"identity\":{\"identity\":\"snapshot:current\",\"revision\":\"1\"},\"digest\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"parameters\":[],\"result\":null,\"created\":[],\"deleted\":[],\"arena\":[]}}"`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#useless_concat
+   = note: `-D clippy::useless-concat` implied by `-D clippy::all`
+   = help: to override `-D clippy::all` add `#[allow(clippy::useless_concat)]`
+
+error: could not compile `quire-spec-language` (test "runtime_inputs") due to 1 previous error

@@ -1,0 +1,15 @@
+quoin write
+
+Repo: /home/peter/dev/worktrees/formalization-a-language
+Org: agent-ix (from git remote)
+
+Authoring contracts:
+- TC (artifact)
+  module: spec-artifacts-iso
+  module_root: /home/peter/.ix/filament/modules/spec-artifacts-iso
+  skeleton: /home/peter/.ix/filament/modules/spec-artifacts-iso/skeletons/tc.md
+  schema: /home/peter/.ix/filament/modules/spec-artifacts-iso/schemas/tc-frontmatter.schema.json
+
+Author files directly in the repo, then validate changed spec files.
+Validate scope: /home/peter/dev/worktrees/formalization-a-language
+Validate command: quire validate --scope /home/peter/dev/worktrees/formalization-a-language "spec/**/*.md"
