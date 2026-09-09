@@ -40,12 +40,12 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-014 | FR-014-AC-3 | TC-037 | ✅ Passed |
 | FR-014 | FR-014-AC-4 | TC-038 | ✅ Passed |
 | FR-014 | FR-014-AC-5 | TC-039 | ✅ Passed |
-| FR-015 | FR-015-AC-1 | TC-040 | 🚧 Planned |
-| FR-015 | FR-015-AC-2 | TC-041 | 🚧 Planned |
-| FR-015 | FR-015-AC-3 | TC-042 | 🚧 Planned |
-| FR-015 | FR-015-AC-4 | TC-043 | 🚧 Planned |
+| FR-015 | FR-015-AC-1 | TC-040 | ✅ Passed |
+| FR-015 | FR-015-AC-2 | TC-041 | ✅ Passed |
+| FR-015 | FR-015-AC-3 | TC-042 | ✅ Passed |
+| FR-015 | FR-015-AC-4 | TC-043 | ✅ Passed |
 | FR-015 | FR-015-AC-5 | TC-044 | ✅ Passed |
-| FR-015 | FR-015-AC-6 | TC-045 | 🚧 Planned |
+| FR-015 | FR-015-AC-6 | TC-045 | ✅ Passed |
 | FR-016 | FR-016-AC-1 | TC-025, TC-053 | 🚧 Planned |
 | FR-016 | FR-016-AC-2 | TC-026, TC-046 | 🚧 Planned |
 | FR-016 | FR-016-AC-3 | TC-027, TC-047 | 🚧 Planned |
@@ -87,12 +87,12 @@ invented for that criterion.
 | TC-037 | Foreign native source requests | Integration | P1 | FR-014-AC-3 | ✅ Passed |
 | TC-038 | Inconsistent formal coordinates | Integration | P1 | FR-014-AC-4 | ✅ Passed |
 | TC-039 | Bounded generated span correspondence | Property | P1 | FR-014-AC-5 | ✅ Passed |
-| TC-040 | Qualify the source-derived native rule model | Integration | P1 | FR-015-AC-1 | 🚧 Planned |
-| TC-041 | Refuse missing or inconsistent native model roles | Integration | P1 | FR-015-AC-2 | 🚧 Planned |
-| TC-042 | Bind all native model semantics and provenance | Property | P1 | FR-015-AC-3 | 🚧 Planned |
-| TC-043 | Verify model loci and inventory identity consistency | Integration | P1 | FR-015-AC-4 | 🚧 Planned |
+| TC-040 | Qualify the source-derived native rule model | Integration | P1 | FR-015-AC-1 | ✅ Passed |
+| TC-041 | Refuse missing or inconsistent native model roles | Integration | P1 | FR-015-AC-2 | ✅ Passed |
+| TC-042 | Bind all native model semantics and provenance | Property | P1 | FR-015-AC-3 | ✅ Passed |
+| TC-043 | Verify model loci and inventory identity consistency | Integration | P1 | FR-015-AC-4 | ✅ Passed |
 | TC-044 | Resolve explicit references and operation declarations | Integration | P1 | FR-015-AC-5 | ✅ Passed |
-| TC-045 | Bound model construction and native linkage | Property | P1 | FR-015-AC-6 | 🚧 Planned |
+| TC-045 | Bound model construction and native linkage | Property | P1 | FR-015-AC-6 | ✅ Passed |
 | TC-046 | Check observation and operation value availability | Integration | P1 | FR-016-AC-2 | 🚧 Planned |
 | TC-047 | Prove signed arithmetic through the actual IR API | Integration | P1 | FR-016-AC-3 | 🚧 Planned |
 | TC-048 | Solve exact native contextual types | Integration | P1 | FR-016-AC-4, FR-016-AC-5 | 🚧 Planned |
@@ -129,8 +129,7 @@ Linker tests use imported single-line ix-trace-rs attributes and real APIs.
 At the PR8 linker baseline, Quire reconciliation reported TM-003 10/15 backed,
 FR-005 5/5 and FR-013 6/6, with no status lies or untracked symbols. The PR9
 source bridge subsequently added five executed cases. The current matrix has
-17 fully qualified and 18 planned cases; five of those planned model cases have
-initial executed tests but incomplete authored qualification. FR-006 remains 0/5. The
+22 fully qualified and 13 planned checker cases. FR-006 remains 0/5. The
 known functional-table Status/Coverage Status classifier limitation is retained;
 explicit TC statuses and executed logs supply the separate completion evidence.
 
@@ -204,6 +203,26 @@ the actual source-derived model and shared linker, including original field/
 operation/enum/parameter targets, exact profile/digest selection, carrier access
 refusals, conflicting inventory identities and hard native-link limits. The
 default suite passed 69 tests and all three selected private tests passed.
-Additional TC-042/043/045 link controls are executed, but their broader model
-criteria and TC-040/041 remain planned. Neither successful linking nor a bound
+At that revision, additional TC-042/043/045 link controls executed while broader
+model criteria remained planned. SR-085 subsequently completes them below.
+Neither successful linking nor a bound
 test tag establishes checking or runtime qualification.
+
+## Complete native model qualification
+
+TC-040–045 are qualified at 0cd679c by SR-084/085. Seventeen additional Rust
+tests cover every primitive site/wrapper, native-only role/carrier/operation
+refusals, ordinary zero-bounded text, unused unsupported IR declarations, all
+source-locus classes, seven source-derived semantic mutations and six inventory
+permutations. Artifact payload assertions preserve exact signed i64 extrema,
+changed bounds, unused values and ordered parameters. False line/column/source/
+revision and split-scalar loci are constructor-valid before native refusal.
+
+Exact small ModelLimits include every dimension and every aggregate-entry class.
+Valid 10,000-node/10,000-entry and depth-64 models pass; the next required node,
+entry or depth fails even with elevated options. The 10,001-role ceiling is
+observed before artifact work; 10,000 full roles exceed this fixture's artifact
+ceiling, so that is recorded as a coupled refusal rather than an exact success.
+The earlier native-link tests retain exact 1 MiB and 8 MiB artifact boundaries.
+The default suite passed 86 tests and all three selected private tests passed.
+Task-008 is complete. Task-009's checker and Task-010's full-plan review remain.

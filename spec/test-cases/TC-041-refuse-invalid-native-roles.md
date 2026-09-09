@@ -10,8 +10,9 @@ relationships:
 
 ## Description
 
-Integration, priority P1. Verifies FR-015-AC-2. Planned until real execution; setup
-must use the qualified source-derived Rust producer and actual public IR APIs.
+Integration, priority P1. Verifies FR-015-AC-2. Qualified at 0cd679c; SR-085
+records the actual public-API controls, local gates and bounded claim. Tests use
+the source-derived Rust producer and successfully constructed actual IR inputs.
 
 ## Test Procedure
 

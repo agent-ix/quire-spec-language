@@ -13,8 +13,9 @@ original parsed JSON occurrences. `link_native` now selects those artifacts,
 resolves explicit references and operations, and rejects conflicting model
 inventory identities. `LinkedPackage::binding_profile`,
 `LinkedModel::native_model` and `LinkedClause::operation` expose that
-correspondence. Full model qualification and expression checking remain in
-progress under [Plan-005](plan/Plan-005-native-checking/index.md).
+correspondence. Model admission and linkage qualification are complete under
+Task-008; expression checking remains the next work in
+[Plan-005](plan/Plan-005-native-checking/index.md).
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,

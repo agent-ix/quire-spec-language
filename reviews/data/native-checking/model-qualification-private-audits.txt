@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/fixture_audit.rs (target/debug/deps/fixture_audit-bdc842a9314affde)
+
+running 3 tests
+test selected_review_packet_and_corrupt_invocation ... ok
+test selected_roles_packet_and_independent_correspondence_mutations ... ok
+test selected_rule_syntax_and_malformed_case_metadata ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.08s

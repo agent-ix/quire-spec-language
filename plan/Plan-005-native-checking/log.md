@@ -7,6 +7,20 @@ description: "Native model/checker lifecycle and evidence."
 
 ## History
 
+- **2026-09-08** — Completed Task-008 qualification at 0cd679c with actual
+  code/Rust review SR-085. Seventeen new tests complete the model mutation,
+  provenance, deterministic identity and limit families; the full suite passed
+  86 tests and all three selected private audits passed. Strict Clippy, fmt,
+  cached minimal build, rustdoc and the documented CLI/audit commands passed.
+  The first Clippy run's test-table type-complexity finding was fixed with a
+  named Dimension structure, with no lint suppression. Evidence explicitly
+  distinguishes the 10,000-role artifact-capacity interaction from the valid
+  small exact-role boundary; 10,000-node and 10,000-entry valid models execute.
+  TC-040–045 are now qualified. Task-009's reviewed checker is next, followed
+  by Task-010. Runtime population/evaluation, backend and Quire integration
+  remain in the full assignment. No new requirements or production interfaces
+  were introduced by this qualification; no hosted CI was dispatched.
+
 - **2026-09-08** — Implemented native linkage at 667bf07 under the existing
   reviewed FR-015 contract. TC-044 is qualified by actual code/Rust review
   SR-084; Task-008 remains in progress. Shared exact import/lexical stages now
