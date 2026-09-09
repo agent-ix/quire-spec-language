@@ -99,6 +99,10 @@ capacity is not an exact content-byte accounting promise.
 
 ## Run and check
 
+The [ConfigVersion example](examples/config-version/README.md) supplies the named
+parent-order, cycle, identity and recorded-update workflow, with 13 native and
+Markdown request sets and explicit refused/incomplete cases.
+
 Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
 native CLI needs no Node or JVM. Default native commands need no optional features;
 the Quire consumer is enabled explicitly with `quire-extraction`.
