@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028: example setup through public model/compiler/runtime APIs.
+//! FR-026, FR-027, FR-028, FR-029: example setup through public native APIs.
 
 // The shared fixture module also serves other runtime test targets.
 #[allow(dead_code)]
@@ -9,15 +9,18 @@ pub(crate) mod runtime;
 use quire_spec_language::{
     formal_source::FormalSource,
     package::{NativePackage, PackageLimits},
-    runtime::{ObservationSelection, ValueId, ValueNode},
+    runtime::{ObservationSelection, ValueBinding, ValueId, ValueNode},
     syntax::ClauseKind,
 };
 use serde_json::{json, Value};
 use std::path::Path;
 
+// Each command test target uses a different subset of the shared generator cases.
+#[allow(dead_code)]
 pub enum Case {
     Aggregate(i64),
     Operation(bool),
+    Boolean(bool),
 }
 
 fn source(source: &FormalSource, file: &str) -> Value {
@@ -28,9 +31,34 @@ fn source(source: &FormalSource, file: &str) -> Value {
 /// Write synthetic licensed fixtures. Invalid setup is a generator error, not a result.
 pub fn write(directory: &Path, case: Case) -> (Value, String) {
     std::fs::create_dir_all(directory).unwrap();
-    let models = [runtime::native_rule_model::parts().model()];
+    let models = [match case {
+        Case::Boolean(_) => runtime::authored_model(|model| {
+            model["values"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"name":"flag","kind":"state","type":{"kind":"boolean"}}));
+        }),
+        Case::Aggregate(_) | Case::Operation(_) => runtime::native_rule_model::parts().model(),
+    }];
     let model = &models[0];
     let (expression, kind, input, selection) = match case {
+        Case::Boolean(value) => {
+            let mut draft = runtime::draft(model);
+            let id = ValueId::new(u32::try_from(draft.arena.len()).unwrap());
+            draft.arena.push(ValueNode::Boolean { value });
+            draft.values.push(ValueBinding {
+                declaration: runtime::qualified(model, "flag"),
+                value: id,
+            });
+            let snapshot = runtime::snapshot(draft);
+            let selection = runtime::selection(model, snapshot.reference());
+            (
+                "true implies flag",
+                ClauseKind::Invariant,
+                runtime::input(snapshot),
+                selection,
+            )
+        }
         Case::Aggregate(number) => {
             let mut draft = runtime::draft(model);
             runtime::change_field(&mut draft, "n", ValueNode::Integer { value: number });
