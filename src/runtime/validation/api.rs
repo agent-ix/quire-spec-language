@@ -257,6 +257,11 @@ impl std::fmt::Debug for ValidatedContext<'_, '_> {
 }
 
 impl<'checked, 'model> ValidatedContext<'checked, 'model> {
+    /// Transfer exact offered data after the evaluator's borrow has ended.
+    pub(in crate::runtime) fn into_request(self) -> (RuntimeInput, ExecutionSelection) {
+        (self.input, self.selection)
+    }
+
     /// Original source-order position established during complete validation.
     pub(crate) fn clause_index(&self) -> usize {
         self.clause_index

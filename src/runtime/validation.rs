@@ -185,6 +185,23 @@ pub fn validate<'checked, 'model>(
     limits: ValidationLimits,
     poll: impl FnMut() -> bool,
 ) -> std::result::Result<ValidatedContext<'checked, 'model>, Box<ValidationReport>> {
+    validate_retaining(checked, input, selection, limits, poll).map_err(|failure| failure.report)
+}
+
+/// Preserve the offered request for the combined execution report without cloning it.
+pub(super) struct FailedValidation {
+    pub input: RuntimeInput,
+    pub selection: ExecutionSelection,
+    pub report: Box<ValidationReport>,
+}
+
+pub(super) fn validate_retaining<'checked, 'model>(
+    checked: &'checked CheckedPackage<'model>,
+    input: RuntimeInput,
+    selection: ExecutionSelection,
+    limits: ValidationLimits,
+    poll: impl FnMut() -> bool,
+) -> std::result::Result<ValidatedContext<'checked, 'model>, Box<FailedValidation>> {
     let artifact = match &selection.observation {
         ObservationSelection::Current { snapshot, .. } => {
             RuntimeReference::Snapshot(snapshot.clone())
@@ -216,7 +233,12 @@ pub fn validate<'checked, 'model>(
     };
     let result = validator.run();
     if result.is_err() || validator.budget.failed() {
-        return Err(validator.budget.report());
+        let report = validator.budget.report();
+        return Err(Box::new(FailedValidation {
+            input,
+            selection,
+            report,
+        }));
     }
     let Some(clause_index) = validator.clause else {
         // Defensive library invariant; never fabricate a successful context.
@@ -225,7 +247,12 @@ pub fn validate<'checked, 'model>(
             Code::InvalidModelBinding,
             "validated request lacks an authored clause",
         );
-        return Err(validator.budget.report());
+        let report = validator.budget.report();
+        return Err(Box::new(FailedValidation {
+            input,
+            selection,
+            report,
+        }));
     };
     let selected = validator.selected;
     let indexes = validator.indexes;

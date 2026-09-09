@@ -18,7 +18,8 @@ adoption and assurance remain explicit acceptance work.
 
 - [Task-021](tasks/Task-021-mapped-compiler-intake.md): mapped compiler API and
   actual runtime integration, then a PR ready for review.
-- Continue independent result/standalone workflow work while that PR is reviewed.
+- [Task-022](tasks/Task-022-native-execution.md): native execution and retained
+  reports while Task-021's PR is reviewed. Standalone file intake remains later work.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
