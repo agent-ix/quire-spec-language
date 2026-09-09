@@ -38,6 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
+The IT and TC field spelling now agree. The signed domain was already required; no new type-system behavior, coercion or weaker acceptance criterion is introduced.
+
+
 Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 The exact owner().package().as_str() mapping is unchanged. The count field is an authored fixture declaration, not a rename performed by the linker or a second authority.

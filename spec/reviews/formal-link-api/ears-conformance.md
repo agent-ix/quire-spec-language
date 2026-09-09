@@ -38,6 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
+Only the IT's inconsistent reserved field spelling changes; FR descriptions and their event/response grammar remain unchanged. The signed numeric input is retained exactly.
+
+
 Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 FR-013's event/response and all six criteria remain unchanged. TC-020/030 now state an executable example using the nonreserved count field; no new shall or hidden exception is added.
