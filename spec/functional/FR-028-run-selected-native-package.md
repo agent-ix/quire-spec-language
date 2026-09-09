@@ -40,8 +40,7 @@ The command shall call NativePackage::read_verified with the expected byte
 reference, externally derived CheckBindings, admitted models and existing
 default support/stage limits.
 The command shall execute only the package accepted by that reader.
-If selected bytes or reconstructed claims fail verification, then the command
-shall return the original refusal without falling back to source compilation.
+If selected bytes or reconstructed claims fail verification, then the command shall return the original refusal without falling back to source compilation.
 The command shall preserve fresh budgets for subsequent requests.
 
 ## Acceptance Criteria
