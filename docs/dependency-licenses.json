@@ -456,6 +456,18 @@
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
+    "name": "quire-contract-codegen",
+    "version": "0.1.0",
+    "license": "MIT OR Apache-2.0",
+    "source": "git+https://github.com/agent-ix/quire-contract-codegen?rev=240fad84a9565ab723ba9844e18faea4e5d96f66#240fad84a9565ab723ba9844e18faea4e5d96f66"
+  },
+  {
+    "name": "quire-contract-ir",
+    "version": "0.1.0",
+    "license": "MIT OR Apache-2.0",
+    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f849c03be23177d373549c6c272551f957d#04eb6f849c03be23177d373549c6c272551f957d"
+  },
+  {
     "name": "quire-contract-ir",
     "version": "0.1.0",
     "license": "MIT OR Apache-2.0",
