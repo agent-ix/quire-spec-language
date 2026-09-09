@@ -44,7 +44,7 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-015 | FR-015-AC-2 | TC-041 | 🚧 Planned |
 | FR-015 | FR-015-AC-3 | TC-042 | 🚧 Planned |
 | FR-015 | FR-015-AC-4 | TC-043 | 🚧 Planned |
-| FR-015 | FR-015-AC-5 | TC-044 | 🚧 Planned |
+| FR-015 | FR-015-AC-5 | TC-044 | ✅ Passed |
 | FR-015 | FR-015-AC-6 | TC-045 | 🚧 Planned |
 | FR-016 | FR-016-AC-1 | TC-025, TC-053 | 🚧 Planned |
 | FR-016 | FR-016-AC-2 | TC-026, TC-046 | 🚧 Planned |
@@ -91,7 +91,7 @@ invented for that criterion.
 | TC-041 | Refuse missing or inconsistent native model roles | Integration | P1 | FR-015-AC-2 | 🚧 Planned |
 | TC-042 | Bind all native model semantics and provenance | Property | P1 | FR-015-AC-3 | 🚧 Planned |
 | TC-043 | Verify model loci and inventory identity consistency | Integration | P1 | FR-015-AC-4 | 🚧 Planned |
-| TC-044 | Resolve explicit references and operation declarations | Integration | P1 | FR-015-AC-5 | 🚧 Planned |
+| TC-044 | Resolve explicit references and operation declarations | Integration | P1 | FR-015-AC-5 | ✅ Passed |
 | TC-045 | Bound model construction and native linkage | Property | P1 | FR-015-AC-6 | 🚧 Planned |
 | TC-046 | Check observation and operation value availability | Integration | P1 | FR-016-AC-2 | 🚧 Planned |
 | TC-047 | Prove signed arithmetic through the actual IR API | Integration | P1 | FR-016-AC-3 | 🚧 Planned |
@@ -129,7 +129,7 @@ Linker tests use imported single-line ix-trace-rs attributes and real APIs.
 At the PR8 linker baseline, Quire reconciliation reported TM-003 10/15 backed,
 FR-005 5/5 and FR-013 6/6, with no status lies or untracked symbols. The PR9
 source bridge subsequently added five executed cases. The current matrix has
-16 fully qualified and 19 planned cases; five of those planned model cases have
+17 fully qualified and 18 planned cases; five of those planned model cases have
 initial executed tests but incomplete authored qualification. FR-006 remains 0/5. The
 known functional-table Status/Coverage Status classifier limitation is retained;
 explicit TC statuses and executed logs supply the separate completion evidence.
@@ -196,3 +196,14 @@ suite passed 61 tests and the selected private lane passed three tests.
 These results qualify the four scoped construction repairs. Task-008/009 and
 the full-plan gap gate remain open; trace presence is not completion evidence
 for the remaining model and checker cases.
+
+## Native linkage qualification
+
+TC-044 is qualified at 667bf07 by SR-084. Eight new Rust link tests exercise
+the actual source-derived model and shared linker, including original field/
+operation/enum/parameter targets, exact profile/digest selection, carrier access
+refusals, conflicting inventory identities and hard native-link limits. The
+default suite passed 69 tests and all three selected private tests passed.
+Additional TC-042/043/045 link controls are executed, but their broader model
+criteria and TC-040/041 remain planned. Neither successful linking nor a bound
+test tag establishes checking or runtime qualification.

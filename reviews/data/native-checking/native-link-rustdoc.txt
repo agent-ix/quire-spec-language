@@ -1,0 +1,4 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+ Documenting quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.27s
+   Generated /home/peter/dev/worktrees/formalization-a-language/target/doc/quire_spec_language/index.html and 2 other files

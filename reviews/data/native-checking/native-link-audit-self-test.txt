@@ -1,0 +1,4 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.37s
+     Running `target/debug/fixture-audit self-test`
+passed: 6 content/digest negative controls for snapshot/frame/invocation; duplicate keys refused; no evaluator executed
