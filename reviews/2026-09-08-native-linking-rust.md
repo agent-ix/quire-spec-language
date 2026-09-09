@@ -125,3 +125,20 @@ exact imports, declaration identity, original provenance, lexical scopes,
 receiver shapes, resource limits and atomic diagnostics. No unowned behavior,
 source stub or test stub was found in the changed surface. The companion gap
 review preserves incomplete typing, runtime, backend and extraction acceptance.
+
+## Final fixture consistency review
+
+The final merge check found that IT-005 still called the field value and selected
+a signed 0..1000 counter while tests used an unsigned counter. The original review
+missed that IT input mismatch. The field consistency correction at 3e8d348 was
+reviewed in all eight specification records at 5f3707c before the test changed.
+The existing signed-domain requirement was preserved, not relaxed.
+
+Reviewed the corrected qualification at
+9615b6eb414dd5b0dab6bd1deac5fdf9df75a779: PASS. The real IR integer constructor
+now selects Signed, minimum 0, maximum 1000, reject overflow. The complete 48-test
+default suite passes again, including all ten linker tests; formatting and strict
+Clippy pass. [Final signed-fixture output](data/native-linking/formalization-a-link-signed-tests.txt)
+and its sibling Clippy log retain those observations. Production source and the
+dependency lock are unchanged from d44e974, so its successful private-audit,
+rustdoc and separate-build observations remain applicable to that same source.
