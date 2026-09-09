@@ -33,4 +33,3 @@ PASS — producer ownership and qualification limits are explicit.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No ownership overlap or new unallocated responsibility found. | FR-009; Plan-008 |
-

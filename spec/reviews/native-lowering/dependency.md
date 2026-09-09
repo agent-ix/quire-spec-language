@@ -32,4 +32,3 @@ PASS — the implementation can advance independently of the coverage-reader upd
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The former engineering gate is removed by the owner's delivery direction; the qualification dependency remains explicit. | Plan-008; Task-020; IT-008-SC-04 |
-

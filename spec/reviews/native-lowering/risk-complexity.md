@@ -32,4 +32,3 @@ PASS — risks have bounded engineering mitigations and explicit remaining assur
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Downstream coverage format remains volatile; isolate its qualification from compiler delivery. | FR-009-AC-5; Task-020 |
-
