@@ -1,0 +1,3 @@
+ ›   Error: could not determine the quire CLI version (expected >= 0.21.0). 
+ ›   Install or update quire-cli: the JSON contract quoin reads is only emitted
+ ›    from 0.21.0 onward.

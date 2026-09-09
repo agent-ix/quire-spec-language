@@ -70,6 +70,14 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-016
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-017
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-018
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-006
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-006
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -165,6 +173,12 @@ The user requested /specify and /spec-review for all work. Existing implementati
 
 Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. On 2026-09-08 the owner also adopted specification PR8 at e897f810a7356d4ce8fd19026221ebda7b65596f for internal implementation. Accepted IR ADR-0054 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
 
+The PR10 model/checker scope is now qualified under Plan-005 and SR-083–087.
+TM-003 contains its 35 qualified cases; the earlier planned status above is
+historical. The LC03 packet adds FR-018, expands FR-007/008, and defines NFR-006,
+IT-006 and TM-004. Its 23 runtime cases are planned. Its input/evaluation API
+specification does not close LC02/FS03 acceptance or replace IT-002.
+
 ## 15. Governance Notes
 
 Use private owning issues and isolated worktrees. A owns the native producer and these requirements; B owns portable verification contracts; C owns coordinated existing-repository consumers. Do not spawn additional agents under the current assignment. Preserve original dependency/template grants. Standard-wide publication terms remain unresolved.
@@ -210,3 +224,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-015](functional/FR-015-project-native-model-semantics.md) | FR | Planned native semantic roles |
 | [FR-016](functional/FR-016-check-native-clauses.md) | FR | Qualified type/definedness checker |
 | [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Qualified construction-stage repairs; SR-083 |
+| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction |
+| [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
+| [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |

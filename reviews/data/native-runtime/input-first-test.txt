@@ -1,0 +1,16 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved import `quire_spec_language::runtime`
+ --> tests/runtime_inputs.rs:7:5
+  |
+7 |     runtime::{ArtifactLimits, DraftPathSegment, Snapshot, SnapshotDraft, ValueId, ValueNode},
+  |     ^^^^^^^ could not find `runtime` in `quire_spec_language`
+
+error[E0599]: no variant, associated function, or constant named `InvalidRuntimeInput` found for enum `Code` in the current scope
+  --> tests/runtime_inputs.rs:48:34
+   |
+48 |     assert_eq!(error.code, Code::InvalidRuntimeInput);
+   |                                  ^^^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `Code`
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "runtime_inputs") due to 2 previous errors

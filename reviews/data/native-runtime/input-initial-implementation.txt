@@ -1,0 +1,49 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+warning: type `Failure` is more private than the item `Body::inspect`
+  --> src/runtime/construction.rs:50:5
+   |
+50 |     fn inspect(&self, budget: &mut Budget) -> Result<()>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `Body::inspect` is reachable at visibility `pub(in crate::runtime)`
+   |
+note: but type `Failure` is only usable at visibility `pub(self)`
+  --> src/runtime/construction.rs:19:1
+   |
+19 | struct Failure {
+   | ^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Failure` is more private than the item `<SnapshotDraft as Body>::inspect`
+   --> src/runtime/construction.rs:410:5
+    |
+410 |     fn inspect(&self, budget: &mut Budget) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<SnapshotDraft as Body>::inspect` is reachable at visibility `pub(in crate::runtime)`
+    |
+note: but type `Failure` is only usable at visibility `pub(self)`
+   --> src/runtime/construction.rs:19:1
+    |
+ 19 | struct Failure {
+    | ^^^^^^^^^^^^^^
+
+warning: type `Failure` is more private than the item `<InvocationDraft as Body>::inspect`
+   --> src/runtime/construction.rs:435:5
+    |
+435 |     fn inspect(&self, budget: &mut Budget) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<InvocationDraft as Body>::inspect` is reachable at visibility `pub(in crate::runtime)`
+    |
+note: but type `Failure` is only usable at visibility `pub(self)`
+   --> src/runtime/construction.rs:19:1
+    |
+ 19 | struct Failure {
+    | ^^^^^^^^^^^^^^
+
+warning: `quire-spec-language` (lib) generated 3 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.51s
+     Running tests/runtime_inputs.rs (target/debug/deps/runtime_inputs-bc8de1781c3759c2)
+
+running 3 tests
+test empty_snapshot_has_exact_independently_authored_envelope ... ok
+test output_limit_admits_exact_bytes_and_refuses_one_below ... ok
+test unused_self_edge_refuses_at_its_actual_draft_path ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

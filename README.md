@@ -24,9 +24,37 @@ checks. The 24 checker tests qualify Task-009. The public library contract is in
 [native-model-checking.md](docs/native-model-checking.md); review and handoff
 are tracked in [Plan-005](plan/Plan-005-native-checking/index.md).
 
-Runtime population validation, healthy/violating evaluation, backend projection
-and Quire integration remain downstream work. A checked package establishes
-static judgments conditional on valid input, without evaluating a population.
+`runtime::Snapshot::new` and `runtime::Invocation::new` now construct immutable
+inputs with exact bytes/digests, distinct reference types, structured errors
+and caller-lowered byte/node/entry/depth limits. Flat arenas preserve duplicate
+entries and shared values for later model-aware diagnosis. Twenty-one public
+API tests and a role-separation compile-fail doctest cover construction; its
+qualification is tracked in [Plan-006](plan/Plan-006-native-runtime/index.md).
+See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
+
+`runtime::validate` now checks exact artifact/clause/model bindings, supplied
+typed values, finite reference closure, operation captures, population deltas
+and immutable frames. Its constructor-private context retains the checked
+package and immutable input; failed reports retain located defects and fresh
+budget usage. Task-013 is qualified at 45ed1b4 by SR-097 with 35 public API tests.
+See [the review](reviews/26-09-09-native-runtime-validation.md) for scope and evidence.
+
+`runtime::evaluate` executes the original native AST over a borrowed validated
+context. Reports retain concrete truth or an explicit incomplete/invariant-failure
+outcome, exact reference costs and original implication events. Borrowed values
+preserve pre/post captures, ordered sequence occurrences and object identities.
+Twenty-nine public tests and two private invariant controls cover reference
+execution, including all small functional graphs and independent budget vectors.
+See [native-runtime-evaluation.md](docs/native-runtime-evaluation.md).
+
+Five public pipeline tests now exercise healthy, violating, refused and incomplete
+parent/aggregate cases, operation captures/frames and immutable retries through
+actual model admission, parsing, linking, checking, construction, validation and
+evaluation. SR-099 records their passing review, and Plan-006 records the
+completed qualification/handoff with its final SR-100 gap audit. Backend projection
+and Quire integration remain downstream work. Construction establishes structure and byte
+correspondence; checking establishes static judgments conditional on valid input;
+validation establishes input conditions before predicate execution.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,

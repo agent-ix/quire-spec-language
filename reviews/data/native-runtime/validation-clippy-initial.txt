@@ -1,0 +1,12 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: local variable doesn't need to be boxed here
+   --> src/runtime/validation/budget.rs:168:45
+    |
+168 |     pub fn observe(&mut self, stage: Stage, diagnostic: Box<Diagnostic>) -> Result<()> {
+    |                                             ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#boxed_local
+    = note: `-D clippy::boxed-local` implied by `-D clippy::all`
+    = help: to override `-D clippy::all` add `#[allow(clippy::boxed_local)]`
+
+error: could not compile `quire-spec-language` (lib) due to 1 previous error

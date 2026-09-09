@@ -1,0 +1,280 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.27s
+     Running unittests src/lib.rs (target/debug/deps/quire_spec_language-6819e4e3cb1b42a0)
+
+running 1 test
+test format::tests::formatter_preserves_ordered_token_and_comment_spellings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests tools/fixture-audit/main.rs (target/debug/deps/fixture_audit-eacfaccd9d48029c)
+
+running 6 tests
+test input::tests::contained_and_escaping_paths ... ok
+test input::tests::exact_and_exceeded_budgets ... ok
+test input::tests::malformed_json_and_fields ... ok
+test review::tests::identity_negative_controls ... ok
+test roles::tests::equal_but_malformed_closure_fields_refuse ... ok
+test roles::tests::original_scalar_coordinates_and_mutations ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/quire_spec-e97760b3821c5b2e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-bebcde53335b131f)
+
+running 3 tests
+test cli_parses_and_formats_without_claiming_execution ... ok
+test cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io ... ok
+test cli_usage_io_and_resource_outcomes_are_distinct ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/fixture_audit.rs (target/debug/deps/fixture_audit-48da47e2cd1dc275)
+
+running 8 tests
+test cli_usage_and_unapproved_producer_with_no_external_runtime_path ... ok
+test model_checkpoint_digest_pin_and_immutable_inputs ... ok
+test model_required_fields_reject_missing_null_and_wrong_types ... ok
+test non_utf8_mode_refuses_and_non_utf8_root_executes ... ok
+test process_budget_failure_emits_no_success_summary ... ok
+test selected_review_packet_and_corrupt_invocation ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test selected_roles_packet_and_independent_correspondence_mutations ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+test selected_rule_syntax_and_malformed_case_metadata ... ignored, IT-004 private-packet lane: set QUIRE_STATE_CORE to the selected state-core directory
+
+test result: ok. 5 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/formal_source.rs (target/debug/deps/formal_source-58cb17bd8497194d)
+
+running 5 tests
+test tc_035_retains_explicit_source_assignment ... ok
+test tc_036_matches_independent_coordinates_and_source_boundary ... ok
+test tc_037_refuses_each_foreign_native_binding_dimension ... ok
+test tc_038_refuses_false_constructor_valid_formal_coordinates ... ok
+test tc_039_generated_spans_match_oracle_and_round_trip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/linking.rs (target/debug/deps/linking-e9d432418909763f)
+
+running 10 tests
+test ambiguity_retains_all_sorted_loci_in_every_order ... ok
+test exact_source_owner_field_and_digest_domains ... ok
+test explicit_context_and_neighboring_clauses_cannot_be_guessed ... ok
+test failed_import_permutations_never_reuse_successful_state ... ok
+test hard_canonical_byte_budgets_admit_equality_and_refuse_one_more ... ok
+test hard_count_and_traversal_ceilings_cannot_be_raised ... ok
+test inclusive_lowered_and_zero_limits_are_enforced_independently ... ok
+test lexical_scope_and_formal_shapes_preserve_exact_targets ... ok
+test missing_stale_unused_declaration_and_malformed_digest ... ok
+test unmapped_forms_refuse_while_linking_makes_no_type_judgment ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.75s
+
+     Running tests/located_json.rs (target/debug/deps/located_json-c540efb9506da077)
+
+running 3 tests
+test tc_054_identical_foreign_buffers_are_not_source_occurrences ... ok
+test tc_054_locations_follow_occurrences_not_spelling ... ok
+test tc_054_malformed_and_ambiguous_typed_input_refuse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/native_boundaries.rs (target/debug/deps/native_boundaries-ff84373786832323)
+
+running 3 tests
+test formatter_byte_ceiling_is_inclusive_and_counts_final_newline ... ok
+test formatter_cannot_raise_the_hard_content_ceiling ... ok
+test native_diagnostic_propagates_as_an_error_and_codes_roundtrip ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/native_checking.rs (target/debug/deps/native_checking-cedad0cfede85d25)
+
+running 24 tests
+test bindings::tc_049_complete_source_ordered_mappings_preserve_qualified_local_ids ... ok
+test bindings::tc_049_execution_points_must_match_clause_category_and_selected_anchor ... ok
+test bindings::tc_049_source_labels_path_bytes_and_formal_identity_must_correspond ... ok
+test flow::tc_046_availability_refusals_record_the_actual_native_phase ... ok
+test flow::tc_046_invocation_parameters_and_aliases_keep_their_captured_observation ... ok
+test flow::tc_050_quantifiers_check_arbitrary_elements_under_their_own_guards ... ok
+test flow::tc_050_stable_and_bound_optional_values_have_structured_guard_identity ... ok
+test flow::tc_050_unreachable_work_skips_only_definedness_and_active_locals_do_not_shadow ... ok
+test limits::tc_051_every_budget_accepts_observed_exact_work_and_refuses_one_less_or_zero ... ok
+test limits::tc_051_expanded_proof_depth_is_bounded_even_when_native_depth_is_small ... ok
+test limits::tc_051_materialization_counts_accumulate_across_distinct_goals ... ok
+test limits::tc_051_shared_graph_expansion_cannot_elevate_hard_limits_or_reuse_prior_success ... ok
+test tc_025_actual_reference_unwraps_need_a_preceding_presence_guard ... ok
+test tc_026_actual_pre_post_references_keep_their_captured_observation ... ok
+test tc_027_guarded_version_addition_is_discharged_by_ir ... ok
+test tc_028_literal_and_size_inference_require_an_explicit_nominal_context ... ok
+test tc_029_root_typing_includes_the_real_boolean_operation_result ... ok
+test tc_047_signed_division_and_remainder_keep_ir_definedness ... ok
+test tc_048_nominal_constraints_cover_branches_units_and_operator_eligibility ... ok
+test tc_052_checked_clauses_retain_universe_and_operation_input_requirements ... ok
+test tc_053_native_presence_facts_are_sound_against_independent_boolean_assignments ... ok
+test types::tc_048_comparison_eligibility_distinguishes_native_nominal_kinds ... ok
+test types::tc_048_size_context_must_cover_every_possible_sequence_length ... ok
+test types::tc_052_reachability_requires_one_exact_target_universe_and_observation ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/native_linking.rs (target/debug/deps/native_linking-265b53ec3b2ab703)
+
+running 8 tests
+test tc_042_native_selection_requires_its_own_exact_artifact_and_revision ... ok
+test tc_043_inventory_conflicts_refuse_before_import_selection ... ok
+test tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped ... ok
+test tc_044_native_reference_fields_and_operations_keep_declared_targets ... ok
+test tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved ... ok
+test tc_045_native_artifact_and_aggregate_hard_byte_ceilings ... ok
+test tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised ... ok
+test tc_045_native_link_limits_are_effective_and_inclusive ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+
+     Running tests/native_model.rs (target/debug/deps/native_model-eff9caffb292d07b)
+
+running 5 tests
+test tc_040_source_derived_rule_model ... ok
+test tc_041_invalid_roles_refuse_atomically ... ok
+test tc_042_artifact_binds_semantics_and_provenance ... ok
+test tc_043_constructor_valid_false_role_coordinates_refuse ... ok
+test tc_045_artifact_and_role_limits_are_inclusive ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/native_model_qualification.rs (target/debug/deps/native_model_qualification-ba574dcd882de464)
+
+running 17 tests
+test admission::tc_040_all_sites_wrappers_and_operation_roles_match_authored_model ... ok
+test admission::tc_040_scalar_value_sites_retain_nested_optional_sequences ... ok
+test admission::tc_041_incomplete_or_inconsistent_scalar_assignments_refuse ... ok
+test admission::tc_041_operation_inputs_and_all_frame_inventories_are_checked ... ok
+test admission::tc_041_ordinary_text_accepts_zero_and_requires_a_role ... ok
+test admission::tc_041_reference_carriers_and_object_ownership_are_explicit ... ok
+test admission::tc_041_unsupported_representations_include_unused_ir_declarations ... ok
+test identity::tc_042_generated_semantic_mutations_bind_the_changed_payload ... ok
+test identity::tc_042_native_source_labels_and_formal_owner_participate_in_identity ... ok
+test identity::tc_042_set_inventories_are_permutation_invariant_but_parameters_are_ordered ... ok
+test limits::tc_045_entry_ceiling_counts_frames_across_operations ... ok
+test limits::tc_045_every_model_dimension_has_an_inclusive_small_boundary ... ok
+test limits::tc_045_formal_depth_cannot_be_elevated_past_64 ... ok
+test limits::tc_045_formal_node_ceiling_is_reachable_within_artifact_limit ... ok
+test limits::tc_045_role_hard_ceiling_precedes_the_coupled_artifact_ceiling ... ok
+test provenance::tc_043_all_locus_classes_reject_false_coordinates_and_foreign_identity ... ok
+test provenance::tc_043_split_unicode_scalar_is_refused_for_each_locus_class ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+
+     Running tests/parser.rs (target/debug/deps/parser-baddeaac6de4108b)
+
+running 11 tests
+test all_admitted_constructs_roundtrip_with_comments ... ok
+test declaration_forms_and_keyword_boundaries ... ok
+test deterministic_malformed_corpus_does_not_panic ... ok
+test every_import_and_name_reference_keeps_its_exact_token_locus ... ok
+test exact_header_versions_and_source_validation ... ok
+test grouping_and_identifier_spans_are_original_bytes ... ok
+test long_flat_chains_parse_format_and_drop_on_a_bounded_stack ... ok
+test malformed_and_unsupported_are_distinct_and_located ... ok
+test precedence_and_associativity ... ok
+test resource_limits_never_become_boolean_results ... ok
+test unicode_crlf_and_checked_regions ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+
+     Running tests/runtime_inputs.rs (target/debug/deps/runtime_inputs-6c6def444b8b03c3)
+
+running 21 tests
+test empty_snapshot_has_exact_independently_authored_envelope ... ok
+test identity_cases::each_snapshot_component_is_byte_bound_and_vectors_keep_order ... ok
+test identity_cases::empty_invocation_has_exact_independent_field_order_and_digest_spelling ... ok
+test identity_cases::expected_refs_and_invocation_mutations_retain_complete_correspondence ... ok
+test identity_cases::invalid_labels_have_source_free_errors_for_both_artifacts_and_refs ... ok
+test identity_cases::label_and_observation_family_preserves_exact_bytes_on_repeat ... ok
+test limits::empty_dimensions_and_flat_destruction_do_not_require_recursive_work ... ok
+test limits::every_metadata_entry_class_is_counted_before_its_work ... ok
+test limits::exact_hard_output_bytes_and_escaped_text_expansion_are_bounded ... ok
+test limits::generated_shared_arenas_obey_each_exact_lowered_dimension ... ok
+test limits::hard_entry_and_depth_limits_ignore_elevated_options ... ok
+test limits::hard_node_limit_and_coupled_byte_limit_remain_distinct ... ok
+test limits::independent_text_totals_include_all_metadata_and_value_strings ... ok
+test limits::oversized_text_stops_before_encoding_and_retains_original_labels ... ok
+test output_limit_admits_exact_bytes_and_refuses_one_below ... ok
+test unused_self_edge_refuses_at_its_actual_draft_path ... ok
+test values::all_snapshot_and_invocation_root_positions_are_checked ... ok
+test values::every_container_rejects_forward_self_and_out_of_range_children ... ok
+test values::every_value_kind_has_its_exact_tag_and_payload ... ok
+test values::invocation_encodes_every_original_binding_without_claiming_validity ... ok
+test values::snapshot_metadata_preserves_duplicates_for_the_model_validator ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running tests/runtime_validation.rs (target/debug/deps/runtime_validation-89296738251246dd)
+
+running 35 tests
+test binding_cases::conflicting_field_permutations_retain_the_same_sorted_diagnostics ... ok
+test binding_cases::each_model_operation_and_observation_binding_is_exact ... ok
+test binding_cases::missing_required_state_and_operation_capture_correspondence_are_diagnosed ... ok
+test binding_cases::object_identity_uses_exact_unicode_keys_and_complete_membership ... ok
+test complete_current_context_retains_exact_checked_source_and_input ... ok
+test conflicting_population_order_preserves_defects_and_actual_byte_provenance ... ok
+test foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_defects ... ok
+test invocation_cases::absent_and_present_results_must_correspond_to_the_declared_operation ... ok
+test invocation_cases::actual_created_sets_need_both_exact_recording_and_model_permission ... ok
+test invocation_cases::deletion_requires_both_exact_recording_and_model_permission ... ok
+test invocation_cases::field_and_population_permissions_do_not_extend_to_other_supplied_models ... ok
+test invocation_cases::incomplete_population_retains_known_unauthorized_field_change ... ok
+test invocation_cases::precondition_can_record_permitted_self_deletion_and_pre_captured_parameter ... ok
+test invocation_cases::recorded_input_checks_immutable_field_permissions_before_any_truth ... ok
+test invocation_cases::state_roots_need_preserved_storage_values_and_explicit_counterparts ... ok
+test invocation_cases::unavailable_pre_does_not_become_empty_or_suppress_known_post_and_delta_defects ... ok
+test invocation_cases::unrelated_duplicate_objects_or_fields_do_not_hide_known_frame_changes ... ok
+test limit_cases::cancellation_at_each_observed_poll_is_repeatable_and_preserves_known_defects ... ok
+test limit_cases::detail_capacity_retains_invalid_classification_even_at_zero ... ok
+test limit_cases::elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings ... ok
+test limit_cases::exact_aggregate_hard_bytes_succeed_and_next_byte_stops_before_indexing ... ok
+test limit_cases::fresh_requests_preserve_success_after_refusal_exhaustion_cancellation_and_panic ... ok
+test limit_cases::maximum_detail_count_is_complete_until_an_additional_defect_needs_storage ... ok
+test limit_cases::maximum_inventory_and_selected_object_counts_can_complete ... ok
+test limit_cases::measured_required_counters_accept_exact_and_stop_one_below_or_zero ... ok
+test limit_cases::shared_values_cannot_raise_hard_work_or_unicode_limits ... ok
+test limit_cases::unselected_artifact_bytes_count_but_their_objects_are_not_inspected ... ok
+test missing_target_is_dangling_only_when_its_population_is_complete ... ok
+test selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory ... ok
+test skipped_invalid_field_refuses_with_actual_native_and_model_loci ... ok
+test value_cases::ambiguous_sequence_element_does_not_hide_changed_available_elements ... ok
+test value_cases::every_native_shape_is_checked_at_fields_state_parameters_and_results ... ok
+test value_cases::mixed_defects_preserve_diagnostics_under_inventory_population_object_and_field_permutations ... ok
+test value_cases::nominal_owners_record_shapes_and_signed_lower_bounds_are_not_inferred_from_values ... ok
+test value_cases::storage_frames_detect_each_value_kind_and_ignore_record_field_order ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.71s
+
+     Running tests/source_map.rs (target/debug/deps/source_map-16cc208423b3568b)
+
+running 9 tests
+test boundaries_are_right_biased_and_eof_precedes_trimmed_newline ... ok
+test exact_bytes_digest_is_checked_before_correspondence ... ok
+test extracted_bytes_need_a_distinct_identity_and_respect_parse_limits ... ok
+test layout_mapping_returns_discontiguous_exact_regions ... ok
+test malformed_segment_and_query_ranges_never_panic_or_partially_succeed ... ok
+test omitted_keywords_internal_whitespace_and_newlines_refuse ... ok
+test original_and_body_identity_revision_and_bytes_must_match ... ok
+test parser_refusal_maps_back_through_a_real_indented_body ... ok
+test verbatim_mapping_retains_original_utf8_crlf_locations ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests quire_spec_language
+
+running 1 test
+test src/runtime/input.rs - runtime::input::SnapshotRef (line 204) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

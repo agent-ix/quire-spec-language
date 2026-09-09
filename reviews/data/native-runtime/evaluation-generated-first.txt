@@ -1,0 +1,30 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.47s
+     Running tests/runtime_evaluation.rs (target/debug/deps/runtime_evaluation-d3dfd53c16aaf11e)
+
+running 7 tests
+test graphs_sequences::all_short_sequences_preserve_occurrences_order_and_short_circuit_events ... ok
+test graphs_sequences::every_small_functional_graph_matches_independent_matrix_closure ... FAILED
+test graphs_sequences::parent_order_and_aggregate_truth_follow_actual_populations ... ok
+test independent_expression_cost_vectors_and_one_below ... ok
+test observations::parameter_reference_keeps_pre_capture_after_its_target_is_deleted ... ok
+test observations::precondition_and_postcondition_select_their_actual_self_observation ... ok
+test positive_length_graph_cost_vectors_and_one_below ... ok
+
+failures:
+
+---- graphs_sequences::every_small_functional_graph_matches_independent_matrix_closure stdout ----
+
+thread 'graphs_sequences::every_small_functional_graph_matches_independent_matrix_closure' (207) panicked at tests/runtime_evaluation_cases/graphs_sequences.rs:79:29:
+assertion `left == right` failed: n=1, encoding=0, from=0, to=0, renamed=false
+  left: Refused(Diagnostic { phase: Evaluate, code: RuntimeInvariant, source: SourceIdentity { identity: "test:runtime-rule", revision: "7" }, path: "runtime-rule.native", span: LocatedSpan { start: Position { byte: 236, line: 4, column: 40 }, end: Position { byte: 269, line: 4, column: 73 } }, message: "checked reaches arguments are not objects", related: [], upstream: None, runtime: None })
+ right: Completed(false)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    graphs_sequences::every_small_functional_graph_matches_independent_matrix_closure
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `--test runtime_evaluation`

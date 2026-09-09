@@ -21,6 +21,10 @@ pub enum Phase {
     Link,
     /// Native contextual typing and guarded proof checking.
     Check,
+    /// Model-aware runtime population and invocation validation.
+    Validate,
+    /// Independent execution of a checked clause over validated inputs.
+    Evaluate,
 }
 
 impl Phase {
@@ -35,6 +39,8 @@ impl Phase {
             Self::SourceMap => "source_map",
             Self::Link => "link",
             Self::Check => "check",
+            Self::Validate => "validate",
+            Self::Evaluate => "evaluate",
         }
     }
 }
@@ -72,12 +78,28 @@ pub enum Code {
     MissingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
+    /// Native runtime artifact structure or selected runtime data is invalid.
+    InvalidRuntimeInput,
     /// An invocation result or value is unavailable in the requested access form.
     WrongSnapshot,
     /// Native types, nominal identities or operator constraints disagree.
     IllTyped,
     /// An actual IR proof could not establish potentially evaluated definedness.
     UndefinedExpression,
+    /// A target is absent from a declared complete population.
+    DanglingReference,
+    /// A required finite population is unavailable or declared incomplete.
+    IncompletePopulation,
+    /// A required artifact, observation or State root is unavailable.
+    UnavailableObservation,
+    /// Recorded created/deleted identities disagree with complete populations.
+    PopulationDeltaMismatch,
+    /// An observed change lies outside the immutable model's effect frame.
+    FrameViolation,
+    /// The caller requested cancellation before the next work unit.
+    Cancelled,
+    /// Execution encountered a violated established typing or input invariant.
+    RuntimeInvariant,
 }
 
 impl Code {
@@ -99,9 +121,17 @@ impl Code {
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
+            Self::InvalidRuntimeInput => "invalid_runtime_input",
             Self::WrongSnapshot => "wrong_snapshot",
             Self::IllTyped => "ill_typed",
             Self::UndefinedExpression => "undefined_expression",
+            Self::DanglingReference => "dangling_reference",
+            Self::IncompletePopulation => "incomplete_population",
+            Self::UnavailableObservation => "unavailable_observation",
+            Self::PopulationDeltaMismatch => "population_delta_mismatch",
+            Self::FrameViolation => "frame_violation",
+            Self::Cancelled => "cancelled",
+            Self::RuntimeInvariant => "runtime_invariant",
         }
     }
 
@@ -123,9 +153,17 @@ impl Code {
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
             Self::InvalidModelBinding,
+            Self::InvalidRuntimeInput,
             Self::WrongSnapshot,
             Self::IllTyped,
             Self::UndefinedExpression,
+            Self::DanglingReference,
+            Self::IncompletePopulation,
+            Self::UnavailableObservation,
+            Self::PopulationDeltaMismatch,
+            Self::FrameViolation,
+            Self::Cancelled,
+            Self::RuntimeInvariant,
         ]
     }
 
@@ -163,6 +201,8 @@ pub struct Diagnostic {
     pub related: Vec<crate::linking::DeclarationLocation>,
     /// Structured upstream formal diagnostic, when that operation failed.
     pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+    /// Exact programmatic input location, separate from authored source coordinates.
+    pub runtime: Option<Box<crate::runtime::RuntimeLocation>>,
 }
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
@@ -178,7 +218,13 @@ impl std::error::Error for Diagnostic {}
 impl Diagnostic {
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
-        self.code == Code::ResourceExhausted
+        matches!(
+            self.code,
+            Code::ResourceExhausted
+                | Code::Cancelled
+                | Code::IncompletePopulation
+                | Code::UnavailableObservation
+        )
     }
 }
 
@@ -201,5 +247,6 @@ pub(crate) fn error(
         message: message.into(),
         related: Vec::new(),
         upstream: None,
+        runtime: None,
     })
 }
