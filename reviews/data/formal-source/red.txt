@@ -1,0 +1,9 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved import `quire_spec_language::formal_source`
+ --> tests/formal_source.rs:7:5
+  |
+7 |     formal_source::FormalSource, source::MAX_SOURCE_BYTES, ByteDigest, Code, Diagnostic, Phase,
+  |     ^^^^^^^^^^^^^ could not find `formal_source` in `quire_spec_language`
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "formal_source") due to 1 previous error

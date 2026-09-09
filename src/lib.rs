@@ -4,6 +4,7 @@
 //! Parsing does not establish model binding, type correctness or execution support.
 pub mod diagnostic;
 pub mod digest;
+pub mod formal_source;
 pub mod format;
 mod lexer;
 pub mod linking;

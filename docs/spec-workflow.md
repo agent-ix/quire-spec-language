@@ -223,3 +223,26 @@ Specification PR8 has separately merged at 8ab058b, with the B consumer handoff
 posted. The compiler does not wait on B's complete reader or closed IR #54.
 After the owner's resource report, all Cargo checks use one job, tests use one
 thread, and build/check phases run serially at low process priority.
+
+## Native formal source correspondence — 2026-09-08
+
+FR-014 was specified at 4eb4ef6, reviewed with actual QUOIN base plus all seven
+selected analyses at 257f787 (SR-056–063), and posted to private LC02 before code:
+https://github.com/agent-ix/quire-spec-language/issues/3#issuecomment-5595066820.
+Plan-004 at 6085159 preceded implementation 7464c9a. The first focused Rust run
+failed on the missing module; five new public-API tests then passed. No new
+dependency, execution language, model reader or shared identity domain was added.
+
+SR-064 applies the actual user-selected agent-skills/rust-review/SKILL.md and
+reports PASS for the bridge. SR-065 preserves the incomplete full LC02 matrix
+and PR/landing task at its evaluated revision. The optional semantic gap review
+remains declined. Full default tests: 53 passed; selected private audit lane:
+3 passed; strict Clippy, fmt, rustdoc and cached separate minimal build pass.
+Quire reports FR-014 5/5 and TM-003 15/20 backed, with zero status lies or
+untracked symbols and 18 retained catalog diagnostics. FR-006 remains 0/5.
+Validation reports 156/156 scoped spec/plan/review documents grammar-clean.
+
+The explicit FormalSource binding retains original bytes and native labels,
+while checking both directions against a separately assigned formal identity.
+Native model semantic roles, actual typing/definedness, reference evaluation,
+backend qualification and existing-extractor integration remain work.
