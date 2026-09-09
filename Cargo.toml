@@ -27,6 +27,9 @@ jsonschema = { version = "=0.17.1", default-features = false, features = ["draft
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
 tempfile = "=3.27.0"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "240fad84a9565ab723ba9844e18faea4e5d96f66" }
+quire-contract-ir-backend = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
+syn = { version = "=2.0.119", features = ["full"] }
 
 [[bin]]
 name = "quire-spec"

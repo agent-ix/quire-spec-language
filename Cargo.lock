@@ -695,6 +695,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-contract-codegen"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-contract-codegen?rev=240fad84a9565ab723ba9844e18faea4e5d96f66#240fad84a9565ab723ba9844e18faea4e5d96f66"
+dependencies = [
+ "quire-contract-ir 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f849c03be23177d373549c6c272551f957d)",
+ "serde",
+ "serde_json",
+ "sha2",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "quire-contract-ir"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f849c03be23177d373549c6c272551f957d#04eb6f849c03be23177d373549c6c272551f957d"
+dependencies = [
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "sha2",
+ "stacker",
+]
+
+[[package]]
 name = "quire-contract-ir"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-contract-ir?rev=690bde7f2dc58662cf9ff0595c2c0e3b17107c6f#690bde7f2dc58662cf9ff0595c2c0e3b17107c6f"
@@ -714,10 +739,13 @@ dependencies = [
  "ix-trace-rs",
  "jsonschema",
  "logos",
- "quire-contract-ir",
+ "quire-contract-codegen",
+ "quire-contract-ir 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f849c03be23177d373549c6c272551f957d)",
+ "quire-contract-ir 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=690bde7f2dc58662cf9ff0595c2c0e3b17107c6f)",
  "serde",
  "serde_json",
  "sha2",
+ "syn 2.0.119",
  "tempfile",
  "thiserror",
 ]

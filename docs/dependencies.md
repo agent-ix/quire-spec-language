@@ -1,6 +1,15 @@
 # Dependency and generated-artifact inventory
 
-The LC02 lock selects 138 packages including this crate. Cargo metadata
+LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
+and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
+The latter has a dev-only alias for the existing consumer's exact wire reader;
+production IR remains `690bde7`. Generated Rust retains codegen's MIT/Apache
+notices and compiles against its runtime `8a4d02b9ff4633cf6d02fd8bdf6ee1b11ad76354`
+(MIT OR Apache-2.0). Syn 2.0.119 (MIT OR Apache-2.0), already resolved transitively,
+is directly selected for Rust syntax inspection in the qualification driver.
+New driver code is Rust under AGPL-3.0-only. No producer source is copied.
+
+The LC04 lock selects 140 packages including this crate. Cargo metadata
 supplies the complete [name/version/source/license snapshot](dependency-licenses.json).
 The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
@@ -124,6 +133,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | proc-macro2 | 1.0.107 | `MIT OR Apache-2.0` |
 | psm | 0.1.32 | `MIT OR Apache-2.0` |
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
+| quire-contract-codegen | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-spec-language | 0.1.0 | `AGPL-3.0-only` |
 | quote | 1.0.47 | `MIT OR Apache-2.0` |
 | r-efi | 5.3.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
