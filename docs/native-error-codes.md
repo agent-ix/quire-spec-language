@@ -27,10 +27,11 @@ reused; prose may change without changing classification.
 | ambiguous_declaration | Multiple exact candidates or visible exports match; related formal loci are retained. |
 | missing_declaration | A required value, field, type or variant cannot be resolved. |
 | invalid_model_binding | A digest, explicit context binding or clause name is invalid. |
+| invalid_runtime_input | Native runtime input structure is invalid, including a local root/child outside its admitted arena ordering. |
 | wrong_snapshot | A native invocation result lacks a selected operation binding, is accessed by its hidden IR name, or a checked result/pre expression is unavailable at its observation. |
 | ill_typed | Native contextual types, nominal identities, units or operator eligibility disagree, or a scalar context is ambiguous. |
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
-| resource_exhausted | A source, syntax, formatter, map, linking or checking/proof ceiling prevented completion. |
+| resource_exhausted | A source, syntax, formatter, map, linking, checking/proof or runtime-construction ceiling prevented completion. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
 source_map, link or check. Related formal declaration locations are structured fields;

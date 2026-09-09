@@ -100,7 +100,7 @@ authorized: all work is Agent A, with shared desktop resources and one writer.
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-012 | A | FR-018, NFR-006, NFR-005 | TC-055–057 | not_started |
+| Task-012 | A | FR-018, NFR-006, NFR-005 | TC-055–057 | in_progress |
 | Task-013 | A | FR-007, NFR-006, NFR-003, NFR-005 | TC-058–066 | blocked |
 | Task-014 | A | FR-008, NFR-006, NFR-003, NFR-005 | TC-067–076 | blocked |
 | Task-015 | A | FR-007, FR-008, FR-018, NFR-006, NFR-003, NFR-005, IT-006 | TC-077 | blocked |

@@ -2,7 +2,7 @@
 id: Task-012
 title: "Construct and qualify exact native runtime artifacts"
 type: Task
-status: not_started
+status: in_progress
 track: A
 priority: P1
 relationships:

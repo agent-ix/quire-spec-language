@@ -1,0 +1,15 @@
+quoin write
+
+Repo: /home/peter/dev/worktrees/formalization-a-language
+Org: agent-ix (from git remote)
+
+Authoring contracts:
+- SpecReview (artifact)
+  module: spec-artifacts-process
+  module_root: /home/peter/.ix/filament/modules/spec-artifacts-process
+  skeleton: /home/peter/.ix/filament/modules/spec-artifacts-process/skeletons/SpecReview.md
+  schema: /home/peter/.ix/filament/modules/spec-artifacts-process/schemas/spec-review-frontmatter.schema.json
+
+Author files directly in the repo, then validate changed spec files.
+Validate scope: /home/peter/dev/worktrees/formalization-a-language
+Validate command: quire validate --scope /home/peter/dev/worktrees/formalization-a-language "spec/**/*.md"
