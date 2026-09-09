@@ -3,8 +3,10 @@
 Draft LC02 contract for FR-019/020/021 and NFR-007, based on compiler
 789c636bf9fb26812a74a2a2f5310b595262bfee. This is the compiler-owned payload
 inside any separately selected transport/reference envelope. B owns shared
-references/results; Contract IR owns executable binding. No code implements
-this draft yet, and all-eight QUOIN review remains required before implementation.
+references/results; Contract IR owns executable binding. Plan-007 tracks
+implementation after all-eight QUOIN review at 69588ad and the source-setup
+correction/re-review at 2c6b9b8/1c3aa50. Package construction is in progress under
+Task-016; verified reconstruction and complete qualification remain Task-017/018.
 
 ## Purpose and boundaries
 

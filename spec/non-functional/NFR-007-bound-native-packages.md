@@ -92,4 +92,7 @@ the existing Rust cache, without timing sleeps or concurrency stress.
 
 ## Status
 
-Draft; no package limit or reconstruction result is implemented or qualified yet.
+Reviewed draft. Initial producer tests measure derive/canonical/encode limits,
+including isolated hard-ceiling controls. Complete Task-016 qualification and
+all reader/reconstruction passes remain pending; no runtime or backend budget
+result is inferred from these package counters.

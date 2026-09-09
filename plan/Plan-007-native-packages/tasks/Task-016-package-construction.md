@@ -44,9 +44,9 @@ cases; readback/refusal portions remain pending until Task-017.
 ## Subtasks
 
 - [ ] Author independent canonical-content/complete-manifest fixtures and public Rust assertions before the producer API; retain the genuine missing-API/failing result.
-- [ ] Introduce focused package modules for the typed manifest, bounded traversal/encoding, error/usage records and role-specific public package/reference/identity types.
+- [x] Introduce focused package modules for the typed manifest, bounded traversal/encoding, error/usage records and role-specific public package/reference/identity types.
 - [ ] Derive complete source, model, authored clause, occurrence and runtime inventories from actual retained inputs, including the minimum admitted unit, multiple aliases and unused selected declarations. Empty source inventories are adverse parser inputs, not successful setup.
-- [ ] Derive the exact feature set with exhaustive source/operator/type mapping and cycle-safe model identity visits; do not infer semantics from carrier spelling.
+- [x] Derive the exact feature set with exhaustive source/operator/type mapping and cycle-safe model identity visits; do not infer semantics from carrier spelling.
 - [ ] Encode the native domain-separated canonical bytes and final artifact, with distinct pass counters, exact integers/Unicode, full projected inventories and excluded display/runtime/projection metadata as specified.
 - [ ] Qualify production byte/string/entry/depth limits, unchanged caller inputs, static mutations and repeated construction. Leave impossible coupled maxima explicitly unqualified rather than fabricating passing public paths.
 - [ ] Record selected Rust dependency features/licenses; keep production and qualification in Rust. Compile the selected structural schema locally against producer fixtures when its reviewed development dependency is added.
@@ -61,6 +61,24 @@ real red/green evidence and validated review. Partial TCs retain planned status
 until all of their producer and reader criteria are backed.
 
 ## Notes
+
+The initial producer increment passes 16 public tests plus three private
+encoding controls. It includes independently composed minimal/Unicode/u64
+expectations, exact multi-owner invariant/pre/post records, all operator and
+builtin feature mappings, unused selected declarations and finite cycles,
+independently counted pass limits and admissible source/authored mutations.
+Original API-red, fixture-setup failures and the new-code vocabulary regression
+remain recorded in reviews/data/native-packages/.
+
+Before this task closes: freeze independently authored canonical byte fixtures
+(including multiple clauses); complete lexical/parameter/result/transitive
+correspondence and static-dependency mutations; exercise runtime-independent
+identity and type-role controls; qualify the structural schema; resolve the
+implementation review's remaining findings. Shared reader cases stay planned.
+The complete regression is green after updating the explicit code vocabulary
+count from 26 to 29 for the three reviewed package codes. Trace inspection also
+requires recording the installed tool's multiline-marker and NFR metric-binding
+limitations; no shared module is changed to hide them.
 
 Use src/checking.rs, src/linking.rs, src/native_model.rs and existing source/
 runtime reference patterns. Do not export the proof graph as executable or

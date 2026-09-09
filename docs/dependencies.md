@@ -13,6 +13,13 @@ The feature adds no package or copied source and preserves serde_json's
 `MIT OR Apache-2.0` grant. Cargo.lock is unchanged. The authored adapter and
 regression fixtures retain AGPL-3.0-only.
 
+The initial FR-019/021 package producer uses existing serde/serde_json Formatter
+hooks and sha2 with unchanged versions, features and grants. Its production,
+fixture composition, assertions and hard-limit controls are Rust under
+AGPL-3.0-only. No new dependency or executable audit helper is introduced.
+The reviewed jsonschema development feature for package-schema qualification
+has not yet been selected; that check remains pending in Task-016.
+
 This is declared metadata, not a public distribution notice bundle or a
 vulnerability scan. Existing grants remain intact, including ICU Unicode-3.0
 and ar_archive_writer Apache-2.0 WITH LLVM-exception. The dependency stacker/psm

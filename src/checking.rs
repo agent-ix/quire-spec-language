@@ -216,6 +216,10 @@ pub struct CheckedClause<'a> {
 }
 
 impl<'a> CheckedClause<'a> {
+    /// Borrow each established type once for complete package feature discovery.
+    pub(crate) fn expression_types(&self) -> impl Iterator<Item = &NativeType<'a>> {
+        self.nodes.iter().map(|node| &node.ty)
+    }
     /// Exact authored clause mapping retained in source order.
     pub fn binding(&self) -> &ClauseBinding {
         &self.binding
