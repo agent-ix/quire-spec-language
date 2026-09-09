@@ -17,10 +17,11 @@ Inspect reconstructed declarations, expression trees, source loci, observations
 and definedness. Exercise guarded arithmetic, target selection, unsupported
 whole populations and exact limits. Compare actual command bytes to the public
 library and verify the current backend's explicit numeric refusal.
+Exercise invalid output directories and later file-write errors in both fixture
+paths, then retry with a fresh directory.
 
 ## Expected Results
 
 The integer IR target supplies real typed executable artifacts without changing
 the Boolean backend claim or native authority. Unsupported/incomplete attempts
 emit no partial artifact and a fresh request succeeds.
-

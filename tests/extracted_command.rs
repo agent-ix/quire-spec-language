@@ -37,7 +37,7 @@ fn invoke_bytes(directory: &Path, command: &str, bytes: &[u8]) -> (i32, Value, b
 #[trace("TC-109", "FR-031-AC-3")]
 fn extraction_request_obeys_the_build_feature() {
     let directory = tempfile::tempdir().unwrap();
-    let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
+    let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
     let (code, result, stdout) = invoke(directory.path(), "run", &job);
     if cfg!(feature = "quire-extraction") {
         assert_eq!(code, 0, "{result}");
@@ -74,7 +74,7 @@ mod enabled {
                 (setup::Case::Operation(true), 1, None),
             ] {
                 let directory = tempfile::tempdir().unwrap();
-                let job = setup::write_extracted(directory.path(), case, crlf);
+                let job = setup::write_extracted(directory.path(), case, crlf).unwrap();
                 let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
                 let (actual, result, stdout) = invoke(directory.path(), "run", &job);
                 assert_eq!(actual, code, "{result}");
@@ -145,7 +145,8 @@ mod enabled {
             ("collect(self.items)", "unsupported_construct"),
         ] {
             let directory = tempfile::tempdir().unwrap();
-            let mut job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true);
+            let mut job =
+                setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true).unwrap();
             let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
             let text = original.replace(
                 "true implies forall(item in self.items: item < self.n)",
@@ -188,7 +189,8 @@ mod enabled {
     #[trace("TC-109", "FR-031-AC-3", "FR-031-AC-4")]
     fn descriptors_modes_stale_bytes_and_limits_refuse_with_fresh_retry() {
         let directory = tempfile::tempdir().unwrap();
-        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
+        let job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
         for bad in [
             Value::Null,
             json!([]),

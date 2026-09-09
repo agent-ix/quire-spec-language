@@ -43,6 +43,9 @@ The compiler shall preserve boolean-oracle/v1 behavior and its existing numeric 
 The standalone command shall emit exact selected projection bytes on success and the selected target in lowering-failure diagnostics.
 If work limits are exhausted, then the compiler shall return incomplete without an artifact.
 The compiler shall use fresh limits for each request.
+If standalone fixture generation encounters a filesystem error, then the generator shall report the error and exit 2 without panicking.
+Partially written example files may remain after failure; generation does not
+promise transactional directory publication.
 
 ## Acceptance Criteria
 
@@ -52,6 +55,7 @@ The compiler shall use fresh limits for each request.
 | FR-033-AC-2 | State/pre/post and captured-input correspondence retain original model/declaration identities; changed scalar bounds alter the relevant native and bound identities. | Test |
 | FR-033-AC-3 | The Boolean default still refuses numeric clauses; unsupported later clauses and node/depth/byte exhaustion return no partial projection, and fresh retries succeed. | Test |
 | FR-033-AC-4 | Actual command target selection exports exactly the library's bytes, identifies integer lowering failures and rejects unknown targets before dependent file access; runnable integer fixtures produce true/false natively and identical projection bytes, while existing codegen explicitly refuses numeric projection. | Test |
+| FR-033-AC-5 | Native and Markdown fixture generation propagate output-directory and later file-write errors; the executable returns exit 2 with an error message, and a fresh valid output directory succeeds. | Test |
 
 ## Dependencies
 

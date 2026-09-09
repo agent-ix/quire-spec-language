@@ -41,7 +41,7 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
         ),
     ] {
         let directory = tempfile::tempdir().unwrap();
-        let (_, digest) = fixtures::write(directory.path(), case);
+        let (_, digest) = fixtures::write(directory.path(), case).unwrap();
         for name in [
             "snapshot-0.json",
             "snapshot-1.json",
@@ -84,7 +84,7 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
 #[trace("TC-105", "FR-027-AC-2", "FR-027-AC-3")]
 fn incompatible_request_and_static_failures_emit_no_package_bytes() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Aggregate(2));
+    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
     let original = std::fs::read(directory.path().join("compile.json")).unwrap();
     let job: Value = serde_json::from_slice(&original).unwrap();
     for (change, expected, code) in [

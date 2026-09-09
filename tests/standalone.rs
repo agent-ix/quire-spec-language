@@ -38,7 +38,7 @@ fn save(directory: &Path, value: &Value) {
 }
 
 fn exported_job(directory: &Path, case: setup::Case) -> Value {
-    let (mut job, _) = setup::write(directory, case);
+    let (mut job, _) = setup::write(directory, case).unwrap();
     let export = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .arg("compile")
         .arg(directory.join("compile.json"))
@@ -253,7 +253,8 @@ fn selected_package_intake_and_runtime_limits_stop_with_fresh_retry() {
 fn aggregate_files_produce_actual_truth_identities_work_and_events() {
     for (number, expected) in [(1, false), (2, true)] {
         let directory = tempfile::tempdir().unwrap();
-        let (job, package_digest) = setup::write(directory.path(), setup::Case::Aggregate(number));
+        let (job, package_digest) =
+            setup::write(directory.path(), setup::Case::Aggregate(number)).unwrap();
         let (code, result, stdout) = invoke(directory.path());
         assert_eq!(code, i32::from(!expected), "{result}");
         assert!(stdout);
@@ -297,7 +298,7 @@ fn aggregate_files_produce_actual_truth_identities_work_and_events() {
 fn recorded_operation_files_preserve_captures_and_frame_refusal() {
     for bad_frame in [false, true] {
         let directory = tempfile::tempdir().unwrap();
-        let (job, _) = setup::write(directory.path(), setup::Case::Operation(bad_frame));
+        let (job, _) = setup::write(directory.path(), setup::Case::Operation(bad_frame)).unwrap();
         let (code, result, stdout) = invoke(directory.path());
         assert!(stdout);
         assert_eq!(
@@ -328,7 +329,7 @@ fn recorded_operation_files_preserve_captures_and_frame_refusal() {
 #[trace("TC-104", "FR-026-AC-3")]
 fn stale_bytes_closed_requests_and_missing_files_keep_actual_failure_stage() {
     let directory = tempfile::tempdir().unwrap();
-    let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2));
+    let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2)).unwrap();
     for (pointer, replacement, expected_exit, stage, code) in [
         ("/format", json!("unknown"), 1, "envelope", "unknown_wire"),
         (
@@ -413,7 +414,7 @@ fn stale_bytes_closed_requests_and_missing_files_keep_actual_failure_stage() {
 #[trace("TC-104", "FR-026-AC-4")]
 fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
     let directory = tempfile::tempdir().unwrap();
-    let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2));
+    let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2)).unwrap();
     for limits in [
         json!({"validation_work":0}),
         json!({"expression_steps":0}),
