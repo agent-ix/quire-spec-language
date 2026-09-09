@@ -290,7 +290,7 @@ fn check_role_selections(packet: &Value, refs: &Value, semantics: &Value) -> Res
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    #[trace("TC-003", "FR-012-AC-3", "FR-012-AC-6")]
+    #[trace("TC-003", "FR-012-AC-3", "FR-012-AC-6", "FR-017-AC-4")]
     #[test]
     fn equal_but_malformed_closure_fields_refuse() {
         let lock = json!({"fingerprint":"sha256:selected","canonicalization":{},"packages":[]});

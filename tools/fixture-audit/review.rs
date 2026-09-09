@@ -261,7 +261,7 @@ pub(crate) fn audit(root: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    #[trace("TC-001", "FR-012-AC-1")]
+    #[trace("TC-001", "FR-012-AC-1", "FR-017-AC-4")]
     #[test]
     fn identity_negative_controls() {
         let summary = self_test().unwrap();
