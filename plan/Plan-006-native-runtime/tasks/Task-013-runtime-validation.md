@@ -2,7 +2,7 @@
 id: Task-013
 title: "Validate finite snapshots and recorded invocations"
 type: Task
-status: blocked
+status: not_started
 track: A
 priority: P1
 relationships:
@@ -58,4 +58,7 @@ Qualified validator, immutable validated context API, stable classified runtime 
 
 ## Notes
 
-Task-009 is already done in Plan-005. Task-012 remains the current implementation dependency. Reuse exact native roles and checked runtime obligations; do not infer a formal model from generated layouts or create another type authority.
+Task-009 is done in Plan-005 and Task-012 is qualified at c8fa41f by SR-096.
+The implementation dependencies are satisfied. Reuse exact native roles and
+checked runtime obligations; do not infer a formal model from generated layouts
+or create another type authority.

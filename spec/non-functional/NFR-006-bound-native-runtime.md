@@ -115,6 +115,12 @@ cancellation/panic controls. A repeat after successful execution must still
 honor a smaller selected limit. Tests run serially with the existing Rust cache;
 no timing sleep, concurrent benchmark or hosted CI run is required.
 
+## Qualification status
+
+Construction metrics M-1..5 are qualified at c8fa41f by TC-057 and SR-096,
+including the explicit coupled node/output ceiling. Validation and evaluation
+metrics M-6..17 remain planned; this is partial NFR qualification.
+
 ## Dependencies
 
 - [FR-018](../functional/FR-018-construct-native-runtime-inputs.md), especially AC-6.

@@ -281,3 +281,17 @@ This native API milestone still requires subsequent LC02/FS03 acceptance,
 compiled ConfigVersion/backend qualification and Quire integration for the
 original assignment. It introduces no B/C/TL/Filament ownership change, new
 portable result authority, decoder, producer-language execution or hosted CI run.
+
+## LC03 input construction qualified — 2026-09-09
+
+Task-012 is qualified at c8fa41f6e172e58b9406792d1b9f6b6bd85e52cc. SR-096
+records the actual code/Rust review, 21 constructor tests, role-separation
+compile-fail doctest and passing serial local gates. The three constructor TC
+setup notes were corrected at dc63f33 and received all eight review addenda at
+29922d7 before this qualification; the existing FR-018 contract was unchanged.
+
+FR-018 is 7/7 backed and TM-004 is 3/23 backed. Quire binds all 134 Rust symbols;
+its matrix status-header and other catalog/classifier limitations are explicitly
+recorded in SR-096. Only construction cases and NFR-006-M-1..5 are qualified.
+Task-013 population validation is unblocked; evaluator, integration, backend and
+Quire acceptance remain outstanding. PR11 stays draft while that work proceeds.

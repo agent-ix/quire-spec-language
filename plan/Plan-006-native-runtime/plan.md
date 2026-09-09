@@ -32,7 +32,7 @@ format repair and passing validation at f7ed193. No runtime implementation was
 written before that gate. Plan-005's checker work is done and remains intact.
 
 - [ ] StR-001: advance trustworthy concrete assessment; full backend/Quire acceptance remains.
-- [ ] FR-018-AC-1..7: bounded immutable input artifacts with exact byte correspondence.
+- [x] FR-018-AC-1..7: bounded immutable input artifacts with exact byte correspondence.
 - [ ] FR-007-AC-1..15: complete valid finite snapshots and recorded invocations before evaluation.
 - [ ] FR-008-AC-1..20: source-AST truth, captured values, actual events and exact reference work.
 - [ ] NFR-006-M-1..17: explicit construction, validation and evaluation ceilings.
@@ -41,7 +41,8 @@ written before that gate. Plan-005's checker work is done and remains intact.
 - [ ] IT-006-SC-01..07: actual source/model/input/reference-result pipeline.
 
 The detailed criterion-to-test mapping remains in
-[TM-004](../../spec/native-runtime/tests.md). All 23 new cases are planned.
+[TM-004](../../spec/native-runtime/tests.md). TC-055–057 are qualified in SR-096;
+the remaining 20 runtime cases are planned.
 A native API milestone does not replace IT-002's compiled ConfigVersion and
 existing backend, remaining LC02 strict package/projection, FS03 acceptance
 or LC05 Quire integration.
@@ -100,8 +101,8 @@ authorized: all work is Agent A, with shared desktop resources and one writer.
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-012 | A | FR-018, NFR-006, NFR-005 | TC-055–057 | in_progress |
-| Task-013 | A | FR-007, NFR-006, NFR-003, NFR-005 | TC-058–066 | blocked |
+| Task-012 | A | FR-018, NFR-006, NFR-005 | TC-055–057 | done |
+| Task-013 | A | FR-007, NFR-006, NFR-003, NFR-005 | TC-058–066 | not_started |
 | Task-014 | A | FR-008, NFR-006, NFR-003, NFR-005 | TC-067–076 | blocked |
 | Task-015 | A | FR-007, FR-008, FR-018, NFR-006, NFR-003, NFR-005, IT-006 | TC-077 | blocked |
 

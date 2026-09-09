@@ -10,8 +10,9 @@ relationships:
 
 ## Description
 
-Integration, priority P1. Verifies FR-018-AC-1, FR-018-AC-2, FR-018-AC-5, FR-018-AC-7. Planned until actual Rust
-execution. Setup uses the public runtime input constructors and existing IR
+Integration, priority P1. Verifies FR-018-AC-1, FR-018-AC-2, FR-018-AC-5, FR-018-AC-7.
+Qualified at c8fa41f with actual Rust evidence and code/Rust review in SR-096.
+Setup uses the public runtime input constructors and existing IR
 identity types. Construction precedes model-aware validation and needs no
 CheckedPackage. Unrelated setup failure cannot stand in for the intended
 construction outcome.
