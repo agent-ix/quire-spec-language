@@ -78,4 +78,4 @@ intake. Extracted-to-original mapping remains the separate SourceMap API.
 
 ## Status
 
-Specified enablement for native checking. No checker or execution completion is claimed.
+Implemented and qualified source correspondence for native checking. No checker or execution completion is claimed.

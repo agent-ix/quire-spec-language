@@ -57,3 +57,13 @@ ix://agent-ix/quire-spec-language. Target bundle is Plan-004-formal-source.
 This read-only review made no code, plan or matrix edits. Finding FND-001 can be
 resolved with actual handoff/merge evidence. Finding FND-002 remains substantive
 Agent A implementation work after the source bridge is landed.
+
+## Reviewable-deliverable addendum
+
+Private PR9 now exists at 4c3ce895645af85d1a0c452758aba677c3eafc04, reports ready
+and mergeable, and includes the real code, tests and review evidence. Task-007
+has been reconciled to done for its reviewed implementation/PR deliverable;
+tasks done is now 1/1 and FND-001 is resolved for that deliverable. Actual merge
+is still a separate next action, not backdated into this review. No source or
+test changed after 7464c9a. The FR-014 result remains 5/5; the full TM-003 verdict
+remains FAIL because FND-002's five typing cases are still unimplemented.
