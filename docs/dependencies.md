@@ -6,6 +6,13 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
+FR-017 enables the existing pinned serde_json 1.0.151 `raw_value` feature in
+the development dependency for source-aware Rust fixture decoding. Borrowed
+values retain their original occurrences; Serde continues to own JSON grammar.
+The feature adds no package or copied source and preserves serde_json's
+`MIT OR Apache-2.0` grant. Cargo.lock is unchanged. The authored adapter and
+regression fixtures retain AGPL-3.0-only.
+
 This is declared metadata, not a public distribution notice bundle or a
 vulnerability scan. Existing grants remain intact, including ICU Unicode-3.0
 and ar_archive_writer Apache-2.0 WITH LLVM-exception. The dependency stacker/psm

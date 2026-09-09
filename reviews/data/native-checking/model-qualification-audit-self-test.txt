@@ -1,0 +1,3 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running `target/debug/fixture-audit self-test`
+passed: 6 content/digest negative controls for snapshot/frame/invocation; duplicate keys refused; no evaluator executed

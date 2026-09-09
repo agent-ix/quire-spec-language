@@ -1,0 +1,22 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error[E0432]: unresolved import `quire_spec_language::link_native`
+  --> tests/native_linking.rs:14:11
+   |
+14 |     link, link_native, parse, ByteDigest, Code, Limits, LinkLimits, ParsedUnit, Phase, Source,
+   |           ^^^^^^^^^^^ no `link_native` in the root
+
+error[E0599]: no method named `binding_profile` found for struct `LinkedPackage<'a>` in the current scope
+   --> tests/native_linking.rs:176:23
+    |
+176 |     assert_eq!(legacy.binding_profile(), "native-formal-environment/1");
+    |                       ^^^^^^^^^^^^^^^ method not found in `LinkedPackage<'_>`
+
+error[E0599]: no method named `native_model` found for struct `LinkedModel<'a>` in the current scope
+   --> tests/native_linking.rs:177:32
+    |
+177 |     assert!(legacy.models()[0].native_model().is_none());
+    |                                ^^^^^^^^^^^^ method not found in `LinkedModel<'_>`
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `quire-spec-language` (test "native_linking") due to 3 previous errors

@@ -1,0 +1,50 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.74s
+     Running tests/native_checking.rs (target/debug/deps/native_checking-cf2f5fdf60595d24)
+
+running 23 tests
+test bindings::tc_049_complete_source_ordered_mappings_preserve_qualified_local_ids ... ok
+test bindings::tc_049_execution_points_must_match_clause_category_and_selected_anchor ... ok
+test bindings::tc_049_source_labels_path_bytes_and_formal_identity_must_correspond ... ok
+test flow::tc_046_availability_refusals_record_the_actual_native_phase ... ok
+test flow::tc_046_invocation_parameters_and_aliases_keep_their_captured_observation ... ok
+test flow::tc_050_quantifiers_check_arbitrary_elements_under_their_own_guards ...
+thread 'flow::tc_050_quantifiers_check_arbitrary_elements_under_their_own_guards' (596) panicked at tests/native_checking.rs:116:10:
+source-derived IR setup precedes checker judgment: Formal([Diagnostic { code: UnboundedCollection, severity: Error, message: "collection maximum must be positive", path: "type.collection.maximum_items", span: None, related: [], obligation_kind: None }])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test flow::tc_050_stable_and_bound_optional_values_have_structured_guard_identity ... ok
+test flow::tc_050_unreachable_work_skips_only_definedness_and_active_locals_do_not_shadow ... ok
+test limits::tc_051_every_budget_accepts_observed_exact_work_and_refuses_one_less_or_zero ...
+thread 'limits::tc_051_every_budget_accepts_observed_exact_work_and_refuses_one_less_or_zero' (599) panicked at tests/native_checking_cases/limits.rs:90:9:
+shared graph must actually expand
+FAILED
+test limits::tc_051_expanded_proof_depth_is_bounded_even_when_native_depth_is_small ...
+thread 'limits::tc_051_expanded_proof_depth_is_bounded_even_when_native_depth_is_small' (600) panicked at tests/native_checking_cases/limits.rs:53:24:
+called `Result::unwrap_err()` on an `Ok` value: CheckedPackage { linked: LinkedPackage { profile: Native, unit: ParsedUnit { source: Source(Document { identity: SourceIdentity { identity: "test:native-checking", revision: "draft:9" }, path: "native-checking.native", text: "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"sha256:c2f20a4bb100030a9925d349dbf4c2106fbbb2ed85bc501d6e35a1e51fb17de8\";\ninvariant Rule
+FAILED
+test limits::tc_051_shared_graph_expansion_cannot_elevate_hard_limits_or_reuse_prior_success ... ok
+test tc_025_actual_reference_unwraps_need_a_preceding_presence_guard ... ok
+test tc_026_actual_pre_post_references_keep_their_captured_observation ... ok
+test tc_027_guarded_version_addition_is_discharged_by_ir ... ok
+test tc_028_literal_and_size_inference_require_an_explicit_nominal_context ... ok
+test tc_029_root_typing_includes_the_real_boolean_operation_result ... ok
+test tc_047_signed_division_and_remainder_keep_ir_definedness ... ok
+test tc_048_nominal_constraints_cover_branches_units_and_operator_eligibility ... ok
+test tc_052_checked_clauses_retain_universe_and_operation_input_requirements ... ok
+test tc_053_native_presence_facts_are_sound_against_independent_boolean_assignments ... independent guard qualification: 202 formulas, 808 assignments, 62 accepted
+ok
+test types::tc_048_comparison_eligibility_distinguishes_native_nominal_kinds ... ok
+test types::tc_048_size_context_must_cover_every_possible_sequence_length ... ok
+test types::tc_052_reachability_requires_one_exact_target_universe_and_observation ... ok
+
+failures:
+
+failures:
+    flow::tc_050_quantifiers_check_arbitrary_elements_under_their_own_guards
+    limits::tc_051_every_budget_accepts_observed_exact_work_and_refuses_one_less_or_zero
+    limits::tc_051_expanded_proof_depth_is_bounded_even_when_native_depth_is_small
+
+test result: FAILED. 20 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+error: test failed, to rerun pass `--test native_checking`

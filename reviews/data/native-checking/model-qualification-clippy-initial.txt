@@ -1,0 +1,12 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: very complex type used. Consider factoring parts into `type` definitions
+  --> tests/native_model_cases/limits.rs:25:21
+   |
+25 |     let dimensions: &[(&str, usize, fn(&mut ModelLimits, usize))] = &[
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#type_complexity
+   = note: `-D clippy::type-complexity` implied by `-D clippy::all`
+   = help: to override `-D clippy::all` add `#[allow(clippy::type_complexity)]`
+
+error: could not compile `quire-spec-language` (test "native_model_qualification") due to 1 previous error

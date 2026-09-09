@@ -66,6 +66,10 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-014
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-015
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-016
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -178,7 +182,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-003](functional/FR-003-format-native-source.md) | FR | Draft |
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR | Draft |
 | [FR-005](functional/FR-005-link-shared-model.md) | FR | Draft |
-| [FR-006](functional/FR-006-check-defined-expressions.md) | FR | Draft |
+| [FR-006](functional/FR-006-check-defined-expressions.md) | FR | Qualified native static judgments |
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR | Draft |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR | Draft |
 | [FR-009](functional/FR-009-lower-qualified-projections.md) | FR | Draft |
@@ -203,3 +207,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT | Planned qualified model consumption |
 | [FR-013](functional/FR-013-link-formal-environments.md) | FR | Implemented formal linking |
 | [FR-014](functional/FR-014-bind-native-formal-source.md) | FR | Implemented native/formal source bridge |
+| [FR-015](functional/FR-015-project-native-model-semantics.md) | FR | Planned native semantic roles |
+| [FR-016](functional/FR-016-check-native-clauses.md) | FR | Qualified type/definedness checker |
+| [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Qualified construction-stage repairs; SR-083 |

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-005/013: exact formal imports and native declaration correspondence.
+//! FR-005/013/015: exact imports and formal/native declaration correspondence.
 //! Linking establishes names and provenance, not typing or evaluability.
+
+mod native;
 
 use std::collections::BTreeSet;
 
 use quire_contract_ir::{
-    CanonicalProfile, DeclarationEnvironment, RequirementRef, SourceSpan, SymbolName,
-    TypeDeclaration, ValueDeclarationKind, ValueType,
+    CanonicalProfile, DeclarationEnvironment, RecordDeclaration, RequirementRef, SourceSpan,
+    SymbolName, TypeDeclaration, ValueDeclarationKind, ValueType,
 };
 
-use crate::syntax::{BinaryOp, Builtin, ClauseKind, ExprId, ExprKind, UnaryOp};
+use crate::native_model::{NativeModel, ObjectRole, OperationRole};
+use crate::syntax::{BinaryOp, Builtin, Clause, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::{ByteDigest, Code, Diagnostic, ParsedUnit, Phase, Span};
 
 /// Caller-lowered ceilings for native formal linkage.
@@ -25,9 +28,9 @@ pub struct LinkLimits {
     pub nodes: usize,
     /// Recursive traversal levels, at most 64.
     pub depth: usize,
-    /// Emitted canonical declaration bytes per environment, at most 1 MiB.
+    /// Selected artifact bytes per model, at most 1 MiB.
     pub model_bytes: usize,
-    /// Emitted canonical declaration bytes across the inventory, at most 8 MiB.
+    /// Selected artifact bytes across the inventory, at most 8 MiB.
     pub total_model_bytes: usize,
 }
 
@@ -81,6 +84,15 @@ pub enum DeclarationKey {
         /// Selected variant.
         variant: SymbolName,
     },
+    /// Explicit native nominal scalar role.
+    Scalar(SymbolName),
+    /// Explicit native operation under its object context.
+    Operation {
+        /// Object context record.
+        context: SymbolName,
+        /// Operation name.
+        name: SymbolName,
+    },
 }
 
 /// Complete owner-qualified identity of a formal declaration.
@@ -113,7 +125,7 @@ pub enum ResolutionTarget {
 /// Original native occurrence and the declaration it denotes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedOccurrence {
-    /// Expression handle in the retained unit, or None for a clause context.
+    /// Expression handle, or None for a clause context/operation declaration.
     pub expression: Option<ExprId>,
     /// Exact native token range in the retained source.
     pub span: Span,
@@ -126,6 +138,7 @@ pub struct ResolvedOccurrence {
 pub struct LinkedModel<'a> {
     environment: &'a DeclarationEnvironment,
     digest: ByteDigest,
+    native: Option<&'a NativeModel>,
 }
 
 impl<'a> LinkedModel<'a> {
@@ -133,9 +146,13 @@ impl<'a> LinkedModel<'a> {
     pub fn environment(&self) -> &'a DeclarationEnvironment {
         self.environment
     }
-    /// Raw SHA-256 of its selected existing V1 canonical declaration bytes.
+    /// Raw SHA-256 of its artifact under the selected binding profile.
     pub fn digest(&self) -> ByteDigest {
         self.digest
+    }
+    /// Explicit native correspondence; absent for the original formal profile.
+    pub fn native_model(&self) -> Option<&'a NativeModel> {
+        self.native
     }
 }
 
@@ -144,6 +161,7 @@ impl<'a> LinkedModel<'a> {
 pub struct LinkedClause {
     model: usize,
     context: DeclarationLocation,
+    operation: Option<DeclarationLocation>,
     occurrences: Vec<ResolvedOccurrence>,
 }
 
@@ -156,6 +174,10 @@ impl LinkedClause {
     pub fn context(&self) -> &DeclarationLocation {
         &self.context
     }
+    /// Selected explicit operation and its role locus; absent for invariants.
+    pub fn operation(&self) -> Option<&DeclarationLocation> {
+        self.operation.as_ref()
+    }
     /// Resolved occurrences; no static-typing judgment is implied.
     pub fn occurrences(&self) -> &[ResolvedOccurrence] {
         &self.occurrences
@@ -165,12 +187,20 @@ impl LinkedClause {
 /// Atomically linked names, retaining the original source and borrowed models.
 #[derive(Debug)]
 pub struct LinkedPackage<'a> {
+    profile: BindingProfile,
     unit: ParsedUnit,
     models: Vec<LinkedModel<'a>>,
     clauses: Vec<LinkedClause>,
 }
 
 impl<'a> LinkedPackage<'a> {
+    /// Exact model binding profile selected by the linking entry point.
+    pub fn binding_profile(&self) -> &'static str {
+        match self.profile {
+            BindingProfile::Formal => "native-formal-environment/1",
+            BindingProfile::Native => "native-state-model/1",
+        }
+    }
     /// Exact original syntax/source; cannot be replaced through this API.
     pub fn unit(&self) -> &ParsedUnit {
         &self.unit
@@ -183,6 +213,12 @@ impl<'a> LinkedPackage<'a> {
     pub fn clauses(&self) -> &[LinkedClause] {
         &self.clauses
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BindingProfile {
+    Formal,
+    Native,
 }
 
 fn location(
@@ -244,21 +280,70 @@ pub fn link(
     limits: LinkLimits,
 ) -> Result<LinkedPackage<'_>, Box<Diagnostic>> {
     let limits = limits.bounded();
+    preflight(&unit, environments.len(), limits)?;
+    let catalog = formal_catalog(&unit, environments, limits)?;
+    let models = select_models(&unit, &catalog)?;
+    let clauses = resolve_clauses(&unit, &models, limits, BindingProfile::Formal)?;
+    Ok(LinkedPackage {
+        profile: BindingProfile::Formal,
+        unit,
+        models,
+        clauses,
+    })
+}
+
+/// Link using exact native-state-model/1 artifacts and explicit native roles.
+///
+/// # Errors
+/// Refuses conflicting inventory identity, missing/stale/ambiguous selections,
+/// unbound native references or operations, and exhausted limits atomically.
+/// Successful linkage does not establish types, definedness or runtime validity.
+pub fn link_native(
+    unit: ParsedUnit,
+    models: &[NativeModel],
+    limits: LinkLimits,
+) -> Result<LinkedPackage<'_>, Box<Diagnostic>> {
+    let limits = limits.bounded();
+    preflight(&unit, models.len(), limits)?;
+    let catalog = native::catalog(&unit, models, limits)?;
+    let models = select_models(&unit, &catalog)?;
+    let clauses = resolve_clauses(&unit, &models, limits, BindingProfile::Native)?;
+    Ok(LinkedPackage {
+        profile: BindingProfile::Native,
+        unit,
+        models,
+        clauses,
+    })
+}
+
+fn preflight(
+    unit: &ParsedUnit,
+    model_count: usize,
+    limits: LinkLimits,
+) -> Result<(), Box<Diagnostic>> {
     for (count, limit, dimension) in [
-        (environments.len(), limits.models, "formal environments"),
+        (model_count, limits.models, "formal environments"),
         (unit.imports().len(), limits.imports, "native imports"),
         (unit.clauses().len(), limits.clauses, "native clauses"),
         (unit.expressions().len(), limits.nodes, "native nodes"),
     ] {
         if count > limit {
             return Err(failure(
-                &unit,
+                unit,
                 Code::ResourceExhausted,
                 Span { start: 0, end: 0 },
                 format!("{dimension} limit exceeded"),
             ));
         }
     }
+    Ok(())
+}
+
+fn formal_catalog<'a>(
+    unit: &ParsedUnit,
+    environments: &'a [DeclarationEnvironment],
+    limits: LinkLimits,
+) -> Result<Vec<LinkedModel<'a>>, Box<Diagnostic>> {
     let mut catalog = Vec::with_capacity(environments.len());
     let mut emitted = 0;
     for environment in environments {
@@ -276,7 +361,7 @@ pub fn link(
                     Code::InvalidModelBinding
                 };
                 let mut error = failure(
-                    &unit,
+                    unit,
                     code,
                     Span { start: 0, end: 0 },
                     "formal declaration canonicalization failed",
@@ -288,13 +373,21 @@ pub fn link(
         catalog.push(LinkedModel {
             environment,
             digest: ByteDigest::of(output.bytes().as_slice()),
+            native: None,
         });
     }
+    Ok(catalog)
+}
+
+fn select_models<'a>(
+    unit: &ParsedUnit,
+    catalog: &[LinkedModel<'a>],
+) -> Result<Vec<LinkedModel<'a>>, Box<Diagnostic>> {
     let mut models = Vec::with_capacity(unit.imports().len());
     for import in unit.imports() {
         let expected: ByteDigest = import.digest.value.parse().map_err(|_| {
             failure(
-                &unit,
+                unit,
                 Code::InvalidModelBinding,
                 import.digest.span,
                 "expected a sha256 byte digest",
@@ -306,7 +399,7 @@ pub fn link(
             .collect();
         if same_package.is_empty() {
             return Err(failure(
-                &unit,
+                unit,
                 Code::MissingImport,
                 import.package.span,
                 "selected package is absent",
@@ -322,7 +415,7 @@ pub fn link(
         match exact.as_slice() {
             [] => {
                 return Err(failure(
-                    &unit,
+                    unit,
                     Code::StaleDependency,
                     import.span,
                     format!("package {} revision {} digest {expected} has no exact formal declaration artifact", import.package.value, import.version.value),
@@ -331,7 +424,7 @@ pub fn link(
             [model] => models.push(**model),
             _ => {
                 return Err(ambiguous(
-                    &unit,
+                    unit,
                     import.span,
                     exact
                         .iter()
@@ -349,93 +442,152 @@ pub fn link(
             }
         }
     }
+    Ok(models)
+}
+
+fn resolve_clauses(
+    unit: &ParsedUnit,
+    models: &[LinkedModel<'_>],
+    limits: LinkLimits,
+    profile: BindingProfile,
+) -> Result<Vec<LinkedClause>, Box<Diagnostic>> {
     let mut names = BTreeSet::new();
     let mut clauses = Vec::with_capacity(unit.clauses().len());
     for clause in unit.clauses() {
         if !names.insert(&clause.name.value) {
             return Err(failure(
-                &unit,
+                unit,
                 Code::InvalidModelBinding,
                 clause.name.span,
                 "duplicate native clause name",
             ));
         }
-        if clause.kind != ClauseKind::Invariant {
+        if profile == BindingProfile::Formal && clause.kind != ClauseKind::Invariant {
             return Err(failure(
-                &unit,
+                unit,
                 Code::UnsupportedConstruct,
                 clause.span,
                 "operation clauses need an explicit native operation mapping",
             ));
         }
-        let mut resolver = Resolver {
-            unit: &unit,
-            models: &models,
-            current: 0,
-            limits,
-            locals: Vec::new(),
-            occurrences: Vec::new(),
-        };
-        let (model, declaration) = resolver.exported(
-            &clause.model.value,
-            &clause.context.value,
-            clause.context.span,
-        )?;
-        let TypeDeclaration::Record {
-            declaration: record,
-        } = declaration
-        else {
-            return Err(failure(
-                &unit,
-                Code::InvalidModelBinding,
-                clause.context.span,
-                "native context must select a record",
-            ));
-        };
-        resolver.current = model;
+        let (model, record) = resolve_context(unit, models, clause, profile)?;
         let environment = models[model].environment;
+        let operation = models[model]
+            .native
+            .map(|model| native::operation(unit, model, clause))
+            .transpose()?
+            .flatten();
         let context = location(
             environment,
             DeclarationKey::Type(record.name().clone()),
             record.source(),
         );
-        let self_value = environment
-            .values()
-            .iter()
-            .find(|value| value.name().as_str() == "self");
-        if !self_value.is_some_and(|value| {
-            value.kind() == ValueDeclarationKind::State
-                && matches!(value.value_type(), ValueType::Record { name } if name == record.name())
-        }) {
-            return Err(failure(
-                &unit,
-                Code::InvalidModelBinding,
-                clause.context.span,
-                "context requires an explicit self State value of its record type",
-            ));
-        }
+        let operation_location = operation.map(|operation| {
+            location(
+                environment,
+                DeclarationKey::Operation {
+                    context: operation.context.clone(),
+                    name: operation.name.clone(),
+                },
+                &operation.source,
+            )
+        });
+        let mut resolver = Resolver {
+            unit,
+            models,
+            current: model,
+            context: record,
+            operation,
+            limits,
+            locals: Vec::new(),
+            occurrences: Vec::new(),
+        };
         resolver.occurrences.push(ResolvedOccurrence {
             expression: None,
             span: clause.context.span,
             target: ResolutionTarget::Formal(context.clone()),
         });
+        if let (Some(name), Some(location)) = (&clause.operation, &operation_location) {
+            resolver.occurrences.push(ResolvedOccurrence {
+                expression: None,
+                span: name.span,
+                target: ResolutionTarget::Formal(location.clone()),
+            });
+        }
         resolver.visit(clause.expression, 0)?;
         clauses.push(LinkedClause {
             model,
             context,
+            operation: operation_location,
             occurrences: resolver.occurrences,
         });
     }
-    Ok(LinkedPackage {
+    Ok(clauses)
+}
+
+fn resolve_context<'a>(
+    unit: &ParsedUnit,
+    models: &[LinkedModel<'a>],
+    clause: &Clause,
+    profile: BindingProfile,
+) -> Result<(usize, &'a RecordDeclaration), Box<Diagnostic>> {
+    let (model, declaration) = exported(
         unit,
         models,
-        clauses,
-    })
+        &clause.model.value,
+        &clause.context.value,
+        clause.context.span,
+    )?;
+    let TypeDeclaration::Record {
+        declaration: record,
+    } = declaration
+    else {
+        return Err(failure(
+            unit,
+            Code::InvalidModelBinding,
+            clause.context.span,
+            "native context must select a record",
+        ));
+    };
+    match profile {
+        BindingProfile::Native => {
+            if !models[model].native.is_some_and(|native| {
+                native
+                    .roles()
+                    .objects
+                    .iter()
+                    .any(|object| &object.record == record.name())
+            }) {
+                return Err(failure(
+                    unit,
+                    Code::InvalidModelBinding,
+                    clause.context.span,
+                    "native context requires an explicit object role",
+                ));
+            }
+        }
+        BindingProfile::Formal => {
+            let self_value = models[model]
+                .environment
+                .values()
+                .iter()
+                .find(|value| value.name().as_str() == "self");
+            if !self_value.is_some_and(|value| {
+                value.kind() == ValueDeclarationKind::State
+                    && matches!(value.value_type(), ValueType::Record { name } if name == record.name())
+            }) {
+                return Err(failure(unit, Code::InvalidModelBinding, clause.context.span, "context requires an explicit self State value of its record type"));
+            }
+        }
+    }
+    Ok((model, record))
 }
 
 #[derive(Clone, Copy)]
 enum Shape<'a> {
     Formal(&'a DeclarationEnvironment, &'a ValueType),
+    Object(&'a DeclarationEnvironment, &'a SymbolName),
+    Reference(&'a DeclarationEnvironment, &'a ObjectRole),
     Boolean,
     Integer,
     Text,
@@ -447,6 +599,12 @@ impl Shape<'_> {
         match self {
             Self::Formal(a, ta) => {
                 matches!(other, Self::Formal(b, tb) if std::ptr::eq(a, b) && ta == tb)
+            }
+            Self::Object(a, name) => {
+                matches!(other, Self::Object(b, other_name) if std::ptr::eq(a, b) && name == other_name)
+            }
+            Self::Reference(a, role) => {
+                matches!(other, Self::Reference(b, other_role) if std::ptr::eq(a, b) && role.record == other_role.record)
             }
             Self::Boolean => matches!(other, Self::Boolean),
             Self::Integer => matches!(other, Self::Integer),
@@ -460,59 +618,62 @@ struct Resolver<'u, 'a> {
     unit: &'u ParsedUnit,
     models: &'u [LinkedModel<'a>],
     current: usize,
+    context: &'a RecordDeclaration,
+    operation: Option<&'a OperationRole>,
     limits: LinkLimits,
     locals: Vec<(&'u str, Span, Shape<'a>)>,
     occurrences: Vec<ResolvedOccurrence>,
 }
 
-impl<'u, 'a> Resolver<'u, 'a> {
-    fn exported(
-        &self,
-        alias: &str,
-        name: &str,
-        span: Span,
-    ) -> Result<(usize, &'a TypeDeclaration), Box<Diagnostic>> {
-        let mut candidates = Vec::new();
-        let mut alias_exists = false;
-        for (index, (import, model)) in self.unit.imports().iter().zip(self.models).enumerate() {
-            if import.alias.value == alias {
-                alias_exists = true;
-                for declaration in model.environment.types() {
-                    if declaration.name().as_str() == name {
-                        candidates.push((index, declaration));
-                    }
+fn exported<'a>(
+    unit: &ParsedUnit,
+    models: &[LinkedModel<'a>],
+    alias: &str,
+    name: &str,
+    span: Span,
+) -> Result<(usize, &'a TypeDeclaration), Box<Diagnostic>> {
+    let mut candidates = Vec::new();
+    let mut alias_exists = false;
+    for (index, (import, model)) in unit.imports().iter().zip(models).enumerate() {
+        if import.alias.value == alias {
+            alias_exists = true;
+            for declaration in model.environment.types() {
+                if declaration.name().as_str() == name {
+                    candidates.push((index, declaration));
                 }
             }
         }
-        match candidates.as_slice() {
-            [] => Err(failure(
-                self.unit,
-                if alias_exists {
-                    Code::MissingDeclaration
-                } else {
-                    Code::MissingImport
-                },
-                span,
-                "selected formal export is absent",
-            )),
-            [candidate] => Ok(*candidate),
-            _ => Err(ambiguous(
-                self.unit,
-                span,
-                candidates
-                    .iter()
-                    .map(|(index, declaration)| {
-                        location(
-                            self.models[*index].environment,
-                            DeclarationKey::Type(declaration.name().clone()),
-                            declaration.source(),
-                        )
-                    })
-                    .collect(),
-            )),
-        }
     }
+    match candidates.as_slice() {
+        [] => Err(failure(
+            unit,
+            if alias_exists {
+                Code::MissingDeclaration
+            } else {
+                Code::MissingImport
+            },
+            span,
+            "selected formal export is absent",
+        )),
+        [candidate] => Ok(*candidate),
+        _ => Err(ambiguous(
+            unit,
+            span,
+            candidates
+                .iter()
+                .map(|(index, declaration)| {
+                    location(
+                        models[*index].environment,
+                        DeclarationKey::Type(declaration.name().clone()),
+                        declaration.source(),
+                    )
+                })
+                .collect(),
+        )),
+    }
+}
 
+impl<'u, 'a> Resolver<'u, 'a> {
     fn occurrence(&mut self, id: ExprId, span: Span, target: ResolutionTarget) {
         self.occurrences.push(ResolvedOccurrence {
             expression: Some(id),
@@ -521,9 +682,13 @@ impl<'u, 'a> Resolver<'u, 'a> {
         });
     }
 
-    fn value(&mut self, id: ExprId, name: &str, span: Span) -> Result<Shape<'a>, Box<Diagnostic>> {
-        let environment = self.models[self.current].environment;
-        let value = environment
+    fn lookup_value(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> Result<&'a quire_contract_ir::ValueDeclaration, Box<Diagnostic>> {
+        self.models[self.current]
+            .environment
             .values()
             .iter()
             .find(|value| value.name().as_str() == name)
@@ -534,7 +699,16 @@ impl<'u, 'a> Resolver<'u, 'a> {
                     span,
                     format!("value {name} is absent"),
                 )
-            })?;
+            })
+    }
+
+    fn bind_value(
+        &mut self,
+        id: ExprId,
+        span: Span,
+        value: &'a quire_contract_ir::ValueDeclaration,
+    ) -> Shape<'a> {
+        let environment = self.models[self.current].environment;
         self.occurrence(
             id,
             span,
@@ -544,7 +718,74 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 value.source(),
             )),
         );
-        Ok(Shape::Formal(environment, value.value_type()))
+        self.shape(environment, value.value_type())
+    }
+
+    fn value(&mut self, id: ExprId, name: &str, span: Span) -> Result<Shape<'a>, Box<Diagnostic>> {
+        let value = self.lookup_value(name, span)?;
+        self.check_input_scope(value, span)?;
+        Ok(self.bind_value(id, span, value))
+    }
+
+    fn field(
+        &mut self,
+        id: ExprId,
+        name: &crate::Spanned<String>,
+        shape: Shape<'a>,
+    ) -> Result<Shape<'a>, Box<Diagnostic>> {
+        let (environment, record_name) = match shape {
+            Shape::Formal(environment, ValueType::Record { name })
+            | Shape::Object(environment, name) => (environment, name),
+            Shape::Reference(..) => {
+                return Err(failure(
+                    self.unit,
+                    Code::UnsupportedConstruct,
+                    name.span,
+                    "reference carrier fields are not native field-access syntax",
+                ))
+            }
+            Shape::Formal(..) | Shape::Boolean | Shape::Integer | Shape::Text | Shape::Unknown => {
+                return Err(failure(
+                    self.unit,
+                    Code::MissingDeclaration,
+                    name.span,
+                    "field receiver has no unambiguous formal record shape",
+                ))
+            }
+        };
+        let field = environment
+            .types()
+            .iter()
+            .find_map(|declaration| match declaration {
+                TypeDeclaration::Record { declaration } if declaration.name() == record_name => {
+                    declaration
+                        .fields()
+                        .iter()
+                        .find(|field| field.name().as_str() == name.value)
+                }
+                TypeDeclaration::Enum { .. } | TypeDeclaration::Record { .. } => None,
+            })
+            .ok_or_else(|| {
+                failure(
+                    self.unit,
+                    Code::MissingDeclaration,
+                    name.span,
+                    "record field is absent",
+                )
+            })?;
+        self.occurrence(
+            id,
+            name.span,
+            ResolutionTarget::Formal(location(
+                environment,
+                DeclarationKey::Field {
+                    record: record_name.clone(),
+                    field: field.name().clone(),
+                },
+                field.source(),
+            )),
+        );
+        Ok(self.shape(environment, field.value_type()))
     }
 
     fn visit(&mut self, id: ExprId, depth: usize) -> Result<Shape<'a>, Box<Diagnostic>> {
@@ -566,8 +807,8 @@ impl<'u, 'a> Resolver<'u, 'a> {
             ExprKind::Boolean(_) => Ok(Shape::Boolean),
             ExprKind::Integer(_) => Ok(Shape::Integer),
             ExprKind::Text(_) => Ok(Shape::Text),
-            ExprKind::SelfValue => self.value(id, "self", expression.span),
-            ExprKind::ResultValue => self.value(id, "result", expression.span),
+            ExprKind::SelfValue => self.context_value(id, expression.span),
+            ExprKind::ResultValue => self.result_value(id, expression.span),
             ExprKind::Name(name) => {
                 if let Some((_, declaration, shape)) = self
                     .locals
@@ -587,7 +828,8 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 name,
                 variant,
             } => {
-                let (index, declaration) = self.exported(&model.value, &name.value, name.span)?;
+                let (index, declaration) =
+                    exported(unit, self.models, &model.value, &name.value, name.span)?;
                 let TypeDeclaration::Enum { declaration } = declaration else {
                     return Err(failure(
                         unit,
@@ -624,50 +866,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
             }
             ExprKind::Field { base, name } => {
                 let shape = self.visit(*base, next)?;
-                let Shape::Formal(environment, ValueType::Record { name: record_name }) = shape
-                else {
-                    return Err(failure(
-                        unit,
-                        Code::MissingDeclaration,
-                        name.span,
-                        "field receiver has no unambiguous formal record shape",
-                    ));
-                };
-                let field = environment
-                    .types()
-                    .iter()
-                    .find_map(|declaration| match declaration {
-                        TypeDeclaration::Record { declaration }
-                            if declaration.name() == record_name =>
-                        {
-                            declaration
-                                .fields()
-                                .iter()
-                                .find(|field| field.name().as_str() == name.value)
-                        }
-                        TypeDeclaration::Enum { .. } | TypeDeclaration::Record { .. } => None,
-                    })
-                    .ok_or_else(|| {
-                        failure(
-                            unit,
-                            Code::MissingDeclaration,
-                            name.span,
-                            "record field is absent",
-                        )
-                    })?;
-                self.occurrence(
-                    id,
-                    name.span,
-                    ResolutionTarget::Formal(location(
-                        environment,
-                        DeclarationKey::Field {
-                            record: record_name.clone(),
-                            field: field.name().clone(),
-                        },
-                        field.source(),
-                    )),
-                );
-                Ok(Shape::Formal(environment, field.value_type()))
+                self.field(id, name, shape)
             }
             ExprKind::Unary { op, argument } => {
                 self.visit(*argument, next)?;
@@ -697,12 +896,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 }
             }
             ExprKind::Call { builtin, argument } => match builtin {
-                Builtin::Deref => Err(failure(
-                    unit,
-                    Code::UnsupportedConstruct,
-                    expression.span,
-                    "native references need a concrete formal mapping",
-                )),
+                Builtin::Deref => self.dereference(id, *argument, expression.span, next),
                 Builtin::Present => {
                     self.visit(*argument, next)?;
                     Ok(Shape::Boolean)
@@ -714,9 +908,11 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 Builtin::Pre => self.visit(*argument, next),
                 Builtin::Value => Ok(match self.visit(*argument, next)? {
                     Shape::Formal(environment, ValueType::Option { value }) => {
-                        Shape::Formal(environment, value)
+                        self.shape(environment, value)
                     }
                     Shape::Formal(..)
+                    | Shape::Object(..)
+                    | Shape::Reference(..)
                     | Shape::Boolean
                     | Shape::Integer
                     | Shape::Text
@@ -752,9 +948,11 @@ impl<'u, 'a> Resolver<'u, 'a> {
             } => {
                 let shape = match self.visit(*domain, next)? {
                     Shape::Formal(environment, ValueType::Collection { value }) => {
-                        Shape::Formal(environment, value.element())
+                        self.shape(environment, value.element())
                     }
                     Shape::Formal(..)
+                    | Shape::Object(..)
+                    | Shape::Reference(..)
                     | Shape::Boolean
                     | Shape::Integer
                     | Shape::Text
@@ -766,12 +964,11 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 result?;
                 Ok(Shape::Boolean)
             }
-            ExprKind::Reaches { .. } => Err(failure(
-                unit,
-                Code::UnsupportedConstruct,
-                expression.span,
-                "native reachability needs a concrete reference/population mapping",
-            )),
+            ExprKind::Reaches {
+                start,
+                target,
+                field,
+            } => self.reaches(id, *start, *target, field, expression.span, next),
         }
     }
 }

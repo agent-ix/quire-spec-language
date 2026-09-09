@@ -41,4 +41,6 @@ The checker consumes the reviewed finite-state semantics. Presence facts cannot 
 
 ## Status
 
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.
+Implemented and qualified through the native checker. TC-025–029 exercise all
+five original reference/operation judgments against the qualified rule model;
+see the checker evidence in reviews/data/native-checking/ and Task-009.

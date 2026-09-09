@@ -1,0 +1,12 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.28s
+     Running tests/native_model.rs (target/debug/deps/native_model-221779f2a8671f52)
+
+running 5 tests
+test tc_040_source_derived_rule_model ... ok
+test tc_041_invalid_roles_refuse_atomically ... ok
+test tc_042_artifact_binds_semantics_and_provenance ... ok
+test tc_043_constructor_valid_false_role_coordinates_refuse ... ok
+test tc_045_artifact_and_role_limits_are_inclusive ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s

@@ -1,0 +1,14 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: called `.err().expect()` on a `Result` value
+  --> tests/native_checking_cases/limits.rs:54:10
+   |
+54 |           .err()
+   |  __________^
+55 | |         .expect("must refuse without a partial checked package");
+   | |_______________^ help: try: `expect_err`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#err_expect
+   = note: `-D clippy::err-expect` implied by `-D clippy::all`
+   = help: to override `-D clippy::all` add `#[allow(clippy::err_expect)]`
+
+error: could not compile `quire-spec-language` (test "native_checking") due to 1 previous error
