@@ -2,7 +2,7 @@
 id: Task-016
 title: "Construct complete native packages and static identities"
 type: Task
-status: not_started
+status: in_progress
 track: A
 priority: P1
 relationships:
@@ -45,7 +45,7 @@ cases; readback/refusal portions remain pending until Task-017.
 
 - [ ] Author independent canonical-content/complete-manifest fixtures and public Rust assertions before the producer API; retain the genuine missing-API/failing result.
 - [ ] Introduce focused package modules for the typed manifest, bounded traversal/encoding, error/usage records and role-specific public package/reference/identity types.
-- [ ] Derive complete source, model, authored clause, occurrence and runtime inventories from actual retained inputs, including empty sources, multiple aliases and unused selected declarations.
+- [ ] Derive complete source, model, authored clause, occurrence and runtime inventories from actual retained inputs, including the minimum admitted unit, multiple aliases and unused selected declarations. Empty source inventories are adverse parser inputs, not successful setup.
 - [ ] Derive the exact feature set with exhaustive source/operator/type mapping and cycle-safe model identity visits; do not infer semantics from carrier spelling.
 - [ ] Encode the native domain-separated canonical bytes and final artifact, with distinct pass counters, exact integers/Unicode, full projected inventories and excluded display/runtime/projection metadata as specified.
 - [ ] Qualify production byte/string/entry/depth limits, unchanged caller inputs, static mutations and repeated construction. Leave impossible coupled maxima explicitly unqualified rather than fabricating passing public paths.
