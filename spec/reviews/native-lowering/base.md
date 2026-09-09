@@ -29,4 +29,3 @@ CONDITIONAL — engineering delivery may proceed; full activation acceptance rem
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Generated activation evidence is unavailable; the owner defers it for engineering delivery without accepting the full criterion. | FR-009-AC-5; TC-094; IT-008-SC-04 |
-

@@ -37,4 +37,3 @@ CONDITIONAL — method choices are explicit author judgement; activation evidenc
 | FND-005 | medium | Retain Test using actual compiled output; generated activation remains unverified and deferred by the owner. | FR-009-AC-5 |
 | FND-006 | low | Advisor unavailable; retain Test using exact/zero/one-below limits and independent hard constants. | FR-009-AC-6 |
 | FND-007 | low | Advisor unavailable; retain Test using later-clause and owner-population refusals. | FR-009-AC-7 |
-

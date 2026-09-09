@@ -29,4 +29,3 @@ PASS — no additional failure behavior is needed for the admitted engineering s
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No new failure-domain omissions found; generated activation qualification remains separately tracked. | FR-009; TC-092; TC-093 |
-

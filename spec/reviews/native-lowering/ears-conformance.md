@@ -28,4 +28,3 @@ PASS — no engine or semantic EARS finding in the changed requirement.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No EARS conformance issue found in FR-009. | FR-009 |
-

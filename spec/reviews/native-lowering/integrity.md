@@ -29,4 +29,3 @@ PASS — specification and delivery accounting agree.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No conflicting requirement introduced by permitting engineering delivery with incomplete assurance. | FR-009 Status; Plan-008; IT-008 |
-
