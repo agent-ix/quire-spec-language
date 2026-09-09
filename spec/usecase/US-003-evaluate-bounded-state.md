@@ -9,6 +9,8 @@ relationships:
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-008"
     type: exercises
+  - target: "ix://agent-ix/quire-spec-language/FR-018"
+    type: exercises
 ---
 # US-003: Evaluate a bounded state with honest outcomes
 
@@ -44,3 +46,4 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 - [FR-007](../functional/FR-007-validate-runtime-inputs.md)
 - [FR-008](../functional/FR-008-evaluate-state-reference.md)
+- [FR-018](../functional/FR-018-construct-native-runtime-inputs.md)
