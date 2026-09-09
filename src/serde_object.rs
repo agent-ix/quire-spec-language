@@ -40,3 +40,14 @@ where
     Vec::<Object<T>>::deserialize(deserializer)
         .map(|values| values.into_iter().map(|Object(value)| value).collect())
 }
+
+pub(crate) fn deserialize_empty_object<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<(), D::Error> {
+    // Serde's internally tagged unit variants otherwise ignore extra fields.
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Empty {}
+    let _: Empty = from_object(deserializer)?;
+    Ok(())
+}
