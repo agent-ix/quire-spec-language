@@ -60,9 +60,10 @@ validation establishes input conditions before predicate execution.
 models, authored clauses, resolutions, runtime obligations and projection
 dispositions with separate byte and native static identities. Serde owns JSON
 encoding, with independently measured derivation/canonical/output passes.
-Task-016 remains in progress: fixed byte vectors and structural schema controls
-now supplement its initial producer tests. Remaining correspondence/identity
-qualification and verified readback are tracked under
+Task-016 is qualified at c195950 / SR-111, with fixed canonical/artifact vectors,
+complete correspondence/capture controls, static dependency mutations and
+runtime-independent identity checks. Verified readback and reconstructed
+execution remain under
 [Plan-007](plan/Plan-007-native-packages/index.md).
 See [the package contract](docs/native-linked-packages.md).
 

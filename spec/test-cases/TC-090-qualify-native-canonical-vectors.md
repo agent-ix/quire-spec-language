@@ -10,8 +10,8 @@ relationships:
 
 ## Description
 
-Property, priority P1. Verifies FR-021-AC-1 and FR-021-AC-6. Planned; no
-implementation or executed vector is claimed. The oracle is independently
+Property, priority P1. Verifies FR-021-AC-1 and FR-021-AC-6. Qualified at
+c195950; SR-111 records actual evidence. The oracle is independently
 authored fixed byte data and Rust hash assertions, not a second invocation of
 the production canonicalizer.
 

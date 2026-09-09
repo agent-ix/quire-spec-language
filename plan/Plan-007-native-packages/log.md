@@ -7,6 +7,8 @@ description: "Native package plan lifecycle and evidence."
 
 ## History
 
+- **2026-09-09** — Task-016 is done at source c195950 / SR-111. Complete parent/alias/capture/transitive inventories, admissible static mutations, independent raw preimage controls, real runtime-invariance runs and two compile-fail identity controls close the remaining producer findings. All required local gates pass: 232 ordinary tests, three doctests and three private audits. QUOIN matrix reconciliation qualifies TC-078/079/080/090, retaining pending reader/integration portions in ten cases and the documented metric-tag limitation. Task-017 is next; PR #12 remains draft. The owner reiterated dispatch-only workflows and local-only testing; the sole workflow was rechecked and no run was dispatched.
+
 - **2026-09-09** — Source cffcaa4 freezes three independent canonical/package byte families and qualifies the reviewed Rust Draft 2020-12 schema. SR-110 resolves SR-109's fixed-vector and structural-schema findings while retaining the remaining correspondence/identity work and metric-tag limitation. The 225-test regression, compile-fail doctest, three private audits and required local gates pass. Task-016 remains in progress; PR #12 remains draft, with Tasks-017/018 still next in order.
 
 - **2026-09-09** — SR-109 applies the actual local code-review/rust-review and implementation-gap discovery to producer source 22e3c5d. Verdict CONDITIONAL: passing local gates establish this increment, while fixed multi-clause canonical vectors, remaining correspondence/identity controls, structural schema qualification and the recorded NFR trace-target discrepancy remain explicit. PR #12 stays draft and Task-016 stays in progress.

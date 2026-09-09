@@ -82,6 +82,6 @@ method, plan, result or evidence schema is introduced.
 ## Status
 
 Reviewed draft for LC02 issue #3: all-eight review at 69588ad, with the
-source-setup correction/re-review at 2c6b9b8/1c3aa50. Task-016 has an initial
-producer implementation; complete qualification, reconstruction and independent
+source-setup correction/re-review at 2c6b9b8/1c3aa50. Task-016's producer
+qualification is recorded at c195950 / SR-111; reconstruction and independent
 canonical/interchange/B/C acceptance remain pending under Plan-007.

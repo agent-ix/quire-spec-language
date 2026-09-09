@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Property, priority P1. Verifies FR-019-AC-5, FR-019-AC-6. Planned; no implementation or execution is claimed. Setup uses actual admitted models and compiler APIs before the target boundary.
+Property, priority P1. Verifies FR-019-AC-5, FR-019-AC-6. Qualified at c195950; SR-111 records actual evidence. Setup uses actual admitted models and compiler APIs before the target boundary.
 
 ## Test Procedure
 
