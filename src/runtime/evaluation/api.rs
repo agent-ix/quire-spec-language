@@ -113,6 +113,13 @@ pub struct EvaluationReport<'context, 'checked, 'model> {
 }
 
 impl<'context, 'checked, 'model> EvaluationReport<'context, 'checked, 'model> {
+    /// Move measured observations out without retaining a borrow of a local context.
+    pub(in crate::runtime) fn into_parts(
+        self,
+    ) -> (EvaluationOutcome, EvaluationUsage, Vec<ImplicationEvent>) {
+        (self.outcome, self.usage, self.events)
+    }
+
     /// Exact input, authored clause, checked model and original source correspondence.
     pub fn context(&self) -> &'context ValidatedContext<'checked, 'model> {
         self.context

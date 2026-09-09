@@ -163,6 +163,15 @@ native diagnostic or package path; the API does not manufacture source wrappers
 or change extraction availability. Run `cargo test --test mapped` for the mapped
 parent workflow and stage refusals. C's real Quire adapter adoption remains open.
 
+`runtime::execute(package, input, selection, limits, poll)` now runs native
+validation and evaluation in one call. The returned report retains the exact
+package and offered artifacts even on validation failure; `truth()` returns a
+Boolean only after completed evaluation. `outcome()` preserves the original
+stage diagnostics, measured work and implication events. The existing separate
+`validate` and `evaluate` APIs remain available. Run
+`cargo test --test runtime_execution` for aggregate, operation and stopped/retried
+requests. This is a native Rust API; standalone file intake remains future work.
+
 The [formal source bridge](docs/formal-source-binding.md) retains exact native
 source under an explicitly supplied Contract IR source identity. Its forward
 and reverse mappings check byte, line and scalar-column correspondence,
