@@ -2,7 +2,7 @@
 id: Task-008
 title: "Implement and qualify source-bound native models"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -34,9 +34,9 @@ linker. Qualify the source-derived Rust model producer before checker use.
 
 - [x] Write initial public API model/source tests and record missing-API failure.
 - [x] Implement immutable model roles, admission and bounded artifact identity.
-- [ ] Complete model mutations/boundaries and write native link qualification tests.
+- [x] Complete model mutations/boundaries and write native link qualification tests.
 - [x] Extend shared resolution for explicit native references and operations.
-- [ ] Execute TC-040–045 and preserve original linker compatibility.
+- [x] Execute TC-040–045 and preserve original linker compatibility.
 
 ## Deliverables
 
@@ -55,7 +55,12 @@ selection, inventory conflicts, reference/operation/enum/parameter correspondenc
 legacy compatibility and native-link limits. The default suite passed 69 tests;
 the three selected private audits and required local gates passed.
 
-TC-040–043 and TC-045 remain planned until their broader model criteria run.
-Remaining work is full role/carrier/operation mutation qualification, all model
-locus classes, artifact mutation/permutation coverage and remaining model-limit
-controls. Complete these before starting Task-009. Task-011 remains complete.
+Completed at 0cd679c with SR-085. Seventeen additional public-API tests complete
+TC-040–043/045's role/carrier/operation mutations, model locus classes, artifact
+mutation/permutation families and model-limit controls. Every adverse IR input
+passes its actual constructors before native admission is judged. The complete
+suite passed 86 tests and the three selected private audits passed. Required
+local gates passed; exact logs are under reviews/data/native-checking/ with the
+model-qualification prefix. TC-044 retains its SR-084 linkage evidence and ran
+again in the full suite. Task-009 is now the next bounded work. Task-011 remains
+complete; the full model/checker plan and runtime workflow remain unfinished.

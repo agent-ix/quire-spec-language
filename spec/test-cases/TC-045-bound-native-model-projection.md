@@ -10,8 +10,9 @@ relationships:
 
 ## Description
 
-Property, priority P1. Verifies FR-015-AC-6. Planned until real execution; setup
-must use the qualified source-derived Rust producer and actual public IR APIs.
+Property, priority P1. Verifies FR-015-AC-6. Qualified at 0cd679c; SR-085
+records the actual public-API controls, local gates and bounded claim. Tests use
+the source-derived Rust producer and successfully constructed actual IR inputs.
 
 ## Test Procedure
 
@@ -20,4 +21,3 @@ For each ModelLimits dimension, construct a small valid exact-limit model and lo
 ## Expected Results
 
 An exactly fitting valid input succeeds; the next required operation returns resource_exhausted and no model/package. Zero never disables a limit and caller values cannot elevate hard ceilings. Emitted bytes are charged before append. Tests use bounded fixture families, one job and one test thread; no uncontrolled concurrency or massive Cartesian product is required.
-

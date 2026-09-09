@@ -10,8 +10,9 @@ relationships:
 
 ## Description
 
-Integration, priority P1. Verifies FR-015-AC-4. Planned until real execution; setup
-must use the qualified source-derived Rust producer and actual public IR APIs.
+Integration, priority P1. Verifies FR-015-AC-4. Qualified at 0cd679c; SR-085
+records the actual public-API controls, local gates and bounded claim. Tests use
+the source-derived Rust producer and successfully constructed actual IR inputs.
 
 ## Test Procedure
 
@@ -20,4 +21,3 @@ Give a valid source-bound IR model a false line, column, split-scalar or foreign
 ## Expected Results
 
 False/foreign loci refuse model construction. Conflicting identity bindings refuse the linked inventory as invalid_model_binding. Identical candidate copies retain the existing ambiguous_declaration outcome for an exact import, and independent valid owners are accepted. No first/last-wins reconciliation or partial LinkedPackage is exposed.
-

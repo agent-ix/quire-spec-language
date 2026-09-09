@@ -10,8 +10,9 @@ relationships:
 
 ## Description
 
-Property, priority P1. Verifies FR-015-AC-3. Planned until real execution; setup
-must use the qualified source-derived Rust producer and actual public IR APIs.
+Property, priority P1. Verifies FR-015-AC-3. Qualified at 0cd679c; SR-085
+records the actual public-API controls, local gates and bounded claim. Tests use
+the source-derived Rust producer and successfully constructed actual IR inputs.
 
 ## Test Procedure
 
@@ -20,4 +21,3 @@ Generate one-at-a-time changes to nominal scalar names, units, object universe, 
 ## Expected Results
 
 Every semantic/provenance mutation changes the raw native artifact digest; set-like input permutations preserve the same deterministic artifact. Correct exact imports link; each wrong artifact fails selection. Ordered operation parameters are retained rather than sorted. This is a bounded generated family, not a claim about cryptographic collisions.
-
