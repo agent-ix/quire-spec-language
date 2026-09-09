@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+   Doc-tests quire_spec_language
+
+running 2 tests
+test src/package.rs - package::NativePackageIdentity (line 173) - compile fail ... ok
+test src/package.rs - package::NativePackageIdentity (line 180) - compile fail ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.05s

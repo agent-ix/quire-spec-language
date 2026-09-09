@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-019/021: independently authored native package construction expectations.
 
+#[path = "package_construction_cases/correspondence.rs"]
+mod correspondence;
 #[path = "package_construction_cases/features.rs"]
 mod features;
 #[path = "package_construction_cases/fixed.rs"]
@@ -17,6 +19,8 @@ mod native_rule_model;
 mod package_vector_setup;
 #[path = "package_construction_cases/schema.rs"]
 mod schema;
+#[path = "package_construction_cases/static_changes.rs"]
+mod static_changes;
 #[path = "package_construction_cases/vectors.rs"]
 mod vectors;
 
