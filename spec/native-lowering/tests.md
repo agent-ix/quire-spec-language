@@ -30,6 +30,7 @@ SR-114/115; PR specification review is under spec/reviews/native-lowering/.
 | FR-033 | FR-033-AC-2 | TC-111 | ✅ Tested |
 | FR-033 | FR-033-AC-3 | TC-111 | ✅ Tested |
 | FR-033 | FR-033-AC-4 | TC-111 | ✅ Tested |
+| FR-033 | FR-033-AC-5 | TC-111 | ✅ Tested |
 
 ## Test Case Summary
 
