@@ -51,16 +51,22 @@ sequence wrappers retain their nested types and bounds. An ordinary record
 admits equality only if each field type does; Option and sequence equality are
 not introduced by representation similarity.
 
-An ObjectRole selects one IR record, one closed reference enumeration, an
-explicit universe SymbolName and a role SourceSpan. Object records and reference
-enumerations have one object-role owner each; conflicting assignments refuse.
-The enumeration's variant identities form the finite object-identity domain.
-They do not assert that any object exists in a runtime snapshot. IR record fields
-remain acyclic; a parent field can be Option<Enum> where that enumeration is
-explicitly the reference domain. Under this profile that leaf means Ref<Object>,
-and self/deref denote identity-bearing object access, not record-value equality.
-Ordinary enums remain enums. Source enum literals cannot construct references by
-using the selected reference enumeration's spelling.
+An ObjectRole selects an object record, a distinct reference-carrier record,
+the carrier's identity-field SymbolName, an explicit universe SymbolName and
+a role SourceSpan. The carrier has exactly one nonoptional Text field with an
+explicit Text scalar role whose authored maximum is positive. Native object IDs
+are nonempty opaque scalar strings within that maximum. Their actual values are
+supplied with runtime populations; they are not enumerated in the model.
+
+Object and reference-carrier records are disjoint, with one object-role owner
+each; conflicting assignments refuse. IR record fields remain acyclic: a parent
+field can be Option<Record<NodeRef>>, where NodeRef contains only its ID carrier
+and no Node payload. The explicit native role gives that leaf Ref<Node> semantics.
+self/deref denote identity-bearing object access. Ordinary records remain
+structural records and ordinary enums remain enums. Reference carrier fields
+are not native field-access syntax: self.peer.id cannot bypass deref or expose
+an implicit record/reference conversion. The model defines ID representation
+and universe/type identity, while FR-007 will validate finite population membership.
 
 An OperationRole declares a context record, operation SymbolName, AnchorName,
 source span, ordered parameter value names, optional result value name and Frame.
