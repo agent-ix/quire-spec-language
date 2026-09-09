@@ -14,6 +14,8 @@ use quire_spec_language::{ByteDigest, Code, Phase};
 #[trace("TC-040", "FR-015-AC-1")]
 fn tc_040_source_derived_rule_model() {
     let model = parts().model();
+    // The producer's optional enum inventory defaults to empty in this fixture.
+    assert_eq!(model.environment().types().len(), 2);
     for declaration in model.environment().types() {
         let span = model.source().to_native(declaration.source()).unwrap();
         let original = &model.source().source().text()[span.start..span.end];

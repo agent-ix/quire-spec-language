@@ -69,6 +69,8 @@ pub enum Code {
     MissingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
+    /// An invocation result or value is unavailable in the requested access form.
+    WrongSnapshot,
 }
 
 impl Code {
@@ -90,6 +92,7 @@ impl Code {
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
+            Self::WrongSnapshot => "wrong_snapshot",
         }
     }
 
@@ -111,6 +114,7 @@ impl Code {
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
             Self::InvalidModelBinding,
+            Self::WrongSnapshot,
         ]
     }
 
