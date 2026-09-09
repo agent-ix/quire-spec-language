@@ -284,5 +284,7 @@ they cannot impersonate a requested checker refusal.
 TC-040–045 qualify this producer and model/link boundary. TC-025–029 and
 TC-046–052 exercise the actual checker, including numeric/observation mutations,
 source/anchor identity, all-branch typing, alias sharing, proof budgets and exact
-retention. First-party implementation and tests are Rust under existing license
+retention. TC-053 adds an independent truth-table oracle for the native presence
+fact rules, including mandatory positive and negative controls. First-party
+implementation and tests are Rust under existing license
 policy. Build/check commands remain local, single-job and low priority.

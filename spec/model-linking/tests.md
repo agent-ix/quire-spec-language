@@ -40,19 +40,19 @@ open. TM-001/002 retain their existing native/audit evidence.
 | FR-014 | FR-014-AC-3 | TC-037 | ✅ Passed |
 | FR-014 | FR-014-AC-4 | TC-038 | ✅ Passed |
 | FR-014 | FR-014-AC-5 | TC-039 | ✅ Passed |
-| FR-015 | FR-015-AC-1 | TC-40 | 🚧 Planned |
-| FR-015 | FR-015-AC-2 | TC-41 | 🚧 Planned |
-| FR-015 | FR-015-AC-3 | TC-42 | 🚧 Planned |
-| FR-015 | FR-015-AC-4 | TC-43 | 🚧 Planned |
-| FR-015 | FR-015-AC-5 | TC-44 | 🚧 Planned |
-| FR-015 | FR-015-AC-6 | TC-45 | 🚧 Planned |
-| FR-016 | FR-016-AC-1 | TC-025 | 🚧 Planned |
+| FR-015 | FR-015-AC-1 | TC-040 | 🚧 Planned |
+| FR-015 | FR-015-AC-2 | TC-041 | 🚧 Planned |
+| FR-015 | FR-015-AC-3 | TC-042 | 🚧 Planned |
+| FR-015 | FR-015-AC-4 | TC-043 | 🚧 Planned |
+| FR-015 | FR-015-AC-5 | TC-044 | 🚧 Planned |
+| FR-015 | FR-015-AC-6 | TC-045 | 🚧 Planned |
+| FR-016 | FR-016-AC-1 | TC-025, TC-053 | 🚧 Planned |
 | FR-016 | FR-016-AC-2 | TC-026, TC-046 | 🚧 Planned |
 | FR-016 | FR-016-AC-3 | TC-027, TC-047 | 🚧 Planned |
 | FR-016 | FR-016-AC-4 | TC-028, TC-048 | 🚧 Planned |
 | FR-016 | FR-016-AC-5 | TC-029, TC-048 | 🚧 Planned |
 | FR-016 | FR-016-AC-6 | TC-049 | 🚧 Planned |
-| FR-016 | FR-016-AC-7 | TC-050 | 🚧 Planned |
+| FR-016 | FR-016-AC-7 | TC-050, TC-053 | 🚧 Planned |
 | FR-016 | FR-016-AC-8 | TC-051 | 🚧 Planned |
 | FR-016 | FR-016-AC-9 | TC-052 | 🚧 Planned |
 
@@ -80,19 +80,20 @@ open. TM-001/002 retain their existing native/audit evidence.
 | TC-037 | Foreign native source requests | Integration | P1 | FR-014-AC-3 | ✅ Passed |
 | TC-038 | Inconsistent formal coordinates | Integration | P1 | FR-014-AC-4 | ✅ Passed |
 | TC-039 | Bounded generated span correspondence | Property | P1 | FR-014-AC-5 | ✅ Passed |
-| TC-40 | Qualify the source-derived native rule model | Integration | P1 | FR-015-AC-1 | 🚧 Planned |
-| TC-41 | Refuse missing or inconsistent native model roles | Integration | P1 | FR-015-AC-2 | 🚧 Planned |
-| TC-42 | Bind all native model semantics and provenance | Property | P1 | FR-015-AC-3 | 🚧 Planned |
-| TC-43 | Verify model loci and inventory identity consistency | Integration | P1 | FR-015-AC-4 | 🚧 Planned |
-| TC-44 | Resolve explicit references and operation declarations | Integration | P1 | FR-015-AC-5 | 🚧 Planned |
-| TC-45 | Bound model construction and native linkage | Property | P1 | FR-015-AC-6 | 🚧 Planned |
-| TC-46 | Check observation and operation value availability | Integration | P1 | FR-016-AC-2 | 🚧 Planned |
-| TC-47 | Prove signed arithmetic through the actual IR API | Integration | P1 | FR-016-AC-3 | 🚧 Planned |
-| TC-48 | Solve exact native contextual types | Integration | P1 | FR-016-AC-4, FR-016-AC-5 | 🚧 Planned |
-| TC-49 | Retain exact checked source and authored clause bindings | Integration | P1 | FR-016-AC-6 | 🚧 Planned |
-| TC-50 | Check lexical scope and guarded evaluation order | Integration | P1 | FR-016-AC-7 | 🚧 Planned |
-| TC-51 | Bound constraint checking and shared proof expansion | Property | P1 | FR-016-AC-8 | 🚧 Planned |
-| TC-52 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | 🚧 Planned |
+| TC-040 | Qualify the source-derived native rule model | Integration | P1 | FR-015-AC-1 | 🚧 Planned |
+| TC-041 | Refuse missing or inconsistent native model roles | Integration | P1 | FR-015-AC-2 | 🚧 Planned |
+| TC-042 | Bind all native model semantics and provenance | Property | P1 | FR-015-AC-3 | 🚧 Planned |
+| TC-043 | Verify model loci and inventory identity consistency | Integration | P1 | FR-015-AC-4 | 🚧 Planned |
+| TC-044 | Resolve explicit references and operation declarations | Integration | P1 | FR-015-AC-5 | 🚧 Planned |
+| TC-045 | Bound model construction and native linkage | Property | P1 | FR-015-AC-6 | 🚧 Planned |
+| TC-046 | Check observation and operation value availability | Integration | P1 | FR-016-AC-2 | 🚧 Planned |
+| TC-047 | Prove signed arithmetic through the actual IR API | Integration | P1 | FR-016-AC-3 | 🚧 Planned |
+| TC-048 | Solve exact native contextual types | Integration | P1 | FR-016-AC-4, FR-016-AC-5 | 🚧 Planned |
+| TC-049 | Retain exact checked source and authored clause bindings | Integration | P1 | FR-016-AC-6 | 🚧 Planned |
+| TC-050 | Check lexical scope and guarded evaluation order | Integration | P1 | FR-016-AC-7 | 🚧 Planned |
+| TC-051 | Bound constraint checking and shared proof expansion | Property | P1 | FR-016-AC-8 | 🚧 Planned |
+| TC-052 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | 🚧 Planned |
+| TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | 🚧 Planned |
 
 ## Six coverage rules
 
@@ -168,3 +169,8 @@ IR checker and exact model producer; no mock bypass or abstract fixture setup
 failure can count as application refusal. No concurrency or Loom claim is
 needed for this serial immutable checker; no fuzz or whole-workflow proof is
 inferred from its unit/integration/property suites.
+
+TC-053 independently checks accepted presence proofs over a bounded generated
+Boolean formula family and all assignments, including mandatory positive
+controls. It addresses the native alternative-join fact calculation rather than
+assuming the existing IR proof implementation qualifies that added logic.
