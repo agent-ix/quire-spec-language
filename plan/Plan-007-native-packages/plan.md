@@ -106,7 +106,7 @@ this plan does not schedule their builds or edit their repositories.
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-016 | A | FR-019, FR-021, NFR-007, NFR-005 | TC-078–082, TC-088, TC-090–091; producer portions | not_started |
+| Task-016 | A | FR-019, FR-021, NFR-007, NFR-005 | TC-078–082, TC-088, TC-090–091; producer portions | in_progress |
 | Task-017 | A | FR-020, FR-019, FR-021, NFR-007, NFR-005 | TC-081–088, TC-091; reader portions | not_started |
 | Task-018 | A | FR-019, FR-020, FR-021, NFR-007, NFR-005, IT-007, StR-001 | TC-089 | not_started |
 

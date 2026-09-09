@@ -75,8 +75,12 @@ nulls and empty arrays. No extension container or unknown fields are admitted.
 The structural schema is
 [native-linked-package-1.schema.json](../schemas/native-linked-package-1.schema.json).
 Its success does not prove constructor constraints, source correspondence,
-feature derivation or compiler reconstruction. Empty source inventories remain
-empty; a header-only package makes no clause-execution claim.
+feature derivation or compiler reconstruction. The admitted native grammar
+requires at least one model import and one clause. A header-only source cannot
+produce a CheckedPackage or a successful NativePackage. Empty serialized
+inventories remain untrusted claims and cannot bypass actual reconstruction.
+The smallest positive fixture uses an actual imported model and constant clause;
+this package contract does not change the native source grammar.
 
 | Member | Exact content |
 | --- | --- |

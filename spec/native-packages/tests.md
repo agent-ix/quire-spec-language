@@ -84,7 +84,7 @@ are not invented trace IDs.
 
 | Dimension | Required combinations | Cases |
 | --- | --- | --- |
-| Source population | Header-only, one clause, multiple owners/clauses; current/pre/post; multiple import aliases | TC-078, TC-089 |
+| Source inventory | One import/constant clause minimum, multiple owners/clauses, current/pre/post and multiple aliases; header-only/import-only are adverse source inputs | TC-078, TC-087, TC-089 |
 | Model contents | Used/unused declarations; scalar/unit/bounds, enum, structural record, object/reference, option/sequence and operation/frame roles | TC-078–080 |
 | Features | Exact set, unique permutations, duplicates/escaped duplicates, unknown, omitted/invented known feature, consumer subset and extra unknown consumer strings | TC-080, TC-084, TC-086 |
 | Wire selectors | Exact/unknown format, language, edition, profiles, definition revision/digest; no decoder fallback | TC-083–085 |
@@ -120,7 +120,7 @@ TC-091 establishes that static identity cannot authorize forged capabilities.
 
 ## Edge Cases
 
-- Header-only source and zero inventories; no invented clause/execution: TC-078.
+- Smallest admitted import/constant-clause source: TC-078; header-only/import-only syntax refusals: TC-087.
 - Different display paths with identical original source identity/bytes: TC-078/082.
 - Unused selected declarations and unreachable feature-bearing syntax: TC-078/080.
 - Escaped duplicate names, null versus omitted, exact u64 revisions and malformed numbers: TC-083/084.

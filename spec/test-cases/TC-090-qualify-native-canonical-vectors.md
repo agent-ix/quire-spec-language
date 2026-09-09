@@ -17,9 +17,12 @@ the production canonicalizer.
 
 ## Test Procedure
 
-Write exact canonical-content byte fixtures before implementing the encoder:
-one checked header-only source and one source with actual checked clauses and
-a selected model. Enumerate every fixed record member in the documented order.
+Use exact independently authored canonical-content byte fixtures for actual
+checked source with an imported model and a constant clause, followed by a
+source with multiple checked clauses. A header-only source cannot pass native
+parsing and must not supply positive setup. Enumerate every fixed record member
+in the documented order. Keep the true fixture/implementation sequence in the
+qualification report: correcting a setup error is not a previously passing oracle.
 Include quote, backslash, slash, b/f/n/r/t controls, another U+0000–001F control,
 non-ASCII and supplementary Unicode in admitted opaque native source labels;
 use the exact positive formal revision 9007199254740993 without a float cast.
