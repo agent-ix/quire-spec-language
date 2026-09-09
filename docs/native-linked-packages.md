@@ -340,7 +340,7 @@ when an independently typed IR expression retains its source-free digest.
 Encode canonical content as compact UTF-8 JSON with exact decimal integers,
 no newline, no normalization and no BOM. String escaping uses double quotes,
 backslash for quote/backslash, the short b/f/n/r/t escapes for their controls,
-and lowercase \\u00xx for the other U+0000–001F controls. Other Unicode scalars
+and lowercase `\u00xx` for the other U+0000–001F controls. Other Unicode scalars
 remain their UTF-8 bytes, including supplementary characters; slash is not
 escaped. This fixed typed-record encoding is not RFC 8785 and never converts
 u64 revisions through binary64. The already qualified model artifact strings
