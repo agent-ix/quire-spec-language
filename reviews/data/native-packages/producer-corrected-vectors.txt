@@ -1,0 +1,11 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.85s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-3579d7ddfbcca096)
+
+running 4 tests
+test actual_checked_clause_retains_complete_selected_model_and_dispositions ... ok
+test canonical_unicode_controls_and_large_revision_are_exact ... ok
+test construction_byte_limit_is_inclusive_and_failed_retry_has_fresh_usage ... ok
+test minimum_admitted_unit_has_exact_independent_static_bytes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s

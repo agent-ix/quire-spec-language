@@ -1,0 +1,15 @@
+    Checking quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+error: unneeded use of `concat!` macro
+  --> tests/package_construction_cases/vectors.rs:44:25
+   |
+44 |   const SEMANTICS: &str = concat!(
+   |  _________________________^
+45 | |     r#"{"language":"ix:native","edition":"0-draft","syntax_profile":"state-finite/0-draft","model_profile":"native-state-model/1",...
+46 | | );
+   | |_^ help: replace with: `"{\"language\":\"ix:native\",\"edition\":\"0-draft\",\"syntax_profile\":\"state-finite/0-draft\",\"model_profile\":\"native-state-model/1\",\"checking_contract\":\"native-checked-clauses/1\",\"ir_revision\":\"690bde7f2dc58662cf9ff0595c2c0e3b17107c6f\",\"base_definition\":{\"revision\":\"e897f810a7356d4ce8fd19026221ebda7b65596f\",\"digest\":\"sha256:8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429\"},\"rules_definition\":{\"revision\":\"e897f810a7356d4ce8fd19026221ebda7b65596f\",\"digest\":\"sha256:d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b\"}}"`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#useless_concat
+   = note: `-D clippy::useless-concat` implied by `-D clippy::all`
+   = help: to override `-D clippy::all` add `#[allow(clippy::useless_concat)]`
+
+error: could not compile `quire-spec-language` (test "package_construction") due to 1 previous error

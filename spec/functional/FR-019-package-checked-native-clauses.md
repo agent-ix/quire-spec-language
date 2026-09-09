@@ -81,5 +81,7 @@ method, plan, result or evidence schema is introduced.
 
 ## Status
 
-Draft specification for LC02 issue #3. Implementation, all-eight QUOIN reviews,
-canonical/interchange acceptance and independent B/C consumption are not claimed.
+Reviewed draft for LC02 issue #3: all-eight review at 69588ad, with the
+source-setup correction/re-review at 2c6b9b8/1c3aa50. Task-016 has an initial
+producer implementation; complete qualification, reconstruction and independent
+canonical/interchange/B/C acceptance remain pending under Plan-007.

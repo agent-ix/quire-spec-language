@@ -1,0 +1,46 @@
+   Compiling quire-spec-language v0.1.0 (/home/peter/dev/worktrees/formalization-a-language)
+warning: function `symbol` is never used
+   --> tests/support/native_rule_model.rs:164:8
+    |
+164 | pub fn symbol(name: &str) -> ir::SymbolName {
+    |        ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `quire-spec-language` (test "package_construction") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.84s
+     Running tests/package_construction.rs (target/debug/deps/package_construction-3579d7ddfbcca096)
+
+running 4 tests
+test actual_checked_clause_retains_complete_selected_model_and_dispositions ... ok
+test canonical_unicode_controls_and_large_revision_are_exact ... FAILED
+test construction_byte_limit_is_inclusive_and_failed_retry_has_fresh_usage ... FAILED
+test empty_inventory_has_exact_independent_static_bytes ... FAILED
+
+failures:
+
+---- canonical_unicode_controls_and_large_revision_are_exact stdout ----
+
+thread 'canonical_unicode_controls_and_large_revision_are_exact' (558) panicked at tests/package_construction.rs:32:7:
+actual parser setup before package construction: Diagnostic { phase: Parse, code: InvalidSyntax, source: SourceIdentity { identity: "test:\"\\/\0\u{8}\u{c}\n\r\té🦀", revision: "draft:é\u{1}" }, path: "unicode.native", span: LocatedSpan { start: Position { byte: 72, line: 3, column: 1 }, end: Position { byte: 72, line: 3, column: 1 } }, message: "expected model", related: [], upstream: None, runtime: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- construction_byte_limit_is_inclusive_and_failed_retry_has_fresh_usage stdout ----
+
+thread 'construction_byte_limit_is_inclusive_and_failed_retry_has_fresh_usage' (559) panicked at tests/package_construction.rs:32:7:
+actual parser setup before package construction: Diagnostic { phase: Parse, code: InvalidSyntax, source: SourceIdentity { identity: "test:package", revision: "draft:1" }, path: "limits.native", span: LocatedSpan { start: Position { byte: 72, line: 3, column: 1 }, end: Position { byte: 72, line: 3, column: 1 } }, message: "expected model", related: [], upstream: None, runtime: None }
+
+---- empty_inventory_has_exact_independent_static_bytes stdout ----
+
+thread 'empty_inventory_has_exact_independent_static_bytes' (560) panicked at tests/package_construction.rs:32:7:
+actual parser setup before package construction: Diagnostic { phase: Parse, code: InvalidSyntax, source: SourceIdentity { identity: "test:package", revision: "draft:1" }, path: "first.native", span: LocatedSpan { start: Position { byte: 72, line: 3, column: 1 }, end: Position { byte: 72, line: 3, column: 1 } }, message: "expected model", related: [], upstream: None, runtime: None }
+
+
+failures:
+    canonical_unicode_controls_and_large_revision_are_exact
+    construction_byte_limit_is_inclusive_and_failed_retry_has_fresh_usage
+    empty_inventory_has_exact_independent_static_bytes
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test package_construction`

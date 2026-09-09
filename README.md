@@ -56,6 +56,15 @@ and Quire integration remain downstream work. Construction establishes structure
 correspondence; checking establishes static judgments conditional on valid input;
 validation establishes input conditions before predicate execution.
 
+`package::NativePackage::new` now exports a checked package's complete selected
+models, authored clauses, resolutions, runtime obligations and projection
+dispositions with separate byte and native static identities. Serde owns JSON
+encoding, with independently measured derivation/canonical/output passes.
+Task-016 remains in progress: its initial 16 public tests and three private
+limit controls pass, while complete vector/schema qualification and verified
+readback remain under [Plan-007](plan/Plan-007-native-packages/index.md).
+See [the package contract](docs/native-linked-packages.md).
+
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
 which may contain replacement characters; exact labels and the actual byte
