@@ -36,3 +36,8 @@ serially under the no-subagent assignment. Catalog authoring contracts, actual
 advisor output and validation were read. The declined optional gap-analysis
 semantic comparison is not included. This is not an independent B/C acceptance.
 
+## Fixture correction re-review
+
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
+PASS for this correction under the previously selected all-analysis review set.
+The setup failures exposed a review blind spot: descriptive API names had been mistaken for admitted identifier syntax. Explicit actual-constructor fixtures and the existing lexer prevent that mistake from becoming compatibility behavior.

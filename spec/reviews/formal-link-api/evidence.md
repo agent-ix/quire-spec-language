@@ -36,3 +36,8 @@ serially under the no-subagent assignment. Catalog authoring contracts, actual
 advisor output and validation were read. The declined optional gap-analysis
 semantic comparison is not included. This is not an independent B/C acceptance.
 
+## Fixture correction re-review
+
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
+PASS for this correction under the previously selected all-analysis review set.
+The first attempted tests failed during setup on source/package identifiers and then on the reserved value field; these runs do not qualify linkage. Corrected fixture tests must reach the real API before any case is marked passed.

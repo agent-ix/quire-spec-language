@@ -36,3 +36,8 @@ serially under the no-subagent assignment. Catalog authoring contracts, actual
 advisor output and validation were read. The declined optional gap-analysis
 semantic comparison is not included. This is not an independent B/C acceptance.
 
+## Fixture correction re-review
+
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
+PASS for this correction under the previously selected all-analysis review set.
+FR-013's event/response and all six criteria remain unchanged. TC-020/030 now state an executable example using the nonreserved count field; no new shall or hidden exception is added.
