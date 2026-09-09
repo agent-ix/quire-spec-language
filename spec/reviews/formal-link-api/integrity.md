@@ -36,3 +36,8 @@ serially under the no-subagent assignment. Catalog authoring contracts, actual
 advisor output and validation were read. The declined optional gap-analysis
 semantic comparison is not included. This is not an independent B/C acceptance.
 
+## Fixture correction re-review
+
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
+PASS for this correction under the previously selected all-analysis review set.
+The exact owner().package().as_str() mapping is unchanged. The count field is an authored fixture declaration, not a rename performed by the linker or a second authority.

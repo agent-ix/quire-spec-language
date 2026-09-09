@@ -36,3 +36,8 @@ serially under the no-subagent assignment. Catalog authoring contracts, actual
 advisor output and validation were read. The declined optional gap-analysis
 semantic comparison is not included. This is not an independent B/C acceptance.
 
+## Fixture correction re-review
+
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
+PASS for this correction under the previously selected all-analysis review set.
+The corrected fixture now obeys both existing grammars: PackageId is a namespace and count is an identifier. The same TC-020/030 assertions retain exact owner/source/digest discrimination.
