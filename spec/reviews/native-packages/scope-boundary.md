@@ -6,6 +6,7 @@ analysis: scope-boundary
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
 evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -19,6 +20,7 @@ remain distinct authorities. No new repository, service or model compiler is nee
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-003 | medium | The package boundary consumes the admitted native grammar; it does not expand it to accept an inventory-free unit. | TC-078; TC-087; TC-090 |
 | FND-001 | low | No ownership overlap is introduced: existing B/C/IR/Filament consumers remain read-only during this slice. | FR-019; FR-020; FR-021 |
 | FND-002 | low | B's independent shared-domain registration and C's consumer integration are recorded acceptance work, not an assumed successful handoff. | IT-007; LC02/FS05 |
 
@@ -67,6 +69,23 @@ silently generalized or copied. Native code and all qualification remain Rust,
 with AGPL-3.0-only for new authored artifacts and existing dependency grants.
 CLI syntax commands, hosted manual-dispatch policy and publication boundaries
 retain their existing scope.
+
+## Admitted source setup correction — 2026-09-09
+
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+installed QUOIN lens, superseding the initial review's header-only positive
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
+
+Agent A corrects its package fixture contract only. Parser/standard, B/C, IR and Filament behavior is unchanged. The minimum positive source uses the existing Rust model fixture; shared consumer acceptance remains required.
+
+Task-016 began under the original completed review gate. Its initial API-red
+run is followed by a first implementation run with one passing nonempty case
+and three parser setup failures. Further implementation paused for this
+specification correction and all-eight re-review; no parser behavior was
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+No claim of executed full package, schema or canonical-vector qualification is
+made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 

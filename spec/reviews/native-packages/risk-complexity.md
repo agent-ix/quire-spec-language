@@ -6,6 +6,7 @@ analysis: risk-complexity
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
 evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -19,6 +20,7 @@ independent counters and actual compiler reconstruction are planned mitigations.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
+| FND-003 | medium | Mitigate fixture-precondition risk with a demonstrated successful actual native setup before canonical/vector assertions. | TC-078; TC-087; TC-090 |
 | FND-001 | low | High identity/trust-boundary risks have concrete planned mitigations; no unreviewed implementation or unbounded prototype is authorized by this report. | FR-020; FR-021 |
 | FND-002 | low | Shared native-domain registration is externally coordinated and remains an acceptance gate, preventing local producer success from closing FS05. | FR-021; IT-007 |
 
@@ -51,6 +53,23 @@ SR-102's identity/purity/cycle/extension analysis is part of this review set.
 No callback, distributed writer, wall-clock promise or runtime population enters
 the package. The versioned local payload isolates shared adoption changes;
 it does not promise that B already understands the new native canonical domain.
+
+## Admitted source setup correction — 2026-09-09
+
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+installed QUOIN lens, superseding the initial review's header-only positive
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
+
+One nonempty checked model/clause package test already passes while three header-based tests fail in the parser. This discriminates the setup defect from an encoding result and reinforces the no-masked-refusal gate. Other technical/volatility scores and mitigations remain unchanged.
+
+Task-016 began under the original completed review gate. Its initial API-red
+run is followed by a first implementation run with one passing nonempty case
+and three parser setup failures. Further implementation paused for this
+specification correction and all-eight re-review; no parser behavior was
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+No claim of executed full package, schema or canonical-vector qualification is
+made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 
