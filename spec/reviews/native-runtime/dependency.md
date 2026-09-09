@@ -65,3 +65,13 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. Construction tests depend
+on existing IR identity types and the FR-018 public constructors. They do not
+need a CheckedPackage. Model-aware validation still needs FR-015/016 and
+FR-018; evaluation still needs validated input. The existing acyclic order
+FR-018 → FR-007 → FR-008 → IT-006 remains correct. The correction removes an
+accidental test-setup dependency and changes no requirement classification or
+implementation ownership. PASS.

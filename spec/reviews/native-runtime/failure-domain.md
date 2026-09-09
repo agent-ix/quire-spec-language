@@ -59,3 +59,13 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Reviewed the TC-055–057 correction at dc63f337fcdaee1320d221383eca38599239f62c.
+Using structurally constructed inputs preserves the intended trust boundary:
+duplicates and model-invalid shapes survive for later model-aware diagnosis.
+A CheckedPackage supplies no constructor authority. Identity/ref distinctions,
+all-node checks, shared-arena termination and failure atomicity are unchanged.
+There is still no constructor callback, I/O or population truth claim. PASS;
+no additional failure contract is needed for this setup correction.

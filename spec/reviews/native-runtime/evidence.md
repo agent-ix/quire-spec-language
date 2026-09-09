@@ -107,3 +107,17 @@ checks the actual adopted meaning and existing interface boundaries.
 All runtime test rows remain planned. Review approval does not qualify native
 execution, finish LC02/FS03 acceptance or complete the original backend/Quire
 workflow. Implementation changes to this contract reopen specify/review.
+
+## Constructor setup correction — 2026-09-09
+
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. Re-ran the installed
+quoin advise --json and catalog methods --json; complete current outputs are
+reviews/data/native-runtime/input-setup-advice.json and input-setup-methods.json.
+All seven FR-018 records retain Test-class matches with mismatch, uncatalogued
+and inconclusive false. Stable-output additionally recommends golden approval
+for AC-4. Public constructor tests, independent literal bytes/hash and generated
+boundary families serve the unchanged criteria. These inputs need no checked
+model; real model/checker setup remains necessary for TC-058 onward. This
+clarifies the earlier general setup paragraph in this review. The existing NFR
+method judgments stand; no new evidence kind, Loom or fuzz claim is added.
+PASS for the correction; executed qualification is recorded separately.
