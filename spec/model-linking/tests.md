@@ -251,6 +251,6 @@ fix. A native reference cycle terminates with the exact observation requirements
 
 The final default suite passes 110 tests; all three selected private audits pass.
 Strict Clippy in both feature configurations, formatting, minimal build, rustdoc
-and documented CLI/audit commands pass. Task-009 is complete; Task-010 owns the
-final code/Rust review, gap reconciliation and private PR handoff. This does not
+and documented CLI/audit commands pass. Tasks 009/010 are complete with validated
+SR-086/087 and the ready private PR #10 handoff. This does not
 qualify runtime populations, truth, backend projection or Quire integration.

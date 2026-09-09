@@ -7,6 +7,15 @@ description: "Native model/checker lifecycle and evidence."
 
 ## History
 
+- **2026-09-09** — Completed Task-010 and Plan-005 with validated gap report
+  SR-087. All four task statuses and deliverables are complete; TM-003 is
+  35/35 backed with actual execution evidence. The private handoff at PR #10
+  is pushed and ready for review. Final report/status changes contain no code
+  or test changes from qualified cdb6560. Explicit-root final spec/plan/review
+  validation passes. LC02 and the full assignment remain open for the strict
+  package/projection and runtime/backend/Quire work; this milestone is not
+  relabeled as full workflow completion. No hosted CI was dispatched.
+
 - **2026-09-09** — Task-009 is implemented and qualified at cdb6560. SR-086
   records the actual code/Rust review and its PASS disposition. Twenty-four
   checker tests execute all thirteen cases; the full suite passes 110 tests and

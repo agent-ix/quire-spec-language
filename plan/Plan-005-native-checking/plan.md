@@ -2,7 +2,7 @@
 id: Plan-005
 title: "Native model and guarded clause checking"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-006
     type: references
@@ -73,5 +73,6 @@ the handoff deliverable; broader goal completion is not inferred from its merge.
 
 See task frontmatter for ownership, dependencies and exact test traces. This
 bundle has one model task, one checker task, one qualification/handoff task
-and the owner's scoped construction-repair task. Task-011 is complete; the
-remaining tasks continue to own native linking, checking and final handoff.
+and the owner's scoped construction-repair task. All four tasks are complete,
+with SR-083–087 and private PR #10 retaining their qualification and handoff.
+This completes the static-checking milestone, not the full Agent A assignment.
