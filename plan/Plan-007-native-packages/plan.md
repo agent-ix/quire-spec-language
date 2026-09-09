@@ -2,7 +2,7 @@
 id: Plan-007
 title: "Native checked packages and verified reconstruction"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: references
@@ -31,17 +31,17 @@ runtime qualification are done. Existing source/link plans retain their own
 requirements; this bundle adds the new package requirements, without
 duplicating their completed tasks.
 
-- [ ] StR-001: advance exact authored assessment; full backend/Quire outcome remains.
-- [ ] FR-019-AC-1..10: complete immutable package and exact static dependencies.
-- [ ] FR-020-AC-1..11: bounded verified read/rebind, explicit authority and actual compiler reconstruction.
-- [ ] FR-021-AC-1..6: native source-bound static identity, independent vectors and role separation.
-- [ ] NFR-007: all five offered/emitted/string/entry/depth metrics and each pass.
-- [ ] NFR-005: first-party production, assertions, generators and qualification remain Rust.
-- [ ] IT-007-SC-01..08: actual reconstructed package-to-native-runtime workflow.
+- [x] StR-001: native package contribution qualified; the full backend/Quire objective remains LC04/05.
+- [x] FR-019-AC-1..10: complete immutable package and exact static dependencies.
+- [x] FR-020-AC-1..11: bounded verified read/rebind, explicit authority and actual compiler reconstruction.
+- [x] FR-021-AC-1..6: native source-bound static identity, independent vectors and role separation.
+- [x] NFR-007: all five offered/emitted/string/entry/depth metrics and each pass.
+- [x] NFR-005: first-party production, assertions, generators and qualification remain Rust.
+- [x] IT-007-SC-01..08: actual reconstructed package-to-native-runtime workflow.
 
 The criterion enumeration and authoritative test mapping are in
-[TM-005](../../spec/native-packages/tests.md). TC-078/079/080/090 are producer-qualified;
-shared reader/integration rows retain pending status.
+[TM-005](../../spec/native-packages/tests.md). All fourteen package cases and
+all 27 functional criteria now have executed evidence in SR-111/112.
 Review approval establishes the specification gate, not implemented packages,
 schema qualification, independent consumer acceptance or full LC02 closure.
 
@@ -84,15 +84,14 @@ Schema acceptance cannot replace wire/source/constructor validation. Fuzzing
 remains an applicable unexecuted recommendation recorded by SR-105; no fuzz,
 Loom, mutation-adequacy or benchmark result is fabricated.
 
-## Remaining Work
+## Delivery
 
 ### Track A: Critical path, serial
 
 - Task-016 construction and static identity — Done at c195950 / SR-111; independent bytes and complete inventories agree, with measured producer limits. Original estimates and corrective sequence remain in the task/history.
-- Task-017 verified reconstruction — Hard, estimated two to three sessions; gate: real compiler replay rejects forged claims and preserves raw bytes/actual failure stages under every selected limit.
-- Task-018 integration and qualification — Medium, estimated one to two sessions; gate: all reconstructed workflow observations, local regressions, code/Rust review and plan-gap evidence agree at the source revision.
+- Task-017 verified reconstruction — Done at eb97a87 / SR-112; strict intake and real compiler replay preserve authority, original bytes, failure stages and selected limits.
+- Task-018 integration and qualification — Done at eb97a87 / SR-112/113; reconstructed workflows and local gates pass. The gap audit retains the catalog's metric-target limitation.
 
-Effort estimates describe relative work, not promised delivery time.
 A gate failure is fixed before dependent work proceeds; a changed contract
 reopens the specification review. There is one active writer and no parallel
 Cargo phases or additional agents.
@@ -108,8 +107,8 @@ this plan does not schedule their builds or edit their repositories.
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
 | Task-016 | A | FR-019, FR-021, NFR-007, NFR-005 | TC-078–082, TC-088, TC-090–091; producer portions | done |
-| Task-017 | A | FR-020, FR-019, FR-021, NFR-007, NFR-005 | TC-081–088, TC-091; reader portions | not_started |
-| Task-018 | A | FR-019, FR-020, FR-021, NFR-007, NFR-005, IT-007, StR-001 | TC-089 | not_started |
+| Task-017 | A | FR-020, FR-019, FR-021, NFR-007, NFR-005 | TC-081–088, TC-091; reader portions | done |
+| Task-018 | A | FR-019, FR-020, FR-021, NFR-007, NFR-005, IT-007, StR-001 | TC-089 | done |
 
 ## Coordination Rules
 

@@ -7,8 +7,8 @@ type: TestMatrix
 ## Overview
 
 This LC02 slice covers FR-019/020/021, NFR-007 and IT-007. All 27 functional
-criteria have explicit cases. TC-078/079/080/090 are qualified by producer
-source c195950 and SR-111; ten cases retain pending reader/integration portions. Existing TM-001–004
+criteria have explicit cases. All fourteen cases are qualified by the producer evidence in SR-111 and the
+reader/runtime evidence in the PR review. Native payload qualification is complete. Existing TM-001–004
 and qualified native runtime behavior retain their scopes. A planned mapping
 is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 
@@ -18,40 +18,40 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| FR-019 | FR-019-AC-1 | TC-078, TC-089 | ✅ Producer qualified; TC-089 remains pending |
+| FR-019 | FR-019-AC-1 | TC-078, TC-089 | ✅ Qualified |
 | FR-019 | FR-019-AC-2 | TC-078 | ✅ Qualified |
 | FR-019 | FR-019-AC-3 | TC-078 | ✅ Qualified |
 | FR-019 | FR-019-AC-4 | TC-079 | ✅ Qualified |
 | FR-019 | FR-019-AC-5 | TC-080 | ✅ Qualified |
 | FR-019 | FR-019-AC-6 | TC-080 | ✅ Qualified |
-| FR-019 | FR-019-AC-7 | TC-081, TC-089 | 🚧 Planned |
-| FR-019 | FR-019-AC-8 | TC-082 | 🚧 Planned |
-| FR-019 | FR-019-AC-9 | TC-081, TC-082 | 🚧 Planned |
-| FR-019 | FR-019-AC-10 | TC-088 | 🚧 Planned |
-| FR-020 | FR-020-AC-1 | TC-089 | 🚧 Planned |
-| FR-020 | FR-020-AC-2 | TC-083 | 🚧 Planned |
-| FR-020 | FR-020-AC-3 | TC-084 | 🚧 Planned |
-| FR-020 | FR-020-AC-4 | TC-084 | 🚧 Planned |
-| FR-020 | FR-020-AC-5 | TC-085 | 🚧 Planned |
-| FR-020 | FR-020-AC-6 | TC-085 | 🚧 Planned |
-| FR-020 | FR-020-AC-7 | TC-086 | 🚧 Planned |
-| FR-020 | FR-020-AC-8 | TC-087 | 🚧 Planned |
-| FR-020 | FR-020-AC-9 | TC-087, TC-088 | 🚧 Planned |
-| FR-020 | FR-020-AC-10 | TC-082 | 🚧 Planned |
-| FR-020 | FR-020-AC-11 | TC-081, TC-086 | 🚧 Planned |
+| FR-019 | FR-019-AC-7 | TC-081, TC-089 | ✅ Qualified |
+| FR-019 | FR-019-AC-8 | TC-082 | ✅ Qualified |
+| FR-019 | FR-019-AC-9 | TC-081, TC-082 | ✅ Qualified |
+| FR-019 | FR-019-AC-10 | TC-088 | ✅ Qualified |
+| FR-020 | FR-020-AC-1 | TC-089 | ✅ Qualified |
+| FR-020 | FR-020-AC-2 | TC-083 | ✅ Qualified |
+| FR-020 | FR-020-AC-3 | TC-084 | ✅ Qualified |
+| FR-020 | FR-020-AC-4 | TC-084 | ✅ Qualified |
+| FR-020 | FR-020-AC-5 | TC-085 | ✅ Qualified |
+| FR-020 | FR-020-AC-6 | TC-085 | ✅ Qualified |
+| FR-020 | FR-020-AC-7 | TC-086 | ✅ Qualified |
+| FR-020 | FR-020-AC-8 | TC-087 | ✅ Qualified |
+| FR-020 | FR-020-AC-9 | TC-087, TC-088 | ✅ Qualified |
+| FR-020 | FR-020-AC-10 | TC-082 | ✅ Qualified |
+| FR-020 | FR-020-AC-11 | TC-081, TC-086 | ✅ Qualified |
 | FR-021 | FR-021-AC-1 | TC-090 | ✅ Qualified |
-| FR-021 | FR-021-AC-2 | TC-082 | 🚧 Planned |
-| FR-021 | FR-021-AC-3 | TC-091 | 🚧 Planned |
-| FR-021 | FR-021-AC-4 | TC-091 | 🚧 Planned |
-| FR-021 | FR-021-AC-5 | TC-091 | 🚧 Planned |
-| FR-021 | FR-021-AC-6 | TC-088, TC-090 | 🚧 Planned |
+| FR-021 | FR-021-AC-2 | TC-082 | ✅ Qualified |
+| FR-021 | FR-021-AC-3 | TC-091 | ✅ Qualified |
+| FR-021 | FR-021-AC-4 | TC-091 | ✅ Qualified |
+| FR-021 | FR-021-AC-5 | TC-091 | ✅ Qualified |
+| FR-021 | FR-021-AC-6 | TC-088, TC-090 | ✅ Qualified |
 
 ### Non-Functional Requirement Coverage
 
 | Non-Functional Req | Verification Method | Evidence/Test Cases | Status |
 | --- | --- | --- | --- |
-| NFR-007 | Test: negative-abuse-testing | TC-088; offered/emitted bytes, string content, entries, depth, every bounded pass and independent frontend limits | 🚧 Producer passes qualified; reader passes pending |
-| NFR-005 | Inspection and existing Rust gates | Source/dependency/CI review and actual Rust qualification | 🚧 Producer scope qualified; reader/integration pending |
+| NFR-007 | Test: negative-abuse-testing | TC-088; offered/emitted bytes, string content, entries, depth, every bounded pass and independent frontend limits | ✅ All package passes and frontend limits qualified |
+| NFR-005 | Inspection and existing Rust gates | Source/dependency/CI review and actual Rust qualification | ✅ Qualified |
 
 ## Test Case Summary
 
@@ -60,25 +60,25 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 | TC-078 | Retain complete package inventories | Integration | P1 | FR-019-AC-1, FR-019-AC-2, FR-019-AC-3 | ✅ Qualified |
 | TC-079 | Retain package resolutions and obligations | Integration | P1 | FR-019-AC-4 | ✅ Qualified |
 | TC-080 | Bind package semantics and features | Property | P1 | FR-019-AC-5, FR-019-AC-6 | ✅ Qualified |
-| TC-081 | Retain unlowered package projections | Integration | P1 | FR-019-AC-7, FR-019-AC-9, FR-020-AC-11 | 🚧 Planned |
-| TC-082 | Preserve static package byte identity | Property | P1 | FR-019-AC-8, FR-019-AC-9, FR-020-AC-10, FR-021-AC-2 | 🚧 Planned |
-| TC-083 | Reject nonclosed package JSON | Property | P1 | FR-020-AC-2 | 🚧 Planned |
-| TC-084 | Select package versions and features | Property | P1 | FR-020-AC-3, FR-020-AC-4 | 🚧 Planned |
-| TC-085 | Verify package dependencies and authorship | Property | P1 | FR-020-AC-5, FR-020-AC-6 | 🚧 Planned |
-| TC-086 | Reject forged package derivations | Property | P1 | FR-020-AC-7, FR-020-AC-11 | 🚧 Planned |
-| TC-087 | Reconstruct through real compiler stages | Integration | P1 | FR-020-AC-8, FR-020-AC-9 | 🚧 Planned |
-| TC-088 | Bound package passes and retries | Property | P1 | FR-019-AC-10, FR-020-AC-9, FR-021-AC-6 | 🚧 Planned |
-| TC-089 | Qualify native package runtime reconstruction | Integration | P1 | FR-020-AC-1, FR-019-AC-1, FR-019-AC-7 | 🚧 Planned |
+| TC-081 | Retain unlowered package projections | Integration | P1 | FR-019-AC-7, FR-019-AC-9, FR-020-AC-11 | ✅ Qualified |
+| TC-082 | Preserve static package byte identity | Property | P1 | FR-019-AC-8, FR-019-AC-9, FR-020-AC-10, FR-021-AC-2 | ✅ Qualified |
+| TC-083 | Reject nonclosed package JSON | Property | P1 | FR-020-AC-2 | ✅ Qualified |
+| TC-084 | Select package versions and features | Property | P1 | FR-020-AC-3, FR-020-AC-4 | ✅ Qualified |
+| TC-085 | Verify package dependencies and authorship | Property | P1 | FR-020-AC-5, FR-020-AC-6 | ✅ Qualified |
+| TC-086 | Reject forged package derivations | Property | P1 | FR-020-AC-7, FR-020-AC-11 | ✅ Qualified |
+| TC-087 | Reconstruct through real compiler stages | Integration | P1 | FR-020-AC-8, FR-020-AC-9 | ✅ Qualified |
+| TC-088 | Bound package passes and retries | Property | P1 | FR-019-AC-10, FR-020-AC-9, FR-021-AC-6 | ✅ Qualified |
+| TC-089 | Qualify native package runtime reconstruction | Integration | P1 | FR-020-AC-1, FR-019-AC-1, FR-019-AC-7 | ✅ Qualified |
 | TC-090 | Qualify native canonical bytes and domain vectors | Property | P1 | FR-021-AC-1, FR-021-AC-6 | ✅ Qualified |
-| TC-091 | Reject static identity and projection substitutions | Property | P1 | FR-021-AC-3, FR-021-AC-4, FR-021-AC-5 | 🚧 Planned |
+| TC-091 | Reject static identity and projection substitutions | Property | P1 | FR-021-AC-3, FR-021-AC-4, FR-021-AC-5 | ✅ Qualified |
 
 ## Test Matrix Rules
 
 EARS/requirement grammar was run before updating this matrix: all 227 current
 spec documents were grammar-clean using Quire 0.31.0. The initial 218-document
 identity/reader-order check remains historical evidence.
-The six rules below describe planned
-qualification. Tests will use imported bare single-line #[trace(...)] attributes
+The six rules below govern the completed local
+qualification. Tests use imported bare single-line #[trace(...)] attributes
 with minted TC/FR criterion IDs. IT procedure labels and NFR metric ordinals
 are not invented trace IDs.
 
@@ -156,12 +156,11 @@ this explicit assessment of applicable methods.
 
 ## Coverage Gaps
 
-Four producer cases are qualified. Producer portions of TC-081/082/088/091
-and structural portions of TC-083 have evidence, while their reader controls
-remain pending. NFR-007 emitted/string/entry/depth metrics have independent
-producer pass measurements; offered bytes and all recognition/decode/compare/
-frontend-read limits remain unexecuted. SR-111 maps the actual producer
-criteria and retains the NFR metric trace-target discrepancy. Shared-domain
+All fourteen cases have executed Rust evidence. NFR-007's five metrics are
+measured at their actual boundaries, with private controls for coupled maxima
+that cannot be reached through public intake. The PR review maps the reader
+and runtime observations; SR-111 retains the producer evidence. The existing
+NFR metric trace-target discrepancy remains a tooling limitation. Shared-domain
 registration and full interchange acceptance remain open under LC02/FS05.
 Independent B/C consumption,
 LC04 actual lowering/backend parity and LC05 Quire integration remain required.
