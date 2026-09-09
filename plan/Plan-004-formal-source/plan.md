@@ -13,8 +13,8 @@ relationships:
 
 ## Requirements Summary
 
-- [ ] FR-014: explicit immutable correspondence with checked forward/reverse loci.
-- [ ] NFR-005: Rust implementation and qualification; no new dependencies.
+- [x] FR-014: explicit immutable correspondence with checked forward/reverse loci.
+- [x] NFR-005: Rust implementation and qualification; no new dependencies.
 
 This bounded enablement step serves US-002/StR-001. It does not complete the
 broader FR-006 type checker or IT-002 state workflow. QUOIN spec-to-plan follows
@@ -57,7 +57,7 @@ builds before starting. No hosted workflow dispatch is authorized.
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-007 | A | FR-014, NFR-005 | TC-035–039 | in_progress |
+| Task-007 | A | FR-014, NFR-005 | TC-035–039 | done |
 
 ## Coordination Rules
 
