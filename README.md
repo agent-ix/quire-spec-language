@@ -36,8 +36,8 @@ See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
 typed values, finite reference closure, operation captures, population deltas
 and immutable frames. Its constructor-private context retains the checked
 package and immutable input; failed reports retain located defects and fresh
-budget usage. Task-013 remains in progress with 27 passing public API tests;
-its complete review and acceptance qualification are still pending.
+budget usage. Task-013 is qualified at 45ed1b4 by SR-097 with 35 public API tests.
+See [the review](reviews/26-09-09-native-runtime-validation.md) for scope and evidence.
 
 Healthy/violating evaluation, backend projection and Quire integration remain
 downstream work. Construction establishes structure and byte correspondence;
