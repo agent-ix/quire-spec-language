@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: explicit JSON views of local native outcomes and actual provenance.
+//! FR-026/028: explicit JSON views of local native outcomes and actual provenance.
 
 use super::{wire, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
@@ -86,6 +86,26 @@ pub(super) fn error(error: &RunError) -> Value {
             "package",
             e.code.as_str(),
             json!({"stage":e.stage.to_string()}),
+        ),
+        RunCause::SelectedPackage {
+            file,
+            expected,
+            error,
+        } => (
+            "package",
+            error.code.as_str(),
+            json!({
+                "file":file,"expected":{"format":expected.format(),"digest":expected.digest().to_string()},
+                "stage":error.stage.to_string(),
+                "path":error.path.iter().map(|part|match part {
+                    crate::package::PackagePathSegment::Field(name) => json!({"field":name}),
+                    crate::package::PackagePathSegment::Index(index) => json!({"index":index}),
+                }).collect::<Vec<_>>(),
+                "cause":error.cause.as_ref().map(|cause|match cause {
+                    crate::package::PackageCause::Native(value) => diagnostic(value),
+                    crate::package::PackageCause::Json(value) => json!({"line":value.line(),"column":value.column(),"message":value.to_string()}),
+                }),
+            }),
         ),
         RunCause::Input(e) => (
             "input",

@@ -29,6 +29,8 @@ Optional limits lower validation work and evaluation expression steps; omitted
 limits use the existing defaults. Null individual limit values also select those
 defaults; a supplied limits record must be an object. Other stages use their
 current default limits.
+The optional package selection under [FR-028](FR-028-run-selected-native-package.md)
+uses the existing verified reader; omission retains source compilation.
 
 ## Outputs
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: real file-driven native command outcomes and adverse intake.
+//! FR-026/028: real file-driven native command outcomes and adverse intake.
 
 #[path = "support/standalone_setup.rs"]
 mod setup;
@@ -35,6 +35,217 @@ fn save(directory: &Path, value: &Value) {
         serde_json::to_vec_pretty(value).unwrap(),
     )
     .unwrap();
+}
+
+fn exported_job(directory: &Path, case: setup::Case) -> Value {
+    let (mut job, _) = setup::write(directory, case);
+    let export = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("compile")
+        .arg(directory.join("compile.json"))
+        .output()
+        .unwrap();
+    assert_eq!(
+        export.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&export.stderr)
+    );
+    std::fs::write(directory.join("package.json"), &export.stdout).unwrap();
+    job["request"]["package"] =
+        json!({"file":"package.json","digest":ByteDigest::of(&export.stdout).to_string()});
+    save(directory, &job);
+    job
+}
+
+#[test]
+#[trace("TC-106", "FR-028-AC-1")]
+fn selected_exports_reach_real_state_and_operation_outcomes() {
+    for (case, code, truth) in [
+        (setup::Case::Aggregate(2), 0, Some(true)),
+        (setup::Case::Aggregate(1), 1, Some(false)),
+        (setup::Case::Operation(false), 0, Some(true)),
+        (setup::Case::Operation(true), 1, None),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let job = exported_job(directory.path(), case);
+        let (actual, result, stdout) = invoke(directory.path());
+        assert_eq!(actual, code, "{result}");
+        assert!(stdout);
+        assert_eq!(result.get("truth").and_then(Value::as_bool), truth);
+        assert_eq!(
+            result["package"]["digest"],
+            job["request"]["package"]["digest"]
+        );
+        assert_eq!(result["selection"], job["request"]["selection"]);
+        if truth.is_none() {
+            assert_eq!(result["stage"], "validate");
+            assert!(result["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|error| error["code"] == "frame_violation"));
+        }
+    }
+}
+
+#[test]
+#[trace("TC-106", "FR-028-AC-2", "FR-028-AC-4")]
+fn selected_external_layout_retains_its_digest_and_original_runtime_observations() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut job = exported_job(directory.path(), setup::Case::Aggregate(2));
+    let (_, original, _) = invoke(directory.path());
+    let mut alternate = b" \n\t".to_vec();
+    alternate.extend(std::fs::read(directory.path().join("package.json")).unwrap());
+    std::fs::write(directory.path().join("package.json"), &alternate).unwrap();
+    job["request"]["package"]["digest"] = json!(ByteDigest::of(&alternate).to_string());
+    save(directory.path(), &job);
+    let (code, result, _) = invoke(directory.path());
+    assert_eq!(code, 0, "{result}");
+    assert_ne!(result["package"]["digest"], original["package"]["digest"]);
+    assert_eq!(
+        result["package"]["digest"],
+        job["request"]["package"]["digest"]
+    );
+    assert_eq!(
+        result["package"]["canonical_identity"],
+        original["package"]["canonical_identity"]
+    );
+    for field in [
+        "source",
+        "models",
+        "inputs",
+        "selection",
+        "truth",
+        "evaluation_usage",
+        "events",
+    ] {
+        assert_eq!(result[field], original[field], "{field}");
+    }
+    job["request"].as_object_mut().unwrap().remove("package");
+    save(directory.path(), &job);
+    let (code, compiled, _) = invoke(directory.path());
+    assert_eq!(code, 0);
+    assert_eq!(compiled["package"], original["package"]);
+}
+
+#[test]
+#[trace("TC-106", "FR-028-AC-3")]
+fn selected_package_failures_preserve_reader_details_without_compilation_fallback() {
+    for (mutation, stage, code) in [
+        ("stale", "decode", "stale_dependency"),
+        ("forged", "compare", "invalid_package"),
+        ("owner", "rebind", "invalid_model_binding"),
+        ("formal", "rebind", "invalid_model_binding"),
+        ("syntax", "rebind", "invalid_syntax"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut job = exported_job(directory.path(), setup::Case::Aggregate(2));
+        let mut package: Value =
+            serde_json::from_slice(&std::fs::read(directory.path().join("package.json")).unwrap())
+                .unwrap();
+        match mutation {
+            "stale" => {
+                job["request"]["package"]["digest"] = json!(ByteDigest::of(b"foreign").to_string())
+            }
+            "forged" => package["clauses"][0]["runtime"]["universes"] = json!([]),
+            "owner" => job["request"]["program"]["clauses"][0]["owner"]["revision"] = json!(8),
+            "formal" => {
+                job["request"]["program"]["source"]["document"] = json!("ForeignFormalSource")
+            }
+            "syntax" => {
+                let bytes = b"language ?";
+                std::fs::write(directory.path().join("program.native"), bytes).unwrap();
+                let digest = json!(ByteDigest::of(bytes).to_string());
+                job["request"]["program"]["source"]["digest"] = digest.clone();
+                package["source"]["digest"] = digest;
+            }
+            _ => unreachable!(),
+        }
+        if matches!(mutation, "forged" | "syntax") {
+            let bytes = serde_json::to_vec(&package).unwrap();
+            std::fs::write(directory.path().join("package.json"), &bytes).unwrap();
+            job["request"]["package"]["digest"] = json!(ByteDigest::of(&bytes).to_string());
+        }
+        save(directory.path(), &job);
+        let (exit, result, stdout) = invoke(directory.path());
+        assert_eq!(exit, 1, "{result}");
+        assert!(!stdout);
+        assert_eq!(result["stage"], "package");
+        assert_eq!(result["code"], code, "{result}");
+        assert_eq!(result["details"]["stage"], stage);
+        assert_eq!(result["details"]["file"], "package.json");
+        assert_eq!(
+            result["details"]["expected"]["digest"],
+            job["request"]["package"]["digest"]
+        );
+        assert!(result.get("truth").is_none());
+        if mutation == "forged" {
+            assert!(!result["details"]["path"].as_array().unwrap().is_empty());
+        }
+        if mutation == "syntax" {
+            assert_eq!(result["details"]["cause"]["code"], "invalid_syntax");
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let job = exported_job(directory.path(), setup::Case::Aggregate(2));
+    for (selection, expected_code) in [
+        (Value::Null, "invalid-request"),
+        (json!([]), "invalid-request"),
+        (json!({"file":"package.json"}), "invalid-request"),
+        (
+            json!({"file":"package.json","digest":"bad","extra":0}),
+            "invalid-request",
+        ),
+        (
+            json!({"file":"package.json","digest":"bad"}),
+            "invalid-digest",
+        ),
+    ] {
+        let mut malformed = job.clone();
+        malformed["request"]["package"] = selection;
+        save(directory.path(), &malformed);
+        let (exit, result, _) = invoke(directory.path());
+        assert_eq!(exit, 2);
+        assert_eq!(result["code"], expected_code);
+    }
+}
+
+#[test]
+#[trace("TC-106", "FR-028-AC-4")]
+fn selected_package_intake_and_runtime_limits_stop_with_fresh_retry() {
+    let directory = tempfile::tempdir().unwrap();
+    let job = exported_job(directory.path(), setup::Case::Aggregate(2));
+    for limits in [json!({"validation_work":0}), json!({"expression_steps":0})] {
+        let mut stopped = job.clone();
+        stopped["request"]["limits"] = limits;
+        save(directory.path(), &stopped);
+        let (code, result, stdout) = invoke(directory.path());
+        assert_eq!(code, 3, "{result}");
+        assert!(stdout);
+        assert_eq!(result["status"], "incomplete");
+        assert!(result.get("truth").is_none());
+        assert_eq!(
+            result["package"]["digest"],
+            job["request"]["package"]["digest"]
+        );
+    }
+    let mut count = job.clone();
+    count["request"]["snapshots"] = json!(vec![job["request"]["snapshots"][0].clone(); 62]);
+    save(directory.path(), &count);
+    let (code, result, _) = invoke(directory.path());
+    assert_eq!(code, 3);
+    assert_eq!(result["details"]["limit"], "selected files");
+    save(directory.path(), &job);
+    let path = directory.path().join("package.json");
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::write(&path, vec![b' '; 8_388_609]).unwrap();
+    let (code, result, _) = invoke(directory.path());
+    assert_eq!(code, 3);
+    assert_eq!(result["stage"], "intake");
+    std::fs::write(path, bytes).unwrap();
+    let (code, result, _) = invoke(directory.path());
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["truth"], true);
 }
 
 #[test]
