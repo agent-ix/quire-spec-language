@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026/027: closed command records; existing constructors own identifier validity.
+//! FR-026, FR-027, FR-028: closed records; existing constructors own identifier validity.
 
 use crate::checking::ClauseBinding;
 use crate::runtime::{
@@ -30,6 +30,8 @@ pub(super) struct CompileRequest {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Request {
+    #[serde(default, deserialize_with = "selected_package")]
+    pub package: Option<SelectedPackage>,
     #[serde(deserialize_with = "deserialize_objects")]
     pub models: Vec<Model>,
     #[serde(deserialize_with = "from_object")]
@@ -42,6 +44,20 @@ pub(super) struct Request {
     pub selection: Selection,
     #[serde(default, deserialize_with = "from_object")]
     pub limits: Limits,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SelectedPackage {
+    pub file: String,
+    pub digest: String,
+}
+
+// Omission selects compilation; an explicitly supplied value must be an object.
+fn selected_package<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<SelectedPackage>, D::Error> {
+    from_object(decoder).map(Some)
 }
 
 #[derive(Deserialize)]

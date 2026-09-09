@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026/027: local file orchestration around the existing native compiler and runtime.
+//! FR-026, FR-027, FR-028: local file orchestration around the native compiler/runtime.
 
 mod output;
 mod wire;
@@ -8,7 +8,9 @@ use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
 use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
 use crate::native_model::{ModelLimits, NativeModel};
-use crate::package::{NativePackage, PackageError, PackageLimits};
+use crate::package::{
+    NativePackage, NativePackageRef, PackageError, PackageLimits, PackageReadLimits, PackageSupport,
+};
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
@@ -71,6 +73,17 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
+    /// Selected package intake failed against the external source/model authority.
+    #[error("selected package {file}: {error}")]
+    SelectedPackage {
+        /// Original file operand from the request.
+        file: String,
+        /// Expected byte reference, never replaced by observed bytes.
+        expected: NativePackageRef,
+        /// Original typed reader failure, including stage, path, usage and cause.
+        #[source]
+        error: Box<PackageError>,
+    },
     /// Existing selected runtime artifact failure.
     #[error("{0}")]
     Input(#[from] Box<InputReadError>),
@@ -117,7 +130,7 @@ impl RunError {
                     1
                 }
             }
-            RunCause::Package(e) => {
+            RunCause::Package(e) | RunCause::SelectedPackage { error: e, .. } => {
                 if e.code == Code::ResourceExhausted {
                     3
                 } else {
@@ -166,6 +179,36 @@ struct Intake<'a> {
 }
 
 impl Intake<'_> {
+    fn selected_package<'model>(
+        &mut self,
+        selected: &wire::SelectedPackage,
+        program: &wire::Program,
+        models: &'model [NativeModel],
+    ) -> Result<NativePackage<'model>> {
+        let expected = NativePackageRef::new(selected.digest.parse()?);
+        let source = self.source(&program.source)?;
+        let clauses = program
+            .clauses
+            .iter()
+            .map(wire::Binding::bind)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let limits = PackageReadLimits::default();
+        let bytes = self.file(&selected.file, limits.package.artifact_bytes)?;
+        NativePackage::read_verified(
+            &bytes,
+            expected,
+            CheckBindings { source, clauses },
+            models,
+            &PackageSupport::default(),
+            limits,
+        )
+        .map_err(|error| RunCause::SelectedPackage {
+            file: selected.file.clone(),
+            expected,
+            error,
+        })
+    }
+
     fn models(&mut self, selected: &[wire::Model]) -> Result<Vec<NativeModel>> {
         selected
             .iter()
@@ -294,10 +337,14 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
             request.models.len(),
             request.snapshots.len(),
             request.invocations.len(),
+            usize::from(request.package.is_some()),
         ],
     )?;
     let models = intake.models(&request.models)?;
-    let package = intake.package(&request.program, &models)?;
+    let package = match &request.package {
+        Some(selected) => intake.selected_package(selected, &request.program, &models)?,
+        None => intake.package(&request.program, &models)?,
+    };
     let limits = ArtifactLimits::default();
     let snapshots = request
         .snapshots

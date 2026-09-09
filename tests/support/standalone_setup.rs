@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026/027: example file setup through the existing public model/compiler/runtime APIs.
+//! FR-026, FR-027, FR-028: example setup through public model/compiler/runtime APIs.
 
 // The shared fixture module also serves other runtime test targets.
 #[allow(dead_code)]
@@ -113,6 +113,15 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
     )
     .unwrap();
     let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
+    std::fs::write(directory.join("package.json"), package.bytes()).unwrap();
+    let mut selected = job.clone();
+    selected["request"]["package"] =
+        json!({"file":"package.json","digest":package.digest().to_string()});
+    std::fs::write(
+        directory.join("package-run.json"),
+        serde_json::to_vec_pretty(&selected).unwrap(),
+    )
+    .unwrap();
     let compilation = json!({"format":"native-compile/1","request":{
         "models":job["request"]["models"],"program":job["request"]["program"]}});
     std::fs::write(

@@ -28,6 +28,8 @@ adoption and assurance remain explicit acceptance work.
   intake, native execution output and a runnable example while earlier PRs await review.
 - [Task-026](tasks/Task-026-compiler-export.md): source-only command exporting the
   actual native package bytes for existing consumers.
+- [Task-027](tasks/Task-027-selected-package-run.md): verify and execute selected
+  package artifacts with the existing source/model authority and reader.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;

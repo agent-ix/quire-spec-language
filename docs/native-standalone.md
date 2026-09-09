@@ -29,6 +29,7 @@ Each request is a closed JSON envelope with `format: native-run/1` and a
 | program | Source selection and complete authored clause bindings/points |
 | snapshots / invocations | Files and the existing role-specific artifact references |
 | selection | Authored owner/clause and current self object or recorded invocation |
+| package | Optional compiled package file and sha256-prefixed digest; omitted means source compilation |
 | limits | Optional validation_work and expression_steps; omitted values use defaults |
 
 Source digests use `sha256:` text. Runtime references retain their existing raw
@@ -59,3 +60,17 @@ it with explicit source/model bindings and a selected digest. Static failures
 leave stdout empty and use the same command-error JSON/exit convention as run.
 An output I/O failure can leave a partial prefix; exit 2 and digest verification
 distinguish that from a complete artifact. Contract: FR-027; binary tests: TC-105.
+
+The generator also writes `package.json` and `package-run.json` in each case
+directory. Run the latter to verify and execute that selected artifact:
+
+```sh
+target/debug/quire-spec run /tmp/native-workflow-example/healthy/package-run.json
+```
+
+Its request adds `"package": {"file":"package.json","digest":"sha256:…"}`.
+The original program/model source and authored bindings remain required. The
+existing reader reconstructs and checks the package before execution; failed
+verification reports the selected file/digest and original reader details.
+Equivalent JSON layouts retain their own raw digest. The package counts toward
+the same 64-file and 8 MiB total intake limits. Contract: FR-028; tests: TC-106.
