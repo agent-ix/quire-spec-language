@@ -2,7 +2,7 @@
 id: Task-024
 title: "Promote the rule-model frontend for standalone callers"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-025
     type: references
