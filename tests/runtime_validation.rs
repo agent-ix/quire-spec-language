@@ -71,8 +71,21 @@ fn checked_kind<'a>(
             },
         ),
     };
+    let additional_imports: String = models
+        .iter()
+        .skip(1)
+        .enumerate()
+        .map(|(index, model)| {
+            format!(
+                "model N{index} = {} version \"{}\" digest \"{}\";\n",
+                serde_json::to_string(model.environment().owner().package().as_str()).unwrap(),
+                model.environment().owner().revision().get(),
+                model.digest(),
+            )
+        })
+        .collect();
     let text = format!(
-        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n",
+        "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{additional_imports}{keyword} Rule on {context} {{ {expression} }}\n{keyword} Other on {context} {{ true }}\n",
         models[0].digest()
     );
     let unit = parse(

@@ -200,7 +200,11 @@ pub fn parts() -> Parts {
 
 /// Orchestrate source intake, occurrence-aware decoding and typed lowering.
 pub fn from_text(text: &str, path: &str, revision: &str) -> Result<Parts> {
-    let source = bind_source(text, path, revision)?;
+    from_source(bind_source(text, path, revision)?)
+}
+
+/// Lower an explicitly identified original source, including multi-model fixtures.
+pub fn from_source(source: FormalSource) -> Result<Parts> {
     let input = decode_model(&source)?;
     let (environment, roles) = lower_model(input)?;
     Ok(Parts {
