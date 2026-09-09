@@ -17,11 +17,11 @@ specified by IT-005; a setup refusal is not an observed application outcome.
 
 Use IT-005's BoundedCounter formal model constructed through the public IR API.
 Parse the native import selecting its exact reviewed source/import binding;
-resolve the context and value field against the explicit formal environment.
+resolve the context and count field against the explicit formal environment.
 
 ## Expected Results
 
 The import resolves to the selected owner-qualified BoundedCounter record and
-its value field, retaining exact declaration and native occurrence loci. A
+its count field, retaining exact declaration and native occurrence loci. A
 distinct LinkedPackage exists. No Filament reader, object-reference semantics,
 evaluation or backend qualification is inferred from this generic case.

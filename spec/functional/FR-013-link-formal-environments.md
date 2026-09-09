@@ -32,7 +32,7 @@ bytes and opaque identity/revision labels. No numeric revision cast occurs.
 ## Behavior
 
 This profile uses existing IR canonical declaration bytes as its explicit formal
-model artifact. Its package is the owner's package IRI; its version is the exact
+model artifact. Its package is the owner's exact PackageId namespace; its version is the exact
 decimal spelling of the positive IR requirement revision. Its import byte digest
 is SHA-256 of the existing V1 canonical declaration bytes, distinct from IR's
 domain-separated CanonicalDigest. This profile does not reinterpret historical
