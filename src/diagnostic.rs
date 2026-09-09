@@ -17,6 +17,8 @@ pub enum Phase {
     Format,
     /// Extracted-body correspondence validation or mapping.
     SourceMap,
+    /// Exact formal import and native declaration resolution.
+    Link,
 }
 
 impl Phase {
@@ -29,6 +31,7 @@ impl Phase {
             Self::Profile => "profile",
             Self::Format => "format",
             Self::SourceMap => "source_map",
+            Self::Link => "link",
         }
     }
 }
@@ -56,6 +59,16 @@ pub enum Code {
     UnknownProfile,
     /// A selected implementation budget prevented completion.
     ResourceExhausted,
+    /// No supplied formal model matches a required package or alias.
+    MissingImport,
+    /// Selected formal revision or declaration bytes differ from the import.
+    StaleDependency,
+    /// More than one formal candidate supplies the selected declaration.
+    AmbiguousDeclaration,
+    /// A required formal or lexical declaration is absent.
+    MissingDeclaration,
+    /// Import digest, context binding or clause identity is invalid.
+    InvalidModelBinding,
 }
 
 impl Code {
@@ -72,6 +85,11 @@ impl Code {
             Self::UnknownEdition => "unknown_edition",
             Self::UnknownProfile => "unknown_profile",
             Self::ResourceExhausted => "resource_exhausted",
+            Self::MissingImport => "missing_import",
+            Self::StaleDependency => "stale_dependency",
+            Self::AmbiguousDeclaration => "ambiguous_declaration",
+            Self::MissingDeclaration => "missing_declaration",
+            Self::InvalidModelBinding => "invalid_model_binding",
         }
     }
 
@@ -88,6 +106,11 @@ impl Code {
             Self::UnknownEdition,
             Self::UnknownProfile,
             Self::ResourceExhausted,
+            Self::MissingImport,
+            Self::StaleDependency,
+            Self::AmbiguousDeclaration,
+            Self::MissingDeclaration,
+            Self::InvalidModelBinding,
         ]
     }
 
@@ -121,6 +144,10 @@ pub struct Diagnostic {
     pub span: LocatedSpan,
     /// Contextual human-readable explanation; code carries stable classification.
     pub message: String,
+    /// Related formal declarations, sorted by identity and source location.
+    pub related: Vec<crate::linking::DeclarationLocation>,
+    /// Structured upstream formal diagnostic, when that operation failed.
+    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
 }
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
@@ -157,5 +184,7 @@ pub(crate) fn error(
             .locate(Span { start, end })
             .expect("internal offsets are UTF-8 boundaries"),
         message: message.into(),
+        related: Vec::new(),
+        upstream: None,
     })
 }

@@ -87,6 +87,8 @@ impl Parser {
             path: self.source.path().into(),
             span: self.source.locate(span).expect("parser span"),
             message: message.into(),
+            related: Vec::new(),
+            upstream: None,
         })
     }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {

@@ -143,4 +143,83 @@ build. Quire now binds 41/41 test symbols, 28/28 native ACs and TM-002's 9/9
 cases. This supersedes the earlier native trace debt, while preserving its
 historical reports. The catalog status-header conflict remains visible;
 the final plan audit records its scoped disposition before private landing.
-Linking/typechecking and accepted FS02/FS03/FS05 contracts remain future work.
+At that readiness review, linking/typechecking and FS02/FS03/FS05 adoption
+remained future work. The later adoption below supersedes the decision status.
+
+## LC02 internal adoption and evidence design — 2026-09-08
+
+The owner adopted specification PR8 at
+e897f810a7356d4ce8fd19026221ebda7b65596f for internal implementation.
+The specification repository records that decision in commit 609790e.
+Compiler PR7 merged at 2be73504edff1224d6396da15edca3775905d37b;
+LR02 research issue #58 is closed with the Rust audit implementation and evidence.
+
+LC02's IT-005, TM-003 and TC-020–029 cover the existing ten FR-005/006
+acceptance criteria. SR-030–037 record the retained base plus seven analyses.
+The cases remain planned: Quire reports TM-003 0/10 backed and the existing
+41/41 Rust test symbols bound. No new runtime execution is claimed.
+The actual shared typed-model/reference interface and qualified rule-model
+realization remain prerequisites; A will specify its concrete native API and
+resource limits against that shared interface before implementation.
+Broader FS acceptance, independent B/C adoption and publication remain separate.
+
+## Current ownership correction — 2026-09-08
+
+The owner clarified that the retired contract-agent-core's remaining work was
+already reassigned to quire-agent-a/b/c, and indicated that quire-agent-c
+largely assumed that track. The separate contract-agent-c still owns tl-*.
+A's earlier request for a transfer from the retired agent was based on stale
+records and is withdrawn. IR #54 belongs in the current A/B/C work allocation,
+with its concrete inherited-track claim coordinated through quire-agent-c.
+The private CO01 handoff requests that claim and the adapter specification/API.
+It does not assert that C has begun implementation merely because A posted it.
+
+This corrects work ownership only. The adopted semantics, IT-005 prerequisites,
+ten planned LC02 cases and SR-030–037 technical findings are unchanged. Actual
+adapter availability still requires code and qualification evidence; it is no
+longer described as a dependency on the retired core session.
+
+## IR #54 resolution — 2026-09-08
+
+C landed Contract IR PR61 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f and
+closed #54. Accepted ADR-0054 removes the incorrect universal Filament-model
+reader dependency. FR-005, IT-005, TM-003 and TC-020–024 now describe native
+resolution over public formal declarations. The existing FR-013/019/023 APIs
+are the integration target; no external #54 delivery remains outstanding.
+
+The native request/result API, resource policy and concrete source/revision
+correspondence are A's next specification/implementation work. The selected
+object-reference/state case remains required by the full goal, with its narrow
+semantic mapping owned by A rather than inferred from generated datatypes.
+Earlier conditional reviews are historical and are superseded for the adapter
+prerequisite by the new boundary reviews; no planned TC is marked executed.
+
+IR FR-019 and NFR-005 record Rust 1.98.1; ADR-0055 remains marked proposed at
+the merged revision and the actual IR Cargo/toolchain files have not migrated.
+Native compatibility runs explicitly select +1.98.1. They do not silently
+reattribute older 1.94.1 results or claim upstream policy implementation.
+
+## Native formal linker qualification — 2026-09-08
+
+FR-013's concrete API was specified at c78792a and reviewed through all eight
+QUOIN analyses at 8dc6b48 before implementation. The fixture corrections at
+ecaf4cf use the actual IR PackageId namespace and nonreserved native count
+field; all eight retained reviews re-evaluated that correction at 01e597d.
+The initial setup failures are explicitly retained in the implementation review.
+
+The actual Rust library now borrows exact IR environments and retains the owned
+source, scoped declarations and typed formal provenance. Ten public linker tests
+qualify TC-020–024/030–034; 48 default tests and three private audit tests pass
+on Rust 1.98.1, alongside strict Clippy and rustdoc. Code::all now includes the
+five specified linkage codes, and the legacy error propagation test checks
+empty related/upstream context. No CLI linking/typing/evaluation is implied.
+
+Actual Quire coverage reports FR-005 5/5, FR-013 6/6 and TM-003 10/15 backed.
+FR-006's five cases remain planned. Current catalog diagnostics also identify
+uncatalogued historical NFR methods and broad property shapes; the global
+coverage rollup does not qualify those methods or complete the full workflow.
+
+Specification PR8 has separately merged at 8ab058b, with the B consumer handoff
+posted. The compiler does not wait on B's complete reader or closed IR #54.
+After the owner's resource report, all Cargo checks use one job, tests use one
+thread, and build/check phases run serially at low process priority.
