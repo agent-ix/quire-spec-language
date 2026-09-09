@@ -11,8 +11,10 @@ relationships:
 ## Description
 
 Property, priority P1. Verifies FR-018-AC-3, FR-018-AC-4, FR-018-AC-7. Planned until actual Rust
-execution. Setup uses qualified public model/checker APIs; unrelated setup
-failure cannot stand in for the intended phase's outcome.
+execution. Setup uses the public runtime input constructors and existing IR
+identity types. Construction precedes model-aware validation and needs no
+CheckedPackage. Unrelated setup failure cannot stand in for the intended
+construction outcome.
 
 ## Test Procedure
 
