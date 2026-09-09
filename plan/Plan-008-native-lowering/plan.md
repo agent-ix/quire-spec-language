@@ -35,3 +35,13 @@ builds. No additional agents or hosted CI. Optional semantic review is declined.
 [TM-006](../../spec/native-lowering/tests.md) maps the criteria. Unsupported
 clauses must reach lowering after valid native checking. Tests cover identity,
 complete populations, observation mapping, limits and real generated execution.
+
+## Deferred follow-ups
+
+A retains the two low findings carried forward by
+[SR-115](../../reviews/26-09-09-lc04-hard-limit-remediation-rereview.md):
+
+- SR-114 FND-002: qualify hosted-CI timing/caching before enabling cloud runs;
+  retain manual dispatch and the ten-minute cost cap while testing stays local.
+- SR-114 FND-003: automate dependency-inventory verification before distribution;
+  the current 140-entry inventory was verified, but has no automated gate.
