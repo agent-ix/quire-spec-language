@@ -18,7 +18,8 @@ relationships:
 ## Scope
 
 Resolve all four demonstrated/supported architecture findings in SR-074 before
-continuing native model implementation. Contract a350754 has all eight actual
+qualification handoff. Apply the repair first, then complete its producer
+qualification with Task-008's actual NativeModel API. Contract a350754 has all eight actual
 selected reviews, SR-075–082. This task is added under QUOIN spec-to-plan.
 
 ## Subtasks
@@ -33,6 +34,10 @@ selected reviews, SR-075–082. This task is added under QUOIN spec-to-plan.
 
 Corrected Rust helpers, traced TC-054, preserved linker/audit behavior and evidence.
 Missing NativeModel/checker APIs remain explicit ongoing Task-008/009 work.
+
+Producer qualification consumes Task-008's real model API. Task-008 and this
+repair therefore share the final Task-010 gate; an artificial Task-011-before-
+Task-008 completion dependency would create a cycle. Work remains serial.
 
 ## Notes
 

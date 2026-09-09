@@ -8,6 +8,7 @@ pub mod formal_source;
 pub mod format;
 mod lexer;
 pub mod linking;
+pub mod native_model;
 mod parser;
 pub mod source;
 pub mod source_map;

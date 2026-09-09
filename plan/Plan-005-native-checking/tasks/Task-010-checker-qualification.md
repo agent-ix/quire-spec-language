@@ -6,6 +6,8 @@ status: pending
 track: A
 priority: P1
 relationships:
+  - target: ix://agent-ix/quire-spec-language/Task-011
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/Task-009
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-006
@@ -40,4 +42,3 @@ private PR. Merge only when ready under existing owner authorization.
 
 This task does not close the full native runtime/backend/Quire objective.
 No hosted CI dispatch or additional agents are authorized.
-
