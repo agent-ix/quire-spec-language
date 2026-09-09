@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Integration, priority P1. Verifies FR-019-AC-1, FR-019-AC-2, FR-019-AC-3. Planned; no implementation or execution is claimed. Setup uses actual admitted models and compiler APIs before the target boundary.
+Integration, priority P1. Verifies FR-019-AC-1, FR-019-AC-2, FR-019-AC-3. Qualified at c195950; SR-111 records actual evidence. Setup uses actual admitted models and compiler APIs before the target boundary.
 
 ## Test Procedure
 

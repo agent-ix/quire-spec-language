@@ -2,7 +2,7 @@
 id: Task-016
 title: "Construct complete native packages and static identities"
 type: Task
-status: in_progress
+status: done
 track: A
 priority: P1
 relationships:
@@ -43,14 +43,14 @@ cases; readback/refusal portions remain pending until Task-017.
 
 ## Subtasks
 
-- [ ] Author independent canonical-content/complete-manifest fixtures and public Rust assertions before the producer API; retain the genuine missing-API/failing result.
+- [x] Retain the genuine pre-API failure and independently authored canonical-content/complete-manifest fixtures and public Rust assertions. Corrected positive fixtures follow the first producer under the reviewed 2c6b9b8/1c3aa50 correction; preserve that actual sequence.
 - [x] Introduce focused package modules for the typed manifest, bounded traversal/encoding, error/usage records and role-specific public package/reference/identity types.
-- [ ] Derive complete source, model, authored clause, occurrence and runtime inventories from actual retained inputs, including the minimum admitted unit, multiple aliases and unused selected declarations. Empty source inventories are adverse parser inputs, not successful setup.
+- [x] Derive complete source, model, authored clause, occurrence and runtime inventories from actual retained inputs, including the minimum admitted unit, multiple aliases and unused selected declarations. Empty source inventories are adverse parser inputs, not successful setup.
 - [x] Derive the exact feature set with exhaustive source/operator/type mapping and cycle-safe model identity visits; do not infer semantics from carrier spelling.
-- [ ] Encode the native domain-separated canonical bytes and final artifact, with distinct pass counters, exact integers/Unicode, full projected inventories and excluded display/runtime/projection metadata as specified.
-- [ ] Qualify production byte/string/entry/depth limits, unchanged caller inputs, static mutations and repeated construction. Leave impossible coupled maxima explicitly unqualified rather than fabricating passing public paths.
+- [x] Encode the native domain-separated canonical bytes and final artifact, with distinct pass counters, exact integers/Unicode, full projected inventories and excluded display/runtime/projection metadata as specified.
+- [x] Qualify production byte/string/entry/depth limits, unchanged caller inputs, static mutations and repeated construction. Leave impossible coupled maxima explicitly unqualified rather than fabricating passing public paths.
 - [x] Record selected Rust dependency features/licenses; keep production and qualification in Rust. Compile the selected structural schema locally against producer fixtures when its reviewed development dependency is added.
-- [ ] Run focused producer tests, actual local code/Rust review and relevant existing regression checks; fix findings before reader work depends on this implementation.
+- [x] Run focused producer tests, actual local code/Rust review and relevant existing regression checks; fix findings before reader work depends on this implementation.
 
 ## Deliverables
 
@@ -79,10 +79,13 @@ invariant/pre/post manifests plus missing/unknown/type/selector controls.
 These follow the initial producer; the original pre-API and failed-setup
 history is retained, not retroactively marked as successful prior fixtures.
 
-Before this task closes: complete lexical/parameter/result/transitive
-correspondence and static-dependency mutations; exercise runtime-independent
-identity and type-role controls; resolve the implementation review's remaining
-findings. Shared reader cases stay planned.
+Source c195950 completes lexical/parameter/result/transitive correspondence,
+static-dependency mutations, runtime-independent bytes/identity and type-role
+controls. SR-111 records the passing producer gate: 25 public package tests,
+five private package controls, 232 ordinary regression tests, three compile-fail
+doctests, three selected private audits and the actual required local checks.
+TC-078/079/080/090 are qualified; shared reader cases stay planned. Task-017
+may now consume the producer and existing private manifest/encoding primitives.
 The complete regression is green after updating the explicit code vocabulary
 count from 26 to 29 for the three reviewed package codes. Trace inspection also
 requires recording the installed tool's multiline-marker and NFR metric-binding

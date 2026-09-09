@@ -40,7 +40,8 @@ duplicating their completed tasks.
 - [ ] IT-007-SC-01..08: actual reconstructed package-to-native-runtime workflow.
 
 The criterion enumeration and authoritative test mapping are in
-[TM-005](../../spec/native-packages/tests.md). Every row remains Planned.
+[TM-005](../../spec/native-packages/tests.md). TC-078/079/080/090 are producer-qualified;
+shared reader/integration rows retain pending status.
 Review approval establishes the specification gate, not implemented packages,
 schema qualification, independent consumer acceptance or full LC02 closure.
 
@@ -87,7 +88,7 @@ Loom, mutation-adequacy or benchmark result is fabricated.
 
 ### Track A: Critical path, serial
 
-- Task-016 construction and static identity — Hard, estimated two to three sessions; gate: independent bytes and complete inventories agree, with measured producer limits, before the reader depends on them.
+- Task-016 construction and static identity — Done at c195950 / SR-111; independent bytes and complete inventories agree, with measured producer limits. Original estimates and corrective sequence remain in the task/history.
 - Task-017 verified reconstruction — Hard, estimated two to three sessions; gate: real compiler replay rejects forged claims and preserves raw bytes/actual failure stages under every selected limit.
 - Task-018 integration and qualification — Medium, estimated one to two sessions; gate: all reconstructed workflow observations, local regressions, code/Rust review and plan-gap evidence agree at the source revision.
 
@@ -106,7 +107,7 @@ this plan does not schedule their builds or edit their repositories.
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-016 | A | FR-019, FR-021, NFR-007, NFR-005 | TC-078–082, TC-088, TC-090–091; producer portions | in_progress |
+| Task-016 | A | FR-019, FR-021, NFR-007, NFR-005 | TC-078–082, TC-088, TC-090–091; producer portions | done |
 | Task-017 | A | FR-020, FR-019, FR-021, NFR-007, NFR-005 | TC-081–088, TC-091; reader portions | not_started |
 | Task-018 | A | FR-019, FR-020, FR-021, NFR-007, NFR-005, IT-007, StR-001 | TC-089 | not_started |
 
