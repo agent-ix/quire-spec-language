@@ -50,7 +50,7 @@ impl EvaluationLimits {
 }
 
 /// Work admitted during this call; earlier runs and validation contribute nothing.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct EvaluationUsage {
     /// Entered non-Group expression nodes.
     pub expression_steps: usize,

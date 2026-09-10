@@ -10,12 +10,13 @@ review_set: all
 
 Compile selects its envelope profile before reading request fields and shares the existing bounded file/digest intake. All model/static stages finish before stdout writing, so intake/static refusal emits no artifact. The contract explicitly distinguishes a later stdout I/O failure, which can leave a partial prefix and requires consumer digest verification. Compilation has no runtime population, network, callback supplied by a user or shared mutable request state.
 
-Author PR-readiness review of `d1de2a4` with the owner-selected all set.
+Author PR-readiness review of `f0cfe7b` with the owner-selected all set.
 No applicable AssuranceProfile was found; review timing follows the owner directive.
+
+Named file groups are charged before file I/O; selected request types own their admitted format. The real /dev/full control exits 2. BrokenPipe retains the documented quiet-exit policy; other output errors cannot report success.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No issues found | FR-027; TC-105 |
-

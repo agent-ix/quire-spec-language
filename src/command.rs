@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028, FR-029: local native compiler/runtime orchestration.
+//! FR-026/027: local file orchestration around the existing native compiler and runtime.
 
+mod compilation;
 mod output;
+mod projection_error;
 mod wire;
 
-use crate::checking::{check, CheckBindings, CheckLimits};
+pub use output::NativeResult;
+pub use projection_error::{ProjectionLocation, ProjectionSource};
+
 use crate::formal_source::FormalSource;
-use crate::lowering::{self, LoweringCode, LoweringError, LoweringLimits};
-use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
-use crate::native_model::{ModelLimits, NativeModel};
-use crate::package::{
-    NativePackage, NativePackageRef, PackageError, PackageLimits, PackageReadLimits, PackageSupport,
-};
+use crate::lowering::{self, LoweringError, LoweringLimits};
+use crate::model_source::ModelSourceError;
+use crate::package::{NativePackage, NativePackageRef, PackageError};
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
 use crate::serde_object::Object;
-use crate::{ByteDigest, Code, Diagnostic, Limits, Source, SourceIdentity};
+use crate::{ByteDigest, Code, Diagnostic, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use std::{
     fs::File,
@@ -29,17 +30,90 @@ const REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_BYTES: usize = 8_388_608;
 const FILES: usize = 64;
 
+/// Selected file category charged by command preflight.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum FileCategory {
+    /// Native program source.
+    Program,
+    /// Rule-model sources.
+    Model,
+    /// Snapshot artifacts.
+    Snapshot,
+    /// Invocation artifacts.
+    Invocation,
+    /// Selected compiled package artifacts.
+    Package,
+}
+
+impl FileCategory {
+    /// Stable category spelling in native intake diagnostics.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Program => "programs",
+            Self::Model => "models",
+            Self::Snapshot => "snapshots",
+            Self::Invocation => "invocations",
+            Self::Package => "packages",
+        }
+    }
+}
+
+struct FileCounts {
+    programs: usize,
+    models: usize,
+    snapshots: usize,
+    invocations: usize,
+    packages: usize,
+}
+
+/// Command intake ceiling that stopped selected-file processing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum LimitKind {
+    /// Per-file or remaining aggregate byte ceiling.
+    FileBytes,
+    /// Total selected file count.
+    SelectedFiles {
+        /// Group that could not be charged.
+        category: FileCategory,
+        /// Files requested by the group.
+        requested: usize,
+        /// Remaining slots before this group.
+        remaining: usize,
+        /// Effective total file ceiling.
+        maximum: usize,
+    },
+}
+
+impl LimitKind {
+    /// Stable field spelling retained for native result compatibility.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FileBytes => "file bytes",
+            Self::SelectedFiles { .. } => "selected files",
+        }
+    }
+}
+
+impl std::fmt::Display for LimitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// JSON result of the local command, distinct from a portable evidence envelope.
 #[derive(Debug)]
 pub struct RunResult {
     /// 0 completed true, 1 completed false/refused, or 3 incomplete.
     pub exit_code: u8,
     /// Structured native-run-result/1 observations.
-    pub value: serde_json::Value,
+    pub value: NativeResult,
 }
 
 /// Original intake failure, without recovering typed data from display messages.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RunCause {
     /// Local file could not be opened or read.
     #[error("cannot read {path}: {error}")]
@@ -53,12 +127,15 @@ pub enum RunCause {
     /// Closed request decoding failed.
     #[error("invalid request: {0}")]
     Json(#[from] serde_json::Error),
+    /// Typed output serialization failed.
+    #[error("cannot serialize native result: {0}")]
+    Output(#[source] serde_json::Error),
     /// Request format was not selected.
     #[error("unsupported native command format")]
     Format,
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
-    Limit(&'static str),
+    Limit(LimitKind),
     /// Selected digest spelling is invalid.
     #[error("{0}")]
     Digest(#[from] crate::digest::InvalidDigest),
@@ -74,25 +151,27 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
-    /// Existing lowering failure, retained with the native authority it refers to.
+    /// Original lowering failure and its resolved native source context.
     #[error("{error}")]
     Lowering {
-        /// Exact native artifact from which the projection was requested.
+        /// Exact native package selected for projection.
         package: NativePackageRef,
-        /// Original formal/program source for interpreting the native byte span.
-        program: FormalSource,
-        /// Original lowering classification, authored clause and IR diagnostics.
+        /// Program provenance without retained source text.
+        program: Box<ProjectionSource>,
+        /// Source coordinates resolved while the selected program was available.
+        location: ProjectionLocation,
+        /// Original classification, authored clause and IR diagnostics.
         #[source]
         error: Box<LoweringError>,
     },
-    /// Selected package intake failed against the external source/model authority.
+    /// The selected package failed its verified reader; source compilation is not a fallback.
     #[error("selected package {file}: {error}")]
     SelectedPackage {
-        /// Original file operand from the request.
+        /// Request-selected package file.
         file: String,
-        /// Expected byte reference, never replaced by observed bytes.
+        /// Exact expected package byte reference.
         expected: NativePackageRef,
-        /// Original typed reader failure, including stage, path, usage and cause.
+        /// Original reader failure.
         #[source]
         error: Box<PackageError>,
     },
@@ -104,6 +183,56 @@ pub enum RunCause {
 impl From<ir::Diagnostic> for RunCause {
     fn from(value: ir::Diagnostic) -> Self {
         Self::Identifier(value)
+    }
+}
+
+impl RunCause {
+    /// Stable catalogued code for this cause, independent of its display message.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Io { .. } => Code::IoError,
+            Self::Json(_) => Code::InvalidRequest,
+            Self::Output(_) => Code::OutputFailure,
+            Self::Format => Code::UnknownWire,
+            Self::Limit(_) => Code::ResourceExhausted,
+            Self::Digest(_) => Code::InvalidDigest,
+            Self::Identifier(_) => Code::InvalidIdentifier,
+            Self::Native(error) => error.code,
+            Self::Model(error) => error.code(),
+            Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
+            Self::Input(error) => error.code,
+            Self::Lowering { error, .. } => error.code.code(),
+        }
+    }
+
+    /// Whether the retained cause prevented completion.
+    pub fn is_incomplete(&self) -> bool {
+        self.code().is_incomplete()
+    }
+
+    /// Native command exit status, with usage/I/O distinct from refusal.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::Io { .. }
+            | Self::Json(_)
+            | Self::Output(_)
+            | Self::Digest(_)
+            | Self::Identifier(_) => 2,
+            Self::Format
+            | Self::Limit(_)
+            | Self::Native(_)
+            | Self::Model(_)
+            | Self::Package(_)
+            | Self::SelectedPackage { .. }
+            | Self::Lowering { .. }
+            | Self::Input(_) => {
+                if self.is_incomplete() {
+                    3
+                } else {
+                    1
+                }
+            }
+        }
     }
 }
 
@@ -119,54 +248,13 @@ pub struct RunError {
 }
 
 impl RunError {
-    /// Existing usage/refusal/incomplete exit convention.
+    /// Existing usage/refusal/incomplete exit convention, derived from the cause.
     pub fn exit_code(&self) -> u8 {
-        match &self.cause {
-            RunCause::Io { .. }
-            | RunCause::Json(_)
-            | RunCause::Digest(_)
-            | RunCause::Identifier(_) => 2,
-            RunCause::Limit(_) => 3,
-            RunCause::Format => 1,
-            RunCause::Lowering { error, .. } => match error.code {
-                LoweringCode::ResourceExhausted => 3,
-                LoweringCode::Unsupported
-                | LoweringCode::Binding
-                | LoweringCode::InvalidCorrespondence => 1,
-            },
-            RunCause::Native(e) => {
-                if e.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-            RunCause::Model(e) => {
-                if e.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-            RunCause::Package(e) | RunCause::SelectedPackage { error: e, .. } => {
-                if e.code == Code::ResourceExhausted {
-                    3
-                } else {
-                    1
-                }
-            }
-            RunCause::Input(e) => {
-                if e.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-        }
+        self.cause.exit_code()
     }
 
     /// JSON error with original stage/code and available source/reference details.
-    pub fn value(&self) -> serde_json::Value {
+    pub fn value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
         output::error(self)
     }
 }
@@ -186,7 +274,7 @@ fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>> {
         error,
     })?;
     if bytes.len() > limit {
-        return Err(RunCause::Limit("file bytes"));
+        return Err(RunCause::Limit(LimitKind::FileBytes));
     }
     Ok(bytes)
 }
@@ -197,70 +285,6 @@ struct Intake<'a> {
 }
 
 impl Intake<'_> {
-    fn selected_package<'model>(
-        &mut self,
-        selected: &wire::SelectedPackage,
-        program: &wire::Program,
-        models: &'model [NativeModel],
-    ) -> Result<NativePackage<'model>> {
-        let expected = NativePackageRef::new(selected.digest.parse()?);
-        let source = self.source(&program.source)?;
-        let clauses = program
-            .clauses
-            .iter()
-            .map(wire::Binding::bind)
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let limits = PackageReadLimits::default();
-        let bytes = self.file(&selected.file, limits.package.artifact_bytes)?;
-        NativePackage::read_verified(
-            &bytes,
-            expected,
-            CheckBindings { source, clauses },
-            models,
-            &PackageSupport::default(),
-            limits,
-        )
-        .map_err(|error| RunCause::SelectedPackage {
-            file: selected.file.clone(),
-            expected,
-            error,
-        })
-    }
-
-    fn models(&mut self, selected: &[wire::Model]) -> Result<Vec<NativeModel>> {
-        selected
-            .iter()
-            .map(|selected| {
-                let source = self.source(&selected.source)?;
-                Ok(
-                    model_source::read(source, &selected.format, ModelSourceLimits::default())?
-                        .admit(ModelLimits::default())?,
-                )
-            })
-            .collect()
-    }
-
-    fn package<'model>(
-        &mut self,
-        program: &wire::Program,
-        models: &'model [NativeModel],
-    ) -> Result<NativePackage<'model>> {
-        let source = self.source(&program.source)?;
-        let unit = crate::parse_source(source.source().clone(), Limits::default())?;
-        let linked = crate::link_native(unit, models, crate::LinkLimits::default())?;
-        let clauses = program
-            .clauses
-            .iter()
-            .map(wire::Binding::bind)
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let checked = check(
-            linked,
-            CheckBindings { source, clauses },
-            CheckLimits::default(),
-        )?;
-        Ok(NativePackage::new(checked, PackageLimits::default())?)
-    }
-
     fn file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
         let bytes = read_file(&self.directory.join(path), ceiling.min(self.remaining))?;
         self.remaining -= bytes.len();
@@ -299,16 +323,20 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     compile_with(path, |package| Ok(package.bytes().to_vec()))
 }
 
-/// Compile native-compile/1 source files and export the existing Boolean IR projection.
+/// Compile native-compile/1 sources and export the existing Boolean IR projection.
 /// Unsupported clauses refuse the complete export; no runtime inputs are needed.
 pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     compile_with(path, |package| {
         lowering::lower(package, LoweringLimits::default())
             .map(|projection| projection.bytes().to_vec())
-            .map_err(|error| RunCause::Lowering {
-                package: NativePackageRef::new(package.digest()),
-                program: package.checked().bindings().source.clone(),
-                error,
+            .map_err(|error| {
+                let program = &package.checked().bindings().source;
+                RunCause::Lowering {
+                    package: NativePackageRef::new(package.digest()),
+                    program: Box::new(program.into()),
+                    location: ProjectionLocation::resolve(program.source(), error.source),
+                    error,
+                }
             })
     })
 }
@@ -318,10 +346,19 @@ fn compile_with(
     export: impl FnOnce(&NativePackage<'_>) -> Result<Vec<u8>>,
 ) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes, _digest| {
-        let request: wire::CompileRequest = request(bytes, "native-compile/1")?;
-        let mut intake = intake(directory, &[request.models.len()])?;
-        let models = intake.models(&request.models)?;
-        let package = intake.package(&request.program, &models)?;
+        let request: wire::CompileRequest = request(bytes)?;
+        let mut intake = intake(
+            directory,
+            FileCounts {
+                programs: 1,
+                models: request.models.len(),
+                snapshots: 0,
+                invocations: 0,
+                packages: 0,
+            },
+        )?;
+        let models = compilation::models(&mut intake, &request.models)?;
+        let package = compilation::package(&mut intake, &request.program, &models)?;
         export(&package)
     })
 }
@@ -346,22 +383,38 @@ fn with_request<T>(
     })
 }
 
-fn request<T: serde::de::DeserializeOwned>(bytes: &[u8], format: &str) -> Result<T> {
+fn request<T: wire::RequestKind>(bytes: &[u8]) -> Result<T> {
     let Object(envelope): Object<wire::Envelope<'_>> = serde_json::from_slice(bytes)?;
-    if envelope.format != format {
+    if envelope.format != T::FORMAT.as_str() {
         return Err(RunCause::Format);
     }
     let Object(request) = serde_json::from_str(envelope.request.get())?;
     Ok(request)
 }
 
-fn intake<'a>(directory: &'a Path, counts: &[usize]) -> Result<Intake<'a>> {
-    let mut remaining_files = FILES - 1; // The selected native program also counts.
-    for &count in counts {
+fn check_file_count(counts: FileCounts) -> Result<()> {
+    let mut remaining_files = FILES;
+    for (category, requested) in [
+        (FileCategory::Program, counts.programs),
+        (FileCategory::Model, counts.models),
+        (FileCategory::Snapshot, counts.snapshots),
+        (FileCategory::Invocation, counts.invocations),
+        (FileCategory::Package, counts.packages),
+    ] {
         remaining_files = remaining_files
-            .checked_sub(count)
-            .ok_or(RunCause::Limit("selected files"))?;
+            .checked_sub(requested)
+            .ok_or(RunCause::Limit(LimitKind::SelectedFiles {
+                category,
+                requested,
+                remaining: remaining_files,
+                maximum: FILES,
+            }))?;
     }
+    Ok(())
+}
+
+fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
     Ok(Intake {
         directory,
         remaining: TOTAL_BYTES,
@@ -369,20 +422,23 @@ fn intake<'a>(directory: &'a Path, counts: &[usize]) -> Result<Intake<'a>> {
 }
 
 fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
-    let request: wire::Request = request(bytes, "native-run/1")?;
+    let request: wire::Request = request(bytes)?;
     let mut intake = intake(
         directory,
-        &[
-            request.models.len(),
-            request.snapshots.len(),
-            request.invocations.len(),
-            usize::from(request.package.is_some()),
-        ],
+        FileCounts {
+            programs: 1,
+            models: request.models.len(),
+            snapshots: request.snapshots.len(),
+            invocations: request.invocations.len(),
+            packages: usize::from(request.package.is_some()),
+        },
     )?;
-    let models = intake.models(&request.models)?;
+    let models = compilation::models(&mut intake, &request.models)?;
     let package = match &request.package {
-        Some(selected) => intake.selected_package(selected, &request.program, &models)?,
-        None => intake.package(&request.program, &models)?,
+        Some(selected) => {
+            compilation::selected_package(&mut intake, selected, &request.program, &models)?
+        }
+        None => compilation::package(&mut intake, &request.program, &models)?,
     };
     let limits = ArtifactLimits::default();
     let snapshots = request
@@ -427,5 +483,5 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         limits,
         || false,
     );
-    Ok(output::report(digest, &request.selection, &models, &report))
+    output::report(digest, &request.selection, &models, &report)
 }

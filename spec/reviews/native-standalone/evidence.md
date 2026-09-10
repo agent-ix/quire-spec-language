@@ -10,12 +10,13 @@ review_set: all
 
 quoin advise --json was attempted and again failed CLI-version detection with installed quire 0.31.0. The fetched installed methods catalog supplies integration-testing/e2e-testing for AC-1/2/5 and negative-abuse-testing for AC-3/4; those Test choices are author judgment. Tests launch the actual binary and inspect identities, truth, stage, counters/events and negative exits. Separately generated on-disk examples were executed from /tmp. Further fuzz/mutation/complete boundary campaigns remain later assurance.
 
-Author PR-readiness review of `5ee5eba` using the owner-selected all set.
+Author PR-readiness re-review of `d7437e2` using the owner-selected all set.
 No applicable AssuranceProfile was found. Reviews occur at PR readiness.
+
+The 14-test focused suite includes schema validation on real binary outputs, malformed-schema controls, cancelled package adaptation, arity checks and absolute/parent-relative paths. Full tests passed before the final package accessor and immutable wrapper; focused tests and strict Clippy passed after them. Advisor version discovery remains unavailable.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Advisor version detection is unavailable; method choices are author judgment. | FR-026; TC-103; TC-104 |
-
