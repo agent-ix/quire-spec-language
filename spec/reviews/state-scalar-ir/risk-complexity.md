@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Reviewed implementation/spec revision `401edc4c378701e3e108303df334be4629cb8cb0`
+Reviewed implementation/spec revision `b789eed`
 at PR readiness, using the owner's selected all-set. No applicable AssuranceProfile.
 
 Assessed the new requirement's technical and contract-change risk. The main hazards are collapsing pre/post reads, alias collision and materializing against another package; discriminating integration tests cover each. There is no added concurrency, service, dependency or latency guarantee.

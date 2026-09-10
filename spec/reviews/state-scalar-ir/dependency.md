@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Reviewed implementation/spec revision `401edc4c378701e3e108303df334be4629cb8cb0`
+Reviewed implementation/spec revision `b789eed`
 at PR readiness, using the owner's selected all-set. No applicable AssuranceProfile.
 
 FR-034 is a compiler feature consuming implemented lowering, native validation and the concrete model. Prerequisites are acyclic and present in the stack. C's numeric generation and deferred activation qualification are later consumers/assurance work, not implementation prerequisites for this scoped delivery.

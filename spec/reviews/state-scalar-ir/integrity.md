@@ -8,10 +8,14 @@ review_set: all
 ---
 ## Summary
 
-Reviewed implementation/spec revision `401edc4c378701e3e108303df334be4629cb8cb0`
+Reviewed implementation/spec revision `b789eed`
 at PR readiness, using the owner's selected all-set. No applicable AssuranceProfile.
 
 Traceability is US-004 → StR-001, FR-034 → US-004, TC-112 → FR-034, and TM-006 → all five ACs. The single feature is a validated state-scalar projection with its required inputs. Explicit target selection avoids contradicting FR-033's field/pre refusals. No external CLI lookup, pagination, authentication or hidden backend fallback is introduced.
+
+Public target, read-origin and stop-code enums are non-exhaustive. Direct State
+and Input materialization uses an exhaustive match. The one target catalog
+supplies the state-scalar spelling alongside the earlier targets.
 
 ## Findings
 
