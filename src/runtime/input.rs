@@ -11,7 +11,7 @@ use crate::serde_object::{
 use crate::{ByteDigest, Code, SourceIdentity};
 
 /// One version shared by native input construction and reading.
-pub(super) const FORMAT: &str = "native-state-input/1";
+pub(super) const FORMAT: &str = crate::wire_format::WireFormat::RuntimeInput.as_str();
 
 /// Artifact-local arena index; it carries no model or cross-artifact identity.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]

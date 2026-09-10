@@ -32,7 +32,7 @@ pub enum EntryKind {
 }
 
 /// Explicit authoring profile for the existing rule-model JSON syntax.
-pub const FORMAT: &str = "native-rule-model/1";
+pub const FORMAT: &str = crate::wire_format::WireFormat::RuleModel.as_str();
 
 /// Inclusive frontend limits, independently clamped to their defaults.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

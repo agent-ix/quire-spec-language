@@ -31,6 +31,7 @@ pub mod source;
 pub mod source_map;
 pub mod syntax;
 mod token;
+pub mod wire_format;
 
 pub use diagnostic::{Code, Diagnostic, Phase};
 pub use digest::ByteDigest;

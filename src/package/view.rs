@@ -14,7 +14,7 @@ use crate::checking::{CheckedPackage, RuntimeRequirements, UniverseRequirement};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget, ResolvedOccurrence};
 use crate::{ByteDigest, Span};
 
-pub(super) const FORMAT: &str = "native-linked-package/1";
+pub(super) const FORMAT: &str = crate::wire_format::WireFormat::LinkedPackage.as_str();
 
 #[derive(Serialize)]
 pub(super) struct Definition {
