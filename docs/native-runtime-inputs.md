@@ -141,6 +141,15 @@ representations; numeric payloads preserve signed i64 values. No unordered map
 controls the order of emitted fields or entries. These emitted bytes are a native
 domain payload; external-reader acceptance is governed by FR-024.
 
+The local [Draft 2020-12 schema](../schemas/native-state-input-1.schema.json)
+describes both envelope kinds and their closed record/value shapes. It admits
+representable numeric values and explicit null results, preserving duplicate
+vector occurrences. It validates parsed JSON data; the original-byte reader
+still rejects duplicate keys, noncanonical numeric tokens, stale selections
+and invalid arena references. Schema validation cannot recover precision that
+a caller's JSON parser already discarded. Artifact byte/work bounds and actual
+model-aware validation remain separate stages.
+
 Artifact construction checks nonempty identity/revision labels, bounded values,
 metadata entries, content and arena depth; duplicate fields/objects remain in
 their vectors for the model-aware validator to diagnose rather than disappear
