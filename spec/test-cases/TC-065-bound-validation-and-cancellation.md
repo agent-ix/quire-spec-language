@@ -17,6 +17,10 @@ failure cannot stand in for the intended phase's outcome.
 
 Generate valid inventories, selected populations, shared arenas, Unicode comparisons and many independent defects. Exercise every ValidationLimits counter at measured exact, one below and zero and hard-limit clamping. Include unselected inventory bytes versus selected object work. Poll deterministic cancellation before work and during loops. In a test-only catch_unwind boundary, make the caller poll panic, then run a fresh valid request.
 
+Shared Unicode input uses two 200-element sequence levels: 40,000 logical text
+occurrences with individually admitted declarations. It must still reach the
+8,388,608-step Unicode ceiling; the separate work case must reach 1,000,000.
+
 ## Expected Results
 
 Exhaustion/cancellation returns actual usage and diagnostics without excess charged work or a context. Valid inputs may complete with zero unused counters or zero diagnostic capacity. Panic unwinds without a successful result or poisoned global state. No sleeps or timing claims are used.
