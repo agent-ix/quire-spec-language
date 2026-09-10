@@ -10,6 +10,19 @@ use quire_contract_ir as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+/// The selected request shape owns its admitted envelope format.
+pub(super) trait RequestKind: serde::de::DeserializeOwned {
+    const FORMAT: crate::wire_format::WireFormat;
+}
+
+impl RequestKind for Request {
+    const FORMAT: crate::wire_format::WireFormat = crate::wire_format::WireFormat::RunRequest;
+}
+
+impl RequestKind for CompileRequest {
+    const FORMAT: crate::wire_format::WireFormat = crate::wire_format::WireFormat::CompileRequest;
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Envelope<'a> {

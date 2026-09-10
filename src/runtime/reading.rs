@@ -22,18 +22,86 @@ pub enum InputReadStage {
     Construction,
 }
 
+impl InputReadStage {
+    /// Stable phase spelling for native read diagnostics.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Selection => "selection",
+            Self::Envelope => "envelope",
+            Self::Body => "body",
+            Self::Construction => "construction",
+        }
+    }
+}
+
+impl std::fmt::Display for InputReadStage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// Original read failure, without recovering fields from a formatted message.
 #[derive(Debug, thiserror::Error)]
 pub enum InputReadCause {
-    /// Failed byte, version, kind or identity selection.
+    /// Input bytes exceeded the effective clamped ceiling, before hashing.
+    #[error("native input byte limit exceeded")]
+    ByteLimit {
+        /// Original input byte length.
+        actual: usize,
+        /// Effective caller-lowered or implementation ceiling.
+        maximum: usize,
+    },
+    /// Computed input digest differs from the separately retained selected reference.
+    #[error("selected digest differs from input bytes")]
+    DigestMismatch {
+        /// Digest of the actual input bytes.
+        actual: ByteDigest,
+    },
+    /// Envelope version differs from the admitted native input format.
+    #[error("native input version is not admitted")]
+    Version {
+        /// Original version spelling, without normalization.
+        actual: String,
+    },
+    /// Envelope artifact kind differs from the selected reader's role.
+    #[error("native input artifact kind differs")]
+    ArtifactKind {
+        /// Role selected by the snapshot or invocation reader.
+        expected: &'static str,
+        /// Original kind spelling.
+        actual: String,
+    },
+    /// Envelope identity differs from the separately retained selected reference.
+    #[error("selected identity differs from envelope")]
+    Identity {
+        /// Original identity decoded from the envelope.
+        actual: SourceIdentity,
+    },
+    /// Original envelope JSON error; coordinates refer to the full input.
     #[error("{0}")]
-    Selection(&'static str),
-    /// Original Serde failure; line/column refer to the stated decode stage.
+    Envelope(#[source] serde_json::Error),
+    /// Original body JSON error; coordinates refer to the raw body slice.
     #[error("{0}")]
-    Json(#[from] serde_json::Error),
+    Body(#[source] serde_json::Error),
     /// Original structural error, including draft path and construction usage.
     #[error("{0}")]
     Construction(#[from] Box<InputError>),
+}
+
+impl InputReadCause {
+    fn classification(&self) -> (InputReadStage, Code) {
+        match self {
+            Self::ByteLimit { .. } => (InputReadStage::Selection, Code::ResourceExhausted),
+            Self::DigestMismatch { .. } => (InputReadStage::Selection, Code::StaleDependency),
+            Self::Version { .. } => (InputReadStage::Envelope, Code::UnknownWire),
+            Self::ArtifactKind { .. } | Self::Envelope(_) => {
+                (InputReadStage::Envelope, Code::InvalidRuntimeInput)
+            }
+            Self::Identity { .. } => (InputReadStage::Envelope, Code::StaleDependency),
+            Self::Body(_) => (InputReadStage::Body, Code::InvalidRuntimeInput),
+            Self::Construction(error) => (InputReadStage::Construction, error.code),
+        }
+    }
 }
 
 /// Failed input read retaining the selected role, identity and digest.
@@ -74,55 +142,8 @@ pub(super) fn read<T: Body + DeserializeOwned>(
     bytes: &[u8],
     limits: ArtifactLimits,
 ) -> Result<Artifact<T>, Box<InputReadError>> {
-    let mut stage = InputReadStage::Selection;
-    let mut code = Code::ResourceExhausted;
-    let mut read = || -> Result<Artifact<T>, InputReadCause> {
-        if bytes.len() > limits.bounded().artifact_bytes {
-            return Err(InputReadCause::Selection(
-                "native input byte limit exceeded",
-            ));
-        }
-        code = Code::StaleDependency;
-        let digest = ByteDigest::of(bytes);
-        if digest != expected.digest() {
-            return Err(InputReadCause::Selection(
-                "selected digest differs from input bytes",
-            ));
-        }
-        stage = InputReadStage::Envelope;
-        code = Code::InvalidRuntimeInput;
-        let Object(envelope): Object<Envelope<'_>> = serde_json::from_slice(bytes)?;
-        if envelope.version != "native-state-input/1" {
-            code = Code::UnknownWire;
-            return Err(InputReadCause::Selection(
-                "native input version is not admitted",
-            ));
-        }
-        if envelope.kind != T::KIND {
-            return Err(InputReadCause::Selection(
-                "native input artifact kind differs",
-            ));
-        }
-        if &envelope.identity != expected.identity() {
-            code = Code::StaleDependency;
-            return Err(InputReadCause::Selection(
-                "selected identity differs from envelope",
-            ));
-        }
-        stage = InputReadStage::Body;
-        let Object(draft): Object<T> = serde_json::from_str(envelope.body.get())?;
-        stage = InputReadStage::Construction;
-        let mut artifact = Artifact::new(envelope.identity, draft, limits).map_err(|error| {
-            code = error.code;
-            InputReadCause::Construction(error)
-        })?;
-        // Construction counters describe that actual pass. Retained bytes and
-        // digest describe this read's external artifact, including its layout.
-        artifact.bytes = bytes.to_vec();
-        artifact.digest = digest;
-        Ok(artifact)
-    };
-    read().map_err(|cause| {
+    read_selected(&expected, bytes, limits).map_err(|cause| {
+        let (stage, code) = cause.classification();
         Box::new(InputReadError {
             code,
             expected,
@@ -130,4 +151,45 @@ pub(super) fn read<T: Body + DeserializeOwned>(
             cause,
         })
     })
+}
+
+fn read_selected<T: Body + DeserializeOwned>(
+    expected: &RuntimeReference,
+    bytes: &[u8],
+    limits: ArtifactLimits,
+) -> Result<Artifact<T>, InputReadCause> {
+    let maximum = limits.bounded().artifact_bytes;
+    if bytes.len() > maximum {
+        return Err(InputReadCause::ByteLimit {
+            actual: bytes.len(),
+            maximum,
+        });
+    }
+    let digest = ByteDigest::of(bytes);
+    if digest != expected.digest() {
+        return Err(InputReadCause::DigestMismatch { actual: digest });
+    }
+    // Preserve Serde's default recursion limit on both untrusted decode phases.
+    let Object(envelope): Object<Envelope<'_>> =
+        serde_json::from_slice(bytes).map_err(InputReadCause::Envelope)?;
+    if envelope.version != super::input::FORMAT {
+        return Err(InputReadCause::Version {
+            actual: envelope.version,
+        });
+    }
+    if envelope.kind != T::KIND {
+        return Err(InputReadCause::ArtifactKind {
+            expected: T::KIND,
+            actual: envelope.kind,
+        });
+    }
+    if &envelope.identity != expected.identity() {
+        return Err(InputReadCause::Identity {
+            actual: envelope.identity,
+        });
+    }
+    let Object(draft): Object<T> =
+        serde_json::from_str(envelope.body.get()).map_err(InputReadCause::Body)?;
+    Artifact::from_external(envelope.identity, draft, bytes, digest, limits)
+        .map_err(InputReadCause::Construction)
 }
