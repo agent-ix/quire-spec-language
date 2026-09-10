@@ -580,10 +580,10 @@ fn result_schema_rejects_missing_fields_and_truth_on_refusals() {
 }
 
 #[test]
-#[trace("TC-103", "FR-026-AC-5")]
+#[trace("TC-103", "FR-026-AC-5", "TC-106", "FR-028-AC-1")]
 fn absolute_and_parent_relative_operands_keep_selected_bytes() {
     let directory = tempfile::tempdir().unwrap();
-    let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2));
+    let job = exported_job(directory.path(), setup::Case::Aggregate(2));
     let child = directory.path().join("requests");
     std::fs::create_dir(&child).unwrap();
     for absolute in [true, false] {
@@ -592,6 +592,7 @@ fn absolute_and_parent_relative_operands_keep_selected_bytes() {
             "/request/models/0/source/file",
             "/request/program/source/file",
             "/request/snapshots/0/file",
+            "/request/package/file",
         ] {
             let selected = changed.pointer(pointer).unwrap().as_str().unwrap();
             let path = if absolute {
@@ -606,6 +607,10 @@ fn absolute_and_parent_relative_operands_keep_selected_bytes() {
         assert_eq!(code, 0, "{result}");
         assert!(stdout);
         assert_eq!(result["truth"], true);
+        assert_eq!(
+            result["package"]["digest"],
+            job["request"]["package"]["digest"]
+        );
         assert_eq!(
             result["source"]["digest"],
             job["request"]["program"]["source"]["digest"]
