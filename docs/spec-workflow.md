@@ -1,5 +1,10 @@
 # Quoin specification workflow status
 
+The sections below retain their historical revisions and run evidence. For
+current matrix status interpretation and the verified candidate tool/module
+stack, see [matrix status checks](matrix-status.md). Bound tags, classified
+statuses and executed tests are separate observations.
+
 ## LC02 native package review — 2026-09-09
 
 The [native package specification](../spec/native-packages/index.md) is authored
