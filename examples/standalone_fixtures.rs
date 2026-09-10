@@ -14,16 +14,31 @@ fn main() {
     for (name, case) in [
         ("healthy", setup::Case::Aggregate(2)),
         ("violating", setup::Case::Aggregate(1)),
-        ("operation", setup::Case::Operation(false)),
-        ("refused", setup::Case::Operation(true)),
-        ("boolean", setup::Case::Boolean(true)),
+        (
+            "operation",
+            setup::Case::Operation {
+                violate_frame: false,
+            },
+        ),
+        (
+            "refused",
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+        ),
+        ("boolean", setup::Case::Boolean { flag: true }),
     ] {
         setup::write(&directory.join(name), case);
     }
     for (name, case) in [
         ("markdown-healthy", setup::Case::Aggregate(2)),
         ("markdown-violating", setup::Case::Aggregate(1)),
-        ("markdown-refused", setup::Case::Operation(true)),
+        (
+            "markdown-refused",
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+        ),
     ] {
         setup::write_extracted(&directory.join(name), case, true);
     }

@@ -10,12 +10,13 @@ review_set: all
 
 Acyclic order: FR-025 source frontend and existing parse/link/check/package capabilities → FR-026 compilation; FR-024 runtime byte intake → FR-023 execution → FR-026 result. All enablement exists in this PR stack; FR-026 is the standalone feature. C's Quire extraction adoption and generated activation qualification are downstream integration/assurance work, not command implementation dependencies.
 
-Author PR-readiness review of `5ee5eba` using the owner-selected all set.
+Author PR-readiness re-review of `d7437e2` using the owner-selected all set.
 No applicable AssuranceProfile was found. Reviews occur at PR readiness.
+
+The correction uses existing Serde/jsonschema dependencies. It establishes the command parser and output boundary that later compile/lower/extraction branches must adopt; it introduces no producer prerequisite.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No issues found | FR-026; TC-103; TC-104 |
-

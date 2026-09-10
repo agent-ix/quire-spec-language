@@ -10,6 +10,19 @@ use quire_contract_ir as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+/// The selected request shape owns its admitted envelope format.
+pub(super) trait RequestKind: serde::de::DeserializeOwned {
+    const FORMAT: crate::wire_format::WireFormat;
+}
+
+impl RequestKind for Request {
+    const FORMAT: crate::wire_format::WireFormat = crate::wire_format::WireFormat::RunRequest;
+}
+
+impl RequestKind for CompileRequest {
+    const FORMAT: crate::wire_format::WireFormat = crate::wire_format::WireFormat::CompileRequest;
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Envelope<'a> {
@@ -64,11 +77,9 @@ fn selected_package<'de, D: serde::Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceFile {
     pub file: String,
-    pub identity: String,
-    pub revision: String,
     pub digest: String,
-    pub document: String,
-    pub formal_revision: u64,
+    #[serde(flatten)]
+    pub identity: Identity,
 }
 
 #[derive(Deserialize)]
@@ -96,7 +107,7 @@ pub(super) struct Program {
 #[serde(deny_unknown_fields)]
 pub(super) struct Extraction {
     #[serde(deserialize_with = "from_object")]
-    pub body: BodyIdentity,
+    pub body: Identity,
 }
 
 #[cfg(feature = "quire-extraction")]
@@ -106,14 +117,28 @@ fn extraction<'de, D: serde::Deserializer<'de>>(
     from_object(decoder).map(Some)
 }
 
-#[cfg(feature = "quire-extraction")]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct BodyIdentity {
+pub(super) struct Identity {
     pub identity: String,
     pub revision: String,
     pub document: String,
     pub formal_revision: u64,
+}
+
+impl Identity {
+    pub fn bind(&self) -> Result<crate::formal_source::SourceIdentities, ir::Diagnostic> {
+        Ok(crate::formal_source::SourceIdentities {
+            native: crate::SourceIdentity {
+                identity: self.identity.clone(),
+                revision: self.revision.clone(),
+            },
+            formal: ir::SourceIdentity::new(
+                ir::SourceDocumentId::new(&self.document)?,
+                ir::SourceRevision::new(self.formal_revision)?,
+            ),
+        })
+    }
 }
 
 #[derive(Deserialize)]
