@@ -95,6 +95,12 @@ bytes, while `usage()` describes the actual constructor pass. InputReadError
 retains the expected reference, failed stage and original JSON/structural cause.
 No reader opens files or starts runtime evaluation.
 
+Each public draft, record, reference and value-node type owns these Serde shape
+checks for direct and nested decoding. No caller-supplied object adapter is
+needed. Direct decoding still produces a draft: it does not establish artifact
+limits or model validity. An invocation `result` must be present, with `null`
+representing no result; digest fields require bare lowercase 64-digit hex.
+
 Encoding uses serde_json's exact integer/string encoding and declared struct
 field order, with no extra whitespace or terminal newline. Sequences, flat arena
 node order and all explicit input vectors retain their order in these byte
