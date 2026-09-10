@@ -4,6 +4,8 @@
 mod output;
 mod wire;
 
+pub use output::NativeResult;
+
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
 use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
@@ -58,7 +60,7 @@ pub struct RunResult {
     /// 0 completed true, 1 completed false/refused, or 3 incomplete.
     pub exit_code: u8,
     /// Structured native-run-result/1 observations.
-    pub value: serde_json::Value,
+    pub value: NativeResult,
 }
 
 /// Original intake failure, without recovering typed data from display messages.
