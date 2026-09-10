@@ -230,3 +230,20 @@ fn projection_export_reuses_source_request_refusals_and_intake_limits() {
         );
     }
 }
+
+#[test]
+#[trace("TC-107", "FR-029-AC-3")]
+fn lower_arity_refuses_before_opening_a_request() {
+    for arguments in [vec!["lower"], vec!["lower", "missing.json", "extra"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            std::str::from_utf8(&output.stderr).unwrap(),
+            "usage: quire-spec lower <request-file>\n"
+        );
+    }
+}

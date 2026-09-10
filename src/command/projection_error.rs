@@ -92,4 +92,80 @@ mod tests {
         );
         assert_eq!((span.end.byte, span.end.line, span.end.column), (7, 2, 5));
     }
+
+    #[test]
+    #[trace("TC-107", "FR-029-AC-2")]
+    fn lowering_error_wire_keeps_catalog_codes_and_location_status() {
+        use crate::command::{RunCause, RunError};
+        use crate::lowering::{LoweringCode, LoweringError};
+        use crate::package::NativePackageRef;
+        let source = Source::read(
+            SourceIdentity {
+                identity: "test:lowering".into(),
+                revision: "1".into(),
+            },
+            "program.native",
+            b"true",
+            1024,
+        )
+        .unwrap();
+        let formal = FormalSource::new(
+            source,
+            ir::SourceIdentity::new(
+                ir::SourceDocumentId::new("Program").unwrap(),
+                ir::SourceRevision::new(1).unwrap(),
+            ),
+        );
+        for (code, expected_code, exit) in [
+            (LoweringCode::Unsupported, "unsupported_projection", 1),
+            (LoweringCode::ResourceExhausted, "resource_exhausted", 3),
+            (LoweringCode::Binding, "projection_binding", 1),
+            (
+                LoweringCode::InvalidCorrespondence,
+                "invalid_projection_correspondence",
+                1,
+            ),
+        ] {
+            for (span, expected_status) in [
+                (None, "absent"),
+                (Some(Span { start: 0, end: 9 }), "invalid"),
+            ] {
+                let error = RunError {
+                    request_digest: Some(ByteDigest::of(b"request")),
+                    cause: RunCause::Lowering {
+                        package: NativePackageRef::new(ByteDigest::of(b"package")),
+                        program: (&formal).into(),
+                        location: ProjectionLocation::resolve(formal.source(), span),
+                        error: Box::new(LoweringError {
+                            code,
+                            clause: None,
+                            source: span,
+                            message: "controlled lowering adapter failure".into(),
+                            upstream: vec![],
+                        }),
+                    },
+                };
+                assert_eq!(error.exit_code(), exit);
+                let value = error.value().unwrap();
+                assert_eq!(value["stage"], "lower");
+                assert_eq!(value["code"], expected_code);
+                assert_eq!(crate::Code::from_code(expected_code), Some(code.code()));
+                assert_eq!(value["details"]["source"]["identity"], "test:lowering");
+                assert_eq!(
+                    value["details"]["source"]["digest"],
+                    ByteDigest::of(b"true").to_string()
+                );
+                assert_eq!(value["details"]["span_status"], expected_status);
+                assert!(value["details"]["span"].is_null());
+                match span {
+                    Some(span) => assert_eq!(
+                        value["details"]["unmapped_span"],
+                        serde_json::json!({"start":span.start,"end":span.end})
+                    ),
+                    None => assert!(value["details"].get("unmapped_span").is_none()),
+                }
+                assert!(value.get("truth").is_none());
+            }
+        }
+    }
 }
