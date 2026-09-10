@@ -51,6 +51,24 @@ pub(super) trait Body: Serialize {
 }
 
 impl<T: Body> Artifact<T> {
+    /// Adopt an externally decoded body after the reader verified its byte digest.
+    /// Usage describes the actual constructor pass; retained bytes preserve the
+    /// caller's accepted layout rather than the constructor's normalized encoding.
+    pub fn from_external(
+        identity: SourceIdentity,
+        draft: T,
+        bytes: &[u8],
+        digest: ByteDigest,
+        limits: ArtifactLimits,
+    ) -> std::result::Result<Self, Box<InputError>> {
+        let constructed = Self::new(identity, draft, limits)?;
+        Ok(Self {
+            bytes: bytes.to_vec(),
+            digest,
+            ..constructed
+        })
+    }
+
     pub fn new(
         identity: SourceIdentity,
         draft: T,
@@ -381,7 +399,7 @@ impl Budget {
             body: &'a T,
         }
         let envelope = Envelope {
-            version: "native-state-input/1",
+            version: input::FORMAT,
             kind: T::KIND,
             identity,
             body: draft,
