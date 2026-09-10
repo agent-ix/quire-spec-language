@@ -102,6 +102,34 @@ invented for that criterion.
 | TC-052 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | ✅ Passed |
 | TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | ✅ Passed |
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
+| TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | 🚧 Planned |
+| TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Planned |
+| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 Planned |
+
+## Composed language admission (L2)
+
+These criteria are planned under compiler #35. Historical passed rows above do
+not qualify the new edition or package boundary. The cases use typed outputs and
+independent source/model selections; no parser success stands in for checking or
+execution. [IT-009](../integration/IT-009-composed-package-boundary.md) requires the
+real producer and cannot pass from a model-shaped mock.
+
+| Functional Req | Acceptance Criteria | Test Cases | Status |
+| --- | --- | --- | --- |
+| FR-035 | FR-035-AC-1 | TC-113 | 🚧 Planned |
+| FR-035 | FR-035-AC-2 | TC-113 | 🚧 Planned |
+| FR-035 | FR-035-AC-3 | TC-113 | 🚧 Planned |
+| FR-035 | FR-035-AC-4 | TC-113 | 🚧 Planned |
+| FR-035 | FR-035-AC-5 | TC-113 | 🚧 Planned |
+| FR-035 | FR-035-AC-6 | TC-113 | 🚧 Planned |
+| FR-036 | FR-036-AC-1 | TC-114 | 🚧 Planned |
+| FR-036 | FR-036-AC-2 | TC-114 | 🚧 Planned |
+| FR-036 | FR-036-AC-3 | TC-114 | 🚧 Planned |
+| FR-036 | FR-036-AC-4 | TC-114 | 🚧 Planned |
+| FR-036 | FR-036-AC-5 | TC-115 | 🚧 Planned |
+| FR-036 | FR-036-AC-6 | TC-115 | 🚧 Planned |
+| FR-036 | FR-036-AC-7 | TC-114 | 🚧 Planned |
+| FR-036 | FR-036-AC-8 | TC-115 | 🚧 Planned |
 
 ## Six coverage rules
 
