@@ -14,7 +14,8 @@ its primitive inputs through actual native validation and the strict IR readers.
 ## Test Procedure
 
 Compare bound pre/post references, exact model/source/field correspondence and
-collision-safe aliases. Materialize unchanged and changed native inputs and
+collision-safe aliases, requiring the expected field and direct-read counts
+before inspecting filtered observations. Materialize unchanged and changed native inputs and
 inspect their provenance. Exercise direct state/captured parameters, selection,
 mismatched context, frame refusal, excluded forms, exact limits, cancellation
 and fresh retries. Export the checked-in example using the actual command.

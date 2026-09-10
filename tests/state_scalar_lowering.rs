@@ -307,10 +307,14 @@ fn aliases_do_not_collide_and_direct_reads_keep_state_and_parameter_origins() {
             ClauseKind::Postcondition,
         );
         let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
-        assert!(projection
+        let fields: Vec<_> = projection
             .reads()
             .iter()
             .filter(|read| read.origin == ProjectedReadOrigin::SelfField)
+            .collect();
+        assert_eq!(fields.len(), 2);
+        assert!(fields
+            .iter()
             .all(|read| read.name.as_str() == "nativeField1"));
         let mut draft = setup::draft(&models[0]);
         if !input_kind {
@@ -353,11 +357,20 @@ fn aliases_do_not_collide_and_direct_reads_keep_state_and_parameter_origins() {
             .inputs(&context, InputProjectionLimits::default(), || false)
             .unwrap();
         assert_eq!(inputs.inputs().len(), 4);
-        for input in inputs
+        let direct: Vec<_> = inputs
             .inputs()
             .iter()
             .filter(|input| input.object().is_none())
-        {
+            .collect();
+        assert_eq!(direct.len(), 2);
+        assert_eq!(
+            direct
+                .iter()
+                .map(|input| input.read().name.as_str())
+                .collect::<Vec<_>>(),
+            ["flag", "nativeField0"]
+        );
+        for input in direct {
             let flag = input.read().name.as_str() == "flag";
             assert_eq!(
                 input.value(),
