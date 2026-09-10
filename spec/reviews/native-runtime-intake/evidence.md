@@ -10,8 +10,10 @@ review_set: all
 
 Five integration tests establish exact round trips, every value variant, malformed fields, real stage causes, lowered limits and execution of reread inputs. Quoin advisor remains unavailable on the already-observed CLI-version discovery failure. Author judgment selects catalog integration/negative Test methods for these concrete byte-boundary obligations; no advisor recommendation is claimed.
 
-Author PR-readiness review of `67c68da`, after implementation as directed.
+Author PR-readiness re-review of `0016103`, after implementation as directed.
 Selected set: all. No applicable AssuranceProfile was found.
+
+The repeated local suite passed 278 tests and three compile-fail doctests. Variant assertions now distinguish refusals that formerly shared one Selection message payload.
 
 ## Findings
 

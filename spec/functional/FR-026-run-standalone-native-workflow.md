@@ -25,6 +25,8 @@ selection. Each source selects file, native identity/revision, SHA-256 digest an
 formal document/revision. Runtime selections use the existing typed references.
 Relative paths resolve against the request's directory; absolute paths remain
 valid local file operands. Source display paths retain the authored file string.
+Parent-relative components are also admitted local operands; the command does
+not establish a tenant filesystem boundary.
 Optional limits lower validation work and evaluation expression steps; omitted
 limits use the existing defaults. Null individual limit values also select those
 defaults; a supplied limits record must be an object. Other stages use their
@@ -43,6 +45,9 @@ stage/code and relevant original source/reference details. Existing parse/format
 commands preserve their behavior. Broken pipes end quietly with the computed
 status. This output is a local native result, not a
 portable verification envelope or assurance claim.
+Serialized results are constructed from typed status/stage payloads; incomplete
+or refused payloads cannot carry truth. Command error spellings belong to the
+native code catalog. Resource causes distinguish file-byte and file-count limits.
 
 ## Behavior
 
@@ -56,6 +61,10 @@ The command shall use the existing source frontend, admission, parser, linker,
 checker, package constructor and runtime execute APIs.
 The command shall preserve refused and incomplete stage outcomes without truth.
 The command shall begin each invocation with fresh budgets.
+The CLI shall parse its command and operands once before I/O and report usage
+for the selected command when operands are missing or excessive.
+The command shall derive incomplete status consistently from its typed cause,
+including incomplete native, model, package and runtime input failures.
 
 ## Acceptance Criteria
 
@@ -63,9 +72,9 @@ The command shall begin each invocation with fresh budgets.
 | --- | --- | --- |
 | FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test |
 | FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test |
-| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage/code with available provenance. | Test |
+| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
 | FR-026-AC-4 | Request/file/read and caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
-| FR-026-AC-5 | Existing parse/format behavior remains, relative files resolve independently of the working directory, and all execution remains local Rust. | Test |
+| FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
 
 ## Dependencies
 
