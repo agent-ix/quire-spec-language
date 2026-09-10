@@ -14,9 +14,19 @@ fn main() {
     for (name, case) in [
         ("healthy", setup::Case::Aggregate(2)),
         ("violating", setup::Case::Aggregate(1)),
-        ("operation", setup::Case::Operation(false)),
-        ("refused", setup::Case::Operation(true)),
-        ("boolean", setup::Case::Boolean(true)),
+        (
+            "operation",
+            setup::Case::Operation {
+                violate_frame: false,
+            },
+        ),
+        (
+            "refused",
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+        ),
+        ("boolean", setup::Case::Boolean { flag: true }),
     ] {
         setup::write(&directory.join(name), case);
     }

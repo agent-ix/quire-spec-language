@@ -73,6 +73,18 @@ pub enum LoweringCode {
     InvalidCorrespondence,
 }
 
+impl LoweringCode {
+    /// Stable native command code for each lowering refusal category.
+    pub fn code(self) -> crate::Code {
+        match self {
+            Self::Unsupported => crate::Code::UnsupportedProjection,
+            Self::ResourceExhausted => crate::Code::ResourceExhausted,
+            Self::Binding => crate::Code::ProjectionBinding,
+            Self::InvalidCorrespondence => crate::Code::InvalidProjectionCorrespondence,
+        }
+    }
+}
+
 /// No partial projection is returned with a refusal.
 #[derive(Debug)]
 pub struct LoweringError {

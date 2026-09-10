@@ -21,6 +21,9 @@ file and canonical sha256-prefixed digest strings. Omission preserves source
 compilation; a supplied null, positional array or malformed object refuses.
 The original program source, complete clause bindings and model sources remain
 required external authority. Native-compile/1 requests still reject this field.
+All file operands follow FR-026: relative paths resolve from the request's
+directory, including parent-relative paths; absolute paths remain absolute.
+This local command does not confine selected files to a request-directory sandbox.
 
 ## Outputs
 
@@ -28,7 +31,9 @@ The existing native-run-result/1 outcome using the accepted package's exact raw
 byte digest and reconstructed static identity. Equivalent JSON layouts retain
 their own selected byte digest. Reader failures retain the original PackageError
 and selected file/reference in the library error; command JSON exposes their
-code, reader stage, path and nested cause. File/I/O/intake failures retain the
+code, reader stage, path and nested cause under the distinct command stage
+selected_package. Source-compilation package failures retain stage package.
+File/I/O/intake failures retain the
 existing FR-026 error behavior. Failed artifact verification performs no runtime
 execution and emits no predicate truth.
 
@@ -36,6 +41,7 @@ execution and emits no predicate truth.
 
 The command shall count the selected package toward the existing 64-file and
 8 MiB aggregate intake ceilings.
+File-count preflight shall identify the exhausted named group, including packages.
 The command shall call NativePackage::read_verified with the expected byte
 reference, externally derived CheckBindings, admitted models and existing
 default support/stage limits.
