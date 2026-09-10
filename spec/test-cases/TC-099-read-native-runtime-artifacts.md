@@ -15,6 +15,9 @@ Round-trip real native snapshots/invocations and every flat value variant.
 Read exact constructor bytes and whitespace/reordered encodings under their
 selected references. Compare original drafts, bytes and digests. Execute
 reread inputs through actual state and operation packages.
+Validate the real envelopes against the local Draft 2020-12 schema, including
+all observations, all ten value variants, populated nested records, duplicate
+vector occurrences and explicit null invocation results.
 
 ## Expected Results
 
