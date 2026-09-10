@@ -279,10 +279,15 @@ nor availability before those runtime inputs are supplied.
 
 ## Qualification
 
-IT-005 uses a separately authored native-rule-model fixture and a Rust producer
-that reads that fixture, calls actual IR constructors, supplies explicit native
-roles and binds all model loci to its source. It is domain-specific test setup,
-not a public replacement model reader. Original FS03 fixture bytes remain
+IT-005 uses a separately authored native-rule-model fixture. FR-025 promotes its
+fallible Rust frontend into `model_source::read`: it calls actual IR constructors,
+derives native roles and binds every declaration to its original JSON occurrence.
+The explicit `native-rule-model/1` source profile returns a ModelDraft; its fallible
+`admit` method applies NativeModel::new with independent limits. Source format,
+declared metadata, limits and typed refusals are defined in
+[FR-025](../spec/functional/FR-025-compile-rule-model-source.md).
+The test wrappers retain setup and fixture license checks, with all semantic
+lowering in production. Original FS03 fixture bytes remain
 unchanged. The producer's concrete bounds/roles are checked independently against
 the rule-model hypotheses before TC-025–029 are run. Setup failures fail tests;
 they cannot impersonate a requested checker refusal.

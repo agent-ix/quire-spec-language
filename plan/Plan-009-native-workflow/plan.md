@@ -22,6 +22,8 @@ adoption and assurance remain explicit acceptance work.
   reports while Task-021's PR is reviewed. Standalone file intake remains later work.
 - [Task-023](tasks/Task-023-native-input-reader.md): selected snapshot/invocation
   byte intake while earlier PRs await review.
+- [Task-024](tasks/Task-024-model-source-frontend.md): production rule-model
+  source frontend and thin fixture callers, enabling the standalone CLI.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
