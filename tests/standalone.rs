@@ -16,6 +16,11 @@ fn invoke(directory: &Path) -> (i32, Value, bool) {
         .current_dir(directory.parent().unwrap())
         .output()
         .unwrap();
+    assert_ne!(
+        result.stdout.is_empty(),
+        result.stderr.is_empty(),
+        "the command must emit exactly one result stream"
+    );
     let from_stdout = !result.stdout.is_empty();
     let bytes = if from_stdout {
         &result.stdout
@@ -302,6 +307,10 @@ fn typed_package_failure_retains_incomplete_classification() {
                 cause: None,
             })),
         };
+        let RunCause::Package(package) = &error.cause else {
+            unreachable!()
+        };
+        assert_eq!(package.is_incomplete(), expected == 3);
         assert_eq!(error.exit_code(), expected);
         let value = error.value().unwrap();
         assert!(result_schema().is_valid(&value));
