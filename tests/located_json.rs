@@ -74,7 +74,7 @@ fn tc_054_locations_follow_occurrences_not_spelling() {
     for (prefix, value, suffix, name, id) in cases {
         let text = format!("{prefix}{value}{suffix}");
         let binding = source(&text);
-        let raw: Vec<&RawValue> = located_json::read(&binding).unwrap();
+        let raw: Vec<&RawValue> = located_json::read(&binding, 1_048_576).unwrap();
         let located: located_json::Located<Named> =
             located_json::decode(&binding, raw.last().unwrap()).unwrap();
         assert_eq!(
@@ -97,17 +97,22 @@ fn tc_054_locations_follow_occurrences_not_spelling() {
 }
 
 #[test]
-#[trace("TC-054", "FR-017-AC-1")]
+#[trace("TC-054", "FR-017-AC-1", "TC-102", "FR-025-AC-3")]
 fn tc_054_identical_foreign_buffers_are_not_source_occurrences() {
     let text = r#"{"name":"NodeRef","id":1}"#;
     let original = source(text);
     let foreign = source(text);
-    let raw: &RawValue = located_json::read(&foreign).unwrap();
+    let raw: &RawValue = located_json::read(&foreign, text.len()).unwrap();
     assert!(matches!(
         located_json::decode::<Named>(&original, raw),
         Err(located_json::Error::ForeignOccurrence)
     ));
-    let own: &RawValue = located_json::read(&original).unwrap();
+    let owned = RawValue::from_string(text.to_owned()).unwrap();
+    assert!(matches!(
+        located_json::decode::<Named>(&original, &owned),
+        Err(located_json::Error::ForeignOccurrence)
+    ));
+    let own: &RawValue = located_json::read(&original, text.len()).unwrap();
     assert_eq!(
         located_json::decode::<Named>(&original, own)
             .unwrap()
@@ -118,12 +123,17 @@ fn tc_054_identical_foreign_buffers_are_not_source_occurrences() {
 }
 
 #[test]
-#[trace("TC-054", "FR-017-AC-1")]
+#[trace("TC-054", "FR-017-AC-1", "TC-102", "FR-025-AC-4")]
 fn tc_054_malformed_and_ambiguous_typed_input_refuse() {
     for text in ["{", "[] true", "[1,]"] {
         assert!(matches!(
-            located_json::read::<&RawValue>(&source(text)),
+            located_json::read::<&RawValue>(&source(text), text.len()),
             Err(located_json::Error::Json(_))
+        ));
+        assert!(matches!(
+            located_json::read::<&RawValue>(&source(text), text.len() - 1),
+            Err(located_json::Error::ByteLimit { actual, maximum })
+                if actual == text.len() && maximum == text.len() - 1
         ));
     }
     for text in [
@@ -133,7 +143,7 @@ fn tc_054_malformed_and_ambiguous_typed_input_refuse() {
         r#"{"name":"NodeRef"}"#,
     ] {
         let binding = source(text);
-        let raw: &RawValue = located_json::read(&binding).unwrap();
+        let raw: &RawValue = located_json::read(&binding, text.len()).unwrap();
         assert!(matches!(
             located_json::decode::<Named>(&binding, raw),
             Err(located_json::Error::Json(_))
