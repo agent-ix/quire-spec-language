@@ -10,8 +10,10 @@ review_set: all
 
 Byte preflight bounds decoding; flat arenas and existing construction ceilings retain structural limits. Public raw-draft Deserialize is not artifact admission. The package's object-only Serde helper is shared rather than duplicated; the reader adds no I/O, concurrency or dependency version.
 
-Author PR-readiness review of `67c68da`, after implementation as directed.
+Author PR-readiness re-review of `0016103`, after implementation as directed.
 Selected set: all. No applicable AssuranceProfile was found.
+
+An exhaustive cause match determines stage and code. Per-field decoder repetition and wider wire-format ownership remain explicit code-review follow-ups.
 
 ## Findings
 
