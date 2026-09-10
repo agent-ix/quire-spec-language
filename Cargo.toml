@@ -13,8 +13,10 @@ default-run = "quire-spec"
 
 [features]
 default = []
+quire-extraction = ["dep:quire-rs"]
 
 [dependencies]
+quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "8b8020e665c61a11bc74f3f23b84617c80c0c442", optional = true, default-features = false }
 logos = "=0.16.1"
 serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
 sha2 = "=0.10.9"
