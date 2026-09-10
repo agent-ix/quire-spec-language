@@ -13,6 +13,25 @@ use crate::runtime::{
 use crate::{ByteDigest, Diagnostic};
 use serde_json::Value;
 
+/// Immutable JSON produced from the typed native result schema.
+/// Construction stays inside the output adapter; callers can inspect or serialize it.
+#[derive(Debug, serde::Serialize)]
+#[serde(transparent)]
+pub struct NativeResult(Value);
+
+impl NativeResult {
+    /// Inspect the encoded observations without changing the admitted shape.
+    pub fn as_value(&self) -> &Value {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NativeResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 fn source(value: &FormalSource) -> types::Source<'_> {
     types::Source {
         identity: value.source().identity(),
@@ -242,6 +261,6 @@ pub(super) fn report(
     };
     Ok(RunResult {
         exit_code,
-        value: serde_json::to_value(document).map_err(RunCause::Output)?,
+        value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
     })
 }
