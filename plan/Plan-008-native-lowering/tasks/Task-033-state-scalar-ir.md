@@ -2,7 +2,7 @@
 id: Task-033
 title: "Deliver state-scalar projection and validated backend inputs"
 type: Task
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-034
     type: references
