@@ -7,6 +7,7 @@ description: "Actual native linker progress."
 
 ## History
 
+- **2026-09-10** — Closed. Frontmatter status moved from `active` to `done`. Task-005 and Task-006 are both `done` and were the plan's complete task set; the plan had remained `active` after its last task closed. FR-005 and FR-013, the requirements this plan references, carry complete coverage rows in the model-linking matrix. Closing this plan records no new work and changes no task, scope or gate.
 - 2026-09-08: Created after the concrete FR-013 API and all eight reviews.
   Native resolution is unblocked on the existing IR surface. B's PR8 packet
   has been delivered separately and is not a compiler implementation gate.

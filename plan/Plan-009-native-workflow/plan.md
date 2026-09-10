@@ -2,7 +2,7 @@
 id: Plan-009
 title: "Native source integration and usable workflow"
 type: Plan
-status: in_progress
+status: active
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-022
     type: references

@@ -7,6 +7,7 @@ description: "Source bridge lifecycle evidence."
 
 ## History
 
+- **2026-09-10** — Closed. Frontmatter status moved from `active` to `done`. Task-007 is `done` and was the plan's only task; the plan had remained `active` after it closed. Closing this plan records no new work and changes no task, scope or gate.
 - **2026-09-08** — Created after contract 4eb4ef6 and all selected reviews
   257f787. Scoped to FR-014, with serial resource limits from the owner. Private
   LC02 pre-implementation handoff records the true spec/review/code ordering.
