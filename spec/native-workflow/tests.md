@@ -7,6 +7,10 @@ type: TestMatrix
 
 FR-022 is the compiler-side API under LC05. Its programmatic mapped fixtures do
 not claim complete Quire producer integration in IT-003.
+FR-030 / TC-108 exercise the actual pinned Rust extractor and native consumer.
+FR-030 and FR-011 rows using TC-108 require `--features quire-extraction` (or
+`--all-features`). Both minimal and enabled feature configurations have separate
+local test and lint lanes; the hosted workflow remains manual-dispatch only.
 
 ## Requirements Traceability
 
@@ -14,6 +18,10 @@ not claim complete Quire producer integration in IT-003.
 
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
+| FR-011 | FR-011-AC-1 | TC-108 | ✅ Tested |
+| FR-011 | FR-011-AC-2 | TC-108 | ✅ Tested |
+| FR-011 | FR-011-AC-3 | TC-108 | ✅ Tested |
+| FR-011 | FR-011-AC-4 | TC-108 | ✅ Tested |
 | FR-022 | FR-022-AC-1 | TC-095 | ✅ Tested |
 | FR-022 | FR-022-AC-2 | TC-096 | ✅ Tested |
 | FR-022 | FR-022-AC-3 | TC-096 | ✅ Tested |
@@ -47,6 +55,11 @@ not claim complete Quire producer integration in IT-003.
 | FR-029 | FR-029-AC-1 | TC-107 | ✅ Tested |
 | FR-029 | FR-029-AC-2 | TC-107 | ✅ Tested |
 | FR-029 | FR-029-AC-3 | TC-107 | ✅ Tested |
+| FR-030 | FR-030-AC-1 | TC-108 | ✅ Tested |
+| FR-030 | FR-030-AC-2 | TC-108 | ✅ Tested |
+| FR-030 | FR-030-AC-3 | TC-108 | ✅ Tested |
+| FR-030 | FR-030-AC-4 | TC-108 | ✅ Tested |
+| FR-030 | FR-030-AC-5 | TC-108 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -65,3 +78,4 @@ not claim complete Quire producer integration in IT-003.
 | TC-105 | Standalone package export | Integration | P1 | FR-027 | ✅ Tested |
 | TC-106 | Selected package execution | Integration | P1 | FR-028 | ✅ Tested |
 | TC-107 | Standalone projection export | Integration | P1 | FR-029 | ✅ Tested |
+| TC-108 | Actual Quire/native workflow | Integration | P1 | FR-030, FR-011 | ✅ Tested |
