@@ -10,8 +10,7 @@ review_set: all
 
 FR-033 has medium technical risk and medium volatility because numeric definedness and the backend boundary must remain explicit. Existing constructors/checkers, signed bound assertions, exact original source checks and whole-artifact refusals constrain the change. Both pinned IR readers qualify the actual wire shape; current codegen's unsupported-expression result is observed. No new performance guarantee or concurrency is introduced. See failure-domain.md for boundary controls.
 
-Author PR-readiness review of `7b5b663`, including the generator I/O correction,
-using the owner-selected all set. Numeric lowering is unchanged from `5a7e5db`.
+Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 ## Findings

@@ -8,11 +8,14 @@ review_set: all
 ---
 ## Summary
 
-FR-033 defines explicit integer IR selection alongside the unchanged Boolean default. US-004 → FR-033 → TC-111/TM-006 covers all five criteria. Seven new tests exercise real binding, numeric/comparison operators, signed bounds, source/observation correspondence, target defaults, whole-package refusals, exact limits and generator filesystem errors. The affected native/Markdown command suites pass; the numeric implementation and prior generated tests are unchanged.
+FR-033 defines explicit integer IR selection alongside the unchanged Boolean default. US-004 → FR-033 → TC-111/TM-006 covers all five criteria. Ten new tests exercise real binding, numeric/comparison operators, signed bounds, source/observation correspondence, target defaults, whole-package refusals, exact limits and generator filesystem errors. The affected native/Markdown command suites pass; the shared Boolean default retains its existing generated tests.
 
-Author PR-readiness review of `7b5b663`, including the generator I/O correction,
-using the owner-selected all set. Numeric lowering is unchanged from `5a7e5db`.
+Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
+
+The target catalog supplies parsing and display, and the existing CLI parser
+owns the suffix. Native binary operators map exhaustively once into typed IR
+operator groups. The default still rejects numeric/comparison operators.
 
 ## Findings
 
