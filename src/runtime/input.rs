@@ -4,7 +4,10 @@
 use quire_contract_ir as ir;
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::serde_object::{deserialize_objects, from_object as deserialize_object};
+use crate::serde_object::{
+    deserialize_empty_object as deserialize_absent, deserialize_objects,
+    from_object as deserialize_object,
+};
 use crate::{ByteDigest, Code, SourceIdentity};
 
 /// One version shared by native input construction and reading.
@@ -487,13 +490,4 @@ fn deserialize_symbol<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<ir::SymbolName, D::Error> {
     ir::SymbolName::new(String::deserialize(deserializer)?).map_err(D::Error::custom)
-}
-
-fn deserialize_absent<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
-    // Serde's internally tagged unit variants otherwise ignore extra fields.
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Empty {}
-    let _: Empty = deserialize_object(deserializer)?;
-    Ok(())
 }

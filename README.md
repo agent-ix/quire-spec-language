@@ -15,6 +15,14 @@ inventory identities. `LinkedPackage::binding_profile`,
 `LinkedModel::native_model` and `LinkedClause::operation` expose that
 correspondence. Model admission and linkage are qualified under Task-008.
 
+`model_source::read(formal_source, model_source::FORMAT, limits)` now exposes the
+existing rule-model frontend to library callers. It derives located IR declarations
+and native roles from `native-rule-model/1` source; `ModelDraft::admit` then runs
+the existing model checks. Errors retain the original source and typed cause.
+The [example model](tests/fixtures/native-rule-model.json) shows the admitted source
+shape. Run `cargo test --test model_source` for fixed-artifact, failure and runtime
+cases. Test helpers now call this production frontend.
+
 `checking::check` consumes a native linked package, exact `CheckBindings` and
 caller-lowered `CheckLimits`. It returns the original source/AST with native
 types, authored clause identities, discharged proof goals and required input
