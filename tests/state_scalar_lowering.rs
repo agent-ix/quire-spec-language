@@ -128,7 +128,7 @@ fn package<'m>(models: &'m [NativeModel], text: &str, kind: ClauseKind) -> Nativ
 #[test]
 #[trace("TC-112", "FR-034-AC-1", "FR-034-AC-2", "FR-034-AC-5")]
 fn concrete_config_update_binds_and_materializes_actual_pre_post_values() {
-    let models = [config::model()];
+    let models = [config::model().unwrap()];
     let root = tempfile::tempdir().unwrap();
     for (case, post, truth) in [
         (config::Case::Unchanged, 2, true),
@@ -237,7 +237,7 @@ fn concrete_config_update_binds_and_materializes_actual_pre_post_values() {
                 models[0].environment().owner()
             );
             assert!(matches!(
-                snapshot.draft().arena[input.arena_value().index() as usize],
+                snapshot.draft().arena[usize::try_from(input.arena_value().index()).unwrap()],
                 ValueNode::Integer { .. }
             ));
         }

@@ -16,6 +16,8 @@ boundary and inspect runtime outcomes, original byte identity and reader errors.
 Run state/operation examples with exact and alternate-layout package bytes.
 Mutate selected digests, reconstructed claims, source/bindings and request shape;
 exercise intake/runtime limits and fresh retries. Run existing command tests.
+Require selected_package as the reader-failure stage and named packages count
+exhaustion. Run selected files through absolute and parent-relative operands.
 
 ## Expected Results
 

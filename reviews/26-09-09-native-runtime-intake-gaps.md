@@ -13,7 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-021–023 are done; runtime intake is implemented at 67c68da. The broader
+Task-021–023 are done; runtime intake and its typed-error correction are implemented
+at 0016103. The broader
 Plan-009 and LC05 remain open for standalone model intake/command and extraction.
 
 ## Verdict
@@ -31,7 +32,8 @@ Plan-009 and LC05 remain open for standalone model intake/command and extraction
 Quire reports TM-007 at 6/6 backed test cases, with all four FR-024 criteria
 traced in five passing reader tests. No scoped unbacked rows or untracked
 symbols. Global rollup is 266/274 backed. Matrix statuses were checked manually
-against the actual tests because of the known Coverage Status/Status mismatch.
+against the actual tests because of the known Coverage Status/Status mismatch
+tracked in #28. These are trace-binding counts, not engine-verified Tested statuses.
 The shared Serde helper remains owned by FR-020/024; no changed behavior lacks
 a requirement. Existing broader assurance gaps remain open. Optional semantic
 gap review was declined and skipped.

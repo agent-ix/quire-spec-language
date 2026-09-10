@@ -17,7 +17,7 @@ When a caller selects an authored clause in an original document, the optional Q
 ## Inputs
 
 An immutable original Source, a caller-loaded Quire SemanticContext, one
-ClauseBinding, explicit body/native and formal identities, admitted models and
+ClauseBinding, an explicit SourceIdentities pair for the body/native and formal identities, admitted models and
 caller-lowered limits. The caller selects and verifies the original document's
 digest before admission. The selected Quire heading ID equals the authored
 binding's clause ID; the body contains a complete single-clause native unit.
@@ -31,10 +31,16 @@ failure retaining original source, selection, any completed extraction outcome
 and the actual native/mapped compiler cause. Quire's unchecked-language advisory
 and lossy availability remain observable after successful native compilation.
 No extraction status is rewritten into a parsing or runtime result.
+Preflight failures distinguish byte and line ceilings, contract and semantic-core
+version skew, and source identity, path and authored-package mismatches with
+typed causes carrying actual and expected values. Their existing native code
+families remain unchanged. ClausesOutcome and SemanticContext are deliberate
+re-exports of the pinned Quire-owned contracts; upgrades require compatibility review.
 
 ## Behavior
 
 The consumer shall check original size and line count before invoking extraction.
+The consumer shall distinguish each original-context mismatch before invoking extraction.
 The consumer shall call Quire extract_clauses over the original bytes, without a second Markdown or expression parser.
 The consumer shall require available extraction and the selected clause/body.
 The consumer shall validate the reported identity, path and fence coordinates against the original source index.
@@ -65,7 +71,7 @@ adoption and broader integration. This is A's native compiler consumer.
 | --- | --- | --- |
 | FR-030-AC-1 | Actual Quire extraction of an indented CRLF clause with Unicode surroundings reaches mapped compilation and existing healthy/violating/refused runtime outcomes with exact authored/source identity. | Test |
 | FR-030-AC-2 | Successful and failed native compilation retain Quire's original availability, complete clause population and diagnostics; an unchecked tag alone does not pass the native parser. | Test |
-| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package. | Test |
+| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test |
 | FR-030-AC-4 | Verified original/body coordinates remain exact at body EOF and with trailing layout; invalid body identity and out-of-range mapping requests refuse. | Test |
 | FR-030-AC-5 | Original byte/line and native stage limits return incomplete, with successful fresh retry; minimal builds retain their existing behavior. | Test |
 

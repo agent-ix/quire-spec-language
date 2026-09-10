@@ -19,8 +19,8 @@ use std::{io, path::Path};
 #[allow(dead_code)]
 pub enum Case {
     Aggregate(i64),
-    Operation(bool),
-    Boolean(bool),
+    Operation { violate_frame: bool },
+    Boolean { flag: bool },
     Integer(i64),
 }
 
@@ -33,7 +33,7 @@ fn source(source: &FormalSource, file: &str) -> Value {
 pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
     std::fs::create_dir_all(directory)?;
     let models = [match case {
-        Case::Boolean(_) => runtime::authored_model(|model| {
+        Case::Boolean { .. } => runtime::authored_model(|model| {
             model["values"]
                 .as_array_mut()
                 .unwrap()
@@ -44,11 +44,11 @@ pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
                 "name":"amount","kind":"state","type":{"kind":"scalar","name":"Version"}
             }));
         }),
-        Case::Aggregate(_) | Case::Operation(_) => runtime::native_rule_model::parts().model(),
+        Case::Aggregate(_) | Case::Operation { .. } => runtime::native_rule_model::parts().model(),
     }];
     let model = &models[0];
     let (expression, kind, input, selection) = match case {
-        Case::Boolean(value) => {
+        Case::Boolean { flag: value } => {
             let mut draft = runtime::draft(model);
             let id = ValueId::new(u32::try_from(draft.arena.len()).unwrap());
             draft.arena.push(ValueNode::Boolean { value });
@@ -101,7 +101,9 @@ pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
                 selection,
             )
         }
-        Case::Operation(bad_frame) => {
+        Case::Operation {
+            violate_frame: bad_frame,
+        } => {
             let before = runtime::draft(model);
             let mut after = before.clone();
             runtime::change_field(&mut after, "n", ValueNode::Integer { value: 2 });

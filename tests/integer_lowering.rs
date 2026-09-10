@@ -447,3 +447,56 @@ fn actual_command_exports_selected_bytes_and_current_backend_refuses_numeric_inp
     assert_eq!(error["code"], "unsupported_projection");
     assert_eq!(error["details"]["profile"], "integer-ir/v1");
 }
+
+#[test]
+#[trace("TC-111", "FR-033-AC-4")]
+fn target_names_round_trip_and_command_usage_precedes_input_reads() {
+    let published = [
+        (ProjectionTarget::BooleanOracleV1, "boolean-oracle/v1"),
+        (ProjectionTarget::IntegerIrV1, "integer-ir/v1"),
+        (ProjectionTarget::StateScalarIrV1, "state-scalar-ir/v1"),
+    ];
+    assert_eq!(ProjectionTarget::ALL.len(), published.len());
+    for (target, name) in published {
+        assert_eq!(target.to_string(), name);
+        assert_eq!(name.parse::<ProjectionTarget>().unwrap(), target);
+    }
+    for name in ["", "Integer-ir/v1", "future/v9"] {
+        assert_eq!(name.parse::<ProjectionTarget>().unwrap_err().name(), name);
+    }
+    for arguments in [
+        vec![
+            "compile",
+            "/missing/input.json",
+            "--target",
+            "integer-ir/v1",
+        ],
+        vec!["run", "/missing/input.json", "--target", "integer-ir/v1"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .args(&arguments)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            format!("usage: quire-spec {} <request-file>\n", arguments[0])
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[trace("TC-111", "FR-033-AC-4")]
+fn non_utf8_target_refuses_before_a_missing_request_is_opened() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args(["lower", "/missing/input.json", "--target"])
+        .arg(OsString::from_vec(vec![0xff]))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(output.stderr, b"lowering target must be UTF-8\n");
+}

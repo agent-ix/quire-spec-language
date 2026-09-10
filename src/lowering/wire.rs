@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Borrowed serialization views for the published IR wire shape, not a second AST.
+//! FR-033: fallible borrowed views of the published primitive IR wire contract.
 
+use super::{failure, LoweringCode, Result};
+use crate::checking::ClauseBinding;
+use crate::formal_source::FormalSource;
 use quire_contract_ir as ir;
 use serde::{ser::SerializeMap, Serialize, Serializer};
 
@@ -15,13 +18,16 @@ impl<'a> Projection<'a> {
     pub fn new(
         package: &'a ir::ContractPackage<ir::ReferenceBody>,
         prepared: &'a [super::Prepared<'a>],
-    ) -> Self {
-        Self {
-            format: ir::EXECUTABLE_PROJECTION_FORMAT,
-            package,
-            bindings: prepared
-                .iter()
-                .map(|item| Binding {
+        source: &FormalSource,
+    ) -> Result<Self> {
+        let bindings = prepared
+            .iter()
+            .map(|item| {
+                let conversion = Conversion {
+                    binding: item.binding,
+                    source,
+                };
+                Ok(Binding {
                     clause: super::identity(item.binding),
                     expression: Input {
                         owner: item.environment.owner(),
@@ -30,17 +36,22 @@ impl<'a> Projection<'a> {
                             .environment
                             .values()
                             .iter()
-                            .map(ValueDeclaration)
-                            .collect(),
+                            .map(|value| conversion.declaration(value))
+                            .collect::<Result<_>>()?,
                         functions: [],
-                        expression: Expression(&item.expression),
+                        expression: conversion.expression(&item.expression)?,
                         expected_type: ir::ValueType::Boolean,
                         execution_point: &item.binding.execution_point,
                         clause_root: true,
                     },
                 })
-                .collect(),
-        }
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            format: ir::EXECUTABLE_PROJECTION_FORMAT,
+            package,
+            bindings,
+        })
     }
 }
 
@@ -62,39 +73,33 @@ struct Input<'a> {
     clause_root: bool,
 }
 
-struct Expression<'a>(&'a ir::Expression);
-
-struct ValueDeclaration<'a>(&'a ir::ValueDeclaration);
-
-impl Serialize for ValueDeclaration<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(4))?;
-        map.serialize_entry("name", self.0.name())?;
-        map.serialize_entry("kind", &self.0.kind())?;
-        map.serialize_entry("value_type", &ValueType(self.0.value_type()))?;
-        map.serialize_entry("source", self.0.source())?;
-        map.end()
-    }
+#[derive(Serialize)]
+struct ValueDeclaration<'a> {
+    name: &'a ir::SymbolName,
+    kind: ir::ValueDeclarationKind,
+    value_type: ValueType<'a>,
+    source: &'a ir::SourceSpan,
 }
 
-struct ValueType<'a>(&'a ir::ValueType);
+enum ValueType<'a> {
+    Boolean,
+    Integer(&'a ir::IntegerType),
+}
 
 impl Serialize for ValueType<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.0 {
-            ir::ValueType::Boolean => self.0.serialize(serializer),
-            ir::ValueType::Integer { value } => IntegerType(value).serialize(serializer),
-            _ => Err(serde::ser::Error::custom("unadmitted primitive wire type")),
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Self::Boolean => ir::ValueType::Boolean.serialize(serializer),
+            Self::Integer(value) => IntegerType(value).serialize(serializer),
         }
     }
 }
 
-// IR's public integer value type serializes with a nested value; its input wire
-// contract instead uses these flattened constructor fields (FR-033).
+// IR's public integer type has a nested value; its input wire uses flattened bounds.
 struct IntegerType<'a>(&'a ir::IntegerType);
 
 impl Serialize for IntegerType<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(5))?;
         map.serialize_entry("kind", "integer")?;
         map.serialize_entry("domain", &self.0.domain())?;
@@ -105,69 +110,233 @@ impl Serialize for IntegerType<'_> {
     }
 }
 
-impl Serialize for Expression<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("source", self.0.source())?;
-        match self.0.kind() {
+#[derive(Serialize)]
+struct Expression<'a> {
+    source: &'a ir::SourceSpan,
+    #[serde(flatten)]
+    kind: ExpressionKind<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "node", rename_all = "snake_case")]
+enum ExpressionKind<'a> {
+    BooleanLiteral {
+        value: bool,
+    },
+    IntegerLiteral {
+        value: i64,
+        value_type: IntegerType<'a>,
+    },
+    ValueReference {
+        name: &'a ir::SymbolName,
+        observation: ir::StateObservation,
+    },
+    BooleanNot {
+        operand: Box<Expression<'a>>,
+    },
+    NumericNegate {
+        operand: Box<Expression<'a>>,
+    },
+    Numeric {
+        operator: ir::NumericOperator,
+        left: Box<Expression<'a>>,
+        right: Box<Expression<'a>>,
+    },
+    Compare {
+        operator: ir::ComparisonOperator,
+        left: Box<Expression<'a>>,
+        right: Box<Expression<'a>>,
+    },
+    Boolean {
+        operator: ir::BooleanOperator,
+        left: Box<Expression<'a>>,
+        right: Box<Expression<'a>>,
+    },
+}
+
+struct Conversion<'a> {
+    binding: &'a ClauseBinding,
+    source: &'a FormalSource,
+}
+
+impl Conversion<'_> {
+    fn unsupported(&self, source: &ir::SourceSpan, message: &str) -> Box<super::LoweringError> {
+        match self.source.to_native(source) {
+            Ok(span) => failure(
+                LoweringCode::Unsupported,
+                Some(self.binding),
+                Some(span),
+                message,
+            ),
+            Err(_) => failure(
+                LoweringCode::InvalidCorrespondence,
+                Some(self.binding),
+                None,
+                "prepared wire source differs from native correspondence",
+            ),
+        }
+    }
+
+    fn declaration<'a>(&self, value: &'a ir::ValueDeclaration) -> Result<ValueDeclaration<'a>> {
+        let value_type = match value.value_type() {
+            ir::ValueType::Boolean => ValueType::Boolean,
+            ir::ValueType::Integer { value } => ValueType::Integer(value),
+            _ => {
+                return Err(self.unsupported(
+                    value.source(),
+                    "unadmitted primitive declaration at the wire boundary",
+                ))
+            }
+        };
+        Ok(ValueDeclaration {
+            name: value.name(),
+            kind: value.kind(),
+            value_type,
+            source: value.source(),
+        })
+    }
+
+    // Prepared expressions come from the bounded native traversal (10,000 nodes,
+    // depth 64). These views borrow their data and add no new semantic authority.
+    fn expression<'a>(&self, value: &'a ir::Expression) -> Result<Expression<'a>> {
+        let kind = match value.kind() {
             ir::ExpressionKind::BooleanLiteral { value } => {
-                map.serialize_entry("node", "boolean_literal")?;
-                map.serialize_entry("value", value)?;
+                ExpressionKind::BooleanLiteral { value: *value }
             }
             ir::ExpressionKind::IntegerLiteral { value, value_type } => {
-                map.serialize_entry("node", "integer_literal")?;
-                map.serialize_entry("value", value)?;
-                map.serialize_entry("value_type", &IntegerType(value_type))?;
+                ExpressionKind::IntegerLiteral {
+                    value: *value,
+                    value_type: IntegerType(value_type),
+                }
             }
             ir::ExpressionKind::ValueReference { name, observation } => {
-                map.serialize_entry("node", "value_reference")?;
-                map.serialize_entry("name", name)?;
-                map.serialize_entry("observation", observation)?;
+                ExpressionKind::ValueReference {
+                    name,
+                    observation: *observation,
+                }
             }
-            ir::ExpressionKind::BooleanNot { operand } => {
-                map.serialize_entry("node", "boolean_not")?;
-                map.serialize_entry("operand", &Expression(operand))?;
-            }
-            ir::ExpressionKind::NumericNegate { operand } => {
-                map.serialize_entry("node", "numeric_negate")?;
-                map.serialize_entry("operand", &Expression(operand))?;
-            }
+            ir::ExpressionKind::BooleanNot { operand } => ExpressionKind::BooleanNot {
+                operand: Box::new(self.expression(operand)?),
+            },
+            ir::ExpressionKind::NumericNegate { operand } => ExpressionKind::NumericNegate {
+                operand: Box::new(self.expression(operand)?),
+            },
             ir::ExpressionKind::Numeric {
                 operator,
                 left,
                 right,
-            } => {
-                map.serialize_entry("node", "numeric")?;
-                map.serialize_entry("operator", operator)?;
-                map.serialize_entry("left", &Expression(left))?;
-                map.serialize_entry("right", &Expression(right))?;
-            }
+            } => ExpressionKind::Numeric {
+                operator: *operator,
+                left: Box::new(self.expression(left)?),
+                right: Box::new(self.expression(right)?),
+            },
             ir::ExpressionKind::Compare {
                 operator,
                 left,
                 right,
-            } => {
-                map.serialize_entry("node", "compare")?;
-                map.serialize_entry("operator", operator)?;
-                map.serialize_entry("left", &Expression(left))?;
-                map.serialize_entry("right", &Expression(right))?;
-            }
+            } => ExpressionKind::Compare {
+                operator: *operator,
+                left: Box::new(self.expression(left)?),
+                right: Box::new(self.expression(right)?),
+            },
             ir::ExpressionKind::Boolean {
                 operator,
                 left,
                 right,
-            } => {
-                map.serialize_entry("node", "boolean")?;
-                map.serialize_entry("operator", operator)?;
-                map.serialize_entry("left", &Expression(left))?;
-                map.serialize_entry("right", &Expression(right))?;
-            }
+            } => ExpressionKind::Boolean {
+                operator: *operator,
+                left: Box::new(self.expression(left)?),
+                right: Box::new(self.expression(right)?),
+            },
             _ => {
-                return Err(serde::ser::Error::custom(
-                    "unadmitted expression reached primitive wire serialization",
+                return Err(self.unsupported(
+                    value.source(),
+                    "unadmitted expression at the primitive wire boundary",
                 ))
             }
-        }
-        map.end()
+        };
+        Ok(Expression {
+            source: value.source(),
+            kind,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Source, SourceIdentity, Span};
+    use ix_trace_rs::trace;
+
+    #[test]
+    #[trace("TC-111", "FR-033-AC-3")]
+    fn unadmitted_prepared_wire_values_keep_clause_and_source_context() {
+        let source = FormalSource::new(
+            Source::read(
+                SourceIdentity {
+                    identity: "test:wire".into(),
+                    revision: "1".into(),
+                },
+                "rule.native",
+                b"true",
+                64,
+            )
+            .unwrap(),
+            ir::SourceIdentity::new(
+                ir::SourceDocumentId::new("WireSource").unwrap(),
+                ir::SourceRevision::new(1).unwrap(),
+            ),
+        );
+        let binding = ClauseBinding {
+            name: "Rule".into(),
+            requirement: ir::RequirementRef::parse("example/wire", "Rule", 1).unwrap(),
+            clause: ir::ClauseId::new("rule").unwrap(),
+            execution_point: ir::ExecutionPoint::Handler {
+                name: ir::AnchorName::new("validate").unwrap(),
+            },
+        };
+        let span = source
+            .to_ir(source.source(), Span { start: 0, end: 4 })
+            .unwrap();
+        let conversion = Conversion {
+            binding: &binding,
+            source: &source,
+        };
+        let declaration = ir::ValueDeclaration::new(
+            ir::SymbolName::new("text").unwrap(),
+            ir::ValueDeclarationKind::State,
+            ir::ValueType::Text,
+            span.clone(),
+        );
+        let Err(error) = conversion.declaration(&declaration) else {
+            panic!("text declaration must not reach serialization");
+        };
+        assert_eq!(error.code, LoweringCode::Unsupported);
+        assert_eq!(error.clause, Some(super::super::identity(&binding)));
+        assert_eq!(error.source, Some(Span { start: 0, end: 4 }));
+
+        let text = ir::Expression::new(
+            ir::ExpressionKind::TextLiteral {
+                value: "bad".into(),
+            },
+            span.clone(),
+        );
+        let nested = ir::Expression::new(
+            ir::ExpressionKind::BooleanNot {
+                operand: Box::new(text),
+            },
+            span.clone(),
+        );
+        let Err(error) = conversion.expression(&nested) else {
+            panic!("unadmitted nested expression must not reach serialization");
+        };
+        assert_eq!(error.code, LoweringCode::Unsupported);
+        assert_eq!(error.clause, Some(super::super::identity(&binding)));
+        assert_eq!(error.source, Some(Span { start: 0, end: 4 }));
+
+        let valid = ir::Expression::new(ir::ExpressionKind::BooleanLiteral { value: true }, span);
+        let wire = serde_json::to_value(conversion.expression(&valid).unwrap()).unwrap();
+        assert_eq!(wire["node"], "boolean_literal");
+        assert_eq!(wire["value"], true);
     }
 }
