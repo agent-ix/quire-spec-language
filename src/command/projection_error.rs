@@ -133,6 +133,7 @@ mod tests {
                 let error = RunError {
                     request_digest: Some(ByteDigest::of(b"request")),
                     cause: RunCause::Lowering {
+                        target: crate::lowering::ProjectionTarget::BooleanOracleV1,
                         package: NativePackageRef::new(ByteDigest::of(b"package")),
                         program: Box::new((&formal).into()),
                         location: ProjectionLocation::resolve(formal.source(), span),

@@ -206,6 +206,7 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
             },
         ),
         RunCause::Lowering {
+            target,
             package,
             program,
             location,
@@ -213,7 +214,7 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         } => (
             types::Stage::Lower,
             types::Details::Lowering {
-                profile: crate::lowering::PROFILE,
+                profile: target.name(),
                 package: types::PackageReference {
                     format: package.format(),
                     digest: package.digest().to_string(),

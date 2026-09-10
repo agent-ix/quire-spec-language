@@ -46,7 +46,7 @@ fn invoke_bytes(directory: &Path, command: &str, bytes: &[u8]) -> (i32, Value, b
 #[trace("TC-109", "FR-031-AC-3")]
 fn extraction_request_obeys_the_build_feature() {
     let directory = tempfile::tempdir().unwrap();
-    let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
+    let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
     let (code, result, stdout) = invoke(directory.path(), "run", &job);
     if cfg!(feature = "quire-extraction") {
         assert_eq!(code, 0, "{result}");
@@ -95,7 +95,7 @@ mod enabled {
                 ),
             ] {
                 let directory = tempfile::tempdir().unwrap();
-                let job = setup::write_extracted(directory.path(), case, crlf);
+                let job = setup::write_extracted(directory.path(), case, crlf).unwrap();
                 let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
                 let (actual, result, stdout) = invoke(directory.path(), "run", &job);
                 assert_eq!(actual, code, "{result}");
@@ -166,7 +166,8 @@ mod enabled {
             ("collect(self.items)", "unsupported_construct"),
         ] {
             let directory = tempfile::tempdir().unwrap();
-            let mut job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true);
+            let mut job =
+                setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true).unwrap();
             let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
             let text = original.replace(
                 "true implies forall(item in self.items: item < self.n)",
@@ -209,7 +210,8 @@ mod enabled {
     #[trace("TC-109", "FR-031-AC-3")]
     fn closed_descriptors_and_shared_identity_fields_refuse_malformed_input() {
         let directory = tempfile::tempdir().unwrap();
-        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
+        let job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
         for bad in [
             Value::Null,
             json!([]),
@@ -257,7 +259,7 @@ mod enabled {
     }
 
     fn missing_model_job(directory: &Path) -> Value {
-        let mut job = setup::write_extracted(directory, setup::Case::Aggregate(2), false);
+        let mut job = setup::write_extracted(directory, setup::Case::Aggregate(2), false).unwrap();
         job["request"]["models"][0]["source"]["file"] = json!("missing-model.json");
         job
     }
@@ -316,7 +318,8 @@ mod enabled {
     #[trace("TC-109", "FR-031-AC-4")]
     fn stale_source_and_extraction_line_ceiling_preserve_the_actual_stage() {
         let directory = tempfile::tempdir().unwrap();
-        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
+        let job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
         let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
         std::fs::write(
             directory.path().join("rules.md"),
@@ -350,7 +353,8 @@ mod enabled {
     #[trace("TC-109", "FR-031-AC-4")]
     fn runtime_stops_retain_extraction_and_allow_a_fresh_success() {
         let directory = tempfile::tempdir().unwrap();
-        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
+        let job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
         for limit in ["expression_steps", "validation_work"] {
             let mut limited = job.clone();
             limited["request"]["limits"] = json!({limit:0});
@@ -371,7 +375,8 @@ mod enabled {
     #[trace("TC-109", "FR-031-AC-1", "FR-031-AC-4")]
     fn extraction_schema_rejects_incomplete_provenance_and_mapping() {
         let directory = tempfile::tempdir().unwrap();
-        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true);
+        let job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true).unwrap();
         let (code, result, _) = invoke(directory.path(), "run", &job);
         assert_eq!(code, 0);
         for (pointer, field) in [

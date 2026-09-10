@@ -14,7 +14,7 @@ pub use output::NativeResult;
 pub use projection_error::{ProjectionLocation, ProjectionSource};
 
 use crate::formal_source::FormalSource;
-use crate::lowering::{self, LoweringError, LoweringLimits};
+use crate::lowering::{self, LoweringError, LoweringLimits, ProjectionTarget};
 use crate::model_source::ModelSourceError;
 use crate::package::{NativePackage, NativePackageRef, PackageError};
 use crate::runtime::{
@@ -162,6 +162,8 @@ pub enum RunCause {
     /// Original lowering failure and its resolved native source context.
     #[error("{error}")]
     Lowering {
+        /// Explicit target whose lowering failed.
+        target: ProjectionTarget,
         /// Exact native package selected for projection.
         package: NativePackageRef,
         /// Program provenance without retained source text.
@@ -338,12 +340,21 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
 /// Compile native-compile/1 sources and export the existing Boolean IR projection.
 /// Unsupported clauses refuse the complete export; no runtime inputs are needed.
 pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    lower_for(path, ProjectionTarget::BooleanOracleV1)
+}
+
+/// Export a source-only job through an explicit IR lowering target (FR-033).
+pub fn lower_for(
+    path: &Path,
+    target: ProjectionTarget,
+) -> std::result::Result<Vec<u8>, Box<RunError>> {
     compile_with(path, |package| {
-        lowering::lower(package, LoweringLimits::default())
+        lowering::lower_for(package, target, LoweringLimits::default())
             .map(|projection| projection.bytes().to_vec())
             .map_err(|error| {
                 let program = &package.checked().bindings().source;
                 RunCause::Lowering {
+                    target,
                     package: NativePackageRef::new(package.digest()),
                     program: Box::new(program.into()),
                     location: ProjectionLocation::resolve(program.source(), error.source),

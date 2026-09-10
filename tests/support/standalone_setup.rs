@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026–029, FR-031: example setup through public native APIs.
+//! FR-026–029, FR-031/033: example setup through public native APIs.
 
 // The shared fixture module also serves other runtime test targets.
 #[allow(dead_code)]
@@ -13,7 +13,7 @@ use quire_spec_language::{
     syntax::ClauseKind,
 };
 use serde_json::{json, Value};
-use std::path::Path;
+use std::{io, path::Path};
 
 // Each command test target uses a different subset of the shared generator cases.
 #[allow(dead_code)]
@@ -21,6 +21,7 @@ pub enum Case {
     Aggregate(i64),
     Operation { violate_frame: bool },
     Boolean { flag: bool },
+    Integer(i64),
 }
 
 fn source(source: &FormalSource, file: &str) -> Value {
@@ -28,15 +29,20 @@ fn source(source: &FormalSource, file: &str) -> Value {
         "digest":source.source().digest().to_string(),"document":source.identity().document().as_str(),"formal_revision":source.identity().revision().get()})
 }
 
-/// Write synthetic licensed fixtures. Invalid setup is a generator error, not a result.
-pub fn write(directory: &Path, case: Case) -> (Value, String) {
-    std::fs::create_dir_all(directory).unwrap();
+/// Write licensed fixtures, propagating I/O failure separately from static setup defects.
+pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
+    std::fs::create_dir_all(directory)?;
     let models = [match case {
         Case::Boolean { .. } => runtime::authored_model(|model| {
             model["values"]
                 .as_array_mut()
                 .unwrap()
                 .push(json!({"name":"flag","kind":"state","type":{"kind":"boolean"}}));
+        }),
+        Case::Integer(_) => runtime::authored_model(|model| {
+            model["values"].as_array_mut().unwrap().push(json!({
+                "name":"amount","kind":"state","type":{"kind":"scalar","name":"Version"}
+            }));
         }),
         Case::Aggregate(_) | Case::Operation { .. } => runtime::native_rule_model::parts().model(),
     }];
@@ -54,6 +60,23 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
             let selection = runtime::selection(model, snapshot.reference());
             (
                 "true implies flag",
+                ClauseKind::Invariant,
+                runtime::input(snapshot),
+                selection,
+            )
+        }
+        Case::Integer(value) => {
+            let mut draft = runtime::draft(model);
+            let id = ValueId::new(u32::try_from(draft.arena.len()).unwrap());
+            draft.arena.push(ValueNode::Integer { value });
+            draft.values.push(ValueBinding {
+                declaration: runtime::qualified(model, "amount"),
+                value: id,
+            });
+            let snapshot = runtime::snapshot(draft);
+            let selection = runtime::selection(model, snapshot.reference());
+            (
+                "amount < 7",
                 ClauseKind::Invariant,
                 runtime::input(snapshot),
                 selection,
@@ -98,8 +121,8 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
     };
     let checked = runtime::checked_kind(&models, expression, kind);
     let program = checked.linked().unit().source();
-    std::fs::write(directory.join("model.json"), model.source().source().text()).unwrap();
-    std::fs::write(directory.join("program.native"), program.text()).unwrap();
+    std::fs::write(directory.join("model.json"), model.source().source().text())?;
+    std::fs::write(directory.join("program.native"), program.text())?;
     let owner = |owner: &quire_contract_ir::RequirementRef| json!({"package":owner.package().as_str(),"requirement":owner.requirement().as_str(),"revision":owner.revision().get()});
     let clauses: Vec<_> = checked.bindings().clauses.iter().map(|clause| json!({"name":clause.name,"owner":owner(&clause.requirement),"clause":clause.clause.as_str(),"point":clause.execution_point})).collect();
     let snapshots: Vec<_> = input
@@ -108,20 +131,20 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
         .enumerate()
         .map(|(index, value)| {
             let file = format!("snapshot-{index}.json");
-            std::fs::write(directory.join(&file), value.bytes()).unwrap();
-            json!({"file":file,"reference":value.reference()})
+            std::fs::write(directory.join(&file), value.bytes())?;
+            Ok(json!({"file":file,"reference":value.reference()}))
         })
-        .collect();
+        .collect::<io::Result<_>>()?;
     let invocations: Vec<_> = input
         .invocations
         .iter()
         .enumerate()
         .map(|(index, value)| {
             let file = format!("invocation-{index}.json");
-            std::fs::write(directory.join(&file), value.bytes()).unwrap();
-            json!({"file":file,"reference":value.reference()})
+            std::fs::write(directory.join(&file), value.bytes())?;
+            Ok(json!({"file":file,"reference":value.reference()}))
         })
-        .collect();
+        .collect::<io::Result<_>>()?;
     let observation = match selection.observation {
         ObservationSelection::Current {
             snapshot,
@@ -139,36 +162,33 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
     }});
     std::fs::write(
         directory.join("request.json"),
-        serde_json::to_vec_pretty(&job).unwrap(),
-    )
-    .unwrap();
+        serde_json::to_vec_pretty(&job)?,
+    )?;
     let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
-    std::fs::write(directory.join("package.json"), package.bytes()).unwrap();
+    std::fs::write(directory.join("package.json"), package.bytes())?;
     let mut selected = job.clone();
     selected["request"]["package"] =
         json!({"file":"package.json","digest":package.digest().to_string()});
     std::fs::write(
         directory.join("package-run.json"),
-        serde_json::to_vec_pretty(&selected).unwrap(),
-    )
-    .unwrap();
+        serde_json::to_vec_pretty(&selected)?,
+    )?;
     let compilation = json!({"format":"native-compile/1","request":{
         "models":job["request"]["models"],"program":job["request"]["program"]}});
     std::fs::write(
         directory.join("compile.json"),
-        serde_json::to_vec_pretty(&compilation).unwrap(),
-    )
-    .unwrap();
-    (job, package.digest().to_string())
+        serde_json::to_vec_pretty(&compilation)?,
+    )?;
+    Ok((job, package.digest().to_string()))
 }
 
 /// Write an authored Markdown fixture and explicitly select its native body identity.
 // Only extraction command tests and the example generator use this case.
 #[allow(dead_code)]
-pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> Value {
-    let (mut job, _) = write(directory, case);
+pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> io::Result<Value> {
+    let (mut job, _) = write(directory, case)?;
     let program = &mut job["request"]["program"];
-    let native = std::fs::read_to_string(directory.join("program.native")).unwrap();
+    let native = std::fs::read_to_string(directory.join("program.native"))?;
     // This generator selects the first clause using the real syntax tree.
     // The ordinary multi-clause fixture remains intact for the other commands.
     let unit = quire_spec_language::parse(
@@ -199,11 +219,10 @@ pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> Value {
     program["source"] = json!({"file":"rules.md","identity":"ix://example/runtime-rules/spec",
         "revision":"authored:7","digest":quire_spec_language::ByteDigest::of(text.as_bytes()).to_string(),
         "document":"AuthoredRules","formal_revision":7});
-    std::fs::write(directory.join("rules.md"), text).unwrap();
+    std::fs::write(directory.join("rules.md"), text)?;
     std::fs::write(
         directory.join("request.json"),
-        serde_json::to_vec_pretty(&job).unwrap(),
-    )
-    .unwrap();
-    job
+        serde_json::to_vec_pretty(&job)?,
+    )?;
+    Ok(job)
 }

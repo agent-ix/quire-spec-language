@@ -22,6 +22,8 @@ object and compiled ConfigVersion acceptance remains LC04 work.
 1. [Task-019](tasks/Task-019-lower-native-booleans.md): tests and bounded lowering.
 2. [Task-020](tasks/Task-020-qualify-boolean-backend.md): actual generated parity,
    local gates, QUOIN spec/code/Rust/gap reviews at PR readiness, then delivery.
+3. [Task-032](tasks/Task-032-integer-ir.md): bounded integer IR lowering and
+   standalone export, independently of C's backend implementation.
 
 Owner direction for the first proof of concept permits engineering delivery with
 generated activation qualification deferred. Complete the scoped PR review and
