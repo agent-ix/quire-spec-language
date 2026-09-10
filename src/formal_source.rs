@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-014: exact source correspondence for caller-selected Contract IR identities.
+//! FR-014/030/031: explicit native/formal identities and exact source correspondence.
 //! This binding checks coordinates; assigning authored identities is the caller's role.
 
 use quire_contract_ir::{SourceIdentity as IrIdentity, SourceLocation, SourceSpan};
 
 use crate::{Code, Diagnostic, Phase, Position, Source, Span};
+
+/// Explicit caller-selected native and formal identities, before source bytes are read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceIdentities {
+    /// Opaque native source identity and revision labels.
+    pub native: crate::SourceIdentity,
+    /// Validated formal document identity and revision.
+    pub formal: IrIdentity,
+}
 
 /// Immutable correspondence between one exact native source and a formal identity.
 /// Native labels remain opaque; no revision conversion or global registry is implied.

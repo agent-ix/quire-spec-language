@@ -10,7 +10,7 @@ review_set: all
 
 The description uses a concrete When trigger and command subject. Byte/count and reader/execution obligations name the command, and failed verification uses If/then. The PR review joined a wrapped If/then sentence that caused a mechanical missing-subject warning; this changes no behavior. Final validation checks the corrected statement. No timing or safety guarantee is inferred from the bounded intake.
 
-Author PR-readiness review of implementation `8db2292` and its final grammar correction.
+Author PR-readiness review of implementation `4f15f0f` and the FR-028 corrections.
 The owner-selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings
@@ -18,4 +18,3 @@ The owner-selected review set is all; no applicable AssuranceProfile was found.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No issues found | FR-028; TC-106 |
-

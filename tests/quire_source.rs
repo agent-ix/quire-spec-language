@@ -14,7 +14,7 @@ use quire_rs::semantic::{
 };
 use quire_spec_language::checking::ClauseBinding;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::quire_source::{compile, Cause, Limits, Selection};
+use quire_spec_language::quire_source::{compile, Cause, Limits, PreflightFailure, Selection};
 use quire_spec_language::runtime::{
     execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode,
 };
@@ -53,14 +53,16 @@ fn selection() -> Selection {
                 name: ir::AnchorName::new("validate").unwrap(),
             },
         },
-        body: SourceIdentity {
-            identity: "test:quire-body".into(),
-            revision: "body:7".into(),
+        body: quire_spec_language::formal_source::SourceIdentities {
+            native: SourceIdentity {
+                identity: "test:quire-body".into(),
+                revision: "body:7".into(),
+            },
+            formal: ir::SourceIdentity::new(
+                ir::SourceDocumentId::new("QuireNativeBody").unwrap(),
+                ir::SourceRevision::new(7).unwrap(),
+            ),
         },
-        formal: ir::SourceIdentity::new(
-            ir::SourceDocumentId::new("QuireNativeBody").unwrap(),
-            ir::SourceRevision::new(7).unwrap(),
-        ),
     }
 }
 
@@ -79,7 +81,7 @@ fn document(model: &NativeModel, expression: &str, crlf: bool) -> Source {
 
 #[test]
 #[trace("TC-108", "FR-030-AC-1", "FR-030-AC-2")]
-#[trace("FR-011-AC-1", "IT-003-SC-01", "IT-003-SC-02")]
+#[trace("FR-011-AC-1")]
 fn actual_quire_body_reaches_native_truth_and_refusal_with_unchanged_extraction() {
     let models = [setup::native_rule_model::parts().model()];
     let model = &models[0];
@@ -195,7 +197,7 @@ fn actual_quire_body_reaches_native_truth_and_refusal_with_unchanged_extraction(
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-2", "FR-011-AC-2", "FR-011-AC-4", "IT-003-SC-04")]
+#[trace("TC-108", "FR-030-AC-2", "FR-011-AC-2", "FR-011-AC-4")]
 fn unchecked_tags_and_native_refusals_retain_the_actual_upstream_population() {
     let models = [setup::native_rule_model::parts().model()];
     let ctx = context();
@@ -251,7 +253,7 @@ fn unchecked_tags_and_native_refusals_retain_the_actual_upstream_population() {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-3", "FR-030-AC-4", "FR-011-AC-3", "IT-003-SC-03")]
+#[trace("TC-108", "FR-030-AC-3", "FR-030-AC-4", "FR-011-AC-3")]
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let models = [setup::native_rule_model::parts().model()];
     let original = document(&models[0], "true", false);
@@ -268,34 +270,6 @@ fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     assert_eq!(error.code, Code::SourceDigestMismatch);
     assert_ne!(ByteDigest::of(changed.as_bytes()), original.digest());
 
-    for field in ["identity", "path", "package", "profile"] {
-        let mut foreign = ctx.clone();
-        match field {
-            "identity" => foreign.source_identity = None,
-            "path" => foreign.path = "foreign.md".into(),
-            "package" => foreign.bundle.package = "example/foreign".into(),
-            "profile" => foreign.module.contract_version = "future".into(),
-            _ => unreachable!(),
-        }
-        let error = compile(
-            original.clone(),
-            &foreign,
-            selection(),
-            &models,
-            Limits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            error.code(),
-            if field == "profile" {
-                Code::UnknownProfile
-            } else {
-                Code::InvalidModelBinding
-            }
-        );
-        assert!(error.extraction().is_none());
-        assert_eq!(error.original().digest(), original.digest());
-    }
     for text in [
         original
             .text()
@@ -313,7 +287,7 @@ fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
         assert_eq!(error.extraction(), Some(&expected));
     }
     let mut reused = selection();
-    reused.body = original.identity().clone();
+    reused.body.native = original.identity().clone();
     let error = compile(original.clone(), &ctx, reused, &models, Limits::default()).unwrap_err();
     assert_eq!(error.code(), Code::InvalidSourceMap);
     assert!(error.extraction().is_some());
@@ -375,14 +349,34 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
         line_stop.lines -= 1;
         let mut compiler_stop = exact;
         compiler_stop.compiler.package.artifact_bytes = 0;
-        for (limits, extracted) in [
-            (byte_stop, false),
-            (line_stop, false),
-            (compiler_stop, true),
+        for (limits, preflight) in [
+            (
+                byte_stop,
+                Some(PreflightFailure::SourceBytes {
+                    actual: original.text().len(),
+                    maximum: byte_stop.source_bytes,
+                }),
+            ),
+            (
+                line_stop,
+                Some(PreflightFailure::SourceLines {
+                    actual: Some(exact.lines),
+                    maximum: line_stop.lines,
+                }),
+            ),
+            (compiler_stop, None),
         ] {
             let error = compile(original.clone(), &ctx, selection(), &models, limits).unwrap_err();
             assert_eq!(error.code(), Code::ResourceExhausted);
-            assert_eq!(error.extraction().is_some(), extracted);
+            assert_eq!(error.extraction().is_none(), preflight.is_some());
+            if let Some(expected) = preflight {
+                let Cause::Preflight(actual) = &error.cause else {
+                    panic!("expected typed input ceiling");
+                };
+                assert_eq!(**actual, expected);
+            } else {
+                assert!(matches!(error.cause, Cause::Compile(_)));
+            }
         }
         assert!(compile(original, &ctx, selection(), &models, exact).is_ok());
     }
@@ -405,4 +399,88 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
     .unwrap_err();
     assert_eq!(error.code(), Code::ResourceExhausted);
     assert!(error.extraction().is_none());
+    let Cause::Preflight(actual) = &error.cause else {
+        panic!("expected hard line ceiling");
+    };
+    assert!(matches!(
+        **actual,
+        PreflightFailure::SourceLines { maximum: 4096, .. }
+    ));
+}
+
+#[test]
+#[trace("TC-108", "FR-030-AC-3", "FR-011-AC-3")]
+fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
+    use quire_spec_language::quire_source::{CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
+    #[derive(Debug)]
+    enum Foreign {
+        Identity,
+        Path,
+        Package,
+        Contract,
+        Semantic,
+    }
+    let models = [setup::native_rule_model::parts().model()];
+    let original = document(&models[0], "true", false);
+    for change in [
+        Foreign::Identity,
+        Foreign::Path,
+        Foreign::Package,
+        Foreign::Contract,
+        Foreign::Semantic,
+    ] {
+        let mut foreign = context();
+        let expected = match change {
+            Foreign::Identity => {
+                foreign.source_identity = None;
+                PreflightFailure::SourceIdentity {
+                    actual: None,
+                    expected: identity().identity,
+                }
+            }
+            Foreign::Path => {
+                foreign.path = "foreign.md".into();
+                PreflightFailure::SourcePath {
+                    actual: "foreign.md".into(),
+                    expected: "rules.md".into(),
+                }
+            }
+            Foreign::Package => {
+                foreign.bundle.package = "example/foreign".into();
+                PreflightFailure::Package {
+                    actual: "example/foreign".into(),
+                    expected: "example/runtime-rules".into(),
+                }
+            }
+            Foreign::Contract => {
+                foreign.module.contract_version = "future".into();
+                PreflightFailure::ContractVersion {
+                    actual: "future".into(),
+                    expected: CONTRACT_VERSION,
+                }
+            }
+            Foreign::Semantic => {
+                foreign.module.semantic_core = "future".into();
+                PreflightFailure::SemanticCore {
+                    actual: "future".into(),
+                    expected: SEMANTIC_CORE_VERSION,
+                }
+            }
+        };
+        let error = compile(
+            original.clone(),
+            &foreign,
+            selection(),
+            &models,
+            Limits::default(),
+        )
+        .unwrap_err();
+        let Cause::Preflight(actual) = &error.cause else {
+            panic!("{change:?}: expected preflight refusal, got {error:?}");
+        };
+        assert_eq!(**actual, expected, "{change:?}");
+        assert_eq!(error.code(), expected.code());
+        assert!(error.extraction().is_none());
+        assert_eq!(error.original().digest(), original.digest());
+    }
 }

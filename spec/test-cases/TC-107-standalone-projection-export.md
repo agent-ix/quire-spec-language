@@ -16,6 +16,9 @@ Export a source-only Boolean fixture; compare exact library bytes and read with
 both pinned IR consumers before generating the full backend oracle population.
 Make a later clause numeric, inspect refusal provenance, and retry valid input.
 Mutate request format, fields, selected source and file count; run existing commands.
+Require catalogued codes and command-specific lower arity errors before file I/O.
+Exercise absent, valid Unicode and invalid span context separately from the actual
+unsupported-clause binary failure; distinguish their serialized span_status values.
 
 ## Expected Results
 
