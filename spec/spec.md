@@ -8,6 +8,8 @@ standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-031
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-030
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-029

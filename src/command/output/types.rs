@@ -11,6 +11,8 @@ use std::borrow::Cow;
 pub(super) use crate::wire_format::WireFormat as Format;
 
 pub(super) enum Stage {
+    #[cfg(feature = "quire-extraction")]
+    Extraction(super::extraction::Stage),
     File,
     Request,
     Output,
@@ -27,6 +29,8 @@ pub(super) enum Stage {
 impl Serialize for Stage {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(match self {
+            #[cfg(feature = "quire-extraction")]
+            Self::Extraction(stage) => stage.as_str(),
             Self::File => "file",
             Self::Request => "request",
             Self::Output => "output",
@@ -105,6 +109,8 @@ pub(super) struct Diagnostic<'a> {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub(super) enum Details<'a> {
+    #[cfg(feature = "quire-extraction")]
+    Extraction(super::extraction::Failure<'a>),
     None,
     Io {
         path: Cow<'a, str>,
@@ -268,6 +274,9 @@ pub(super) enum Outcome<'a> {
 
 #[derive(Serialize)]
 pub(super) struct Report<'a> {
+    #[cfg(feature = "quire-extraction")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extraction: Option<super::extraction::Extracted<'a>>,
     pub format: Format,
     pub request_digest: String,
     pub package: Package,

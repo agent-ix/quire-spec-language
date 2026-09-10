@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028, FR-029: example setup through public native APIs.
+//! FR-026–029, FR-031: example setup through public native APIs.
 
 // The shared fixture module also serves other runtime test targets.
 #[allow(dead_code)]
@@ -160,4 +160,50 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
     )
     .unwrap();
     (job, package.digest().to_string())
+}
+
+/// Write an authored Markdown fixture and explicitly select its native body identity.
+// Only extraction command tests and the example generator use this case.
+#[allow(dead_code)]
+pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> Value {
+    let (mut job, _) = write(directory, case);
+    let program = &mut job["request"]["program"];
+    let native = std::fs::read_to_string(directory.join("program.native")).unwrap();
+    // This generator selects the first clause using the real syntax tree.
+    // The ordinary multi-clause fixture remains intact for the other commands.
+    let unit = quire_spec_language::parse(
+        quire_spec_language::SourceIdentity {
+            identity: "test:fixture-selection".into(),
+            revision: "1".into(),
+        },
+        "program.native",
+        native.as_bytes(),
+        quire_spec_language::Limits::default(),
+    )
+    .unwrap();
+    let native = &native[..unit.clauses()[0].span.end];
+    program["clauses"].as_array_mut().unwrap().truncate(1);
+    let body: String = native.lines().map(|line| format!("  {line}\n")).collect();
+    let clause = program["clauses"][0]["clause"].as_str().unwrap();
+    let text = format!("# Ω native workflow\n\n## Invariants\n\n### {clause}\n  ```ix:native\n{body}  ```\u{a0}\n\n## Notes\nλ exact source.\n");
+    let text = if crlf {
+        text.replace('\n', "\r\n")
+    } else {
+        text
+    };
+    let selected = &program["source"];
+    program["extraction"] = json!({"body":{
+        "identity":selected["identity"],"revision":selected["revision"],
+        "document":selected["document"],"formal_revision":selected["formal_revision"]
+    }});
+    program["source"] = json!({"file":"rules.md","identity":"ix://example/runtime-rules/spec",
+        "revision":"authored:7","digest":quire_spec_language::ByteDigest::of(text.as_bytes()).to_string(),
+        "document":"AuthoredRules","formal_revision":7});
+    std::fs::write(directory.join("rules.md"), text).unwrap();
+    std::fs::write(
+        directory.join("request.json"),
+        serde_json::to_vec_pretty(&job).unwrap(),
+    )
+    .unwrap();
+    job
 }

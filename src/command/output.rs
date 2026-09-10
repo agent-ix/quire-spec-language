@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-026: construct typed JSON views of native outcomes and actual provenance.
 
+#[cfg(feature = "quire-extraction")]
+mod extraction;
 mod types;
 
 use super::{wire, LimitKind, RunCause, RunError, RunResult};
@@ -120,6 +122,11 @@ fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLoc
 
 pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
+        #[cfg(feature = "quire-extraction")]
+        RunCause::Extraction(error) => {
+            let (stage, details) = extraction::failure(error);
+            (stage, types::Details::Extraction(details))
+        }
         RunCause::Io { path, error } => (
             types::Stage::File,
             types::Details::Io {
@@ -242,6 +249,7 @@ pub(super) fn report(
     digest: ByteDigest,
     selection: &wire::Selection,
     models: &[NativeModel],
+    _package: &super::compilation::RunPackage<'_>,
     report: &ExecutionReport<'_, '_>,
 ) -> super::Result<RunResult> {
     let (exit_code, outcome) = match report.outcome() {
@@ -314,6 +322,8 @@ pub(super) fn report(
         }
     };
     let document = types::Report {
+        #[cfg(feature = "quire-extraction")]
+        extraction: extraction::context(_package),
         format: types::Format::RunResult,
         request_digest: digest.to_string(),
         package: types::Package {

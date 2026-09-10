@@ -53,14 +53,16 @@ fn selection() -> Selection {
                 name: ir::AnchorName::new("validate").unwrap(),
             },
         },
-        body: SourceIdentity {
-            identity: "test:quire-body".into(),
-            revision: "body:7".into(),
+        body: quire_spec_language::formal_source::SourceIdentities {
+            native: SourceIdentity {
+                identity: "test:quire-body".into(),
+                revision: "body:7".into(),
+            },
+            formal: ir::SourceIdentity::new(
+                ir::SourceDocumentId::new("QuireNativeBody").unwrap(),
+                ir::SourceRevision::new(7).unwrap(),
+            ),
         },
-        formal: ir::SourceIdentity::new(
-            ir::SourceDocumentId::new("QuireNativeBody").unwrap(),
-            ir::SourceRevision::new(7).unwrap(),
-        ),
     }
 }
 
@@ -285,7 +287,7 @@ fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
         assert_eq!(error.extraction(), Some(&expected));
     }
     let mut reused = selection();
-    reused.body = original.identity().clone();
+    reused.body.native = original.identity().clone();
     let error = compile(original.clone(), &ctx, reused, &models, Limits::default()).unwrap_err();
     assert_eq!(error.code(), Code::InvalidSourceMap);
     assert!(error.extraction().is_some());

@@ -11,6 +11,70 @@ use crate::package::{
 };
 use crate::Limits;
 
+pub(super) fn source_only(_program: &wire::Program) -> Result<()> {
+    // A minimal build's closed Program decoder already rejects extraction fields.
+    #[cfg(feature = "quire-extraction")]
+    if _program.extraction.is_some() {
+        return Err(super::ExtractionMode::CompileCommand.into());
+    }
+    Ok(())
+}
+
+pub(super) enum RunSelection<'a> {
+    Native(&'a wire::Request),
+    #[cfg(feature = "quire-extraction")]
+    Extracted(super::extraction::Selected<'a>),
+}
+
+impl<'a> RunSelection<'a> {
+    pub fn new(request: &'a wire::Request) -> Result<Self> {
+        #[cfg(feature = "quire-extraction")]
+        if let Some(descriptor) = &request.program.extraction {
+            if request.package.is_some() {
+                return Err(super::ExtractionMode::PackageSelected.into());
+            }
+            return Ok(Self::Extracted(super::extraction::select(
+                &request.program,
+                descriptor,
+            )?));
+        }
+        Ok(Self::Native(request))
+    }
+
+    pub fn compile<'model>(
+        self,
+        intake: &mut Intake<'_>,
+        models: &'model [NativeModel],
+    ) -> Result<RunPackage<'model>> {
+        match self {
+            Self::Native(request) => Ok(RunPackage::Native(Box::new(match &request.package {
+                Some(selected) => selected_package(intake, selected, &request.program, models)?,
+                None => package(intake, &request.program, models)?,
+            }))),
+            #[cfg(feature = "quire-extraction")]
+            Self::Extracted(selected) => Ok(RunPackage::Extracted(Box::new(
+                selected.compile(intake, models)?,
+            ))),
+        }
+    }
+}
+
+pub(super) enum RunPackage<'model> {
+    Native(Box<NativePackage<'model>>),
+    #[cfg(feature = "quire-extraction")]
+    Extracted(Box<super::extraction::ExtractedRun<'model>>),
+}
+
+impl<'model> RunPackage<'model> {
+    pub fn native(&self) -> &NativePackage<'model> {
+        match self {
+            Self::Native(package) => package,
+            #[cfg(feature = "quire-extraction")]
+            Self::Extracted(value) => value.package.mapped().native(),
+        }
+    }
+}
+
 pub(super) fn models(
     intake: &mut Intake<'_>,
     selected: &[wire::Model],
