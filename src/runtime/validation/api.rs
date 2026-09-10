@@ -194,7 +194,7 @@ impl ValidationLimits {
 }
 
 /// Work actually admitted by this validation request, without construction fuel.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct ValidationUsage {
     /// Offered artifacts admitted by inventory preflight.
     pub artifacts: usize,
