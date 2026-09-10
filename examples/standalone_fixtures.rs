@@ -33,7 +33,12 @@ fn main() {
     for (name, case) in [
         ("markdown-healthy", setup::Case::Aggregate(2)),
         ("markdown-violating", setup::Case::Aggregate(1)),
-        ("markdown-refused", setup::Case::Operation(true)),
+        (
+            "markdown-refused",
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+        ),
     ] {
         setup::write_extracted(&directory.join(name), case, true);
     }
