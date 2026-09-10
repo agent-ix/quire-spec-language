@@ -8,6 +8,12 @@ standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-035
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-036
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-009
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-033
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
@@ -115,11 +121,15 @@ relationships:
 ---
 # Master Requirements Specification
 
-## Native finite-state compiler and executable core
+## Native compiler, composed admission and executable profiles
 
 ## 1. Purpose
 
-This root indexes the discrete requirements for Agent A's assigned native finite-state work. It corrects the earlier proposal-only authoring by using the requested /specify catalog contract. All artifacts remain draft with conditional /spec-review findings; retrospective documentation does not retroactively approve implementation.
+This root indexes the native compiler requirements, including the historical
+finite-state implementation and the proposed composed-language admission under
+[compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35).
+Discrete requirements distinguish planned composed behavior from existing
+implementation and its recorded qualification.
 
 ## 2. Scope
 
@@ -127,15 +137,30 @@ This root indexes the discrete requirements for Agent A's assigned native finite
 
 LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned fixture verification under FR-012/NFR-005.
 
+L2 adds edition-selected syntax and exact package linking across state, temporal
+and choreography declarations through
+[FR-035](functional/FR-035-parse-composed-native-units.md) and
+[FR-036](functional/FR-036-link-composed-native-packages.md). It consumes the shared
+language/model/binding contracts without claiming the downstream family engines.
+
 ### 2.2 Out of Scope
 
-Temporal/protocol/message semantics, B's portable method/plan/result schemas, C's existing-repository integration work, a duplicate archetype model or Contract IR type authority, a second executable binder, public publication and standard-wide license selection are outside this repository's implementation ownership. A owns native semantics and concrete source-to-formal projections needed by its proof cases. These boundaries do not remove the full supported-state workflow.
+The standard owns temporal/protocol/message meaning; the existing family tickets
+own its downstream execution and projections. This L2 slice does not implement
+those engines, B's portable result schemas, D's model producer or C's assurance
+campaign. Duplicate model/type authorities, a second executable binder, public
+publication and standard-wide license selection remain outside this scope.
 
 ## 3. System Overview
 
 ### 3.1 System Description
 
-The language defines an explicit finite-state profile. The native pipeline preserves source identity through parsing, model linking, runtime validation, reference evaluation and qualified backend projection. Archetype schemas, explicit formal declarations and runtime populations are distinct. Contract IR owns formal types and its executable binder; the modeling language owns the semantics and qualified projection of concepts its clauses require.
+The existing implementation selects an explicit finite-state profile. The proposed
+composed path preserves source identity through edition recognition and typed
+package dependencies before downstream checking, assessment binding or execution.
+Archetype schemas, explicit formal declarations and runtime populations remain
+distinct. Contract IR owns formal types and its executable binder; the native
+language standard owns the meaning of the clauses being compiled.
 
 ### 3.2 Intended Users
 
