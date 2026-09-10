@@ -85,7 +85,7 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
         Command::Compile { path } => quire_spec_language::command::compile(path)
             .map(|bytes| (0, Output::Artifact(bytes)))
             .map_err(|error| command_error(&error)),
-        Command::Lower { path } => quire_spec_language::command::lower(path)
+        Command::Lower { path, target } => quire_spec_language::command::lower_for(path, target)
             .map(|bytes| (0, Output::Artifact(bytes)))
             .map_err(|error| command_error(&error)),
     }

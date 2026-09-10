@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-009: a narrow native derivation consumed by the existing executable binder.
+//! FR-009/FR-033: explicit native targets consumed by the existing executable binder.
 
+mod target;
 mod wire;
+
+pub use target::{ProjectionTarget, UnknownProjectionTarget};
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};
@@ -15,7 +18,45 @@ use crate::syntax::{BinaryOp, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::{ByteDigest, Span};
 
 /// The existing backend's Boolean expression domain; not a proof attestation.
-pub const PROFILE: &str = "boolean-oracle/v1";
+pub const PROFILE: &str = ProjectionTarget::BooleanOracleV1.name();
+
+impl ProjectionTarget {
+    fn admits(self, ty: &ir::ValueType) -> bool {
+        match self {
+            Self::BooleanOracleV1 => matches!(ty, ir::ValueType::Boolean),
+            Self::IntegerIrV1 => {
+                matches!(ty, ir::ValueType::Boolean | ir::ValueType::Integer { .. })
+            }
+        }
+    }
+}
+
+enum ProjectedOperator {
+    Boolean(ir::BooleanOperator),
+    Numeric(ir::NumericOperator),
+    Compare(ir::ComparisonOperator),
+}
+
+impl From<BinaryOp> for ProjectedOperator {
+    fn from(op: BinaryOp) -> Self {
+        match op {
+            BinaryOp::And => Self::Boolean(ir::BooleanOperator::ShortCircuitAnd),
+            BinaryOp::Or => Self::Boolean(ir::BooleanOperator::ShortCircuitOr),
+            BinaryOp::Implies => Self::Boolean(ir::BooleanOperator::Implication),
+            BinaryOp::Add => Self::Numeric(ir::NumericOperator::Add),
+            BinaryOp::Subtract => Self::Numeric(ir::NumericOperator::Subtract),
+            BinaryOp::Multiply => Self::Numeric(ir::NumericOperator::Multiply),
+            BinaryOp::Divide => Self::Numeric(ir::NumericOperator::Divide),
+            BinaryOp::Remainder => Self::Numeric(ir::NumericOperator::Remainder),
+            BinaryOp::Equal => Self::Compare(ir::ComparisonOperator::Equal),
+            BinaryOp::NotEqual => Self::Compare(ir::ComparisonOperator::NotEqual),
+            BinaryOp::Less => Self::Compare(ir::ComparisonOperator::Less),
+            BinaryOp::LessEqual => Self::Compare(ir::ComparisonOperator::LessEqual),
+            BinaryOp::Greater => Self::Compare(ir::ComparisonOperator::Greater),
+            BinaryOp::GreaterEqual => Self::Compare(ir::ComparisonOperator::GreaterEqual),
+        }
+    }
+}
 
 /// Caller-lowered ceilings for one fresh atomic projection.
 #[derive(Clone, Copy, Debug)]
@@ -144,7 +185,7 @@ fn identity(clause: &ClauseBinding) -> ir::ClauseRef {
     ir::ClauseRef::new(clause.requirement.clone(), clause.clause.clone())
 }
 
-/// One derived Boolean parameter's exact native declaration correspondence.
+/// One derived primitive parameter's exact native declaration correspondence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectedRead {
     /// Complete authored clause identity in the derived package.
@@ -165,6 +206,7 @@ pub struct ProjectedRead {
 #[derive(Debug)]
 pub struct NativeProjection<'p, 'model> {
     native: &'p NativePackage<'model>,
+    target: ProjectionTarget,
     bytes: Vec<u8>,
     bound: ir::BoundPackage,
     reads: Vec<ProjectedRead>,
@@ -178,7 +220,7 @@ impl<'p, 'model> NativeProjection<'p, 'model> {
     }
     /// Named lowering domain. Backend generation may impose further limits.
     pub fn profile(&self) -> &'static str {
-        PROFILE
+        self.target.name()
     }
     /// Public IR executable-projection/v1 wire consumed by the strict binder.
     pub fn bytes(&self) -> &[u8] {
@@ -210,6 +252,16 @@ struct Prepared<'a> {
 /// This operation neither evaluates runtime data nor authenticates backend evidence.
 pub fn lower<'p, 'model>(
     native: &'p NativePackage<'model>,
+    limits: LoweringLimits,
+) -> Result<NativeProjection<'p, 'model>> {
+    lower_for(native, ProjectionTarget::BooleanOracleV1, limits)
+}
+
+/// Lower the complete package for an explicitly selected target (FR-033).
+/// Integer IR output still requires a backend that admits its expression domain.
+pub fn lower_for<'p, 'model>(
+    native: &'p NativePackage<'model>,
+    target: ProjectionTarget,
     limits: LoweringLimits,
 ) -> Result<NativeProjection<'p, 'model>> {
     let limits = limits.bounded();
@@ -285,6 +337,7 @@ pub fn lower<'p, 'model>(
             .collect();
         let mut lowering = ClauseLowering {
             native,
+            target,
             clause,
             model,
             occurrences,
@@ -394,29 +447,30 @@ pub fn lower<'p, 'model>(
         requirements,
     )
     .map_err(|errors| upstream(None, None, errors))?;
+    // Establish the complete wire domain before any serialized bytes are written.
+    let projection = wire::Projection::new(&package, &prepared, &checked.bindings().source)?;
     let mut output = Output {
         bytes: Vec::new(),
         maximum: limits.bytes,
     };
-    serde_json::to_writer(&mut output, &wire::Projection::new(&package, &prepared)).map_err(
-        |error| {
-            failure(
-                if error.is_io() {
-                    LoweringCode::ResourceExhausted
-                } else {
-                    LoweringCode::InvalidCorrespondence
-                },
-                None,
-                None,
-                &error.to_string(),
-            )
-        },
-    )?;
+    serde_json::to_writer(&mut output, &projection).map_err(|error| {
+        failure(
+            if error.is_io() {
+                LoweringCode::ResourceExhausted
+            } else {
+                LoweringCode::InvalidCorrespondence
+            },
+            None,
+            None,
+            &error.to_string(),
+        )
+    })?;
     usage.bytes = output.bytes.len();
     let bound = ir::BoundPackage::from_json_bytes(&output.bytes)
         .map_err(|errors| upstream(None, None, errors))?;
     Ok(NativeProjection {
         native,
+        target,
         bytes: output.bytes,
         bound,
         reads,
@@ -426,6 +480,7 @@ pub fn lower<'p, 'model>(
 
 struct ClauseLowering<'a, 'model> {
     native: &'a NativePackage<'model>,
+    target: ProjectionTarget,
     clause: &'a CheckedClause<'model>,
     model: &'a crate::linking::LinkedModel<'model>,
     occurrences: BTreeMap<usize, &'a DeclarationLocation>,
@@ -453,16 +508,41 @@ impl ClauseLowering<'_, '_> {
         }
         self.usage.nodes += 1;
         self.usage.max_depth = self.usage.max_depth.max(depth);
-        if !matches!(self.clause.expression_type(id), Some(NativeType::Boolean)) {
+        let primitive = match self.clause.expression_type(id) {
+            Some(NativeType::Boolean) => Some(&ir::ValueType::Boolean),
+            Some(NativeType::Scalar { representation, .. }) => Some(*representation),
+            _ => None,
+        };
+        if !primitive.is_some_and(|ty| self.target.admits(ty)) {
             return Err(self.error(
                 LoweringCode::Unsupported,
                 node.span,
-                "the Boolean backend requires Boolean expressions",
+                "expression type is outside the selected projection target",
             ));
         }
         let kind = match &node.kind {
             ExprKind::Group { inner } => return self.expression(*inner, depth + 1),
             ExprKind::Boolean(value) => ir::ExpressionKind::BooleanLiteral { value: *value },
+            ExprKind::Integer(text) if self.target == ProjectionTarget::IntegerIrV1 => {
+                let Some(ir::ValueType::Integer { value: value_type }) = primitive else {
+                    return Err(self.error(
+                        LoweringCode::InvalidCorrespondence,
+                        node.span,
+                        "integer literal has no checked scalar representation",
+                    ));
+                };
+                let value = text.parse().map_err(|_| {
+                    self.error(
+                        LoweringCode::InvalidCorrespondence,
+                        node.span,
+                        "checked integer literal cannot be represented",
+                    )
+                })?;
+                ir::ExpressionKind::IntegerLiteral {
+                    value,
+                    value_type: value_type.clone(),
+                }
+            }
             ExprKind::Name(_) => self.read(id, node.span)?,
             ExprKind::Unary {
                 op: UnaryOp::Not,
@@ -470,30 +550,22 @@ impl ClauseLowering<'_, '_> {
             } => ir::ExpressionKind::BooleanNot {
                 operand: Box::new(self.expression(*argument, depth + 1)?),
             },
-            ExprKind::Binary { op, left, right } => {
-                let operator = match op {
-                    BinaryOp::And => ir::BooleanOperator::ShortCircuitAnd,
-                    BinaryOp::Or => ir::BooleanOperator::ShortCircuitOr,
-                    BinaryOp::Implies => ir::BooleanOperator::Implication,
-                    _ => {
-                        return Err(self.error(
-                            LoweringCode::Unsupported,
-                            node.span,
-                            "operator is outside the Boolean backend domain",
-                        ))
-                    }
-                };
-                ir::ExpressionKind::Boolean {
-                    operator,
-                    left: Box::new(self.expression(*left, depth + 1)?),
-                    right: Box::new(self.expression(*right, depth + 1)?),
+            ExprKind::Unary {
+                op: UnaryOp::Negate,
+                argument,
+            } if self.target == ProjectionTarget::IntegerIrV1 => {
+                ir::ExpressionKind::NumericNegate {
+                    operand: Box::new(self.expression(*argument, depth + 1)?),
                 }
+            }
+            ExprKind::Binary { op, left, right } => {
+                self.binary(*op, *left, *right, depth, node.span)?
             }
             _ => {
                 return Err(self.error(
                     LoweringCode::Unsupported,
                     node.span,
-                    "expression form is outside the Boolean backend domain",
+                    "expression form is outside the selected projection target",
                 ))
             }
         };
@@ -509,6 +581,45 @@ impl ClauseLowering<'_, '_> {
                 )
             })?;
         Ok(ir::Expression::new(kind, source))
+    }
+
+    fn binary(
+        &mut self,
+        op: BinaryOp,
+        left: ExprId,
+        right: ExprId,
+        depth: usize,
+        span: Span,
+    ) -> Result<ir::ExpressionKind> {
+        let operator = ProjectedOperator::from(op);
+        if self.target == ProjectionTarget::BooleanOracleV1
+            && !matches!(operator, ProjectedOperator::Boolean(_))
+        {
+            return Err(self.error(
+                LoweringCode::Unsupported,
+                span,
+                "operator is outside the Boolean backend domain",
+            ));
+        }
+        let left = Box::new(self.expression(left, depth + 1)?);
+        let right = Box::new(self.expression(right, depth + 1)?);
+        Ok(match operator {
+            ProjectedOperator::Boolean(operator) => ir::ExpressionKind::Boolean {
+                operator,
+                left,
+                right,
+            },
+            ProjectedOperator::Numeric(operator) => ir::ExpressionKind::Numeric {
+                operator,
+                left,
+                right,
+            },
+            ProjectedOperator::Compare(operator) => ir::ExpressionKind::Compare {
+                operator,
+                left,
+                right,
+            },
+        })
     }
 
     fn read(&mut self, id: ExprId, span: Span) -> Result<ir::ExpressionKind> {
@@ -540,11 +651,11 @@ impl ClauseLowering<'_, '_> {
                 "linked value declaration is unavailable",
             )
         })?;
-        if declaration.value_type() != &ir::ValueType::Boolean {
+        if !self.target.admits(declaration.value_type()) {
             return Err(self.error(
                 LoweringCode::Unsupported,
                 span,
-                "read declaration is outside the Boolean backend domain",
+                "read declaration is outside the selected projection target",
             ));
         }
         let Some(Observation::Snapshot(native_observation)) = self.clause.observation(id) else {

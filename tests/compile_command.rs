@@ -43,7 +43,7 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
         ),
     ] {
         let generated = tempfile::tempdir().unwrap();
-        let (_, digest) = fixtures::write(generated.path(), case);
+        let (_, digest) = fixtures::write(generated.path(), case).unwrap();
         let request_bytes = std::fs::read(generated.path().join("compile.json")).unwrap();
         let job: Value = serde_json::from_slice(&request_bytes).unwrap();
         let directory = tempfile::tempdir().unwrap();
@@ -109,7 +109,7 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
         Change::Syntax,
     ] {
         let directory = tempfile::tempdir().unwrap();
-        fixtures::write(directory.path(), fixtures::Case::Aggregate(2));
+        fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
         let original = std::fs::read(directory.path().join("compile.json")).unwrap();
         let mut changed: Value = serde_json::from_slice(&original).unwrap();
         let (expected, code) = match change {
@@ -178,7 +178,7 @@ fn compile_arity_is_checked_before_opening_any_request() {
 #[trace("TC-105", "FR-027-AC-3")]
 fn failed_artifact_output_is_an_io_exit() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Aggregate(2));
+    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
     let full = std::fs::OpenOptions::new()
         .write(true)
         .open("/dev/full")
@@ -205,7 +205,8 @@ fn file_count_refusals_name_the_exhausted_group_before_file_io() {
             fixtures::Case::Operation {
                 violate_frame: false,
             },
-        );
+        )
+        .unwrap();
         let item = job["request"][field][0].clone();
         job["request"][field] = json!(vec![item; 64]);
         job["request"]["program"]["source"]["file"] = json!("missing.native");

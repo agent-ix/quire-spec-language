@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-010/026: the binary's bounded positional command grammar.
 
+use quire_spec_language::lowering::{ProjectionTarget, UnknownProjectionTarget};
 use std::ffi::OsString;
 use std::path::Path;
 
@@ -25,6 +26,7 @@ pub(super) enum Command<'a> {
     },
     Lower {
         path: &'a Path,
+        target: ProjectionTarget,
     },
 }
 
@@ -36,6 +38,8 @@ pub(super) enum UsageError<'a> {
     NonUtf8 { operand: &'static str },
     #[error("unknown command: {0}")]
     UnknownCommand(&'a str),
+    #[error("{0}")]
+    UnknownTarget(#[from] UnknownProjectionTarget),
     #[error("usage: quire-spec {command} {operands}")]
     Arity {
         command: &'a str,
@@ -99,14 +103,24 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                 })
             }
             "lower" => {
-                let [path] = operands else {
-                    return Err(UsageError::Arity {
-                        command,
-                        operands: "<request-file>",
-                    });
+                let (path, target) = match operands {
+                    [path] => (path, ProjectionTarget::BooleanOracleV1),
+                    [path, option, target] if option == "--target" => {
+                        let name = target.to_str().ok_or(UsageError::NonUtf8 {
+                            operand: "lowering target",
+                        })?;
+                        (path, name.parse()?)
+                    }
+                    _ => {
+                        return Err(UsageError::Arity {
+                            command,
+                            operands: "<request-file> [--target <target>]",
+                        })
+                    }
                 };
                 Ok(Self::Lower {
                     path: Path::new(path),
+                    target,
                 })
             }
             _ => Err(UsageError::UnknownCommand(command)),

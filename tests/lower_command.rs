@@ -42,10 +42,92 @@ fn job(directory: &Path) -> Value {
 }
 
 #[test]
+#[trace("TC-111", "FR-033-AC-5")]
+fn fixture_filesystem_failures_propagate_and_fresh_generation_succeeds() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("file");
+    std::fs::write(&file, "not a directory").unwrap();
+    for markdown in [false, true] {
+        let invalid = file.join("child");
+        let error = if markdown {
+            fixtures::write_extracted(&invalid, fixtures::Case::Integer(1), true).unwrap_err()
+        } else {
+            fixtures::write(&invalid, fixtures::Case::Integer(1)).unwrap_err()
+        };
+        assert_eq!(error.kind(), std::io::ErrorKind::NotADirectory);
+
+        let later = directory
+            .path()
+            .join(if markdown { "markdown" } else { "native" });
+        std::fs::create_dir_all(&later).unwrap();
+        let collision = later.join(if markdown { "rules.md" } else { "model.json" });
+        std::fs::create_dir(&collision).unwrap();
+        let error = if markdown {
+            fixtures::write_extracted(&later, fixtures::Case::Integer(1), true).unwrap_err()
+        } else {
+            fixtures::write(&later, fixtures::Case::Integer(1)).unwrap_err()
+        };
+        assert_eq!(error.kind(), std::io::ErrorKind::IsADirectory);
+        assert!(collision.is_dir());
+    }
+    let valid = directory.path().join("retry");
+    fixtures::write(&valid, fixtures::Case::Integer(1)).unwrap();
+    let output = invoke(&valid, "run", "request.json");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["truth"],
+        true
+    );
+}
+
+#[test]
+#[trace("TC-111", "FR-033-AC-4")]
+fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut projections = Vec::new();
+    for (name, amount, truth) in [("healthy", 1, true), ("violating", 10, false)] {
+        let path = directory.path().join(name);
+        fixtures::write(&path, fixtures::Case::Integer(amount)).unwrap();
+        let actual = invoke(&path, "run", "request.json");
+        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 1 }));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&actual.stdout).unwrap()["truth"],
+            truth
+        );
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .arg("lower")
+            .arg(path.join("compile.json"))
+            .args(["--target", "integer-ir/v1"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bound = ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
+        assert_eq!(bound.clauses().len(), 2);
+        projections.push(output.stdout);
+    }
+    assert_eq!(projections[0], projections[1]);
+    let path = directory.path().join("boolean");
+    fixtures::write(&path, fixtures::Case::Boolean { flag: true }).unwrap();
+    let default = invoke(&path, "lower", "compile.json");
+    let explicit = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("lower")
+        .arg(path.join("compile.json"))
+        .args(["--target", "boolean-oracle/v1"])
+        .output()
+        .unwrap();
+    assert!(default.status.success() && explicit.status.success());
+    assert_eq!(default.stdout, explicit.stdout);
+}
+
+#[test]
 #[trace("TC-107", "FR-029-AC-1", "FR-029-AC-3")]
 fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_population() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true });
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let run = invoke(directory.path(), "run", "request.json");
     assert_eq!(run.status.code(), Some(0));
     assert_eq!(
@@ -122,7 +204,7 @@ fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_populat
 #[trace("TC-107", "FR-029-AC-2")]
 fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefix() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true });
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let original_job = job(directory.path());
     let program_path = directory.path().join("program.native");
     let original = std::fs::read_to_string(&program_path).unwrap();
@@ -180,7 +262,7 @@ fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefi
 #[trace("TC-107", "FR-029-AC-3")]
 fn projection_export_reuses_source_request_refusals_and_intake_limits() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: false });
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: false }).unwrap();
     let original = job(directory.path());
     #[derive(Debug)]
     enum Mutation {
@@ -243,7 +325,7 @@ fn lower_arity_refuses_before_opening_a_request() {
         assert!(output.stdout.is_empty());
         assert_eq!(
             std::str::from_utf8(&output.stderr).unwrap(),
-            "usage: quire-spec lower <request-file>\n"
+            "usage: quire-spec lower <request-file> [--target <target>]\n"
         );
     }
 }
