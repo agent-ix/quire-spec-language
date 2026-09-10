@@ -9,7 +9,9 @@ mod setup;
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
-use quire_spec_language::model_source::{read, ModelSourceCause, ModelSourceLimits, FORMAT};
+use quire_spec_language::model_source::{
+    read, EntryKind, ModelSourceCause, ModelSourceLimits, FORMAT,
+};
 use quire_spec_language::native_model::ModelLimits;
 use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{
@@ -45,6 +47,7 @@ fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
     let source = source(text, "1");
     let draft = read(source.clone(), FORMAT, ModelSourceLimits::default()).unwrap();
     assert_eq!(draft.declared_license, "AGPL-3.0-only");
+    assert_eq!(draft.source_limits, ModelSourceLimits::default());
     assert_eq!(draft.source.source().text(), text);
     let model = draft.admit(ModelLimits::default()).unwrap();
     let frozen: Value = serde_json::from_slice(include_bytes!(
@@ -186,6 +189,34 @@ fn profile_decode_formal_and_admission_failures_retain_the_original_source() {
 #[test]
 #[trace("TC-102", "FR-025-AC-4")]
 fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
+    let effective = ModelSourceLimits {
+        source_bytes: usize::MAX,
+        entries: usize::MAX,
+        type_depth: usize::MAX,
+    }
+    .bounded();
+    assert_eq!(effective.source_bytes, 1_048_576);
+    assert_eq!(effective.entries, 10_000);
+    assert_eq!(effective.type_depth, 64);
+    let overlarge = ModelSourceLimits {
+        source_bytes: usize::MAX,
+        entries: usize::MAX,
+        type_depth: usize::MAX,
+    };
+    let draft = read(
+        source(setup::native_rule_model::FIXTURE, "effective"),
+        FORMAT,
+        overlarge,
+    )
+    .unwrap();
+    assert_eq!(draft.source_limits, effective);
+    let failure = draft
+        .admit(ModelLimits {
+            roles: 0,
+            ..ModelLimits::default()
+        })
+        .unwrap_err();
+    assert_eq!(failure.source_limits(), effective);
     let binding = source(setup::native_rule_model::FIXTURE, "draft:1");
     for limits in [
         ModelSourceLimits {
@@ -203,6 +234,30 @@ fn lowered_limits_remain_incomplete_and_fresh_requests_succeed() {
     ] {
         let failure = read(binding.clone(), FORMAT, limits).unwrap_err();
         assert!(failure.is_incomplete());
+        assert_eq!(failure.source_limits(), limits.bounded());
+        match &failure.cause {
+            ModelSourceCause::SourceBytes { actual, maximum } => {
+                assert_eq!(limits.source_bytes, 0);
+                assert_eq!(*actual, binding.source().text().len());
+                assert_eq!(*maximum, 0);
+            }
+            ModelSourceCause::Entries {
+                kind,
+                requested,
+                remaining,
+                maximum,
+            } => {
+                assert_eq!(limits.entries, 0);
+                assert_eq!(*kind, EntryKind::Declaration);
+                assert!(*requested > 0);
+                assert_eq!((*remaining, *maximum), (0, 0));
+            }
+            ModelSourceCause::TypeDepth { actual, maximum } => {
+                assert_eq!(limits.type_depth, 1);
+                assert_eq!((*actual, *maximum), (2, 1));
+            }
+            cause => panic!("expected the selected resource cause, got {cause:?}"),
+        }
         assert_eq!(
             failure.source().source().digest(),
             binding.source().digest()
@@ -305,5 +360,110 @@ fn public_model_source_reaches_real_aggregate_and_operation_execution() {
         } else {
             assert_eq!(report.truth(), Some(true));
         }
+    }
+}
+
+#[test]
+#[trace("TC-102", "FR-025-AC-3")]
+fn duplicate_scalar_retains_the_exact_declared_name() {
+    let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+    let scalar = input["scalars"][0].clone();
+    let name = scalar["name"].as_str().unwrap().to_owned();
+    input["scalars"].as_array_mut().unwrap().push(scalar);
+    let text = input.to_string();
+    let failure = read(
+        source(&text, "duplicate"),
+        FORMAT,
+        ModelSourceLimits::default(),
+    )
+    .unwrap_err();
+    assert_eq!(failure.code(), Code::InvalidModelBinding);
+    assert_eq!(failure.source().source().text(), text);
+    assert!(
+        matches!(failure.cause, ModelSourceCause::DuplicateScalar { name: actual } if actual.as_str() == name)
+    );
+}
+
+#[test]
+#[trace("TC-102", "FR-025-AC-3")]
+fn unknown_scalar_retains_the_exact_referenced_name() {
+    let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+    input["records"][0]["fields"][0]["type"] = json!({"kind":"scalar","name":"MissingScalar"});
+    let text = input.to_string();
+    let failure = read(
+        source(&text, "unknown"),
+        FORMAT,
+        ModelSourceLimits::default(),
+    )
+    .unwrap_err();
+    assert_eq!(failure.code(), Code::InvalidModelBinding);
+    assert_eq!(failure.source().source().text(), text);
+    assert!(
+        matches!(failure.cause, ModelSourceCause::UnknownScalar { name } if name.as_str() == "MissingScalar")
+    );
+}
+
+#[test]
+#[trace("TC-102", "FR-025-AC-4")]
+fn entry_budgets_precede_value_decoding_and_later_operations() {
+    for (kind, pointer, declarations) in [
+        (EntryKind::Declaration, "/records", 0),
+        (EntryKind::Field, "/records/0/fields", 1),
+        (EntryKind::Variant, "/enums/0/variants", 1),
+        (EntryKind::Parameter, "/operations/0/parameters", 2),
+        (EntryKind::FrameField, "/operations/0/frame/fields", 2),
+        (EntryKind::Created, "/operations/0/frame/created", 2),
+        (EntryKind::Deleted, "/operations/0/frame/deleted", 2),
+    ] {
+        let mut input = json!({
+            "license":"AGPL-3.0-only", "package":"test:model", "requirement":"Model", "revision":1,
+            "scalars":[], "records":[], "enums":[], "values":[], "objects":[], "operations":[]
+        });
+        match kind {
+            EntryKind::Declaration => {}
+            EntryKind::Field => input["records"] = json!([{"name":"Record", "fields":[]}]),
+            EntryKind::Variant => input["enums"] = json!([{"name":"Enum", "variants":[]}]),
+            EntryKind::Parameter
+            | EntryKind::FrameField
+            | EntryKind::Created
+            | EntryKind::Deleted => {
+                input["operations"] = json!([
+                    {"name":"update", "context":"Record", "anchor":"update", "parameters":[],
+                     "result":null, "frame":{"fields":[],"created":[],"deleted":[]}},
+                    {"malformed_later_operation":true}
+                ]);
+            }
+        }
+        // A false value is malformed for every selected group. Its decoder must
+        // not run when the budget is exhausted, nor may the later operation run.
+        *input.pointer_mut(pointer).unwrap() = json!([false]);
+        let text = input.to_string();
+        let limits = ModelSourceLimits {
+            entries: declarations,
+            ..ModelSourceLimits::default()
+        };
+        let failure = read(source(&text, "budget"), FORMAT, limits).unwrap_err();
+        assert_eq!(failure.code(), Code::ResourceExhausted, "{kind:?}");
+        assert!(
+            matches!(failure.cause,
+                ModelSourceCause::Entries { kind: actual, requested: 1, remaining: 0, maximum }
+                if actual == kind && maximum == declarations
+            ),
+            "{kind:?}: {failure:?}"
+        );
+        // Admit the one entry: the exact same bytes now reach its JSON decoder.
+        let failure = read(
+            source(&text, "budget-retry"),
+            FORMAT,
+            ModelSourceLimits {
+                entries: declarations + 1,
+                ..limits
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(failure.cause, ModelSourceCause::Decode(_)),
+            "{kind:?}: {failure:?}"
+        );
     }
 }

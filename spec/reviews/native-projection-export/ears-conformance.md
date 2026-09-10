@@ -10,7 +10,7 @@ review_set: all
 
 FR-029 uses a When trigger with the command as subject. Its behavior statements each name the command and a concrete obligation; unsupported clauses use an If/then refusal. Exit status, exact output and the fixed target are explicit. Quire validation found no EARS diagnostics in the new requirement; existing duplicate-registry warnings remain unrelated.
 
-Author PR-readiness review of `4f2c20f`, using the owner-selected all set.
+Author PR-readiness review of `d1fcf16`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings
@@ -18,4 +18,3 @@ No applicable AssuranceProfile was found; timing follows the owner directive.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No issues found | FR-029; TC-107 |
-
