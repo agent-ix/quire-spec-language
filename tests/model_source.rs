@@ -66,6 +66,51 @@ fn public_frontend_matches_the_preexisting_frozen_model_artifact() {
 }
 
 #[test]
+#[trace("TC-041", "FR-015-AC-2", "TC-102", "FR-025-AC-3")]
+fn source_sequence_maxima_are_checked_at_native_admission() {
+    for maximum in [10_000, 10_001, u32::MAX] {
+        for unused in [false, true] {
+            let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
+            if unused {
+                input["values"].as_array_mut().unwrap().push(json!({
+                    "name":"unused_sequence", "kind":"state",
+                    "type":{"kind":"option", "value":{"kind":"sequence", "maximum":1,
+                        "value":{"kind":"sequence", "maximum":maximum, "value":{"kind":"boolean"}}}}
+                }));
+            } else {
+                let field = input["records"][0]["fields"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|field| field["name"] == "items")
+                    .unwrap();
+                field["type"]["maximum"] = json!(maximum);
+            }
+            let text = serde_json::to_string(&input).unwrap();
+            let binding = source(&text, "sequence-boundary");
+            let draft = read(binding.clone(), FORMAT, ModelSourceLimits::default())
+                .expect("valid IR declarations must reach the native admission boundary");
+            let result = draft.admit(ModelLimits::default());
+            if maximum == 10_000 {
+                let model = result.unwrap();
+                assert_eq!(model.source().source().text(), text);
+                assert_eq!(model.source().source().digest(), binding.source().digest());
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.code(), Code::UnsupportedConstruct);
+                assert!(!error.is_incomplete());
+                assert_eq!(error.source().source().digest(), binding.source().digest());
+                let ModelSourceCause::Admission(cause) = error.cause else {
+                    panic!("native admission must own the sequence refusal");
+                };
+                assert_eq!(cause.code, Code::UnsupportedConstruct);
+                assert_eq!(cause.source, *binding.source().identity());
+            }
+        }
+    }
+}
+
+#[test]
 #[trace("TC-101", "FR-025-AC-2")]
 fn source_forms_and_repeated_names_keep_exact_original_occurrences() {
     let mut input: Value = serde_json::from_str(setup::native_rule_model::FIXTURE).unwrap();
