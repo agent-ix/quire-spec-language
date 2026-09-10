@@ -2,7 +2,7 @@
 id: Plan-004
 title: "Native formal source correspondence"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-014
     type: references

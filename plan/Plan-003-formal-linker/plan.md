@@ -2,7 +2,7 @@
 id: Plan-003
 title: "Implement the reviewed native formal linker"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-005
     type: references

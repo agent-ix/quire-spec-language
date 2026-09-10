@@ -2,7 +2,7 @@
 id: Plan-008
 title: "Native Boolean lowering and backend parity"
 type: Plan
-status: in_progress
+status: active
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-009
     type: references
