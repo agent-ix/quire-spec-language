@@ -1,0 +1,714 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Native command result envelope version 1",
+  "description": "Owns native envelope, status, provenance and measured-result fields. Embedded IR identities, selected native references and upstream diagnostics retain their independently validated producer wire contracts.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/failure"
+    },
+    {
+      "$ref": "#/$defs/report"
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "path": {
+          "type": "string"
+        },
+        "formal": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "identity",
+        "revision",
+        "digest",
+        "path",
+        "formal"
+      ],
+      "additionalProperties": false
+    },
+    "coordinate": {
+      "type": "object",
+      "properties": {
+        "byte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "byte",
+        "line",
+        "column"
+      ],
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "identity": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "identity",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "path": {
+          "type": "string"
+        },
+        "span": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/coordinate"
+            },
+            "end": {
+              "$ref": "#/$defs/coordinate"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "upstream": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "runtime": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "phase",
+        "code",
+        "message",
+        "source",
+        "path",
+        "span",
+        "upstream",
+        "runtime"
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "implication": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "operand": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "span": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "kind": {
+          "enum": [
+            "antecedent_entered",
+            "antecedent_completed",
+            "consequent_entered"
+          ]
+        },
+        "truth": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "implication",
+        "operand",
+        "span",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "antecedent_completed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "truth"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "truth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "validation_usage": {
+      "type": "object",
+      "properties": {
+        "artifacts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "artifact_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "objects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "work": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagnostics": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "artifacts",
+        "artifact_bytes",
+        "objects",
+        "work",
+        "text_steps",
+        "diagnostics"
+      ],
+      "additionalProperties": false
+    },
+    "evaluation_usage": {
+      "type": "object",
+      "properties": {
+        "expression_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "graph_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comparisons": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expression_depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comparison_depth": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "expression_steps",
+        "graph_steps",
+        "comparisons",
+        "text_steps",
+        "events",
+        "expression_depth",
+        "comparison_depth"
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "const": "native-run-result/1"
+        },
+        "request_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "refused",
+            "incomplete"
+          ]
+        },
+        "stage": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "format",
+        "request_digest",
+        "status",
+        "stage",
+        "code",
+        "message",
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "const": "native-run-result/1"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "package": {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "$ref": "#/$defs/digest"
+            },
+            "canonical_identity": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "digest",
+            "canonical_identity"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "object"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "source": {
+                "$ref": "#/$defs/source"
+              }
+            },
+            "required": [
+              "owner",
+              "digest",
+              "source"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "properties": {
+            "snapshots": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "invocations": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "required": [
+            "snapshots",
+            "invocations"
+          ],
+          "additionalProperties": false
+        },
+        "selection": {
+          "type": "object"
+        },
+        "validation_usage": {
+          "$ref": "#/$defs/validation_usage"
+        },
+        "stage": {
+          "enum": [
+            "validate",
+            "evaluate"
+          ]
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "refused",
+            "incomplete"
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "terminal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/diagnostic"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diagnostic": {
+          "$ref": "#/$defs/diagnostic"
+        },
+        "cost_model": {
+          "type": "string"
+        },
+        "evaluation_usage": {
+          "$ref": "#/$defs/evaluation_usage"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        },
+        "truth": {
+          "type": "boolean"
+        },
+        "extraction": {
+          "$ref": "#/$defs/extraction"
+        }
+      },
+      "required": [
+        "format",
+        "request_digest",
+        "package",
+        "source",
+        "models",
+        "inputs",
+        "selection",
+        "validation_usage",
+        "stage",
+        "status"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "stage": {
+                "const": "validate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "diagnostics",
+              "terminal"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "refused",
+                  "incomplete"
+                ]
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "truth"
+                  ]
+                },
+                {
+                  "required": [
+                    "evaluation_usage"
+                  ]
+                },
+                {
+                  "required": [
+                    "events"
+                  ]
+                },
+                {
+                  "required": [
+                    "cost_model"
+                  ]
+                },
+                {
+                  "required": [
+                    "diagnostic"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "cost_model",
+              "evaluation_usage",
+              "events"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "diagnostics"
+                  ]
+                },
+                {
+                  "required": [
+                    "terminal"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "truth"
+            ],
+            "not": {
+              "required": [
+                "diagnostic"
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "truth"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "stage": {
+                "const": "evaluate"
+              },
+              "status": {
+                "enum": [
+                  "refused",
+                  "incomplete"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "diagnostic"
+            ]
+          }
+        }
+      ]
+    },
+    "byte_span": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    "extraction": {
+      "type": "object",
+      "properties": {
+        "original": {
+          "$ref": "#/$defs/source"
+        },
+        "outcome": {
+          "type": "object",
+          "properties": {
+            "availability": {
+              "type": "object"
+            },
+            "clauses": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "object"
+              }
+            },
+            "clause_text": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "required": [
+            "availability",
+            "clauses",
+            "clause_text",
+            "diagnostics"
+          ],
+          "additionalProperties": false
+        },
+        "mapping": {
+          "type": "object",
+          "properties": {
+            "region": {
+              "$ref": "#/$defs/byte_span"
+            },
+            "segments": {
+              "type": "array",
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/byte_span"
+                  },
+                  "original": {
+                    "$ref": "#/$defs/byte_span"
+                  }
+                },
+                "required": [
+                  "body",
+                  "original"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "drop_final_newline": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "region",
+            "segments",
+            "drop_final_newline"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "original",
+        "outcome",
+        "mapping"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

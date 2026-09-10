@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-009/FR-033: explicit native targets consumed by the existing executable binder.
 
+mod target;
 mod wire;
+
+pub use target::{ProjectionTarget, UnknownProjectionTarget};
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};
@@ -15,29 +18,43 @@ use crate::syntax::{BinaryOp, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::{ByteDigest, Span};
 
 /// The existing backend's Boolean expression domain; not a proof attestation.
-pub const PROFILE: &str = "boolean-oracle/v1";
-
-/// Explicit lowering domain; IR binding and backend acceptance are separate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProjectionTarget {
-    /// The existing generated Boolean backend's qualified domain.
-    BooleanOracleV1,
-    /// Bounded primitive integer expressions for the strict IR binder.
-    IntegerIrV1,
-}
+pub const PROFILE: &str = ProjectionTarget::BooleanOracleV1.name();
 
 impl ProjectionTarget {
-    /// Stable target name used in command selection and failure reports.
-    pub const fn name(self) -> &'static str {
+    fn admits(self, ty: &ir::ValueType) -> bool {
         match self {
-            Self::BooleanOracleV1 => PROFILE,
-            Self::IntegerIrV1 => "integer-ir/v1",
+            Self::BooleanOracleV1 => matches!(ty, ir::ValueType::Boolean),
+            Self::IntegerIrV1 => {
+                matches!(ty, ir::ValueType::Boolean | ir::ValueType::Integer { .. })
+            }
         }
     }
+}
 
-    fn admits(self, ty: &ir::ValueType) -> bool {
-        matches!(ty, ir::ValueType::Boolean)
-            || (self == Self::IntegerIrV1 && matches!(ty, ir::ValueType::Integer { .. }))
+enum ProjectedOperator {
+    Boolean(ir::BooleanOperator),
+    Numeric(ir::NumericOperator),
+    Compare(ir::ComparisonOperator),
+}
+
+impl From<BinaryOp> for ProjectedOperator {
+    fn from(op: BinaryOp) -> Self {
+        match op {
+            BinaryOp::And => Self::Boolean(ir::BooleanOperator::ShortCircuitAnd),
+            BinaryOp::Or => Self::Boolean(ir::BooleanOperator::ShortCircuitOr),
+            BinaryOp::Implies => Self::Boolean(ir::BooleanOperator::Implication),
+            BinaryOp::Add => Self::Numeric(ir::NumericOperator::Add),
+            BinaryOp::Subtract => Self::Numeric(ir::NumericOperator::Subtract),
+            BinaryOp::Multiply => Self::Numeric(ir::NumericOperator::Multiply),
+            BinaryOp::Divide => Self::Numeric(ir::NumericOperator::Divide),
+            BinaryOp::Remainder => Self::Numeric(ir::NumericOperator::Remainder),
+            BinaryOp::Equal => Self::Compare(ir::ComparisonOperator::Equal),
+            BinaryOp::NotEqual => Self::Compare(ir::ComparisonOperator::NotEqual),
+            BinaryOp::Less => Self::Compare(ir::ComparisonOperator::Less),
+            BinaryOp::LessEqual => Self::Compare(ir::ComparisonOperator::LessEqual),
+            BinaryOp::Greater => Self::Compare(ir::ComparisonOperator::Greater),
+            BinaryOp::GreaterEqual => Self::Compare(ir::ComparisonOperator::GreaterEqual),
+        }
     }
 }
 
@@ -95,6 +112,18 @@ pub enum LoweringCode {
     Binding,
     /// An invariant of the already checked native input was not satisfied.
     InvalidCorrespondence,
+}
+
+impl LoweringCode {
+    /// Stable native command code for each lowering refusal category.
+    pub fn code(self) -> crate::Code {
+        match self {
+            Self::Unsupported => crate::Code::UnsupportedProjection,
+            Self::ResourceExhausted => crate::Code::ResourceExhausted,
+            Self::Binding => crate::Code::ProjectionBinding,
+            Self::InvalidCorrespondence => crate::Code::InvalidProjectionCorrespondence,
+        }
+    }
 }
 
 /// No partial projection is returned with a refusal.
@@ -418,24 +447,24 @@ pub fn lower_for<'p, 'model>(
         requirements,
     )
     .map_err(|errors| upstream(None, None, errors))?;
+    // Establish the complete wire domain before any serialized bytes are written.
+    let projection = wire::Projection::new(&package, &prepared, &checked.bindings().source)?;
     let mut output = Output {
         bytes: Vec::new(),
         maximum: limits.bytes,
     };
-    serde_json::to_writer(&mut output, &wire::Projection::new(&package, &prepared)).map_err(
-        |error| {
-            failure(
-                if error.is_io() {
-                    LoweringCode::ResourceExhausted
-                } else {
-                    LoweringCode::InvalidCorrespondence
-                },
-                None,
-                None,
-                &error.to_string(),
-            )
-        },
-    )?;
+    serde_json::to_writer(&mut output, &projection).map_err(|error| {
+        failure(
+            if error.is_io() {
+                LoweringCode::ResourceExhausted
+            } else {
+                LoweringCode::InvalidCorrespondence
+            },
+            None,
+            None,
+            &error.to_string(),
+        )
+    })?;
     usage.bytes = output.bytes.len();
     let bound = ir::BoundPackage::from_json_bytes(&output.bytes)
         .map_err(|errors| upstream(None, None, errors))?;
@@ -562,8 +591,9 @@ impl ClauseLowering<'_, '_> {
         depth: usize,
         span: Span,
     ) -> Result<ir::ExpressionKind> {
+        let operator = ProjectedOperator::from(op);
         if self.target == ProjectionTarget::BooleanOracleV1
-            && !matches!(op, BinaryOp::And | BinaryOp::Or | BinaryOp::Implies)
+            && !matches!(operator, ProjectedOperator::Boolean(_))
         {
             return Err(self.error(
                 LoweringCode::Unsupported,
@@ -573,45 +603,19 @@ impl ClauseLowering<'_, '_> {
         }
         let left = Box::new(self.expression(left, depth + 1)?);
         let right = Box::new(self.expression(right, depth + 1)?);
-        Ok(match op {
-            BinaryOp::And | BinaryOp::Or | BinaryOp::Implies => ir::ExpressionKind::Boolean {
-                operator: match op {
-                    BinaryOp::And => ir::BooleanOperator::ShortCircuitAnd,
-                    BinaryOp::Or => ir::BooleanOperator::ShortCircuitOr,
-                    _ => ir::BooleanOperator::Implication,
-                },
+        Ok(match operator {
+            ProjectedOperator::Boolean(operator) => ir::ExpressionKind::Boolean {
+                operator,
                 left,
                 right,
             },
-            BinaryOp::Add
-            | BinaryOp::Subtract
-            | BinaryOp::Multiply
-            | BinaryOp::Divide
-            | BinaryOp::Remainder => ir::ExpressionKind::Numeric {
-                operator: match op {
-                    BinaryOp::Add => ir::NumericOperator::Add,
-                    BinaryOp::Subtract => ir::NumericOperator::Subtract,
-                    BinaryOp::Multiply => ir::NumericOperator::Multiply,
-                    BinaryOp::Divide => ir::NumericOperator::Divide,
-                    _ => ir::NumericOperator::Remainder,
-                },
+            ProjectedOperator::Numeric(operator) => ir::ExpressionKind::Numeric {
+                operator,
                 left,
                 right,
             },
-            BinaryOp::Equal
-            | BinaryOp::NotEqual
-            | BinaryOp::Less
-            | BinaryOp::LessEqual
-            | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => ir::ExpressionKind::Compare {
-                operator: match op {
-                    BinaryOp::Equal => ir::ComparisonOperator::Equal,
-                    BinaryOp::NotEqual => ir::ComparisonOperator::NotEqual,
-                    BinaryOp::Less => ir::ComparisonOperator::Less,
-                    BinaryOp::LessEqual => ir::ComparisonOperator::LessEqual,
-                    BinaryOp::Greater => ir::ComparisonOperator::Greater,
-                    _ => ir::ComparisonOperator::GreaterEqual,
-                },
+            ProjectedOperator::Compare(operator) => ir::ExpressionKind::Compare {
+                operator,
                 left,
                 right,
             },

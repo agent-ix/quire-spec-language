@@ -16,7 +16,12 @@ run the actual standalone binary against independent expected judgments.
 Inspect the admitted model's source-corresponded roles. Execute all named state,
 identity/graph, pre/post and adverse cases from native files and actual Markdown.
 Check truth only after completed evaluation, original identities and refusal
-stages; retry the healthy case after resource exhaustion.
+stages and the specific diagnostic location; retry the healthy case after resource
+exhaustion. Iterate the generated case list with an independent exhaustive outcome
+match. Require report provenance for every runtime case and require original
+selection in the missing-model extraction error. Required assertions must not
+depend on an output field being present. Check generator output failure through
+the actual example binary, and compare repeated healthy artifact bytes.
 
 ## Expected Results
 

@@ -16,8 +16,9 @@ When an author generates the ConfigVersion example, the Rust generator shall emi
 
 ## Inputs
 
-An explicitly selected output directory and a checked-in AGPL-3.0-only native
-model source. The model declares ConfigVersion.versionNumber as signed 0..1000,
+An explicitly selected output directory and a newly authored, checked-in
+AGPL-3.0-only native model source at examples/config-version/model.json, with no
+copied or generated third-party model content. The model declares ConfigVersion.versionNumber as signed 0..1000,
 an optional identity-bearing parent reference, explicit config_history universe,
 and attemptUpdate returning Boolean with permission to change versionNumber only.
 This is A's concrete native realization of the reviewed example, using the
@@ -40,11 +41,19 @@ actual command results constitute execution observations.
 The generator shall compile its model with the existing model source frontend and construct runtime artifacts with the public Rust APIs.
 The generator shall preserve optional absence, object identity, reference closure and pre/post observations in the emitted cases.
 The generator shall use fresh case-specific snapshot and invocation identities.
+If model or runtime construction or filesystem output fails, then the generator shall return an error and exit with code 2.
 The generated parent-order cases shall cover healthy, violating and absent-parent outcomes.
 The generated graph/identity cases shall cover a cycle, self-loop and equal-valued distinct objects.
 The generated update cases shall cover unchanged version, changed version and a forbidden parent-field change.
 The generated adverse cases shall cover dangling parent, incomplete population, missing model and exhausted runtime work.
 The standalone command shall evaluate the emitted requests using its existing compiler, validation and runtime paths.
+
+The declared case catalog supplies the complete generation list and named input
+data; independent exhaustive test expectations own the expected outcomes.
+Missing-model compilation fails before a runtime report exists. Other listed
+cases retain runtime report provenance, including validation refusals and work
+exhaustion. Markdown execution of those cases retains extraction provenance;
+its missing-model failure instead retains the original selection in error details.
 
 ## Acceptance Criteria
 

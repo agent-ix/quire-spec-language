@@ -22,6 +22,10 @@ foreign/stale selections, unavailable extraction, EOF mapping and exhausted limi
 
 ## Expected Results
 
+Each foreign source identity, path, package, contract version and semantic-core
+version must return its own typed preflight cause and actual/expected values,
+without an extraction outcome. Both minimal and enabled feature suites run locally.
+
 The original clause remains identifiable through actual extraction, compilation
 and execution. All failed prerequisites retain their stage's data without a
 successful package or fabricated truth. Fresh retries use independent budgets.

@@ -22,6 +22,12 @@ paths, then retry with a fresh directory.
 
 ## Expected Results
 
+Check target parsing/display against the published spellings, including unknown
+and non-UTF-8 command operands. A compile request with a lower-only suffix
+reports compile usage before reading its missing file. Operator cases require
+the exact IR constructor and operand order. Controlled prepared-wire values
+outside the admitted domain refuse with clause/source context before serialization.
+
 The integer IR target supplies real typed executable artifacts without changing
 the Boolean backend claim or native authority. Unsupported/incomplete attempts
 emit no partial artifact and a fresh request succeeds.

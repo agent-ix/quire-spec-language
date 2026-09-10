@@ -10,7 +10,7 @@ review_set: all
 
 FR-030 defines one optional consumer with explicit original, authored, body and formal identities. FR-011 and IT-003 now name the real available Rust extractor. All five new criteria and four existing integration criteria have actual traced tests; LF/CRLF, Unicode, adverse selections, compiler refusal, limits and fresh retry are exercised.
 
-Author PR-readiness review of `bf8c170`, using the owner-selected all set.
+Author PR-readiness review of `55649b3`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings
@@ -18,4 +18,3 @@ No applicable AssuranceProfile was found; timing follows the owner directive.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No issues found | FR-030; FR-011; TC-108 |
-

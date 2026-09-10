@@ -3,12 +3,12 @@ id: SR-203
 title: "Code and Rust review of standalone projection export"
 type: SpecReview
 analysis: code-review
-scope: "src/command.rs; src/command/output.rs; src/main.rs; tests/lower_command.rs; shared fixture generator"
+scope: "src/command; src/command.rs; src/cli.rs; src/main.rs; src/lowering.rs; src/diagnostic.rs; tests/lower_command.rs; shared fixture generator"
 review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 4f2c20f using actual code-review, rust-review and
+Author PR-readiness review of d1fcf16 using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -23,19 +23,29 @@ rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Checks
 
-Compile and lower share one source-only intake/package path. Lower invokes the
-existing complete projection and strict binder; output uses the existing bounded
-bytes and stdout writer. Original typed lowering errors retain native authority,
-located spans and upstream diagnostics. Enum matching is exhaustive. No new
-parser, unsafe code, recoverable-input panic, unchecked conversion or dependency
-was introduced. The small fixture dead-code allowance explains why individual
-test targets use different generator cases.
+Compile and lower share source-only intake/package construction through the
+existing export closure. The typed Command parser admits lower and retains one
+output/error dispatcher. LoweringCode maps exhaustively to catalogued native
+codes; all existing wire spellings are retained.
 
-Three new traced binary tests pass. They exercise both real pinned IR readers
-and actual complete codegen output, and refuse a later unsupported clause without
-partial stdout. Source-only export, request/refusal identity and fresh retries
-are checked. Final local gates pass: 296 tests plus three compile-fail doctests
-(four existing assurance tests ignored), strict all-targets/all-features Clippy,
-formatting, warnings-denied rustdoc, cached minimal build and Rust fixture audits.
-The generated Boolean example runs and exports successfully. No hosted CI ran.
-This review does not claim new generated execution or activation qualification.
+Lowering errors now hold boxed source metadata and coordinates resolved before
+the program is released. The old FormalSource clone shared an Arc rather than
+copying text; the correction removes retention of that text as well. Absent and
+invalid spans are distinct in the typed API and serialized span_status, with
+unmapped_span retained for invalid coordinates. Boxing metadata resolves the
+strict result_large_err finding without suppressing it. No new unsafe code,
+parser, dependency, unchecked cast or recoverable-input panic was introduced.
+
+Four binary tests exercise exact output through both pinned IR readers and
+actual codegen/syn output, later-clause refusal, fresh retry, shared intake and
+command-specific arity. Two unit tests cover coordinate resolution and controlled
+adapter serialization/classification; these are not claimed as end-to-end
+production failures. Shared fixture variants name flag/frame payloads and adverse
+request cases use exhaustive enum dispatch.
+
+At b910d64, 311 tests plus three compile-fail doctests passed, with four existing
+assurance tests ignored. After boxing metadata at d1fcf16, all 21 library/lower
+tests, strict all-targets/all-features Clippy, formatting, cached minimal build
+and warnings-denied rustdoc passed. Cargo phases ran serially with one build job.
+No hosted CI ran. This author review does not claim independent acceptance,
+new generated execution or activation qualification.

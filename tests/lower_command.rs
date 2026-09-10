@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-029/FR-033: actual source-only projection export and backend boundaries.
+//! FR-029: actual source-only projection export and existing backend consumption.
 
 #[path = "support/standalone_setup.rs"]
 mod fixtures;
@@ -111,7 +111,7 @@ fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
     }
     assert_eq!(projections[0], projections[1]);
     let path = directory.path().join("boolean");
-    fixtures::write(&path, fixtures::Case::Boolean(true)).unwrap();
+    fixtures::write(&path, fixtures::Case::Boolean { flag: true }).unwrap();
     let default = invoke(&path, "lower", "compile.json");
     let explicit = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .arg("lower")
@@ -127,7 +127,7 @@ fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
 #[trace("TC-107", "FR-029-AC-1", "FR-029-AC-3")]
 fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_population() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean(true)).unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let run = invoke(directory.path(), "run", "request.json");
     assert_eq!(run.status.code(), Some(0));
     assert_eq!(
@@ -204,7 +204,7 @@ fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_populat
 #[trace("TC-107", "FR-029-AC-2")]
 fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefix() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean(true)).unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let original_job = job(directory.path());
     let program_path = directory.path().join("program.native");
     let original = std::fs::read_to_string(&program_path).unwrap();
@@ -227,6 +227,7 @@ fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefi
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["stage"], "lower");
     assert_eq!(error["code"], "unsupported_projection");
+    assert_eq!(error["details"]["span_status"], "located");
     assert_eq!(error["details"]["clause"]["clause"], "other_rule");
     assert_eq!(
         error["details"]["package"]["digest"],
@@ -261,38 +262,70 @@ fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefi
 #[trace("TC-107", "FR-029-AC-3")]
 fn projection_export_reuses_source_request_refusals_and_intake_limits() {
     let directory = tempfile::tempdir().unwrap();
-    fixtures::write(directory.path(), fixtures::Case::Boolean(false)).unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: false }).unwrap();
     let original = job(directory.path());
-    for (mutation, exit, code) in [
-        ("format", 1, "unknown_wire"),
-        ("runtime", 2, "invalid-request"),
-        ("stale", 1, "source_digest_mismatch"),
-        ("files", 3, "resource_exhausted"),
+    #[derive(Debug)]
+    enum Mutation {
+        Format,
+        Runtime,
+        Stale,
+        Files,
+    }
+    for mutation in [
+        Mutation::Format,
+        Mutation::Runtime,
+        Mutation::Stale,
+        Mutation::Files,
     ] {
         let mut changed = original.clone();
-        match mutation {
-            "format" => changed["format"] = json!("native-run/1"),
-            "runtime" => changed["request"]["snapshots"] = json!([]),
-            "stale" => {
+        let (exit, code) = match mutation {
+            Mutation::Format => {
+                changed["format"] = json!("native-run/1");
+                (1, "unknown_wire")
+            }
+            Mutation::Runtime => {
+                changed["request"]["snapshots"] = json!([]);
+                (2, "invalid-request")
+            }
+            Mutation::Stale => {
                 changed["request"]["program"]["source"]["digest"] =
-                    json!(ByteDigest::of(b"foreign").to_string())
+                    json!(ByteDigest::of(b"foreign").to_string());
+                (1, "source_digest_mismatch")
             }
-            "files" => {
+            Mutation::Files => {
                 changed["request"]["models"] =
-                    json!(vec![original["request"]["models"][0].clone(); 64])
+                    json!(vec![original["request"]["models"][0].clone(); 64]);
+                (3, "resource_exhausted")
             }
-            _ => unreachable!(),
-        }
+        };
         save(directory.path(), &changed);
         let output = invoke(directory.path(), "lower", "compile.json");
-        assert_eq!(output.status.code(), Some(exit));
+        assert_eq!(output.status.code(), Some(exit), "{mutation:?}");
         assert!(output.stdout.is_empty());
         let error: Value = serde_json::from_slice(&output.stderr).unwrap();
         assert_eq!(error["code"], code);
+        assert!(quire_spec_language::Code::from_code(code).is_some());
         assert_eq!(
             error["request_digest"],
             ByteDigest::of(&std::fs::read(directory.path().join("compile.json")).unwrap())
                 .to_string()
+        );
+    }
+}
+
+#[test]
+#[trace("TC-107", "FR-029-AC-3")]
+fn lower_arity_refuses_before_opening_a_request() {
+    for arguments in [vec!["lower"], vec!["lower", "missing.json", "extra"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            std::str::from_utf8(&output.stderr).unwrap(),
+            "usage: quire-spec lower <request-file> [--target <target>]\n"
         );
     }
 }
