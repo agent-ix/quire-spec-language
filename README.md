@@ -155,6 +155,14 @@ original document locations. Maps preserve all corresponding byte regions and
 refuse changed bytes, foreign source bindings, malformed segments and budget
 exhaustion. Wire decoding and existing-repository extraction remain separate.
 
+`mapped::compile` carries a verified map and one authored `ClauseBinding` through
+the existing parse/link/check/package stages. Its immutable `MappedPackage`
+exposes the native package for validation, evaluation and lowering while keeping
+the original document available for source locations. Failures preserve the
+native diagnostic or package path; the API does not manufacture source wrappers
+or change extraction availability. Run `cargo test --test mapped` for the mapped
+parent workflow and stage refusals. C's real Quire adapter adoption remains open.
+
 The [formal source bridge](docs/formal-source-binding.md) retains exact native
 source under an explicitly supplied Contract IR source identity. Its forward
 and reverse mappings check byte, line and scalar-column correspondence,
