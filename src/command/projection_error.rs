@@ -134,7 +134,7 @@ mod tests {
                     request_digest: Some(ByteDigest::of(b"request")),
                     cause: RunCause::Lowering {
                         package: NativePackageRef::new(ByteDigest::of(b"package")),
-                        program: (&formal).into(),
+                        program: Box::new((&formal).into()),
                         location: ProjectionLocation::resolve(formal.source(), span),
                         error: Box::new(LoweringError {
                             code,
