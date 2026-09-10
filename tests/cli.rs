@@ -102,6 +102,7 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
 
 #[trace("TC-012", "FR-002-AC-1")]
 #[trace("TC-015", "FR-010-AC-1", "FR-010-AC-2", "FR-010-AC-5")]
+#[trace("TC-103", "FR-026-AC-5")]
 #[test]
 fn cli_parses_and_formats_without_claiming_execution() {
     let parsed = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
@@ -146,4 +147,32 @@ fn cli_parses_and_formats_without_claiming_execution() {
     let value: serde_json::Value = serde_json::from_slice(&invalid.stderr).unwrap();
     assert_eq!(value["code"], "invalid_source_identity");
     assert_eq!(value["status"], "refused");
+}
+
+#[test]
+#[trace("TC-104", "FR-026-AC-5")]
+fn malformed_operands_report_the_selected_command_before_io() {
+    for (arguments, command) in [
+        (vec!["run"], "run"),
+        (vec!["run", "missing.json", "extra"], "run"),
+        (vec!["parse", "source"], "parse"),
+        (
+            vec!["format", "source", "revision", "missing.native", "extra"],
+            "format",
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let message = std::str::from_utf8(&output.stderr).unwrap();
+        assert!(
+            message.starts_with(&format!("usage: quire-spec {command} ")),
+            "{message}"
+        );
+        assert!(!message.contains("cannot read"));
+        assert!(!message.contains("cannot open"));
+    }
 }

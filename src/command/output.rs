@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: explicit JSON views of local native outcomes and actual provenance.
+//! FR-026: construct typed JSON views of native outcomes and actual provenance.
+
+mod types;
 
 use super::{wire, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
@@ -8,99 +10,125 @@ use crate::runtime::{
     EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
     RuntimeReference, ValidationStatus,
 };
-use crate::{ByteDigest, Code, Diagnostic, LocatedSpan, SourceIdentity};
-use serde_json::{json, Value};
+use crate::{ByteDigest, Diagnostic};
+use serde_json::Value;
 
-fn identity(value: &SourceIdentity) -> Value {
-    json!({"identity":value.identity,"revision":value.revision})
-}
-
-fn source(value: &FormalSource) -> Value {
-    json!({"identity":value.source().identity().identity,"revision":value.source().identity().revision,
-        "digest":value.source().digest().to_string(),"path":value.source().path(),"formal":value.identity()})
-}
-
-fn span(value: LocatedSpan) -> Value {
-    json!({"start":{"byte":value.start.byte,"line":value.start.line,"column":value.start.column},
-        "end":{"byte":value.end.byte,"line":value.end.line,"column":value.end.column}})
-}
-
-fn reference(value: &RuntimeReference) -> Value {
-    match value {
-        RuntimeReference::Snapshot(value) => json!({"kind":"snapshot","reference":value}),
-        RuntimeReference::Invocation(value) => json!({"kind":"invocation","reference":value}),
+fn source(value: &FormalSource) -> types::Source<'_> {
+    types::Source {
+        identity: value.source().identity(),
+        digest: value.source().digest().to_string(),
+        path: value.source().path(),
+        formal: value.identity(),
     }
 }
 
-fn runtime_path(value: &RuntimePathSegment) -> Value {
+fn reference(value: &RuntimeReference) -> types::Reference<'_> {
     match value {
-        RuntimePathSegment::Model(value) => json!({"model":value}),
+        RuntimeReference::Snapshot(value) => types::Reference::Snapshot(value),
+        RuntimeReference::Invocation(value) => types::Reference::Invocation(value),
+    }
+}
+
+fn runtime_path(value: &RuntimePathSegment) -> types::RuntimePath<'_> {
+    match value {
+        RuntimePathSegment::Model(value) => types::RuntimePath::Model(value),
         RuntimePathSegment::Population { record, universe } => {
-            json!({"population":{"record":record,"universe":universe}})
+            types::RuntimePath::Population { record, universe }
         }
-        RuntimePathSegment::Object(value) => json!({"object":value}),
-        RuntimePathSegment::State(value) => json!({"state":value}),
-        RuntimePathSegment::Parameter(value) => json!({"parameter":value}),
-        RuntimePathSegment::Result => json!({"result":true}),
-        RuntimePathSegment::Field(value) => json!({"field":value}),
-        RuntimePathSegment::Index(value) => json!({"index":value}),
+        RuntimePathSegment::Object(value) => types::RuntimePath::Object(value),
+        RuntimePathSegment::State(value) => types::RuntimePath::State(value),
+        RuntimePathSegment::Parameter(value) => types::RuntimePath::Parameter(value),
+        RuntimePathSegment::Result => types::RuntimePath::Result(true),
+        RuntimePathSegment::Field(value) => types::RuntimePath::Field(value),
+        RuntimePathSegment::Index(value) => types::RuntimePath::Index(*value),
     }
 }
 
-fn diagnostic(value: &Diagnostic) -> Value {
-    json!({"phase":value.phase.as_str(),"code":value.code.as_str(),"message":value.message,
-        "source":identity(&value.source),"path":value.path,"span":span(value.span),
-        "upstream":value.upstream,
-        "runtime":value.runtime.as_ref().map(|location| json!({"artifact":reference(&location.artifact),
-            "observation":location.observation,"requirement":location.requirement,"clause":location.clause,
-            "path":location.path.iter().map(runtime_path).collect::<Vec<_>>()}))})
+fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
+    types::Diagnostic {
+        phase: value.phase.as_str(),
+        code: value.code.as_str(),
+        message: &value.message,
+        source: &value.source,
+        path: &value.path,
+        span: value.span,
+        upstream: value.upstream.as_deref(),
+        runtime: value
+            .runtime
+            .as_ref()
+            .map(|location| types::RuntimeLocation {
+                artifact: reference(&location.artifact),
+                observation: location.observation,
+                requirement: &location.requirement,
+                clause: &location.clause,
+                path: location.path.iter().map(runtime_path).collect(),
+            }),
+    }
 }
 
-pub(super) fn error(error: &RunError) -> Value {
-    let (stage, code, details) = match &error.cause {
+pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
+    let (stage, details) = match &error.cause {
         RunCause::Io { path, error } => (
             "file",
-            "io-error",
-            json!({"path":path.to_string_lossy(),"os_code":error.raw_os_error()}),
+            types::Details::Io {
+                path: path.to_string_lossy(),
+                os_code: error.raw_os_error(),
+            },
         ),
-        RunCause::Json(e) => (
+        RunCause::Json(error) => (
             "request",
-            "invalid-request",
-            json!({"line":e.line(),"column":e.column()}),
+            types::Details::Json {
+                line: error.line(),
+                column: error.column(),
+            },
         ),
-        RunCause::Format => ("envelope", Code::UnknownWire.as_str(), Value::Null),
-        RunCause::Limit(name) => (
+        RunCause::Output(_) => ("output", types::Details::None),
+        RunCause::Format => ("envelope", types::Details::None),
+        RunCause::Limit(kind) => (
             "intake",
-            Code::ResourceExhausted.as_str(),
-            json!({"limit":name}),
+            types::Details::Limit {
+                limit: kind.as_str(),
+            },
         ),
-        RunCause::Digest(_) => ("request", "invalid-digest", Value::Null),
-        RunCause::Identifier(e) => ("request", "invalid-identifier", json!(e)),
-        RunCause::Native(e) => (e.phase.as_str(), e.code.as_str(), diagnostic(e)),
-        RunCause::Model(e) => (
+        RunCause::Digest(_) => ("request", types::Details::None),
+        RunCause::Identifier(error) => ("request", types::Details::Identifier(error)),
+        RunCause::Native(error) => (
+            error.phase.as_str(),
+            types::Details::Native(diagnostic(error)),
+        ),
+        RunCause::Model(error) => (
             "model",
-            e.code().as_str(),
-            json!({"source":source(e.source())}),
+            types::Details::Model {
+                source: source(error.source()),
+            },
         ),
-        RunCause::Package(e) => (
+        RunCause::Package(error) => (
             "package",
-            e.code.as_str(),
-            json!({"stage":e.stage.to_string()}),
+            types::Details::Package {
+                stage: error.stage.to_string(),
+            },
         ),
-        RunCause::Input(e) => (
+        RunCause::Input(error) => (
             "input",
-            e.code.as_str(),
-            json!({"expected":reference(&e.expected),"stage":match e.stage {
-                crate::runtime::InputReadStage::Selection => "selection",
-                crate::runtime::InputReadStage::Envelope => "envelope",
-                crate::runtime::InputReadStage::Body => "body",
-                crate::runtime::InputReadStage::Construction => "construction",
-            }}),
+            types::Details::Input {
+                expected: reference(&error.expected),
+                stage: error.stage.as_str(),
+            },
         ),
     };
-    json!({"format":"native-run-result/1", "request_digest":error.request_digest.map(|value|value.to_string()),
-        "status":if error.exit_code()==3 { "incomplete" } else { "refused" },
-        "stage":stage,"code":code,"message":error.to_string(),"details":details})
+    serde_json::to_value(types::Failure {
+        format: types::Format::NativeResult,
+        request_digest: error.request_digest.map(|value| value.to_string()),
+        status: if error.cause.is_incomplete() {
+            types::FailureStatus::Incomplete
+        } else {
+            types::FailureStatus::Refused
+        },
+        stage,
+        code: error.cause.code().as_str(),
+        message: error.to_string(),
+        details,
+    })
 }
 
 pub(super) fn report(
@@ -108,35 +136,21 @@ pub(super) fn report(
     selection: &wire::Selection,
     models: &[NativeModel],
     report: &ExecutionReport<'_, '_>,
-) -> RunResult {
-    let usage = report.validation_usage();
-    let mut value = json!({"format":"native-run-result/1","request_digest":digest.to_string(),
-        "package":{"digest":report.package().digest().to_string(),"canonical_identity":report.package().canonical_identity().to_string()},
-        "source":source(&report.package().checked().bindings().source),
-        "models":models.iter().map(|model|json!({"owner":model.environment().owner(),"digest":model.digest().to_string(),"source":source(model.source())})).collect::<Vec<_>>(),
-        "inputs":{"snapshots":report.input().snapshots.iter().map(|value|value.reference()).collect::<Vec<_>>(),
-            "invocations":report.input().invocations.iter().map(|value|value.reference()).collect::<Vec<_>>()},
-        "selection":selection,
-        "validation_usage":{"artifacts":usage.artifacts,"artifact_bytes":usage.artifact_bytes,"objects":usage.objects,"work":usage.work,"text_steps":usage.text_steps,"diagnostics":usage.diagnostics}});
-    let exit_code = match report.outcome() {
+) -> super::Result<RunResult> {
+    let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
-            value["stage"] = json!("validate");
-            value["diagnostics"] = json!(failure
-                .diagnostics
-                .iter()
-                .map(diagnostic)
-                .collect::<Vec<_>>());
-            value["terminal"] = json!(failure.terminal.as_deref().map(diagnostic));
-            match failure.status {
-                ValidationStatus::Refused => {
-                    value["status"] = json!("refused");
-                    1
-                }
-                ValidationStatus::Incomplete => {
-                    value["status"] = json!("incomplete");
-                    3
-                }
-            }
+            let (code, status) = match failure.status {
+                ValidationStatus::Refused => (1, types::FailureStatus::Refused),
+                ValidationStatus::Incomplete => (3, types::FailureStatus::Incomplete),
+            };
+            (
+                code,
+                types::Outcome::Validate {
+                    status,
+                    diagnostics: failure.diagnostics.iter().map(diagnostic).collect(),
+                    terminal: failure.terminal.as_deref().map(diagnostic),
+                },
+            )
         }
         ExecutionOutcome::Evaluated {
             result,
@@ -144,37 +158,90 @@ pub(super) fn report(
             events,
             cost_model,
         } => {
-            value["stage"] = json!("evaluate");
-            value["cost_model"] = json!(cost_model);
-            value["evaluation_usage"] = json!({"expression_steps":usage.expression_steps,"graph_steps":usage.graph_steps,
-                "comparisons":usage.comparisons,"text_steps":usage.text_steps,"events":usage.events,
-                "expression_depth":usage.expression_depth,"comparison_depth":usage.comparison_depth});
-            value["events"] = json!(events.iter().map(|event| {
-                let mut value = json!({"implication":event.implication.0,"operand":event.operand.0,"span":{"start":event.span.start,"end":event.span.end}});
-                value["kind"] = json!(match event.kind {
-                    ImplicationEventKind::AntecedentEntered => "antecedent_entered",
-                    ImplicationEventKind::AntecedentCompleted(truth) => { value["truth"] = json!(truth); "antecedent_completed" },
-                    ImplicationEventKind::ConsequentEntered => "consequent_entered",
-                }); value
-            }).collect::<Vec<_>>());
-            match result {
-                EvaluationOutcome::Completed(truth) => {
-                    value["status"] = json!("completed");
-                    value["truth"] = json!(truth);
-                    u8::from(!truth)
-                }
-                EvaluationOutcome::Refused(error) => {
-                    value["status"] = json!("refused");
-                    value["diagnostic"] = diagnostic(error);
-                    1
-                }
-                EvaluationOutcome::Incomplete(error) => {
-                    value["status"] = json!("incomplete");
-                    value["diagnostic"] = diagnostic(error);
-                    3
-                }
-            }
+            let (code, result) = match result {
+                EvaluationOutcome::Completed(truth) => (
+                    u8::from(!truth),
+                    types::Evaluation::Completed { truth: *truth },
+                ),
+                EvaluationOutcome::Refused(error) => (
+                    1,
+                    types::Evaluation::Refused {
+                        diagnostic: diagnostic(error),
+                    },
+                ),
+                EvaluationOutcome::Incomplete(error) => (
+                    3,
+                    types::Evaluation::Incomplete {
+                        diagnostic: diagnostic(error),
+                    },
+                ),
+            };
+            let events = events
+                .iter()
+                .map(|event| types::Event {
+                    implication: event.implication.0,
+                    operand: event.operand.0,
+                    span: event.span,
+                    kind: match event.kind {
+                        ImplicationEventKind::AntecedentEntered => {
+                            types::EventKind::AntecedentEntered
+                        }
+                        ImplicationEventKind::AntecedentCompleted(truth) => {
+                            types::EventKind::AntecedentCompleted { truth }
+                        }
+                        ImplicationEventKind::ConsequentEntered => {
+                            types::EventKind::ConsequentEntered
+                        }
+                    },
+                })
+                .collect();
+            (
+                code,
+                types::Outcome::Evaluate {
+                    result,
+                    evaluation_usage: usage,
+                    events,
+                    cost_model,
+                },
+            )
         }
     };
-    RunResult { exit_code, value }
+    let document = types::Report {
+        format: types::Format::NativeResult,
+        request_digest: digest.to_string(),
+        package: types::Package {
+            digest: report.package().digest().to_string(),
+            canonical_identity: report.package().canonical_identity().to_string(),
+        },
+        source: source(&report.package().checked().bindings().source),
+        models: models
+            .iter()
+            .map(|model| types::Model {
+                owner: model.environment().owner(),
+                digest: model.digest().to_string(),
+                source: source(model.source()),
+            })
+            .collect(),
+        inputs: types::Inputs {
+            snapshots: report
+                .input()
+                .snapshots
+                .iter()
+                .map(|value| value.reference())
+                .collect(),
+            invocations: report
+                .input()
+                .invocations
+                .iter()
+                .map(|value| value.reference())
+                .collect(),
+        },
+        selection,
+        validation_usage: report.validation_usage(),
+        outcome,
+    };
+    Ok(RunResult {
+        exit_code,
+        value: serde_json::to_value(document).map_err(RunCause::Output)?,
+    })
 }
