@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-010: native syntax CLI with OS paths and explicit phase outcomes.
+//! FR-010/026: parse one command, execute it, and write one explicit outcome.
+mod cli;
+
+use cli::{Command, SyntaxCommand};
 use quire_spec_language::{format::format, parse, Diagnostic, Limits, SourceIdentity};
 use serde_json::json;
 use std::io::{self, Read, Write};
@@ -20,33 +23,20 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
     (if incomplete { 3 } else { 1 }, output)
 }
 
-fn run() -> Result<String, (u8, String)> {
-    let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
-    let [command, identity, revision, path] = arguments.as_slice() else {
-        return Err((
-            2,
-            "usage: quire-spec <parse|format> <source-id> <source-revision> <file>".into(),
-        ));
-    };
-    let Some(command) = command.to_str() else {
-        return Err((2, "command must be UTF-8".into()));
-    };
-    let Some(identity) = identity.to_str() else {
-        return Err((2, "source identity must be UTF-8".into()));
-    };
-    let Some(revision) = revision.to_str() else {
-        return Err((2, "source revision must be UTF-8".into()));
-    };
-    if !matches!(command, "parse" | "format") {
-        return Err((2, "command must be parse or format".into()));
-    }
+fn syntax(
+    command: SyntaxCommand,
+    identity: &str,
+    revision: &str,
+    path: &Path,
+) -> Result<String, (u8, String)> {
     let limits = Limits::default();
-    let path = Path::new(path);
     let display_path = path.to_string_lossy();
     let file = std::fs::File::open(path)
         .map_err(|error| (2, format!("cannot open {display_path}: {error}")))?;
     let mut bytes = Vec::new();
-    file.take(limits.source_bytes as u64 + 1)
+    let ceiling = u64::try_from(limits.source_bytes)
+        .map_err(|error| (2, format!("invalid source ceiling: {error}")))?;
+    file.take(ceiling.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|error| (2, format!("cannot read {display_path}: {error}")))?;
     let unit = parse(
@@ -59,7 +49,7 @@ fn run() -> Result<String, (u8, String)> {
         limits,
     )
     .map_err(|error| diagnostic(&error))?;
-    if command == "format" {
+    if command == SyntaxCommand::Format {
         return format(&unit).map_err(|error| diagnostic(&error));
     }
     Ok(
@@ -69,19 +59,44 @@ fn run() -> Result<String, (u8, String)> {
     )
 }
 
-fn main() -> ExitCode {
-    match run() {
-        Ok(output) => match writeln!(io::stdout().lock(), "{}", output.trim_end_matches('\n')) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
-            Err(error) => {
-                let _ = writeln!(io::stderr().lock(), "output failed: {error}");
-                ExitCode::from(2)
-            }
+fn execute(command: Command<'_>) -> Result<(u8, String), (u8, String)> {
+    match command {
+        Command::Syntax {
+            kind,
+            identity,
+            revision,
+            path,
+        } => syntax(kind, identity, revision, path).map(|text| (0, text)),
+        Command::Run { path } => match quire_spec_language::command::run(path) {
+            Ok(result) => Ok((result.exit_code, result.value.to_string())),
+            Err(error) => match error.value() {
+                Ok(value) => Err((error.exit_code(), value.to_string())),
+                Err(output) => Err((2, format!("output failed: {output}"))),
+            },
         },
-        Err((code, output)) => {
-            let _ = writeln!(io::stderr().lock(), "{output}");
-            ExitCode::from(code)
+    }
+}
+
+fn main() -> ExitCode {
+    // Four operands including the command are admitted; retain one extra to
+    // reject excess arguments without collecting an unbounded process argument list.
+    let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
+    let outcome = Command::try_from(arguments.as_slice())
+        .map_err(|error| (2, error.to_string()))
+        .and_then(execute);
+    let (code, result) = match outcome {
+        Ok((code, output)) => (
+            code,
+            writeln!(io::stdout().lock(), "{}", output.trim_end_matches('\n')),
+        ),
+        Err((code, output)) => (code, writeln!(io::stderr().lock(), "{output}")),
+    };
+    match result {
+        Ok(()) => ExitCode::from(code),
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(code),
+        Err(error) => {
+            let _ = writeln!(io::stderr().lock(), "output failed: {error}");
+            ExitCode::from(2)
         }
     }
 }

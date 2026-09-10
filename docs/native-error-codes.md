@@ -18,6 +18,11 @@ reused; prose may change without changing classification.
 
 | Code | Meaning |
 | --- | --- |
+| io-error | A selected local file could not be opened or read. |
+| invalid-request | A closed command request has invalid JSON or fields. |
+| invalid-digest | A selected command digest has an invalid spelling. |
+| invalid-identifier | A selected command identifier fails its constructor. |
+| output-failure | A typed command result could not be serialized. |
 | invalid_source_identity | Required source identity, revision or display path is absent. |
 | invalid_source_map | Correspondence, source binding or queried range is invalid. |
 | source_digest_mismatch | Admitted source bytes differ from the supplied raw SHA-256 digest. |
