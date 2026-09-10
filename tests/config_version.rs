@@ -13,36 +13,131 @@ use quire_spec_language::Span;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 
-fn run(directory: &Path, request: &str) -> (i32, Value) {
+struct Run {
+    exit: i32,
+    value: Value,
+    stdout: bool,
+}
+
+fn run(directory: &Path, request: &str) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .arg("run")
         .arg(directory.join(request))
         .current_dir(directory.parent().unwrap())
         .output()
         .unwrap();
-    let bytes = if output.stdout.is_empty() {
-        &output.stderr
-    } else {
+    assert_ne!(
+        output.stdout.is_empty(),
+        output.stderr.is_empty(),
+        "exactly one result stream"
+    );
+    let stdout = !output.stdout.is_empty();
+    let bytes = if stdout {
         &output.stdout
+    } else {
+        &output.stderr
     };
-    (
-        output.status.code().unwrap(),
-        serde_json::from_slice(bytes).unwrap(),
-    )
+    Run {
+        exit: output.status.code().unwrap(),
+        value: serde_json::from_slice(bytes).unwrap(),
+        stdout,
+    }
 }
 
-fn has_code(value: &Value, code: &str) -> bool {
-    value["code"] == code
-        || value["diagnostic"]["code"] == code
-        || value["diagnostics"]
-            .as_array()
-            .is_some_and(|values| values.iter().any(|value| value["code"] == code))
+// Independent of the generator's CaseSpec: adding a catalog case requires an
+// explicit expected semantic result here, enforced by this exhaustive match.
+enum Expected {
+    Completed(bool),
+    Validation {
+        code: &'static str,
+        incomplete: bool,
+    },
+    MissingModel,
+    Exhausted,
+}
+
+fn expected(case: Case) -> Expected {
+    match case {
+        Case::Healthy | Case::Absent | Case::Unchanged => Expected::Completed(true),
+        Case::Violating | Case::Cycle | Case::SelfLoop | Case::Distinct | Case::Changed => {
+            Expected::Completed(false)
+        }
+        Case::Dangling => Expected::Validation {
+            code: "dangling_reference",
+            incomplete: false,
+        },
+        Case::Incomplete => Expected::Validation {
+            code: "incomplete_population",
+            incomplete: true,
+        },
+        Case::ForbiddenParent => Expected::Validation {
+            code: "frame_violation",
+            incomplete: false,
+        },
+        Case::MissingModel => Expected::MissingModel,
+        Case::Exhausted => Expected::Exhausted,
+    }
+}
+
+fn assert_outcome(case: Case, actual: &Run, extracted: bool) {
+    let value = &actual.value;
+    match expected(case) {
+        Expected::Completed(truth) => {
+            assert_eq!(actual.exit, i32::from(!truth), "{}: {value}", case.id());
+            assert!(actual.stdout);
+            assert_eq!(value["status"], "completed");
+            assert_eq!(value["stage"], "evaluate");
+            assert_eq!(value["truth"], truth);
+            assert!(value.get("code").is_none());
+            assert!(value.get("diagnostic").is_none());
+        }
+        Expected::Validation { code, incomplete } => {
+            assert_eq!(actual.exit, if incomplete { 3 } else { 1 });
+            assert!(actual.stdout);
+            assert_eq!(
+                value["status"],
+                if incomplete { "incomplete" } else { "refused" }
+            );
+            assert_eq!(value["stage"], "validate");
+            assert!(value.get("truth").is_none());
+            assert!(value.get("code").is_none());
+            assert!(value.get("diagnostic").is_none());
+            let codes: BTreeSet<_> = value["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value["code"].as_str().unwrap())
+                .collect();
+            // The same refusal can locate several affected input paths.
+            assert_eq!(codes, BTreeSet::from([code]), "{}: {value}", case.id());
+        }
+        Expected::MissingModel => {
+            assert_eq!(actual.exit, 1);
+            assert!(!actual.stdout);
+            assert_eq!(value["status"], "refused");
+            assert_eq!(value["stage"], if extracted { "quire" } else { "link" });
+            assert_eq!(value["code"], "missing_import");
+            assert!(value.get("truth").is_none());
+            assert!(value.get("source").is_none());
+            assert!(value.get("extraction").is_none());
+        }
+        Expected::Exhausted => {
+            assert_eq!(actual.exit, 3);
+            assert!(actual.stdout);
+            assert_eq!(value["status"], "incomplete");
+            assert_eq!(value["stage"], "evaluate");
+            assert_eq!(value["diagnostic"]["code"], "resource_exhausted");
+            assert!(value.get("truth").is_none());
+            assert!(value.get("code").is_none());
+            assert!(value.get("diagnostics").is_none());
+        }
+    }
 }
 
 #[test]
 #[trace("TC-110", "FR-032-AC-1")]
 fn concrete_model_retains_exact_bounds_roles_and_original_source() {
-    let model = fixtures::model();
+    let model = fixtures::model().unwrap();
     assert_eq!(
         model.environment().owner().package().as_str(),
         "example/config-version"
@@ -124,42 +219,26 @@ fn concrete_model_retains_exact_bounds_roles_and_original_source() {
 #[trace("TC-110", "FR-032-AC-1", "FR-032-AC-2", "FR-032-AC-3")]
 fn actual_native_commands_execute_named_semantics_and_distinct_case_identities() {
     let directory = tempfile::tempdir().unwrap();
-    let model = fixtures::model();
+    let model = fixtures::model().unwrap();
     let mut snapshot_ids = BTreeSet::new();
     let mut invocation_ids = BTreeSet::new();
     let mut observed_cases = BTreeSet::new();
-    for (case, exit, truth, code) in [
-        (Case::Healthy, 0, Some(true), None),
-        (Case::Violating, 1, Some(false), None),
-        (Case::Absent, 0, Some(true), None),
-        (Case::Cycle, 1, Some(false), None),
-        (Case::SelfLoop, 1, Some(false), None),
-        (Case::Distinct, 1, Some(false), None),
-        (Case::Dangling, 1, None, Some("dangling_reference")),
-        (Case::Incomplete, 3, None, Some("incomplete_population")),
-        (Case::MissingModel, 1, None, Some("missing_import")),
-        (Case::Exhausted, 3, None, Some("resource_exhausted")),
-        (Case::Unchanged, 0, Some(true), None),
-        (Case::Changed, 1, Some(false), None),
-        (Case::ForbiddenParent, 1, None, Some("frame_violation")),
-    ] {
+    for &case in fixtures::CASES {
         let path = directory.path().join(case.id());
         assert!(observed_cases.insert(case.id()));
         fixtures::write(&path, &model, case).unwrap();
-        let (actual, result) = run(&path, "request.json");
-        assert_eq!(actual, exit, "{}: {result}", case.id());
-        assert_eq!(
-            result.get("truth").and_then(Value::as_bool),
-            truth,
-            "{}: {result}",
-            case.id()
-        );
-        if let Some(code) = code {
-            assert!(has_code(&result, code), "{}: {result}", case.id());
-        }
+        let actual = run(&path, "request.json");
+        assert_outcome(case, &actual, false);
+        let result = &actual.value;
         let job: Value =
             serde_json::from_slice(&std::fs::read(path.join("request.json")).unwrap()).unwrap();
-        if result["source"].is_object() {
+        if matches!(case, Case::MissingModel) {
+            assert_eq!(
+                result["details"]["source"]["identity"],
+                job["request"]["program"]["source"]["identity"]
+            );
+        } else {
+            assert!(result["source"].is_object(), "{}: {result}", case.id());
             assert_eq!(
                 result["source"]["digest"],
                 job["request"]["program"]["source"]["digest"]
@@ -179,7 +258,7 @@ fn actual_native_commands_execute_named_semantics_and_distinct_case_identities()
         fixtures::CASES.iter().map(|case| case.id()).collect()
     );
     assert_eq!(
-        run(&directory.path().join(Case::Healthy.id()), "request.json").1["truth"],
+        run(&directory.path().join(Case::Healthy.id()), "request.json").value["truth"],
         true
     );
 }
@@ -189,16 +268,52 @@ fn actual_native_commands_execute_named_semantics_and_distinct_case_identities()
 #[trace("TC-110", "FR-032-AC-4")]
 fn actual_markdown_and_native_cases_agree_without_reusing_source_identity() {
     let directory = tempfile::tempdir().unwrap();
-    let model = fixtures::model();
-    for case in fixtures::CASES {
+    let model = fixtures::model().unwrap();
+    for &case in fixtures::CASES {
         let path = directory.path().join(case.id());
         fixtures::write(&path, &model, case).unwrap();
-        let (native_exit, native) = run(&path, "request.json");
-        let (markdown_exit, markdown) = run(&path, "markdown-run.json");
-        assert_eq!(markdown_exit, native_exit, "{}: {markdown}", case.id());
+        let native_run = run(&path, "request.json");
+        let markdown_run = run(&path, "markdown-run.json");
+        assert_outcome(case, &native_run, false);
+        assert_outcome(case, &markdown_run, true);
+        let native = &native_run.value;
+        let markdown = &markdown_run.value;
+        assert_eq!(
+            markdown_run.exit,
+            native_run.exit,
+            "{}: {markdown}",
+            case.id()
+        );
         assert_eq!(markdown["status"], native["status"]);
         assert_eq!(markdown.get("truth"), native.get("truth"));
-        if markdown["extraction"].is_object() {
+        if matches!(case, Case::MissingModel) {
+            let job: Value =
+                serde_json::from_slice(&std::fs::read(path.join("markdown-run.json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                markdown["details"]["original"]["identity"],
+                job["request"]["program"]["source"]["identity"]
+            );
+            assert_eq!(
+                markdown["details"]["original"]["digest"],
+                job["request"]["program"]["source"]["digest"]
+            );
+            assert_eq!(
+                markdown["details"]["cause"]["diagnostic"]["code"],
+                "missing_import"
+            );
+            assert!(!markdown["details"]["cause"]["original_spans"]
+                .as_array()
+                .unwrap()
+                .is_empty());
+        } else {
+            assert!(
+                markdown["extraction"].is_object(),
+                "{}: {markdown}",
+                case.id()
+            );
+            assert!(markdown["source"].is_object());
+            assert!(native["source"].is_object());
             assert_eq!(markdown["selection"], native["selection"]);
             assert_eq!(markdown["inputs"], native["inputs"]);
             assert_ne!(markdown["source"]["identity"], native["source"]["identity"]);
@@ -230,7 +345,7 @@ fn actual_markdown_and_native_cases_agree_without_reusing_source_identity() {
 #[trace("TC-110", "FR-032-AC-2", "FR-032-AC-4")]
 fn exported_config_version_packages_reconstruct_the_same_native_outcomes() {
     let directory = tempfile::tempdir().unwrap();
-    let model = fixtures::model();
+    let model = fixtures::model().unwrap();
     for case in [Case::Healthy, Case::Changed, Case::ForbiddenParent] {
         let path = directory.path().join(case.id());
         fixtures::write(&path, &model, case).unwrap();
@@ -246,7 +361,7 @@ fn exported_config_version_packages_reconstruct_the_same_native_outcomes() {
             String::from_utf8_lossy(&export.stderr)
         );
         let digest = ByteDigest::of(&export.stdout).to_string();
-        assert_eq!(expected.1["package"]["digest"], digest);
+        assert_eq!(expected.value["package"]["digest"], digest);
         std::fs::write(path.join("package.json"), &export.stdout).unwrap();
         let mut job: Value =
             serde_json::from_slice(&std::fs::read(path.join("request.json")).unwrap()).unwrap();
@@ -257,7 +372,8 @@ fn exported_config_version_packages_reconstruct_the_same_native_outcomes() {
         )
         .unwrap();
         let actual = run(&path, "package-run.json");
-        assert_eq!(actual.0, expected.0);
+        assert_eq!(actual.exit, expected.exit);
+        assert_outcome(case, &actual, false);
         for field in [
             "status",
             "truth",
@@ -270,10 +386,33 @@ fn exported_config_version_packages_reconstruct_the_same_native_outcomes() {
             "events",
         ] {
             assert_eq!(
-                actual.1.get(field),
-                expected.1.get(field),
-                "{field}: {actual:?}"
+                actual.value.get(field),
+                expected.value.get(field),
+                "{field}: {}",
+                actual.value
             );
         }
     }
+}
+
+#[test]
+#[trace("TC-110", "FR-032-AC-1", "FR-032-AC-3")]
+fn fixture_output_is_repeatable_and_filesystem_failure_is_returned() {
+    let directory = tempfile::tempdir().unwrap();
+    let model = fixtures::model().unwrap();
+    let first = directory.path().join("first");
+    let second = directory.path().join("second");
+    fixtures::write(&first, &model, Case::Healthy).unwrap();
+    fixtures::write(&second, &model, Case::Healthy).unwrap();
+    for entry in std::fs::read_dir(&first).unwrap() {
+        let entry = entry.unwrap();
+        assert_eq!(
+            std::fs::read(entry.path()).unwrap(),
+            std::fs::read(second.join(entry.file_name())).unwrap()
+        );
+    }
+    let file = directory.path().join("occupied");
+    std::fs::write(&file, b"existing file").unwrap();
+    assert!(fixtures::write(&file, &model, Case::Healthy).is_err());
+    assert_eq!(std::fs::read(file).unwrap(), b"existing file");
 }
