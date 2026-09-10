@@ -170,7 +170,14 @@ Boolean only after completed evaluation. `outcome()` preserves the original
 stage diagnostics, measured work and implication events. The existing separate
 `validate` and `evaluate` APIs remain available. Run
 `cargo test --test runtime_execution` for aggregate, operation and stopped/retried
-requests. This is a native Rust API; standalone file intake remains future work.
+requests. This is a native Rust API; a standalone command remains future work.
+
+`Snapshot::read_verified` and `Invocation::read_verified` now read selected
+`native-state-input/1` bytes through closed Serde decoding and the existing
+structural constructors. They preserve original bytes/digests and refuse stale
+selections, incompatible envelopes, malformed fields and exhausted budgets.
+Run `cargo test --test runtime_reading` for round trips and actual execution of
+reread inputs. Model-aware validation still occurs during `runtime::execute`.
 
 The [formal source bridge](docs/formal-source-binding.md) retains exact native
 source under an explicitly supplied Contract IR source identity. Its forward

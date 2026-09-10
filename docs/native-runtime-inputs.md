@@ -2,7 +2,8 @@
 
 LC03 contract reviewed before implementation. FR-018's structural constructors
 are qualified; model-aware validation is qualified at 45ed1b4 by SR-097,
-with 35 passing public API tests. Predicate evaluation remains unimplemented. This
+with 35 passing public API tests. Native evaluation and combined execution are
+implemented under FR-008/023; selected byte intake is defined by FR-024. This
 contract consumes the internally adopted state-finite rules at specification
 e897f81 and the native model/checker landed in PR10 at bfac17d. It does not
 modify the historical profile or fixture bytes. FR-018 owns input construction,
@@ -79,10 +80,20 @@ uses ObjectIdentity and explicit snapshot references, never a foreign ValueId.
 The emitted native-state-input/1 envelope has exactly version, kind, identity
 and body. Kind is snapshot or invocation. Body fields are the complete draft
 fields specified below; all are present. Snapshot and invocation use separate
-Rust types. This first API constructs artifacts; it does not claim a JSON reader
-or shared-reference decoder. No schema-driven validation of external bytes is
-implied by Serialize or successful construction. A future reader requires its
-own strict duplicate-key/version/source contract and review.
+Rust types. Construction establishes structure; FR-024 separately defines the
+selected-byte reader. Neither operation is a shared-reference decoder or a
+substitute for model-aware runtime validation.
+
+`Snapshot::read_verified` and `Invocation::read_verified` bound bytes, verify
+the selected digest, decode the closed envelope and select its version/kind
+before decoding the body. Serde handles JSON; native records require objects,
+all fields are required, and unknown/duplicate fields refuse. Existing IR
+constructors validate declaration identifiers. Existing structural constructors
+check every decoded artifact before admission. Whitespace and field order are
+accepted and retained exactly; `bytes()` and `digest()` describe those external
+bytes, while `usage()` describes the actual constructor pass. InputReadError
+retains the expected reference, failed stage and original JSON/structural cause.
+No reader opens files or starts runtime evaluation.
 
 Encoding uses serde_json's exact integer/string encoding and declared struct
 field order, with no extra whitespace or terminal newline. Sequences, flat arena
@@ -122,7 +133,7 @@ encode as current/pre/post. Envelope version is native-state-input/1. Kind is
 snapshot/invocation. SymbolName and anchor values use their existing exact string
 representations; numeric payloads preserve signed i64 values. No unordered map
 controls the order of emitted fields or entries. These emitted bytes are a native
-domain payload, not an external-reader acceptance promise.
+domain payload; external-reader acceptance is governed by FR-024.
 
 Artifact construction checks nonempty identity/revision labels, bounded values,
 metadata entries, content and arena depth; duplicate fields/objects remain in

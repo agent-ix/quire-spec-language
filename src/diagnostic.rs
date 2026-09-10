@@ -68,7 +68,7 @@ pub enum Code {
     UnknownProfile,
     /// Native package encoding, structure or reconstructed claims are invalid.
     InvalidPackage,
-    /// Native package format selection is not implemented.
+    /// Native artifact format selection is not implemented.
     UnknownWire,
     /// Native package requires an unknown or unavailable feature.
     UnknownRequiredFeature,
@@ -76,7 +76,7 @@ pub enum Code {
     ResourceExhausted,
     /// No supplied formal model matches a required package or alias.
     MissingImport,
-    /// Selected formal revision or declaration bytes differ from the import.
+    /// Selected dependency identity, revision or bytes differ from the artifact.
     StaleDependency,
     /// More than one formal candidate supplies the selected declaration.
     AmbiguousDeclaration,

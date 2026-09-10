@@ -5,9 +5,11 @@ mod construction;
 mod evaluation;
 mod execution;
 mod input;
+mod reading;
 mod validation;
 
 pub use execution::{execute, ExecutionLimits, ExecutionOutcome, ExecutionReport};
+pub use reading::{InputReadCause, InputReadError, InputReadStage};
 
 pub use evaluation::{
     evaluate, EvaluationLimits, EvaluationOutcome, EvaluationReport, EvaluationUsage,
@@ -35,6 +37,16 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Read exact selected native-state-input/1 bytes and repeat structural checks.
+    pub fn read_verified(
+        expected: &SnapshotRef,
+        bytes: &[u8],
+        limits: ArtifactLimits,
+    ) -> Result<Self, Box<InputReadError>> {
+        reading::read(RuntimeReference::Snapshot(expected.clone()), bytes, limits)
+            .map(|artifact| Self { artifact })
+    }
+
     /// Check structure and emit exact native-state-input/1 snapshot bytes.
     pub fn new(
         identity: SourceIdentity,
@@ -49,12 +61,12 @@ impl Snapshot {
         &self.artifact.identity
     }
 
-    /// Exact complete emitted bytes, with no terminal newline.
+    /// Exact artifact bytes, as constructed or read from the selected input.
     pub fn bytes(&self) -> &[u8] {
         &self.artifact.bytes
     }
 
-    /// SHA-256 of the complete emitted bytes.
+    /// SHA-256 of the complete retained artifact bytes.
     pub const fn digest(&self) -> ByteDigest {
         self.artifact.digest
     }
@@ -82,6 +94,20 @@ pub struct Invocation {
 }
 
 impl Invocation {
+    /// Read exact selected native-state-input/1 bytes and repeat structural checks.
+    pub fn read_verified(
+        expected: &InvocationRef,
+        bytes: &[u8],
+        limits: ArtifactLimits,
+    ) -> Result<Self, Box<InputReadError>> {
+        reading::read(
+            RuntimeReference::Invocation(expected.clone()),
+            bytes,
+            limits,
+        )
+        .map(|artifact| Self { artifact })
+    }
+
     /// Check structure and emit exact native-state-input/1 invocation bytes.
     pub fn new(
         identity: SourceIdentity,
@@ -96,12 +122,12 @@ impl Invocation {
         &self.artifact.identity
     }
 
-    /// Complete emitted bytes, with no terminal newline.
+    /// Exact artifact bytes, as constructed or read from the selected input.
     pub fn bytes(&self) -> &[u8] {
         &self.artifact.bytes
     }
 
-    /// SHA-256 of the complete emitted bytes.
+    /// SHA-256 of the complete retained artifact bytes.
     pub const fn digest(&self) -> ByteDigest {
         self.artifact.digest
     }
