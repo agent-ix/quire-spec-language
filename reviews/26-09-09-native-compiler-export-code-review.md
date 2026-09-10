@@ -3,39 +3,42 @@ id: SR-183
 title: "Code and Rust review of standalone compiler export"
 type: SpecReview
 analysis: code-review
-scope: "src/command.rs; src/command/wire.rs; src/main.rs; tests/compile_command.rs; shared fixture setup"
+scope: "src/command; src/command.rs; src/wire_format.rs; src/cli.rs; src/main.rs; tests/compile_command.rs"
 review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of d1de2a4 using actual code-review, rust-review and
+Author PR-readiness review of f0cfe7b using actual code-review, rust-review and
 portable rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
 
-**PASS** — no remaining code/Rust findings in compiler export.
+**CONDITIONAL** — requested compiler/dispatch corrections are implemented;
+broader format schemas and public command naming remain follow-up work.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No findings | - |
+| FND-001 | medium | The format catalog now owns all six selectors, but dedicated schemas still cover only linked packages and native results. Do not claim complete wire-schema coverage. | FR-024; FR-025; FR-027 |
+| FND-002 | low | RunError/RunCause still name the shared command error API after its first command; retain compatibility until the cross-cutting error work in issue 27. | FR-026; FR-027 |
 
 ## Checks
 
-Reviewed closed source-only decoding, profile-before-body selection, shared
-file/count/byte bounds and exact source checks. Both commands use the same model
-and static compiler helpers. The returned byte copy intentionally outlives local
-models; stdout uses write_all without reserialization or newline. Original
-typed errors retain request identity, and static failure writes no package.
-No new panic, unsafe block, unchecked numeric conversion, dependency or runtime
-input construction was introduced. Actual trace tags bind the binary tests.
+Reviewed the closed request types and their associated format constants, one
+Command parser and shared stream handling, named file-count charges, and compiler
+functions separated from file intake. Error details use typed serialization.
+The output copy deliberately outlives local model ownership. No new unsafe,
+panic, dependency, unchecked cast or hosted workflow change was introduced.
 
-The full suite passed 289 tests and three compile-fail doctests, with four
-existing assurance tests ignored. After replacing duplicate fixture imports
-with a shared module, strict all-targets/all-features Clippy and all nine
-compile/run/parse-format tests passed. Formatting, warnings-denied rustdoc,
-cached minimal build, both fixture audits and generated fixture execution passed.
-The standalone exported artifact has digest
-sha256:bf2ce1db5d398f18169742bac213e89d201c2f91918ff5b610be6fd262599071.
-No hosted CI ran; dispatch-only policy remains. This is author review.
+Six compile tests include exact producer-byte identity and verified reread from
+a directory containing only selected sources, exhaustive typed adverse cases,
+command-specific usage, file-group exhaustion and actual Linux /dev/full output.
+The reported ENOSPC-success defect did not reproduce: non-BrokenPipe errors exit
+2. The documented quiet BrokenPipe policy is retained.
+
+At f0cfe7b the full local suite passed 300 tests and three compile-fail doctests,
+with four existing assurance tests ignored. All 17 focused command tests,
+formatting, strict all-targets/all-features Clippy, cached no-default-features
+build and warnings-denied rustdoc passed. Cargo phases ran serially with one
+build job. No hosted CI ran. This is author review, not independent acceptance.

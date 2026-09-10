@@ -10,8 +10,10 @@ review_set: all
 
 Digest checking precedes JSON interpretation; version/kind selection precedes typed body decoding. Wrong identities, incompatible formats, malformed fields and structural stops preserve their selected reference and failed stage. Noncanonical layout retains external bytes; construction usage is explicitly a separate count.
 
-Author PR-readiness review of `67c68da`, after implementation as directed.
+Author PR-readiness re-review of `0016103`, after implementation as directed.
 Selected set: all. No applicable AssuranceProfile was found.
+
+Cause-owned classification removes the mutable stage/code side channel. Digest and envelope guards still precede body decoding, and construction owns external byte adoption.
 
 ## Findings
 

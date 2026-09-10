@@ -15,6 +15,8 @@ Refuse stale selections, incompatible envelopes and invalid native input bodies.
 Mutate identity/digest, kind/version, required/unknown/duplicate fields, identifier
 and integer/digest forms, and arena indices. Lower byte and structural limits,
 then retry with defaults. Include deeply nested malformed input.
+Match every selection refusal and both JSON decode phases by Rust variant,
+with observed values and code/stage classification checked independently.
 
 ## Expected Results
 
