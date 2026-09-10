@@ -37,7 +37,7 @@ and returns a LinkedPackage that retains the exact selected models and source.
 
 The native model adapter shall derive primitive bounds, option structure, record fields and collection maxima from the supplied IR declarations.
 
-If any sequence declaration has a maximum greater than 10,000, then the native model adapter shall refuse the entire model with unsupported_construct before publishing an artifact.
+If native admission reaches a sequence declaration with a maximum greater than 10,000, then the native model adapter shall refuse the entire model with unsupported_construct before publishing an artifact.
 
 The sequence ceiling applies to every collection wrapper in used or unused
 record fields and values, including nested options and sequences. It constrains
@@ -46,6 +46,8 @@ budgets. Raising ModelLimits cannot raise this admission ceiling. Existing IR
 construction requires a positive declared maximum; an admitted sequence may
 still contain zero runtime elements. Source-derived ModelDraft::admit and the
 public Rust NativeModel constructor enforce the same rule.
+Earlier source, structural or work-limit failures can stop admission before
+it reaches that declaration and retain their own refusal or incomplete code.
 
 The native model adapter shall bind each integer or text declaration site to exactly one explicitly authored nominal scalar role.
 
