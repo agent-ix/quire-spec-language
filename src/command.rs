@@ -157,7 +157,7 @@ pub enum RunCause {
         /// Exact native package selected for projection.
         package: NativePackageRef,
         /// Program provenance without retained source text.
-        program: ProjectionSource,
+        program: Box<ProjectionSource>,
         /// Source coordinates resolved while the selected program was available.
         location: ProjectionLocation,
         /// Original classification, authored clause and IR diagnostics.
@@ -333,7 +333,7 @@ pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
                 let program = &package.checked().bindings().source;
                 RunCause::Lowering {
                     package: NativePackageRef::new(package.digest()),
-                    program: program.into(),
+                    program: Box::new(program.into()),
                     location: ProjectionLocation::resolve(program.source(), error.source),
                     error,
                 }
