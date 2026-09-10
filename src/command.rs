@@ -3,13 +3,16 @@
 
 mod compilation;
 mod output;
+mod projection_error;
 mod wire;
 
 pub use output::NativeResult;
+pub use projection_error::{ProjectionLocation, ProjectionSource};
 
 use crate::formal_source::FormalSource;
+use crate::lowering::{self, LoweringError, LoweringLimits};
 use crate::model_source::ModelSourceError;
-use crate::package::{NativePackageRef, PackageError};
+use crate::package::{NativePackage, NativePackageRef, PackageError};
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
@@ -148,6 +151,19 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
+    /// Original lowering failure and its resolved native source context.
+    #[error("{error}")]
+    Lowering {
+        /// Exact native package selected for projection.
+        package: NativePackageRef,
+        /// Program provenance without retained source text.
+        program: Box<ProjectionSource>,
+        /// Source coordinates resolved while the selected program was available.
+        location: ProjectionLocation,
+        /// Original classification, authored clause and IR diagnostics.
+        #[source]
+        error: Box<LoweringError>,
+    },
     /// The selected package failed its verified reader; source compilation is not a fallback.
     #[error("selected package {file}: {error}")]
     SelectedPackage {
@@ -185,6 +201,7 @@ impl RunCause {
             Self::Model(error) => error.code(),
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
             Self::Input(error) => error.code,
+            Self::Lowering { error, .. } => error.code.code(),
         }
     }
 
@@ -207,6 +224,7 @@ impl RunCause {
             | Self::Model(_)
             | Self::Package(_)
             | Self::SelectedPackage { .. }
+            | Self::Lowering { .. }
             | Self::Input(_) => {
                 if self.is_incomplete() {
                     3
@@ -302,6 +320,31 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
 /// Compile a native-compile/1 source-only job into the exact existing package bytes.
 /// No runtime artifact is read or executed; failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    compile_with(path, |package| Ok(package.bytes().to_vec()))
+}
+
+/// Compile native-compile/1 sources and export the existing Boolean IR projection.
+/// Unsupported clauses refuse the complete export; no runtime inputs are needed.
+pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    compile_with(path, |package| {
+        lowering::lower(package, LoweringLimits::default())
+            .map(|projection| projection.bytes().to_vec())
+            .map_err(|error| {
+                let program = &package.checked().bindings().source;
+                RunCause::Lowering {
+                    package: NativePackageRef::new(package.digest()),
+                    program: Box::new(program.into()),
+                    location: ProjectionLocation::resolve(program.source(), error.source),
+                    error,
+                }
+            })
+    })
+}
+
+fn compile_with(
+    path: &Path,
+    export: impl FnOnce(&NativePackage<'_>) -> Result<Vec<u8>>,
+) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes, _digest| {
         let request: wire::CompileRequest = request(bytes)?;
         let mut intake = intake(
@@ -316,7 +359,7 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
         )?;
         let models = compilation::models(&mut intake, &request.models)?;
         let package = compilation::package(&mut intake, &request.program, &models)?;
-        Ok(package.bytes().to_vec())
+        export(&package)
     })
 }
 

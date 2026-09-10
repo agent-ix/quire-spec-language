@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: explicitly selected output directory for the synthetic native workflow.
+//! FR-026/029: explicitly selected output directory for the synthetic native workflow.
 
 #[path = "../tests/support/standalone_setup.rs"]
 mod setup;
@@ -14,8 +14,19 @@ fn main() {
     for (name, case) in [
         ("healthy", setup::Case::Aggregate(2)),
         ("violating", setup::Case::Aggregate(1)),
-        ("operation", setup::Case::Operation(false)),
-        ("refused", setup::Case::Operation(true)),
+        (
+            "operation",
+            setup::Case::Operation {
+                violate_frame: false,
+            },
+        ),
+        (
+            "refused",
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+        ),
+        ("boolean", setup::Case::Boolean { flag: true }),
     ] {
         setup::write(&directory.join(name), case);
     }

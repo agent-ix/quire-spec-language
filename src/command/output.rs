@@ -105,6 +105,19 @@ fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_
     }
 }
 
+fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLocation {
+    let (span_status, span, unmapped_span) = match value {
+        super::ProjectionLocation::Absent => (types::SpanStatus::Absent, None, None),
+        super::ProjectionLocation::Located(span) => (types::SpanStatus::Located, Some(span), None),
+        super::ProjectionLocation::Invalid(span) => (types::SpanStatus::Invalid, None, Some(span)),
+    };
+    types::ProjectionLocation {
+        span_status,
+        span,
+        unmapped_span,
+    }
+}
+
 pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         RunCause::Io { path, error } => (
@@ -183,6 +196,30 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 stage: error.stage.to_string(),
                 path: error.path.iter().map(package_path).collect(),
                 cause: error.cause.as_ref().map(package_cause),
+            },
+        ),
+        RunCause::Lowering {
+            package,
+            program,
+            location,
+            error,
+        } => (
+            types::Stage::Lower,
+            types::Details::Lowering {
+                profile: crate::lowering::PROFILE,
+                package: types::PackageReference {
+                    format: package.format(),
+                    digest: package.digest().to_string(),
+                },
+                source: types::Source {
+                    identity: &program.identity,
+                    digest: program.digest.to_string(),
+                    path: &program.path,
+                    formal: &program.formal,
+                },
+                clause: error.clause.as_ref(),
+                location: projection_location(*location),
+                upstream: &error.upstream,
             },
         ),
     };

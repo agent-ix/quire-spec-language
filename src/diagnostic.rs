@@ -59,6 +59,12 @@ pub enum Code {
     InvalidIdentifier,
     /// A typed command result could not be serialized.
     OutputFailure,
+    /// Checked native expressions are outside the selected executable projection.
+    UnsupportedProjection,
+    /// The existing IR rejected an executable derivation.
+    ProjectionBinding,
+    /// Checked native correspondence could not be preserved in the projection.
+    InvalidProjectionCorrespondence,
     /// Required source identity, revision or path is absent.
     InvalidSourceIdentity,
     /// Supplied correspondence or query does not match the selected sources.
@@ -128,6 +134,9 @@ impl Code {
             Self::InvalidDigest => "invalid-digest",
             Self::InvalidIdentifier => "invalid-identifier",
             Self::OutputFailure => "output-failure",
+            Self::UnsupportedProjection => "unsupported_projection",
+            Self::ProjectionBinding => "projection_binding",
+            Self::InvalidProjectionCorrespondence => "invalid_projection_correspondence",
             Self::InvalidSourceIdentity => "invalid_source_identity",
             Self::InvalidSourceMap => "invalid_source_map",
             Self::SourceDigestMismatch => "source_digest_mismatch",
@@ -168,6 +177,9 @@ impl Code {
             Self::InvalidDigest,
             Self::InvalidIdentifier,
             Self::OutputFailure,
+            Self::UnsupportedProjection,
+            Self::ProjectionBinding,
+            Self::InvalidProjectionCorrespondence,
             Self::InvalidSourceIdentity,
             Self::InvalidSourceMap,
             Self::SourceDigestMismatch,
