@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-021–030 are done at 1359f05. The standalone binary now executes selected
+Task-021–030 are done at 0d3d294. The standalone binary now executes selected
 Markdown clauses through actual Quire extraction and native runtime semantics.
 The complete LC05 adoption and assurance effort remains open.
 
@@ -26,14 +26,17 @@ The complete LC05 adoption and assurance effort remains open.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Installed-module/wire adoption, wider backend support and deferred activation assurance remain separate work. | Plan-009; IT-008 |
+| FND-002 | medium | Matrix status-column mismatch remains tracked in compiler issue #28; authored Tested marks are not engine-verified. | TM-007 |
 
 ## Coverage
 
 Quire reports FR-031 4/4 criteria, TM-007 15/15 test cases and global 308/312.
-TC-109 has actual trace attributes on four enabled tests and its separately run
-minimal-feature refusal case. No scoped unbacked row, stub or unowned behavior
+TC-109 has actual trace attributes on the enabled binary tests, a context-adapter
+control and the separately run minimal-feature refusal case. TM-007 explicitly
+states feature gating. No scoped unbacked row, stub or unowned behavior
 was found: FR-026 owns unchanged runtime/file intake, FR-030 owns extraction and
-FR-031 owns command selection/report composition. Statuses were checked against
-actual runs. Existing global assurance gaps remain open; the optional semantic
+shared identity pairing, and FR-031 owns command selection/report composition.
+Counts report trace bindings, not execution or verification of status marks.
+The local runs in SR-223 supply execution evidence. Existing global assurance
+gaps remain open; the optional semantic
 gap review was declined and skipped.
-

@@ -27,10 +27,14 @@ wire accepted by BoundPackage::from_json_bytes; exit 0, no wrapper or newline.
 This is a derived executable artifact, not the native package or proof evidence.
 Compile remains the command for retaining native model/runtime obligations.
 Lowering refusal emits no projection bytes and retains the exact request digest,
-native package reference, original formal/program source and typed LoweringError.
+native package reference, original formal/program source identity and typed LoweringError.
+The failure retains source metadata and resolved coordinates without retaining
+the program text. Absent and invalid spans have distinct span_status values;
+invalid coordinates retain their original unmapped_span.
 The command error JSON uses stage lower and codes unsupported_projection,
 resource_exhausted, projection_binding or invalid_projection_correspondence,
 with authored clause, located native span and original upstream diagnostics.
+All lowering codes come from the native Code catalog through LoweringCode.
 Existing intake errors and stdout I/O behavior follow FR-027.
 
 ## Behavior
@@ -46,7 +50,7 @@ The command shall return exit 3 for exhausted budgets and exit 1 for lowering re
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-029-AC-1 | Actual lower-command bytes match library lowering, pass both pinned IR readers and generate the complete existing backend oracle population without runtime files. | Test |
-| FR-029-AC-2 | A later unsupported clause refuses the complete projection with empty stdout and original request/package/source/clause identity; a fresh valid retry succeeds. | Test |
+| FR-029-AC-2 | A later unsupported clause refuses the complete projection with empty stdout and original request/package/source/clause identity; location context distinguishes absent, located and invalid spans; a fresh valid retry succeeds. | Test |
 | FR-029-AC-3 | Wrong request format, runtime fields, stale source and intake limits retain existing error/exit behavior; compile/run/parse/format remain usable. | Test |
 
 ## Dependencies

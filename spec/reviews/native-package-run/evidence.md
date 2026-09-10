@@ -10,7 +10,7 @@ review_set: all
 
 quoin advise --json failed CLI-version detection with installed quire 0.31.0. From the previously fetched installed method catalog, author judgment selects integration/contract testing for AC-1/2 and negative-abuse testing for AC-3/4. Tests export with the real compiler binary, execute selected bytes, and alter claims with recomputed digests. Alternate layout checks raw identity independently of semantic observations. These are local behavioral checks, not independent semantic assurance.
 
-Author PR-readiness review of implementation `8db2292` and its final grammar correction.
+Author PR-readiness review of implementation `4f15f0f` and the FR-028 corrections.
 The owner-selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings
@@ -18,4 +18,3 @@ The owner-selected review set is all; no applicable AssuranceProfile was found.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Advisor version detection is unavailable; method choices are author judgment. | FR-028; TC-106 |
-

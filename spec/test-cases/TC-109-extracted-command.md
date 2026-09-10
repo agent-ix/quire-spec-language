@@ -16,6 +16,12 @@ snapshot/invocation files; assert values, byte-map correspondence and refusals.
 Run healthy/violating/refused cases under LF and CRLF. Exercise native syntax and
 extraction failures, malformed selection records, stale source, disabled feature,
 unsupported command combinations and exhausted budgets followed by fresh retry.
+Use separate package-conflict, clause-count and export-mode tests with missing
+model files to prove selection precedes I/O. Assert distinct codes and exact count
+details. Test shared identity fields for malformed types, duplicates and unknown
+keys. Validate every actual command envelope against the result schema and reject
+removed extraction provenance/mapping fields. A controlled adapter test retains
+real Quire context-validator failures and the selected producer versions.
 
 ## Expected Results
 

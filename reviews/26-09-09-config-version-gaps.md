@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-021–031 are done at 8564909. The named ConfigVersion model now executes
-actual parent, graph, identity and update cases through native/Markdown files.
+Task-021–031 are done at 53431cb. The named ConfigVersion model executes actual
+parent, graph, identity and update cases through native/Markdown files.
 The complete LC05 integration and assurance effort remains open.
 
 ## Verdict
@@ -26,14 +26,16 @@ The complete LC05 integration and assurance effort remains open.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Numeric/object/graph generated-backend parity and independent assurance remain open acceptance work. | IT-002; Plan-009 |
+| FND-002 | medium | Matrix status-column mismatch remains tracked in compiler issue #28; authored Tested marks are not engine-verified. | TM-007 |
 
 ## Coverage
 
 Quire reports FR-032 4/4 criteria, TM-007 16/16 test cases and global 313/317.
-TC-110 has actual trace attributes on four enabled tests; its three native
-tests also pass with no default features. No scoped unbacked row, stub or
-unowned behavior was found: FR-032 owns the concrete realization, while the
-existing model, command and runtime requirements own its execution semantics.
-Global status_lies is empty. This is trace backing, not completed assurance;
+TC-110 has actual trace attributes on five enabled tests; four native tests also
+pass with minimal features. TM-007 explicitly separates Markdown mapping from
+feature-independent package replay. No scoped unbacked row, stub or unowned
+behavior was found: FR-032 owns the concrete realization and newly authored model
+data; existing model, command and runtime requirements own execution semantics.
+These counts describe trace bindings, not execution or engine verification of
+status marks. SR-233 records actual local runs. Broader assurance remains open;
 the optional semantic gap review was declined and skipped.
-
