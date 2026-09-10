@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 8564909 using actual code-review, rust-review and
+Author PR-readiness review of 53431cb using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -23,23 +23,28 @@ rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Checks
 
-The Rust generator calls the production model frontend and public immutable
-runtime constructors. Static fixture assertions name programmer invariants;
-selected output-path I/O errors propagate to exit 2. It adds no parser,
-production API, dependency, unsafe block, unchecked numeric conversion, shared
-state, or alternate evaluator. The bounded case enum is exhaustive, and the
-existing intentional example-module inclusion pattern serves tests.
+The generated case enum/list and its exhaustive CaseSpec match have one authored
+catalog. Named rows, clauses and current/update inputs replace positional fields
+and repeated variant matches. The test oracle is a separate exhaustive match:
+adding a case requires an independent expectation. Preparation is split into
+model, program, input, request and Markdown emission. CRLF joins line records
+directly. Model admission and runtime construction errors propagate with I/O
+errors; static identifier and bounded-arena assertions remain programmer defects.
 
-The real binary executes 13 independently authored expected outcome rows,
-including identity equality, cycles, pre/post and refused/incomplete results.
-Native/Markdown parity supplements those independent judgments. Tests verify
-exact model-declaration source fragments and selected-package replay. Test
-directories use tempfile cleanup and every new test has actual trace attributes.
+Every case requires its actual exit, output stream, status, stage and diagnostic
+location. Native/Markdown runtime cases require source and extraction provenance;
+missing-model compilation is the explicit exception and requires error
+provenance instead. There is no presence-guarded acceptance assertion. Multiple
+located incomplete-population diagnostics remain legitimate. Package replay,
+distinct identities, exact source maps and repeatable bytes are exercised.
+The generator uses real production APIs and introduces no parser, dependency,
+unsafe code, unchecked numeric conversion or alternate evaluator.
 
-Local gates passed: fmt; strict all-targets/all-features Clippy; 308 ordinary
-tests plus three compile-fail doctests; three minimal-feature ConfigVersion
-tests; minimal build; rustdoc with warnings denied. Four existing assurance
-tests remain ignored. Fresh generated native and Markdown files independently
-returned true, false and frame refusal outside the harness. Missing arguments
-and a file used as output directory returned exit 2.
-
+At 53431cb, full local suites pass: 332 ordinary tests plus three compile-fail
+doctests with all features, 316 plus three with minimal features. Four existing
+assurance tests remain ignored in each. Strict all-targets Clippy passes in both
+configurations. Formatting, cached minimal binary/example build and warnings-denied
+all-feature rustdoc pass. The generated example and its usage/output error paths
+were checked locally. Quire validation reports no grammar findings.
+Workflow and dependency diffs against #23 are empty; hosted CI remains
+manual-dispatch only and was not run.
