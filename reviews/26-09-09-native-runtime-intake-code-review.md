@@ -8,19 +8,32 @@ review_set: subset
 ---
 ## Summary
 
-Author review of `67c68da` using actual code-review, rust-review and rust-style
+Author re-review of `0016103` using actual code-review, rust-review and rust-style
 skills. No applicable AssuranceProfile was found. Public integration tests use
 the repository's existing fixture convention and real trace attributes.
 
 ## Verdict
 
-**PASS** — no remaining code/Rust findings in the delivered reader scope.
+**CONDITIONAL** — the independent review's two required structural corrections
+are implemented and checked. The broader follow-ups below remain open.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No findings | - |
+| FND-001 | low | Resolved independent findings 1/2: distinct typed causes now determine stage/code exhaustively; tests assert variants and payloads. | src/runtime/reading.rs; tests/runtime_reading.rs; FR-024-AC-2 |
+| FND-002 | high | Type-owned wire decoders remain follow-up work: per-field adapters still require callers adding fields to select the correct decoder. Existing malformed-field controls pass. | src/runtime/input.rs; independent findings 3/8 |
+| FND-003 | medium | Bare-hex digest conversion and a wider wire-format catalog/schema remain follow-ups. The input format is now shared by reader and writer, but that is only partial resolution of finding 6. | src/runtime/input.rs; independent findings 5/6 |
+
+Findings 4/7 are also resolved: an internal constructor owns adoption of external
+bytes and InputReadStage owns its stable spelling. The default Serde recursion
+guard is documented at the decode site. Cross-cutting error remediation is #27.
+
+On this correction: full suite 278 tests plus three compile-fail doctests passed
+(four existing ignored); strict all-targets/all-features Clippy, formatting,
+minimal build and rustdoc with warnings denied passed. The focused 48-test
+runtime/package regression set also passed. No workflow or dependency changed.
+The earlier baseline checks below are retained as historical evidence.
 
 ## Checks
 
