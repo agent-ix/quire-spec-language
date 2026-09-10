@@ -4,7 +4,22 @@
 //! remain in the existing mapped compiler. Enabled by `quire-extraction`.
 
 use quire_contract_ir as ir;
-use quire_rs::semantic::{extract_clauses, AvailabilityState, ClausesOutcome, SemanticContext};
+use quire_rs::semantic::{extract_clauses, AvailabilityState, ClauseRef, SourceLocus};
+/// Pinned Quire-owned input/result contracts deliberately exposed by this feature.
+/// Changes to their upstream shape require consumer compatibility review.
+pub use quire_rs::semantic::{ClausesOutcome, SemanticContext};
+
+mod preflight;
+pub use preflight::PreflightFailure;
+
+/// Quire module contract admitted by this consumer and command adapters.
+pub const CONTRACT_VERSION: &str = "1.0.0";
+/// Quire semantic-core contract admitted by this consumer and command adapters.
+pub const SEMANTIC_CORE_VERSION: &str = "0.1.0";
+/// Hard original-document byte ceiling before extraction.
+pub const MAX_SOURCE_BYTES: usize = 1_048_576;
+/// Hard original-document line ceiling, including trailing empty line.
+pub const MAX_LINES: usize = 4096;
 
 use crate::checking::ClauseBinding;
 use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
@@ -37,8 +52,8 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            source_bytes: 1_048_576,
-            lines: 4096,
+            source_bytes: MAX_SOURCE_BYTES,
+            lines: MAX_LINES,
             compiler: CompileLimits::default(),
         }
     }
@@ -46,7 +61,11 @@ impl Default for Limits {
 
 /// Actual failed join or native stage, without parsing display messages.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Cause {
+    /// Input limits, profile selection or original-context mismatch before extraction.
+    #[error("{0}")]
+    Preflight(#[from] Box<PreflightFailure>),
     /// Original selection/correspondence diagnostic.
     #[error("{0}")]
     Join(#[from] Box<Diagnostic>),
@@ -86,6 +105,7 @@ impl Error {
     /// Code of the stage that actually failed.
     pub fn code(&self) -> Code {
         match &self.cause {
+            Cause::Preflight(error) => error.code(),
             Cause::Join(error) => error.code,
             Cause::Compile(error) => error.code(),
         }
@@ -115,51 +135,11 @@ fn failure(source: &Source, code: Code, message: &str) -> Box<Diagnostic> {
     crate::diagnostic::error(source, code, Phase::SourceMap, 0, 0, message)
 }
 
-fn preflight(
+fn selected_clause<'a>(
     original: &Source,
-    context: &SemanticContext,
+    extraction: &'a ClausesOutcome,
     selection: &Selection,
-    limits: Limits,
-) -> Result<(), Box<Diagnostic>> {
-    let hard = Limits::default();
-    if original.text().len() > limits.source_bytes.min(hard.source_bytes)
-        || original
-            .position(original.text().len())
-            .is_none_or(|position| position.line > limits.lines.min(hard.lines))
-    {
-        return Err(failure(
-            original,
-            Code::ResourceExhausted,
-            "Quire extraction input limit exceeded",
-        ));
-    }
-    if context.module.contract_version != "1.0.0" || context.module.semantic_core != "0.1.0" {
-        return Err(failure(
-            original,
-            Code::UnknownProfile,
-            "Quire consumer requires contract 1.0.0 / semantic-core 0.1.0",
-        ));
-    }
-    if context.source_identity.as_deref() != Some(original.identity().identity.as_str())
-        || context.path != original.path()
-        || context.identity_package() != selection.binding.requirement.package().as_str()
-    {
-        return Err(failure(
-            original,
-            Code::InvalidModelBinding,
-            "Quire context differs from the selected source or authored package",
-        ));
-    }
-    Ok(())
-}
-
-fn body_map(
-    original: &Source,
-    extraction: &ClausesOutcome,
-    selection: &Selection,
-    byte_limit: usize,
-) -> Result<(SourceMap, String), Box<Diagnostic>> {
-    let invalid = |message| failure(original, Code::InvalidSourceMap, message);
+) -> Result<&'a ClauseRef, Box<Diagnostic>> {
     if extraction.availability.state != AvailabilityState::Available {
         return Err(failure(
             original,
@@ -167,7 +147,8 @@ fn body_map(
             "Quire clause extraction is not available",
         ));
     }
-    let clause = extraction
+    // The pre-extraction line ceiling bounds the entire upstream clause population.
+    extraction
         .clauses
         .as_deref()
         .unwrap_or(&[])
@@ -179,15 +160,11 @@ fn body_map(
                 Code::InvalidModelBinding,
                 "selected authored clause is absent from Quire extraction",
             )
-        })?;
-    let locus = clause
-        .source_span
-        .as_ref()
-        .ok_or_else(|| invalid("extracted clause has no original locus"))?;
-    let extracted_text = extraction
-        .clause_text
-        .get(&clause.clause_id)
-        .ok_or_else(|| invalid("extracted clause has no body"))?;
+        })
+}
+
+fn locate_fence(original: &Source, locus: &SourceLocus) -> Result<Span, Box<Diagnostic>> {
+    let invalid = |message| failure(original, Code::InvalidSourceMap, message);
     let close = locus
         .end_line
         .ok_or_else(|| invalid("extracted fence has no closing line"))?;
@@ -218,8 +195,7 @@ fn body_map(
             end: next,
         })
         .ok_or_else(|| invalid("invalid closing line range"))?;
-    // Quire FR-071 defines endColumn as one past the closing line's byte
-    // length. Native diagnostics use scalar columns; do not compare those units.
+    // Quire FR-071 uses byte columns here; native diagnostic columns count scalars.
     let closing_content = closing_line
         .strip_suffix('\n')
         .unwrap_or(closing_line)
@@ -229,37 +205,48 @@ fn body_map(
             "closing fence coordinate disagrees with original bytes",
         ));
     }
-    let extracted_end = start
-        .checked_add(extracted_text.len())
+    Ok(Span { start, end })
+}
+
+fn verify_body_bytes<'a>(
+    original: &Source,
+    region: Span,
+    extracted: &'a str,
+) -> Result<&'a str, Box<Diagnostic>> {
+    let invalid = |message| failure(original, Code::InvalidSourceMap, message);
+    let extracted_end = region
+        .start
+        .checked_add(extracted.len())
         .ok_or_else(|| invalid("extracted body coordinate overflow"))?;
-    if original.slice(Span {
-        start,
+    let selected = original.slice(Span {
+        start: region.start,
         end: extracted_end,
-    }) != Some(extracted_text)
-        || !matches!(
-            original.slice(Span {
-                start: extracted_end,
-                end
-            }),
-            Some("" | "\n")
-        )
-    {
+    });
+    let suffix = original.slice(Span {
+        start: extracted_end,
+        end: region.end,
+    });
+    if selected != Some(extracted) || !matches!(suffix, Some("" | "\n")) {
         return Err(invalid(
             "Quire body differs from the reported original region",
         ));
     }
-    // Quire omits the final LF but preserves a preceding CR. Having checked its
-    // exact bytes above, remove only that dangling CR so native syntax sees the
-    // declared final-newline deletion, never an inserted LF or an invalid bare CR.
-    let text = if original.slice(Span {
-        start: extracted_end,
-        end,
-    }) == Some("\n")
-    {
-        extracted_text.strip_suffix('\r').unwrap_or(extracted_text)
+    // Verify Quire's bytes before dropping the CR left by its omitted final LF.
+    Ok(if suffix == Some("\n") {
+        extracted.strip_suffix('\r').unwrap_or(extracted)
     } else {
-        extracted_text.as_str()
-    };
+        extracted
+    })
+}
+
+fn build_map(
+    original: &Source,
+    clause: &ClauseRef,
+    selection: &Selection,
+    region: Span,
+    text: &str,
+    byte_limit: usize,
+) -> Result<SourceMap, Box<Diagnostic>> {
     let body = Source::read(
         selection.body.clone(),
         format!("{}#{}", original.path(), clause.clause_id),
@@ -275,25 +262,48 @@ fn body_map(
                 end: text.len(),
             },
             original: Span {
-                start,
-                end: start
-                    .checked_add(text.len())
-                    .ok_or_else(|| invalid("body coordinate overflow"))?,
+                start: region.start,
+                end: region.start.checked_add(text.len()).ok_or_else(|| {
+                    failure(original, Code::InvalidSourceMap, "body coordinate overflow")
+                })?,
             },
         }]
     };
-    let mapping = SourceMap::verify(
+    SourceMap::verify(
         original.clone(),
         body,
-        Span { start, end },
+        region,
         segments,
         Layout {
             drop_final_newline: true,
             ..Layout::default()
         },
         1,
-    )?;
-    Ok((mapping, clause.language.clone()))
+    )
+}
+
+fn body_map<'a>(
+    original: &Source,
+    extraction: &'a ClausesOutcome,
+    selection: &Selection,
+    byte_limit: usize,
+) -> Result<(SourceMap, &'a str), Box<Diagnostic>> {
+    let invalid = |message| failure(original, Code::InvalidSourceMap, message);
+    let clause = selected_clause(original, extraction, selection)?;
+    let locus = clause
+        .source_span
+        .as_ref()
+        .ok_or_else(|| invalid("extracted clause has no original locus"))?;
+    let extracted = extraction
+        .clause_text
+        .get(&clause.clause_id)
+        .ok_or_else(|| invalid("extracted clause has no body"))?;
+    let region = locate_fence(original, locus)?;
+    let text = verify_body_bytes(original, region, extracted)?;
+    Ok((
+        build_map(original, clause, selection, region, text, byte_limit)?,
+        &clause.language,
+    ))
 }
 
 /// Extract from the original document, verify the selected body and compile it.
@@ -308,12 +318,12 @@ pub fn compile<'model>(
     models: &'model [NativeModel],
     limits: Limits,
 ) -> Result<ExtractedPackage<'model>, Box<Error>> {
-    if let Err(cause) = preflight(&original, context, &selection, limits) {
+    if let Err(cause) = preflight::check(&original, context, &selection, limits) {
         return Err(Box::new(Error {
             original,
             selection,
             extraction: None,
-            cause: Cause::Join(cause),
+            cause: Cause::Preflight(cause),
         }));
     }
     let extraction = extract_clauses(original.text(), context);
@@ -326,7 +336,7 @@ pub fn compile<'model>(
         )?;
         Ok(mapped::compile(
             mapping,
-            &language,
+            language,
             selection.binding.clone(),
             selection.formal.clone(),
             models,

@@ -8,6 +8,9 @@ type: TestMatrix
 FR-022 is the compiler-side API under LC05. Its programmatic mapped fixtures do
 not claim complete Quire producer integration in IT-003.
 FR-030 / TC-108 exercise the actual pinned Rust extractor and native consumer.
+FR-030 and FR-011 rows using TC-108 require `--features quire-extraction` (or
+`--all-features`). Both minimal and enabled feature configurations have separate
+local test and lint lanes; the hosted workflow remains manual-dispatch only.
 
 ## Requirements Traceability
 
