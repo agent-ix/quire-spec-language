@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Reviewed implementation/spec revision `401edc4c378701e3e108303df334be4629cb8cb0`
+Reviewed implementation/spec revision `b789eed`
 at PR readiness, using the owner's selected all-set. No applicable AssuranceProfile.
 
 FR-034 belongs to Agent A's compiler lowering module (core). It consumes native validation and existing IR contracts; it does not add a second model binder, runtime evaluator, evidence store or backend generator. B/C repositories and dependency pins are unchanged.

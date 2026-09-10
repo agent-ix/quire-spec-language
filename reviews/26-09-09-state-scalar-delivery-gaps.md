@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Inspected Plan-008 and TM-006 with implementation `401edc4` and the PR readiness
+Inspected Plan-008 and TM-006 with implementation `b789eed` and the PR readiness
 task update. Task-033 is delivered; complete Plan-008 acceptance remains open.
 
 ## Verdict
@@ -27,7 +27,7 @@ assurance remains visible.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Generated activation qualification remains incomplete; tagged TC-094 does not establish a passing run. | Task-020; FR-009-AC-5; IT-008-SC-04 |
-| FND-002 | low | The installed trace selector expects Status while the valid functional-coverage table uses Coverage Status. Checked authored markers directly; empty status_lies alone is not a qualification result. | TM-006 |
+| FND-002 | medium | Compiler issue #28 owns the status-column mismatch; authored Tested marks are not engine-verified. | TM-006 |
 
 ## Coverage
 
@@ -35,7 +35,8 @@ Reconciliation: actual `quire coverage --scope . --json`, Quire 0.31.0; no grep
 fallback. Tasks done: 3/4. FR-034: 5/5 criteria backed; TM-006: 5/5 test-case rows
 backed; global trace rollup: 325/329. These are trace counts, not proof or project
 completion percentages. No unmatched tags or untracked test symbols occur in
-the new test file. TC-112's five tests pass; TC-094 retains its deferred marker.
+the new test file. TC-112's five tests require actual provenance populations and pass; TC-094
+retains its deferred marker. SR-253 records the current full feature lanes.
 
 Reverse discovery inventoried six changed behaviors: target/command selection,
 field/pre lowering, alias/read correspondence, exact-context selection,
