@@ -19,78 +19,10 @@ use std::{io, path::Path};
 /// Original native model source, independent of historical datatype artifacts.
 pub const MODEL: &str = include_str!("model.json");
 
-/// Explicit authored scenarios; expected results live in the integration test.
-#[derive(Clone, Copy, Debug)]
-pub enum Case {
-    Healthy,
-    Violating,
-    Absent,
-    Cycle,
-    SelfLoop,
-    Distinct,
-    Dangling,
-    Incomplete,
-    MissingModel,
-    Exhausted,
-    Unchanged,
-    Changed,
-    ForbiddenParent,
-}
-
-/// The complete runnable example population.
-pub const CASES: [Case; 13] = [
-    Case::Healthy,
-    Case::Violating,
-    Case::Absent,
-    Case::Cycle,
-    Case::SelfLoop,
-    Case::Distinct,
-    Case::Dangling,
-    Case::Incomplete,
-    Case::MissingModel,
-    Case::Exhausted,
-    Case::Unchanged,
-    Case::Changed,
-    Case::ForbiddenParent,
-];
-
-impl Case {
-    /// Stable case-specific identity and output directory.
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Healthy => "healthy-parent",
-            Self::Violating => "violating-parent",
-            Self::Absent => "absent-parent",
-            Self::Cycle => "cycle",
-            Self::SelfLoop => "self-loop",
-            Self::Distinct => "distinct-identities",
-            Self::Dangling => "dangling-parent",
-            Self::Incomplete => "incomplete-population",
-            Self::MissingModel => "missing-model",
-            Self::Exhausted => "exhausted-work",
-            Self::Unchanged => "unchanged-version",
-            Self::Changed => "changed-version",
-            Self::ForbiddenParent => "forbidden-parent-change",
-        }
-    }
-
-    fn operation(self) -> bool {
-        matches!(
-            self,
-            Self::Unchanged | Self::Changed | Self::ForbiddenParent
-        )
-    }
-
-    fn clause(self) -> (&'static str, &'static str, &'static str) {
-        match self {
-            Self::Cycle | Self::SelfLoop => ("NoCycle", "no_cycle", "not reaches(self, self, parent)"),
-            Self::Distinct => ("SameIdentity", "same_identity", "self = other"),
-            Self::Unchanged | Self::Changed | Self::ForbiddenParent => ("VersionUnchanged", "version_unchanged", "self.versionNumber = pre(self.versionNumber)"),
-            Self::Healthy | Self::Violating | Self::Absent | Self::Dangling | Self::Incomplete |
-            Self::MissingModel | Self::Exhausted => ("ParentOrder", "parent_order", "present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber"),
-        }
-    }
-}
+#[path = "cases.rs"]
+mod cases;
+pub use cases::{Case, CASES};
+use cases::{CaseSpec, Input, Row};
 
 fn symbol(name: &str) -> ir::SymbolName {
     ir::SymbolName::new(name).expect("static example symbol")
@@ -104,7 +36,7 @@ fn identity(case: Case, role: &str) -> SourceIdentity {
 }
 
 /// Compile and admit the checked-in model using the production frontend.
-pub fn model() -> NativeModel {
+pub fn model() -> io::Result<NativeModel> {
     let source = Source::read(
         SourceIdentity {
             identity: "ix://example/config-version/model".into(),
@@ -114,7 +46,7 @@ pub fn model() -> NativeModel {
         MODEL.as_bytes(),
         1_048_576,
     )
-    .expect("checked-in model source");
+    .map_err(io::Error::other)?;
     let source = FormalSource::new(
         source,
         ir::SourceIdentity::new(
@@ -123,9 +55,9 @@ pub fn model() -> NativeModel {
         ),
     );
     read(source, "native-rule-model/1", ModelSourceLimits::default())
-        .expect("checked-in ConfigVersion model compiles")
+        .map_err(io::Error::other)?
         .admit(ModelLimits::default())
-        .expect("checked-in ConfigVersion roles are valid")
+        .map_err(io::Error::other)
 }
 
 fn binding(model: &NativeModel) -> ModelBinding {
@@ -150,28 +82,22 @@ fn push(arena: &mut Vec<ValueNode>, value: ValueNode) -> ValueId {
     id
 }
 
-fn snapshot(model: &NativeModel, case: Case, observation: ir::StateObservation) -> Snapshot {
-    let mut rows = vec![("root", 1, None), ("child", 2, Some("root"))];
-    match case {
-        Case::Violating => rows[0].1 = 3,
-        Case::Absent => rows.truncate(1),
-        Case::Cycle => rows[0].2 = Some("child"),
-        Case::SelfLoop => rows = vec![("child", 2, Some("child"))],
-        Case::Distinct => rows = vec![("root", 2, None), ("child", 2, None)],
-        Case::Dangling | Case::Incomplete => rows[1].2 = Some("missing"),
-        Case::Changed if observation == ir::StateObservation::Post => rows[1].1 = 3,
-        Case::ForbiddenParent if observation == ir::StateObservation::Post => rows[1].2 = None,
-        Case::Healthy
-        | Case::MissingModel
-        | Case::Exhausted
-        | Case::Unchanged
-        | Case::Changed
-        | Case::ForbiddenParent => {}
-    }
+fn snapshot(
+    model: &NativeModel,
+    case: Case,
+    observation: ir::StateObservation,
+    rows: &[Row],
+    other: Option<&str>,
+) -> io::Result<Snapshot> {
     let mut arena = Vec::new();
     let objects = rows
-        .into_iter()
-        .map(|(key, version, parent)| {
+        .iter()
+        .map(|row| {
+            let Row {
+                key,
+                version,
+                parent,
+            } = *row;
             let version = push(&mut arena, ValueNode::Integer { value: version });
             let parent = match parent {
                 Some(key) => {
@@ -200,11 +126,11 @@ fn snapshot(model: &NativeModel, case: Case, observation: ir::StateObservation) 
             }
         })
         .collect();
-    let values = if matches!(case, Case::Distinct) {
+    let values = if let Some(key) = other {
         let value = push(
             &mut arena,
             ValueNode::Object {
-                identity: object(model, "root"),
+                identity: object(model, key),
             },
         );
         vec![ValueBinding {
@@ -231,7 +157,7 @@ fn snapshot(model: &NativeModel, case: Case, observation: ir::StateObservation) 
                 model: model.environment().owner().clone(),
                 record: symbol("ConfigVersion"),
                 universe: symbol("config_history"),
-                complete: !matches!(case, Case::Incomplete),
+                complete: case.spec().complete,
                 objects,
             }],
             values,
@@ -239,7 +165,7 @@ fn snapshot(model: &NativeModel, case: Case, observation: ir::StateObservation) 
         },
         ArtifactLimits::default(),
     )
-    .expect("example snapshots are structurally valid, including adverse semantic inputs")
+    .map_err(io::Error::other)
 }
 
 fn source_selection(file: &str, identity: &SourceIdentity, text: &str, document: &str) -> Value {
@@ -247,118 +173,206 @@ fn source_selection(file: &str, identity: &SourceIdentity, text: &str, document:
         "digest":ByteDigest::of(text.as_bytes()).to_string(),"document":document,"formal_revision":1})
 }
 
-/// Emit one selected case. I/O errors propagate; static fixture errors are defects.
-pub fn write(directory: &Path, model: &NativeModel, case: Case) -> io::Result<()> {
-    std::fs::create_dir_all(directory)?;
-    std::fs::write(directory.join("model.json"), MODEL)?;
-    let (name, clause, expression) = case.clause();
-    let (keyword, context, point) = if case.operation() {
-        (
-            "post",
-            "Config::ConfigVersion::attemptUpdate",
-            json!({"kind":"post","operation":"attemptUpdate"}),
-        )
-    } else {
-        (
-            "invariant",
-            "Config::ConfigVersion at current",
-            json!({"kind":"handler","name":"validate"}),
-        )
+struct Program {
+    native: String,
+    document: String,
+    owner: Value,
+    selection: Value,
+}
+
+struct Syntax {
+    keyword: &'static str,
+    context: &'static str,
+    point: Value,
+}
+
+fn write_program(directory: &Path, model: &NativeModel, case: Case) -> io::Result<Program> {
+    let spec = case.spec();
+    let clause = spec.clause;
+    let syntax = match spec.input {
+        Input::Update { .. } => Syntax {
+            keyword: "post",
+            context: "Config::ConfigVersion::attemptUpdate",
+            point: json!({"kind":"post","operation":"attemptUpdate"}),
+        },
+        Input::Current { .. } => Syntax {
+            keyword: "invariant",
+            context: "Config::ConfigVersion at current",
+            point: json!({"kind":"handler","name":"validate"}),
+        },
     };
-    let native = format!("// SPDX-License-Identifier: AGPL-3.0-only\nlanguage \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel Config = \"example/config-version\" version \"1\" digest \"{}\";\n{keyword} {name} on {context} {{ {expression} }}\n", model.digest());
+    let native = format!(
+        "// SPDX-License-Identifier: AGPL-3.0-only\nlanguage \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel Config = \"example/config-version\" version \"1\" digest \"{}\";\n{} {} on {} {{ {} }}\n",
+        model.digest(), syntax.keyword, clause.name, syntax.context, clause.expression,
+    );
     std::fs::write(directory.join("program.native"), &native)?;
-    let owner = json!({"package":"example/config-version","requirement":name,"revision":1});
-    let source_id = identity(case, "native");
-    // SourceDocumentId is opaque; use a valid, explicit case-specific identifier.
+    let owner = json!({"package":"example/config-version","requirement":clause.name,"revision":1});
     let document = format!("ConfigVersion{}", case.id().replace('-', "_"));
-    let program = json!({"source":source_selection("program.native", &source_id, &native, &document),
-        "clauses":[{"name":name,"owner":owner,"clause":clause,"point":point}]});
-    let snapshots = if case.operation() {
-        vec![
-            snapshot(model, case, ir::StateObservation::Pre),
-            snapshot(model, case, ir::StateObservation::Post),
-        ]
-    } else {
-        vec![snapshot(model, case, ir::StateObservation::Current)]
-    };
-    let mut snapshot_files = Vec::new();
-    for (index, snapshot) in snapshots.iter().enumerate() {
-        let file = format!("snapshot-{index}.json");
-        std::fs::write(directory.join(&file), snapshot.bytes())?;
-        snapshot_files.push(json!({"file":file,"reference":snapshot.reference()}));
+    let selection = json!({
+        "source":source_selection("program.native", &identity(case, "native"), &native, &document),
+        "clauses":[{"name":clause.name,"owner":owner,"clause":clause.id,"point":syntax.point}]
+    });
+    Ok(Program {
+        native,
+        document,
+        owner,
+        selection,
+    })
+}
+
+struct Inputs {
+    snapshots: Vec<Value>,
+    invocations: Vec<Value>,
+    observation: Value,
+}
+
+fn write_snapshot(directory: &Path, index: usize, snapshot: &Snapshot) -> io::Result<Value> {
+    let file = format!("snapshot-{index}.json");
+    std::fs::write(directory.join(&file), snapshot.bytes())?;
+    Ok(json!({"file":file,"reference":snapshot.reference()}))
+}
+
+fn write_inputs(directory: &Path, model: &NativeModel, case: Case) -> io::Result<Inputs> {
+    match case.spec().input {
+        Input::Current {
+            rows,
+            self_key,
+            other,
+        } => {
+            let snapshot = snapshot(model, case, ir::StateObservation::Current, rows, other)?;
+            Ok(Inputs {
+                snapshots: vec![write_snapshot(directory, 0, &snapshot)?],
+                invocations: Vec::new(),
+                observation: json!({"kind":"current","snapshot":snapshot.reference(),
+                    "self_object":object(model, self_key)}),
+            })
+        }
+        Input::Update { pre, post } => {
+            let pre = snapshot(model, case, ir::StateObservation::Pre, pre, None)?;
+            let post = snapshot(model, case, ir::StateObservation::Post, post, None)?;
+            write_update(directory, model, case, &pre, &post)
+        }
     }
-    let (invocations, observation) = if case.operation() {
-        let invocation = Invocation::new(
-            identity(case, "invocation"),
-            InvocationDraft {
-                models: vec![binding(model)],
-                context: QualifiedName {
-                    model: model.environment().owner().clone(),
-                    name: symbol("ConfigVersion"),
-                },
-                operation: symbol("attemptUpdate"),
-                anchor: ir::AnchorName::new("attemptUpdate").unwrap(),
-                self_object: object(model, "child"),
-                pre: snapshots[0].reference(),
-                post: snapshots[1].reference(),
-                parameters: Vec::new(),
-                result: Some(ValueId::new(0)),
-                created: Vec::new(),
-                deleted: Vec::new(),
-                arena: vec![ValueNode::Boolean { value: true }],
+}
+
+fn write_update(
+    directory: &Path,
+    model: &NativeModel,
+    case: Case,
+    pre: &Snapshot,
+    post: &Snapshot,
+) -> io::Result<Inputs> {
+    let invocation = Invocation::new(
+        identity(case, "invocation"),
+        InvocationDraft {
+            models: vec![binding(model)],
+            context: QualifiedName {
+                model: model.environment().owner().clone(),
+                name: symbol("ConfigVersion"),
             },
-            ArtifactLimits::default(),
-        )
-        .expect("static recorded update fixture");
-        std::fs::write(directory.join("invocation.json"), invocation.bytes())?;
-        (
-            vec![json!({"file":"invocation.json","reference":invocation.reference()})],
-            json!({"kind":"invocation","invocation":invocation.reference()}),
-        )
-    } else {
-        (
-            Vec::new(),
-            json!({"kind":"current","snapshot":snapshots[0].reference(),
-        "self_object":object(model, if matches!(case, Case::Absent) {"root"} else {"child"})}),
-        )
-    };
-    let models = if matches!(case, Case::MissingModel) {
-        Vec::new()
-    } else {
+            operation: symbol("attemptUpdate"),
+            anchor: ir::AnchorName::new("attemptUpdate").expect("static anchor name"),
+            self_object: object(model, "child"),
+            pre: pre.reference(),
+            post: post.reference(),
+            parameters: Vec::new(),
+            result: Some(ValueId::new(0)),
+            created: Vec::new(),
+            deleted: Vec::new(),
+            arena: vec![ValueNode::Boolean { value: true }],
+        },
+        ArtifactLimits::default(),
+    )
+    .map_err(io::Error::other)?;
+    std::fs::write(directory.join("invocation.json"), invocation.bytes())?;
+    Ok(Inputs {
+        snapshots: vec![
+            write_snapshot(directory, 0, pre)?,
+            write_snapshot(directory, 1, post)?,
+        ],
+        invocations: vec![json!({"file":"invocation.json","reference":invocation.reference()})],
+        observation: json!({"kind":"invocation","invocation":invocation.reference()}),
+    })
+}
+
+fn write_model(directory: &Path, model: &NativeModel, spec: CaseSpec) -> io::Result<Vec<Value>> {
+    std::fs::write(directory.join("model.json"), MODEL)?;
+    Ok(if spec.include_model {
         vec![
-            json!({"format":"native-rule-model/1","source":source_selection("model.json", model.source().source().identity(), MODEL, "ConfigVersionModelSource")}),
+            json!({"format":"native-rule-model/1","source":source_selection(
+            "model.json", model.source().source().identity(), MODEL, "ConfigVersionModelSource")}),
         ]
-    };
-    let mut job = json!({"format":"native-run/1","request":{"models":models,"program":program,
-        "snapshots":snapshot_files,"invocations":invocations,"selection":{"owner":owner,"clause":clause,"observation":observation}}});
-    if matches!(case, Case::Exhausted) {
-        job["request"]["limits"] = json!({"expression_steps":0});
-    }
-    std::fs::write(
-        directory.join("request.json"),
-        serde_json::to_vec_pretty(&job)?,
-    )?;
-    let compilation =
-        json!({"format":"native-compile/1","request":{"models":models,"program":program}});
-    std::fs::write(
-        directory.join("compile.json"),
-        serde_json::to_vec_pretty(&compilation)?,
-    )?;
-    let body: String = native.lines().map(|line| format!("  {line}\n")).collect();
-    let markdown = format!("<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n# ConfigVersion — café\n\n## Invariants\n\n### {clause}\n  ```ix:native\n{body}  ```\n").replace('\n', "\r\n");
+    } else {
+        Vec::new()
+    })
+}
+
+fn write_json(directory: &Path, file: &str, value: &Value) -> io::Result<()> {
+    std::fs::write(directory.join(file), serde_json::to_vec_pretty(value)?)
+}
+
+fn write_markdown(
+    directory: &Path,
+    case: Case,
+    program: &Program,
+    mut job: Value,
+) -> io::Result<()> {
+    let mut lines = vec![
+        "<!-- SPDX-License-Identifier: AGPL-3.0-only -->".to_owned(),
+        "# ConfigVersion — café".to_owned(),
+        String::new(),
+        "## Invariants".to_owned(),
+        String::new(),
+        format!("### {}", case.spec().clause.id),
+        "  ```ix:native".to_owned(),
+    ];
+    lines.extend(program.native.lines().map(|line| format!("  {line}")));
+    lines.push("  ```".to_owned());
+    lines.push(String::new());
+    let markdown = lines.join("\r\n");
     std::fs::write(directory.join("rules.md"), &markdown)?;
     let selected = &mut job["request"]["program"];
     selected["source"] = source_selection(
         "rules.md",
         &identity(case, "spec"),
         &markdown,
-        &format!("Markdown{document}"),
+        &format!("Markdown{}", program.document),
     );
     let extracted = identity(case, "extracted");
-    selected["extraction"] = json!({"body":{"identity":extracted.identity,"revision":extracted.revision,"document":format!("Extracted{document}"),"formal_revision":1}});
-    std::fs::write(
-        directory.join("markdown-run.json"),
-        serde_json::to_vec_pretty(&job)?,
+    selected["extraction"] = json!({"body":{"identity":extracted.identity,
+        "revision":extracted.revision,"document":format!("Extracted{}", program.document),"formal_revision":1}});
+    write_json(directory, "markdown-run.json", &job)
+}
+
+fn write_requests(
+    directory: &Path,
+    case: Case,
+    models: Vec<Value>,
+    program: Program,
+    inputs: Inputs,
+) -> io::Result<()> {
+    let mut job = json!({"format":"native-run/1","request":{
+        "models":models,"program":program.selection,
+        "snapshots":inputs.snapshots,"invocations":inputs.invocations,
+        "selection":{"owner":program.owner,"clause":case.spec().clause.id,"observation":inputs.observation}
+    }});
+    if let Some(steps) = case.spec().expression_steps {
+        job["request"]["limits"] = json!({"expression_steps":steps});
+    }
+    write_json(directory, "request.json", &job)?;
+    write_json(
+        directory,
+        "compile.json",
+        &json!({"format":"native-compile/1","request":{"models":models,"program":program.selection}}),
     )?;
-    Ok(())
+    write_markdown(directory, case, &program, job)
+}
+
+/// Emit one case through public constructors, propagating construction and I/O failures.
+pub fn write(directory: &Path, model: &NativeModel, case: Case) -> io::Result<()> {
+    std::fs::create_dir_all(directory)?;
+    let models = write_model(directory, model, case.spec())?;
+    let program = write_program(directory, model, case)?;
+    let inputs = write_inputs(directory, model, case)?;
+    write_requests(directory, case, models, program, inputs)
 }
