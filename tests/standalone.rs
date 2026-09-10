@@ -16,17 +16,39 @@ fn invoke(directory: &Path) -> (i32, Value, bool) {
         .current_dir(directory.parent().unwrap())
         .output()
         .unwrap();
+    assert_ne!(
+        result.stdout.is_empty(),
+        result.stderr.is_empty(),
+        "the command must emit exactly one result stream"
+    );
     let from_stdout = !result.stdout.is_empty();
     let bytes = if from_stdout {
         &result.stdout
     } else {
         &result.stderr
     };
-    (
-        result.status.code().unwrap(),
-        serde_json::from_slice(bytes).unwrap(),
-        from_stdout,
-    )
+    let value: Value = serde_json::from_slice(bytes).unwrap();
+    assert!(
+        result_schema().is_valid(&value),
+        "result violates its schema: {value}"
+    );
+    if let Some(code) = value.get("code") {
+        assert!(
+            quire_spec_language::Code::from_code(code.as_str().unwrap()).is_some(),
+            "uncatalogued command code: {code}"
+        );
+    }
+    (result.status.code().unwrap(), value, from_stdout)
+}
+
+fn result_schema() -> &'static jsonschema::JSONSchema {
+    static SCHEMA: std::sync::OnceLock<jsonschema::JSONSchema> = std::sync::OnceLock::new();
+    SCHEMA.get_or_init(|| {
+        let schema: Value =
+            serde_json::from_str(include_str!("../schemas/native-run-result-1.schema.json"))
+                .unwrap();
+        jsonschema::JSONSchema::compile(&schema).unwrap()
+    })
 }
 
 fn save(directory: &Path, value: &Value) {
@@ -63,8 +85,20 @@ fn selected_exports_reach_real_state_and_operation_outcomes() {
     for (case, code, truth) in [
         (setup::Case::Aggregate(2), 0, Some(true)),
         (setup::Case::Aggregate(1), 1, Some(false)),
-        (setup::Case::Operation(false), 0, Some(true)),
-        (setup::Case::Operation(true), 1, None),
+        (
+            setup::Case::Operation {
+                violate_frame: false,
+            },
+            0,
+            Some(true),
+        ),
+        (
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+            1,
+            None,
+        ),
     ] {
         let directory = tempfile::tempdir().unwrap();
         let job = exported_job(directory.path(), case);
@@ -131,46 +165,62 @@ fn selected_external_layout_retains_its_digest_and_original_runtime_observations
 #[test]
 #[trace("TC-106", "FR-028-AC-3")]
 fn selected_package_failures_preserve_reader_details_without_compilation_fallback() {
-    for (mutation, stage, code) in [
-        ("stale", "decode", "stale_dependency"),
-        ("forged", "compare", "invalid_package"),
-        ("owner", "rebind", "invalid_model_binding"),
-        ("formal", "rebind", "invalid_model_binding"),
-        ("syntax", "rebind", "invalid_syntax"),
+    #[derive(Clone, Copy, Debug)]
+    enum Mutation {
+        Stale,
+        Forged,
+        Owner,
+        Formal,
+        Syntax,
+    }
+    for mutation in [
+        Mutation::Stale,
+        Mutation::Forged,
+        Mutation::Owner,
+        Mutation::Formal,
+        Mutation::Syntax,
     ] {
         let directory = tempfile::tempdir().unwrap();
         let mut job = exported_job(directory.path(), setup::Case::Aggregate(2));
         let mut package: Value =
             serde_json::from_slice(&std::fs::read(directory.path().join("package.json")).unwrap())
                 .unwrap();
-        match mutation {
-            "stale" => {
-                job["request"]["package"]["digest"] = json!(ByteDigest::of(b"foreign").to_string())
+        let (stage, code) = match mutation {
+            Mutation::Stale => {
+                job["request"]["package"]["digest"] = json!(ByteDigest::of(b"foreign").to_string());
+                ("decode", "stale_dependency")
             }
-            "forged" => package["clauses"][0]["runtime"]["universes"] = json!([]),
-            "owner" => job["request"]["program"]["clauses"][0]["owner"]["revision"] = json!(8),
-            "formal" => {
-                job["request"]["program"]["source"]["document"] = json!("ForeignFormalSource")
+            Mutation::Forged => {
+                package["clauses"][0]["runtime"]["universes"] = json!([]);
+                ("compare", "invalid_package")
             }
-            "syntax" => {
+            Mutation::Owner => {
+                job["request"]["program"]["clauses"][0]["owner"]["revision"] = json!(8);
+                ("rebind", "invalid_model_binding")
+            }
+            Mutation::Formal => {
+                job["request"]["program"]["source"]["document"] = json!("ForeignFormalSource");
+                ("rebind", "invalid_model_binding")
+            }
+            Mutation::Syntax => {
                 let bytes = b"language ?";
                 std::fs::write(directory.path().join("program.native"), bytes).unwrap();
                 let digest = json!(ByteDigest::of(bytes).to_string());
                 job["request"]["program"]["source"]["digest"] = digest.clone();
                 package["source"]["digest"] = digest;
+                ("rebind", "invalid_syntax")
             }
-            _ => unreachable!(),
-        }
-        if matches!(mutation, "forged" | "syntax") {
+        };
+        if matches!(mutation, Mutation::Forged | Mutation::Syntax) {
             let bytes = serde_json::to_vec(&package).unwrap();
             std::fs::write(directory.path().join("package.json"), &bytes).unwrap();
             job["request"]["package"]["digest"] = json!(ByteDigest::of(&bytes).to_string());
         }
         save(directory.path(), &job);
         let (exit, result, stdout) = invoke(directory.path());
-        assert_eq!(exit, 1, "{result}");
+        assert_eq!(exit, 1, "{mutation:?}: {result}");
         assert!(!stdout);
-        assert_eq!(result["stage"], "package");
+        assert_eq!(result["stage"], "selected_package");
         assert_eq!(result["code"], code, "{result}");
         assert_eq!(result["details"]["stage"], stage);
         assert_eq!(result["details"]["file"], "package.json");
@@ -179,13 +229,18 @@ fn selected_package_failures_preserve_reader_details_without_compilation_fallbac
             job["request"]["package"]["digest"]
         );
         assert!(result.get("truth").is_none());
-        if mutation == "forged" {
+        if matches!(mutation, Mutation::Forged) {
             assert!(!result["details"]["path"].as_array().unwrap().is_empty());
         }
-        if mutation == "syntax" {
+        if matches!(mutation, Mutation::Syntax) {
             assert_eq!(result["details"]["cause"]["code"], "invalid_syntax");
         }
     }
+}
+
+#[test]
+#[trace("TC-106", "FR-028-AC-3")]
+fn malformed_package_selections_refuse_at_request_intake() {
     let directory = tempfile::tempdir().unwrap();
     let job = exported_job(directory.path(), setup::Case::Aggregate(2));
     for (selection, expected_code) in [
@@ -235,6 +290,9 @@ fn selected_package_intake_and_runtime_limits_stop_with_fresh_retry() {
     let (code, result, _) = invoke(directory.path());
     assert_eq!(code, 3);
     assert_eq!(result["details"]["limit"], "selected files");
+    assert_eq!(result["details"]["category"], "packages");
+    assert_eq!(result["details"]["requested"], 1);
+    assert_eq!(result["details"]["remaining"], 0);
     save(directory.path(), &job);
     let path = directory.path().join("package.json");
     let bytes = std::fs::read(&path).unwrap();
@@ -297,7 +355,12 @@ fn aggregate_files_produce_actual_truth_identities_work_and_events() {
 fn recorded_operation_files_preserve_captures_and_frame_refusal() {
     for bad_frame in [false, true] {
         let directory = tempfile::tempdir().unwrap();
-        let (job, _) = setup::write(directory.path(), setup::Case::Operation(bad_frame));
+        let (job, _) = setup::write(
+            directory.path(),
+            setup::Case::Operation {
+                violate_frame: bad_frame,
+            },
+        );
         let (code, result, stdout) = invoke(directory.path());
         assert!(stdout);
         assert_eq!(
@@ -473,4 +536,110 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
     let (code, result, _) = invoke(directory.path());
     assert_eq!(code, 0);
     assert_eq!(result["truth"], true);
+}
+
+#[test]
+#[trace("TC-104", "FR-026-AC-3", "FR-026-AC-4")]
+fn typed_package_failure_retains_incomplete_classification() {
+    use quire_spec_language::command::{RunCause, RunError};
+    use quire_spec_language::package::{PackageError, PackageStage, PackageUsage};
+    use quire_spec_language::Code;
+    for (code, expected, status) in [
+        (Code::Cancelled, 3, "incomplete"),
+        (Code::InvalidPackage, 1, "refused"),
+    ] {
+        let error = RunError {
+            request_digest: Some(ByteDigest::of(b"selected request")),
+            cause: RunCause::Package(Box::new(PackageError {
+                code,
+                stage: PackageStage::Rebind,
+                path: Vec::new(),
+                usage: PackageUsage::default(),
+                message: "identical prose for distinct causes",
+                cause: None,
+            })),
+        };
+        let RunCause::Package(package) = &error.cause else {
+            unreachable!()
+        };
+        assert_eq!(package.is_incomplete(), expected == 3);
+        assert_eq!(error.exit_code(), expected);
+        let value = error.value().unwrap();
+        assert!(result_schema().is_valid(&value));
+        assert_eq!(value["status"], status);
+        assert_eq!(value["stage"], "package");
+        assert_eq!(value["code"], code.as_str());
+        assert!(value.get("truth").is_none());
+    }
+}
+
+#[test]
+#[trace("TC-104", "FR-026-AC-3")]
+fn result_schema_rejects_missing_fields_and_truth_on_refusals() {
+    for case in [
+        setup::Case::Aggregate(2),
+        setup::Case::Operation {
+            violate_frame: true,
+        },
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        setup::write(directory.path(), case);
+        let (_, result, _) = invoke(directory.path());
+        for field in ["source", "package", "status", "stage", "validation_usage"] {
+            let mut incomplete = result.clone();
+            incomplete.as_object_mut().unwrap().remove(field);
+            assert!(!result_schema().is_valid(&incomplete), "missing {field}");
+        }
+        let mut invalid = result.clone();
+        if result["status"] == "completed" {
+            invalid.as_object_mut().unwrap().remove("truth");
+        } else {
+            assert_eq!(result["status"], "refused");
+            invalid["truth"] = json!(false);
+        }
+        assert!(!result_schema().is_valid(&invalid));
+    }
+}
+
+#[test]
+#[trace("TC-103", "FR-026-AC-5", "TC-106", "FR-028-AC-1")]
+fn absolute_and_parent_relative_operands_keep_selected_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let job = exported_job(directory.path(), setup::Case::Aggregate(2));
+    let child = directory.path().join("requests");
+    std::fs::create_dir(&child).unwrap();
+    for absolute in [true, false] {
+        let mut changed = job.clone();
+        for pointer in [
+            "/request/models/0/source/file",
+            "/request/program/source/file",
+            "/request/snapshots/0/file",
+            "/request/package/file",
+        ] {
+            let selected = changed.pointer(pointer).unwrap().as_str().unwrap();
+            let path = if absolute {
+                directory.path().join(selected)
+            } else {
+                Path::new("..").join(selected)
+            };
+            *changed.pointer_mut(pointer).unwrap() = json!(path.to_str().unwrap());
+        }
+        save(&child, &changed);
+        let (code, result, stdout) = invoke(&child);
+        assert_eq!(code, 0, "{result}");
+        assert!(stdout);
+        assert_eq!(result["truth"], true);
+        assert_eq!(
+            result["package"]["digest"],
+            job["request"]["package"]["digest"]
+        );
+        assert_eq!(
+            result["source"]["digest"],
+            job["request"]["program"]["source"]["digest"]
+        );
+        assert_eq!(
+            result["source"]["path"],
+            changed["request"]["program"]["source"]["file"]
+        );
+    }
 }

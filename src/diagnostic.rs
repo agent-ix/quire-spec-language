@@ -47,7 +47,32 @@ impl Phase {
 
 /// Stable native code vocabulary; see docs/native-error-codes.md.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum Code {
+    /// A selected local file could not be read.
+    IoError,
+    /// The closed command request is malformed.
+    InvalidRequest,
+    /// A command's selected digest spelling is invalid.
+    InvalidDigest,
+    /// A command's selected identifier is invalid.
+    InvalidIdentifier,
+    /// A typed command result could not be serialized.
+    OutputFailure,
+    /// Checked native expressions are outside the selected executable projection.
+    UnsupportedProjection,
+    /// The existing IR rejected an executable derivation.
+    ProjectionBinding,
+    /// Checked native correspondence could not be preserved in the projection.
+    InvalidProjectionCorrespondence,
+    /// Source-only export cannot use extracted Markdown.
+    ExtractionRequiresRun,
+    /// Selected package bytes conflict with extracted compilation.
+    ExtractionPackageConflict,
+    /// Extracted compilation did not select exactly one authored binding.
+    ExtractionClauseCount,
+    /// Pinned Quire rejected the local semantic context.
+    InvalidQuireContext,
     /// Required source identity, revision or path is absent.
     InvalidSourceIdentity,
     /// Supplied correspondence or query does not match the selected sources.
@@ -112,6 +137,18 @@ impl Code {
     /// Stable code spelling, independent of the diagnostic message.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::IoError => "io-error",
+            Self::InvalidRequest => "invalid-request",
+            Self::InvalidDigest => "invalid-digest",
+            Self::InvalidIdentifier => "invalid-identifier",
+            Self::OutputFailure => "output-failure",
+            Self::UnsupportedProjection => "unsupported_projection",
+            Self::ProjectionBinding => "projection_binding",
+            Self::InvalidProjectionCorrespondence => "invalid_projection_correspondence",
+            Self::ExtractionRequiresRun => "extraction-requires-run",
+            Self::ExtractionPackageConflict => "extraction-package-conflict",
+            Self::ExtractionClauseCount => "extraction-clause-count",
+            Self::InvalidQuireContext => "invalid-quire-context",
             Self::InvalidSourceIdentity => "invalid_source_identity",
             Self::InvalidSourceMap => "invalid_source_map",
             Self::SourceDigestMismatch => "source_digest_mismatch",
@@ -147,6 +184,18 @@ impl Code {
     /// Complete code vocabulary for enumeration and compatibility checks.
     pub fn all() -> &'static [Self] {
         &[
+            Self::IoError,
+            Self::InvalidRequest,
+            Self::InvalidDigest,
+            Self::InvalidIdentifier,
+            Self::OutputFailure,
+            Self::UnsupportedProjection,
+            Self::ProjectionBinding,
+            Self::InvalidProjectionCorrespondence,
+            Self::ExtractionRequiresRun,
+            Self::ExtractionPackageConflict,
+            Self::ExtractionClauseCount,
+            Self::InvalidQuireContext,
             Self::InvalidSourceIdentity,
             Self::InvalidSourceMap,
             Self::SourceDigestMismatch,
@@ -185,6 +234,17 @@ impl Code {
             .iter()
             .copied()
             .find(|code| code.as_str() == value)
+    }
+
+    /// Whether this code records incomplete work rather than invalid input.
+    pub fn is_incomplete(self) -> bool {
+        matches!(
+            self,
+            Self::ResourceExhausted
+                | Self::Cancelled
+                | Self::IncompletePopulation
+                | Self::UnavailableObservation
+        )
     }
 }
 
@@ -230,13 +290,7 @@ impl std::error::Error for Diagnostic {}
 impl Diagnostic {
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
-        matches!(
-            self.code,
-            Code::ResourceExhausted
-                | Code::Cancelled
-                | Code::IncompletePopulation
-                | Code::UnavailableObservation
-        )
+        self.code.is_incomplete()
     }
 }
 

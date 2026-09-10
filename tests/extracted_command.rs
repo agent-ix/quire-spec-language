@@ -20,17 +20,26 @@ fn invoke_bytes(directory: &Path, command: &str, bytes: &[u8]) -> (i32, Value, b
         .current_dir(directory.parent().unwrap())
         .output()
         .unwrap();
+    assert_ne!(
+        output.stdout.is_empty(),
+        output.stderr.is_empty(),
+        "exactly one result stream"
+    );
     let stdout = !output.stdout.is_empty();
     let bytes = if stdout {
         &output.stdout
     } else {
         &output.stderr
     };
-    (
-        output.status.code().unwrap(),
-        serde_json::from_slice(bytes).unwrap(),
-        stdout,
-    )
+    let value: Value = serde_json::from_slice(bytes).unwrap();
+    assert!(
+        result_schema().is_valid(&value),
+        "result schema rejected {value}"
+    );
+    if let Some(code) = value.get("code") {
+        assert!(quire_spec_language::Code::from_code(code.as_str().unwrap()).is_some());
+    }
+    (output.status.code().unwrap(), value, stdout)
 }
 
 #[test]
@@ -70,8 +79,20 @@ mod enabled {
             for (case, code, truth) in [
                 (setup::Case::Aggregate(2), 0, Some(true)),
                 (setup::Case::Aggregate(1), 1, Some(false)),
-                (setup::Case::Operation(false), 0, Some(true)),
-                (setup::Case::Operation(true), 1, None),
+                (
+                    setup::Case::Operation {
+                        violate_frame: false,
+                    },
+                    0,
+                    Some(true),
+                ),
+                (
+                    setup::Case::Operation {
+                        violate_frame: true,
+                    },
+                    1,
+                    None,
+                ),
             ] {
                 let directory = tempfile::tempdir().unwrap();
                 let job = setup::write_extracted(directory.path(), case, crlf);
@@ -185,8 +206,8 @@ mod enabled {
     }
 
     #[test]
-    #[trace("TC-109", "FR-031-AC-3", "FR-031-AC-4")]
-    fn descriptors_modes_stale_bytes_and_limits_refuse_with_fresh_retry() {
+    #[trace("TC-109", "FR-031-AC-3")]
+    fn closed_descriptors_and_shared_identity_fields_refuse_malformed_input() {
         let directory = tempfile::tempdir().unwrap();
         let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
         for bad in [
@@ -203,48 +224,108 @@ mod enabled {
             assert!(!stdout);
             assert_eq!(result["code"], "invalid-request");
         }
-        let mut selected = job.clone();
-        selected["request"]["models"][0]["source"]["file"] = json!("missing-model.json");
-        selected["request"]["package"] = json!({"file":"missing-package.json","digest":"bad"});
-        let (_, result, _) = invoke(directory.path(), "run", &selected);
-        assert_eq!(result["code"], "unsupported-extraction-mode");
-        selected["request"]
-            .as_object_mut()
-            .unwrap()
-            .remove("package");
-        selected["request"]["program"]["clauses"] = json!([]);
-        let (_, result, _) = invoke(directory.path(), "run", &selected);
-        assert_eq!(result["code"], "unsupported-extraction-mode");
-        selected["request"]["program"]["clauses"] = json!([
-            job["request"]["program"]["clauses"][0],
-            job["request"]["program"]["clauses"][0]
-        ]);
-        let (_, result, _) = invoke(directory.path(), "run", &selected);
-        assert_eq!(result["code"], "unsupported-extraction-mode");
-        let compilation = json!({"format":"native-compile/1","request":{"models":selected["request"]["models"],"program":job["request"]["program"]}});
+        for pointer in [
+            "/request/program/source",
+            "/request/program/extraction/body",
+        ] {
+            for (field, bad) in [
+                ("identity", json!(1)),
+                ("revision", json!(false)),
+                ("document", json!([])),
+                ("formal_revision", json!("seven")),
+                ("extra", json!(0)),
+            ] {
+                let mut malformed = job.clone();
+                malformed.pointer_mut(pointer).unwrap()[field] = bad;
+                let (code, result, stdout) = invoke(directory.path(), "run", &malformed);
+                assert_eq!(code, 2, "{pointer}/{field}: {result}");
+                assert!(!stdout);
+                assert_eq!(result["code"], "invalid-request");
+            }
+            let descriptor = job.pointer(pointer).unwrap().to_string();
+            let duplicate = descriptor.replacen(
+                "\"identity\":",
+                "\"identity\":\"duplicate\",\"identity\":",
+                1,
+            );
+            let bytes = job.to_string().replacen(&descriptor, &duplicate, 1);
+            let (code, result, stdout) = invoke_bytes(directory.path(), "run", bytes.as_bytes());
+            assert_eq!(code, 2, "{pointer}: {result}");
+            assert!(!stdout);
+            assert_eq!(result["code"], "invalid-request");
+        }
+    }
+
+    fn missing_model_job(directory: &Path) -> Value {
+        let mut job = setup::write_extracted(directory, setup::Case::Aggregate(2), false);
+        job["request"]["models"][0]["source"]["file"] = json!("missing-model.json");
+        job
+    }
+
+    #[test]
+    #[trace("TC-109", "FR-031-AC-3")]
+    fn selected_package_conflict_is_distinct_and_precedes_file_io() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut job = missing_model_job(directory.path());
+        job["request"]["package"] = json!({"file":"missing-package.json","digest":"bad"});
+        let (code, result, stdout) = invoke(directory.path(), "run", &job);
+        assert_eq!(code, 1);
+        assert!(!stdout);
+        assert_eq!(result["stage"], "extraction-selection");
+        assert_eq!(result["code"], "extraction-package-conflict");
+        assert_eq!(result["details"], json!({"kind":"package_selected"}));
+    }
+
+    #[test]
+    #[trace("TC-109", "FR-031-AC-3")]
+    fn clause_count_refusals_retain_the_actual_count_before_file_io() {
+        let directory = tempfile::tempdir().unwrap();
+        let job = missing_model_job(directory.path());
+        for count in [0, 2] {
+            let mut changed = job.clone();
+            changed["request"]["program"]["clauses"] =
+                json!(vec![job["request"]["program"]["clauses"][0].clone(); count]);
+            let (code, result, stdout) = invoke(directory.path(), "run", &changed);
+            assert_eq!(code, 1);
+            assert!(!stdout);
+            assert_eq!(result["stage"], "extraction-selection");
+            assert_eq!(result["code"], "extraction-clause-count");
+            assert_eq!(
+                result["details"],
+                json!({"kind":"wrong_clause_count","actual":count})
+            );
+        }
+    }
+
+    #[test]
+    #[trace("TC-109", "FR-031-AC-3")]
+    fn source_only_exports_reject_extraction_before_file_io() {
+        let directory = tempfile::tempdir().unwrap();
+        let job = missing_model_job(directory.path());
+        let compilation = json!({"format":"native-compile/1","request":{"models":job["request"]["models"],"program":job["request"]["program"]}});
         for command in ["compile", "lower"] {
             let (code, result, stdout) = invoke(directory.path(), command, &compilation);
             assert_eq!(code, 1);
             assert!(!stdout);
-            assert_eq!(result["code"], "unsupported-extraction-mode");
+            assert_eq!(result["code"], "extraction-requires-run");
+            assert_eq!(result["details"], json!({"kind":"compile_command"}));
         }
-        let descriptor = job["request"]["program"]["extraction"].to_string();
-        let duplicate = descriptor.replacen(
-            "\"identity\":",
-            "\"identity\":\"duplicate\",\"identity\":",
-            1,
-        );
-        let bytes = job.to_string().replacen(&descriptor, &duplicate, 1);
-        let (code, result, _) = invoke_bytes(directory.path(), "run", bytes.as_bytes());
-        assert_eq!(code, 2, "{result}");
-        assert_eq!(result["code"], "invalid-request");
+    }
+
+    #[test]
+    #[trace("TC-109", "FR-031-AC-4")]
+    fn stale_source_and_extraction_line_ceiling_preserve_the_actual_stage() {
+        let directory = tempfile::tempdir().unwrap();
+        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
         let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
         std::fs::write(
             directory.path().join("rules.md"),
             format!("{original}stale\n"),
         )
         .unwrap();
-        let (_, result, _) = invoke(directory.path(), "run", &job);
+        let (code, result, stdout) = invoke(directory.path(), "run", &job);
+        assert_eq!(code, 1);
+        assert!(!stdout);
         assert_eq!(result["code"], "source_digest_mismatch");
         let mut limited = job.clone();
         replace(
@@ -252,21 +333,77 @@ mod enabled {
             &mut limited,
             &format!("{}{original}", "\n".repeat(4096)),
         );
-        let (code, result, _) = invoke(directory.path(), "run", &limited);
+        let (code, result, stdout) = invoke(directory.path(), "run", &limited);
         assert_eq!(code, 3, "{result}");
+        assert!(!stdout);
+        assert_eq!(result["stage"], "quire");
         assert_eq!(result["code"], "resource_exhausted");
         assert!(result["details"]["outcome"].is_null());
-        replace(directory.path(), &mut limited, &original);
+        assert_eq!(
+            result["details"]["cause"]["preflight"]["kind"],
+            "source_lines"
+        );
+        assert_eq!(result["details"]["cause"]["preflight"]["maximum"], 4096);
+    }
+
+    #[test]
+    #[trace("TC-109", "FR-031-AC-4")]
+    fn runtime_stops_retain_extraction_and_allow_a_fresh_success() {
+        let directory = tempfile::tempdir().unwrap();
+        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false);
         for limit in ["expression_steps", "validation_work"] {
+            let mut limited = job.clone();
             limited["request"]["limits"] = json!({limit:0});
             let (code, result, stdout) = invoke(directory.path(), "run", &limited);
             assert_eq!(code, 3, "{result}");
             assert!(stdout);
             assert_eq!(result["status"], "incomplete");
             assert!(result["extraction"].is_object());
+            assert!(result.get("truth").is_none());
         }
-        let (code, result, _) = invoke(directory.path(), "run", &job);
+        let (code, result, stdout) = invoke(directory.path(), "run", &job);
         assert_eq!(code, 0, "{result}");
+        assert!(stdout);
         assert_eq!(result["truth"], true);
     }
+
+    #[test]
+    #[trace("TC-109", "FR-031-AC-1", "FR-031-AC-4")]
+    fn extraction_schema_rejects_incomplete_provenance_and_mapping() {
+        let directory = tempfile::tempdir().unwrap();
+        let job = setup::write_extracted(directory.path(), setup::Case::Aggregate(2), true);
+        let (code, result, _) = invoke(directory.path(), "run", &job);
+        assert_eq!(code, 0);
+        for (pointer, field) in [
+            ("/extraction", "original"),
+            ("/extraction", "outcome"),
+            ("/extraction", "mapping"),
+            ("/extraction/mapping", "segments"),
+            ("/extraction/mapping/segments/0", "original"),
+            ("/extraction/outcome", "clause_text"),
+        ] {
+            let mut invalid = result.clone();
+            assert!(invalid
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(field)
+                .is_some());
+            assert!(!result_schema().is_valid(&invalid), "{pointer}/{field}");
+        }
+    }
+}
+
+fn result_schema() -> &'static jsonschema::JSONSchema {
+    static SCHEMA: std::sync::OnceLock<jsonschema::JSONSchema> = std::sync::OnceLock::new();
+    SCHEMA.get_or_init(|| {
+        jsonschema::JSONSchema::compile(
+            &serde_json::from_str::<Value>(include_str!(
+                "../schemas/native-run-result-1.schema.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+    })
 }
