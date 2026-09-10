@@ -84,7 +84,7 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
         assert_eq!(Code::from_code(code.as_str()), Some(code));
         assert_eq!(code.to_string(), code.as_str());
     }
-    assert_eq!(seen.len(), 34);
+    assert_eq!(seen.len(), 37);
     assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");
     assert_eq!(
         Code::from_code("invalid_runtime_input"),

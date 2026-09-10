@@ -85,8 +85,20 @@ fn selected_exports_reach_real_state_and_operation_outcomes() {
     for (case, code, truth) in [
         (setup::Case::Aggregate(2), 0, Some(true)),
         (setup::Case::Aggregate(1), 1, Some(false)),
-        (setup::Case::Operation(false), 0, Some(true)),
-        (setup::Case::Operation(true), 1, None),
+        (
+            setup::Case::Operation {
+                violate_frame: false,
+            },
+            0,
+            Some(true),
+        ),
+        (
+            setup::Case::Operation {
+                violate_frame: true,
+            },
+            1,
+            None,
+        ),
     ] {
         let directory = tempfile::tempdir().unwrap();
         let job = exported_job(directory.path(), case);
@@ -343,7 +355,12 @@ fn aggregate_files_produce_actual_truth_identities_work_and_events() {
 fn recorded_operation_files_preserve_captures_and_frame_refusal() {
     for bad_frame in [false, true] {
         let directory = tempfile::tempdir().unwrap();
-        let (job, _) = setup::write(directory.path(), setup::Case::Operation(bad_frame));
+        let (job, _) = setup::write(
+            directory.path(),
+            setup::Case::Operation {
+                violate_frame: bad_frame,
+            },
+        );
         let (code, result, stdout) = invoke(directory.path());
         assert!(stdout);
         assert_eq!(
@@ -559,7 +576,12 @@ fn typed_package_failure_retains_incomplete_classification() {
 #[test]
 #[trace("TC-104", "FR-026-AC-3")]
 fn result_schema_rejects_missing_fields_and_truth_on_refusals() {
-    for case in [setup::Case::Aggregate(2), setup::Case::Operation(true)] {
+    for case in [
+        setup::Case::Aggregate(2),
+        setup::Case::Operation {
+            violate_frame: true,
+        },
+    ] {
         let directory = tempfile::tempdir().unwrap();
         setup::write(directory.path(), case);
         let (_, result, _) = invoke(directory.path());

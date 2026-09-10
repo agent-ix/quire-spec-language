@@ -35,7 +35,9 @@ fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
             quire_spec_language::syntax::ClauseKind::Invariant,
         ),
         (
-            fixtures::Case::Operation(false),
+            fixtures::Case::Operation {
+                violate_frame: false,
+            },
             "pre(self.n) = 1 and self.n = 2 and result",
             quire_spec_language::syntax::ClauseKind::Postcondition,
         ),
@@ -198,7 +200,12 @@ fn failed_artifact_output_is_an_io_exit() {
 fn file_count_refusals_name_the_exhausted_group_before_file_io() {
     for (field, remaining) in [("models", 63), ("snapshots", 62), ("invocations", 60)] {
         let directory = tempfile::tempdir().unwrap();
-        let (mut job, _) = fixtures::write(directory.path(), fixtures::Case::Operation(false));
+        let (mut job, _) = fixtures::write(
+            directory.path(),
+            fixtures::Case::Operation {
+                violate_frame: false,
+            },
+        );
         let item = job["request"][field][0].clone();
         job["request"][field] = json!(vec![item; 64]);
         job["request"]["program"]["source"]["file"] = json!("missing.native");

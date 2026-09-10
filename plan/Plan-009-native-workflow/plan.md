@@ -30,6 +30,8 @@ adoption and assurance remain explicit acceptance work.
   actual native package bytes for existing consumers.
 - [Task-027](tasks/Task-027-selected-package-run.md): verify and execute selected
   package artifacts with the existing source/model authority and reader.
+- [Task-028](tasks/Task-028-lowering-export.md): export the existing Boolean
+  projection through the standalone compiler for existing IR/backend consumers.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;

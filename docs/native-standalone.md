@@ -74,3 +74,18 @@ existing reader reconstructs and checks the package before execution; failed
 verification reports the selected file/digest and original reader details.
 Equivalent JSON layouts retain their own raw digest. The package counts toward
 the same 64-file and 8 MiB total intake limits. Contract: FR-028; tests: TC-106.
+
+To export the existing Boolean backend projection, use a source-only compile
+request with the lower command. The generator supplies a Boolean state example:
+
+```sh
+target/debug/quire-spec lower /tmp/native-workflow-example/boolean/compile.json > /tmp/native-projection.json
+```
+
+Stdout is exact executable-projection/v1 wire accepted by the existing strict IR
+binder and Boolean backend. The target remains boolean-oracle/v1: numeric,
+object and other unsupported expressions refuse the complete export, retaining
+the authored clause and original source location on stderr. Compile still emits
+the native package with its model/runtime obligations; the projection is a
+separate derived artifact. No runtime files or evidence framework are required.
+Contract: FR-029; binary/consumer tests: TC-107.

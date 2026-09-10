@@ -20,6 +20,7 @@ pub(super) enum Stage {
     Model,
     Package,
     SelectedPackage,
+    Lower,
     Input,
 }
 
@@ -35,6 +36,7 @@ impl Serialize for Stage {
             Self::Model => "model",
             Self::Package => "package",
             Self::SelectedPackage => "selected_package",
+            Self::Lower => "lower",
             Self::Input => "input",
         })
     }
@@ -137,10 +139,35 @@ pub(super) enum Details<'a> {
         path: Vec<PackagePath<'a>>,
         cause: Option<PackageCause<'a>>,
     },
+    Lowering {
+        profile: &'static str,
+        package: PackageReference,
+        source: Source<'a>,
+        clause: Option<&'a ir::ClauseRef>,
+        #[serde(flatten)]
+        location: ProjectionLocation,
+        upstream: &'a [ir::Diagnostic],
+    },
     Input {
         expected: Reference<'a>,
         stage: &'static str,
     },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum SpanStatus {
+    Absent,
+    Located,
+    Invalid,
+}
+
+#[derive(Serialize)]
+pub(super) struct ProjectionLocation {
+    pub span_status: SpanStatus,
+    pub span: Option<LocatedSpan>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unmapped_span: Option<Span>,
 }
 
 #[derive(Serialize)]
