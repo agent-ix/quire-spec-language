@@ -24,6 +24,8 @@ The body record assigns distinct native and formal identities to its derived
 source. Exactly one authored clause binding selects the Quire heading and native
 clause. Omission preserves ordinary native-source execution. Supplied null or
 positional extraction/body records, duplicate and unknown fields refuse.
+The body and original-source records share one closed wire identity definition;
+the decoded native/formal pair is explicit and performs no revision conversion.
 
 This local clause-only mode constructs a validated Quire contract 1.0.0 /
 semantic-core 0.1.0 context for the explicitly selected binding's package and
@@ -42,11 +44,18 @@ map links those bytes to the original. Only completed execution has truth.
 Extraction/compilation failures retain original source, authored selection,
 completed Quire output, native diagnostic and verified original spans when present.
 Other file/model/runtime-input intake failures keep FR-026's existing envelope.
+Unsupported combinations have distinct catalogued codes: extraction-package-conflict,
+extraction-clause-count (with actual count), and extraction-requires-run. A Quire
+context failure uses invalid-quire-context and retains contract_version,
+semantic_core and unchanged producer diagnostics. The extraction report is
+constructed through typed serialization before the immutable native result is exposed.
 
 ## Behavior
 
 The command shall use existing bounded file intake, model frontend, FR-030 consumer and runtime execution.
 The command shall validate the fixed clause-only context through Quire's public semantic-block validator.
+The command shall use FR-030's named contract-version constants for that context.
+The command shall validate and retain exactly one authored binding before dependent file I/O.
 The command shall retain original byte correspondence and producer availability separately from native truth.
 If the request combines extraction with selected-package execution or source-only compile/lower export, then the command shall refuse the unsupported combination before dependent files are read.
 If extraction is supplied to a build without quire-extraction, then the request decoder shall refuse the unknown field.
@@ -58,7 +67,7 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 | --- | --- | --- |
 | FR-031-AC-1 | Actual binary execution of LF/CRLF Markdown aggregate and operation fixtures returns healthy, violating and frame-refused outcomes with exact original/body mapping and unchanged extraction metadata. | Test |
 | FR-031-AC-2 | Invalid/unsupported native bodies and unavailable extraction retain original identity, authored selection and actual producer/compiler failure data. | Test |
-| FR-031-AC-3 | Malformed extraction descriptors, multiple bindings, unsupported mode combinations, stale original bytes and disabled-feature requests refuse without successful execution. | Test |
+| FR-031-AC-3 | Malformed extraction descriptors, multiple bindings, unsupported mode combinations, stale original bytes and disabled-feature requests refuse without successful execution; mode failures have distinct codes and clause-count details before file I/O. | Test |
 | FR-031-AC-4 | Original line and runtime limits return incomplete, a fresh request succeeds, and ordinary native command behavior remains unchanged. | Test |
 
 ## Dependencies

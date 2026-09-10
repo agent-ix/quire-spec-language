@@ -154,6 +154,13 @@ pub struct PackageError {
     pub cause: Option<PackageCause>,
 }
 
+impl PackageError {
+    /// Whether the retained native classification records incomplete work.
+    pub fn is_incomplete(&self) -> bool {
+        self.code.is_incomplete()
+    }
+}
+
 /// Exact byte selector under the fixed native-linked-package/1 format.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativePackageRef {

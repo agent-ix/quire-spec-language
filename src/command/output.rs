@@ -1,202 +1,271 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-028, FR-029, FR-031: JSON views of native outcomes and provenance.
+//! FR-026: construct typed JSON views of native outcomes and actual provenance.
 
-use super::{wire, RunCause, RunError, RunResult};
+#[cfg(feature = "quire-extraction")]
+mod extraction;
+mod types;
+
+use super::{wire, LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
 use crate::runtime::{
     EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
     RuntimeReference, ValidationStatus,
 };
-use crate::{ByteDigest, Code, Diagnostic, LocatedSpan, SourceIdentity};
-use serde_json::{json, Value};
+use crate::{ByteDigest, Diagnostic};
+use serde_json::Value;
 
-fn identity(value: &SourceIdentity) -> Value {
-    json!({"identity":value.identity,"revision":value.revision})
-}
+/// Immutable JSON produced from the typed native result schema.
+/// Construction stays inside the output adapter; callers can inspect or serialize it.
+#[derive(Debug, serde::Serialize)]
+#[serde(transparent)]
+pub struct NativeResult(Value);
 
-pub(super) fn source(value: &FormalSource) -> Value {
-    json!({"identity":value.source().identity().identity,"revision":value.source().identity().revision,
-        "digest":value.source().digest().to_string(),"path":value.source().path(),"formal":value.identity()})
-}
-
-pub(super) fn span(value: LocatedSpan) -> Value {
-    json!({"start":{"byte":value.start.byte,"line":value.start.line,"column":value.start.column},
-        "end":{"byte":value.end.byte,"line":value.end.line,"column":value.end.column}})
-}
-
-fn reference(value: &RuntimeReference) -> Value {
-    match value {
-        RuntimeReference::Snapshot(value) => json!({"kind":"snapshot","reference":value}),
-        RuntimeReference::Invocation(value) => json!({"kind":"invocation","reference":value}),
+impl NativeResult {
+    /// Inspect the encoded observations without changing the admitted shape.
+    pub fn as_value(&self) -> &Value {
+        &self.0
     }
 }
 
-fn runtime_path(value: &RuntimePathSegment) -> Value {
+impl std::fmt::Display for NativeResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+fn source(value: &FormalSource) -> types::Source<'_> {
+    types::Source {
+        identity: value.source().identity(),
+        digest: value.source().digest().to_string(),
+        path: value.source().path(),
+        formal: value.identity(),
+    }
+}
+
+fn reference(value: &RuntimeReference) -> types::Reference<'_> {
     match value {
-        RuntimePathSegment::Model(value) => json!({"model":value}),
+        RuntimeReference::Snapshot(value) => types::Reference::Snapshot(value),
+        RuntimeReference::Invocation(value) => types::Reference::Invocation(value),
+    }
+}
+
+fn runtime_path(value: &RuntimePathSegment) -> types::RuntimePath<'_> {
+    match value {
+        RuntimePathSegment::Model(value) => types::RuntimePath::Model(value),
         RuntimePathSegment::Population { record, universe } => {
-            json!({"population":{"record":record,"universe":universe}})
+            types::RuntimePath::Population { record, universe }
         }
-        RuntimePathSegment::Object(value) => json!({"object":value}),
-        RuntimePathSegment::State(value) => json!({"state":value}),
-        RuntimePathSegment::Parameter(value) => json!({"parameter":value}),
-        RuntimePathSegment::Result => json!({"result":true}),
-        RuntimePathSegment::Field(value) => json!({"field":value}),
-        RuntimePathSegment::Index(value) => json!({"index":value}),
+        RuntimePathSegment::Object(value) => types::RuntimePath::Object(value),
+        RuntimePathSegment::State(value) => types::RuntimePath::State(value),
+        RuntimePathSegment::Parameter(value) => types::RuntimePath::Parameter(value),
+        RuntimePathSegment::Result => types::RuntimePath::Result(true),
+        RuntimePathSegment::Field(value) => types::RuntimePath::Field(value),
+        RuntimePathSegment::Index(value) => types::RuntimePath::Index(*value),
     }
 }
 
-pub(super) fn diagnostic(value: &Diagnostic) -> Value {
-    json!({"phase":value.phase.as_str(),"code":value.code.as_str(),"message":value.message,
-        "source":identity(&value.source),"path":value.path,"span":span(value.span),
-        "upstream":value.upstream,
-        "runtime":value.runtime.as_ref().map(|location| json!({"artifact":reference(&location.artifact),
-            "observation":location.observation,"requirement":location.requirement,"clause":location.clause,
-            "path":location.path.iter().map(runtime_path).collect::<Vec<_>>()}))})
+fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
+    types::Diagnostic {
+        phase: value.phase.as_str(),
+        code: value.code.as_str(),
+        message: &value.message,
+        source: &value.source,
+        path: &value.path,
+        span: value.span,
+        upstream: value.upstream.as_deref(),
+        runtime: value
+            .runtime
+            .as_ref()
+            .map(|location| types::RuntimeLocation {
+                artifact: reference(&location.artifact),
+                observation: location.observation,
+                requirement: &location.requirement,
+                clause: &location.clause,
+                path: location.path.iter().map(runtime_path).collect(),
+            }),
+    }
 }
 
-pub(super) fn error(error: &RunError) -> Value {
-    let (stage, code, details) = match &error.cause {
-        #[cfg(feature = "quire-extraction")]
-        RunCause::ExtractionMode(_) => (
-            "extraction-selection",
-            "unsupported-extraction-mode",
-            Value::Null,
-        ),
-        #[cfg(feature = "quire-extraction")]
-        RunCause::QuireContext(failures) => {
-            ("quire-context", "invalid-quire-context", json!(failures))
+fn package_path(value: &crate::package::PackagePathSegment) -> types::PackagePath<'_> {
+    match value {
+        crate::package::PackagePathSegment::Field(name) => types::PackagePath::Field(name),
+        crate::package::PackagePathSegment::Index(index) => types::PackagePath::Index(*index),
+    }
+}
+
+fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_> {
+    match value {
+        crate::package::PackageCause::Native(value) => {
+            types::PackageCause::Native(diagnostic(value))
         }
+        crate::package::PackageCause::Json(value) => types::PackageCause::Json {
+            line: value.line(),
+            column: value.column(),
+            message: value.to_string(),
+        },
+    }
+}
+
+fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLocation {
+    let (span_status, span, unmapped_span) = match value {
+        super::ProjectionLocation::Absent => (types::SpanStatus::Absent, None, None),
+        super::ProjectionLocation::Located(span) => (types::SpanStatus::Located, Some(span), None),
+        super::ProjectionLocation::Invalid(span) => (types::SpanStatus::Invalid, None, Some(span)),
+    };
+    types::ProjectionLocation {
+        span_status,
+        span,
+        unmapped_span,
+    }
+}
+
+pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
+    let (stage, details) = match &error.cause {
         #[cfg(feature = "quire-extraction")]
-        RunCause::Quire(error) => (
-            "quire",
-            error.code().as_str(),
-            super::extraction::error(error),
-        ),
+        RunCause::Extraction(error) => {
+            let (stage, details) = extraction::failure(error);
+            (stage, types::Details::Extraction(details))
+        }
         RunCause::Io { path, error } => (
-            "file",
-            "io-error",
-            json!({"path":path.to_string_lossy(),"os_code":error.raw_os_error()}),
-        ),
-        RunCause::Json(e) => (
-            "request",
-            "invalid-request",
-            json!({"line":e.line(),"column":e.column()}),
-        ),
-        RunCause::Format => ("envelope", Code::UnknownWire.as_str(), Value::Null),
-        RunCause::Limit(name) => (
-            "intake",
-            Code::ResourceExhausted.as_str(),
-            json!({"limit":name}),
-        ),
-        RunCause::Digest(_) => ("request", "invalid-digest", Value::Null),
-        RunCause::Identifier(e) => ("request", "invalid-identifier", json!(e)),
-        RunCause::Native(e) => (e.phase.as_str(), e.code.as_str(), diagnostic(e)),
-        RunCause::Model(e) => (
-            "model",
-            e.code().as_str(),
-            json!({"source":source(e.source())}),
-        ),
-        RunCause::Package(e) => (
-            "package",
-            e.code.as_str(),
-            json!({"stage":e.stage.to_string()}),
-        ),
-        RunCause::Lowering {
-            package,
-            program,
-            error,
-        } => (
-            "lower",
-            match error.code {
-                crate::lowering::LoweringCode::Unsupported => "unsupported_projection",
-                crate::lowering::LoweringCode::ResourceExhausted => {
-                    Code::ResourceExhausted.as_str()
-                }
-                crate::lowering::LoweringCode::Binding => "projection_binding",
-                crate::lowering::LoweringCode::InvalidCorrespondence => {
-                    "invalid_projection_correspondence"
-                }
+            types::Stage::File,
+            types::Details::Io {
+                path: path.to_string_lossy(),
+                os_code: error.raw_os_error(),
             },
-            json!({
-                "profile":crate::lowering::PROFILE,
-                "package":{"format":package.format(),"digest":package.digest().to_string()},
-                "source":source(program),"clause":error.clause,
-                "span":error.source.and_then(|value|program.source().locate(value)).map(span),
-                "upstream":error.upstream,
-            }),
+        ),
+        RunCause::Json(error) => (
+            types::Stage::Request,
+            types::Details::Json {
+                line: error.line(),
+                column: error.column(),
+            },
+        ),
+        RunCause::Output(_) => (types::Stage::Output, types::Details::None),
+        RunCause::Format => (types::Stage::Envelope, types::Details::None),
+        RunCause::Limit(kind) => (
+            types::Stage::Intake,
+            match kind {
+                LimitKind::FileBytes => types::Details::FileBytes {
+                    limit: kind.as_str(),
+                },
+                LimitKind::SelectedFiles {
+                    category,
+                    requested,
+                    remaining,
+                    maximum,
+                } => types::Details::FileCount {
+                    limit: kind.as_str(),
+                    category: category.as_str(),
+                    requested: *requested,
+                    remaining: *remaining,
+                    maximum: *maximum,
+                },
+            },
+        ),
+        RunCause::Digest(_) => (types::Stage::Request, types::Details::None),
+        RunCause::Identifier(error) => (types::Stage::Request, types::Details::Identifier(error)),
+        RunCause::Native(error) => (
+            types::Stage::Native(error.phase),
+            types::Details::Native(diagnostic(error)),
+        ),
+        RunCause::Model(error) => (
+            types::Stage::Model,
+            types::Details::Model {
+                source: source(error.source()),
+            },
+        ),
+        RunCause::Package(error) => (
+            types::Stage::Package,
+            types::Details::Package {
+                stage: error.stage.to_string(),
+            },
+        ),
+        RunCause::Input(error) => (
+            types::Stage::Input,
+            types::Details::Input {
+                expected: reference(&error.expected),
+                stage: error.stage.as_str(),
+            },
         ),
         RunCause::SelectedPackage {
             file,
             expected,
             error,
         } => (
-            "package",
-            error.code.as_str(),
-            json!({
-                "file":file,"expected":{"format":expected.format(),"digest":expected.digest().to_string()},
-                "stage":error.stage.to_string(),
-                "path":error.path.iter().map(|part|match part {
-                    crate::package::PackagePathSegment::Field(name) => json!({"field":name}),
-                    crate::package::PackagePathSegment::Index(index) => json!({"index":index}),
-                }).collect::<Vec<_>>(),
-                "cause":error.cause.as_ref().map(|cause|match cause {
-                    crate::package::PackageCause::Native(value) => diagnostic(value),
-                    crate::package::PackageCause::Json(value) => json!({"line":value.line(),"column":value.column(),"message":value.to_string()}),
-                }),
-            }),
+            types::Stage::SelectedPackage,
+            types::Details::SelectedPackage {
+                file,
+                expected: types::PackageReference {
+                    format: expected.format(),
+                    digest: expected.digest().to_string(),
+                },
+                stage: error.stage.to_string(),
+                path: error.path.iter().map(package_path).collect(),
+                cause: error.cause.as_ref().map(package_cause),
+            },
         ),
-        RunCause::Input(e) => (
-            "input",
-            e.code.as_str(),
-            json!({"expected":reference(&e.expected),"stage":match e.stage {
-                crate::runtime::InputReadStage::Selection => "selection",
-                crate::runtime::InputReadStage::Envelope => "envelope",
-                crate::runtime::InputReadStage::Body => "body",
-                crate::runtime::InputReadStage::Construction => "construction",
-            }}),
+        RunCause::Lowering {
+            package,
+            program,
+            location,
+            error,
+        } => (
+            types::Stage::Lower,
+            types::Details::Lowering {
+                profile: crate::lowering::PROFILE,
+                package: types::PackageReference {
+                    format: package.format(),
+                    digest: package.digest().to_string(),
+                },
+                source: types::Source {
+                    identity: &program.identity,
+                    digest: program.digest.to_string(),
+                    path: &program.path,
+                    formal: &program.formal,
+                },
+                clause: error.clause.as_ref(),
+                location: projection_location(*location),
+                upstream: &error.upstream,
+            },
         ),
     };
-    json!({"format":"native-run-result/1", "request_digest":error.request_digest.map(|value|value.to_string()),
-        "status":if error.exit_code()==3 { "incomplete" } else { "refused" },
-        "stage":stage,"code":code,"message":error.to_string(),"details":details})
+    serde_json::to_value(types::Failure {
+        format: types::Format::RunResult,
+        request_digest: error.request_digest.map(|value| value.to_string()),
+        status: if error.cause.is_incomplete() {
+            types::FailureStatus::Incomplete
+        } else {
+            types::FailureStatus::Refused
+        },
+        stage,
+        code: error.cause.code().as_str(),
+        message: error.to_string(),
+        details,
+    })
 }
 
 pub(super) fn report(
     digest: ByteDigest,
     selection: &wire::Selection,
     models: &[NativeModel],
+    _package: &super::compilation::RunPackage<'_>,
     report: &ExecutionReport<'_, '_>,
-) -> RunResult {
-    let usage = report.validation_usage();
-    let mut value = json!({"format":"native-run-result/1","request_digest":digest.to_string(),
-        "package":{"digest":report.package().digest().to_string(),"canonical_identity":report.package().canonical_identity().to_string()},
-        "source":source(&report.package().checked().bindings().source),
-        "models":models.iter().map(|model|json!({"owner":model.environment().owner(),"digest":model.digest().to_string(),"source":source(model.source())})).collect::<Vec<_>>(),
-        "inputs":{"snapshots":report.input().snapshots.iter().map(|value|value.reference()).collect::<Vec<_>>(),
-            "invocations":report.input().invocations.iter().map(|value|value.reference()).collect::<Vec<_>>()},
-        "selection":selection,
-        "validation_usage":{"artifacts":usage.artifacts,"artifact_bytes":usage.artifact_bytes,"objects":usage.objects,"work":usage.work,"text_steps":usage.text_steps,"diagnostics":usage.diagnostics}});
-    let exit_code = match report.outcome() {
+) -> super::Result<RunResult> {
+    let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
-            value["stage"] = json!("validate");
-            value["diagnostics"] = json!(failure
-                .diagnostics
-                .iter()
-                .map(diagnostic)
-                .collect::<Vec<_>>());
-            value["terminal"] = json!(failure.terminal.as_deref().map(diagnostic));
-            match failure.status {
-                ValidationStatus::Refused => {
-                    value["status"] = json!("refused");
-                    1
-                }
-                ValidationStatus::Incomplete => {
-                    value["status"] = json!("incomplete");
-                    3
-                }
-            }
+            let (code, status) = match failure.status {
+                ValidationStatus::Refused => (1, types::FailureStatus::Refused),
+                ValidationStatus::Incomplete => (3, types::FailureStatus::Incomplete),
+            };
+            (
+                code,
+                types::Outcome::Validate {
+                    status,
+                    diagnostics: failure.diagnostics.iter().map(diagnostic).collect(),
+                    terminal: failure.terminal.as_deref().map(diagnostic),
+                },
+            )
         }
         ExecutionOutcome::Evaluated {
             result,
@@ -204,37 +273,92 @@ pub(super) fn report(
             events,
             cost_model,
         } => {
-            value["stage"] = json!("evaluate");
-            value["cost_model"] = json!(cost_model);
-            value["evaluation_usage"] = json!({"expression_steps":usage.expression_steps,"graph_steps":usage.graph_steps,
-                "comparisons":usage.comparisons,"text_steps":usage.text_steps,"events":usage.events,
-                "expression_depth":usage.expression_depth,"comparison_depth":usage.comparison_depth});
-            value["events"] = json!(events.iter().map(|event| {
-                let mut value = json!({"implication":event.implication.0,"operand":event.operand.0,"span":{"start":event.span.start,"end":event.span.end}});
-                value["kind"] = json!(match event.kind {
-                    ImplicationEventKind::AntecedentEntered => "antecedent_entered",
-                    ImplicationEventKind::AntecedentCompleted(truth) => { value["truth"] = json!(truth); "antecedent_completed" },
-                    ImplicationEventKind::ConsequentEntered => "consequent_entered",
-                }); value
-            }).collect::<Vec<_>>());
-            match result {
-                EvaluationOutcome::Completed(truth) => {
-                    value["status"] = json!("completed");
-                    value["truth"] = json!(truth);
-                    u8::from(!truth)
-                }
-                EvaluationOutcome::Refused(error) => {
-                    value["status"] = json!("refused");
-                    value["diagnostic"] = diagnostic(error);
-                    1
-                }
-                EvaluationOutcome::Incomplete(error) => {
-                    value["status"] = json!("incomplete");
-                    value["diagnostic"] = diagnostic(error);
-                    3
-                }
-            }
+            let (code, result) = match result {
+                EvaluationOutcome::Completed(truth) => (
+                    u8::from(!truth),
+                    types::Evaluation::Completed { truth: *truth },
+                ),
+                EvaluationOutcome::Refused(error) => (
+                    1,
+                    types::Evaluation::Refused {
+                        diagnostic: diagnostic(error),
+                    },
+                ),
+                EvaluationOutcome::Incomplete(error) => (
+                    3,
+                    types::Evaluation::Incomplete {
+                        diagnostic: diagnostic(error),
+                    },
+                ),
+            };
+            let events = events
+                .iter()
+                .map(|event| types::Event {
+                    implication: event.implication.0,
+                    operand: event.operand.0,
+                    span: event.span,
+                    kind: match event.kind {
+                        ImplicationEventKind::AntecedentEntered => {
+                            types::EventKind::AntecedentEntered
+                        }
+                        ImplicationEventKind::AntecedentCompleted(truth) => {
+                            types::EventKind::AntecedentCompleted { truth }
+                        }
+                        ImplicationEventKind::ConsequentEntered => {
+                            types::EventKind::ConsequentEntered
+                        }
+                    },
+                })
+                .collect();
+            (
+                code,
+                types::Outcome::Evaluate {
+                    result,
+                    evaluation_usage: usage,
+                    events,
+                    cost_model,
+                },
+            )
         }
     };
-    RunResult { exit_code, value }
+    let document = types::Report {
+        #[cfg(feature = "quire-extraction")]
+        extraction: extraction::context(_package),
+        format: types::Format::RunResult,
+        request_digest: digest.to_string(),
+        package: types::Package {
+            digest: report.package().digest().to_string(),
+            canonical_identity: report.package().canonical_identity().to_string(),
+        },
+        source: source(&report.package().checked().bindings().source),
+        models: models
+            .iter()
+            .map(|model| types::Model {
+                owner: model.environment().owner(),
+                digest: model.digest().to_string(),
+                source: source(model.source()),
+            })
+            .collect(),
+        inputs: types::Inputs {
+            snapshots: report
+                .input()
+                .snapshots
+                .iter()
+                .map(|value| value.reference())
+                .collect(),
+            invocations: report
+                .input()
+                .invocations
+                .iter()
+                .map(|value| value.reference())
+                .collect(),
+        },
+        selection,
+        validation_usage: report.validation_usage(),
+        outcome,
+    };
+    Ok(RunResult {
+        exit_code,
+        value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
+    })
 }
