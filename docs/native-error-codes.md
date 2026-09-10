@@ -28,7 +28,7 @@ reused; prose may change without changing classification.
 | unknown_edition | The selected edition label is not admitted. |
 | unknown_profile | The selected profile label is not admitted. |
 | invalid_package | Native package encoding, closed structure or reconstructed claims are invalid. |
-| unknown_wire | The native package format selector is unsupported. |
+| unknown_wire | The native package or runtime-input format selector is unsupported. |
 | unknown_required_feature | A package feature is unknown or outside the consumer's declared support. |
 | missing_import | A selected formal package or native import alias is absent. |
 | stale_dependency | A known package has no exact selected revision and declaration byte digest. |

@@ -16,7 +16,7 @@ default = []
 
 [dependencies]
 logos = "=0.16.1"
-serde_json = { version = "=1.0.151", features = ["unbounded_depth"] }
+serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
 sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"

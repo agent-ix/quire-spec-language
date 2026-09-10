@@ -23,6 +23,10 @@ not claim complete Quire producer integration in IT-003.
 | FR-023 | FR-023-AC-2 | TC-098 | ✅ Tested |
 | FR-023 | FR-023-AC-3 | TC-098 | ✅ Tested |
 | FR-023 | FR-023-AC-4 | TC-097 | ✅ Tested |
+| FR-024 | FR-024-AC-1 | TC-099 | ✅ Tested |
+| FR-024 | FR-024-AC-2 | TC-100 | ✅ Tested |
+| FR-024 | FR-024-AC-3 | TC-099, TC-100 | ✅ Tested |
+| FR-024 | FR-024-AC-4 | TC-099, TC-100 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -32,3 +36,5 @@ not claim complete Quire producer integration in IT-003.
 | TC-096 | Typed mapped refusals | Integration | P1 | FR-022 | ✅ Tested |
 | TC-097 | Retained native execution | Integration | P1 | FR-023 | ✅ Tested |
 | TC-098 | Native execution stops | Integration | P1 | FR-023 | ✅ Tested |
+| TC-099 | Read native inputs | Integration | P1 | FR-024 | ✅ Tested |
+| TC-100 | Refuse native input reads | Integration | P1 | FR-024 | ✅ Tested |

@@ -18,7 +18,8 @@ SnapshotDraft or InvocationDraft, SourceIdentity labels and ArtifactLimits.
 The complete variant inventory, fields and native-state-input/1 encoding are
 defined in [the input contract](../../docs/native-runtime-inputs.md). Flat arena
 nodes use typed local ValueIds; object references use exact model/type/universe/key
-identity. This initial public Rust API is construction, not an external JSON reader.
+identity. This requirement owns construction; the separate
+[FR-024](FR-024-read-native-runtime-artifacts.md) owns external byte intake.
 
 ## Outputs
 

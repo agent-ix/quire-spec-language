@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-020: closed representation adapters; admitted models still come from callers.
 
+use crate::serde_object::from_object;
 use crate::ByteDigest;
 use quire_contract_ir as ir;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -22,22 +23,6 @@ macro_rules! record {
             }
         }
     };
-}
-
-// Records stay objects even when Serde buffers them inside a tagged variant.
-// Its default struct decoder also accepts positional arrays.
-fn from_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(decoder: D) -> Result<T, D::Error> {
-    struct Object<T>(std::marker::PhantomData<T>);
-    impl<'de, T: Deserialize<'de>> de::Visitor<'de> for Object<T> {
-        type Value = T;
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("a JSON object")
-        }
-        fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<T, A::Error> {
-            T::deserialize(de::value::MapAccessDeserializer::new(map))
-        }
-    }
-    decoder.deserialize_map(Object(std::marker::PhantomData))
 }
 
 record!(Manifest {

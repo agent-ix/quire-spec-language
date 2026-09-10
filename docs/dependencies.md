@@ -20,6 +20,10 @@ pin. Only package intake disables the library recursion guard; its metered
 traversal enforces the 128-container hard ceiling. Other decoders retain their
 guards. No package version or grant changes.
 
+FR-024 also enables the existing pinned serde_json 1.0.151 `raw_value` feature
+for native runtime intake so version/kind selection precedes typed body decoding.
+It adds no dependency or copied source; default reader recursion limits stay enabled.
+
 FR-017 enables the existing pinned serde_json 1.0.151 `raw_value` feature in
 the development dependency for source-aware Rust fixture decoding. Borrowed
 values retain their original occurrences; Serde continues to own JSON grammar.

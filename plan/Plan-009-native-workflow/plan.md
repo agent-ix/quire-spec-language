@@ -20,6 +20,8 @@ adoption and assurance remain explicit acceptance work.
   actual runtime integration, then a PR ready for review.
 - [Task-022](tasks/Task-022-native-execution.md): native execution and retained
   reports while Task-021's PR is reviewed. Standalone file intake remains later work.
+- [Task-023](tasks/Task-023-native-input-reader.md): selected snapshot/invocation
+  byte intake while earlier PRs await review.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
