@@ -20,11 +20,14 @@ pub(super) enum Command<'a> {
     Run {
         path: &'a Path,
     },
+    Compile {
+        path: &'a Path,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UsageError<'a> {
-    #[error("usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec run <request-file>")]
+    #[error("usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile> <request-file>")]
     MissingCommand,
     #[error("{operand} must be UTF-8")]
     NonUtf8 { operand: &'static str },
@@ -78,6 +81,17 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                     });
                 };
                 Ok(Self::Run {
+                    path: Path::new(path),
+                })
+            }
+            "compile" => {
+                let [path] = operands else {
+                    return Err(UsageError::Arity {
+                        command,
+                        operands: "<request-file>",
+                    });
+                };
+                Ok(Self::Compile {
                     path: Path::new(path),
                 })
             }
