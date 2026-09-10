@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 /// Authored identity/revision, separate from path and any later semantic digest.
 /// These are opaque caller labels, not validated shared artifact references.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct SourceIdentity {
     /// Caller-selected source label, preserved without normalization.
     pub identity: String,
@@ -14,7 +14,7 @@ pub struct SourceIdentity {
 }
 
 /// Original byte offset and one-based line/Unicode scalar column.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct Position {
     /// Zero-based offset into the exact original UTF-8 bytes.
     pub byte: usize,
@@ -25,7 +25,7 @@ pub struct Position {
 }
 
 /// Half-open original UTF-8 bytes. Coordinates are derived only when requested.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct Span {
     /// Inclusive starting byte offset.
     pub start: usize,
@@ -43,7 +43,7 @@ pub struct Spanned<T> {
 }
 
 /// Half-open range after resolving both byte offsets to source coordinates.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct LocatedSpan {
     /// Inclusive range start.
     pub start: Position,

@@ -26,6 +26,32 @@ const REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_BYTES: usize = 8_388_608;
 const FILES: usize = 64;
 
+/// Command intake ceiling that stopped selected-file processing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum LimitKind {
+    /// Per-file or remaining aggregate byte ceiling.
+    FileBytes,
+    /// Total selected file count.
+    SelectedFiles,
+}
+
+impl LimitKind {
+    /// Stable field spelling retained for native result compatibility.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FileBytes => "file bytes",
+            Self::SelectedFiles => "selected files",
+        }
+    }
+}
+
+impl std::fmt::Display for LimitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// JSON result of the local command, distinct from a portable evidence envelope.
 #[derive(Debug)]
 pub struct RunResult {
@@ -37,6 +63,7 @@ pub struct RunResult {
 
 /// Original intake failure, without recovering typed data from display messages.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RunCause {
     /// Local file could not be opened or read.
     #[error("cannot read {path}: {error}")]
@@ -50,12 +77,15 @@ pub enum RunCause {
     /// Closed request decoding failed.
     #[error("invalid request: {0}")]
     Json(#[from] serde_json::Error),
+    /// Typed output serialization failed.
+    #[error("cannot serialize native result: {0}")]
+    Output(#[source] serde_json::Error),
     /// Request format was not selected.
     #[error("unsupported native run format")]
     Format,
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
-    Limit(&'static str),
+    Limit(LimitKind),
     /// Selected digest spelling is invalid.
     #[error("{0}")]
     Digest(#[from] crate::digest::InvalidDigest),
@@ -82,6 +112,53 @@ impl From<ir::Diagnostic> for RunCause {
     }
 }
 
+impl RunCause {
+    /// Stable catalogued code for this cause, independent of its display message.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Io { .. } => Code::IoError,
+            Self::Json(_) => Code::InvalidRequest,
+            Self::Output(_) => Code::OutputFailure,
+            Self::Format => Code::UnknownWire,
+            Self::Limit(_) => Code::ResourceExhausted,
+            Self::Digest(_) => Code::InvalidDigest,
+            Self::Identifier(_) => Code::InvalidIdentifier,
+            Self::Native(error) => error.code,
+            Self::Model(error) => error.code(),
+            Self::Package(error) => error.code,
+            Self::Input(error) => error.code,
+        }
+    }
+
+    /// Whether the retained cause prevented completion.
+    pub fn is_incomplete(&self) -> bool {
+        self.code().is_incomplete()
+    }
+
+    /// Native command exit status, with usage/I/O distinct from refusal.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::Io { .. }
+            | Self::Json(_)
+            | Self::Output(_)
+            | Self::Digest(_)
+            | Self::Identifier(_) => 2,
+            Self::Format
+            | Self::Limit(_)
+            | Self::Native(_)
+            | Self::Model(_)
+            | Self::Package(_)
+            | Self::Input(_) => {
+                if self.is_incomplete() {
+                    3
+                } else {
+                    1
+                }
+            }
+        }
+    }
+}
+
 /// Failed command retaining the exact request byte identity when it was read.
 #[derive(Debug, thiserror::Error)]
 #[error("{cause}")]
@@ -94,48 +171,13 @@ pub struct RunError {
 }
 
 impl RunError {
-    /// Existing usage/refusal/incomplete exit convention.
+    /// Existing usage/refusal/incomplete exit convention, derived from the cause.
     pub fn exit_code(&self) -> u8 {
-        match &self.cause {
-            RunCause::Io { .. }
-            | RunCause::Json(_)
-            | RunCause::Digest(_)
-            | RunCause::Identifier(_) => 2,
-            RunCause::Limit(_) => 3,
-            RunCause::Format => 1,
-            RunCause::Native(e) => {
-                if e.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-            RunCause::Model(e) => {
-                if e.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-            RunCause::Package(e) => {
-                if e.code == Code::ResourceExhausted {
-                    3
-                } else {
-                    1
-                }
-            }
-            RunCause::Input(e) => {
-                if e.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-        }
+        self.cause.exit_code()
     }
 
     /// JSON error with original stage/code and available source/reference details.
-    pub fn value(&self) -> serde_json::Value {
+    pub fn value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
         output::error(self)
     }
 }
@@ -155,7 +197,7 @@ fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>> {
         error,
     })?;
     if bytes.len() > limit {
-        return Err(RunCause::Limit("file bytes"));
+        return Err(RunCause::Limit(LimitKind::FileBytes));
     }
     Ok(bytes)
 }
@@ -224,7 +266,7 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
     ] {
         remaining_files = remaining_files
             .checked_sub(count)
-            .ok_or(RunCause::Limit("selected files"))?;
+            .ok_or(RunCause::Limit(LimitKind::SelectedFiles))?;
     }
     let mut intake = Intake {
         directory,
@@ -299,5 +341,5 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         limits,
         || false,
     );
-    Ok(output::report(digest, &request.selection, &models, &report))
+    output::report(digest, &request.selection, &models, &report)
 }

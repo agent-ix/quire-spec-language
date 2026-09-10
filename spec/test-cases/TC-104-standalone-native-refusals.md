@@ -15,6 +15,11 @@ command boundary without substituting compiler or execution logic.
 
 Mutate selected bytes, request fields/format, paths and budgets; inspect the
 actual stage/code and available provenance. Retry an unchanged default request.
+Validate every emitted run envelope against its schema and resolve error codes
+through the native catalog. Reject missing result fields or truth attached to
+refusal. Adapt an independently typed cancelled package error and require exit 3.
+Exercise command-specific arity errors before I/O, plus absolute and parent-relative
+file selections in a request stored separately from the current working directory.
 
 ## Expected Results
 
