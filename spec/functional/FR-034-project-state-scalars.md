@@ -16,6 +16,9 @@ When state-scalar-ir/v1 is selected, the compiler shall project primitive contex
 
 ## Inputs
 
+The selected target uses FR-033's shared catalog and command parsing. Public
+target, read-origin and materialization-stop enums are non-exhaustive.
+
 The existing native package and lowering limits; optional runtime input
 materialization takes a constructor-private ValidatedContext from that exact
 checked package, a caller-lowered work ceiling (hard maximum 100,000) and a
