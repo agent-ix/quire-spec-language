@@ -3,7 +3,6 @@
 //! Quire retains Markdown, availability and schema ownership; native semantics
 //! remain in the existing mapped compiler. Enabled by `quire-extraction`.
 
-use quire_contract_ir as ir;
 use quire_rs::semantic::{extract_clauses, AvailabilityState, ClauseRef, SourceLocus};
 /// Pinned Quire-owned input/result contracts deliberately exposed by this feature.
 /// Changes to their upstream shape require consumer compatibility review.
@@ -22,10 +21,11 @@ pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 pub const MAX_LINES: usize = 4096;
 
 use crate::checking::ClauseBinding;
+use crate::formal_source::SourceIdentities;
 use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
 use crate::native_model::NativeModel;
 use crate::source_map::{Layout, Segment, SourceMap};
-use crate::{Code, Diagnostic, Phase, Source, SourceIdentity, Span};
+use crate::{Code, Diagnostic, Phase, Source, Span};
 
 /// Explicit authored selection and independently assigned native/formal body identities.
 #[derive(Clone, Debug)]
@@ -33,9 +33,7 @@ pub struct Selection {
     /// Authored clause ID selects the Quire heading; name selects the native clause.
     pub binding: ClauseBinding,
     /// Caller-assigned identity/revision for the extracted body, distinct from the original.
-    pub body: SourceIdentity,
-    /// Explicit Contract IR identity for the body; no revision-string conversion.
-    pub formal: ir::SourceIdentity,
+    pub body: SourceIdentities,
 }
 
 /// Pre-extraction input bounds and the unchanged native compiler stage limits.
@@ -248,7 +246,7 @@ fn build_map(
     byte_limit: usize,
 ) -> Result<SourceMap, Box<Diagnostic>> {
     let body = Source::read(
-        selection.body.clone(),
+        selection.body.native.clone(),
         format!("{}#{}", original.path(), clause.clause_id),
         text.as_bytes(),
         byte_limit,
@@ -338,7 +336,7 @@ pub fn compile<'model>(
             mapping,
             language,
             selection.binding.clone(),
-            selection.formal.clone(),
+            selection.body.formal.clone(),
             models,
             limits.compiler,
         )?)

@@ -465,6 +465,9 @@
         },
         "truth": {
           "type": "boolean"
+        },
+        "extraction": {
+          "$ref": "#/$defs/extraction"
         }
       },
       "required": [
@@ -601,6 +604,111 @@
           }
         }
       ]
+    },
+    "byte_span": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    "extraction": {
+      "type": "object",
+      "properties": {
+        "original": {
+          "$ref": "#/$defs/source"
+        },
+        "outcome": {
+          "type": "object",
+          "properties": {
+            "availability": {
+              "type": "object"
+            },
+            "clauses": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "object"
+              }
+            },
+            "clause_text": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "required": [
+            "availability",
+            "clauses",
+            "clause_text",
+            "diagnostics"
+          ],
+          "additionalProperties": false
+        },
+        "mapping": {
+          "type": "object",
+          "properties": {
+            "region": {
+              "$ref": "#/$defs/byte_span"
+            },
+            "segments": {
+              "type": "array",
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/byte_span"
+                  },
+                  "original": {
+                    "$ref": "#/$defs/byte_span"
+                  }
+                },
+                "required": [
+                  "body",
+                  "original"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "drop_final_newline": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "region",
+            "segments",
+            "drop_final_newline"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "original",
+        "outcome",
+        "mapping"
+      ],
+      "additionalProperties": false
     }
   }
 }

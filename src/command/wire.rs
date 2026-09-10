@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026, FR-027, FR-028: closed records; existing constructors own identifier validity.
+//! FR-026–028, FR-031: closed records; existing constructors own identifier validity.
 
 use crate::checking::ClauseBinding;
 use crate::runtime::{
@@ -77,11 +77,9 @@ fn selected_package<'de, D: serde::Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceFile {
     pub file: String,
-    pub identity: String,
-    pub revision: String,
     pub digest: String,
-    pub document: String,
-    pub formal_revision: u64,
+    #[serde(flatten)]
+    pub identity: Identity,
 }
 
 #[derive(Deserialize)]
@@ -95,10 +93,52 @@ pub(super) struct Model {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Program {
+    #[cfg(feature = "quire-extraction")]
+    #[serde(default, deserialize_with = "extraction")]
+    pub extraction: Option<Extraction>,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
     #[serde(deserialize_with = "deserialize_objects")]
     pub clauses: Vec<Binding>,
+}
+
+#[cfg(feature = "quire-extraction")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Extraction {
+    #[serde(deserialize_with = "from_object")]
+    pub body: Identity,
+}
+
+#[cfg(feature = "quire-extraction")]
+fn extraction<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<Extraction>, D::Error> {
+    from_object(decoder).map(Some)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Identity {
+    pub identity: String,
+    pub revision: String,
+    pub document: String,
+    pub formal_revision: u64,
+}
+
+impl Identity {
+    pub fn bind(&self) -> Result<crate::formal_source::SourceIdentities, ir::Diagnostic> {
+        Ok(crate::formal_source::SourceIdentities {
+            native: crate::SourceIdentity {
+                identity: self.identity.clone(),
+                revision: self.revision.clone(),
+            },
+            formal: ir::SourceIdentity::new(
+                ir::SourceDocumentId::new(&self.document)?,
+                ir::SourceRevision::new(self.formal_revision)?,
+            ),
+        })
+    }
 }
 
 #[derive(Deserialize)]

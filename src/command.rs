@@ -2,10 +2,14 @@
 //! FR-026/027: local file orchestration around the existing native compiler and runtime.
 
 mod compilation;
+#[cfg(feature = "quire-extraction")]
+mod extraction;
 mod output;
 mod projection_error;
 mod wire;
 
+#[cfg(feature = "quire-extraction")]
+pub use extraction::{ExtractionError, ExtractionMode};
 pub use output::NativeResult;
 pub use projection_error::{ProjectionLocation, ProjectionSource};
 
@@ -17,7 +21,7 @@ use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
 use crate::serde_object::Object;
-use crate::{ByteDigest, Code, Diagnostic, Source, SourceIdentity};
+use crate::{ByteDigest, Code, Diagnostic, Source};
 use quire_contract_ir as ir;
 use std::{
     fs::File,
@@ -133,6 +137,10 @@ pub enum RunCause {
     /// Request format was not selected.
     #[error("unsupported native command format")]
     Format,
+    /// Extraction selection, context or actual Quire/native compilation failure.
+    #[cfg(feature = "quire-extraction")]
+    #[error("{0}")]
+    Extraction(#[from] Box<ExtractionError>),
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
     Limit(LimitKind),
@@ -194,6 +202,8 @@ impl RunCause {
             Self::Json(_) => Code::InvalidRequest,
             Self::Output(_) => Code::OutputFailure,
             Self::Format => Code::UnknownWire,
+            #[cfg(feature = "quire-extraction")]
+            Self::Extraction(error) => error.code(),
             Self::Limit(_) => Code::ResourceExhausted,
             Self::Digest(_) => Code::InvalidDigest,
             Self::Identifier(_) => Code::InvalidIdentifier,
@@ -227,6 +237,14 @@ impl RunCause {
             | Self::Lowering { .. }
             | Self::Input(_) => {
                 if self.is_incomplete() {
+                    3
+                } else {
+                    1
+                }
+            }
+            #[cfg(feature = "quire-extraction")]
+            Self::Extraction(error) => {
+                if error.code().is_incomplete() {
                     3
                 } else {
                     1
@@ -292,23 +310,17 @@ impl Intake<'_> {
     }
 
     fn source(&mut self, selected: &wire::SourceFile) -> Result<FormalSource> {
-        let identity = ir::SourceIdentity::new(
-            ir::SourceDocumentId::new(&selected.document)?,
-            ir::SourceRevision::new(selected.formal_revision)?,
-        );
+        let identity = selected.identity.bind()?;
         let expected = selected.digest.parse()?;
         let bytes = self.file(&selected.file, REQUEST_BYTES)?;
         let source = Source::read_verified(
-            SourceIdentity {
-                identity: selected.identity.clone(),
-                revision: selected.revision.clone(),
-            },
+            identity.native,
             &selected.file,
             &bytes,
             expected,
             REQUEST_BYTES,
         )?;
-        Ok(FormalSource::new(source, identity))
+        Ok(FormalSource::new(source, identity.formal))
     }
 }
 
@@ -347,6 +359,7 @@ fn compile_with(
 ) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes, _digest| {
         let request: wire::CompileRequest = request(bytes)?;
+        compilation::source_only(&request.program)?;
         let mut intake = intake(
             directory,
             FileCounts {
@@ -423,6 +436,7 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
 
 fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
     let request: wire::Request = request(bytes)?;
+    let selected = compilation::RunSelection::new(&request)?;
     let mut intake = intake(
         directory,
         FileCounts {
@@ -434,37 +448,8 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         },
     )?;
     let models = compilation::models(&mut intake, &request.models)?;
-    let package = match &request.package {
-        Some(selected) => {
-            compilation::selected_package(&mut intake, selected, &request.program, &models)?
-        }
-        None => compilation::package(&mut intake, &request.program, &models)?,
-    };
-    let limits = ArtifactLimits::default();
-    let snapshots = request
-        .snapshots
-        .iter()
-        .map(|selected| {
-            let bytes = intake.file(&selected.file, limits.artifact_bytes)?;
-            Ok(Snapshot::read_verified(
-                &selected.reference,
-                &bytes,
-                limits,
-            )?)
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let invocations = request
-        .invocations
-        .iter()
-        .map(|selected| {
-            let bytes = intake.file(&selected.file, limits.artifact_bytes)?;
-            Ok(Invocation::read_verified(
-                &selected.reference,
-                &bytes,
-                limits,
-            )?)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let package = selected.compile(&mut intake, &models)?;
+    let input = runtime_input(&mut intake, &request)?;
     let selection = request.selection.bind()?;
     let mut limits = ExecutionLimits::default();
     if let Some(value) = request.limits.validation_work {
@@ -473,15 +458,34 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
     if let Some(value) = request.limits.expression_steps {
         limits.evaluation.expression_steps = value;
     }
-    let report = runtime::execute(
-        &package,
-        RuntimeInput {
-            snapshots,
-            invocations,
-        },
-        selection,
-        limits,
-        || false,
-    );
-    output::report(digest, &request.selection, &models, &report)
+    let report = runtime::execute(package.native(), input, selection, limits, || false);
+    output::report(digest, &request.selection, &models, &package, &report)
+}
+
+fn read_artifacts<T, U>(
+    intake: &mut Intake<'_>,
+    selected: &[wire::FileSelection<T>],
+    limits: ArtifactLimits,
+    read: impl Fn(&T, &[u8], ArtifactLimits) -> std::result::Result<U, Box<InputReadError>>,
+) -> Result<Vec<U>> {
+    selected
+        .iter()
+        .map(|selected| {
+            let bytes = intake.file(&selected.file, limits.artifact_bytes)?;
+            Ok(read(&selected.reference, &bytes, limits)?)
+        })
+        .collect()
+}
+
+fn runtime_input(intake: &mut Intake<'_>, request: &wire::Request) -> Result<RuntimeInput> {
+    let limits = ArtifactLimits::default();
+    Ok(RuntimeInput {
+        snapshots: read_artifacts(intake, &request.snapshots, limits, Snapshot::read_verified)?,
+        invocations: read_artifacts(
+            intake,
+            &request.invocations,
+            limits,
+            Invocation::read_verified,
+        )?,
+    })
 }

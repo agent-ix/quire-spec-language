@@ -17,7 +17,7 @@ When a caller selects an authored clause in an original document, the optional Q
 ## Inputs
 
 An immutable original Source, a caller-loaded Quire SemanticContext, one
-ClauseBinding, explicit body/native and formal identities, admitted models and
+ClauseBinding, an explicit SourceIdentities pair for the body/native and formal identities, admitted models and
 caller-lowered limits. The caller selects and verifies the original document's
 digest before admission. The selected Quire heading ID equals the authored
 binding's clause ID; the body contains a complete single-clause native unit.

@@ -65,6 +65,14 @@ pub enum Code {
     ProjectionBinding,
     /// Checked native correspondence could not be preserved in the projection.
     InvalidProjectionCorrespondence,
+    /// Source-only export cannot use extracted Markdown.
+    ExtractionRequiresRun,
+    /// Selected package bytes conflict with extracted compilation.
+    ExtractionPackageConflict,
+    /// Extracted compilation did not select exactly one authored binding.
+    ExtractionClauseCount,
+    /// Pinned Quire rejected the local semantic context.
+    InvalidQuireContext,
     /// Required source identity, revision or path is absent.
     InvalidSourceIdentity,
     /// Supplied correspondence or query does not match the selected sources.
@@ -137,6 +145,10 @@ impl Code {
             Self::UnsupportedProjection => "unsupported_projection",
             Self::ProjectionBinding => "projection_binding",
             Self::InvalidProjectionCorrespondence => "invalid_projection_correspondence",
+            Self::ExtractionRequiresRun => "extraction-requires-run",
+            Self::ExtractionPackageConflict => "extraction-package-conflict",
+            Self::ExtractionClauseCount => "extraction-clause-count",
+            Self::InvalidQuireContext => "invalid-quire-context",
             Self::InvalidSourceIdentity => "invalid_source_identity",
             Self::InvalidSourceMap => "invalid_source_map",
             Self::SourceDigestMismatch => "source_digest_mismatch",
@@ -180,6 +192,10 @@ impl Code {
             Self::UnsupportedProjection,
             Self::ProjectionBinding,
             Self::InvalidProjectionCorrespondence,
+            Self::ExtractionRequiresRun,
+            Self::ExtractionPackageConflict,
+            Self::ExtractionClauseCount,
+            Self::InvalidQuireContext,
             Self::InvalidSourceIdentity,
             Self::InvalidSourceMap,
             Self::SourceDigestMismatch,
