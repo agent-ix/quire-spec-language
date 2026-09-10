@@ -9,7 +9,7 @@ pub use output::NativeResult;
 
 use crate::formal_source::FormalSource;
 use crate::model_source::ModelSourceError;
-use crate::package::PackageError;
+use crate::package::{NativePackageRef, PackageError};
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
@@ -39,6 +39,8 @@ pub enum FileCategory {
     Snapshot,
     /// Invocation artifacts.
     Invocation,
+    /// Selected compiled package artifacts.
+    Package,
 }
 
 impl FileCategory {
@@ -49,6 +51,7 @@ impl FileCategory {
             Self::Model => "models",
             Self::Snapshot => "snapshots",
             Self::Invocation => "invocations",
+            Self::Package => "packages",
         }
     }
 }
@@ -58,6 +61,7 @@ struct FileCounts {
     models: usize,
     snapshots: usize,
     invocations: usize,
+    packages: usize,
 }
 
 /// Command intake ceiling that stopped selected-file processing.
@@ -144,6 +148,17 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
+    /// The selected package failed its verified reader; source compilation is not a fallback.
+    #[error("selected package {file}: {error}")]
+    SelectedPackage {
+        /// Request-selected package file.
+        file: String,
+        /// Exact expected package byte reference.
+        expected: NativePackageRef,
+        /// Original reader failure.
+        #[source]
+        error: Box<PackageError>,
+    },
     /// Existing selected runtime artifact failure.
     #[error("{0}")]
     Input(#[from] Box<InputReadError>),
@@ -168,7 +183,7 @@ impl RunCause {
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
             Self::Model(error) => error.code(),
-            Self::Package(error) => error.code,
+            Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
             Self::Input(error) => error.code,
         }
     }
@@ -191,6 +206,7 @@ impl RunCause {
             | Self::Native(_)
             | Self::Model(_)
             | Self::Package(_)
+            | Self::SelectedPackage { .. }
             | Self::Input(_) => {
                 if self.is_incomplete() {
                     3
@@ -295,6 +311,7 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
                 models: request.models.len(),
                 snapshots: 0,
                 invocations: 0,
+                packages: 0,
             },
         )?;
         let models = compilation::models(&mut intake, &request.models)?;
@@ -332,13 +349,14 @@ fn request<T: wire::RequestKind>(bytes: &[u8]) -> Result<T> {
     Ok(request)
 }
 
-fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+fn check_file_count(counts: FileCounts) -> Result<()> {
     let mut remaining_files = FILES;
     for (category, requested) in [
         (FileCategory::Program, counts.programs),
         (FileCategory::Model, counts.models),
         (FileCategory::Snapshot, counts.snapshots),
         (FileCategory::Invocation, counts.invocations),
+        (FileCategory::Package, counts.packages),
     ] {
         remaining_files = remaining_files
             .checked_sub(requested)
@@ -349,6 +367,11 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
                 maximum: FILES,
             }))?;
     }
+    Ok(())
+}
+
+fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
     Ok(Intake {
         directory,
         remaining: TOTAL_BYTES,
@@ -364,10 +387,16 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
             models: request.models.len(),
             snapshots: request.snapshots.len(),
             invocations: request.invocations.len(),
+            packages: usize::from(request.package.is_some()),
         },
     )?;
     let models = compilation::models(&mut intake, &request.models)?;
-    let package = compilation::package(&mut intake, &request.program, &models)?;
+    let package = match &request.package {
+        Some(selected) => {
+            compilation::selected_package(&mut intake, selected, &request.program, &models)?
+        }
+        None => compilation::package(&mut intake, &request.program, &models)?,
+    };
     let limits = ArtifactLimits::default();
     let snapshots = request
         .snapshots

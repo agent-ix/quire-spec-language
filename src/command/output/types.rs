@@ -10,6 +10,36 @@ use std::borrow::Cow;
 
 pub(super) use crate::wire_format::WireFormat as Format;
 
+pub(super) enum Stage {
+    File,
+    Request,
+    Output,
+    Envelope,
+    Intake,
+    Native(crate::Phase),
+    Model,
+    Package,
+    SelectedPackage,
+    Input,
+}
+
+impl Serialize for Stage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self {
+            Self::File => "file",
+            Self::Request => "request",
+            Self::Output => "output",
+            Self::Envelope => "envelope",
+            Self::Intake => "intake",
+            Self::Native(phase) => phase.as_str(),
+            Self::Model => "model",
+            Self::Package => "package",
+            Self::SelectedPackage => "selected_package",
+            Self::Input => "input",
+        })
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum FailureStatus {
@@ -100,9 +130,40 @@ pub(super) enum Details<'a> {
     Package {
         stage: String,
     },
+    SelectedPackage {
+        file: &'a str,
+        expected: PackageReference,
+        stage: String,
+        path: Vec<PackagePath<'a>>,
+        cause: Option<PackageCause<'a>>,
+    },
     Input {
         expected: Reference<'a>,
         stage: &'static str,
+    },
+}
+
+#[derive(Serialize)]
+pub(super) struct PackageReference {
+    pub format: &'static str,
+    pub digest: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum PackagePath<'a> {
+    Field(&'a str),
+    Index(usize),
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub(super) enum PackageCause<'a> {
+    Native(Diagnostic<'a>),
+    Json {
+        line: usize,
+        column: usize,
+        message: String,
     },
 }
 
@@ -111,7 +172,7 @@ pub(super) struct Failure<'a> {
     pub format: Format,
     pub request_digest: Option<String>,
     pub status: FailureStatus,
-    pub stage: &'static str,
+    pub stage: Stage,
     pub code: &'static str,
     pub message: String,
     pub details: Details<'a>,

@@ -85,26 +85,46 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
     }
 }
 
+fn package_path(value: &crate::package::PackagePathSegment) -> types::PackagePath<'_> {
+    match value {
+        crate::package::PackagePathSegment::Field(name) => types::PackagePath::Field(name),
+        crate::package::PackagePathSegment::Index(index) => types::PackagePath::Index(*index),
+    }
+}
+
+fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_> {
+    match value {
+        crate::package::PackageCause::Native(value) => {
+            types::PackageCause::Native(diagnostic(value))
+        }
+        crate::package::PackageCause::Json(value) => types::PackageCause::Json {
+            line: value.line(),
+            column: value.column(),
+            message: value.to_string(),
+        },
+    }
+}
+
 pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         RunCause::Io { path, error } => (
-            "file",
+            types::Stage::File,
             types::Details::Io {
                 path: path.to_string_lossy(),
                 os_code: error.raw_os_error(),
             },
         ),
         RunCause::Json(error) => (
-            "request",
+            types::Stage::Request,
             types::Details::Json {
                 line: error.line(),
                 column: error.column(),
             },
         ),
-        RunCause::Output(_) => ("output", types::Details::None),
-        RunCause::Format => ("envelope", types::Details::None),
+        RunCause::Output(_) => (types::Stage::Output, types::Details::None),
+        RunCause::Format => (types::Stage::Envelope, types::Details::None),
         RunCause::Limit(kind) => (
-            "intake",
+            types::Stage::Intake,
             match kind {
                 LimitKind::FileBytes => types::Details::FileBytes {
                     limit: kind.as_str(),
@@ -123,29 +143,46 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 },
             },
         ),
-        RunCause::Digest(_) => ("request", types::Details::None),
-        RunCause::Identifier(error) => ("request", types::Details::Identifier(error)),
+        RunCause::Digest(_) => (types::Stage::Request, types::Details::None),
+        RunCause::Identifier(error) => (types::Stage::Request, types::Details::Identifier(error)),
         RunCause::Native(error) => (
-            error.phase.as_str(),
+            types::Stage::Native(error.phase),
             types::Details::Native(diagnostic(error)),
         ),
         RunCause::Model(error) => (
-            "model",
+            types::Stage::Model,
             types::Details::Model {
                 source: source(error.source()),
             },
         ),
         RunCause::Package(error) => (
-            "package",
+            types::Stage::Package,
             types::Details::Package {
                 stage: error.stage.to_string(),
             },
         ),
         RunCause::Input(error) => (
-            "input",
+            types::Stage::Input,
             types::Details::Input {
                 expected: reference(&error.expected),
                 stage: error.stage.as_str(),
+            },
+        ),
+        RunCause::SelectedPackage {
+            file,
+            expected,
+            error,
+        } => (
+            types::Stage::SelectedPackage,
+            types::Details::SelectedPackage {
+                file,
+                expected: types::PackageReference {
+                    format: expected.format(),
+                    digest: expected.digest().to_string(),
+                },
+                stage: error.stage.to_string(),
+                path: error.path.iter().map(package_path).collect(),
+                cause: error.cause.as_ref().map(package_cause),
             },
         ),
     };
