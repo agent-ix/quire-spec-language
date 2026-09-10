@@ -19,6 +19,10 @@ not claim complete Quire producer integration in IT-003.
 | FR-022 | FR-022-AC-3 | TC-096 | ✅ Tested |
 | FR-022 | FR-022-AC-4 | TC-096 | ✅ Tested |
 | FR-022 | FR-022-AC-5 | TC-095 | ✅ Tested |
+| FR-023 | FR-023-AC-1 | TC-097 | ✅ Tested |
+| FR-023 | FR-023-AC-2 | TC-098 | ✅ Tested |
+| FR-023 | FR-023-AC-3 | TC-098 | ✅ Tested |
+| FR-023 | FR-023-AC-4 | TC-097 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -26,3 +30,5 @@ not claim complete Quire producer integration in IT-003.
 | --- | --- | --- | --- | --- | --- |
 | TC-095 | Mapped parent workflow | Integration | P1 | FR-022 | ✅ Tested |
 | TC-096 | Typed mapped refusals | Integration | P1 | FR-022 | ✅ Tested |
+| TC-097 | Retained native execution | Integration | P1 | FR-023 | ✅ Tested |
+| TC-098 | Native execution stops | Integration | P1 | FR-023 | ✅ Tested |

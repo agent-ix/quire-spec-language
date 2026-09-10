@@ -3,8 +3,11 @@
 
 mod construction;
 mod evaluation;
+mod execution;
 mod input;
 mod validation;
+
+pub use execution::{execute, ExecutionLimits, ExecutionOutcome, ExecutionReport};
 
 pub use evaluation::{
     evaluate, EvaluationLimits, EvaluationOutcome, EvaluationReport, EvaluationUsage,
