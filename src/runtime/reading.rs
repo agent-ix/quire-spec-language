@@ -131,8 +131,7 @@ impl InputReadError {
 struct Envelope<'a> {
     version: String,
     kind: String,
-    #[serde(deserialize_with = "super::input::deserialize_identity")]
-    identity: SourceIdentity,
+    identity: super::input::wire::Identity,
     #[serde(borrow)]
     body: &'a RawValue,
 }
@@ -183,13 +182,12 @@ fn read_selected<T: Body + DeserializeOwned>(
             actual: envelope.kind,
         });
     }
-    if &envelope.identity != expected.identity() {
+    if &envelope.identity.0 != expected.identity() {
         return Err(InputReadCause::Identity {
-            actual: envelope.identity,
+            actual: envelope.identity.0,
         });
     }
-    let Object(draft): Object<T> =
-        serde_json::from_str(envelope.body.get()).map_err(InputReadCause::Body)?;
-    Artifact::from_external(envelope.identity, draft, bytes, digest, limits)
+    let draft = serde_json::from_str(envelope.body.get()).map_err(InputReadCause::Body)?;
+    Artifact::from_external(envelope.identity.0, draft, bytes, digest, limits)
         .map_err(InputReadCause::Construction)
 }
