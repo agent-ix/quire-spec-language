@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-026/027: local file orchestration around the existing native compiler and runtime.
 
+mod compilation;
 mod output;
 mod wire;
 
 pub use output::NativeResult;
 
-use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
-use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
-use crate::native_model::{ModelLimits, NativeModel};
-use crate::package::{NativePackage, PackageError, PackageLimits};
+use crate::model_source::ModelSourceError;
+use crate::package::PackageError;
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
 use crate::serde_object::Object;
-use crate::{ByteDigest, Code, Diagnostic, Limits, Source, SourceIdentity};
+use crate::{ByteDigest, Code, Diagnostic, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use std::{
     fs::File,
@@ -28,6 +27,39 @@ const REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_BYTES: usize = 8_388_608;
 const FILES: usize = 64;
 
+/// Selected file category charged by command preflight.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum FileCategory {
+    /// Native program source.
+    Program,
+    /// Rule-model sources.
+    Model,
+    /// Snapshot artifacts.
+    Snapshot,
+    /// Invocation artifacts.
+    Invocation,
+}
+
+impl FileCategory {
+    /// Stable category spelling in native intake diagnostics.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Program => "programs",
+            Self::Model => "models",
+            Self::Snapshot => "snapshots",
+            Self::Invocation => "invocations",
+        }
+    }
+}
+
+struct FileCounts {
+    programs: usize,
+    models: usize,
+    snapshots: usize,
+    invocations: usize,
+}
+
 /// Command intake ceiling that stopped selected-file processing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -35,7 +67,16 @@ pub enum LimitKind {
     /// Per-file or remaining aggregate byte ceiling.
     FileBytes,
     /// Total selected file count.
-    SelectedFiles,
+    SelectedFiles {
+        /// Group that could not be charged.
+        category: FileCategory,
+        /// Files requested by the group.
+        requested: usize,
+        /// Remaining slots before this group.
+        remaining: usize,
+        /// Effective total file ceiling.
+        maximum: usize,
+    },
 }
 
 impl LimitKind {
@@ -43,7 +84,7 @@ impl LimitKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::FileBytes => "file bytes",
-            Self::SelectedFiles => "selected files",
+            Self::SelectedFiles { .. } => "selected files",
         }
     }
 }
@@ -210,40 +251,6 @@ struct Intake<'a> {
 }
 
 impl Intake<'_> {
-    fn models(&mut self, selected: &[wire::Model]) -> Result<Vec<NativeModel>> {
-        selected
-            .iter()
-            .map(|selected| {
-                let source = self.source(&selected.source)?;
-                Ok(
-                    model_source::read(source, &selected.format, ModelSourceLimits::default())?
-                        .admit(ModelLimits::default())?,
-                )
-            })
-            .collect()
-    }
-
-    fn package<'model>(
-        &mut self,
-        program: &wire::Program,
-        models: &'model [NativeModel],
-    ) -> Result<NativePackage<'model>> {
-        let source = self.source(&program.source)?;
-        let unit = crate::parse_source(source.source().clone(), Limits::default())?;
-        let linked = crate::link_native(unit, models, crate::LinkLimits::default())?;
-        let clauses = program
-            .clauses
-            .iter()
-            .map(wire::Binding::bind)
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let checked = check(
-            linked,
-            CheckBindings { source, clauses },
-            CheckLimits::default(),
-        )?;
-        Ok(NativePackage::new(checked, PackageLimits::default())?)
-    }
-
     fn file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
         let bytes = read_file(&self.directory.join(path), ceiling.min(self.remaining))?;
         self.remaining -= bytes.len();
@@ -280,10 +287,18 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
 /// No runtime artifact is read or executed; failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
     with_request(path, |directory, bytes, _digest| {
-        let request: wire::CompileRequest = request(bytes, "native-compile/1")?;
-        let mut intake = intake(directory, &[request.models.len()])?;
-        let models = intake.models(&request.models)?;
-        let package = intake.package(&request.program, &models)?;
+        let request: wire::CompileRequest = request(bytes)?;
+        let mut intake = intake(
+            directory,
+            FileCounts {
+                programs: 1,
+                models: request.models.len(),
+                snapshots: 0,
+                invocations: 0,
+            },
+        )?;
+        let models = compilation::models(&mut intake, &request.models)?;
+        let package = compilation::package(&mut intake, &request.program, &models)?;
         Ok(package.bytes().to_vec())
     })
 }
@@ -308,21 +323,31 @@ fn with_request<T>(
     })
 }
 
-fn request<T: serde::de::DeserializeOwned>(bytes: &[u8], format: &str) -> Result<T> {
+fn request<T: wire::RequestKind>(bytes: &[u8]) -> Result<T> {
     let Object(envelope): Object<wire::Envelope<'_>> = serde_json::from_slice(bytes)?;
-    if envelope.format != format {
+    if envelope.format != T::FORMAT.as_str() {
         return Err(RunCause::Format);
     }
     let Object(request) = serde_json::from_str(envelope.request.get())?;
     Ok(request)
 }
 
-fn intake<'a>(directory: &'a Path, counts: &[usize]) -> Result<Intake<'a>> {
-    let mut remaining_files = FILES - 1; // The selected native program also counts.
-    for &count in counts {
+fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+    let mut remaining_files = FILES;
+    for (category, requested) in [
+        (FileCategory::Program, counts.programs),
+        (FileCategory::Model, counts.models),
+        (FileCategory::Snapshot, counts.snapshots),
+        (FileCategory::Invocation, counts.invocations),
+    ] {
         remaining_files = remaining_files
-            .checked_sub(count)
-            .ok_or(RunCause::Limit(LimitKind::SelectedFiles))?;
+            .checked_sub(requested)
+            .ok_or(RunCause::Limit(LimitKind::SelectedFiles {
+                category,
+                requested,
+                remaining: remaining_files,
+                maximum: FILES,
+            }))?;
     }
     Ok(Intake {
         directory,
@@ -331,17 +356,18 @@ fn intake<'a>(directory: &'a Path, counts: &[usize]) -> Result<Intake<'a>> {
 }
 
 fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
-    let request: wire::Request = request(bytes, "native-run/1")?;
+    let request: wire::Request = request(bytes)?;
     let mut intake = intake(
         directory,
-        &[
-            request.models.len(),
-            request.snapshots.len(),
-            request.invocations.len(),
-        ],
+        FileCounts {
+            programs: 1,
+            models: request.models.len(),
+            snapshots: request.snapshots.len(),
+            invocations: request.invocations.len(),
+        },
     )?;
-    let models = intake.models(&request.models)?;
-    let package = intake.package(&request.program, &models)?;
+    let models = compilation::models(&mut intake, &request.models)?;
+    let package = compilation::package(&mut intake, &request.program, &models)?;
     let limits = ArtifactLimits::default();
     let snapshots = request
         .snapshots

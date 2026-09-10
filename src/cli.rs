@@ -91,7 +91,9 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                         operands: "<request-file>",
                     });
                 };
-                Ok(Self::Compile { path: Path::new(path) })
+                Ok(Self::Compile {
+                    path: Path::new(path),
+                })
             }
             _ => Err(UsageError::UnknownCommand(command)),
         }

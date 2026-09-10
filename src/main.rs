@@ -73,8 +73,12 @@ fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String)
 
 fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
     match command {
-        Command::Syntax { kind, identity, revision, path } =>
-            syntax(kind, identity, revision, path).map(|text| (0, Output::Line(text))),
+        Command::Syntax {
+            kind,
+            identity,
+            revision,
+            path,
+        } => syntax(kind, identity, revision, path).map(|text| (0, Output::Line(text))),
         Command::Run { path } => quire_spec_language::command::run(path)
             .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
             .map_err(|error| command_error(&error)),

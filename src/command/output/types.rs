@@ -8,11 +8,7 @@ use quire_contract_ir as ir;
 use serde::Serialize;
 use std::borrow::Cow;
 
-#[derive(Serialize)]
-pub(super) enum Format {
-    #[serde(rename = "native-run-result/1")]
-    NativeResult,
-}
+pub(super) use crate::wire_format::WireFormat as Format;
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,8 +82,15 @@ pub(super) enum Details<'a> {
         line: usize,
         column: usize,
     },
-    Limit {
+    FileBytes {
         limit: &'static str,
+    },
+    FileCount {
+        limit: &'static str,
+        category: &'static str,
+        requested: usize,
+        remaining: usize,
+        maximum: usize,
     },
     Identifier(&'a ir::Diagnostic),
     Native(Diagnostic<'a>),
