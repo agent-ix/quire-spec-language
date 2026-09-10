@@ -7,6 +7,9 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use crate::serde_object::{deserialize_objects, from_object as deserialize_object};
 use crate::{ByteDigest, Code, SourceIdentity};
 
+/// One version shared by native input construction and reading.
+pub(super) const FORMAT: &str = "native-state-input/1";
+
 /// Artifact-local arena index; it carries no model or cross-artifact identity.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]

@@ -29,6 +29,10 @@ fields and value variants defined in the native runtime input contract.
 The existing immutable Snapshot or Invocation, or a typed read error retaining
 the expected runtime reference, failed stage and original JSON/construction cause.
 JSON coordinates are relative to their stated envelope or body decode stage.
+Byte-limit, digest, version, artifact-kind and identity refusals have distinct
+typed causes with the observed value or effective ceiling. Envelope and body
+JSON failures are separate variants retaining the original Serde error. The
+cause determines its stage and code through one exhaustive classification.
 
 ## Behavior
 
@@ -44,6 +48,7 @@ invalid identifiers, non-integer numeric values and non-lowercase 64-digit diges
 The reader shall preserve explicit null operation results and duplicate vector entries.
 The reader shall run the existing structural constructor before admitting an artifact.
 The reader shall retain the original input bytes and their digest on success.
+The artifact constructor shall own adoption of the original external bytes after structural validation.
 
 Whitespace and object field order may differ from the constructor's encoding.
 ArtifactUsage continues to describe the actual construction pass, including its
@@ -61,7 +66,7 @@ predicate truth. It defines no portable reference/result envelope and performs n
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-024-AC-1 | Snapshot and invocation bytes round-trip into artifacts with exact selected references, bytes and flat drafts, including whitespace and reordered object fields. | Test |
-| FR-024-AC-2 | Stale digests/identities, foreign roles, unknown versions and malformed/unknown/missing/duplicate JSON fields refuse with the actual stage and typed cause. | Test |
+| FR-024-AC-2 | Stale digests/identities, foreign roles, unknown versions and malformed/unknown/missing/duplicate JSON fields refuse with the actual stage and a distinct typed cause; byte-limit causes retain the actual length and effective ceiling, and envelope/body errors retain their original JSON diagnostics. | Test |
 | FR-024-AC-3 | Every admitted value variant decodes exactly; invalid identifier, numeric, digest and local-index values refuse while vector duplicates remain intact. | Test |
 | FR-024-AC-4 | Byte and structural limits return incomplete without partial artifacts; fresh reads can succeed and actual execution of reread snapshots/invocations preserves truth and frame refusals. | Test |
 
