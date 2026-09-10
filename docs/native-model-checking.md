@@ -51,6 +51,12 @@ sequence wrappers retain their nested types and bounds. An ordinary record
 admits equality only if each field type does; Option and sequence equality are
 not introduced by representation similarity.
 
+Every sequence declaration has a positive maximum no greater than 10,000,
+including nested wrappers and unused fields/values. NativeModel::new owns this
+admission check; ModelDraft::admit uses it as well. Oversized maxima return
+unsupported_construct independently of runtime length and ModelLimits. The
+general IR collection constructor supports a wider domain and is not this gate.
+
 An ObjectRole selects an object record, a distinct reference-carrier record,
 the carrier's identity-field SymbolName, an explicit universe SymbolName and
 a role SourceSpan. The carrier has exactly one nonoptional Text field with an

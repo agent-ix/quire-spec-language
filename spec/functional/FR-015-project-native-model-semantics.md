@@ -37,6 +37,16 @@ and returns a LinkedPackage that retains the exact selected models and source.
 
 The native model adapter shall derive primitive bounds, option structure, record fields and collection maxima from the supplied IR declarations.
 
+If any sequence declaration has a maximum greater than 10,000, then the native model adapter shall refuse the entire model with unsupported_construct before publishing an artifact.
+
+The sequence ceiling applies to every collection wrapper in used or unused
+record fields and values, including nested options and sequences. It constrains
+declared maxima independently of actual runtime length and caller-lowered work
+budgets. Raising ModelLimits cannot raise this admission ceiling. Existing IR
+construction requires a positive declared maximum; an admitted sequence may
+still contain zero runtime elements. Source-derived ModelDraft::admit and the
+public Rust NativeModel constructor enforce the same rule.
+
 The native model adapter shall bind each integer or text declaration site to exactly one explicitly authored nominal scalar role.
 
 If a role is missing, duplicated, inconsistent with its IR representation or outside the native profile, then the native model adapter shall refuse the model.
@@ -52,7 +62,7 @@ authored text maximum, identity-bearing object/universe roles, reference identit
 domains and operation parameter/result/frame bindings. Scalars reuse IR signed
 integer bounds with reject-overflow; no new range engine or numeric widening is
 introduced. Collections under this explicit profile are ordered sequences with
-duplicates retained and the IR-authored maximum. References use an explicitly
+duplicates retained and a positive IR-authored maximum no greater than 10,000. References use an explicitly
 selected acyclic IR identity carrier containing one bounded-text ID field;
 object fields remain acyclic IR records. Native roles distinguish that opaque
 reference carrier from an ordinary record. No recursive object embedding or
@@ -76,7 +86,7 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-015-AC-1 | A real source-derived Rust rule model preserves Version 0..1000, Signed -10..10, Count 0..3, Wide i64 bounds, Distance/metre, Duration/second, Node reference fields, duplicate-preserving items and the step operation without enumerating runtime object IDs. | Test (TC-040) |
-| FR-015-AC-2 | Missing/duplicate scalar sites, mismatched representations, unsigned/saturating/rational declarations, missing text bounds and malformed object/operation/frame roles refuse without a model. | Test (TC-041) |
+| FR-015-AC-2 | Missing/duplicate scalar sites, mismatched representations, unsigned/saturating/rational declarations, missing text bounds and malformed object/operation/frame roles refuse without a model; sequence maxima 10,000 are admitted and 10,001 refuse with unsupported_construct through both public Rust and source-draft admission, including nested and unused declarations. | Test (TC-041) |
 | FR-015-AC-3 | Semantic, provenance and unused-declaration mutations change the model artifact; reordering set-like role/declaration inventories preserves it; a legacy or foreign digest cannot select the model. | Test (TC-042) |
 | FR-015-AC-4 | False or foreign model source loci refuse, including constructor-valid IR coordinates; conflicting native bindings for one formal source identity or model owner cannot enter one linked inventory. | Test (TC-043) |
 | FR-015-AC-5 | link_native resolves actual dereference fields and operation roles while existing link retains its unsupported reference/operation behavior and original artifact identity. | Test (TC-044) |
@@ -93,6 +103,9 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 ## Status
 
 Model admission and native linkage are implemented through 667bf07. All six
-criteria are qualified at 0cd679c by TC-040–045 and SR-084/085. Neither NativeModel
+original criteria were qualified at 0cd679c by TC-040–045 and SR-084/085. The
+sequence-ceiling amendment is implemented by Task-034 under compiler issue #30;
+SR-263 records its new boundary tests. The older checks alone do not qualify
+this amendment, and broader ruling conformance remains open. Neither NativeModel
 nor successful name resolution
 establishes a reference-evaluable clause or an executable backend package.

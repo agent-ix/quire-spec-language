@@ -319,6 +319,100 @@ fn tc_041_unsupported_representations_include_unused_ir_declarations() {
 
 #[test]
 #[trace("TC-041", "FR-015-AC-2")]
+fn tc_041_sequence_field_maxima_are_profile_bounded() {
+    for maximum in [10_000, 10_001, u32::MAX] {
+        for (record, field, element) in [
+            ("Node", "items", integer(0, 1000)),
+            ("Unused", "spare", ir::ValueType::Boolean),
+        ] {
+            let ty = ir::ValueType::collection(ir::CollectionType::new(element, maximum).unwrap());
+            let mut input = extra_inventory();
+            replace_field_type(&mut input, record, field, ty.clone());
+            if maximum == 10_000 {
+                let model = input.model();
+                let declaration = model
+                    .environment()
+                    .types()
+                    .iter()
+                    .find(|declaration| declaration.name().as_str() == record)
+                    .unwrap();
+                let ir::TypeDeclaration::Record { declaration } = declaration else {
+                    panic!("record fixture");
+                };
+                let selected = declaration
+                    .fields()
+                    .iter()
+                    .find(|selected| selected.name().as_str() == field)
+                    .unwrap();
+                assert_eq!(selected.value_type(), &ty);
+            } else {
+                refuse(input, Code::UnsupportedConstruct);
+            }
+        }
+    }
+}
+
+#[test]
+#[trace("TC-041", "FR-015-AC-2")]
+fn tc_041_nested_sequence_value_maxima_cannot_be_raised_with_work_limits() {
+    fn sequence(value: ir::ValueType, maximum: u32) -> ir::ValueType {
+        ir::ValueType::collection(ir::CollectionType::new(value, maximum).unwrap())
+    }
+    for maximum in [10_000, 10_001, u32::MAX] {
+        for ty in [
+            ir::ValueType::option(sequence(ir::ValueType::Boolean, maximum)),
+            sequence(
+                ir::ValueType::option(sequence(ir::ValueType::Boolean, maximum)),
+                1,
+            ),
+            sequence(
+                ir::ValueType::option(sequence(ir::ValueType::Boolean, 1)),
+                maximum,
+            ),
+        ] {
+            let mut input = parts();
+            add_value(
+                &mut input,
+                "unused_sequence",
+                ir::ValueDeclarationKind::State,
+                ty.clone(),
+            );
+            let source = input.source.source().clone();
+            let result = NativeModel::new(
+                input.source,
+                input.environment,
+                input.roles,
+                ModelLimits {
+                    artifact_bytes: usize::MAX,
+                    roles: usize::MAX,
+                    entries: usize::MAX,
+                    nodes: usize::MAX,
+                    depth: usize::MAX,
+                },
+            );
+            if maximum == 10_000 {
+                let model = result.unwrap();
+                let selected = model
+                    .environment()
+                    .values()
+                    .iter()
+                    .find(|value| value.name().as_str() == "unused_sequence")
+                    .unwrap();
+                assert_eq!(selected.value_type(), &ty);
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.code, Code::UnsupportedConstruct);
+                assert_eq!(error.phase, Phase::Link);
+                assert!(!error.is_incomplete());
+                assert_eq!(error.source, *source.identity());
+                assert_eq!(error.path, source.path());
+            }
+        }
+    }
+}
+
+#[test]
+#[trace("TC-041", "FR-015-AC-2")]
 fn tc_041_ordinary_text_accepts_zero_and_requires_a_role() {
     for maximum in [0, 1, ir::MAX_TEXT_LENGTH] {
         let input = authored(|data| {
