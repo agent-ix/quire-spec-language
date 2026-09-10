@@ -13,6 +13,10 @@ FR-030 and FR-011 rows using TC-108 require `--features quire-extraction` (or
 local test and lint lanes; the hosted workflow remains manual-dispatch only.
 FR-031 / TC-109 extraction behavior also requires that feature; its disabled-build
 request-refusal control runs in the minimal suite.
+FR-032-AC-4 / TC-110 package replay runs in both configurations; its Markdown
+outcome and original/body mapping checks require quire-extraction. Every runtime
+case requires report provenance. Missing-model compilation instead requires the
+appropriate error provenance, explicitly rather than through a presence guard.
 
 ## Requirements Traceability
 
@@ -66,6 +70,10 @@ request-refusal control runs in the minimal suite.
 | FR-031 | FR-031-AC-2 | TC-109 | ✅ Tested |
 | FR-031 | FR-031-AC-3 | TC-109 | ✅ Tested |
 | FR-031 | FR-031-AC-4 | TC-109 | ✅ Tested |
+| FR-032 | FR-032-AC-1 | TC-110 | ✅ Tested |
+| FR-032 | FR-032-AC-2 | TC-110 | ✅ Tested |
+| FR-032 | FR-032-AC-3 | TC-110 | ✅ Tested |
+| FR-032 | FR-032-AC-4 | TC-110 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -86,3 +94,4 @@ request-refusal control runs in the minimal suite.
 | TC-107 | Standalone projection export | Integration | P1 | FR-029 | ✅ Tested |
 | TC-108 | Actual Quire/native workflow | Integration | P1 | FR-030, FR-011 | ✅ Tested |
 | TC-109 | Standalone Markdown execution | Integration | P1 | FR-031 | ✅ Tested |
+| TC-110 | Concrete ConfigVersion workflow | Integration | P1 | FR-032 | ✅ Tested |

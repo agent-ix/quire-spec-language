@@ -24,6 +24,11 @@ The workflow has real healthy, violating and refused/incomplete observations wit
 
 Native parse/link/reference-evaluate pipeline and the existing qualified executable binder/backend.
 
+FR-032 supplies the concrete ConfigVersion native model, original/Markdown
+sources and recorded runtime files for the reference path. Numeric/object/graph
+backend support and generated activation remain incomplete; these native runs
+do not satisfy the full backend comparison in IT-002-SC-05.
+
 ## Preconditions
 
 FS02/FS03/FS05 and model/source/frame adapters must be reviewed. Actual native linking, evaluation and qualified backend entry points must be available. Current parser-only functionality does not satisfy this setup.
