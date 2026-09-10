@@ -16,17 +16,39 @@ fn invoke(directory: &Path) -> (i32, Value, bool) {
         .current_dir(directory.parent().unwrap())
         .output()
         .unwrap();
+    assert_ne!(
+        result.stdout.is_empty(),
+        result.stderr.is_empty(),
+        "the command must emit exactly one result stream"
+    );
     let from_stdout = !result.stdout.is_empty();
     let bytes = if from_stdout {
         &result.stdout
     } else {
         &result.stderr
     };
-    (
-        result.status.code().unwrap(),
-        serde_json::from_slice(bytes).unwrap(),
-        from_stdout,
-    )
+    let value: Value = serde_json::from_slice(bytes).unwrap();
+    assert!(
+        result_schema().is_valid(&value),
+        "result violates its schema: {value}"
+    );
+    if let Some(code) = value.get("code") {
+        assert!(
+            quire_spec_language::Code::from_code(code.as_str().unwrap()).is_some(),
+            "uncatalogued command code: {code}"
+        );
+    }
+    (result.status.code().unwrap(), value, from_stdout)
+}
+
+fn result_schema() -> &'static jsonschema::JSONSchema {
+    static SCHEMA: std::sync::OnceLock<jsonschema::JSONSchema> = std::sync::OnceLock::new();
+    SCHEMA.get_or_init(|| {
+        let schema: Value =
+            serde_json::from_str(include_str!("../schemas/native-run-result-1.schema.json"))
+                .unwrap();
+        jsonschema::JSONSchema::compile(&schema).unwrap()
+    })
 }
 
 fn save(directory: &Path, value: &Value) {
@@ -262,4 +284,100 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
     let (code, result, _) = invoke(directory.path());
     assert_eq!(code, 0);
     assert_eq!(result["truth"], true);
+}
+
+#[test]
+#[trace("TC-104", "FR-026-AC-3", "FR-026-AC-4")]
+fn typed_package_failure_retains_incomplete_classification() {
+    use quire_spec_language::command::{RunCause, RunError};
+    use quire_spec_language::package::{PackageError, PackageStage, PackageUsage};
+    use quire_spec_language::Code;
+    for (code, expected, status) in [
+        (Code::Cancelled, 3, "incomplete"),
+        (Code::InvalidPackage, 1, "refused"),
+    ] {
+        let error = RunError {
+            request_digest: Some(ByteDigest::of(b"selected request")),
+            cause: RunCause::Package(Box::new(PackageError {
+                code,
+                stage: PackageStage::Rebind,
+                path: Vec::new(),
+                usage: PackageUsage::default(),
+                message: "identical prose for distinct causes",
+                cause: None,
+            })),
+        };
+        let RunCause::Package(package) = &error.cause else {
+            unreachable!()
+        };
+        assert_eq!(package.is_incomplete(), expected == 3);
+        assert_eq!(error.exit_code(), expected);
+        let value = error.value().unwrap();
+        assert!(result_schema().is_valid(&value));
+        assert_eq!(value["status"], status);
+        assert_eq!(value["stage"], "package");
+        assert_eq!(value["code"], code.as_str());
+        assert!(value.get("truth").is_none());
+    }
+}
+
+#[test]
+#[trace("TC-104", "FR-026-AC-3")]
+fn result_schema_rejects_missing_fields_and_truth_on_refusals() {
+    for case in [setup::Case::Aggregate(2), setup::Case::Operation(true)] {
+        let directory = tempfile::tempdir().unwrap();
+        setup::write(directory.path(), case);
+        let (_, result, _) = invoke(directory.path());
+        for field in ["source", "package", "status", "stage", "validation_usage"] {
+            let mut incomplete = result.clone();
+            incomplete.as_object_mut().unwrap().remove(field);
+            assert!(!result_schema().is_valid(&incomplete), "missing {field}");
+        }
+        let mut invalid = result.clone();
+        if result["status"] == "completed" {
+            invalid.as_object_mut().unwrap().remove("truth");
+        } else {
+            assert_eq!(result["status"], "refused");
+            invalid["truth"] = json!(false);
+        }
+        assert!(!result_schema().is_valid(&invalid));
+    }
+}
+
+#[test]
+#[trace("TC-103", "FR-026-AC-5")]
+fn absolute_and_parent_relative_operands_keep_selected_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2));
+    let child = directory.path().join("requests");
+    std::fs::create_dir(&child).unwrap();
+    for absolute in [true, false] {
+        let mut changed = job.clone();
+        for pointer in [
+            "/request/models/0/source/file",
+            "/request/program/source/file",
+            "/request/snapshots/0/file",
+        ] {
+            let selected = changed.pointer(pointer).unwrap().as_str().unwrap();
+            let path = if absolute {
+                directory.path().join(selected)
+            } else {
+                Path::new("..").join(selected)
+            };
+            *changed.pointer_mut(pointer).unwrap() = json!(path.to_str().unwrap());
+        }
+        save(&child, &changed);
+        let (code, result, stdout) = invoke(&child);
+        assert_eq!(code, 0, "{result}");
+        assert!(stdout);
+        assert_eq!(result["truth"], true);
+        assert_eq!(
+            result["source"]["digest"],
+            job["request"]["program"]["source"]["digest"]
+        );
+        assert_eq!(
+            result["source"]["path"],
+            changed["request"]["program"]["source"]["file"]
+        );
+    }
 }
