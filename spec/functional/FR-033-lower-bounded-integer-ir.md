@@ -19,6 +19,9 @@ node/depth/byte limits. Existing lower calls and the standalone lower command
 default to boolean-oracle/v1. The optional command suffix
 `--target integer-ir/v1` selects this IR-only target; unknown names refuse
 before file intake. The request remains native-compile/1.
+Library target parsing, display and command selection use one published name
+catalog. The public target enum is non-exhaustive. The suffix belongs only to
+lower; a suffix on compile produces compile-specific usage before file intake.
 The existing Rust standalone fixture generator emits integer-healthy and
 integer-violating source/run requests with a bounded amount declaration.
 
@@ -36,7 +39,9 @@ does not replace that authority. This target does not assert codegen acceptance.
 The compiler shall reuse the existing complete-package lowering and strict binder.
 The integer target shall translate Boolean/integer literals, direct linked state/input reads, parentheses, Boolean operators, numeric negation, integer arithmetic and scalar comparisons using the existing IR constructors.
 The compiler shall retain operand order, authored clauses, source coordinates and declaration observation correspondence.
+The compiler shall map each native binary operator explicitly to its corresponding IR operator without a fallback operator.
 The compiler shall serialize integer declarations and literals in the existing flattened IR wire shape.
+If an unadmitted prepared declaration or expression reaches the wire boundary, then the compiler shall refuse it with its clause and source before writing output.
 The compiler shall retain the actual IR definedness judgment and any upstream refusal.
 If any clause contains fields, objects/references, collections, calls, local bindings or another unadmitted form, then the compiler shall refuse the complete projection without partial output.
 The compiler shall preserve boolean-oracle/v1 behavior and its existing numeric refusals.

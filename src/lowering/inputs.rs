@@ -24,6 +24,7 @@ impl Default for InputProjectionLimits {
 
 /// Materialization stop reason; none of these represents predicate truth.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum InputProjectionCode {
     /// The context was validated against a different checked package.
     ContextMismatch,
@@ -256,8 +257,8 @@ fn materialize<'a>(
                 Some(identity),
             )
         }
-        (ProjectedReadOrigin::Value(kind), DeclarationKey::Value(name)) => {
-            if kind == ir::ValueDeclarationKind::Input {
+        (ProjectedReadOrigin::Value(kind), DeclarationKey::Value(name)) => match kind {
+            ir::ValueDeclarationKind::Input => {
                 let invocation = context
                     .invocation()
                     .ok_or_else(|| budget.missing("captured invocation unavailable"))?;
@@ -275,7 +276,8 @@ fn materialize<'a>(
                     InputArtifact::Invocation(invocation),
                     None,
                 )
-            } else {
+            }
+            ir::ValueDeclarationKind::State => {
                 let snapshot = snapshot()?;
                 let value = context
                     .state(
@@ -293,7 +295,7 @@ fn materialize<'a>(
                     None,
                 )
             }
-        }
+        },
         _ => return Err(budget.missing("projected read origin disagrees with linked declaration")),
     };
     budget.step()?;

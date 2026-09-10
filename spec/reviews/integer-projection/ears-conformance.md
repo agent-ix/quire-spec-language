@@ -8,10 +8,9 @@ review_set: all
 ---
 ## Summary
 
-Quire reports 366/366 scoped documents grammar-clean and zero grammar findings. FR-033 uses explicit event/selection and unwanted-condition patterns with one shall per normative statement. Numeric translation, source retention, wire shape, whole-package refusal, fresh limits and generator I/O failure name observable behavior. The target describes strict IR output, without an ambiguous claim of generated execution.
+Scoped Quire validation passes with no grammar findings. FR-033 uses explicit event/selection and unwanted-condition patterns with one shall per normative statement. Numeric translation, source retention, wire shape, whole-package refusal, fresh limits and generator I/O failure name observable behavior. The target describes strict IR output, without an ambiguous claim of generated execution.
 
-Author PR-readiness review of `7b5b663`, including the generator I/O correction,
-using the owner-selected all set. Numeric lowering is unchanged from `5a7e5db`.
+Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 ## Findings

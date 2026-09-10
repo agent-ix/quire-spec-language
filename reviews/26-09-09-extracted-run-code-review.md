@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 1359f05 using actual code-review, rust-review and
+Author PR-readiness review of 0d3d294 using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -23,27 +23,30 @@ rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Checks
 
-A small prepared-package enum feeds one existing runtime path; extraction retains
-its package and original formal source. Quire context validation, exact-source
-intake and mapped compilation remain existing APIs. New request records are
-closed and reject null/positional/duplicate values; unsupported combinations
-refuse before a deliberately missing dependent file is read. Minimal builds
-reject the extraction field. No parser, dependency, unsafe block, request panic,
-unchecked conversion, mutable shared state or runtime bypass is introduced.
+Three typed mode refusals have separate catalogued codes and pre-I/O tests.
+One binding guard retains the selected binding. A shared closed wire identity
+binds original and body selections to the same native/formal identity type;
+malformed types, unknown fields and duplicate keys are exercised for both uses.
+Quire context construction uses the consumer's version constants, and rejected
+context output carries those versions with actual producer diagnostics.
 
-Actual binary tests exercise LF/CRLF healthy, violating and frame-refused cases,
-syntax/unsupported errors with original spans, unavailable extraction, stale
-bytes, zero/multiple bindings and incomplete/fresh retries. The fixture generator
-uses the real syntax tree to select a single clause. Initial fixture failures
-exposed its two-clause input and Quire's source-identity schema; the generator was
-corrected without weakening admission. The original multi-clause fixtures remain.
+The private compilation module owns preparation and feature selection; one
+runtime-input helper serves snapshots and invocations. Public error enums are
+non-exhaustive. Necessary feature-gated type declarations remain; there is no
+runtime trait object or test-only bypass. Typed extraction output is constructed
+before serialization and immutable result exposure. Schema negative controls
+remove required provenance/map fields and require rejection. The Quire-owned
+embedded records are deliberately not redefined as a second producer contract.
 
-Local full suite: 304 tests plus three compile-fail doctests pass; four existing
-assurance tests remain ignored. The separate minimal-feature test also passes.
-Strict all-targets/all-features Clippy, formatting, minimal build and warnings-denied
-rustdoc pass. Subsequent source edits only update owning-requirement doc comments.
-No hosted workflow ran; dispatch-only policy is unchanged.
+Actual binary tests cover LF/CRLF truth/refusal, original byte maps, unavailable
+extraction, stale bytes, source-line ceilings and incomplete/fresh retries.
+The context-error adapter control uses real Quire validator diagnostics; it
+does not claim a reachable end-to-end context-construction failure. No new
+parser, dependency, unsafe block or request panic was found.
 
-The generated standalone Markdown healthy, violating and frame-refused requests
-also ran successfully outside the test harness, with exit codes 0, 1 and 1 and
-the expected true, false and absent truth respectively.
+Local full suite at 0d3d294: 327 ordinary tests plus three compile-fail doctests
+with all features; 312 plus three with minimal features. Four existing assurance
+tests remain ignored in both. Strict all-targets Clippy passes in both feature
+configurations; formatting, cached minimal build and warnings-denied all-feature
+rustdoc pass. The workflow diff against #22 is empty and retains both lanes,
+with workflow_dispatch as its only trigger. No hosted workflow ran.

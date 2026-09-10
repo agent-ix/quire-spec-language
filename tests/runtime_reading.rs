@@ -95,15 +95,26 @@ fn reads_refuse_stale_selections_and_incompatible_envelopes_before_body_decoding
     assert_eq!(failure.stage, InputReadStage::Selection);
     assert_eq!(failure.expected.identity(), stale.identity());
     assert_eq!(failure.expected.digest(), stale.digest());
-    for (field, value, code) in [
-        ("version", json!("native-state-input/2"), Code::UnknownWire),
-        ("kind", json!("invocation"), Code::InvalidRuntimeInput),
-        (
-            "identity",
-            json!({"identity":"foreign", "revision":"1"}),
-            Code::StaleDependency,
-        ),
-    ] {
+    assert!(
+        matches!(failure.cause, InputReadCause::DigestMismatch { actual } if actual == original.digest())
+    );
+    assert_eq!(failure.stage.as_str(), "selection");
+    #[derive(Clone, Copy, Debug)]
+    enum Mismatch {
+        Version,
+        Kind,
+        Identity,
+    }
+    for mismatch in [Mismatch::Version, Mismatch::Kind, Mismatch::Identity] {
+        let (field, value, code) = match mismatch {
+            Mismatch::Version => ("version", json!("native-state-input/2"), Code::UnknownWire),
+            Mismatch::Kind => ("kind", json!("invocation"), Code::InvalidRuntimeInput),
+            Mismatch::Identity => (
+                "identity",
+                json!({"identity":"foreign", "revision":"1"}),
+                Code::StaleDependency,
+            ),
+        };
         let mut wire: Value = serde_json::from_slice(original.bytes()).unwrap();
         wire[field] = value;
         wire["body"] = json!({"invalid_for_any_native_body": true});
@@ -114,13 +125,32 @@ fn reads_refuse_stale_selections_and_incompatible_envelopes_before_body_decoding
         assert_eq!(failure.code, code, "{field}");
         assert_eq!(failure.stage, InputReadStage::Envelope);
         assert_eq!(failure.expected.digest(), expected.digest());
-        assert!(matches!(failure.cause, InputReadCause::Selection(_)));
+        match (mismatch, failure.cause) {
+            (Mismatch::Version, InputReadCause::Version { actual }) => {
+                assert_eq!(actual, "native-state-input/2")
+            }
+            (Mismatch::Kind, InputReadCause::ArtifactKind { expected, actual }) => {
+                assert_eq!(expected, "snapshot");
+                assert_eq!(actual, "invocation");
+            }
+            (Mismatch::Identity, InputReadCause::Identity { actual }) => {
+                assert_eq!(
+                    actual,
+                    SourceIdentity {
+                        identity: "foreign".into(),
+                        revision: "1".into()
+                    }
+                );
+            }
+            (case, cause) => panic!("{case:?} produced a different typed cause: {cause:?}"),
+        }
+        assert_eq!(failure.stage.to_string(), "envelope");
     }
     for bytes in [b"{broken".to_vec(), b"[]".to_vec(), b"null".to_vec()] {
         let failure = Snapshot::read_verified(&selected(&bytes), &bytes, ArtifactLimits::default())
             .unwrap_err();
         assert_eq!(failure.stage, InputReadStage::Envelope);
-        assert!(matches!(failure.cause, InputReadCause::Json(_)));
+        assert!(matches!(failure.cause, InputReadCause::Envelope(ref error) if error.line() > 0));
     }
 }
 
@@ -164,7 +194,10 @@ fn native_records_require_object_shapes_and_closed_fields() {
                 Code::InvalidRuntimeInput,
                 "missing {pointer}/{removed}"
             );
-            assert!(matches!(failure.cause, InputReadCause::Json(_)));
+            assert!(matches!(
+                failure.cause,
+                InputReadCause::Envelope(_) | InputReadCause::Body(_)
+            ));
         }
         let mut changed = wire.clone();
         changed
@@ -204,7 +237,10 @@ fn native_records_require_object_shapes_and_closed_fields() {
         let failure = Snapshot::read_verified(&selected(&bytes), &bytes, ArtifactLimits::default())
             .unwrap_err();
         assert_eq!(failure.code, Code::InvalidRuntimeInput);
-        assert!(matches!(failure.cause, InputReadCause::Json(_)));
+        assert!(matches!(
+            failure.cause,
+            InputReadCause::Envelope(_) | InputReadCause::Body(_)
+        ));
     }
 }
 
@@ -228,7 +264,7 @@ fn malformed_values_and_limits_refuse_without_losing_fresh_read_behavior() {
         let failure = Snapshot::read_verified(&selected(&bytes), &bytes, ArtifactLimits::default())
             .unwrap_err();
         assert_eq!(failure.stage, InputReadStage::Body, "{pointer}");
-        assert!(matches!(failure.cause, InputReadCause::Json(_)));
+        assert!(matches!(failure.cause, InputReadCause::Body(ref error) if error.line() > 0));
     }
     let mut wire: Value = serde_json::from_slice(original.bytes()).unwrap();
     wire["body"]["arena"][0] = json!({"kind":"present","value":0});
@@ -261,6 +297,16 @@ fn malformed_values_and_limits_refuse_without_losing_fresh_read_behavior() {
             Snapshot::read_verified(&original.reference(), original.bytes(), limits).unwrap_err();
         assert!(failure.is_incomplete());
         assert_eq!(failure.expected.digest(), original.digest());
+        if limits.artifact_bytes < original.bytes().len() {
+            assert!(
+                matches!(failure.cause, InputReadCause::ByteLimit { actual, maximum }
+                if actual == original.bytes().len() && maximum == limits.artifact_bytes)
+            );
+            assert_eq!(failure.stage, InputReadStage::Selection);
+        } else {
+            assert!(matches!(failure.cause, InputReadCause::Construction(_)));
+            assert_eq!(failure.stage, InputReadStage::Construction);
+        }
         let retry = Snapshot::read_verified(
             &original.reference(),
             original.bytes(),

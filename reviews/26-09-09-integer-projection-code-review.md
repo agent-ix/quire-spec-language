@@ -3,15 +3,13 @@ id: SR-243
 title: "Code and Rust review of bounded integer IR lowering"
 type: SpecReview
 analysis: code-review
-scope: "src/lowering.rs; src/lowering/wire.rs; src/command*; src/main.rs; integer tests and examples"
+scope: "src/lowering/; src/lowering.rs; src/cli.rs; src/command/; src/main.rs; integer tests and examples"
 review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 7b5b663 using actual code-review, rust-review and
-rust-style skills. Numeric implementation is unchanged from 5a7e5db; this
-revision corrects generator I/O handling. No applicable AssuranceProfile or
-deny.toml exists.
+Author PR-readiness review of b0c02c7 using actual code-review, rust-review and
+rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
 
@@ -25,36 +23,34 @@ deny.toml exists.
 
 ## Checks
 
-One explicit target enum extends the existing lowerer and CLI. Translation walks
-the checked native AST and borrows actual scalar/declaration representations;
-it does not reuse proof-abstraction inputs or evaluate predicates into constants.
-The borrowed wire views encode the existing IR input contract. Both pinned
-strict readers reconstruct the actual bytes and agree on bound identity.
+One exhaustive BinaryOp conversion owns operator semantics. Its typed result
+supplies both target admission and construction; no fallback maps a new operator
+to an existing one. One catalog defines the non-exhaustive public target enum,
+published names/list and parsing/display. The shared CLI parser owns the optional
+lower suffix and reports the named command's usage before dependent I/O.
+Typed command failures retain the selected target and metadata-only source context.
 
-The exhaustive binary-operator mapping preserves operand order. Original
-source/observation correspondence and complete-package limits stay in the shared
-path. Unsupported fields/locals/calls/objects refuse; numeric literal conversion
-is fallible. No dependency, unsafe block, production panic, shared mutable state
-or permissive request decoder was added. Target selection validates before I/O.
-The example helper now returns io::Result for every filesystem operation.
-The executable reports selected-path failures with exit 2; only known static
-fixture constructor defects retain assertions. Both native and Markdown paths
-handle early and later write failure without panic.
+The wire boundary constructs fallible typed borrowed views of the already bounded
+IR tree before writing bytes. Unadmitted declarations or nested forms retain
+clause and native source; foreign coordinates become InvalidCorrespondence.
+These views preserve the existing flattened integer contract, without changing
+native semantics or adding a parser. Both pinned IR readers accept actual output.
+Codegen continues to return its explicit unsupported-expression result for numeric
+programs; that is a tested boundary, not numeric backend qualification.
 
-Seven new tests carry real trace attributes. Assertions independently name numeric
-operators/bounds, compare original source fragments, check model/observation
-identity and exact limits, exercise actual command output and current backend
-unsupported-expression diagnostics. Healthy/violating runtime results have the
-same source-only projection, ruling out snapshot-specific constant evaluation.
+Ten new tests cover exact operators/bounds, source/observation identity, both
+readers, atomic limits, actual command output, target spellings/encoding, and
+generator I/O failure. The private wire-conversion control is not claimed as a
+publicly constructible invalid checked package. Sixty focused tests pass.
+Shared generators retain named Boolean/operation payloads from the parent and
+propagate selected-path filesystem failures. No dependency, unsafe code,
+request panic, unchecked numeric cast or workflow change was introduced.
 
-Local gates passed: fmt; strict all-targets/all-features Clippy; 314 ordinary
-tests plus three compile-fail doctests; nine relevant minimal-feature tests;
-minimal build; rustdoc with warnings denied. Four existing assurance tests remain
-ignored. Fresh example files also produced true/false and identical integer IR
-outside the harness. Boolean lowering and existing generated tests passed.
-
-Those full-suite results are the unchanged numeric implementation baseline at
-5a7e5db. For 7b5b663, all 19 affected command tests, six minimal-feature tests,
-fmt, strict all-target Clippy and the actual example build pass. Invalid output
-directories and a late Markdown write return exit 2; fresh generation and native
-execution succeed. The core compiler/runtime source did not change.
+At b0c02c7, full local suites pass: 342 ordinary tests plus three compile-fail
+doctests with all features; 326 plus three with minimal features. Four existing
+assurance tests remain ignored in each. Strict all-targets Clippy passes in both
+configurations; formatting, cached minimal binary/example build and
+warnings-denied all-feature rustdoc pass. Scoped Quire validation passes.
+The actual generator's success and error exits were checked locally; integer
+healthy/violating runtime cases retain identical source-only projection bytes.
+Hosted CI remains manual-dispatch only and was not run.
