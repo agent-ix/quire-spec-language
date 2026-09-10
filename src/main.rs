@@ -59,21 +59,32 @@ fn syntax(
     )
 }
 
-fn execute(command: Command<'_>) -> Result<(u8, String), (u8, String)> {
+enum Output {
+    Line(String),
+    Artifact(Vec<u8>),
+}
+
+fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String) {
+    match error.value() {
+        Ok(value) => (error.exit_code(), value.to_string()),
+        Err(output) => (2, format!("output failed: {output}")),
+    }
+}
+
+fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
     match command {
         Command::Syntax {
             kind,
             identity,
             revision,
             path,
-        } => syntax(kind, identity, revision, path).map(|text| (0, text)),
-        Command::Run { path } => match quire_spec_language::command::run(path) {
-            Ok(result) => Ok((result.exit_code, result.value.to_string())),
-            Err(error) => match error.value() {
-                Ok(value) => Err((error.exit_code(), value.to_string())),
-                Err(output) => Err((2, format!("output failed: {output}"))),
-            },
-        },
+        } => syntax(kind, identity, revision, path).map(|text| (0, Output::Line(text))),
+        Command::Run { path } => quire_spec_language::command::run(path)
+            .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
+            .map_err(|error| command_error(&error)),
+        Command::Compile { path } => quire_spec_language::command::compile(path)
+            .map(|bytes| (0, Output::Artifact(bytes)))
+            .map_err(|error| command_error(&error)),
     }
 }
 
@@ -85,10 +96,14 @@ fn main() -> ExitCode {
         .map_err(|error| (2, error.to_string()))
         .and_then(execute);
     let (code, result) = match outcome {
-        Ok((code, output)) => (
-            code,
-            writeln!(io::stdout().lock(), "{}", output.trim_end_matches('\n')),
-        ),
+        Ok((code, output)) => {
+            let mut stdout = io::stdout().lock();
+            let written = match output {
+                Output::Line(text) => writeln!(stdout, "{}", text.trim_end_matches('\n')),
+                Output::Artifact(bytes) => stdout.write_all(&bytes),
+            };
+            (code, written)
+        }
         Err((code, output)) => (code, writeln!(io::stderr().lock(), "{output}")),
     };
     match result {

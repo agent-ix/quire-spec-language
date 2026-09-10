@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: local file orchestration around the existing native compiler and runtime.
+//! FR-026/027: local file orchestration around the existing native compiler and runtime.
 
+mod compilation;
 mod output;
 mod wire;
 
 pub use output::NativeResult;
 
-use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
-use crate::model_source::{self, ModelSourceError, ModelSourceLimits};
-use crate::native_model::ModelLimits;
-use crate::package::{NativePackage, PackageError, PackageLimits};
+use crate::model_source::ModelSourceError;
+use crate::package::PackageError;
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
 use crate::serde_object::Object;
-use crate::{ByteDigest, Code, Diagnostic, Limits, Source, SourceIdentity};
+use crate::{ByteDigest, Code, Diagnostic, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use std::{
     fs::File,
@@ -28,6 +27,39 @@ const REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_BYTES: usize = 8_388_608;
 const FILES: usize = 64;
 
+/// Selected file category charged by command preflight.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum FileCategory {
+    /// Native program source.
+    Program,
+    /// Rule-model sources.
+    Model,
+    /// Snapshot artifacts.
+    Snapshot,
+    /// Invocation artifacts.
+    Invocation,
+}
+
+impl FileCategory {
+    /// Stable category spelling in native intake diagnostics.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Program => "programs",
+            Self::Model => "models",
+            Self::Snapshot => "snapshots",
+            Self::Invocation => "invocations",
+        }
+    }
+}
+
+struct FileCounts {
+    programs: usize,
+    models: usize,
+    snapshots: usize,
+    invocations: usize,
+}
+
 /// Command intake ceiling that stopped selected-file processing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -35,7 +67,16 @@ pub enum LimitKind {
     /// Per-file or remaining aggregate byte ceiling.
     FileBytes,
     /// Total selected file count.
-    SelectedFiles,
+    SelectedFiles {
+        /// Group that could not be charged.
+        category: FileCategory,
+        /// Files requested by the group.
+        requested: usize,
+        /// Remaining slots before this group.
+        remaining: usize,
+        /// Effective total file ceiling.
+        maximum: usize,
+    },
 }
 
 impl LimitKind {
@@ -43,7 +84,7 @@ impl LimitKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::FileBytes => "file bytes",
-            Self::SelectedFiles => "selected files",
+            Self::SelectedFiles { .. } => "selected files",
         }
     }
 }
@@ -83,7 +124,7 @@ pub enum RunCause {
     #[error("cannot serialize native result: {0}")]
     Output(#[source] serde_json::Error),
     /// Request format was not selected.
-    #[error("unsupported native run format")]
+    #[error("unsupported native command format")]
     Format,
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
@@ -239,6 +280,34 @@ impl Intake<'_> {
 
 /// Read a native-run/1 job and execute it locally with fresh, bounded stage state.
 pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
+    with_request(path, run_bytes)
+}
+
+/// Compile a native-compile/1 source-only job into the exact existing package bytes.
+/// No runtime artifact is read or executed; failures expose no partial artifact.
+pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    with_request(path, |directory, bytes, _digest| {
+        let request: wire::CompileRequest = request(bytes)?;
+        let mut intake = intake(
+            directory,
+            FileCounts {
+                programs: 1,
+                models: request.models.len(),
+                snapshots: 0,
+                invocations: 0,
+            },
+        )?;
+        let models = compilation::models(&mut intake, &request.models)?;
+        let package = compilation::package(&mut intake, &request.program, &models)?;
+        Ok(package.bytes().to_vec())
+    })
+}
+
+// Both commands retain the same exact request identity on any later failure.
+fn with_request<T>(
+    path: &Path,
+    action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,
+) -> std::result::Result<T, Box<RunError>> {
     let bytes = read_file(path, REQUEST_BYTES).map_err(|cause| {
         Box::new(RunError {
             request_digest: None,
@@ -246,7 +315,7 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
         })
     })?;
     let digest = ByteDigest::of(&bytes);
-    run_bytes(path.parent().unwrap_or(Path::new(".")), &bytes, digest).map_err(|cause| {
+    action(path.parent().unwrap_or(Path::new(".")), &bytes, digest).map_err(|cause| {
         Box::new(RunError {
             request_digest: Some(digest),
             cause,
@@ -254,52 +323,51 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
     })
 }
 
-fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
+fn request<T: wire::RequestKind>(bytes: &[u8]) -> Result<T> {
     let Object(envelope): Object<wire::Envelope<'_>> = serde_json::from_slice(bytes)?;
-    if envelope.format != "native-run/1" {
+    if envelope.format != T::FORMAT.as_str() {
         return Err(RunCause::Format);
     }
-    let Object(request): Object<wire::Request> = serde_json::from_str(envelope.request.get())?;
-    let mut remaining_files = FILES - 1; // The selected native program also counts.
-    for count in [
-        request.models.len(),
-        request.snapshots.len(),
-        request.invocations.len(),
+    let Object(request) = serde_json::from_str(envelope.request.get())?;
+    Ok(request)
+}
+
+fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+    let mut remaining_files = FILES;
+    for (category, requested) in [
+        (FileCategory::Program, counts.programs),
+        (FileCategory::Model, counts.models),
+        (FileCategory::Snapshot, counts.snapshots),
+        (FileCategory::Invocation, counts.invocations),
     ] {
         remaining_files = remaining_files
-            .checked_sub(count)
-            .ok_or(RunCause::Limit(LimitKind::SelectedFiles))?;
+            .checked_sub(requested)
+            .ok_or(RunCause::Limit(LimitKind::SelectedFiles {
+                category,
+                requested,
+                remaining: remaining_files,
+                maximum: FILES,
+            }))?;
     }
-    let mut intake = Intake {
+    Ok(Intake {
         directory,
         remaining: TOTAL_BYTES,
-    };
-    let models = request
-        .models
-        .iter()
-        .map(|selected| {
-            let source = intake.source(&selected.source)?;
-            Ok(
-                model_source::read(source, &selected.format, ModelSourceLimits::default())?
-                    .admit(ModelLimits::default())?,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let source = intake.source(&request.program.source)?;
-    let unit = crate::parse_source(source.source().clone(), Limits::default())?;
-    let linked = crate::link_native(unit, &models, crate::LinkLimits::default())?;
-    let clauses = request
-        .program
-        .clauses
-        .iter()
-        .map(wire::Binding::bind)
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    let checked = check(
-        linked,
-        CheckBindings { source, clauses },
-        CheckLimits::default(),
+    })
+}
+
+fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
+    let request: wire::Request = request(bytes)?;
+    let mut intake = intake(
+        directory,
+        FileCounts {
+            programs: 1,
+            models: request.models.len(),
+            snapshots: request.snapshots.len(),
+            invocations: request.invocations.len(),
+        },
     )?;
-    let package = NativePackage::new(checked, PackageLimits::default())?;
+    let models = compilation::models(&mut intake, &request.models)?;
+    let package = compilation::package(&mut intake, &request.program, &models)?;
     let limits = ArtifactLimits::default();
     let snapshots = request
         .snapshots

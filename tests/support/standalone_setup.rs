@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-026: example file setup through the existing public model/compiler/runtime APIs.
+//! FR-026/027: example file setup through the existing public model/compiler/runtime APIs.
 
 // The shared fixture module also serves other runtime test targets.
 #[allow(dead_code)]
 #[path = "runtime_setup.rs"]
-mod runtime;
+pub(crate) mod runtime;
 
 use quire_spec_language::{
     formal_source::FormalSource,
@@ -113,5 +113,12 @@ pub fn write(directory: &Path, case: Case) -> (Value, String) {
     )
     .unwrap();
     let package = NativePackage::new(checked, PackageLimits::default()).unwrap();
+    let compilation = json!({"format":"native-compile/1","request":{
+        "models":job["request"]["models"],"program":job["request"]["program"]}});
+    std::fs::write(
+        directory.join("compile.json"),
+        serde_json::to_vec_pretty(&compilation).unwrap(),
+    )
+    .unwrap();
     (job, package.digest().to_string())
 }

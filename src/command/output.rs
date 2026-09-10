@@ -3,7 +3,7 @@
 
 mod types;
 
-use super::{wire, RunCause, RunError, RunResult};
+use super::{wire, LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
 use crate::runtime::{
@@ -105,8 +105,22 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         RunCause::Format => ("envelope", types::Details::None),
         RunCause::Limit(kind) => (
             "intake",
-            types::Details::Limit {
-                limit: kind.as_str(),
+            match kind {
+                LimitKind::FileBytes => types::Details::FileBytes {
+                    limit: kind.as_str(),
+                },
+                LimitKind::SelectedFiles {
+                    category,
+                    requested,
+                    remaining,
+                    maximum,
+                } => types::Details::FileCount {
+                    limit: kind.as_str(),
+                    category: category.as_str(),
+                    requested: *requested,
+                    remaining: *remaining,
+                    maximum: *maximum,
+                },
             },
         ),
         RunCause::Digest(_) => ("request", types::Details::None),
@@ -136,7 +150,7 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         ),
     };
     serde_json::to_value(types::Failure {
-        format: types::Format::NativeResult,
+        format: types::Format::RunResult,
         request_digest: error.request_digest.map(|value| value.to_string()),
         status: if error.cause.is_incomplete() {
             types::FailureStatus::Incomplete
@@ -226,7 +240,7 @@ pub(super) fn report(
         }
     };
     let document = types::Report {
-        format: types::Format::NativeResult,
+        format: types::Format::RunResult,
         request_digest: digest.to_string(),
         package: types::Package {
             digest: report.package().digest().to_string(),
