@@ -56,7 +56,7 @@ The frontend shall retain ordered operation parameters and explicit effect frame
 The frontend shall return no draft on a decode/lowering failure and no model on
 an admission failure.
 The frontend shall report exhausted source/lowering/admission limits as incomplete.
-After bounded JSON framing, the frontend shall charge each entry group before
+The frontend shall charge each entry group after bounded JSON framing and before
 decoding its values, including each operation's parameters and frame groups.
 
 The existing syntax admits Boolean, scalar, record, enum, optional and bounded
