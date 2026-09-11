@@ -20,7 +20,7 @@ disposition establishes type admission only; exact authored formal sources suppl
 the existing IR rational normalizer. `checking::composed::proofs::discharge`
 then checks supported guarded values through the existing IR prover and exact
 authored `CheckBindings`, preserving actual goals and dependent refusals.
-Ordered-query proof representation, complete family admission and runtime
+Ordered-query proof representation, general family admission and runtime
 validation remain open. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
@@ -32,13 +32,20 @@ canonical encoder and a parser-free reader under
 `read` checks independently selected artifact/source/dependency references,
 actual admitted model exports, typed local handles and structural control edges.
 `encode_candidate` returns transport bytes; its result and reader admission
-remain separate from native compilation authority. See the
+remain separate from native compilation authority. `protocol_artifact::native::admit`
+consumes the actual composed proof report and independently selected source,
+definition, model and producer inputs. It derives a constructor-private
+`FamilyAdmission` from supported complete native families;
+`native::emit` accepts only that authority and returns canonical bytes.
+See the
 [wire contract](docs/compiled-protocol-v1.md) for the exact encoding, identity
 domains and limits. The [numeric component](spec/functional/FR-038-encode-exact-protocol-numbers.md)
 uses tagged canonical decimal strings for signed-64 integers and reduced
-rationals, with typed validation errors. Complete family admission, native
-emission and the real producer-to-B handoff remain open; manually authored wire
-fixtures do not establish those capabilities.
+rationals, with typed validation errors. Real source-to-reader tests exercise
+native predicate, state, temporal and protocol emission. General decision
+proofs, recovery admission, unavailable producer exports and the actual
+producer-to-B handoff remain open; the supported boundary is stated in the
+wire contract.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
