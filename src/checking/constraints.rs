@@ -7,6 +7,7 @@ use quire_contract_ir as ir;
 
 use super::inputs::Populations;
 use super::types::Catalog;
+use super::variables::Variables;
 use super::{
     failure, CheckLimits, CheckUsage, NativeType, Observation, Result, RuntimeRequirements,
 };
@@ -25,72 +26,6 @@ pub(super) struct NodeType<'a> {
 pub(super) struct TypedClause<'a> {
     pub nodes: Vec<NodeType<'a>>,
     pub runtime: RuntimeRequirements<'a>,
-}
-
-struct Variables<'a> {
-    parents: Vec<usize>,
-    ranks: Vec<u8>,
-    known: Vec<Option<NativeType<'a>>>,
-}
-
-impl<'a> Variables<'a> {
-    fn new(count: usize) -> Self {
-        Self {
-            parents: (0..count).collect(),
-            ranks: vec![0; count],
-            known: vec![None; count],
-        }
-    }
-    fn fresh(&mut self) -> usize {
-        let id = self.parents.len();
-        self.parents.push(id);
-        self.ranks.push(0);
-        self.known.push(None);
-        id
-    }
-    fn root(&mut self, mut var: usize) -> usize {
-        while self.parents[var] != var {
-            self.parents[var] = self.parents[self.parents[var]];
-            var = self.parents[var];
-        }
-        var
-    }
-    fn get(&mut self, var: usize) -> Option<NativeType<'a>> {
-        let root = self.root(var);
-        self.known[root].clone()
-    }
-    fn assign(&mut self, var: usize, ty: NativeType<'a>) -> std::result::Result<bool, ()> {
-        let root = self.root(var);
-        match &self.known[root] {
-            Some(prior) if prior != &ty => Err(()),
-            Some(_) => Ok(false),
-            None => {
-                self.known[root] = Some(ty);
-                Ok(true)
-            }
-        }
-    }
-    fn unify(&mut self, left: usize, right: usize) -> std::result::Result<(), ()> {
-        let mut a = self.root(left);
-        let mut b = self.root(right);
-        if a == b {
-            return Ok(());
-        }
-        if matches!((&self.known[a], &self.known[b]), (Some(a), Some(b)) if a != b) {
-            return Err(());
-        }
-        if self.ranks[a] < self.ranks[b] {
-            std::mem::swap(&mut a, &mut b);
-        }
-        self.parents[b] = a;
-        if self.ranks[a] == self.ranks[b] {
-            self.ranks[a] += 1;
-        }
-        if self.known[a].is_none() {
-            self.known[a] = self.known[b].take();
-        }
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -163,13 +98,15 @@ impl<'u, 'a> Solver<'u, 'a> {
     fn unify(&mut self, a: usize, b: usize, at: ExprId) -> Result<()> {
         self.variables
             .unify(a, b)
-            .map_err(|()| self.invalid(at, "native operands require the same exact type"))
+            .map_err(|_conflict| self.invalid(at, "native operands require the same exact type"))
     }
     fn assign(&mut self, var: usize, ty: NativeType<'a>, at: ExprId) -> Result<()> {
         self.variables
             .assign(var, ty)
             .map(|_| ())
-            .map_err(|()| self.invalid(at, "native expression has incompatible contextual types"))
+            .map_err(|_conflict| {
+                self.invalid(at, "native expression has incompatible contextual types")
+            })
     }
     fn boolean(&mut self, id: ExprId) -> Result<()> {
         self.assign(id.0, NativeType::Boolean, id)
@@ -506,7 +443,7 @@ impl<'u, 'a> Solver<'u, 'a> {
     fn resolve_relations(&mut self) -> Result<()> {
         // Direct unions are complete. Each relation watches one root; each root
         // can become known once, so notification work is linear in this table.
-        let mut watchers = vec![Vec::new(); self.variables.parents.len()];
+        let mut watchers = vec![Vec::new(); self.variables.len()];
         for (index, relation) in self.relations.iter().enumerate() {
             watchers[self.variables.root(relation.input())].push(index);
         }
@@ -532,7 +469,7 @@ impl<'u, 'a> Solver<'u, 'a> {
                 )),
             };
             if let Some((var, ty)) = assignment {
-                let changed = self.variables.assign(var, ty).map_err(|()| {
+                let changed = self.variables.assign(var, ty).map_err(|_conflict| {
                     self.invalid(
                         relation.at(),
                         "native wrapper result disagrees with its context",
@@ -560,7 +497,17 @@ impl<'u, 'a> Solver<'u, 'a> {
                     .is_ok_and(|n| n >= integer.minimum() && n <= integer.maximum())
             }),
             ExprKind::Text(text) => {
-                matches!(&ty, NativeType::Scalar { role, .. } if matches!(role.kind, ScalarKind::Text { max_scalars } if text.chars().count() <= usize::try_from(max_scalars).unwrap_or(usize::MAX)))
+                if let NativeType::Scalar { role, .. } = &ty {
+                    match role.kind {
+                        ScalarKind::Text { max_scalars } => {
+                            text.chars().count()
+                                <= usize::try_from(max_scalars).unwrap_or(usize::MAX)
+                        }
+                        ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => false,
+                    }
+                } else {
+                    false
+                }
             }
             ExprKind::Unary {
                 op: UnaryOp::Negate,
