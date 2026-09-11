@@ -300,4 +300,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; delivered producer reviews pass |
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
-| [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Planned full typed protocol artifact, strict reader and real source-to-consumer emission; compiler #40 |
+| [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Typed wire reader implemented; complete family admission and real source-to-consumer emission remain open under #40 |
