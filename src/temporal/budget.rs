@@ -55,15 +55,14 @@ impl Limits {
         macro_rules! clamp {
             ($($field:ident),* $(,)?) => { $(self.$field = self.$field.min(hard.$field);)* };
         }
-        clamp!(
-            positions, valuations, instances, captures, retention, visits, depth, horizon
-        );
+        clamp!(positions, valuations, instances, captures, retention, visits, depth, horizon);
         self
     }
 }
 
-/// Successful cumulative work; `instances`, `depth` and `horizon` retain their
-/// peak. A refused charge never increases usage.
+/// Successful work. `instances`, `retention`, `depth` and `horizon` are peak
+/// counters; `positions`, `valuations`, `captures` and `visits` are cumulative.
+/// A refused charge never increases usage.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Usage {
     pub positions: usize,

@@ -6,6 +6,8 @@
 //! closes or completes another, and no resource stop, missing observation or
 //! unsupported mapping is reported as a Boolean.
 
+use std::collections::BTreeMap;
+
 use super::budget::{Exhaustion, Usage};
 use super::profile::Profile;
 
@@ -14,7 +16,9 @@ use super::profile::Profile;
 pub struct Subject {
     /// Declaration index in the admitted package.
     pub declaration: usize,
-    /// Obligation instance ordinal, or zero for a whole-execution origin.
+    /// Obligation instance ordinal within this evaluation. The instance's
+    /// semantic identity is carried by `Assessment::instance`, not by this
+    /// ordinal, which exists only to locate a stop.
     pub instance: usize,
     /// Temporal arena node under evaluation, when one was selected.
     pub node: Option<usize>,
@@ -84,7 +88,7 @@ pub enum Activation {
         execution: Execution,
     },
     /// One admitted semantic trigger, or a whole-execution origin.
-    Active { instance: usize },
+    Active,
 }
 
 /// The exact premises a result depends on. Two results with different premises
@@ -93,8 +97,16 @@ pub enum Activation {
 pub struct Premises {
     /// Selected temporal profile, retained by identity.
     pub profile: Profile,
+    /// Exact admitted profile revision, distinct from the language edition.
+    pub profile_revision: String,
     /// Exact clock binding name the declaration selected.
     pub clock: String,
+    /// Declared clock parameters the trace asserted. The emitted body carries
+    /// none of them, so they are retained premises: changing one changes result
+    /// identity, but this evaluator does not authenticate them.
+    pub clock_parameters: BTreeMap<String, String>,
+    /// Progress watermark in the profile's clock domain.
+    pub watermark: i64,
     /// Decision-scope progress and closure.
     pub decision_scope: Closure,
     /// Surrounding-execution progress and closure, independent of the above.
@@ -113,14 +125,44 @@ pub struct Premises {
 /// Trace positions whose valuations established the reported truth.
 pub type Support = Vec<usize>;
 
+/// One retained immutable capture record. The public API exposes no mutable
+/// path to this value after activation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Capture {
+    /// Index of the capture's declared initializer handle in the authored list.
+    pub declared: usize,
+    /// The anchor the value was established at.
+    pub anchor: String,
+    /// The established value, retained verbatim.
+    pub value: String,
+}
+
 /// One obligation instance's assessed temporal outcome.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Assessment {
     pub subject: Subject,
+    /// Semantic instance identity: the admitted trigger or execution-origin
+    /// identity this obligation was keyed by. Absent where no instance was
+    /// created.
+    pub instance: Option<String>,
+    /// Receipt identities delivered for this instance, in delivery order. A
+    /// repeated delivery adds provenance here and creates no second instance.
+    pub receipts: Vec<String>,
+    /// Retained immutable captures, in authored source order.
+    pub captures: Vec<Capture>,
+    /// How many times this instance's capture initializers were evaluated.
+    /// Exactly one for an activated instance, across incremental
+    /// re-evaluation, restoration and replay.
+    pub capture_evaluations: usize,
     pub activation: Activation,
     /// Absent when activation carried no obligation to assess.
     pub truth: Option<Truth>,
-    pub basis: Basis,
+    /// Absent where no obligation was assessed for this instance.
+    pub basis: Option<Basis>,
+    /// A required fact inside the decision support that was missing. The
+    /// assessment is still reported so a sibling's established value stays
+    /// inspectable beside it.
+    pub incomplete: Option<Incomplete>,
     /// Exact decision support; a missing fact inside this set makes the truth
     /// unavailable, while a missing fact outside it is a completeness gap that
     /// does not falsify or delay the settled truth.
@@ -134,6 +176,7 @@ pub struct Assessment {
 #[non_exhaustive]
 pub enum Dimension {
     Profile,
+    ProfileRevision,
     Clock,
     SamplePeriod,
     Epoch,
@@ -142,6 +185,7 @@ pub enum Dimension {
     AdmittedOrder,
     Interval,
     Capture,
+    Guard,
     TriggerIdentity,
     Anchor,
     Valuation,
@@ -157,14 +201,20 @@ pub enum Dimension {
 pub enum Refusal {
     /// A trace dimension differs from the declaration's admitted selection.
     #[error("temporal binding mismatch on {dimension:?}")]
-    Binding { dimension: Dimension, subject: Subject },
+    Binding {
+        dimension: Dimension,
+        subject: Subject,
+    },
     /// Order-sensitive operator over positions sharing a clock coordinate with
     /// no admitted order key.
     #[error("order-sensitive temporal operator without an admitted order")]
     Order { subject: Subject },
     /// A capture could not be established at the activation anchor.
     #[error("temporal capture could not be established: {dimension:?}")]
-    Capture { dimension: Dimension, subject: Subject },
+    Capture {
+        dimension: Dimension,
+        subject: Subject,
+    },
     /// A monotonic progress assertion regressed, or a completeness assertion
     /// was revised in conflict, under one binding.
     #[error("temporal progress or completeness contradiction")]
@@ -181,6 +231,20 @@ pub enum Refusal {
 pub struct Incomplete {
     pub dimension: Dimension,
     pub subject: Subject,
+}
+
+/// One obligation's outcome. Activation failing for one instance leaves every
+/// sibling instance inspectable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Obligation {
+    Assessed(Box<Assessment>),
+    /// Activation could not be established for this instance.
+    Unactivated {
+        subject: Subject,
+        /// Semantic instance identity, where one was known before the failure.
+        instance: Option<String>,
+        error: Error,
+    },
 }
 
 /// A single bounded outcome. Exhausted work never returns a partial Boolean.
@@ -216,7 +280,7 @@ impl From<Refusal> for Error {
 /// Effective limits and successful work accompany either outcome.
 #[derive(Clone, Debug)]
 pub struct Report {
-    pub(super) result: Result<Vec<Assessment>, Error>,
+    pub(super) result: Result<Vec<Obligation>, Error>,
     pub(super) limits: super::budget::Limits,
     pub(super) usage: Usage,
 }
@@ -224,7 +288,7 @@ pub struct Report {
 impl Report {
     /// The assessed obligations, or the single bounded outcome that stopped the
     /// evaluation. A stop is never rendered as a Boolean.
-    pub fn result(&self) -> Result<&[Assessment], &Error> {
+    pub fn result(&self) -> Result<&[Obligation], &Error> {
         match &self.result {
             Ok(value) => Ok(value),
             Err(error) => Err(error),
