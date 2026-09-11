@@ -41,6 +41,17 @@ this evaluator diverge, the owned rule governs and this requirement is defective
 | Atoms, constants and boundaries | FR-091-AC-2, FR-092-AC-2; the three profile definition artifacts |
 | Progress, closure and settlement | FR-094 Behavior and FR-094-AC-1..AC-8; FR-091-AC-4 |
 
+### Verification limit recorded on compiler #38
+
+FR-043-AC-10's closing obligation — that every one-axis substitution of a
+settlement basis, truth and closure combination is refused — has no expressible
+verification against this surface. The evaluator computes the basis from the
+evaluated result and the trace's premises; it accepts no caller-supplied basis,
+so there is no substitution a caller can submit and no refusal path to exercise.
+The independence half of AC-10 is verified in full. This limit is recorded rather
+than left as an unbacked claim, and becomes verifiable only if a caller-supplied
+basis ever enters the surface.
+
 ### Open questions referred to agent E
 
 The pointwise reading of `not`, `and`, `or` and `implies` is **not** a
@@ -102,6 +113,14 @@ One caller-constructed observation trace supplying:
   progress assertion, not a second clock authority: it may settle a deadline
   only under the fixed-sample and timestamped-event profiles. Under
   event-position it is retained as a premise and SHALL NOT advance the clock.
+
+Optionally, a caller-held progress ledger retaining what each binding — one
+declaration, one clock binding name, one asserted profile identity — has already
+asserted about its watermark, completeness and decision-scope closure. A caller
+evaluating one declaration repeatedly as observation arrives carries one ledger,
+so a contradicting assertion is refused rather than absorbed. Evaluation without
+a ledger stands on the trace's own assertions alone and detects no contradiction
+across calls.
 
 Caller-lowered ceilings arrive as explicit values under
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). The evaluator
@@ -234,8 +253,12 @@ event-position clock SHALL NOT advance during silence.
 
 If a progress watermark regresses under one binding, or a completeness assertion
 is revised in conflict under one binding, then the evaluator SHALL return a typed
-contradiction refusal, and SHALL NOT roll back progress, restamp closure or
-rewrite an earlier result.
+contradiction refusal naming the contradicted dimension and that binding's clock,
+and SHALL NOT roll back progress, restamp closure or rewrite an earlier result. A
+refused assertion SHALL leave the retained progress unchanged.
+
+Progress asserted under any other declaration, clock binding or profile identity
+is progress for a different binding and SHALL settle nothing here.
 
 The evaluator SHALL accept a settlement basis only with its valid truth and
 closure combination, and SHALL refuse any one-axis substitution.

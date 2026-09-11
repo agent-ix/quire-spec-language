@@ -27,12 +27,23 @@ pub(super) struct Instance {
     pub payload: String,
 }
 
+/// An admitted trigger whose activation could not be established. Its semantic
+/// identity is retained: it is known whenever the trigger was admitted, which
+/// is every case an activation can fail in.
+pub(super) struct Failed {
+    pub identity: String,
+    pub error: Error,
+}
+
+/// One admitted trigger's resolution.
+pub(super) type Resolved = Result<Instance, Failed>;
+
 /// What activation produced: either instances to assess, or one disposition
 /// that carries no obligation.
 pub(super) enum Outcome {
     /// One entry per instance-creating trigger. Activation failing for one
-    /// instance leaves every sibling entry inspectable.
-    Instances(Vec<Result<Instance, Error>>),
+    /// leaves every sibling entry inspectable.
+    Instances(Vec<Resolved>),
     Disposition(Activation),
 }
 
@@ -79,9 +90,8 @@ pub(super) fn resolve(
         Evidence::Admitted => {}
     }
 
-    let mut instances: Vec<Result<Instance, Error>> = Vec::new();
+    let mut instances: Vec<Resolved> = Vec::new();
     let mut created = 0usize;
-    let mut refused_guard: Option<Error> = None;
     for (ordinal, trigger) in trace.triggers.iter().enumerate() {
         work.visit()?;
         work.subject = Subject {
@@ -99,6 +109,7 @@ pub(super) fn resolve(
             // contradiction rather than a silent alias.
             if existing.payload != trigger.payload {
                 return Err(Refusal::Contradiction {
+                    identity: trigger.identity.clone(),
                     subject: work.subject,
                 }
                 .into());
@@ -109,18 +120,21 @@ pub(super) fn resolve(
 
         if shape.guarded && !shape.origin {
             match trigger.guard {
+                // A false guard creates no instance and is not a refusal.
                 Some(false) => continue,
                 Some(true) => {}
                 None => {
-                    // Record and keep going: an unestablished guard on one
-                    // trigger must not erase a healthy sibling instance.
-                    refused_guard.get_or_insert_with(|| {
-                        Incomplete {
+                    // An unestablished guard is not a false guard. It is
+                    // reported against its own trigger, so a healthy sibling
+                    // instance neither erases it nor is erased by it.
+                    instances.push(Err(Failed {
+                        identity: trigger.identity.clone(),
+                        error: Incomplete {
                             dimension: Dimension::Guard,
                             subject: work.subject,
                         }
-                        .into()
-                    });
+                        .into(),
+                    }));
                     continue;
                 }
             }
@@ -142,14 +156,14 @@ pub(super) fn resolve(
             // An exhausted ceiling stops the whole evaluation; an unestablished
             // capture stops only its own instance.
             Err(Error::Exhausted(exhaustion)) => return Err(Error::Exhausted(exhaustion)),
-            Err(error) => instances.push(Err(error)),
+            Err(error) => instances.push(Err(Failed {
+                identity: trigger.identity.clone(),
+                error,
+            })),
         }
     }
 
     if instances.is_empty() {
-        if let Some(error) = refused_guard {
-            return Err(error);
-        }
         return Ok(Outcome::Disposition(disposition(trace)));
     }
     Ok(Outcome::Instances(instances))
@@ -178,6 +192,7 @@ fn establish(
     trace: &Trace,
     work: &mut Work,
 ) -> Result<Vec<Capture>, Error> {
+    work.subject.capture = None;
     if trigger.captures.len() != shape.captures {
         return Err(Incomplete {
             dimension: Dimension::Capture,
@@ -195,6 +210,8 @@ fn establish(
     let mut established = Vec::with_capacity(shape.captures);
     for (declared, input) in trigger.captures.iter().enumerate() {
         work.visit()?;
+        // Name which capture, not only that one failed.
+        work.subject.capture = Some(declared);
         if trace.evicted.iter().any(|evicted| {
             matches!(
                 evicted,
@@ -239,5 +256,6 @@ fn establish(
             }
         }
     }
+    work.subject.capture = None;
     Ok(established)
 }

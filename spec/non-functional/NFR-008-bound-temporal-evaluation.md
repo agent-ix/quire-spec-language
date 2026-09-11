@@ -54,7 +54,8 @@ evaluated.
 
 | Metric | Target | Threshold | Method |
 |--------|--------|-----------|--------|
-| Horizon or history computations accepted after exceeding the checked i64 domain, over the enumerated nested-interval population | 0 | 0 | property-based-testing |
+| Cases wrapping, saturating or narrowing instead of producing a well-formed assessment or a typed stop, over the 384-declaration enumerated boundary population | 0 | 0 | property-based-testing |
+| Compositions provably outside the checked i64 domain that are accepted rather than stopped, over the targeted overflow controls | 0 | 0 | fault-injection |
 | Evaluations emitting `true` or `false` after a forced overflow, work, instance, capture or retention exhaustion, over the enumerated forced-stop population | 0 | 0 | fault-injection |
 | Unsettled obligations whose required retained valuation or capture was removed without an incomplete result naming it, over the generated obligation/eviction-schedule population | 0 | 0 | model-based-test-generation |
 | Results reused after a changed ceiling, profile, clock binding or declared clock parameter, over the enumerated re-evaluation population | 0 | 0 | integration-testing |
@@ -103,12 +104,26 @@ The effective clamped ceilings participate in result identity.
 
 ## Verification
 
-Enumerate the declared overflow population: for each of the eight bounded
-operators, each of the three profiles, and nesting depths one through four, the
+Enumerate the declared boundary population: for each of the eight bounded
+operators, each of the three profiles, nesting depths one through four, and the
 interval bound pairs `(0, i64::MAX)`, `(1, i64::MAX)`, `(i64::MAX - 1, i64::MAX)`
-and `(0, i64::MAX / 2)` evaluated at anchor offsets `0`, `1` and `i64::MAX / 2` —
-`8 x 3 x 4 x 4 x 3 = 1,152` cases, of which the composed-horizon overflow set is
-determined by checked arithmetic rather than by observation. Enumerate
+and `(0, i64::MAX / 2)` — `8 x 3 x 4 x 4 = 384` authored declarations. The root
+of a formula is always evaluated at offset zero, so the offsets that compose are
+the ones nesting introduces; nesting depth is that dimension and no separate
+anchor-offset dimension exists.
+
+The population's obligation is that **no case wraps, saturates or narrows**:
+every outcome is a well-formed assessment or a typed stop naming a charged
+dimension. It carries no per-case expected value, because which composition a
+nested formula performs depends on which offsets its trace reaches — under the
+sparse finite-window profile a nested operator is evaluated only at admitted
+instants — so a per-case oracle would have to reimplement the evaluator and would
+verify nothing.
+
+The overflow obligation itself is discharged by a separate targeted control whose
+expected bound is computed from the authored intervals: a composition reached
+from a nonzero offset that provably leaves the i64 domain must stop on the
+checked-arithmetic dimension and evaluate nothing further. Enumerate
 concurrent trigger instances at the active-instance ceiling minus one, at it,
 and at it plus one. Independently force
 horizon overflow, work exhaustion, active-instance exhaustion, capture exhaustion
