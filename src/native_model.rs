@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-015: explicit native roles over source-bound, validated IR declarations.
+//! FR-015/041: explicit native profiles over source-bound, validated IR declarations.
 
 mod admission;
 mod artifact;
@@ -8,6 +8,50 @@ use quire_contract_ir::{AnchorName, DeclarationEnvironment, SourceSpan, SymbolNa
 use serde::Serialize;
 
 use crate::{formal_source::FormalSource, ByteDigest, Code, Diagnostic, Phase};
+
+/// Explicit producer semantics retained in the immutable native artifact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum NativeModelProfile {
+    /// Historical integer/text model admission.
+    V1,
+    /// Historical roles plus exact IR rational scalar representations.
+    V2,
+}
+
+impl NativeModelProfile {
+    /// Exact artifact profile spelling, independent of source format selection.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => "native-state-model/1",
+            Self::V2 => "native-state-model/2",
+        }
+    }
+}
+
+/// A selector outside the explicitly supported native model profiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("unsupported native model profile")]
+pub struct UnknownNativeModelProfile;
+
+impl TryFrom<&str> for NativeModelProfile {
+    type Error = UnknownNativeModelProfile;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl std::str::FromStr for NativeModelProfile {
+    type Err = UnknownNativeModelProfile;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        [Self::V1, Self::V2]
+            .into_iter()
+            .find(|profile| profile.as_str() == value)
+            .ok_or(UnknownNativeModelProfile)
+    }
+}
 
 /// Complete explicit native-role inventory; no runtime population is included.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -57,6 +101,11 @@ pub enum ScalarSite {
 pub enum ScalarKind {
     /// Bounds and signed/reject policy come from the actual IR sites.
     Integer {
+        /// Exact authored unit, with no conversions.
+        unit: Unit,
+    },
+    /// Exact numerator/denominator bounds come from the actual IR sites; /2 only.
+    Rational {
         /// Exact authored unit, with no conversions.
         unit: Unit,
     },
@@ -165,6 +214,7 @@ impl ModelLimits {
 /// An immutable admitted native model; population membership is still unproved.
 #[derive(Clone, Debug)]
 pub struct NativeModel {
+    profile: NativeModelProfile,
     source: FormalSource,
     environment: DeclarationEnvironment,
     roles: NativeRoles,
@@ -173,7 +223,7 @@ pub struct NativeModel {
 }
 
 impl NativeModel {
-    /// Admit all supplied declarations/roles and bind their exact artifact.
+    /// Admit the historical /1 declarations/roles and bind their exact artifact.
     ///
     /// # Errors
     /// Returns a located invalid-model, unsupported-profile or resource refusal
@@ -181,15 +231,37 @@ impl NativeModel {
     pub fn new(
         source: FormalSource,
         environment: DeclarationEnvironment,
+        roles: NativeRoles,
+        limits: ModelLimits,
+    ) -> Result<Self, Box<Diagnostic>> {
+        Self::new_with_profile(NativeModelProfile::V1, source, environment, roles, limits)
+    }
+
+    /// Admit the explicitly selected profile without inferring it from declarations.
+    ///
+    /// # Errors
+    /// Refuses invalid roles, unsupported representations and exhausted limits
+    /// atomically, retaining the original model source.
+    pub fn new_with_profile(
+        profile: NativeModelProfile,
+        source: FormalSource,
+        environment: DeclarationEnvironment,
         mut roles: NativeRoles,
         limits: ModelLimits,
     ) -> Result<Self, Box<Diagnostic>> {
         let limits = limits.bounded();
-        admission::check(&source, &environment, &roles, limits)?;
+        admission::check(profile, &source, &environment, &roles, limits)?;
         normalize(&mut roles);
-        let artifact = artifact::encode(&source, &environment, &roles, limits.artifact_bytes)?;
+        let artifact = artifact::encode(
+            profile,
+            &source,
+            &environment,
+            &roles,
+            limits.artifact_bytes,
+        )?;
         let digest = ByteDigest::of(&artifact);
         Ok(Self {
+            profile,
             source,
             environment,
             roles,
@@ -198,6 +270,10 @@ impl NativeModel {
         })
     }
 
+    /// Actual admitted profile, also encoded in the artifact bytes.
+    pub fn profile(&self) -> NativeModelProfile {
+        self.profile
+    }
     /// Exact original model source and explicit formal identity.
     pub fn source(&self) -> &FormalSource {
         &self.source
@@ -210,7 +286,7 @@ impl NativeModel {
     pub fn roles(&self) -> &NativeRoles {
         &self.roles
     }
-    /// Exact native-state-model/1 artifact content.
+    /// Exact profile-bearing native model artifact content.
     pub fn artifact_bytes(&self) -> &[u8] {
         &self.artifact
     }
