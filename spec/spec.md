@@ -232,7 +232,7 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 ## 12. Verification Strategy
 
-Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. TC-113 exercises the composed parser; TC-114 exercises source inventory, native references and the combined definition/model/scope binding path. Its remaining type/runtime-role portions, TC-115 and IT-009 remain planned. Name resolution cannot qualify later temporal or choreography evaluation.
+Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. TC-113 exercises the composed parser; TC-114 exercises source inventory, native references and the combined definition/model/scope binding path. TC-115 exercises the declared static components against varied assessment, backend and resource selections, the requested clause/capability report, and the historical package/runner boundary. TC-114's remaining type/runtime-role portions and IT-009 remain planned. Name resolution cannot qualify later temporal or choreography evaluation.
 
 ## 13. Change Management
 
