@@ -282,8 +282,29 @@ impl<'a> ValueBuilder<'a> {
                     work,
                 )?,
             },
-            // NativeModel supplies the object role, but no admitted Population export.
-            NativeType::Reference { .. } => return Err(Error::Unsupported(Unsupported::Export)),
+            NativeType::Reference { model, role } => w::Type::Reference {
+                export: self.export(
+                    model,
+                    w::ExportKind::Reference,
+                    role.reference.as_str(),
+                    None,
+                    work,
+                )?,
+                object: self.export(
+                    model,
+                    w::ExportKind::Object,
+                    role.record.as_str(),
+                    None,
+                    work,
+                )?,
+                universe: self.export(
+                    model,
+                    w::ExportKind::Population,
+                    role.record.as_str(),
+                    Some(role.universe.as_str()),
+                    work,
+                )?,
+            },
             NativeType::Option(_) | NativeType::Sequence { .. } => {
                 return Err(Error::Invalid(Invalid::Type))
             }
@@ -390,6 +411,16 @@ fn model_exports(selected: &AdmittedModel<'_>, work: &mut Work) -> Result<Vec<w:
             w::ExportKind::Scalar,
             role.name.as_str(),
             "",
+            &role.source,
+            work,
+        )?;
+    }
+    for role in &model.roles().objects {
+        insert_export(
+            &mut exports,
+            w::ExportKind::Population,
+            role.record.as_str(),
+            role.universe.as_str(),
             &role.source,
             work,
         )?;

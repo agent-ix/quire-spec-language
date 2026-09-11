@@ -411,6 +411,7 @@ pub(super) fn lower(
             syntax,
             scope,
             exports,
+            models: binding.models().ok_or(Error::Invalid(Invalid::Model))?,
             references: entry.references(),
             profile_uses: &profiles.uses,
             profiles: &profile_indices,

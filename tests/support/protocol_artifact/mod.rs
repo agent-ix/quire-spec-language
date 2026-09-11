@@ -57,7 +57,10 @@ pub fn handle(index: u32) -> w::Handle {
 
 impl Fixture {
     pub fn new() -> Self {
-        Self::with_definitions(&[])
+        let mut fixture = Self::with_definitions(&[]);
+        // Authored input and finish binders retain distinct observations.
+        fixture.population_requirements(&[(0, 0), (0, 2)]);
+        fixture
     }
 
     fn with_definitions(additional: &[R]) -> Self {
@@ -94,6 +97,9 @@ impl Fixture {
             R::TemporalFacet,
             R::Protocol,
             R::Package,
+            R::Range,
+            R::ObservationBinding,
+            R::Progress,
         ];
         registry.extend_from_slice(additional);
         registry.sort_by_key(|definition| definition.identity());
@@ -444,18 +450,32 @@ impl Fixture {
             models: vec![w::Model {
                 artifact: dependency("model"),
                 profile: model.profile().as_str().into(),
-                exports: vec![w::Export {
-                    kind: w::ExportKind::Object,
-                    path: vec!["Node".into()],
-                    locus: w::ForeignLocus {
-                        source: foreign_source.clone(),
-                        formal: foreign_formal.clone(),
-                        span: w::Span {
-                            start: object_span.start as u32,
-                            end: object_span.end as u32,
+                exports: vec![
+                    w::Export {
+                        kind: w::ExportKind::Object,
+                        path: vec!["Node".into()],
+                        locus: w::ForeignLocus {
+                            source: foreign_source.clone(),
+                            formal: foreign_formal.clone(),
+                            span: w::Span {
+                                start: object_span.start as u32,
+                                end: object_span.end as u32,
+                            },
                         },
                     },
-                }],
+                    w::Export {
+                        kind: w::ExportKind::Population,
+                        path: vec!["Node".into(), "nodes".into()],
+                        locus: w::ForeignLocus {
+                            source: foreign_source.clone(),
+                            formal: foreign_formal.clone(),
+                            span: w::Span {
+                                start: object_span.start as u32,
+                                end: object_span.end as u32,
+                            },
+                        },
+                    },
+                ],
                 correspondence: w::Nullable(None),
             }],
             types: vec![w::Type::Object { export: object }, w::Type::Boolean {}],
@@ -499,6 +519,44 @@ impl Fixture {
                             .eq(path.iter().copied())
                 })
                 .unwrap() as u32,
+        }
+    }
+
+    /// Explicit expected Node populations for this fixture's authored input sites.
+    fn population_requirements(&mut self, observations: &[(u32, u32)]) {
+        let population = self.export(w::ExportKind::Population, &["Node", "nodes"]);
+        let observation =
+            self.package.definitions[self.definition(R::ObservationBinding) as usize].artifact;
+        let progress = self.package.definitions[self.definition(R::Progress) as usize].artifact;
+        for &(owner, anchor) in observations {
+            let declaration = &mut self.package.declarations[owner as usize];
+            let required = declaration.anchors[anchor as usize]
+                .binding
+                .0
+                .into_iter()
+                .collect();
+            let population_index = declaration.bindings.len() as u32;
+            for (kind, contract, requires) in [
+                (w::BindingKind::Population, observation, required),
+                (w::BindingKind::Closure, progress, vec![population_index]),
+            ] {
+                declaration.bindings.push(w::BindingRequirement {
+                    name: format!("Node:nodes:{anchor}:{}", kind.as_str()),
+                    kind,
+                    value_type: w::Nullable(Some(0)),
+                    authority: self.package.dependencies[contract as usize]
+                        .artifact
+                        .clone(),
+                    contract,
+                    model: w::Nullable(Some(population.clone())),
+                    subject: w::Subject::Declaration { declaration: owner },
+                    anchor: owned(owner, anchor),
+                    scope: owned(owner, 0),
+                    relation: w::Nullable(None),
+                    requires,
+                    locus: declaration.locus.clone(),
+                });
+            }
         }
     }
 
@@ -884,6 +942,8 @@ impl Fixture {
             .required
             .push("quire.protocol.temporal/1".into());
         fixture.package.features.required.sort();
+        // Protocol input/finish, current state self, and temporal input.
+        fixture.population_requirements(&[(0, 0), (0, 2), (2, 0), (3, 0)]);
         fixture
     }
 
@@ -1354,6 +1414,8 @@ impl Fixture {
                 locus: locus(FINISH),
             }),
         };
+        // Input, all event-record views, and finish retain three observations.
+        fixture.population_requirements(&[(0, 0), (0, 1), (0, 2)]);
         fixture
     }
 

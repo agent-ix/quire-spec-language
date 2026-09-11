@@ -208,10 +208,16 @@ pub(super) fn nominal(
             None,
             work,
         ),
-        NativeType::Reference { .. }
-        | NativeType::Boolean
-        | NativeType::Option(_)
-        | NativeType::Sequence { .. } => Err(Error::Unsupported(Unsupported::Export)),
+        NativeType::Reference { model, role } => builder.export(
+            model,
+            w::ExportKind::Reference,
+            role.reference.as_str(),
+            None,
+            work,
+        ),
+        NativeType::Boolean | NativeType::Option(_) | NativeType::Sequence { .. } => {
+            Err(Error::Unsupported(Unsupported::Export))
+        }
     }
 }
 pub(super) fn binder_type<'a, 'm>(
@@ -574,7 +580,76 @@ pub(super) fn body(
             }
         }
     };
+    for need in super::populations::collect(context, work)? {
+        work.locus = Some(layout.locus(need.span)?);
+        let model = builder.export(
+            need.model,
+            w::ExportKind::Population,
+            need.role.record.as_str(),
+            Some(need.role.universe.as_str()),
+            work,
+        )?;
+        let value_type = builder.ty(
+            &NativeType::Object {
+                model: need.model,
+                role: need.role,
+            },
+            work,
+        )?;
+        let anchor = layout.anchor(need.anchor)?.index;
+        let prerequisite = runtime.anchors[anchor as usize].binding.0;
+        let mut requires = Vec::new();
+        if let Some(prerequisite) = prerequisite {
+            work.charge(Dimension::Entries, 1)?;
+            requires.push(prerequisite);
+        }
+        let name = population_name("population", &model, anchor, work)?;
+        let population = runtime.add(
+            Requirement {
+                name: &name,
+                kind: w::BindingKind::Population,
+                selected: R::ObservationBinding,
+                value_type: Some(value_type),
+                model: Some(model.clone()),
+                subject: runtime.declaration_subject(),
+                anchor: need.anchor,
+                requires,
+                span: need.span,
+            },
+            work,
+        )?;
+        let name = population_name("population-closure", &model, anchor, work)?;
+        work.charge(Dimension::Entries, 1)?;
+        runtime.add(
+            Requirement {
+                name: &name,
+                kind: w::BindingKind::Closure,
+                selected: R::Progress,
+                value_type: Some(value_type),
+                model: Some(model),
+                subject: runtime.declaration_subject(),
+                anchor: need.anchor,
+                requires: vec![population],
+                span: need.span,
+            },
+            work,
+        )?;
+    }
     Ok((runtime.anchors, runtime.bindings, body))
+}
+
+fn population_name(
+    prefix: &str,
+    model: &w::ExportRef,
+    anchor: u32,
+    work: &mut Work,
+) -> Result<String, Error> {
+    let digits = |value: u32| value.checked_ilog10().map_or(1, |power| power as usize + 1);
+    work.bytes(prefix.len() + 3 + digits(model.model) + digits(model.export) + digits(anchor))?;
+    Ok(format!(
+        "{prefix}:{}:{}:{anchor}",
+        model.model, model.export
+    ))
 }
 pub(super) fn operation_export(
     context: &Declaration<'_, '_>,
