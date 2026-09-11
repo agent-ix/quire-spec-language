@@ -1,0 +1,412 @@
+# Compiled protocol package wire v1
+
+Normative data contract owned by [FR-042](../spec/functional/FR-042-publish-compiled-protocol-artifacts.md).
+This is generated data, not another editable formal language. The source grammar,
+selected definitions and producer contracts own the meanings represented here.
+
+## Encoding and external selection
+
+| Identity | Exact value |
+| --- | --- |
+| Payload wire | `quire.compiled-protocol/1` |
+| Media type | `application/vnd.quire.compiled-protocol+json;version=1` |
+| Schema/type | `quire.compiled-protocol.schema/1` / `CompiledProtocolPackage` |
+| Byte encoding | `quire.protocol.compact-json/1` |
+| Native numbers | `quire.protocol.numeric/1`, the closed [FR-038](../spec/functional/FR-038-encode-exact-protocol-numbers.md) objects |
+
+The encoding is UTF-8 JSON without BOM, whitespace between tokens or a final
+newline. Object members occur in the order specified below. Strings use the
+existing `serde_json` 1.0.151 `CompactFormatter` spelling: quote/backslash and
+backspace/tab/newline/form-feed/carriage-return use their short escapes; other
+U+0000–001F scalars use lowercase `\u00xx`; other Unicode scalars, including `/`,
+remain literal UTF-8. There is no Unicode normalization. No float conversion or
+JSON-number semantic value participates. A reader re-encodes admitted fields
+through the bounded Serde writer and compares every byte with the offered bytes.
+Alternate whitespace, escaping, member order and numeric spelling refuse.
+
+The existing `ix.artifact-ref/3-draft` reference is **external** to these bytes.
+Its `kind` is `linked-package`, `wire` is `{identity:"quire.compiled-protocol",version:"1"}`,
+and `digest` is `sha256:` plus lowercase SHA-256 of the complete canonical payload.
+The payload contains no digest of itself. This is its one artifact-content binding;
+there is no additional payload hash, semantic hash or result-JCS hash. The outer
+composed-package `SemanticRef` retains its selected package definition, exactly
+the declaration-family features below and `canonicalIdentity:null` under
+[standard FR-130](ix://agent-ix/quire-specification/FR-130).
+
+Reader input includes that independently selected expected artifact reference,
+the accepted contract/baseline and producer selections, and exact supplied
+dependency bytes/admitted producer views. The artifact cannot designate its own
+acceptance, trusted seal or replacement inventory. Recomputing a modified
+payload's seal does not change the expected reference. Authorizing a different
+external reference is a new selection; digest integrity alone does not prove
+authenticity or equivalence to native source. That correspondence comes from the
+real compiler's admitted input/output path, not parser-free reconstruction.
+
+## Closed records and ordering
+
+The notation below specifies JSON data shapes, not executable helper code.
+`{field:Type,...}` lists **all required members in canonical order**; no ellipsis
+is an actual field allowance. `T?` means `T` or explicit JSON `null`, never omission.
+`[T]` is an array. A tagged alternative `{kind:"tag",...}` is one closed object.
+Unknown, duplicate or missing fields/tags and positional-array substitutes refuse.
+
+`String` is a Unicode scalar string, possibly empty; `Name` is nonempty.
+Names/identity components are at most 4,096 UTF-8 bytes; text/source content is
+bounded by the reader's content limits. `U` is a bare JSON integer in 0..1,048,576,
+with no sign, exponent, fraction or leading zero. It is used only for structure,
+source coordinates and array indices. Native values and authored bounds use
+`Number`; `Integer` is its integer alternative. Counts such as repeat maxima,
+delivery bounds, type maxima and temporal intervals are authored bounds, not `U`.
+Revisions remain names in their explicit revision namespace, including exact
+canonical decimal strings where the selected producer requires that spelling.
+
+```text
+Integer = {kind:"integer",decimal:String}
+Number = Integer | {kind:"rational",numerator:String,denominator:String}
+Revision = {namespace:Name,value:Name}
+Wire = {identity:Name,version:Name}
+Ref = {refVersion:"ix.artifact-ref/3-draft",kind:ArtifactKind,authority:Name,
+       identity:Name,revision:Revision,digest:ByteDigest,wire:Wire}
+Formal = {document:Name,revision:Revision}
+Span = {start:U,end:U}
+Locus = {source:U,span:Span}
+ForeignLocus = {source:Ref,formal:Formal,span:Span}
+Handle = {declaration:U,index:U}
+SelectedDigest = {domain:Name,version:Name,algorithm:Name,value:Name}
+Producer = {implementation:Name,revision:Revision,binary:Ref}
+Dependency = {artifact:Ref,requires:[U]}
+Definition = {identity:Name,revision:Revision,artifact:U,rules:[U],requires:[U]}
+ProducerObject = {interface:U,kind:Name,authority:Name,identity:Name,
+                  revision:Revision,digest:SelectedDigest}
+Correspondence = {producer:ProducerObject,native:U,relation:U,exports:[U]}
+Export = {kind:ExportKind,path:[Name],locus:ForeignLocus}
+Model = {artifact:U,profile:Name,exports:[Export],correspondence:Correspondence?}
+Source = {artifact:Ref,native:{identity:Name,revision:Name},path:Name,formal:Formal,text:String}
+Features = {declarations:[Name],required:[Name],optional:[Name]}
+CompiledProtocolPackage = {
+ wire:"quire.compiled-protocol/1",media:"application/vnd.quire.compiled-protocol+json;version=1",
+ schema:"quire.compiled-protocol.schema/1",type:"CompiledProtocolPackage",
+ encoding:"quire.protocol.compact-json/1",numeric:"quire.protocol.numeric/1",
+ contract:Ref,producer:Producer,baseline:Ref,language:{identity:"ix:native",edition:Name},
+ package_definition:U,features:Features,sources:[Source],dependencies:[Dependency],
+ definitions:[Definition],models:[Model],types:[Type],declarations:[Declaration]
+}
+```
+
+`ByteDigest` and `ArtifactKind` use the exact shared-reference schema; no new
+artifact kind is added. The external package reference is not copied inside the
+payload. `contract`, `baseline`, producer `binary` and each dependency must match
+their individually expected role/reference, including wire and revision namespace.
+Definition artifact/rule indices select source-kind dependency bytes; model
+artifacts select model-package-kind dependencies. An export kind is exactly
+`scalar|enum|variant|record|field|object|reference|operation|relationship|population|component|endpoint`.
+Paths and source loci must identify that kind in the admitted producer view;
+unsupported authoritative exports prevent emission/admission of their dependents.
+The current native model adapter's absent relationship/population exports are
+not supplied by declaring these tags. A producer correspondence, when required
+by its interface, is mandatory and verified against its selected relation
+artifact; `null` is allowed only for a directly admitted native model without
+such a producer-domain mapping.
+
+`package_definition` and every `profile` index `definitions`; `Definition.requires`
+indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index
+dependencies. `Model.artifact`, `ProducerObject.interface`, `Correspondence.native`
+and `Correspondence.relation` also index dependencies; correspondence `native`
+equals that model's artifact index and its `exports` index that model's exports.
+Interface/relation bytes must admit that exact producer object, native model and
+export correspondence in their own domains; absent verification is unsupported.
+Dependency and definition closure is acyclic and complete under the selected
+package contract. Source/dependency revision or digest values are copied exactly
+from the selected producer reference, never regenerated in the artifact domain.
+
+Native source labels, external source-artifact revision and the explicitly
+authored formal document/revision remain separate. Source bytes must hash to
+the source artifact digest; spans use those original decoded UTF-8 bytes and
+must be scalar-boundary aligned. Declaration loci are disjoint in each source;
+all local loci lie inside their owning declaration. Foreign model loci are
+validated against their separately supplied exact source bytes. No display
+path, occurrence ordinal or equal name establishes authority.
+
+Dependencies sort by `(kind,authority,identity,revision.namespace,revision.value,wire.identity,wire.version)`;
+sources sort by their artifact key; definitions by `(identity,revision.namespace,revision.value)`;
+models by dependency index; exports by `(kind,path)`; declarations by
+`(source index,span.start,span.end)`. Comparisons use lexicographic UTF-8 byte
+order. Equal immutable keys with different content refuse, as do repeated
+entries even when equal. Types are first-occurrence indexed during this
+declaration/value order, sharing only exactly equal resolved types. Declaration
+local tables follow original source occurrence order, using original arena
+index only to break an equal-span tie. Every index is rewritten consistently
+after ordering. Semantic arrays preserve authored order: arguments, sequence
+children, captures, query results and path segments. Set-valued features,
+definition/rule/dependency references and joins sort uniquely by their typed key.
+Sorting a set never inserts causality or reorders an executable sequence.
+
+`features.declarations` is exactly the applicable set
+`declaration.predicate`, `family.state`, `family.temporal`, `family.protocol`.
+`features.required` always contains `quire.protocol.numeric/1` and
+`quire.protocol.bindings/1`, adds `quire.protocol.values/1` for value nodes,
+`quire.protocol.temporal/1` for temporal nodes and `quire.protocol.control/1`
+for protocol control. These are closed wire capability names, separate from
+selected semantic definitions and backend assessment capabilities. This version
+has no optional feature: `optional` is `[]`; unknown entries refuse as unsupported
+features. The package includes at least one protocol and the complete declarations
+of its explicit source inventory; a filtered or partially admitted inventory
+cannot use its full-package interpretation.
+
+## Types, owners and pure values
+
+`D` is a declaration index. `V/B/A/S/T/C/R/H/K` are `Handle` values indexing that
+declaration's values/binders/anchors/scopes/temporal nodes/controls/roles/channels/
+compensations respectively. Their wire shapes coincide; their expected kinds and
+declaration owners do not. `X={model:U,export:U}` selects a model export;
+`Q` is an index in the global types table. Values, lexical locals and controls
+cannot point into another declaration. Cross-declaration calls/requirements use
+`D` and explicit ordered arguments; no foreign `ExprId` becomes a local handle.
+
+```text
+Type = {kind:"boolean"}
+ | {kind:"scalar",export:X,unit:Name?,representation:Representation}
+ | {kind:"enum",export:X} | {kind:"record",export:X}
+ | {kind:"object",export:X} | {kind:"reference",export:X,object:X,universe:X}
+ | {kind:"option",value:Q} | {kind:"sequence",element:Q,maximum:Integer}
+Representation = {kind:"integer",minimum:Integer,maximum:Integer}
+ | {kind:"rational",numerator_minimum:Integer,numerator_maximum:Integer,maximum_denominator:Integer}
+ | {kind:"text",maximum_scalars:Integer}
+Scope = {parent:S?,locus:Locus}
+Anchor = {kind:AnchorKind,owner:Handle?,binding:U?,locus:Locus}
+Binder = {name:Name,kind:BinderKind,type:Q,scope:S,anchor:A,initializer:V?,locus:Locus}
+Origin = {kind:"independent"} | {kind:"anchor",anchor:A} | {kind:"selected",value:V}
+Value = {original_expression:U,locus:Locus,operator_locus:Locus?,type:Q,
+         profile:U,scope:S,anchor:A,origin:Origin,operation:ValueOperation}
+ValueOperation = {kind:"boolean",value:Boolean} | {kind:"number",value:Number}
+ | {kind:"text",value:String} | {kind:"enum",variant:X} | {kind:"read",binder:B}
+ | {kind:"group",value:V} | {kind:"field",base:V,field:X}
+ | {kind:"unary",operator:Unary,value:V}
+ | {kind:"binary",operator:Binary,left:V,right:V}
+ | {kind:"if",condition:V,then_value:V,else_value:V}
+ | {kind:"let",binder:B,initializer:V,body:V}
+ | {kind:"pre",value:V,anchor:A}
+ | {kind:"call",predicate:D,arguments:[V]}
+ | {kind:"size",collection:V,result:Q} | {kind:"contains",collection:V,member:V}
+ | {kind:"query",operator:Query,binder:B,collection:V,body:V,result:Q}
+ | {kind:"parent",reference:V,edge:X,universe:X}
+ | {kind:"reaches",start:V,target:V,edge:X,universe:X}
+```
+
+`Boolean` is JSON true/false. `Unary` is `not|negate|present|value|deref`;
+`Binary` is `implies|or|and|equal|not_equal|less|less_equal|greater|greater_equal|add|subtract|multiply|rational_divide`;
+`Query` is `forall|exists|filter|map|count|sum`. Integer division/remainder/modulo
+have no admitted variant. Their recognized source syntax still receives its
+source-profile refusal. A type's representation and exact unit must equal the
+selected export's actual IR/native representation; equal bounds never merge
+nominal types. Integer bounds are signed-64 and ordered; rational denominator
+maximum is 1..i64::MAX; sequence maximum retains its admitted producer bound.
+Each number also satisfies its node/field-specific type domain.
+
+Each declaration has one root lexical scope; every other scope reaches that
+root through an acyclic parent chain. Binder initializers and value child/origin
+references form an acyclic evaluation graph. Reads select a visible binder at
+that occurrence and retain its initializer's immutable anchor. Wrapper-type
+indices are acyclic; nominal recursion remains an explicit producer export,
+not a cyclic wrapper table. All handles must be in range and match their field's
+kind and declaration owner, including unused entries.
+
+`AnchorKind` is `predicate|current|invocation_input|invocation_pre|invocation_post|activation|temporal_instant|protocol_instant|fifo|registration|compensation_activation|retry|recovery|control|finish`.
+Owner is null only for declaration-level anchors; otherwise it points to the
+owning channel, compensation or control as required by that kind. Binding names
+the applicable runtime requirement, not a concrete observation. `BinderKind` is
+`parameter|input|trigger|capture|let|query|self|result|invocation_parameter|event|finish|fifo|forward_effect|compensation_trigger|earlier_attempt|later_attempt|recovery`.
+Scopes, initialization order, visibility and immutable origins must agree with
+actual binding. `let` initializes once; `if` and Boolean operators retain lazy
+evaluation. `pre` changes eligible reads inside its operand without replaying an
+outer initializer. Queries preserve ordered duplicates, scoped binders and
+sum's prefix obligations. This value graph is a faithful checked native
+evaluation graph; it is neither serialized `TypeReport` nor the prover's
+symbolic Boolean witnesses/abstracted object inputs.
+
+## Declarations, protocol control and recovery
+
+```text
+Declaration = {name:Name,locus:Locus,requirement:{package:Name,identity:Name,revision:Revision},
+ clause:Name,execution:Execution,profile:U,requires:[D],scopes:[Scope],anchors:[Anchor],
+ binders:[Binder],values:[Value],temporal:[Temporal],bindings:[BindingRequirement],body:Body}
+Execution = {kind:"initialization",name:Name} | {kind:"handler",name:Name}
+ | {kind:"pre",operation:X} | {kind:"post",operation:X}
+Body = {kind:"predicate",parameters:[B],result:Q,root:V}
+ | {kind:"state",clause_kind:"invariant"|"pre"|"post",context:X,operation:X?,root:V}
+ | {kind:"temporal",input:B,clock:U,activation:Activation,captures:[B],root:T}
+ | {kind:"protocol",input:B,activation:Activation,captures:[B],roles:[Role],
+    relationships:[Relationship],channels:[Channel],compensations:[Compensation],
+    temporal_requirements:[D],controls:[Control],causal_edges:[CausalEdge],run:C,finish:Finish}
+Activation = {kind:"origin",anchor:A} | {kind:"each",trigger:B,guard:V?,anchor:A}
+Interval = {lower:Integer,upper:Integer}
+Temporal = {original_node:U,locus:Locus,operation:TemporalOperation}
+TemporalOperation = {kind:"constant",value:Boolean} | {kind:"holds",value:V}
+ | {kind:"group",value:T} | {kind:"unary",operator:TemporalUnary,interval:Interval?,value:T}
+ | {kind:"binary",operator:TemporalBinary,interval:Interval?,left:T,right:T}
+Role = {name:Name,model:X,instance:U,locus:Locus}
+Relationship = {name:Name,model:X,binding:U,locus:Locus}
+Channel = {name:Name,from:R,to:R,message_type:Q,ordering:Ordering,delivery:Interval,
+           message:U,send:U,receive:U,delivery_instance:U,locus:Locus}
+Ordering = {kind:"unordered"} | {kind:"fifo",binder:B,key:V,anchor:A}
+Control = {name:Name,original_node:U,locus:Locus,operation:ControlOperation}
+ControlOperation = {kind:"sequence",children:[C]}
+ | {kind:"choice",owner:R,visible:[V],cases:[{label:Name,guard:V,body:C,locus:Locus}]}
+ | {kind:"parallel",branches:[{label:Name,body:C,locus:Locus}],join:[U]}
+ | {kind:"repeat",owner:R,visible:[V],maximum:Integer,guard:V,body:C,exhausted:C}
+ | {kind:"await",after:AwaitAnchor,profile:U,clock:U,within:Interval,event:C,then_body:C,timeout:C}
+ | {kind:"event",event:Event,binder:B,related:[Related],constraint:V}
+ | {kind:"check",profile:U,value:V}
+ | {kind:"commit",owner:R,binder:B,constraint:V,instance:U}
+Event = {kind:"send",channel:H} | {kind:"receive",channel:H,send:C}
+ | {kind:"attempt",owner:R,operation:X,contracts:[D],instance:U}
+ | {kind:"effect",attempt:C,instance:U}
+ | {kind:"event",owner:R,compensation:K?,instance:U}
+Related = {relationship:U,from:V,to:V,locus:Locus}
+AwaitAnchor = {kind:"event",node:C} | {kind:"compensation",compensation:K}
+CausalEdge = {kind:EdgeKind,owner:C,from:{node:C,port:Port},to:{node:C,port:Port},maximum:Integer?}
+Finish = {name:Name,binder:B,constraint:V,closure:U,locus:Locus}
+Compensation = {name:Name,forward_effect:C,forward:B,owner:R,operation:X,profile:U,
+ clock:U,registration_anchor:A,registration_instance:U,registration_captures:[B],
+ trigger:B,guard:V,activation_anchor:A,activation_captures:[B],within:Interval,
+ maximum_attempts:Integer,attempt_type:Q,earlier:B,later:B,retry:V,attempt_instance:U,
+ effect_instance:U,commit:C?,recovery:B,recover:V,recovery_bindings:[U],locus:Locus}
+BindingRequirement = {name:Name,kind:BindingKind,type:Q?,authority:Ref,contract:U,
+ model:X?,subject:Subject,anchor:A,scope:S,relation:U?,requires:[U],locus:Locus}
+Subject = {kind:"declaration",declaration:D} | {kind:"role",role:R}
+ | {kind:"channel",channel:H} | {kind:"control",control:C} | {kind:"compensation",compensation:K}
+```
+
+`TemporalUnary` is `not|eventually|always|once|historically`;
+`TemporalBinary` is `implies|or|and|until|release|since|triggered`.
+Boolean temporal operators have null intervals; bounded operators require
+ordered nonnegative intervals under the selected clock/range contract.
+Profile fields index exact definitions and preserve nested check/await/recovery
+selections. Operation references select actual operation exports and their
+authored execution anchors; attempt contracts select only matching pre/post
+declarations. Predicate roots and every guard/constraint/retry/recovery root
+are Boolean and total; required calls retain the callee's own profile/owner.
+
+`Declaration.requires` is exactly its direct predicate, operation-contract and
+temporal declaration dependencies, including unused syntax. Its transitive
+semantic dependency graph is acyclic; bounded control progress is not an edge
+in that graph. Calls preserve exact arity, ordered argument types and the
+callee's independently admitted profile. `Related.relationship` indexes the
+owning protocol's relationships; parallel `join` indexes its authored branches.
+
+`Port` is `enter|exit`; `EdgeKind` is `sequence|branch|join|repeat_progress|await_success|await_timeout`.
+Edges must equal the relation derived from the closed control structures, not an
+arbitrary graph supplied by a producer. `maximum` is non-null only on
+`repeat_progress`, equals its owner repeat's nonnegative maximum and advances that
+repeat's iteration counter once before re-entry. Removing those explicitly
+bounded progress edges leaves an acyclic graph; finite unfolding is acyclic.
+Nesting is finite and structural children have one owner. Parallel ordering is
+per branch, with `join` indexing exactly the authored branch completion set;
+array order, timestamps and FIFO on another channel add no edges. Await targets,
+receive/send pairs, effects/attempts and compensation/commit references are
+kind-checked. Choice ownership, branch labels, non-overlap and decision-visible
+facts are family-admission obligations, not assumed from graph shape.
+Choice guards are also collectively exhaustive over admitted decision inputs.
+At each repeat decision, false exits normally; true below the maximum enters
+the body, and true at the maximum enters the exhausted child once. Maximum zero
+therefore admits only the normal/exhausted paths, without entering the body.
+Every continuing body path needs observable progress; checks or empty groups
+alone do not establish it. All parallel branches appear in `join` exactly once.
+An await anchor selects an exact preceding event or a compensation activation,
+never a group or guessed latest occurrence. Its matched child is receive, effect
+or domain event only. The upper endpoint is inclusive; timeout requires the
+selected progress/completeness authority, not a false constraint or absent datum.
+The finish constraint is reached after the run root exits and the selected
+join/completion requirements close; a source declaration position is no substitute
+for that termination dependency.
+
+The exact structural edge expansion below uses `in/out` for enter/exit ports;
+the edge owner is the expanded control. Edges are alternatives selected by that
+owner's admitted guard/deadline rule, except parallel joins which require all
+branches. They do not assert that mutually exclusive branches both occurred.
+
+| Control | Required edges (kind) |
+| --- | --- |
+| Event/check/commit; empty sequence | in → out (`sequence`) |
+| Nonempty sequence | in → first.in; each child.out → successor.in; last.out → out (`sequence`) |
+| Choice | in → each case.in (`branch`); each case.out → out (`join`) |
+| Parallel | in → each branch.in (`branch`); every branch.out → out (`join`) |
+| Repeat | in → out, body.in or exhausted.in (`branch`); body.out → in (`repeat_progress`, maximum N); exhausted.out → out (`join`) |
+| Await | in → match.in and match.out → then.in (`await_success`); in → timeout.in (`await_timeout`); then.out and timeout.out → out (`join`) |
+
+An event await anchor additionally contributes anchor.out → await.in (`sequence`);
+a compensation anchor retains its activation-binding dependency instead. A
+receive contributes send.out → receive.in and an effect contributes attempt.out
+→ effect.in (`sequence`, owner the dependent event). Other registration/commit
+dependencies remain in their typed compensation/binding records. The edge array
+sorts uniquely by `(owner,kind,from.node,from.port,to.node,to.port)`; no other edge
+is admitted. A repeat's progress edge is unreachable when N=0. The reader checks
+these finite edges without unrolling runtime iteration identities.
+
+`BindingKind` is `workflow_instance|role_instance|participant|component|endpoint|message|send|receive|delivery|attempt|effect|compensation_registration|compensation_attempt|compensation_effect|commit|snapshot|invocation|population|relationship|clock|observation|progress|closure|capture`.
+Each is a typed **requirement for a later binding**, not a runtime instance or
+observation embedded in a static package. `U` fields named instance, clock,
+closure, binding or recovery_bindings index the owning declaration's binding
+requirements. Dependency/contract/relation indices select the appropriate
+immutable external contract bytes; relationship indices select the owning
+protocol's relationship table. Requirements retain exact producer authority,
+role, type, anchor, scope and closure/completeness dependencies. B/D/F's admitted
+request/producer interfaces supply actual instance identities later. Two
+workflows may bind one provider while their role/message/attempt/effect subjects
+remain distinct. A delivery never becomes an effect, and a component/endpoint
+never becomes a role instance through equal spelling or hash bits.
+
+`BindingRequirement.requires` selects bindings of that same declaration, and
+its `contract`/non-null `relation` select dependencies. Binding requirements are
+acyclic. `type` and `model` may be null only when the selected binding contract
+defines a non-value/non-model role, such as a clock or closure authority; null
+cannot erase a required instance type or authoritative model export.
+
+Compensation registers only after the paired successful effect, once per effect
+identity. Registration and activation captures have separate anchors; retries
+have distinct attempt identities under the same obligation. Null commit means
+the authored `never` boundary, not unknown commit input. A non-null commit
+forbids the selected subsequent registration/recovery. Recovery retains the
+actual predicate, target captures and required population/relationship authorities;
+operation success alone is not restoration. Full and partial recovery therefore
+remain different authored relations. Missing future observations are not static
+admission failures; missing required static binding contracts are.
+
+## Bounded read and emission
+
+The Rust reader accepts bytes plus an explicit expected selection. It hashes
+the bounded offered bytes against the external seal, decodes the closed shape,
+checks header/accepted identities and dependency bytes before interpreting their
+dependent records, validates numbers and table/reference/scope/type/control
+invariants, then performs bounded canonical byte comparison. Source text is
+hashed/indexed for original loci; it is never parsed. External producer digests
+are verified only by their selected domain adapter. Profile/rule closure, source
+inventory and every retained dependency must match the expected inputs exactly.
+
+The following independent dimensions each use the listed default and hard maximum:
+8 MiB payload/output bytes;
+1 MiB per source; 8 MiB decoded source/string content; 10,000 sources/dependencies/
+definitions/models/declarations each; 100,000 aggregate table entries; 1,000,000
+reference/edge/type visits; 64 MiB total copied, hashed, indexed or compared byte
+work; depth 64. Each created array entry/object member charges an entry before
+allocation; each subsequent reference/edge/type visit charges again. Content decoding,
+hashing, indexing, reference validation and canonical writing charge before work.
+Bounded-repeat graphs are not eagerly unfolded. Lowered limits, including zero,
+are honored; overflow or the next unaffordable step yields typed incomplete with
+dimension, prior usage, requested work and available locus, never an admitted
+partial package. Each report retains effective limits and successful usage in
+the versioned `quire.protocol.artifact-work/1` accounting contract. Input,
+dependency, decode, link and canonical passes each use fresh traversal state;
+their successful work accumulates in this invocation's counters, and retry
+starts a new invocation. Diagnostic records count as entries as well.
+
+Production emission consumes the actual fully admitted family graph, original
+source/formal correspondence and exact definitions/models/runtime requirements.
+It does not accept freely constructed wire records, type reports or proof graphs
+as that authority. The emitter independently checks references and exact model/
+type/profile correspondence while deriving the records, then uses the existing
+Rust numeric codec, bounded Serde writer and SHA-256 machinery. Failure leaves
+the partial compilation report intact but returns no accepted full-package
+artifact or external seal. This contract's new constructors/readers and full
+family graph remain implementation obligations; current component APIs do not
+already provide them.
