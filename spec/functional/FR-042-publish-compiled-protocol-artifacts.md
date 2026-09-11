@@ -103,6 +103,16 @@ source order, field spelling or a shared provider cannot replace this authority.
 Attempt ownership uses the resolved role identity, not equality of role model
 types. An attempt observation does not prove operation success or a business
 effect; operation and contract admission remain independent prerequisites.
+The compiler SHALL retain one attempt identity per bounded occurrence of a
+forward attempt authored inside a bounded repeat, carrying its enclosing
+iteration ordinal.
+The compiler SHALL keep that attempt identity distinct from the transport
+delivery that carried it and from the declared business effect.
+The compiler SHALL NOT mint a further successful effect when an attempt repeats
+under an unchanged effect identity.
+The compiler SHALL NOT let a retried attempt inherit an earlier occurrence's
+effect. Attempt count, delivery count and effect count are independent
+cardinalities.
 The compiler SHALL preserve a compensation-qualified domain event's exact
 registration prerequisite independently of its Boolean atom. Reading an event
 field establishes no registration, activation, operation success, effect, send
@@ -116,9 +126,26 @@ Composite visible-expression determinacy remains `Unsupported::FamilyProof`;
 listing `a and b` cannot grant individual visibility to `a` and `b`.
 The selected guard fragment admits Boolean literals/fields, grouping, `not`,
 `and`, `or`, `implies`, Boolean `=`/`!=`, Boolean conditionals and immutable `let`
-aliases. Arbitrary inputs, numeric comparisons, queries, callee-body expansion
-and dynamic repeat guards remain unsupported family prerequisites, including
-when present in an unused operand.
+aliases. Arbitrary inputs, numeric comparisons, queries and callee-body expansion
+remain unsupported family prerequisites, including when present in an unused
+operand.
+
+A bounded repeat's guard MAY be an observed Boolean over that same selected
+fragment. The compiler SHALL apply the observed-Boolean atom, ownership and
+`visible(...)` obligations above to a repeat exactly as to a choice: each atom
+derives from the exact receive, own-attempt or domain-event binder, admitted
+Boolean field/export and original anchor; the actual channel receiver, attempt
+role or domain-event role must equal the repeat owner declared by `by`; and every
+guard atom must appear in that repeat's validated atom set. A foreign-role or
+unlisted atom returns `Unsupported::FamilyProof`. Equal role model types do not
+grant repeat ownership. The authored finite maximum and the explicit `exhausted`
+branch remain prerequisites of an observed guard, not substitutes for it.
+
+A repeat's guard is evaluated at each bound decision instant under the repeat's
+own anchor. The compiler SHALL NOT admit a guard atom that is established only
+inside the repeat body: the body's bindings do not flow back to the decision, and
+a guard depending on them has no causal availability at that instant. Such a
+guard returns `Unsupported::FamilyProof` rather than an assumed value.
 
 The compiler SHALL establish exactly one case for every valuation of the
 conservative independent-atom abstraction before admitting a symbolic choice.
@@ -136,6 +163,18 @@ require observable progress in every abstractly feasible branch.
 An unproved branch leaves the choice's progress unestablished; if the continuing
 body depends on that proof, admission returns FamilyProof. Other guaranteed
 progress in the body retains its ordinary control meaning.
+
+An observed repeat guard partitions each valuation into exactly the continuing
+and exhausting branches.
+The compiler SHALL establish that partition before admitting the repeat.
+If that proof fails, then the compiler SHALL return `Unsupported::FamilyProof`
+without claiming a concrete overlap or hole from an abstract valuation. Because a true
+guard is feasible under that abstraction whenever any valuation selects it, the
+continuing body SHALL establish observable progress exactly as under a true
+constant guard. A body proving no progress remains `Invalid::Control`, and a body
+whose progress is unproved remains `Unsupported::FamilyProof`. An observed guard
+neither supplies progress itself nor weakens the authored finite maximum; guard
+falsification is a normal exit and is never evidence of body progress.
 
 The encoder SHALL produce the selected compact JSON bytes with the contract's
 fixed member order, array/set ordering, exact [FR-038](FR-038-encode-exact-protocol-numbers.md)
@@ -264,8 +303,8 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-2 | Fixed compact JSON vectors retain field order, Unicode escaping and authored sequence order; permitted inventory reordering yields identical bytes. Integer safe endpoints, signed-64 extrema and normalized rationals retain exact kind/components in every value/bound field; invalid field-domain values, bare native numbers, floats and noncanonical structural integers refuse without rounding or repair. | Test (TC-121) |
 | FR-042-AC-3 | One-axis changes to producer, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
 | FR-042-AC-4 | Typed values preserve exact nominal/unit/domain identities, cross-unit callee owners, ordered arguments, all eight query forms, graph-export authority, Boolean roots, source loci, scope and pre/post/activation/capture origins. Wrong type/owner, dangling/cyclic value references, missing totality and proof-witness substitution cannot produce an emitted package. | Test (TC-121) |
-| FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Received, own-attempt and same-owner domain-event Boolean choices preserve exact atom/owner/provenance identity and prove one case for every abstract valuation; unsupported visibility or an unproved partition returns FamilyProof, while evaluated closed overlap/hole remains Invalid(Control). Equal role model types do not grant ownership. Compensation-qualified events retain their registration prerequisite; Boolean observations grant no activation or effect-success evidence. A dynamic choice establishes continuing-loop progress only when every feasible branch progresses. Missing/foreign joins, unbounded or zero-progress repetition, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
-| FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. Effect-dependent registration, bounded retries through the signed-64 maximum, commit boundaries and full versus partial recovery retain exact relations and authorities. Producer and reader derive identical recovery population membership through original operand, binder-initializer and selected-origin reachability, preserving captured anchors without span-based or proof-folded substitutions. Compensation effects retain exact operation/subject/retry/attempt identity even when a type is inserted; an otherwise valid typed compensation effect remains explicitly unsupported. Missing/cross-wired registration, activation, clock or recovery prerequisites, unrelated recovery/population records, null model, an ordinary effect with null type, or an operation-success shortcut refuse. | Test (TC-121) |
+| FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Received, own-attempt and same-owner domain-event Boolean choices preserve exact atom/owner/provenance identity and prove one case for every abstract valuation; unsupported visibility or an unproved partition returns FamilyProof, while evaluated closed overlap/hole remains Invalid(Control). Equal role model types do not grant ownership. Compensation-qualified events retain their registration prerequisite; Boolean observations grant no activation or effect-success evidence. A dynamic choice establishes continuing-loop progress only when every feasible branch progresses. An observed repeat guard preserves the same atom/owner/provenance identity and partitions the continuing and exhausting branches; a foreign-role, unlisted, composite or body-established guard atom returns FamilyProof, a non-progressing continuing body remains Invalid(Control), and an unproved one returns FamilyProof. Missing/foreign joins, unbounded or zero-progress repetition, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
+| FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. A forward attempt repeated across bounded iterations retains one attempt identity per occurrence with its iteration ordinal, distinct from the carrying delivery and from the single business effect; a retried attempt inherits no earlier effect. Effect-dependent registration, bounded retries through the signed-64 maximum, commit boundaries and full versus partial recovery retain exact relations and authorities. Producer and reader derive identical recovery population membership through original operand, binder-initializer and selected-origin reachability, preserving captured anchors without span-based or proof-folded substitutions. Compensation effects retain exact operation/subject/retry/attempt identity even when a type is inserted; an otherwise valid typed compensation effect remains explicitly unsupported. Missing/cross-wired registration, activation, clock or recovery prerequisites, unrelated recovery/population records, null model, an ordinary effect with null type, or an operation-success shortcut refuse. | Test (TC-121) |
 | FR-042-AC-7 | The public reader verifies canonical bytes and external selection without a native parser. Unknown/duplicate/missing fields, wrong tags, noncanonical encodings, out-of-range/foreign handles and changed content refuse with typed causes. Resealing a tampered payload under an unchanged expected reference still refuses; digest success alone is never evidence of native-source equivalence. | Test (TC-121) |
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow/clamping and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
