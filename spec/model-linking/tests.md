@@ -105,26 +105,10 @@ invented for that criterion.
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
 | TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Planned |
 | TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 Planned |
-| TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
-
-## Compiled protocol numeric component
-
-The separate numeric component of compiler #40 is tracked below; it does not
-establish composed parsing, model admission or source-to-artifact correspondence.
-
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
-| --- | --- | --- | --- |
-| FR-038 | FR-038-AC-1 | TC-117 | ✅ Passed |
-| FR-038 | FR-038-AC-2 | TC-117 | ✅ Passed |
-| FR-038 | FR-038-AC-3 | TC-117 | ✅ Passed |
-| FR-038 | FR-038-AC-4 | TC-117 | ✅ Passed |
-| FR-038 | FR-038-AC-5 | TC-117 | ✅ Passed |
-
-TC-117 executes nine public Rust API tests in `tests/protocol_number.rs` with
-`#[trace]` tags for these five criteria. This status records the local component
-run, not a Quire-engine coverage or complete compiler-to-consumer claim.
+| TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
+| TC-121 | Full compiled protocol artifact and real Rust handoff | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 Planned |
 
 ## Composed language admission (L2)
 
@@ -183,6 +167,45 @@ complete compiler #35/#40.
 | FR-041 | FR-041-AC-5 | TC-120 | 🚧 Planned |
 | FR-041 | FR-041-AC-6 | TC-120 | 🚧 Planned |
 | FR-041 | FR-041-AC-7 | TC-120 | 🚧 Planned |
+
+## Compiled protocol numeric component
+
+The separate numeric component of compiler #40 is tracked below; it does not
+establish composed parsing, model admission or source-to-artifact correspondence.
+
+| Functional Req | Acceptance Criteria | Test Cases | Status |
+| --- | --- | --- | --- |
+| FR-038 | FR-038-AC-1 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-2 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-3 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-4 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-5 | TC-117 | ✅ Passed |
+
+TC-117 executes nine public Rust API tests in `tests/protocol_number.rs` with
+`#[trace]` tags for these five criteria. This status records the local component
+run, not a Quire-engine coverage or complete compiler-to-consumer claim.
+
+## Compiled protocol artifact (L6)
+
+[TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md) covers the
+full [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) contract.
+Twenty public reader/encoder controls in `tests/protocol_artifact.rs` exercise
+actual admitted model exports and independently supplied wire selections. Their
+manually authored transport fixtures do not establish native family admission
+or actual source-to-consumer emission; full acceptance remains planned.
+
+| Functional Req | Acceptance Criteria | Test Cases | Status |
+| --- | --- | --- | --- |
+| FR-042 | FR-042-AC-1 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-2 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-3 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-4 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-5 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-6 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-7 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-8 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-9 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-10 | TC-121 | 🚧 Planned |
 
 ## Six coverage rules
 
