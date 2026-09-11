@@ -29,6 +29,33 @@ pub fn try_model_with_maximum(
     name: &str,
     maximum: u32,
 ) -> Result<NativeModel, Box<model_source::ModelSourceError>> {
+    try_model_with(name, maximum, |_| {})
+}
+
+/// The shared fixture already declares the full signed-64 integer scalar `Wide`,
+/// but every rational domain in it is narrow. This variant adds `Exact`, the
+/// rational domain at the denominator ceiling `ir::RationalType::new` admits, so
+/// a literal can reach both signed-64 endpoints and that ceiling.
+#[allow(dead_code)]
+pub fn model_with_signed64_domains(name: &str) -> NativeModel {
+    try_model_with(name, 5, |document| {
+        document["scalars"].as_array_mut().unwrap().push(
+            json!({"name":"Exact", "kind":"rational", "numerator_minimum": i64::MIN, "numerator_maximum": i64::MAX, "maximum_denominator": i64::MAX}),
+        );
+        // Model admission requires a declaration site for every scalar role.
+        document["records"][0]["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"exact", "type":{"kind":"scalar", "name":"Exact"}}));
+    })
+    .expect("admitted signed-64 domain model fixture")
+}
+
+fn try_model_with(
+    name: &str,
+    maximum: u32,
+    extend: impl FnOnce(&mut Value),
+) -> Result<NativeModel, Box<model_source::ModelSourceError>> {
     let mut document: Value =
         serde_json::from_str(include_str!("../../fixtures/native-rule-model.json")).unwrap();
     document["package"] = json!(format!("test/{name}"));
@@ -62,6 +89,7 @@ pub fn try_model_with_maximum(
         "name":"delta", "kind":"input", "type":{"kind":"scalar", "name":"Signed"}
     }));
     document["operations"][0]["parameters"] = json!(["delta"]);
+    extend(&mut document);
     let text = serde_json::to_string_pretty(&document).unwrap();
     let source = Source::read(
         SourceIdentity {
