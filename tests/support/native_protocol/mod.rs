@@ -75,14 +75,20 @@ fn owner() -> ir::RequirementRef {
 }
 
 impl Inputs {
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "Shared fixture module; each test binary selects its own constructor"
+    )]
     pub fn new(units: &[Unit<'_>]) -> Self {
         Self::with_model(units, composed_inputs::model("NativeEmission"))
     }
 
     /// The shared fixture already carries the full signed-64 integer scalar;
     /// this variant also carries the exact-rational domain at its ceiling.
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "Only numeric-boundary consumers need this shared fixture variant"
+    )]
     pub fn with_signed64_domains(units: &[Unit<'_>]) -> Self {
         Self::with_model(
             units,
