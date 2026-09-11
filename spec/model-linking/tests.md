@@ -190,10 +190,13 @@ run, not a Quire-engine coverage or complete compiler-to-consumer claim.
 
 [TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md) covers the
 full [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) contract.
-Twenty public reader/encoder controls in `tests/protocol_artifact.rs` exercise
-actual admitted model exports and independently supplied wire selections. Their
-manually authored transport fixtures do not establish native family admission
-or actual source-to-consumer emission; full acceptance remains planned.
+`tests/protocol_artifact.rs` exercises the reader/encoder with independently
+supplied wire selections and actual admitted model exports.
+`tests/native_protocol_emission.rs` and `tests/native_population_emission.rs`
+exercise real source through native family admission, emission and independent
+reading, including exact population requirements and substituted or surplus
+inputs. The actual producer-to-B consumer handoff and remaining full-family
+obligations stay open; full acceptance remains planned.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |

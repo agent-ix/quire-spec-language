@@ -109,7 +109,15 @@ using path `[record, universe]` and that role's original source locus. Its
 `[reference]`. These paths are relative to the exact selected model. Two object
 roles sharing a universe label still have distinct population exports. This
 binds a nominal population requirement; it supplies no population members or
-completeness evidence. Absent relationship/component/endpoint exports are not
+completeness evidence. Within each declaration, the population requirement key
+is the exact selected model, object record and original observation anchor;
+binding names are opaque labels. Native admission derives the set from original
+source owners; the parser-free reader checks the exact set justified by the
+decoded input binders and anchored values against admitted models, refusing
+missing or surplus pairs as `Invalid::Binding`. Derived binders retain initializer origins,
+and selected values preserve their contributing origins. Nested record/reference
+traversal visits each key once, including cycles, under the declared work limits.
+Absent relationship/component/endpoint exports are not
 supplied by declaring their tags. A producer correspondence, when required
 by its interface, is mandatory and verified against its selected relation
 artifact; `null` is allowed only for a directly admitted native model without
