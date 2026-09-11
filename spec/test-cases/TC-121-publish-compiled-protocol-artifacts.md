@@ -101,7 +101,13 @@ observations belong only to the later consumer fixture.
    into this abstraction; require `Unsupported::FamilyProof`, not a claimed
    concrete counterexample. Closed literal overlap/hole remains `Invalid::Control`.
    Numeric comparisons, queries, callee expansion and dynamic repeat guards
-   remain unsupported. In a constant-guard continuing repeat, compare a symbolic
+   remain unsupported. Put hidden inputs behind `false and`, `true or`,
+   `false implies` and an unselected conditional branch; require FamilyProof
+   rather than admission through the closed-decision path. Closed Boolean let
+   aliases retain the evaluated overlap/hole `Invalid::Control` classification.
+   Combine the choice with pre/post contracts in another original source unit,
+   retaining the exact operation export and contract owners through reading.
+   In a constant-guard continuing repeat, compare a symbolic
    choice whose every feasible branch progresses with one having a feasible
    check-only branch; one progressing branch cannot establish the choice's
    progress. The latter remains FamilyProof unless another guaranteed body
