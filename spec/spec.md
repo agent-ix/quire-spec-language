@@ -292,6 +292,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
-| [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared type/profile admission implemented; definedness and runtime acceptance open under #35/#36 |
+| [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared types and supported guarded proofs implemented; query/runtime acceptance open under #35/#36 |
 | [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; delivered producer reviews pass |
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
