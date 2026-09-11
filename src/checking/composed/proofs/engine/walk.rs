@@ -45,29 +45,35 @@ impl<'s, 'a> Builder<'s, 'a> {
         Ok(result)
     }
     fn read(&mut self, at: ExprId) -> Result<Value> {
-        let node = self.typed.node(at).expect("original typed occurrence");
-        let binder = node.binder.expect("bound direct read");
+        let node = self.typed.node(at).ok_or_else(|| upstream(self.site(at)))?;
+        let binder = node.binder.ok_or_else(|| upstream(self.site(at)))?;
         self.work.charge(D::Types, 1, self.site(at))?;
         if let Some(value) = self.locals.get(&binder.index()) {
             return Ok(value.clone());
         }
-        let observation =
-            if self.scope.binders[binder.index()].kind == scopes::BinderKind::SelfValue {
-                match node.origin {
-                    Some(ObservationOrigin::Anchored(Anchor::InvocationPre)) => 1,
-                    Some(ObservationOrigin::Anchored(Anchor::InvocationPost)) => 2,
-                    Some(ObservationOrigin::Anchored(Anchor::Current)) => 0,
-                    Some(ObservationOrigin::Independent | ObservationOrigin::Selected { .. })
-                    | Some(ObservationOrigin::Anchored(_))
-                    | None => return Err(self.unsupported(at, Unsupported::ValueRepresentation)),
-                }
-            } else {
-                0
-            };
+        let observation = if self
+            .scope
+            .binders
+            .get(binder.index())
+            .ok_or_else(|| upstream(self.site(at)))?
+            .kind
+            == scopes::BinderKind::SelfValue
+        {
+            match node.origin {
+                Some(ObservationOrigin::Anchored(Anchor::InvocationPre)) => 1,
+                Some(ObservationOrigin::Anchored(Anchor::InvocationPost)) => 2,
+                Some(ObservationOrigin::Anchored(Anchor::Current)) => 0,
+                Some(ObservationOrigin::Independent | ObservationOrigin::Selected { .. })
+                | Some(ObservationOrigin::Anchored(_))
+                | None => return Err(self.unsupported(at, Unsupported::ValueRepresentation)),
+            }
+        } else {
+            0
+        };
         self.symbolic(
             Key::Binder(binder.index(), observation),
             at,
-            self.ty(at),
+            self.ty(at)?,
             true,
         )
     }
@@ -79,8 +85,8 @@ impl<'s, 'a> Builder<'s, 'a> {
         depth: usize,
     ) -> Result<Value> {
         let mut value = self.visit(at, path, depth)?;
-        if !value.stable && self.ty(at) != &NativeType::Boolean {
-            value = self.symbolic(Key::Capture(binder), at, self.ty(at), true)?;
+        if !value.stable && self.ty(at)? != &NativeType::Boolean {
+            value = self.symbolic(Key::Capture(binder), at, self.ty(at)?, true)?;
         }
         self.work.charge(D::Records, 1, self.site(at))?;
         self.locals.insert(binder, value.clone());
@@ -90,9 +96,14 @@ impl<'s, 'a> Builder<'s, 'a> {
         self.work.charge(D::Depth, depth, self.site(at))?;
         self.work.charge(D::Expressions, 1, self.site(at))?;
         if path.facts.is_none() {
-            return self.symbolic(Key::Expression(at.0), at, self.ty(at), false);
+            return self.symbolic(Key::Expression(at.0), at, self.ty(at)?, false);
         }
-        let mut value = match &self.unit.expressions()[at.0].kind {
+        let mut value = match &self
+            .unit
+            .expression(at)
+            .ok_or_else(|| upstream(self.site(at)))?
+            .kind
+        {
             c::ValueKind::Shared(kind) => match kind {
                 ExprKind::Group { inner } => self.visit(*inner, path, depth + 1)?,
                 ExprKind::Boolean(value) => {
@@ -104,17 +115,20 @@ impl<'s, 'a> Builder<'s, 'a> {
                     let value = text
                         .parse::<i64>()
                         .map_err(|_| self.unsupported(at, Unsupported::ValueRepresentation))?;
-                    let ty = self.ty(at).integer().expect("typed integer");
+                    let ty = self
+                        .ty(at)?
+                        .integer()
+                        .ok_or_else(|| upstream(self.site(at)))?;
                     let graph = self.node(Kind::Integer(value, ty), at)?;
                     self.expression(graph, at, true, Outcomes::unknown())?
                 }
                 ExprKind::Text(_) | ExprKind::EnumValue { .. } => {
-                    self.symbolic(Key::Expression(at.0), at, self.ty(at), true)?
+                    self.symbolic(Key::Expression(at.0), at, self.ty(at)?, true)?
                 }
                 ExprKind::Name(_) | ExprKind::SelfValue | ExprKind::ResultValue => self.read(at)?,
                 ExprKind::Field { base, name: field } => {
                     let value = self.visit(*base, path, depth + 1)?;
-                    let (model, record) = match self.ty(*base) {
+                    let (model, record) = match self.ty(*base)? {
                         NativeType::Record { model, declaration } => {
                             (*model, declaration.name().as_str())
                         }
@@ -144,7 +158,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                             field.value.clone(),
                         ),
                         at,
-                        self.ty(at),
+                        self.ty(at)?,
                         value.stable,
                     )?
                 }
@@ -165,7 +179,9 @@ impl<'s, 'a> Builder<'s, 'a> {
                                     let graph = self.node(
                                         Kind::Integer(
                                             value,
-                                            self.ty(at).integer().expect("typed negated integer"),
+                                            self.ty(at)?
+                                                .integer()
+                                                .ok_or_else(|| upstream(self.site(at)))?,
                                         ),
                                         at,
                                     )?;
@@ -282,9 +298,9 @@ impl<'s, 'a> Builder<'s, 'a> {
                         | BinaryOp::LessEqual
                         | BinaryOp::Greater
                         | BinaryOp::GreaterEqual => {
-                            if self.ty(*left).integer().is_some()
-                                || self.ty(*left).rational().is_some()
-                                || self.ty(*left) == &NativeType::Boolean
+                            if self.ty(*left)?.integer().is_some()
+                                || self.ty(*left)?.rational().is_some()
+                                || self.ty(*left)? == &NativeType::Boolean
                             {
                                 let operator = match op {
                                     BinaryOp::Equal => ir::ComparisonOperator::Equal,
@@ -344,14 +360,17 @@ impl<'s, 'a> Builder<'s, 'a> {
                             }
                         }
                         Builtin::Deref => {
-                            self.symbolic(Key::Deref(value.key), at, self.ty(at), value.stable)?
+                            self.symbolic(Key::Deref(value.key), at, self.ty(at)?, value.stable)?
                         }
                         Builtin::Size => unreachable!("unsupported query handled before its body"),
                     }
                 }
                 ExprKind::Let { name, value, body } => {
                     self.work.charge(D::Types, 1, self.site(at))?;
-                    let binder = self.binders[&name.span.start];
+                    let binder = *self
+                        .binders
+                        .get(&name.span.start)
+                        .ok_or_else(|| upstream(self.site(at)))?;
                     self.capture(binder, *value, path, depth + 1)?;
                     let result = self.visit(*body, path, depth + 1)?;
                     self.locals.remove(&binder);
@@ -367,7 +386,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                     let yes_value = self.visit(*then_value, &yes_path, depth + 1)?;
                     let no_path = self.assume(path, &condition_value, false, *condition)?;
                     let no_value = self.visit(*else_value, &no_path, depth + 1)?;
-                    if self.ty(at) == &NativeType::Boolean {
+                    if self.ty(at)? == &NativeType::Boolean {
                         let negated = self.node(Kind::Not(condition_value.graph), *condition)?;
                         let yes = self.node(
                             Kind::BooleanOp(
@@ -420,7 +439,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                         outcomes.rebase(at, self, span)?;
                         self.expression(graph, at, false, outcomes)?
                     } else {
-                        self.symbolic(Key::Expression(at.0), at, self.ty(at), false)?
+                        self.symbolic(Key::Expression(at.0), at, self.ty(at)?, false)?
                     }
                 }
                 ExprKind::Quantifier { .. } => {
@@ -437,12 +456,14 @@ impl<'s, 'a> Builder<'s, 'a> {
                     .typed
                     .node(at)
                     .and_then(|node| node.normalized_rational)
-                    .expect("type-admitted normalized rational");
+                    .ok_or_else(|| upstream(self.site(at)))?;
                 let graph = self.node(
                     Kind::Rational(
                         numerator,
                         denominator,
-                        self.ty(at).rational().expect("typed rational"),
+                        self.ty(at)?
+                            .rational()
+                            .ok_or_else(|| upstream(self.site(at)))?,
                     ),
                     at,
                 )?;
@@ -477,7 +498,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                 return Err(self.unsupported(at, Unsupported::OrderedQuery))
             }
         };
-        if self.ty(at) == &NativeType::Boolean {
+        if self.ty(at)? == &NativeType::Boolean {
             value.graph = self.protect(
                 value.graph,
                 &path.facts,

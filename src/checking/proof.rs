@@ -173,7 +173,7 @@ impl Meter<'_> {
     }
 }
 
-fn proof_type(ty: &NativeType<'_>) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
+fn proof_type(ty: &NativeType<'_>) -> std::result::Result<ir::ValueType, RepresentationError> {
     representation(ty, Interpretation::HistoricalFinite)
 }
 
@@ -184,12 +184,35 @@ pub(super) enum Interpretation {
     ComposedValues,
 }
 
-// Native model admission establishes the scalar role/representation invariant;
-// the historical link guard additionally excludes selected rational models.
+#[derive(Debug)]
+pub(super) enum RepresentationError {
+    Unsupported,
+    Ir(ir::Diagnostic),
+}
+
+impl From<ir::Diagnostic> for RepresentationError {
+    fn from(value: ir::Diagnostic) -> Self {
+        Self::Ir(value)
+    }
+}
+
+impl RepresentationError {
+    fn into_native(self, source: &Source, span: Span, message: &str) -> Box<crate::Diagnostic> {
+        match self {
+            Self::Unsupported => failure(source, Code::InvalidModelBinding, span, message),
+            Self::Ir(diagnostic) => upstream(source, span, vec![diagnostic], message),
+        }
+    }
+}
+
+// This is a definedness abstraction, not an executable value conversion. Opaque
+// values become witnesses; comparisons over them are separate Boolean symbols.
+// Admission establishes scalar representation invariants, but the adapter still
+// refuses a broken prerequisite instead of panicking across that module boundary.
 pub(super) fn representation(
     ty: &NativeType<'_>,
     interpretation: Interpretation,
-) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
+) -> std::result::Result<ir::ValueType, RepresentationError> {
     Ok(match ty {
         NativeType::Scalar {
             role,
@@ -199,33 +222,31 @@ pub(super) fn representation(
             ir::ValueType::Integer { value } => match &role.kind {
                 ScalarKind::Integer { .. } => ir::ValueType::integer(value.clone()),
                 ScalarKind::Rational { .. } | ScalarKind::Text { .. } => {
-                    unreachable!("admitted scalar role matches its integer representation")
+                    return Err(RepresentationError::Unsupported)
                 }
             },
             ir::ValueType::Rational { value } => match &role.kind {
                 ScalarKind::Rational { .. } => match interpretation {
                     Interpretation::ComposedValues => ir::ValueType::rational(value.clone()),
                     Interpretation::HistoricalFinite => {
-                        unreachable!("historical linking excludes selected rational models")
+                        return Err(RepresentationError::Unsupported)
                     }
                 },
                 ScalarKind::Integer { .. } | ScalarKind::Text { .. } => {
-                    unreachable!("admitted scalar role matches its rational representation")
+                    return Err(RepresentationError::Unsupported)
                 }
             },
             ir::ValueType::Text => match &role.kind {
                 ScalarKind::Text { .. } => ir::ValueType::Boolean,
                 ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => {
-                    unreachable!("admitted scalar role matches its text representation")
+                    return Err(RepresentationError::Unsupported)
                 }
             },
             ir::ValueType::Boolean
             | ir::ValueType::Enum { .. }
             | ir::ValueType::Record { .. }
             | ir::ValueType::Option { .. }
-            | ir::ValueType::Collection { .. } => {
-                unreachable!("admitted scalar roles have primitive scalar representations")
-            }
+            | ir::ValueType::Collection { .. } => return Err(RepresentationError::Unsupported),
         },
         NativeType::Option(value) => ir::ValueType::option(representation(value, interpretation)?),
         NativeType::Sequence { element, maximum } => ir::ValueType::Collection {
@@ -341,10 +362,9 @@ impl<'u, 'a> Builder<'u, 'a> {
         })?;
         let source = self.source(native)?;
         let representation = proof_type(ty).map_err(|error| {
-            upstream(
+            error.into_native(
                 self.meter.source,
                 span,
-                vec![error],
                 "native proof type conversion failed",
             )
         })?;
@@ -508,10 +528,9 @@ impl<'u, 'a> Builder<'u, 'a> {
             return Ok(());
         }
         let representation = proof_type(&self.ty(native)?.ty).map_err(|error| {
-            upstream(
+            error.into_native(
                 self.meter.source,
                 self.span(native),
-                vec![error],
                 "native goal type conversion failed",
             )
         })?;
