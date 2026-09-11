@@ -15,6 +15,8 @@ use quire_spec_language::ByteDigest;
 use serde_json::json;
 use setup::{handle, Fixture};
 
+type Mutation<T> = (fn(&mut T), Error);
+
 #[track_caller]
 fn failure<T>(report: &artifact::Report<T>, expected: Error) {
     match report.result() {
@@ -992,7 +994,7 @@ fn real_model_values_and_all_declaration_families_preserve_exact_references() {
         package.declarations[4].values[2].operation,
         w::ValueOperation::Text { value: "é".into() }
     );
-    let mutations: [(fn(&mut w::Package), Error); 8] = [
+    let mutations: [Mutation<w::Package>; 8] = [
         (
             |p| {
                 p.declarations[1].values[1].operation = w::ValueOperation::Number {
@@ -1185,7 +1187,7 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
         declaration.bindings[5].subject,
         declaration.bindings[6].subject
     );
-    let mutants: [(fn(&mut Vec<w::Control>), Error); 7] = [
+    let mutants: [Mutation<Vec<w::Control>>; 7] = [
         (
             |controls| {
                 let w::ControlOperation::Choice { cases, .. } = &mut controls[3].operation else {
