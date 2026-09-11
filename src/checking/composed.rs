@@ -316,21 +316,30 @@ pub fn admit_types<'r, 'a>(
     solver::admit(binding, sources, limits)
 }
 
-fn permissions(definition: RegisteredDefinition) -> (bool, bool) {
+#[derive(Clone, Copy)]
+enum Capability {
+    Queries,
+    Graph,
+}
+
+fn permits(definition: RegisteredDefinition, capability: Capability) -> bool {
     match definition {
-        RegisteredDefinition::StateCore => (false, false),
-        RegisteredDefinition::StateQueries => (true, false),
+        RegisteredDefinition::StateCore => false,
+        RegisteredDefinition::StateQueries => match capability {
+            Capability::Queries => true,
+            Capability::Graph => false,
+        },
         RegisteredDefinition::StateGraph
         | RegisteredDefinition::TemporalFacet
         | RegisteredDefinition::EventPosition
         | RegisteredDefinition::FixedSample
         | RegisteredDefinition::TimestampedWindow
-        | RegisteredDefinition::Protocol => (true, true),
+        | RegisteredDefinition::Protocol => true,
         RegisteredDefinition::Edition
         | RegisteredDefinition::ObservationBinding
         | RegisteredDefinition::Progress
         | RegisteredDefinition::Range
         | RegisteredDefinition::Package
-        | RegisteredDefinition::Diagnostics => (false, false),
+        | RegisteredDefinition::Diagnostics => false,
     }
 }

@@ -6,7 +6,7 @@ impl Solver<'_, '_, '_, '_> {
     pub(super) fn roots(&mut self, syntax: &c::Declaration) -> Result<()> {
         match &syntax.kind {
             c::DeclarationKind::Predicate { body, .. } => {
-                self.require(*body, true, false)?;
+                self.require(*body, Capability::Queries)?;
                 self.boolean(*body)?;
             }
             c::DeclarationKind::State { body, .. } => {
@@ -98,10 +98,12 @@ impl Solver<'_, '_, '_, '_> {
                                 .expect("profile report")
                                 .declarations[self.output.declaration.index()]
                             .uses;
+                            let mut selected = false;
                             for (profile_index, usage) in uses.iter().enumerate() {
                                 self.work
                                     .charge(D::Constraints, 1, self.site(*expression))?;
                                 if usage.alias.span == profile.span {
+                                    selected = true;
                                     let owner = self.unit.expressions()[expression.0].span;
                                     for index in self.range.clone() {
                                         self.work.charge(
@@ -116,6 +118,9 @@ impl Solver<'_, '_, '_, '_> {
                                     }
                                     break;
                                 }
+                            }
+                            if !selected {
+                                self.cause(*expression, CauseKind::UpstreamBinding)?;
                             }
                             self.boolean(*expression)?;
                         }
