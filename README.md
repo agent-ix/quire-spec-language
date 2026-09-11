@@ -8,6 +8,14 @@ defines its closed shapes. `NumberWire` retains unvalidated strings for typed
 conversion; `ProtocolNumber` contains only admitted numeric components. This
 does not yet provide a complete compiled-protocol reader or native producer.
 
+The composed-language work under [issue #35](https://github.com/agent-ix/quire-spec-language/issues/35)
+is specified in [edition-selected parsing](spec/functional/FR-035-parse-composed-native-units.md)
+and [package linking](spec/functional/FR-036-link-composed-native-packages.md).
+It extends the current lexer/parser and exact model pipeline across state,
+temporal and choreography declarations. These are proposed requirements;
+composed admission is not implemented. The behavior below describes the existing
+historical profile.
+
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
 The library links exact imports and scoped names against supplied Contract IR
