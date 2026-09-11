@@ -116,8 +116,15 @@ absence of status diagnostics:
   status defect.** The `nfr-acceptance-criterion` declaration selects every NFR
   by archetype and reports that none has an `Acceptance Criteria` section. None
   does: the seven NFRs state their obligations as `Measurement and Evaluation`
-  metric rows plus a prose `Verification` section, and no `NFR-nnn-AC-n` id
-  exists anywhere in this repository. The NFR archetype makes
+  metric rows plus a prose `Verification` section, and as measured on
+  `bb30eac` no `NFR-nnn-AC-n` id existed anywhere in this repository. That last
+  clause is time-bounded and is already being overtaken: `NFR-008` on
+  `agent-a/l5-native-temporal` declares `NFR-008-AC-1..AC-5` under a real
+  `## Acceptance Criteria` heading with the required `ID | Criteria |
+  Verification` shape, tagged by `tests/composed_temporal_limits.rs`. That does
+  not weaken the conclusion — the seven documents measured here still
+  legitimately have no acceptance table — but do not re-cite "none anywhere"
+  without re-measuring. The NFR archetype makes
   `Acceptance Criteria` optional while a trace-target declaration has no way to
   say a section is optional, which is the `agent-ix/quire-rs#327` class of false
   alarm the process module already documents for `## Constraints`. Renaming
@@ -129,6 +136,25 @@ absence of status diagnostics:
   for `section-holds-no-table`. Authoring such a table would be inventing
   acceptance criteria that no requirement states and no test carries; it is not
   done here.
+
+Two further traps, both found by paying for them once:
+
+- **Census both trees, not just `tests/`.** Tag coverage in this repository is
+  not confined to `tests/*.rs`: `TC-120` binds through three modules, of which
+  only `tests/native_model_profiles.rs` is a test file — the other two are
+  `#[cfg(test)]` unit tests at `src/checking/types.rs:462` and
+  `src/linking.rs:1006`. `TC-114` binds through eight modules including
+  `src/linking/composed/arena.rs`. Two independent audits of these same rows
+  each under-counted, in different directions, by scanning `tests/` alone. Any
+  tag census must scan `src/` as well or it will report a module count that is
+  simply wrong.
+- **A declared verification method can name a test case that binds nothing.**
+  `FR-036-AC-4` and `FR-036-AC-6` declare `Test (TC-114, IT-009)` and
+  `Test (TC-115, IT-009)`, and `IT-009` carries no trace tag anywhere in the
+  tree. So a criterion can read as backed on one half of its declared method
+  while the other half has no evidence at all. Backing a criterion is therefore
+  necessary but not sufficient for claiming its method was discharged; read the
+  method cell, not only the status.
 
 [SR-275](../reviews/26-09-09-matrix-status-review.md) records the bounded review.
 Compiler [#28](https://github.com/agent-ix/quire-spec-language/issues/28) remains
