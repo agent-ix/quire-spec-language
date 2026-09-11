@@ -98,13 +98,15 @@ impl<'u, 'a> Solver<'u, 'a> {
     fn unify(&mut self, a: usize, b: usize, at: ExprId) -> Result<()> {
         self.variables
             .unify(a, b)
-            .map_err(|()| self.invalid(at, "native operands require the same exact type"))
+            .map_err(|_conflict| self.invalid(at, "native operands require the same exact type"))
     }
     fn assign(&mut self, var: usize, ty: NativeType<'a>, at: ExprId) -> Result<()> {
         self.variables
             .assign(var, ty)
             .map(|_| ())
-            .map_err(|()| self.invalid(at, "native expression has incompatible contextual types"))
+            .map_err(|_conflict| {
+                self.invalid(at, "native expression has incompatible contextual types")
+            })
     }
     fn boolean(&mut self, id: ExprId) -> Result<()> {
         self.assign(id.0, NativeType::Boolean, id)
@@ -441,7 +443,7 @@ impl<'u, 'a> Solver<'u, 'a> {
     fn resolve_relations(&mut self) -> Result<()> {
         // Direct unions are complete. Each relation watches one root; each root
         // can become known once, so notification work is linear in this table.
-        let mut watchers = vec![Vec::new(); self.variables.parents.len()];
+        let mut watchers = vec![Vec::new(); self.variables.len()];
         for (index, relation) in self.relations.iter().enumerate() {
             watchers[self.variables.root(relation.input())].push(index);
         }
@@ -467,7 +469,7 @@ impl<'u, 'a> Solver<'u, 'a> {
                 )),
             };
             if let Some((var, ty)) = assignment {
-                let changed = self.variables.assign(var, ty).map_err(|()| {
+                let changed = self.variables.assign(var, ty).map_err(|_conflict| {
                     self.invalid(
                         relation.at(),
                         "native wrapper result disagrees with its context",
@@ -495,7 +497,17 @@ impl<'u, 'a> Solver<'u, 'a> {
                     .is_ok_and(|n| n >= integer.minimum() && n <= integer.maximum())
             }),
             ExprKind::Text(text) => {
-                matches!(&ty, NativeType::Scalar { role, .. } if matches!(role.kind, ScalarKind::Text { max_scalars } if text.chars().count() <= usize::try_from(max_scalars).unwrap_or(usize::MAX)))
+                if let NativeType::Scalar { role, .. } = &ty {
+                    match role.kind {
+                        ScalarKind::Text { max_scalars } => {
+                            text.chars().count()
+                                <= usize::try_from(max_scalars).unwrap_or(usize::MAX)
+                        }
+                        ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => false,
+                    }
+                } else {
+                    false
+                }
             }
             ExprKind::Unary {
                 op: UnaryOp::Negate,

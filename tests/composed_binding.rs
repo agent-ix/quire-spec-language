@@ -6,15 +6,19 @@
 mod native_rule_model;
 
 use ix_trace_rs::trace;
+use quire_contract_ir as ir;
+use quire_spec_language::checking::NativeType;
+use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding::{self, Disposition, Refusal};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
-use quire_spec_language::linking::composed::models::ModelInput;
+use quire_spec_language::linking::composed::models::{ModelInput, ModelTarget};
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
 };
-use quire_spec_language::native_model::NativeModel;
+use quire_spec_language::model_source::{self, ModelSourceLimits};
+use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
 use std::collections::BTreeMap;
 
@@ -131,6 +135,112 @@ fn a_large_legal_unit_binds_without_rescanning_other_declarations() {
     }
     // Two arena walks plus bounded profile/boundary overhead fit this ceiling.
     // A per-declaration whole-arena scan requires 3,990,000 reads on its own.
+    assert!(report.usage().references < 200_000, "{:?}", report.usage());
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-3", "FR-036-AC-7")]
+fn large_admitted_model_resolves_repeated_nominal_parameters_at_defaults() {
+    let records = (0..1_500)
+        .map(|index| {
+            serde_json::json!({
+                "name": format!("R{index:04}"),
+                "fields": [{"name": "ready", "type": {"kind": "boolean"}}]
+            })
+        })
+        .collect::<Vec<_>>();
+    let document = serde_json::json!({
+        "license": "AGPL-3.0-only", "package": "test/large", "requirement": "Large",
+        "revision": 1, "scalars": [], "records": records, "values": [],
+        "objects": [], "operations": []
+    });
+    let text = serde_json::to_string_pretty(&document).unwrap();
+    let formal = FormalSource::new(
+        Source::read(
+            SourceIdentity {
+                identity: "large-model".into(),
+                revision: "1".into(),
+            },
+            "large-model.json",
+            text.as_bytes(),
+            ModelSourceLimits::default().source_bytes,
+        )
+        .unwrap(),
+        ir::SourceIdentity::new(
+            ir::SourceDocumentId::new("Large").unwrap(),
+            ir::SourceRevision::new(1).unwrap(),
+        ),
+    );
+    // Real frontend/admission at defaults: 3,000 authoring entries and 4,500
+    // formal nodes (record + field + Boolean leaf), with the 1 MiB artifact cap.
+    let model = model_source::read(formal, model_source::FORMAT, ModelSourceLimits::default())
+        .unwrap()
+        .admit(ModelLimits::default())
+        .unwrap();
+    assert_eq!(model.environment().types().len(), 1_500);
+    let declarations = (0..400)
+        .map(|index| format!(
+            "predicate Rule{index} using S (a: M::R1496, b: M::R1497, c: M::R1498, d: M::R1499): Boolean {{ true }}\n"
+        ))
+        .collect::<String>();
+    let sources = [source(
+        "large-model-use",
+        &model,
+        &[("S", R::StateQueries)],
+        &declarations,
+    )];
+    let selected_sources = inventory(&sources);
+    let admitted = admit_namespace(
+        &selected_sources,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    assert!(admitted.issues().is_empty(), "{:?}", admitted.issues());
+    let namespace = admitted.namespace().unwrap();
+    assert!(namespace.dependencies_complete());
+    assert_eq!(namespace.declarations().len(), 400);
+    let (definitions, rules) = artifacts();
+    let selected = Inventory {
+        edition: R::Edition.selection(),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let models = [ModelInput::Native(&model)];
+    let report = binding::bind(namespace, &selected, &models, BindingLimits::default());
+    assert!(report.complete(), "{:?}", report.exhaustion());
+    assert_eq!(report.declarations().len(), 400);
+    assert_eq!(report.exports().len(), 400);
+    for result in report.declarations() {
+        assert_eq!(
+            report.disposition(result.declaration()),
+            Some(Disposition::NamesResolved)
+        );
+    }
+    for exports in report.exports() {
+        assert!(exports.complete && exports.refusals.is_empty());
+        assert_eq!(exports.occurrences.len(), 4);
+        for (occurrence, expected) in exports
+            .occurrences
+            .iter()
+            .zip(["R1496", "R1497", "R1498", "R1499"])
+        {
+            let ModelTarget::Type(bound) = &occurrence.target else {
+                panic!("authored parameter must resolve to its exact model type")
+            };
+            let NativeType::Record {
+                model: owner,
+                declaration,
+            } = bound.native()
+            else {
+                panic!("ordinary record parameter")
+            };
+            assert!(std::ptr::eq(*owner, &model));
+            assert_eq!(declaration.name().as_str(), expected);
+        }
+    }
+    // A full record scan per parameter needs (1497+1498+1499+1500)*400 =
+    // 2,397,600 reads in model resolution alone, exceeding the hard 2M ceiling.
     assert!(report.usage().references < 200_000, "{:?}", report.usage());
 }
 
