@@ -293,6 +293,10 @@ model/program/runtime files and calls these same APIs. See
 [the runnable workflow](docs/native-standalone.md) for healthy, violating,
 operation and refused examples, JSON results and exit codes.
 
+[Matrix status checks](docs/matrix-status.md) records the exact CLI/module stack
+that reads both authored status columns, its false-completion controls and the
+remaining installed-tool limitation. Coverage binding does not execute tests.
+
 `Snapshot::read_verified` and `Invocation::read_verified` now read selected
 `native-state-input/1` bytes through closed Serde decoding and the existing
 structural constructors. They preserve original bytes/digests and refuse stale
