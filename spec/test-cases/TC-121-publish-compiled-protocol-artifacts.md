@@ -94,9 +94,18 @@ observations belong only to the later consumer fixture.
    registration-to-forward, activation-to-registration or attempt-to-activation
    chain. Require `Invalid::Binding` for these semantic mismatches, retaining
    `Invalid::Owner` for foreign-declaration handles. Null an ordinary effect's
-   value type and require refusal; an explicitly selected typed effect view
-   retains its payload/model fields. No operation result or recovery snapshot
-   supplies the missing effect identity or correspondence.
+   value type and require refusal. Insert a payload type into the compensation
+   effect while retaining its exact operation; require `Unsupported::Export`
+   because the profile has no authoritative typed-effect correspondence. Insert
+   that type alongside a foreign operation and require `Invalid::Binding`.
+   Swap compensation clocks, recovery snapshots, progress or closure records;
+   sever the snapshot's activation edge or each progress/closure dependency on
+   clock, effect or snapshot independently. Require `Invalid::Binding` and retain
+   a positive control with every original prerequisite present. Unrelated
+   population pairs cannot enter a compensation's recovery inventory. Retain the
+   exact signed-64 maximum attempt bound through compilation and reading;
+   refuse an overflowing bound without expanding attempts. No operation result
+   or recovery snapshot supplies the missing effect identity or correspondence.
 7. Give exact emitted bytes and external reference to the bounded public reader
    without invoking native parsing. Mutate every closed object/tag/member,
    duplicate equal entries, introduce invalid indices/cycles/noncanonical bytes,
