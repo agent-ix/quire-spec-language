@@ -138,20 +138,7 @@ fn owned<T>(
     work: &mut Work,
     site: Site,
 ) -> Result<std::ops::Range<usize>> {
-    let mut boundary = |at| -> Result<usize> {
-        let (mut low, mut high) = (0, nodes.len());
-        while low < high {
-            work.charge(D::Expressions, 1, site)?;
-            let middle = low + (high - low) / 2;
-            if span(&nodes[middle]).start < at {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        Ok(low)
-    };
-    Ok(boundary(owner.start)?..boundary(owner.end)?)
+    c::arena::owned_range(nodes, owner, span, || work.charge(D::Expressions, 1, site))
 }
 
 #[derive(Clone, Copy)]
@@ -228,8 +215,8 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
                 .expect("syntax")
                 .span,
         };
-        work.charge(D::Constraints, range.len() + scope.binders.len(), site)?;
         let count = range.len() + scope.binders.len();
+        work.charge(D::Constraints, count, site)?;
         let mut occurrences = BTreeMap::new();
         for (index, value) in scope.values.iter().enumerate() {
             work.charge(D::Constraints, 1, site)?;
@@ -275,7 +262,12 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
         }
     }
     fn var(&self, at: ExprId) -> usize {
-        debug_assert!(self.range.contains(&at.0));
+        // IDs come from this immutable declaration's parser-owned region. Both
+        // binding and typing use the shared, real-parser-tested arena helper.
+        assert!(
+            self.range.contains(&at.0),
+            "expression belongs to its original declaration arena"
+        );
         at.0 - self.range.start
     }
     fn binder_var(&self, index: usize) -> usize {
@@ -291,10 +283,11 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
     fn cause(&mut self, at: ExprId, kind: CauseKind) -> Result<()> {
         let site = self.site(at);
         self.work.charge(D::Records, 1, site)?;
+        let profile = (kind != CauseKind::UpstreamBinding).then(|| self.profiles[self.var(at)]);
         self.output.causes.push(TypeCause {
             site,
             kind,
-            profile: Some(self.profiles[self.var(at)]),
+            profile,
         });
         Ok(())
     }
@@ -349,24 +342,27 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
         .uses[self.profiles[self.var(at)]]
         .closure[0]
     }
-    fn require(&mut self, at: ExprId, queries: bool, graph: bool) -> Result<()> {
-        let (q, g) = permissions(self.profile(at));
-        if (queries && !q) || (graph && !g) {
+    fn require(&mut self, at: ExprId, capability: Capability) -> Result<()> {
+        if !permits(self.profile(at), capability) {
             self.cause(at, CauseKind::ProfilePermission)?;
         }
         Ok(())
     }
-    fn catalog(&mut self, model: &'a NativeModel, at: ExprId) -> Result<&'b Catalog<'a>> {
+    fn catalog(&mut self, model: &'a NativeModel, at: ExprId) -> Result<Option<&'b Catalog<'a>>> {
         let models = self.binding.models().expect("resolved models");
         for (index, input) in models.inputs().iter().enumerate() {
             self.work.charge(D::Constraints, 1, self.site(at))?;
             if let ModelInput::Native(candidate) = input {
                 if std::ptr::eq(*candidate, model) {
-                    return Ok(models.catalog_at(index).expect("admitted catalog"));
+                    if let Some(catalog) = models.catalog_at(index) {
+                        return Ok(Some(catalog));
+                    }
+                    break;
                 }
             }
         }
-        unreachable!("bound native type belongs to input catalog")
+        self.cause(at, CauseKind::UpstreamBinding)?;
+        Ok(None)
     }
     fn qualified(&mut self, name: &c::QualifiedName, at: ExprId) -> Result<Option<NativeType<'a>>> {
         let span = Span {
@@ -400,7 +396,9 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
                         self.work.charge(D::Constraints, 1, self.site(at))?;
                         if let ModelTarget::Operation(operation) = &occurrence.target {
                             if occurrence.span.start == name.model.span.start {
-                                let catalog = self.catalog(operation.model(), at)?;
+                                let Some(catalog) = self.catalog(operation.model(), at)? else {
+                                    return Ok(None);
+                                };
                                 return Ok(catalog.record_type(&operation.role().context));
                             }
                         }
@@ -414,7 +412,9 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
                     self.work.charge(D::Constraints, 1, self.site(at))?;
                     if let ModelInput::Native(model) = input {
                         if model.environment().owner() == &location.identity.owner {
-                            let catalog = models.catalog_at(input_index).expect("admitted catalog");
+                            let Some(catalog) = models.catalog_at(input_index) else {
+                                continue;
+                            };
                             if let crate::linking::DeclarationKey::Value(name) =
                                 &location.identity.key
                             {
