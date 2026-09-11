@@ -284,7 +284,6 @@ fn events(controls: &[w::Control]) -> Vec<&w::Event> {
 /// Item 1. The whole retry: a bounded repeat over a pre-loop observed charge
 /// outcome, with the forward attempt and its single effect inside the body.
 #[test]
-#[ignore = "observed repeat guard lands with agent-a/payment-retry-repetition; see #39"]
 #[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
 fn payment_retry_over_a_pre_loop_observed_charge_outcome_emits_its_attempt_and_effect() {
     let run = order(&retry(
@@ -344,7 +343,11 @@ fn payment_retry_over_a_pre_loop_observed_charge_outcome_emits_its_attempt_and_e
             declaration.anchors[listed.origin.index as usize].owner.0,
             Some(shipment.clone())
         );
-        assert_ne!(listed.origin.index, retry.index);
+        assert_ne!(
+            declaration.anchors[listed.origin.index as usize].owner.0,
+            Some(retry.clone()),
+            "the atom is anchored at S1, never at the repeat that reads it"
+        );
 
         // The body carries the forward attempt and its single effect.
         let (charged, _) = control(protocol.controls, "Charged");
@@ -464,7 +467,6 @@ fn a_zero_maximum_never_enters_the_retry_body_that_a_positive_bound_requires() {
 /// a normal exit, the bound still governs the body, and a continuing body of
 /// checks only is refused as an evaluated control defect rather than accepted.
 #[test]
-#[ignore = "observed repeat guard lands with agent-a/payment-retry-repetition; see #39"]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
 fn an_observed_guard_retains_the_bound_and_refuses_a_nonprogressing_retry_body() {
     let checks = "sequence Charged { check Pending using S { true }; }";
@@ -512,7 +514,6 @@ fn an_observed_guard_retains_the_bound_and_refuses_a_nonprogressing_retry_body()
 /// repeat's own `visible(...)` set, is an unsupported family prerequisite —
 /// while the identical retry whose owner does observe the listed atom admits.
 #[test]
-#[ignore = "observed repeat guard lands with agent-a/payment-retry-repetition; see #39"]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
 fn foreign_role_and_unlisted_guard_atoms_refuse_where_the_owner_observation_admits() {
     for (case, owner, visible, guard, supported) in [
@@ -569,7 +570,6 @@ fn foreign_role_and_unlisted_guard_atoms_refuse_where_the_owner_observation_admi
 /// atom, binder, admitted Boolean export, owning role and originating anchor
 /// survive, and none of them is replaced by the alias's own name or position.
 #[test]
-#[ignore = "observed repeat guard lands with agent-a/payment-retry-repetition; see #39"]
 #[trace("TC-121", "FR-042-AC-4", "FR-042-AC-5", "FR-042-AC-7")]
 fn an_immutable_alias_guard_retains_the_exact_atom_binder_field_role_and_anchor() {
     let run = order(&retry(
