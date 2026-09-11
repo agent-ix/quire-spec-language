@@ -1638,9 +1638,9 @@ fn config_reference(digest: ByteDigest) -> w::ArtifactRef {
 
 /// Real native source with the producer-owned config artifact added to the exact
 /// dependency inventory under the given reference digest and supplied bytes.
-fn config_inputs(name: &str, digest: ByteDigest, bytes: &[u8]) -> Inputs {
+fn config_inputs(digest: ByteDigest, bytes: &[u8]) -> Inputs {
     let mut inputs = Inputs::new(&[Unit {
-        name,
+        name: "digest-domains-config",
         body: SIMPLE,
         declarations: &["Simple"],
     }]);
@@ -1678,7 +1678,7 @@ fn recanonicalized_producer_bytes_do_not_satisfy_the_authored_config_selection()
             CONFIG_JCS,
         ),
     ] {
-        let inputs = config_inputs("digest-domains-matched", digest, bytes);
+        let inputs = config_inputs(digest, bytes);
         inputs.with_proofs(
             TypeLimits::default(),
             proofs::ProofLimits::default(),
@@ -1713,18 +1713,34 @@ fn recanonicalized_producer_bytes_do_not_satisfy_the_authored_config_selection()
             CONFIG_AUTHORED,
         ),
     ] {
-        let inputs = config_inputs("digest-domains-crossed", digest, bytes);
+        let inputs = config_inputs(digest, bytes);
         inputs.with_proofs(
             TypeLimits::default(),
             proofs::ProofLimits::default(),
             |proofs, selections| {
                 discharged(proofs);
+                let mismatches: Vec<_> = selections
+                    .dependencies
+                    .iter()
+                    .filter(|dependency| {
+                        ByteDigest::of(dependency.bytes) != dependency.artifact.digest
+                    })
+                    .map(|dependency| dependency.artifact.identity.as_str())
+                    .collect();
+                assert_eq!(mismatches, [CONFIG_IDENTITY], "{name}: one changed axis");
                 let report = native::admit(proofs, selections, Limits::default());
                 assert_eq!(
                     report.result().err(),
                     Some(&Error::Invalid(Invalid::Seal)),
                     "{name}"
                 );
+                // Native metadata verifies dependency seals before visiting
+                // source or model tables. Together with the isolated mismatch
+                // and matched controls, this distinguishes this refusal from
+                // a later reader/source seal failure.
+                assert_eq!(report.usage().sources, 0, "{name}");
+                assert_eq!(report.usage().models, 0, "{name}");
+                assert_eq!(report.locus(), None, "{name}");
             },
         );
     }
