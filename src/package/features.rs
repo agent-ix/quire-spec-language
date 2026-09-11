@@ -66,10 +66,16 @@ fn model_features(model: &NativeModel, features: &mut Features) -> Result<(), Bo
         features.extend(["object", "reference"]);
     }
     for scalar in &model.roles().scalars {
-        features.insert(match scalar.kind {
-            ScalarKind::Integer { .. } => "integer",
-            ScalarKind::Text { .. } => "text",
-        });
+        match scalar.kind {
+            ScalarKind::Integer { .. } => {
+                features.insert("integer");
+            }
+            ScalarKind::Text { .. } => {
+                features.insert("text");
+            }
+            // Defensive: CheckedPackage only admits historical model profiles.
+            ScalarKind::Rational { .. } => return Err(invalid_model()),
+        }
     }
     if !model.roles().operations.is_empty() {
         features.insert("object");
@@ -100,17 +106,21 @@ fn model_features(model: &NativeModel, features: &mut Features) -> Result<(), Bo
     Ok(())
 }
 
-fn native_type(ty: &NativeType<'_>, features: &mut Features) {
+fn native_type(ty: &NativeType<'_>, features: &mut Features) -> Result<(), Box<PackageError>> {
     match ty {
         NativeType::Boolean => {
             features.insert("boolean");
         }
-        NativeType::Scalar { role, .. } => {
-            features.insert(match role.kind {
-                ScalarKind::Integer { .. } => "integer",
-                ScalarKind::Text { .. } => "text",
-            });
-        }
+        NativeType::Scalar { role, .. } => match role.kind {
+            ScalarKind::Integer { .. } => {
+                features.insert("integer");
+            }
+            ScalarKind::Text { .. } => {
+                features.insert("text");
+            }
+            // Defensive: historical type checking cannot emit a rational.
+            ScalarKind::Rational { .. } => return Err(invalid_model()),
+        },
         NativeType::Enumeration { .. } => {
             features.insert("enumeration");
         }
@@ -125,13 +135,14 @@ fn native_type(ty: &NativeType<'_>, features: &mut Features) {
         }
         NativeType::Option(value) => {
             features.insert("option");
-            native_type(value, features);
+            native_type(value, features)?;
         }
         NativeType::Sequence { element, .. } => {
             features.insert("sequence");
-            native_type(element, features);
+            native_type(element, features)?;
         }
     }
+    Ok(())
 }
 
 pub(super) fn derive(checked: &CheckedPackage<'_>) -> Result<Features, Box<PackageError>> {
@@ -146,7 +157,7 @@ pub(super) fn derive(checked: &CheckedPackage<'_>) -> Result<Features, Box<Packa
     for clause in checked.clauses() {
         features.insert("boolean");
         for ty in clause.expression_types() {
-            native_type(ty, &mut features);
+            native_type(ty, &mut features)?;
         }
     }
     for clause in checked.linked().unit().clauses() {

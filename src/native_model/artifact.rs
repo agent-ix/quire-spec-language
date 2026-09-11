@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use quire_contract_ir as ir;
 use serde::Serialize;
 
-use super::{failure, NativeRoles, ScalarKind, ScalarSite, Unit};
+use super::{failure, NativeModelProfile, NativeRoles, ScalarKind, ScalarSite, Unit};
 use crate::{formal_source::FormalSource, Code, Diagnostic};
 
 type Result<T> = std::result::Result<T, Box<Diagnostic>>;
@@ -91,6 +91,9 @@ pub(super) fn check_string_content(
         budget.text(scalar.name.as_str())?;
         budget.span(&scalar.source)?;
         if let ScalarKind::Integer {
+            unit: Unit::Named(name),
+        }
+        | ScalarKind::Rational {
             unit: Unit::Named(name),
         } = &scalar.kind
         {
@@ -244,6 +247,7 @@ impl Write for BoundedBytes {
 }
 
 pub(super) fn encode(
+    profile: NativeModelProfile,
     source: &FormalSource,
     environment: &ir::DeclarationEnvironment,
     roles: &NativeRoles,
@@ -276,7 +280,7 @@ pub(super) fn encode(
         )
     })?;
     let artifact = Artifact {
-        profile: "native-state-model/1",
+        profile: profile.as_str(),
         declarations,
         source: ModelSource {
             identity: &source.source().identity().identity,

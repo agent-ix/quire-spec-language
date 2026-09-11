@@ -4,22 +4,34 @@
 use std::collections::BTreeMap;
 
 use super::{Meter, ValueKey};
-use crate::checking::Result;
 use crate::syntax::ExprId;
 use crate::Span;
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Fact {
+pub(in crate::checking) struct Fact {
     pub present: bool,
     pub guard: ExprId,
     pub outcome: bool,
 }
 
 /// None denotes an impossible path, not absence of information.
-pub(super) type Facts = Option<BTreeMap<ValueKey, Fact>>;
+pub(in crate::checking) type Facts = Option<BTreeMap<ValueKey, Fact>>;
+
+/// Each caller keeps source ownership and its existing accounting/error type.
+pub(in crate::checking) trait FactMeter {
+    type Error;
+    fn facts(&mut self, count: usize, span: Span) -> Result<(), Self::Error>;
+}
+
+impl FactMeter for Meter<'_> {
+    type Error = Box<crate::Diagnostic>;
+    fn facts(&mut self, count: usize, span: Span) -> Result<(), Self::Error> {
+        Meter::facts(self, count, span)
+    }
+}
 
 #[derive(Clone, Debug)]
-pub(super) struct Outcomes {
+pub(in crate::checking) struct Outcomes {
     pub yes: Facts,
     pub no: Facts,
 }
@@ -71,7 +83,12 @@ impl Outcomes {
             &self.no
         }
     }
-    pub fn rebase(&mut self, guard: ExprId, meter: &mut Meter<'_>, span: Span) -> Result<()> {
+    pub fn rebase<M: FactMeter>(
+        &mut self,
+        guard: ExprId,
+        meter: &mut M,
+        span: Span,
+    ) -> Result<(), M::Error> {
         for (truth, facts) in [(true, &mut self.yes), (false, &mut self.no)] {
             if let Some(facts) = facts {
                 meter.facts(facts.len(), span)?;
@@ -85,12 +102,12 @@ impl Outcomes {
     }
 }
 
-pub(super) fn sequential(
+pub(in crate::checking) fn sequential<M: FactMeter>(
     left: &Facts,
     right: &Facts,
-    meter: &mut Meter<'_>,
+    meter: &mut M,
     span: Span,
-) -> Result<Facts> {
+) -> Result<Facts, M::Error> {
     let (Some(left), Some(right)) = (left, right) else {
         return Ok(None);
     };
@@ -107,12 +124,12 @@ pub(super) fn sequential(
     Ok((!conflict).then_some(combined))
 }
 
-pub(super) fn alternative(
+pub(in crate::checking) fn alternative<M: FactMeter>(
     left: &Facts,
     right: &Facts,
-    meter: &mut Meter<'_>,
+    meter: &mut M,
     span: Span,
-) -> Result<Facts> {
+) -> Result<Facts, M::Error> {
     match (left, right) {
         (None, None) => Ok(None),
         (Some(facts), None) | (None, Some(facts)) => {

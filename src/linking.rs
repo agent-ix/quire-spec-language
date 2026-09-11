@@ -2,6 +2,7 @@
 //! FR-005/013/015: exact imports and formal/native declaration correspondence.
 //! Linking establishes names and provenance, not typing or evaluability.
 
+pub mod composed;
 mod native;
 
 use std::collections::BTreeSet;
@@ -11,7 +12,7 @@ use quire_contract_ir::{
     SymbolName, TypeDeclaration, ValueDeclarationKind, ValueType,
 };
 
-use crate::native_model::{NativeModel, ObjectRole, OperationRole};
+use crate::native_model::{NativeModel, NativeModelProfile, ObjectRole, OperationRole};
 use crate::syntax::{BinaryOp, Builtin, Clause, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::{ByteDigest, Code, Diagnostic, ParsedUnit, Phase, Span};
 
@@ -194,11 +195,24 @@ pub struct LinkedPackage<'a> {
 }
 
 impl<'a> LinkedPackage<'a> {
-    /// Exact model binding profile selected by the linking entry point.
+    /// Binding interpretation selected by the entry point. Consumers also verify
+    /// the actual selected model profiles through the typed boundary.
     pub fn binding_profile(&self) -> &'static str {
         match self.profile {
             BindingProfile::Formal => "native-formal-environment/1",
-            BindingProfile::Native => "native-state-model/1",
+            BindingProfile::Native => NativeModelProfile::V1.as_str(),
+        }
+    }
+    /// Historical checking validates actual model selections, not a display label.
+    pub(crate) fn require_historical_native(&self) -> Result<(), Box<Diagnostic>> {
+        match self.profile {
+            BindingProfile::Native => native::check_selected_profiles(&self.unit, &self.models),
+            BindingProfile::Formal => Err(failure(
+                &self.unit,
+                Code::UnsupportedConstruct,
+                Span { start: 0, end: 0 },
+                "checking requires the explicit native model binding profile",
+            )),
         }
     }
     /// Exact original syntax/source; cannot be replaced through this API.
@@ -307,6 +321,7 @@ pub fn link_native(
     preflight(&unit, models.len(), limits)?;
     let catalog = native::catalog(&unit, models, limits)?;
     let models = select_models(&unit, &catalog)?;
+    native::check_selected_profiles(&unit, &models)?;
     let clauses = resolve_clauses(&unit, &models, limits, BindingProfile::Native)?;
     Ok(LinkedPackage {
         profile: BindingProfile::Native,
@@ -379,6 +394,8 @@ fn formal_catalog<'a>(
     Ok(catalog)
 }
 
+// Success returns exactly one model for each import, in the authored order.
+// Profile checks and occurrence resolution retain that positional correspondence.
 fn select_models<'a>(
     unit: &ParsedUnit,
     catalog: &[LinkedModel<'a>],
@@ -969,6 +986,101 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 target,
                 field,
             } => self.reaches(id, *start, *target, field, expression.span, next),
+        }
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    use crate::checking::{check, CheckBindings, CheckLimits};
+    use crate::formal_source::FormalSource;
+    use crate::native_model::ModelLimits;
+    use crate::runtime_test_setup::native_rule_model;
+    use crate::{parse, Limits, SourceIdentity};
+    use ix_trace_rs::trace;
+    use quire_contract_ir as ir;
+
+    #[test]
+    #[trace("TC-120", "FR-041-AC-4")]
+    fn historical_checker_rechecks_actual_profiles_after_a_linker_invariant_bypass() {
+        let parts = native_rule_model::parts();
+        let model = NativeModel::new_with_profile(
+            NativeModelProfile::V2,
+            parts.source,
+            parts.environment,
+            parts.roles,
+            ModelLimits::default(),
+        )
+        .unwrap();
+        let text = format!(
+            "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\" version \"1\" digest \"{}\"; invariant Rule on M::Node at current {{ true }}",
+            model.digest()
+        );
+        let unit = parse(
+            SourceIdentity {
+                identity: "historical-profile-check".into(),
+                revision: "1".into(),
+            },
+            "historical.native",
+            text.as_bytes(),
+            Limits::default(),
+        )
+        .unwrap();
+        let import = unit.imports()[0].span;
+        let bindings = CheckBindings {
+            source: FormalSource::new(
+                unit.source().clone(),
+                ir::SourceIdentity::new(
+                    ir::SourceDocumentId::new("ProfileCheck").unwrap(),
+                    ir::SourceRevision::new(1).unwrap(),
+                ),
+            ),
+            clauses: Vec::new(),
+        };
+        let selected = LinkedModel {
+            environment: model.environment(),
+            digest: model.digest(),
+            native: Some(&model),
+        };
+        for (models, expected, at) in [
+            (vec![selected], Code::UnsupportedConstruct, import),
+            (
+                Vec::new(),
+                Code::InvalidModelBinding,
+                Span { start: 0, end: 0 },
+            ),
+            (
+                vec![selected, selected],
+                Code::InvalidModelBinding,
+                Span { start: 0, end: 0 },
+            ),
+            (
+                vec![LinkedModel {
+                    native: None,
+                    ..selected
+                }],
+                Code::InvalidModelBinding,
+                import,
+            ),
+        ] {
+            // Only this private invariant control bypasses normal link_native.
+            // Its historical label cannot authorize the actual /2 selection or
+            // let a malformed correspondence reach clause/type/proof processing.
+            let linked = LinkedPackage {
+                profile: BindingProfile::Native,
+                unit: unit.clone(),
+                models,
+                clauses: Vec::new(),
+            };
+            assert_eq!(linked.binding_profile(), NativeModelProfile::V1.as_str());
+            let error = check(linked, bindings.clone(), CheckLimits::default()).unwrap_err();
+            assert_eq!(error.code, expected);
+            assert_eq!(error.phase, Phase::Check);
+            assert_eq!(
+                (error.span.start.byte, error.span.end.byte),
+                (at.start, at.end)
+            );
         }
     }
 }
