@@ -41,6 +41,7 @@ appropriate error provenance, explicitly rather than through a presence guard.
 | FR-024 | FR-024-AC-2 | TC-100 | ✅ Tested |
 | FR-024 | FR-024-AC-3 | TC-099, TC-100 | ✅ Tested |
 | FR-024 | FR-024-AC-4 | TC-099, TC-100 | ✅ Tested |
+| FR-024 | FR-024-AC-5 | TC-099, TC-100 | ✅ Tested |
 | FR-025 | FR-025-AC-1 | TC-101 | ✅ Tested |
 | FR-025 | FR-025-AC-2 | TC-101 | ✅ Tested |
 | FR-025 | FR-025-AC-3 | TC-102 | ✅ Tested |

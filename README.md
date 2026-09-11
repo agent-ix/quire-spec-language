@@ -45,10 +45,14 @@ See the
 domains and limits. The [numeric component](spec/functional/FR-038-encode-exact-protocol-numbers.md)
 uses tagged canonical decimal strings for signed-64 integers and reduced
 rationals, with typed validation errors. Real source-to-reader tests exercise
-native predicate, state, temporal and protocol emission. General decision
-proofs, recovery admission, unavailable producer exports and the actual
-producer-to-B handoff remain open; the supported boundary is stated in the
-wire contract.
+native predicate, state, temporal and protocol emission, including static
+compensation registration, activation, retries and full/partial recovery
+requirements. The [Rust producer recipe](examples/protocol-handoff/README.md)
+combines four source units, queries, population/reference roles and actual model
+operations, retaining the executable bytes and independently derived selectors.
+General dynamic choice/progress proofs, first-class relationship exports,
+runtime recovery and B's public consumer acceptance remain open; the supported
+boundary is stated in the wire contract.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
@@ -145,6 +149,13 @@ Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
 the existing codegen still refuses numeric expressions. The `standalone_fixtures`
 example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
 Their native runs return true and false; both export the same integer projection.
+`ProjectionTarget::StateScalarIrV1` additionally projects primitive self fields
+and `pre` expressions. `NativeProjection::inputs` supplies their actual values
+from a context validated against that exact checked package, retaining snapshot,
+invocation and object provenance. For the concrete update example, run
+`quire-spec lower <unchanged-version/compile.json> --target state-scalar-ir/v1`.
+This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
+inputs; native population and frame validation still precedes materialization.
 The LC04 backend qualification uses pinned existing codegen and actual generated
 Rust; activation acceptance is pending the codegen reader's Rust 1.98.1 / LLVM
 3.1.0 migration. [Plan-008](plan/Plan-008-native-lowering/plan.md) retains that gate.
@@ -281,6 +292,10 @@ requests. The standalone `quire-spec run <request-file>` command now reads selec
 model/program/runtime files and calls these same APIs. See
 [the runnable workflow](docs/native-standalone.md) for healthy, violating,
 operation and refused examples, JSON results and exit codes.
+
+[Matrix status checks](docs/matrix-status.md) records the exact CLI/module stack
+that reads both authored status columns, its false-completion controls and the
+remaining installed-tool limitation. Coverage binding does not execute tests.
 
 `Snapshot::read_verified` and `Invocation::read_verified` now read selected
 `native-state-input/1` bytes through closed Serde decoding and the existing

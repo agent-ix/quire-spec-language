@@ -24,6 +24,8 @@ object and compiled ConfigVersion acceptance remains LC04 work.
    local gates, QUOIN spec/code/Rust/gap reviews at PR readiness, then delivery.
 3. [Task-032](tasks/Task-032-integer-ir.md): bounded integer IR lowering and
    standalone export, independently of C's backend implementation.
+4. [Task-033](tasks/Task-033-state-scalar-ir.md): concrete context-field projection
+   and validated primitive inputs at their original observations.
 
 Owner direction for the first proof of concept permits engineering delivery with
 generated activation qualification deferred. Complete the scoped PR review and

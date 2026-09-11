@@ -95,6 +95,12 @@ bytes, while `usage()` describes the actual constructor pass. InputReadError
 retains the expected reference, failed stage and original JSON/structural cause.
 No reader opens files or starts runtime evaluation.
 
+Each public draft, record, reference and value-node type owns these Serde shape
+checks for direct and nested decoding. No caller-supplied object adapter is
+needed. Direct decoding still produces a draft: it does not establish artifact
+limits or model validity. An invocation `result` must be present, with `null`
+representing no result; digest fields require bare lowercase 64-digit hex.
+
 Encoding uses serde_json's exact integer/string encoding and declared struct
 field order, with no extra whitespace or terminal newline. Sequences, flat arena
 node order and all explicit input vectors retain their order in these byte
@@ -134,6 +140,15 @@ snapshot/invocation. SymbolName and anchor values use their existing exact strin
 representations; numeric payloads preserve signed i64 values. No unordered map
 controls the order of emitted fields or entries. These emitted bytes are a native
 domain payload; external-reader acceptance is governed by FR-024.
+
+The local [Draft 2020-12 schema](../schemas/native-state-input-1.schema.json)
+describes both envelope kinds and their closed record/value shapes. It admits
+representable numeric values and explicit null results, preserving duplicate
+vector occurrences. It validates parsed JSON data; the original-byte reader
+still rejects duplicate keys, noncanonical numeric tokens, stale selections
+and invalid arena references. Schema validation cannot recover precision that
+a caller's JSON parser already discarded. Artifact byte/work bounds and actual
+model-aware validation remain separate stages.
 
 Artifact construction checks nonempty identity/revision labels, bounded values,
 metadata entries, content and arena depth; duplicate fields/objects remain in

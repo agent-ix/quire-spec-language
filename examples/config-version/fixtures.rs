@@ -21,8 +21,11 @@ pub const MODEL: &str = include_str!("model.json");
 
 #[path = "cases.rs"]
 mod cases;
-pub use cases::{Case, CASES};
+pub use cases::Case;
 use cases::{CaseSpec, Input, Row};
+
+/// Every declared case, in deterministic generation order.
+pub const CASES: &[Case] = cases::CASES;
 
 fn symbol(name: &str) -> ir::SymbolName {
     ir::SymbolName::new(name).expect("static example symbol")

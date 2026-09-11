@@ -1,21 +1,41 @@
 # Native protocol producer example
 
-`native_protocol_handoff` compiles the authored [native body](workflow.body.native)
-and [located rule model](model.json) through the public model frontend, namespace,
-binding, type, definedness and family-admission APIs. It emits through
+`native_protocol_handoff` compiles the authored [predicate](predicates.body.native),
+[state](state.body.native), [temporal](temporal.body.native) and
+[workflow](workflow.body.native) source units and the [located rule model](model.json)
+through the public model frontend, namespace, binding, type, definedness and
+family-admission APIs. It emits through
 `protocol_artifact::native::emit` and checks the unchanged bytes with
 `protocol_artifact::read` against selections derived from the original inputs.
 The output seal is selected by the producer after emission; this local reader
 check does not independently authenticate that seal or exercise tamper controls.
-The example includes an exact rational domain, object/reference population
-requirements, and predicate, state, temporal and protocol declarations. It
-supplies no runtime observations or population-completeness claims.
+The units retain cross-unit calls, bounded `sum`/`size` queries, exact rational types and
+object/reference population requirements. The actual `Workflow::apply` operation
+and its pre/post contracts retain their model and source owners. Both `Full` and
+`Partial` compensation obligations pair with `Main::Applied`: `Full` requires the
+receipt sum to equal its captured target and names `Main::Committed`; `Partial`
+requires a positive sum below its captured target and selects commit `never`.
+Their registration, activation, retry anchors and recovery predicates remain
+distinct static requirements; the example supplies no runtime
+observations, population-completeness claims or recovery results.
 
 Build and run the Rust example with a new output directory:
 
 ```console
 CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_handoff -- /tmp/quire-native-handoff
 ```
+
+Run the named producer test with its actual stripped release test executable:
+
+```console
+CARGO_PROFILE_RELEASE_STRIP=symbols cargo test --locked --offline --release --no-default-features --example native_protocol_handoff stripped_release_producer_keeps_original_owners_and_compensations -- --ignored --test-threads=1
+```
+
+This test uses a fresh temporary output directory and checks original source and
+declaration owners plus Full/Partial compensation records after the producer's
+independent reader succeeds. It is ignored in ordinary test runs because the
+executable must fit the producer's ELF binary limit. It does not exercise B's
+acceptance interface.
 
 This recipe supports Linux ELF executables; Mach-O and PE executables are refused.
 The producer reads its actual `current_exe()` bytes, identifies an ELF version-1
@@ -34,7 +54,8 @@ The output directory contains:
 - `compiled-protocol.ref.json`: the existing `ix.artifact-ref/3-draft` external seal.
 - `expected.json`: this example's independent selections, using the existing
   wire records and `Expected` fields, plus relative dependency/model filenames.
-- `workflow.native` and `model-source.json`: the complete original sources.
+- `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and
+  `model-source.json`: the complete original sources.
 - `dependencies/`: exact selected model, binary, contract, definition and rule
   bytes; `expected.json` maps each reference to its file and direct prerequisites.
 
@@ -61,8 +82,9 @@ alternate model reader is needed.
 This example exercises A's producer and reader. FR-042-AC-10 and B's IT-001 stay
 incomplete until B's real public Rust admission/linking interface consumes these
 unchanged bytes and retains the selectors. No B implementation is supplied here.
-The broader recovery, decision-proof and producer-authority obligations remain
-as specified in FR-042/TC-121.
+General dynamic choice/progress proofs, first-class D relationship/related-instance
+exports and runtime recovery remain open as specified in FR-042/TC-121. Ordinary
+object/reference exports do not supply those relationship authorities.
 
 New example source uses AGPL-3.0-only. Embedded standard documents retain their
 [original provenance and deferred licensing](../../resources/native-v1/README.md);
