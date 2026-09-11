@@ -5,9 +5,6 @@
 //! evidence that its operation succeeded: nothing here asserts that an attempt
 //! implies an effect, and the emitted packages are checked to carry no effect.
 
-// The shared setup module also serves tests that rebind operation contracts;
-// these cases author none, so its contract helper is unused in this target.
-#[allow(dead_code)]
 #[path = "support/native_protocol/mod.rs"]
 mod setup;
 
@@ -128,8 +125,8 @@ fn an_immutable_alias_retains_the_exact_owned_attempt_boolean_atom() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
-fn an_unused_initializer_cannot_hide_an_unavailable_or_foreign_role_atom() {
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7")]
+fn an_unused_initializer_cannot_hide_an_unadvertised_or_foreign_role_atom() {
     // The guard discards the alias, but the atom still has to be visible to,
     // and owned by, the deciding role.
     for (case, owner, visible, admits) in [
@@ -272,7 +269,7 @@ fn a_continuing_repeat_admits_when_every_feasible_attempt_branch_progresses() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+#[trace("TC-121", "FR-042-AC-5")]
 fn a_repeat_refuses_when_a_feasible_attempt_branch_makes_no_progress() {
     let inputs = inputs(&loop_body("check Rejected using S { true };", ""));
     refused(&inputs, "feasible branch without progress");
