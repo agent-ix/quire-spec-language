@@ -292,6 +292,8 @@ pub enum ScopeIssue {
     InvalidAwaitEvent { control: c::ControlId, span: Span },
     /// A receive selects a different channel than its exact referenced send.
     IncompatibleReference { reference: usize },
+    /// An internal scope result did not extend its inherited frame chain.
+    InvalidEnvironment { span: Span },
 }
 
 /// Scope completion is independent of definition/model/type/family admission.
@@ -380,6 +382,7 @@ impl Environment {
     }
 }
 struct Frame {
+    // Frames are appended, so every parent precedes its child in the arena.
     parent: Option<usize>,
     binder: BinderId,
 }
@@ -525,34 +528,58 @@ impl Resolver<'_, '_> {
             anchor: Anchor::Activation,
             ..env
         };
-        let trigger = match activation {
-            c::Activation::Origin { .. } => None,
-            c::Activation::Each { trigger, guard, .. } => {
+        let (trigger, span) = match activation {
+            c::Activation::Origin { span } => (None, *span),
+            c::Activation::Each {
+                trigger,
+                guard,
+                span,
+            } => {
                 let id = self.parameter(trigger, BinderKind::Trigger, Anchor::Activation)?;
                 active = self.extend(active, id)?;
                 if let Some(guard) = guard {
                     self.expression(*guard, active)?;
                 }
-                Some(id)
+                (Some(id), *span)
             }
         };
         let captured = self.captures(captures, active, Anchor::Activation)?;
         // Export captures in their authored order, leaving the activation trigger behind.
-        let mut exported = env;
-        let mut ids = Vec::new();
-        let mut cursor = captured.frame;
-        while cursor != env.frame {
+        self.export_frames(captured, env, env, trigger, span)
+    }
+
+    // Every control result must extend its inherited environment (possibly by
+    // zero frames). Validate the complete suffix before exporting anything;
+    // malformed ancestry refuses at its authored owner and retains only `output`.
+    fn export_frames(
+        &mut self,
+        result: Environment,
+        base: Environment,
+        mut output: Environment,
+        excluded: Option<BinderId>,
+        span: Span,
+    ) -> Result<Environment, Exhaustion> {
+        let mut exports = Vec::new();
+        let mut cursor = result.frame;
+        while cursor != base.frame {
             self.work.charge(Dimension::Edges, 1)?;
-            let frame = &self.frames[cursor.expect("activation frame")];
-            if Some(frame.binder) != trigger {
-                ids.push(frame.binder);
+            let Some(frame) = cursor.and_then(|index| {
+                self.frames
+                    .get(index)
+                    .filter(|frame| frame.parent.is_none_or(|parent| parent < index))
+            }) else {
+                self.issue(ScopeIssue::InvalidEnvironment { span })?;
+                return Ok(output);
+            };
+            if Some(frame.binder) != excluded {
+                exports.push(frame.binder);
             }
             cursor = frame.parent;
         }
-        for id in ids.into_iter().rev() {
-            exported = self.extend(exported, id)?;
+        for binder in exports.into_iter().rev() {
+            output = self.extend(output, binder)?;
         }
-        Ok(exported)
+        Ok(output)
     }
     fn finish_names(&mut self) -> Result<(), Exhaustion> {
         for issue in &mut self.output.issues {
