@@ -707,3 +707,267 @@ fn identity_only_compensation_effects_keep_exact_operation_obligation_and_attemp
         },
     );
 }
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
+fn compensation_await_and_associated_event_keep_original_activation_prerequisites() {
+    let body = changed(
+        "event Recovered by Service for Full as (recoveryEvent: M::Plain) { recoveryEvent.ready };",
+        "await RecoveryWindow after Partial using T clock \"await-recovery\" within [0,5]
+            match event RecoveryObserved by Service for Partial as (observedRecovery: M::Plain) { true };
+            then check RecoverySeen using S { true };
+            timeout check RecoveryExpired using S { true };",
+    );
+    let (inputs, _) = inputs(&body);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("actual compensation-anchored await and associated domain event");
+            let package = admitted.package();
+            let owner = package
+                .declarations
+                .iter()
+                .position(|declaration| declaration.name == "RecoveryFlow")
+                .unwrap() as u32;
+            let declaration = &package.declarations[owner as usize];
+            let w::Body::Protocol {
+                compensations,
+                controls,
+                roles,
+                causal_edges,
+                ..
+            } = &declaration.body
+            else {
+                panic!("original protocol")
+            };
+            let partial = w::Handle {
+                declaration: owner,
+                index: 1,
+            };
+            let selected_compensation = &compensations[partial.index as usize];
+            assert_eq!(selected_compensation.name, "Partial");
+            let wait = w::Handle {
+                declaration: owner,
+                index: controls
+                    .iter()
+                    .position(|control| control.name == "RecoveryWindow")
+                    .unwrap() as u32,
+            };
+            let wait_control = &controls[wait.index as usize];
+            let w::ControlOperation::Await {
+                after,
+                clock,
+                within,
+                event,
+                then_body,
+                timeout,
+                ..
+            } = &wait_control.operation
+            else {
+                panic!("native await")
+            };
+            assert_eq!(
+                after,
+                &w::AwaitAnchor::Compensation {
+                    compensation: partial.clone()
+                }
+            );
+            assert_eq!((integer(&within.lower), integer(&within.upper)), (0, 5));
+            assert_eq!(controls[event.index as usize].name, "RecoveryObserved");
+            assert_eq!(controls[then_body.index as usize].name, "RecoverySeen");
+            assert_eq!(controls[timeout.index as usize].name, "RecoveryExpired");
+
+            let namespace = proofs.types().binding().namespace();
+            let id = flow(proofs);
+            let unit = namespace
+                .unit(namespace.declaration(id).unwrap().unit())
+                .unwrap();
+            let c::DeclarationKind::Protocol(original) = &namespace.syntax(id).unwrap().kind else {
+                panic!("native protocol AST")
+            };
+            let c::ProtocolRequirement::Compensation(authored_partial) = &original.requirements[2]
+            else {
+                panic!("temporal requirement keeps its separate source index")
+            };
+            assert_eq!(authored_partial.name.value, "Partial");
+            let c::ControlKind::Await {
+                after: authored_after,
+                clock: authored_clock,
+                event: authored_event,
+                ..
+            } = &unit.controls()[wait_control.original_node as usize].kind
+            else {
+                panic!("original await occurrence")
+            };
+            assert_eq!(unit.source().slice(authored_after.span), Some("Partial"));
+            assert_eq!(authored_clock.value, "await-recovery");
+            let observed = &controls[event.index as usize];
+            let original_event = unit.control(*authored_event).unwrap();
+            assert_eq!(
+                &unit.controls()[observed.original_node as usize],
+                original_event
+            );
+            let c::ControlKind::Event(c::Event {
+                kind:
+                    c::EventKind::Event {
+                        compensation: Some(authored_target),
+                        ..
+                    },
+                ..
+            }) = &original_event.kind
+            else {
+                panic!("authored compensation event association")
+            };
+            assert_eq!(unit.source().slice(authored_target.span), Some("Partial"));
+            assert_eq!(
+                (
+                    wait_control.locus.span.start as usize,
+                    wait_control.locus.span.end as usize
+                ),
+                (
+                    unit.controls()[wait_control.original_node as usize]
+                        .span
+                        .start,
+                    unit.controls()[wait_control.original_node as usize]
+                        .span
+                        .end
+                )
+            );
+            assert_eq!(observed.locus.source, declaration.locus.source);
+
+            let activation_anchor =
+                &declaration.anchors[selected_compensation.activation_anchor.index as usize];
+            assert_eq!(activation_anchor.owner.0.as_ref(), Some(&partial));
+            assert_eq!(
+                activation_anchor.kind,
+                w::AnchorKind::CompensationActivation
+            );
+            let activation = activation_anchor.binding.0.unwrap();
+            assert_eq!(
+                declaration.bindings[activation as usize].requires,
+                [selected_compensation.registration_instance]
+            );
+            let clock_requirement = &declaration.bindings[*clock as usize];
+            assert_eq!(clock_requirement.requires, [activation]);
+            assert_eq!(
+                clock_requirement.subject,
+                w::Subject::Control {
+                    control: wait.clone()
+                }
+            );
+            assert_eq!(
+                (
+                    clock_requirement.locus.span.start as usize,
+                    clock_requirement.locus.span.end as usize
+                ),
+                (authored_clock.span.start, authored_clock.span.end)
+            );
+            for kind in [w::BindingKind::Progress, w::BindingKind::Closure] {
+                let requirement = declaration
+                    .bindings
+                    .iter()
+                    .find(|binding| {
+                        binding.kind == kind
+                            && binding.subject
+                                == w::Subject::Control {
+                                    control: wait.clone(),
+                                }
+                    })
+                    .unwrap();
+                assert_eq!(requirement.requires, [*clock]);
+                assert_eq!(requirement.anchor, clock_requirement.anchor);
+            }
+            let w::ControlOperation::Event {
+                event:
+                    w::Event::Event {
+                        owner: role,
+                        compensation,
+                        instance,
+                    },
+                ..
+            } = &observed.operation
+            else {
+                panic!("bound domain event")
+            };
+            assert_eq!(compensation.0.as_ref(), Some(&partial));
+            assert_eq!(event.declaration, owner);
+            let event_requirement = &declaration.bindings[*instance as usize];
+            assert_eq!(event_requirement.kind, w::BindingKind::Invocation);
+            assert_eq!(
+                event_requirement.subject,
+                w::Subject::Control {
+                    control: event.clone()
+                }
+            );
+            let mut event_dependencies = vec![
+                roles[role.index as usize].instance,
+                selected_compensation.registration_instance,
+            ];
+            event_dependencies.sort_unstable();
+            assert_eq!(event_requirement.requires, event_dependencies);
+
+            // These are branch alternatives and static prerequisites, not claims
+            // that an activation, event, timeout, or recovery actually occurred.
+            let edges: Vec<_> = causal_edges
+                .iter()
+                .filter(|edge| edge.owner == wait)
+                .collect();
+            assert_eq!(edges.len(), 5);
+            for (kind, from, from_port, to, to_port) in [
+                (
+                    w::EdgeKind::AwaitSuccess,
+                    &wait,
+                    w::Port::Enter,
+                    event,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::AwaitSuccess,
+                    event,
+                    w::Port::Exit,
+                    then_body,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::AwaitTimeout,
+                    &wait,
+                    w::Port::Enter,
+                    timeout,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::Join,
+                    then_body,
+                    w::Port::Exit,
+                    &wait,
+                    w::Port::Exit,
+                ),
+                (
+                    w::EdgeKind::Join,
+                    timeout,
+                    w::Port::Exit,
+                    &wait,
+                    w::Port::Exit,
+                ),
+            ] {
+                assert!(edges.iter().any(|edge| edge.kind == kind
+                    && edge.from.node == *from
+                    && edge.from.port == from_port
+                    && edge.to.node == *to
+                    && edge.to.port == to_port
+                    && edge.maximum.0.is_none()));
+            }
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs.read(proofs, &emitted).into_result().expect(
+                "independently selected reader accepts the original compensation references",
+            );
+            assert_eq!(read.package(), package);
+            assert_eq!(read.digest(), emitted.digest());
+        },
+    );
+}
