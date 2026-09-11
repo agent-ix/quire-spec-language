@@ -13,6 +13,7 @@
 use crate::protocol_artifact::wire as w;
 
 use super::profile::Profile;
+use super::result::Subject;
 use super::trace::Closure;
 
 /// Reviewed correspondence source this table restates.
@@ -81,6 +82,33 @@ pub enum Support {
     },
 }
 
+/// What a classification retains from the native declaration. Nothing is
+/// substituted or reduced: the subject, the selected profile identity and
+/// revision, and the activation record are the admitted declaration's own.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Retained {
+    /// The native declaration subject the request was made against.
+    pub subject: Subject,
+    /// The declaration's admitted name.
+    pub name: String,
+    /// The selected profile, retained by its registered identity.
+    pub profile: Profile,
+    /// The exact admitted profile revision, distinct from the language edition.
+    pub profile_revision: String,
+    /// The declaration's admitted activation record.
+    pub activation: w::Activation,
+}
+
+/// One classification request: its disposition, and everything the request
+/// retains from the native declaration it was made against.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Classification {
+    /// The disposition read from the reviewed support table.
+    pub support: Support,
+    /// The retained native subject, profile and activation record.
+    pub retained: Retained,
+}
+
 /// Which operator kinds a declaration's temporal graph reaches.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Operators {
@@ -136,7 +164,10 @@ pub fn classify(profile: Profile, operators: Operators, surrounding_execution: C
             Closure::Open => Target::OnlinePrefix,
         },
         table: SUPPORT_TABLE,
-        total_sample_valuation: profile == Profile::FixedSample,
+        // The fixed-sample row attaches its condition only where a bounded
+        // future operator is reachable; a formula reaching no bounded operator
+        // at all matches the last row instead and imposes no such obligation.
+        total_sample_valuation: profile == Profile::FixedSample && operators.future,
         premises: OUTSTANDING_PREMISES,
     }
 }

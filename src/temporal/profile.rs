@@ -62,6 +62,17 @@ impl Profile {
         }
     }
 
+    /// Whether a progress watermark advances this clock through an offset that
+    /// carries no business event. A declared sample period and a declared
+    /// timestamp unit both advance without one; an event-position sequence does
+    /// not advance during silence, so its watermark stays a retained premise.
+    pub fn advances_on_progress(self) -> bool {
+        match self {
+            Self::FixedSample | Self::TimestampedWindow => true,
+            Self::EventPosition => false,
+        }
+    }
+
     /// Whether an offset addresses a required position that must exist in a
     /// complete trace. Event-position and fixed-sample traces are dense in their
     /// own domain: every offset inside the scope is a required position, and a

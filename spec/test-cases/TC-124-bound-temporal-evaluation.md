@@ -27,13 +27,18 @@ score is claimed.
 
 ## Test Procedure
 
-1. Enumerate the overflow population declared in NFR-008's Verification section —
+1. Enumerate the boundary population declared in NFR-008's Verification section —
    eight operators x three profiles x nesting depths one through four x four
-   interval bound pairs x three anchor offsets, 1,152 cases — and evaluate each. Require rejection before any position is
-   visited, with reported `positions` usage zero and the overflow named against
-   its operator and interval. Compare each accepted composed horizon against an
-   independently computed checked value, and require refusal rather than a wrapped,
-   saturated or narrowed result.
+   interval bound pairs, 384 authored declarations — and evaluate each. Require
+   every outcome to be a well-formed assessment or a typed stop naming a charged
+   dimension and retaining the obligation identity, and require the population to
+   reach both regimes rather than stopping uniformly. Add a control at ordinary
+   bounds over the same nested shapes, so an evaluator that refused everything
+   could not pass. Separately author a composition reached from a nonzero offset
+   that provably leaves the i64 domain — `always[1,1] eventually[k,k]` with
+   `1 + k` outside the domain — and require a stop naming the checked-arithmetic
+   dimension, with the expected bound computed from the authored intervals rather
+   than read back from the evaluator.
 2. Independently force a stop in each of the eight charged dimensions against
    otherwise evaluable declarations, including horizon overflow, work exhaustion,
    active-instance exhaustion, capture exhaustion and retention exhaustion. Require each to produce an

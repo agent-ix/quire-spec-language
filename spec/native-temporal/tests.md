@@ -33,7 +33,17 @@ is visible in results. All three are recorded on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38).
 
 Status values are set from local runs only; hosted workflows remain
-manual-dispatch. `Coverage Status` and `Status` headers follow
+manual-dispatch. The 39 controls are `tests/composed_temporal_evaluation.rs` (14),
+`tests/composed_temporal_activation.rs` (11), `tests/composed_temporal_limits.rs`
+(7) and `tests/composed_temporal_mapping.rs` (7); all pass under
+`cargo test --locked --no-default-features -j 1 -- --test-threads=1`, with
+`cargo fmt --all -- --check` and Clippy clean under both the minimal and the
+`quire-extraction` lanes.
+
+Trace binding is claimed only where a run on the pinned stack in
+[matrix-status.md](../../docs/matrix-status.md) also reports zero
+`status-column-matches-nothing` diagnostics: on the installed stack an empty
+status-lie list is indistinguishable between a clean run and a skipped check. `Coverage Status` and `Status` headers follow
 [matrix-status.md](../../docs/matrix-status.md) and are not renamed.
 
 ## Requirements Traceability
@@ -42,46 +52,46 @@ manual-dispatch. `Coverage Status` and `Status` headers follow
 
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| FR-043 | FR-043-AC-1 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-2 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-3 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-4 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-5 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-6 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-7 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-8 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-9 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-10 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-11 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-12 | TC-122 | 🚧 Planned |
-| FR-043 | FR-043-AC-13 | TC-122 | 🚧 Planned |
-| FR-044 | FR-044-AC-1 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-2 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-3 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-4 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-5 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-6 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-7 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-8 | TC-123 | 🚧 Planned |
-| FR-044 | FR-044-AC-9 | TC-123 | 🚧 Planned |
-| FR-045 | FR-045-AC-1 | TC-125 | 🚧 Planned |
-| FR-045 | FR-045-AC-2 | TC-125 | 🚧 Planned |
-| FR-045 | FR-045-AC-3 | TC-125 | 🚧 Planned |
-| FR-045 | FR-045-AC-4 | TC-125 | 🚧 Planned |
-| FR-045 | FR-045-AC-5 | TC-125 | 🚧 Planned |
-| NFR-008 | NFR-008-AC-1 | TC-124 | 🚧 Planned |
-| NFR-008 | NFR-008-AC-2 | TC-124 | 🚧 Planned |
-| NFR-008 | NFR-008-AC-3 | TC-124 | 🚧 Planned |
-| NFR-008 | NFR-008-AC-4 | TC-124 | 🚧 Planned |
-| NFR-008 | NFR-008-AC-5 | TC-124 | 🚧 Planned |
+| FR-043 | FR-043-AC-1 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-2 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-3 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-4 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-5 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-6 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-7 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-8 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-9 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-10 | TC-122 | ✅ Tested; basis substitution not expressible, recorded on #38 |
+| FR-043 | FR-043-AC-11 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-12 | TC-122 | ✅ Tested |
+| FR-043 | FR-043-AC-13 | TC-122 | ✅ Tested |
+| FR-044 | FR-044-AC-1 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-2 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-3 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-4 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-5 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-6 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-7 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-8 | TC-123 | ✅ Tested |
+| FR-044 | FR-044-AC-9 | TC-123 | ✅ Tested |
+| FR-045 | FR-045-AC-1 | TC-125 | ✅ Tested |
+| FR-045 | FR-045-AC-2 | TC-125 | ✅ Tested |
+| FR-045 | FR-045-AC-3 | TC-125 | ✅ Tested |
+| FR-045 | FR-045-AC-4 | TC-125 | ✅ Tested |
+| FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
+| NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
+| NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
+| NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |
+| NFR-008 | NFR-008-AC-4 | TC-124 | ✅ Tested |
+| NFR-008 | NFR-008-AC-5 | TC-124 | ✅ Tested |
 
 ### Non-Functional Requirement Coverage
 
 | Non-Functional Req | Verification Method | Evidence/Test Cases | Status |
 | --- | --- | --- | --- |
-| NFR-008 | property-based-testing over the declared nested-horizon population; fault-injection for each forced stop; model-based-test-generation for eviction schedules; integration-testing for result reuse; negative-abuse-testing for ceiling permutations | TC-124 groups 1–5; counters published in docs/native-temporal-evaluation.md | 🚧 Planned; mutation-testing of the exhaustion paths outstanding on #38 |
-| NFR-005 | Inspection and the existing Rust gates | Rust-only evaluator, tests and fixtures; no shell or foreign-language executable path added | 🚧 Planned |
-| NFR-003 | Inspection and Test | Five distinct outcomes and five distinct settlement bases asserted in TC-122; no resource stop rendered as Boolean in TC-124 | 🚧 Planned |
+| NFR-008 | property-based-testing over the declared nested-horizon population; fault-injection for each forced stop; model-based-test-generation for eviction schedules; integration-testing for result reuse; negative-abuse-testing for ceiling permutations | TC-124 groups 1–5; counters published in docs/native-temporal-evaluation.md | ✅ Tested; mutation-testing of the exhaustion paths outstanding on #38 |
+| NFR-005 | Inspection and the existing Rust gates | Rust-only evaluator, tests and fixtures; no shell or foreign-language executable path added | ✅ Inspected locally |
+| NFR-003 | Inspection and Test | Five distinct outcomes and five distinct settlement bases asserted in TC-122; no resource stop rendered as Boolean in TC-124 | ✅ Tested |
 
 ### Stakeholder and User Story Coverage
 
@@ -93,10 +103,10 @@ groups 2 and 3. Illustrative EX IDs are not minted as acceptance criteria.
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
-| TC-122 | Bounded temporal truth under each selected profile | Integration | P1 | FR-043 | 🚧 Planned |
-| TC-123 | Activation dispositions and immutable captures | Integration | P1 | FR-044 | 🚧 Planned |
-| TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | 🚧 Planned |
-| TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | 🚧 Planned |
+| TC-122 | Bounded temporal truth under each selected profile | Integration | P1 | FR-043 | ✅ Tested |
+| TC-123 | Activation dispositions and immutable captures | Integration | P1 | FR-044 | ✅ Tested |
+| TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | ✅ Tested |
+| TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | ✅ Tested |
 
 ## Six coverage rules
 

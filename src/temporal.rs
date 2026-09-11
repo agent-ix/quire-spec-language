@@ -20,6 +20,7 @@ mod budget;
 mod formula;
 mod mapping;
 mod profile;
+mod progress;
 mod result;
 mod trace;
 
@@ -30,9 +31,11 @@ use formula::{Evaluator, Tri};
 
 pub use budget::{Dimension as LimitDimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 pub use mapping::{
-    classify, Operators, Support, Target, Unmatched, OUTSTANDING_PREMISES, SUPPORT_TABLE,
+    classify, Classification, Operators, Retained, Support, Target, Unmatched,
+    OUTSTANDING_PREMISES, SUPPORT_TABLE,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
+pub use progress::{Binding, Ledger, Progress};
 pub use result::{
     Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
     Incomplete, Obligation, Premises, Refusal, Report, Subject, Support as DecisionSupport, Truth,
@@ -57,7 +60,37 @@ pub fn evaluate(
     limits: Limits,
 ) -> Report {
     let mut work = budget::Work::new(limits);
-    let result = run(package, declaration, trace, &mut work);
+    let result = run(package, declaration, trace, trace.watermark, &mut work);
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+    }
+}
+
+/// Evaluate against a trace whose progress is retained across evaluations under
+/// its own binding.
+///
+/// The trace's watermark, completeness and decision-scope closure are recorded
+/// in `ledger` under this declaration, clock binding name and asserted profile
+/// identity. A watermark regressing under that binding, or a completeness
+/// assertion revised in conflict under it, is a typed contradiction refusal: the
+/// retained progress is not rolled back, the retained closure is not restamped
+/// and the earlier result is neither reused nor rewritten. Progress asserted
+/// under any other declaration, clock or profile is a different binding and
+/// settles nothing here.
+pub fn evaluate_with_progress(
+    package: &AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+    ledger: &mut Ledger,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let result = match ledger.record(Binding::of(declaration, trace), Progress::of(trace)) {
+        Ok(retained) => run(package, declaration, trace, retained.watermark, &mut work),
+        Err(refusal) => Err(refusal.into()),
+    };
     Report {
         result,
         limits: work.limits,
@@ -71,7 +104,7 @@ pub fn mapping_support(
     package: &AdmittedPackage,
     declaration: usize,
     surrounding_execution: Closure,
-) -> Result<Support, Error> {
+) -> Result<Classification, Error> {
     let mut work = budget::Work::new(Limits::default());
     let subject = Subject {
         declaration,
@@ -79,11 +112,27 @@ pub fn mapping_support(
     };
     work.subject = subject;
     let entry = select(package, declaration, &mut work)?;
-    Ok(classify(
-        entry.profile,
-        Operators::of(&entry.declaration.temporal),
-        surrounding_execution,
-    ))
+    let w::Body::Temporal { activation, .. } = entry.body else {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    };
+    Ok(Classification {
+        support: classify(
+            entry.profile,
+            Operators::of(&entry.declaration.temporal),
+            surrounding_execution,
+        ),
+        retained: Retained {
+            subject,
+            name: entry.declaration.name.clone(),
+            profile: entry.profile,
+            profile_revision: entry.revision.clone(),
+            activation: activation.clone(),
+        },
+    })
 }
 
 /// The admitted declaration, its temporal body and its selected profile.
@@ -135,6 +184,7 @@ fn run(
     package: &AdmittedPackage,
     declaration: usize,
     trace: &Trace,
+    watermark: i64,
     work: &mut budget::Work,
 ) -> Result<Vec<Obligation>, Error> {
     let subject = Subject {
@@ -193,7 +243,7 @@ fn run(
         profile_revision: selected.revision.clone(),
         clock: trace.clock.name.clone(),
         clock_parameters: trace.clock.parameters.clone(),
-        watermark: trace.watermark,
+        watermark,
         decision_scope: trace.decision_scope,
         surrounding_execution: trace.surrounding_execution,
         execution: trace.execution,
@@ -229,11 +279,11 @@ fn run(
                 work.subject = subject;
                 let instance = match instance {
                     Ok(instance) => instance,
-                    Err(error) => {
+                    Err(failed) => {
                         assessed.push(Obligation::Unactivated {
                             subject,
-                            instance: None,
-                            error,
+                            instance: failed.identity,
+                            error: failed.error,
                         });
                         continue;
                     }
@@ -245,6 +295,7 @@ fn run(
                     nodes: &selected.declaration.temporal,
                     declaration,
                     instance: ordinal,
+                    watermark,
                     support: Vec::new(),
                 };
                 let outcome = evaluator.root(root, work);

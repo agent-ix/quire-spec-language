@@ -20,6 +20,15 @@ no public entry point accepting a freely constructed `wire::Package`: admission
 through the reader is the constructor-private evidence that the declaration was
 compiled, not asserted.
 
+`temporal::evaluate_with_progress` takes the same inputs plus a caller-held
+`temporal::Ledger`, which retains the watermark, completeness assertion and
+decision-scope closure each `temporal::Binding` — one declaration, one clock
+binding name and one asserted profile identity — has already asserted. A caller
+evaluating one declaration repeatedly as observation arrives carries one ledger,
+so a contradicting assertion is refused rather than absorbed; progress recorded
+under any other binding settles nothing. `temporal::evaluate` consults no ledger
+and stands on the trace's own assertions alone.
+
 The evaluator returns a `Report` carrying either the per-instance `Assessment`
 list or one bounded stop. It does not evaluate composed value expressions, does
 not read observations from any transport, and emits no protocol result. Agent F
@@ -106,9 +115,10 @@ true.
 Under `quire.temporal.timestamped-event.finite-window/v1`, quantification ranges
 only over admitted instants inside the inclusive window and no synthetic atom is
 added after closure. An instant exactly at the upper endpoint participates before
-settlement. An empty window yields empty-existential `false` or empty-universal
-`true` only where the trace asserts completeness through the inclusive upper
-endpoint.
+settlement. The polarity a later admitted instant could still overturn —
+empty-existential or observed-existential `false`, and universal `true` — holds
+only where the trace asserts completeness through the inclusive upper endpoint
+and progress has reached it; otherwise the window is `Pending` with `Unsettled`.
 
 An incomplete input applies neither rule, even where the scope is labelled closed.
 

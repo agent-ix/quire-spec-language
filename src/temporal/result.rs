@@ -24,6 +24,10 @@ pub struct Subject {
     pub node: Option<usize>,
     /// Trace position under evaluation, when one was selected.
     pub position: Option<usize>,
+    /// Declared capture ordinal under evaluation, when one was selected. This
+    /// is what lets an incomplete or refused activation name *which* capture
+    /// could not be established rather than only that one could not.
+    pub capture: Option<usize>,
 }
 
 /// Bounded temporal truth. `Pending` is a distinct outcome, never a Boolean.
@@ -193,6 +197,10 @@ pub enum Dimension {
     PastOperator,
     FiniteWindow,
     OpenPrefix,
+    /// Progress in the profile's clock domain, asserted by a watermark.
+    Watermark,
+    /// The input-completeness assertion, independent of both closure axes.
+    Completeness,
 }
 
 /// A located refusal. No refusal is ever reported as a temporal Boolean.
@@ -215,10 +223,26 @@ pub enum Refusal {
         dimension: Dimension,
         subject: Subject,
     },
-    /// A monotonic progress assertion regressed, or a completeness assertion
-    /// was revised in conflict, under one binding.
-    #[error("temporal progress or completeness contradiction")]
-    Contradiction { subject: Subject },
+    /// Two deliveries asserted one semantic trigger or execution-origin
+    /// identity with conflicting payloads.
+    #[error("conflicting temporal deliveries under identity {identity}")]
+    Contradiction {
+        /// The semantic identity the conflict was asserted under.
+        identity: String,
+        subject: Subject,
+    },
+    /// A progress assertion contradicts the progress already retained under one
+    /// binding: a regressing watermark, or a completeness assertion revised in
+    /// conflict. The retained progress is not rolled back, the retained closure
+    /// is not restamped and no earlier result is rewritten.
+    #[error("temporal progress contradiction on {dimension:?} under clock {clock}")]
+    Progress {
+        /// Which retained dimension the assertion contradicts.
+        dimension: Dimension,
+        /// Clock binding name the contradiction was asserted under.
+        clock: String,
+        subject: Subject,
+    },
     /// The emitted graph did not match the shape this evaluator admits.
     #[error("temporal graph reference is not admissible")]
     Reference { subject: Subject },
@@ -241,8 +265,9 @@ pub enum Obligation {
     /// Activation could not be established for this instance.
     Unactivated {
         subject: Subject,
-        /// Semantic instance identity, where one was known before the failure.
-        instance: Option<String>,
+        /// Semantic instance identity. Known whenever the trigger was admitted,
+        /// which is every case an activation can fail in.
+        instance: String,
         error: Error,
     },
 }

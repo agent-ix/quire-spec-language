@@ -66,6 +66,10 @@ pub(super) struct Evaluator<'a> {
     pub nodes: &'a [w::Temporal],
     pub declaration: usize,
     pub instance: usize,
+    /// Progress in force for this binding, in the profile's clock domain. It is
+    /// the trace's own assertion, or the progress a ledger retains for the
+    /// binding; progress asserted under any other binding never reaches here.
+    pub watermark: i64,
     /// Positions consulted while establishing the reported truth.
     pub support: Support,
 }
@@ -81,14 +85,25 @@ impl<'a> Evaluator<'a> {
             instance: self.instance,
             node: Some(node),
             position: self.position_at(offset),
+            capture: None,
         }
     }
 
-    /// The trace position holding a dense offset, when one exists.
+    /// The trace position an offset addresses, when one exists. A dense profile
+    /// names one position per integer offset from the anchor; a finite window
+    /// is sparse, so the offset names the admitted instant at that clock
+    /// distance from the anchor and no other.
     fn position_at(&self, offset: i64) -> Option<usize> {
-        usize::try_from(offset)
-            .ok()
-            .and_then(|offset| self.ordered.get(offset).copied())
+        if self.profile.requires_dense_positions() {
+            return usize::try_from(offset)
+                .ok()
+                .and_then(|offset| self.ordered.get(offset).copied());
+        }
+        let coordinate = self.anchor_coordinate().checked_add(offset)?;
+        self.ordered
+            .iter()
+            .copied()
+            .find(|position| self.trace.positions[*position].coordinate == coordinate)
     }
 
     fn evaluate(
@@ -235,11 +250,17 @@ impl<'a> Evaluator<'a> {
             return Ok(Vec::new());
         }
         if self.profile.requires_dense_positions() {
+            // A false-extension profile is dense, so the range names one
+            // position per integer offset. A span too large to address is a
+            // position-count stop, not a horizon-arithmetic stop: the bound
+            // composition itself did not overflow.
             let span = hi
                 .checked_sub(lo)
                 .and_then(|span| span.checked_add(1))
-                .ok_or_else(|| horizon(work))?;
-            let span = usize::try_from(span).map_err(|_| horizon(work))?;
+                .and_then(|span| usize::try_from(span).ok());
+            let Some(span) = span else {
+                return Err(exhausted(Charge::Positions, usize::MAX, work));
+            };
             work.charge(Charge::Positions, span)?;
             return Ok((lo..=hi).collect());
         }
@@ -277,9 +298,6 @@ impl<'a> Evaluator<'a> {
         work: &mut Work,
     ) -> Result<Tri, Error> {
         let offsets = self.offsets(lo, hi, work)?;
-        if offsets.is_empty() {
-            return Ok(self.empty_window(hi, universal, work));
-        }
         let mut value = if universal { Tri::True } else { Tri::False };
         for offset in offsets {
             let step = self.evaluate(node, offset, depth, work)?;
@@ -289,24 +307,38 @@ impl<'a> Evaluator<'a> {
                 value.or(step)
             };
         }
-        Ok(value)
+        Ok(self.window(value, hi, universal))
     }
 
-    /// An empty quantification range. Under the finite-window profile the
-    /// empty-existential `false` and empty-universal `true` are emitted only
-    /// where the authority establishes completeness through the inclusive
-    /// upper endpoint.
-    fn empty_window(&self, hi: i64, universal: bool, _work: &mut Work) -> Tri {
-        let complete =
-            self.trace.completeness == Completeness::Complete && self.trace.watermark >= hi;
-        if !complete {
-            return Tri::Unknown;
+    /// Whether progress establishes this clock through the inclusive upper
+    /// endpoint `hi`, measured from the anchor in the profile's own clock
+    /// domain, over complete valuations.
+    ///
+    /// A fixed-sample or timestamped progress assertion advances the clock with
+    /// no business event; an event-position clock does not advance during
+    /// silence, so its watermark stays a retained premise and establishes
+    /// nothing.
+    fn established(&self, hi: i64) -> bool {
+        self.profile.advances_on_progress()
+            && self.trace.completeness == Completeness::Complete
+            && self
+                .anchor_coordinate()
+                .checked_add(hi)
+                .is_some_and(|deadline| self.watermark >= deadline)
+    }
+
+    /// Settle a quantification over a finite window. A window ranges only over
+    /// admitted instants, so the polarity a later instant could still overturn
+    /// — `false` for an existential range, including the empty one, and `true`
+    /// for a universal one — holds only where progress establishes the window
+    /// through its inclusive upper endpoint. A dense profile has no later
+    /// instant to admit, so its own boundary rule decides instead.
+    fn window(&self, value: Tri, hi: i64, universal: bool) -> Tri {
+        let decisive = if universal { Tri::False } else { Tri::True };
+        if value == decisive || self.profile.requires_dense_positions() || self.established(hi) {
+            return value;
         }
-        if universal {
-            Tri::True
-        } else {
-            Tri::False
-        }
+        Tri::Unknown
     }
 
     /// `left until[a,b] right` and `left since[a,b] right`, together with their
@@ -337,9 +369,6 @@ impl<'a> Evaluator<'a> {
         if past {
             offsets.reverse();
         }
-        if offsets.is_empty() {
-            return Ok(self.empty_window(hi, dual, work));
-        }
         let mut result = if dual { Tri::True } else { Tri::False };
         let mut every = Tri::True;
         let mut any = Tri::False;
@@ -359,7 +388,7 @@ impl<'a> Evaluator<'a> {
             every = every.and(held);
             any = any.or(held);
         }
-        Ok(result)
+        Ok(self.window(result, hi, dual))
     }
 
     /// Order-sensitive operators refuse when two participating positions share
@@ -409,11 +438,11 @@ impl<'a> Evaluator<'a> {
                 }
                 .into());
             }
-            return Ok(self.outside());
+            return Ok(self.outside(offset));
         }
 
         let Some(position) = self.position_at(offset) else {
-            return Ok(self.outside());
+            return Ok(self.outside(offset));
         };
         if self.trace.evicted.iter().any(|evicted| {
             matches!(
@@ -450,12 +479,19 @@ impl<'a> Evaluator<'a> {
 
     /// An atomic valuation outside the admitted positions. An incomplete input
     /// applies no boundary rule, even where the scope is labelled closed.
-    fn outside(&self) -> Tri {
+    ///
+    /// An open scope extends nothing on its own. A fixed-sample or timestamped
+    /// progress assertion, however, advances the clock through the offset with
+    /// no business event, so over complete valuations the silent offset carries
+    /// a false atom and the bounded obligation settles at its deadline. An
+    /// event-position clock does not advance during silence and stays unknown.
+    fn outside(&self, offset: i64) -> Tri {
         if self.trace.completeness == Completeness::Incomplete {
             return Tri::Unknown;
         }
         match (self.trace.decision_scope, self.profile.extends_false()) {
             (Closure::Closed, true) => Tri::False,
+            (Closure::Open, true) if self.established(offset) => Tri::False,
             (Closure::Closed, false) | (Closure::Open, _) => Tri::Unknown,
         }
     }
@@ -470,15 +506,33 @@ fn index(handle: &w::Handle, work: &mut Work) -> Result<usize, Error> {
     })
 }
 
-fn horizon(work: &Work) -> Error {
+/// A stop whose requested increment cannot be represented, so it can never be
+/// charged. Usage and the effective ceiling are reported unchanged.
+fn exhausted(dimension: Charge, requested: usize, work: &Work) -> Error {
+    let (used, limit) = match dimension {
+        Charge::Positions => (work.usage.positions, work.limits.positions),
+        Charge::Horizon => (work.usage.horizon, work.limits.horizon),
+        Charge::Valuations => (work.usage.valuations, work.limits.valuations),
+        Charge::Instances => (work.usage.instances, work.limits.instances),
+        Charge::Captures => (work.usage.captures, work.limits.captures),
+        Charge::Retention => (work.usage.retention, work.limits.retention),
+        Charge::Visits => (work.usage.visits, work.limits.visits),
+        Charge::Depth => (work.usage.depth, work.limits.depth),
+    };
     super::budget::Exhaustion {
-        dimension: Charge::Horizon,
-        used: work.usage.horizon,
-        requested: usize::MAX,
-        limit: work.limits.horizon,
+        dimension,
+        used,
+        requested,
+        limit,
         subject: work.subject,
     }
     .into()
+}
+
+/// Checked interval arithmetic overflowed; the composed horizon is outside the
+/// i64 domain and no evaluation is attempted.
+fn horizon(work: &Work) -> Error {
+    exhausted(Charge::Horizon, usize::MAX, work)
 }
 
 fn charge_horizon(bound: i64, work: &mut Work) -> Result<(), Error> {
