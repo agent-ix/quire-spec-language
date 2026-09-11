@@ -10,11 +10,37 @@ use quire_contract_ir::{
 use super::{
     failure, location, DeclarationKey, LinkLimits, LinkedModel, ResolutionTarget, Resolver, Shape,
 };
-use crate::native_model::{NativeModel, OperationRole};
+use crate::native_model::{NativeModel, NativeModelProfile, OperationRole};
 use crate::syntax::{Clause, ExprId};
 use crate::{Code, Diagnostic, ParsedUnit, Span, Spanned};
 
 type Result<T> = std::result::Result<T, Box<Diagnostic>>;
+
+/// FR-041: only selected artifacts cross the historical semantic boundary.
+pub(super) fn check_selected_profiles(unit: &ParsedUnit, models: &[LinkedModel<'_>]) -> Result<()> {
+    for (import, selected) in unit.imports().iter().zip(models) {
+        let model = selected.native_model().ok_or_else(|| {
+            failure(
+                unit,
+                Code::InvalidModelBinding,
+                import.span,
+                "historical native import has no admitted native model",
+            )
+        })?;
+        match model.profile() {
+            NativeModelProfile::V1 => {}
+            NativeModelProfile::V2 => {
+                return Err(failure(
+                    unit,
+                    Code::UnsupportedConstruct,
+                    import.span,
+                    "historical native linking does not admit native-state-model/2",
+                ))
+            }
+        }
+    }
+    Ok(())
+}
 
 pub(super) fn catalog<'a>(
     unit: &ParsedUnit,

@@ -29,6 +29,22 @@ pub(super) struct RuleModel<'a> {
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum ScalarV1 {
+    Integer {
+        name: String,
+        minimum: i64,
+        maximum: i64,
+        unit: Option<String>,
+    },
+    Text {
+        name: String,
+        max_scalars: u32,
+    },
+}
+
+/// The /2 scalar extension; all other source sections share the /1 wire types.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum Scalar {
     Integer {
         name: String,
@@ -40,6 +56,32 @@ pub(super) enum Scalar {
         name: String,
         max_scalars: u32,
     },
+    Rational {
+        name: String,
+        numerator_minimum: i64,
+        numerator_maximum: i64,
+        maximum_denominator: u64,
+        unit: Option<String>,
+    },
+}
+
+impl From<ScalarV1> for Scalar {
+    fn from(value: ScalarV1) -> Self {
+        match value {
+            ScalarV1::Integer {
+                name,
+                minimum,
+                maximum,
+                unit,
+            } => Self::Integer {
+                name,
+                minimum,
+                maximum,
+                unit,
+            },
+            ScalarV1::Text { name, max_scalars } => Self::Text { name, max_scalars },
+        }
+    }
 }
 
 #[derive(Deserialize)]

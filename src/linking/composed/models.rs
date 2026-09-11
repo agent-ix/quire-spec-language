@@ -17,7 +17,7 @@ use crate::{ByteDigest, Span, Spanned};
 /// Supplied model selections; only constructor-admitted native artifacts bind.
 #[derive(Clone, Copy, Debug)]
 pub enum ModelInput<'a> {
-    /// Existing native-state-model/1 admission, preserving its actual declarations.
+    /// Constructor-admitted native model, preserving its actual profile and declarations.
     Native(&'a NativeModel),
     /// An explicit external selection whose correspondence is not implemented.
     /// These labels select a refusal, never assert producer validity.
