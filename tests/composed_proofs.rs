@@ -10,7 +10,7 @@ use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::proofs::work::Dimension;
 use quire_spec_language::checking::composed::proofs::{
     self, CauseKind, CorrespondenceError, DeclarationProof, ProofDisposition, ProofLimits,
-    ProofReport, Unsupported,
+    ProofReport,
 };
 use quire_spec_language::checking::composed::{
     self, ObservationOrigin, TypeDisposition, TypeLimits, TypeReport,
@@ -685,28 +685,25 @@ fn callee_totality_and_call_argument_definedness_are_independent_obligations() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-4", "FR-040-AC-8")]
-fn unsupported_ordered_query_proofs_remain_distinct_from_type_admission() {
+#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-5", "FR-040-AC-8")]
+fn ordered_query_definedness_keeps_original_types_and_unblocks_consumers() {
     inspect("predicate Ordered using S (input: M::Node): Boolean { forall(item in input.amounts: item >= 1) }\n\
         predicate Consumer using S (input: M::Node): Boolean { Ordered(input) }\n\
         predicate Independent using S (): Boolean { true }", &["Ordered", "Consumer", "Independent"], |types, bindings| {
             let report = proofs::discharge(types, bindings, ProofLimits::default());
             let ordered = id(types, "Ordered");
-            let consumer = id(types, "Consumer");
             assert_eq!(types.disposition(ordered), Some(TypeDisposition::Typed));
-            assert_eq!(report.disposition(ordered), Some(ProofDisposition::Refused));
-            assert!(!report.declaration(ordered).unwrap().complete());
-            let cause = report.declaration(ordered).unwrap().causes().iter().find(|cause|
-                matches!(cause.kind, CauseKind::Unsupported(Unsupported::OrderedQuery))).unwrap();
-            assert_eq!(cause.site.declaration, ordered);
-            assert_eq!(cause.site.unit, types.declaration(ordered).unwrap().unit());
-            let unit = types.binding().namespace().unit(cause.site.unit).unwrap();
-            assert_eq!(unit.source().slice(cause.site.span), Some("forall(item in input.amounts: item >= 1)"));
-            assert_eq!(unit.expression(cause.site.expression.unwrap()).unwrap().span, cause.site.span);
-            assert_eq!(report.disposition(consumer), Some(ProofDisposition::Refused));
-            assert!(!report.declaration(consumer).unwrap().complete());
-            assert!(report.declaration(consumer).unwrap().causes().iter().any(|cause|
-                matches!(cause.kind, CauseKind::Dependency { target } if target == ordered)));
+            let proof = discharged(&report, "Ordered");
+            assert_eq!(proof.declaration(), ordered);
+            let typed = types.declaration(ordered).unwrap();
+            assert_eq!(proof.unit(), typed.unit());
+            let unit = types.binding().namespace().unit(proof.unit()).unwrap();
+            let query = typed.nodes().iter().find(|node| unit.source().slice(node.span)
+                == Some("forall(item in input.amounts: item >= 1)")).unwrap();
+            assert!(matches!(query.ty, Some(quire_spec_language::checking::NativeType::Boolean)));
+            assert_eq!(unit.expression(query.expression).unwrap().span, query.span);
+            assert_eq!(report.clause_binding(ordered), Some(&bindings[0].clauses[0]));
+            discharged(&report, "Consumer");
             discharged(&report, "Independent");
         });
 }

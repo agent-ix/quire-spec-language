@@ -76,7 +76,7 @@ impl ValueBuilder<'_> {
                     }
                 }
             };
-            let operation = self.operation(&context, at, work)?;
+            let operation = self.operation(&context, at, value_type, work)?;
             work.charge(Dimension::Entries, 1)?;
             result.push(w::Value {
                 original_expression: index(at.0)?,
@@ -102,6 +102,7 @@ impl ValueBuilder<'_> {
         &mut self,
         context: &Context<'_, '_>,
         at: ExprId,
+        result: u32,
         work: &mut Work,
     ) -> Result<w::ValueOperation, Error> {
         let layout = context.layout;
@@ -230,9 +231,10 @@ impl ValueBuilder<'_> {
                             value: layout.value(*argument)?,
                         }
                     }
-                    // Actual proof admission currently refuses ordered collection
-                    // meanings. Do not turn its absence into executable authority.
-                    Builtin::Size => return Err(Error::Unsupported(Unsupported::Feature)),
+                    Builtin::Size => w::ValueOperation::Size {
+                        collection: layout.value(*argument)?,
+                        result,
+                    },
                 },
                 ExprKind::Let { name, value, body } => w::ValueOperation::Let {
                     binder: context.local_binder(name.span, scopes::BinderKind::Let, work)?,
@@ -248,9 +250,22 @@ impl ValueBuilder<'_> {
                     then_value: layout.value(*then_value)?,
                     else_value: layout.value(*else_value)?,
                 },
-                ExprKind::Quantifier { .. } => {
-                    return Err(Error::Unsupported(Unsupported::Feature))
-                }
+                ExprKind::Quantifier {
+                    universal,
+                    name,
+                    domain,
+                    predicate,
+                } => w::ValueOperation::Query {
+                    operator: if *universal {
+                        w::Query::ForAll
+                    } else {
+                        w::Query::Exists
+                    },
+                    binder: context.local_binder(name.span, scopes::BinderKind::Query, work)?,
+                    collection: layout.value(*domain)?,
+                    body: layout.value(*predicate)?,
+                    result,
+                },
                 ExprKind::Reaches {
                     start,
                     target,
@@ -334,9 +349,32 @@ impl ValueBuilder<'_> {
                 },
                 c::ProductOp::Mod => return Err(Error::Unsupported(Unsupported::Feature)),
             },
-            c::ValueKind::Size { .. }
-            | c::ValueKind::Contains { .. }
-            | c::ValueKind::Query { .. } => return Err(Error::Unsupported(Unsupported::Feature)),
+            c::ValueKind::Size { argument, .. } => w::ValueOperation::Size {
+                collection: layout.value(*argument)?,
+                result,
+            },
+            c::ValueKind::Contains { collection, member } => w::ValueOperation::Contains {
+                collection: layout.value(*collection)?,
+                member: layout.value(*member)?,
+            },
+            c::ValueKind::Query {
+                op,
+                binder,
+                domain,
+                body,
+                ..
+            } => w::ValueOperation::Query {
+                operator: match op.value {
+                    c::QueryOp::Filter => w::Query::Filter,
+                    c::QueryOp::Map => w::Query::Map,
+                    c::QueryOp::Count => w::Query::Count,
+                    c::QueryOp::Sum => w::Query::Sum,
+                },
+                binder: context.local_binder(binder.span, scopes::BinderKind::Query, work)?,
+                collection: layout.value(*domain)?,
+                body: layout.value(*body)?,
+                result,
+            },
         })
     }
 }
