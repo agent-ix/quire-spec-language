@@ -17,19 +17,35 @@ Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065
 hard exhaustion checks using admitted nested sequences. SR-263 records actual
 local execution. Source-profile reconciliation remains compiler #30.
 
-The status-column defect in #28 is not repairable from this repository. The
-shared `spec-artifacts-process` catalog contradicts itself: the TestMatrix
-archetype asserts the `functional_coverage` table columns as
-`Coverage Status`, while `traceability.status.column` selects `Status`. Authoring
-either spelling therefore fails the other check — renaming the column to `Status`
-makes `quire validate` report a column-assert failure at line 28, and keeping
-`Coverage Status` makes `quire coverage` skip status classification with
-`status-column-matches-nothing`. The mismatch must be corrected at the catalog,
-not forked here; remaining work: #28. A local negative control confirmed the
-engine does classify these rows once the spellings agree: with the column named
-`Status`, a row claiming `✅ Passed` against an unbacked test case is reported as
-a status lie. Until the catalog is fixed, every authored label in this matrix
-records local execution and trace binding, not engine-verified status.
+The #28 status-column defect is a property of the installed catalog revision,
+not of this document. The installed `spec-artifacts-process` module carries a
+single `traceability.status.column: Status` while its TestMatrix archetype
+asserts the `functional_coverage` columns as `Coverage Status`, so the two
+spellings cannot both be satisfied: renaming the authored column to `Status`
+makes `quire validate` fail the column assert, and keeping `Coverage Status`
+makes `quire coverage` skip classification with `status-column-matches-nothing`.
+The producer fix already exists. With the pinned stack recorded in
+[docs/matrix-status.md](../../docs/matrix-status.md) — CLI `ff638b9`, engine
+`d3bc2ba`, process module `e6ea515`, ISO module `a60ee12` — the
+`functional-coverage` declaration carries its own `status_column: Coverage
+Status`, no `status-column-matches-nothing` diagnostic is raised, and
+`status_lies` is an empty list because the check ran rather than because it was
+skipped. Do not author around the installed revision: keep `Coverage Status`,
+and read status results from the pinned stack until those producer changes are
+installed. Remaining work: #28 for that installed-stack adoption.
+
+Two limits of a clean status result are load-bearing and are not visible in
+`status_lies` or `unbacked_rows`. First, this declaration classifies a row by
+the row's `Test Cases` reference, not per acceptance criterion: a row naming a
+backed test case is classified `complete` whatever the criterion in its
+`Acceptance Criteria` cell is worth. Per-criterion honesty therefore rests on
+the minted acceptance-criterion targets, which `quire coverage` reports
+separately, and the row status never carries it. Second, and for the same
+reason, `FR-042-AC-10` names `TC-121`, `TC-121` binds through nine modules, and
+so the row is backed and a completion label on it would not be reported as a
+status lie; only the FR-042 group count, 9 of 10, exposes that the criterion
+itself carries no tag. Check the per-group backed counts, not only the unbacked
+rows, before moving any row off Planned.
 
 ## Requirements Traceability
 
@@ -131,12 +147,12 @@ invented for that criterion.
 | TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | ✅ Passed |
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
-| TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Planned |
-| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | ✅ Passed |
-| TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
-| TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
+| TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | ✅ Passed locally (tests/composed_models.rs, tests/composed_namespace.rs, tests/composed_definitions.rs, tests/composed_definition_source.rs, tests/composed_linking.rs, tests/composed_scopes.rs, tests/composed_binding.rs, src/linking/composed/arena.rs) |
+| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | ✅ Passed locally (tests/composed_admission_stages.rs) |
+| TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
+| TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
-| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 Planned |
+| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 FR-042-AC-10 planned; FR-042-AC-1..FR-042-AC-9 passed locally (tests/protocol_artifact.rs, tests/native_protocol_emission.rs, tests/native_population_emission.rs, tests/native_choice_emission.rs, tests/native_compensation_emission.rs, tests/native_query_emission.rs, tests/native_domain_event_choices.rs, tests/native_domain_event_boundaries.rs, tests/native_mixed_observation_choices.rs) |
 | TC-126 | Preserve exact predicate meaning at cross-family calls | Integration | P1 | FR-046-AC-1, FR-046-AC-2, FR-046-AC-8 | 🚧 Planned; scoped trace reconciliation pending |
 | TC-127 | Evaluate ordered query values against independent expected results | Integration | P1 | FR-046-AC-3, FR-046-AC-4, FR-046-AC-5, FR-046-AC-8 | 🚧 Planned; full runtime execution outstanding |
 | TC-128 | Keep incomplete query inputs and exhausted work distinct from values | Integration | P1 | FR-046-AC-6, FR-046-AC-7 | 🚧 Planned; runtime completeness/accounting outstanding |
@@ -159,25 +175,31 @@ source namespace and native dependency portions have public tests in
 `tests/composed_namespace.rs` and `tests/composed_linking.rs`. The combined path in
 `tests/composed_binding.rs` adds exact definition/rule and NativeModel export
 selection, lexical/capture scope and protocol references, with dedicated adverse
-tests in the corresponding modules. TC-115 has eleven public Rust controls in
-`tests/composed_admission_stages.rs` covering the declared static components, the
-requested clause/capability report and the historical package/runner boundary.
-Full typing/runtime-role criteria and
-[IT-009](../integration/IT-009-composed-package-boundary.md)'s real D producer
-integration remain open under compiler #35; the broad TC-114 rows therefore remain
-Planned. Names resolved at this stage grant no checked or executable package, and
-an admitted request is not a checked clause. Status records local runs, not
-engine-verified coverage.
+tests in the corresponding modules. `tests/composed_definitions.rs`,
+`tests/composed_definition_source.rs`, `tests/composed_models.rs` and
+`tests/composed_scopes.rs` complete TC-114's definition closure, model export and
+declaration-owned role portions, with further tagged unit tests in
+`src/linking/composed/arena.rs`. Each FR-036-AC-1..AC-4 and AC-7 row below cites
+the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
+controls in `tests/composed_admission_stages.rs` covering the declared static
+components, requested clause/capability report and historical package/runner
+boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
+stage grant no checked or executable package. The real D producer integration
+in [IT-009](../integration/IT-009-composed-package-boundary.md) remains a
+separate boundary. Status records local runs, not ecosystem acceptance.
 
 TC-120's public rational-model controls are implemented and pass locally through
-the real frontend, admission and composed exports. Its Planned matrix rows retain
-the remaining review/assurance acceptance; they do not mean the producer is unbuilt.
-TC-119 now has public type-admission controls across predicates, state, temporal
-and protocol consumers, including partial upstream reports. Supported guarded
-proofs and their authored correspondence are exercised in `tests/composed_proofs.rs`
-through the actual IR prover. Ordered-query proof representation, complete runtime
-obligations and remaining acceptance controls stay open. Neither test set establishes
-complete compiler #35/#40.
+the real frontend, admission and composed exports; all seven FR-041 criteria are
+tagged in `tests/native_model_profiles.rs`, with two further tagged unit tests in
+`src/checking/types.rs` and `src/linking.rs`, and `quire coverage` reports FR-041
+7 of 7 backed. TC-119 has public type-admission controls across predicates,
+state, temporal and protocol consumers, including partial upstream reports.
+Supported guarded proofs and their authored correspondence are exercised in
+`tests/composed_proofs.rs` through the actual IR prover, ordered-query proof
+representation in `tests/composed_query_proofs.rs`, and declaration-owned runtime
+requirements in `tests/composed_type_pipeline.rs`; FR-040 reports 10 of 10 backed.
+The local status of these rows is a test-summary record, not review or assurance
+acceptance; neither test set establishes complete compiler #35/#40.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
@@ -187,31 +209,31 @@ complete compiler #35/#40.
 | FR-035 | FR-035-AC-4 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-5 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-6 | TC-113 | ✅ Passed |
-| FR-036 | FR-036-AC-1 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-2 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-3 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-4 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-5 | TC-115 | ✅ Passed |
-| FR-036 | FR-036-AC-6 | TC-115 | ✅ Passed |
-| FR-036 | FR-036-AC-7 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-8 | TC-115 | ✅ Passed |
-| FR-040 | FR-040-AC-1 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-2 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-3 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-4 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-5 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-6 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-7 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-8 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-9 | TC-119 | 🚧 Planned |
-| FR-040 | FR-040-AC-10 | TC-119 | 🚧 Planned |
-| FR-041 | FR-041-AC-1 | TC-120 | 🚧 Planned |
-| FR-041 | FR-041-AC-2 | TC-120 | 🚧 Planned |
-| FR-041 | FR-041-AC-3 | TC-120 | 🚧 Planned |
-| FR-041 | FR-041-AC-4 | TC-120 | 🚧 Planned |
-| FR-041 | FR-041-AC-5 | TC-120 | 🚧 Planned |
-| FR-041 | FR-041-AC-6 | TC-120 | 🚧 Planned |
-| FR-041 | FR-041-AC-7 | TC-120 | 🚧 Planned |
+| FR-036 | FR-036-AC-1 | TC-114 | ✅ Passed locally (tests/composed_models.rs) |
+| FR-036 | FR-036-AC-2 | TC-114 | ✅ Passed locally (tests/composed_namespace.rs) |
+| FR-036 | FR-036-AC-3 | TC-114 | ✅ Passed locally (tests/composed_definitions.rs) |
+| FR-036 | FR-036-AC-4 | TC-114 | ✅ Passed locally (tests/composed_scopes.rs) |
+| FR-036 | FR-036-AC-5 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
+| FR-036 | FR-036-AC-6 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
+| FR-036 | FR-036-AC-7 | TC-114 | ✅ Passed locally (tests/composed_binding.rs) |
+| FR-036 | FR-036-AC-8 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
+| FR-040 | FR-040-AC-1 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
+| FR-040 | FR-040-AC-2 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
+| FR-040 | FR-040-AC-3 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
+| FR-040 | FR-040-AC-4 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
+| FR-040 | FR-040-AC-5 | TC-119 | ✅ Passed locally (tests/composed_query_proofs.rs) |
+| FR-040 | FR-040-AC-6 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
+| FR-040 | FR-040-AC-7 | TC-119 | ✅ Passed locally (tests/composed_type_pipeline.rs) |
+| FR-040 | FR-040-AC-8 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
+| FR-040 | FR-040-AC-9 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
+| FR-040 | FR-040-AC-10 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
+| FR-041 | FR-041-AC-1 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
+| FR-041 | FR-041-AC-2 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
+| FR-041 | FR-041-AC-3 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
+| FR-041 | FR-041-AC-4 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
+| FR-041 | FR-041-AC-5 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
+| FR-041 | FR-041-AC-6 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
+| FR-041 | FR-041-AC-7 | TC-120 | ✅ Passed locally (tests/native_model_profiles.rs) |
 
 ## Compiled protocol numeric component
 
@@ -266,14 +288,32 @@ consumer's RFC 8785/JCS protocol-result identity: an exact producer reference
 survives emission and reading, either substituted digest refuses, and a
 recanonicalized producer reference refuses at producer admission.
 
-FR-042-AC-1 through FR-042-AC-9 each carry
-`#[trace("TC-121", "FR-042-AC-n")]` tags on executed Rust tests, and
-`quire coverage --scope . --json` reports each of those minted
-acceptance-criterion targets as backed; FR-042-AC-10 is reported unbacked.
-Per-criterion backing therefore comes from the minted criterion targets, which
-the engine does reconcile. This status records engine-verified trace binding
-plus a local serial test run; it is not a claim of complete family semantics or
-executed consumer integration.
+FR-042-AC-1 through FR-042-AC-9 each carry `#[trace("TC-121", "FR-042-AC-n")]`
+tags on executed Rust tests, and `quire coverage --scope . --json` reports each of
+those minted acceptance-criterion targets as backed, FR-042 9 of 10; FR-042-AC-10
+is reported unbacked. One module carrying each criterion's tag:
+
+| Criterion | Module carrying the tag |
+| --- | --- |
+| FR-042-AC-1 | `tests/native_protocol_emission.rs` |
+| FR-042-AC-2 | `tests/protocol_artifact.rs` |
+| FR-042-AC-3 | `tests/protocol_artifact.rs` |
+| FR-042-AC-4 | `tests/native_population_emission.rs` |
+| FR-042-AC-5 | `tests/native_choice_emission.rs` |
+| FR-042-AC-6 | `tests/native_compensation_emission.rs` |
+| FR-042-AC-7 | `tests/protocol_artifact.rs` |
+| FR-042-AC-8 | `tests/native_choice_emission.rs` |
+| FR-042-AC-9 | `tests/native_domain_event_boundaries.rs` |
+| FR-042-AC-10 | none; see below |
+
+Per-criterion backing comes from those minted criterion targets and not from the
+row status: the `functional-coverage` declaration classifies a row by its
+`Test Cases` cell, so every FR-042 row above — AC-10 included — reads as backed
+through `TC-121` and a completion label on AC-10 would not be reported as a
+status lie. The FR-042 group count, 9 of 10, is the only place the gap shows.
+This status records engine-verified trace binding plus a local serial test run;
+it is not a claim of complete family semantics or of executed consumer
+integration.
 
 ### Consumer handoff
 
@@ -286,15 +326,15 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
-| FR-042 | FR-042-AC-1 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-2 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-3 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-4 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-5 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-6 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-7 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-8 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-9 | TC-121 | 🚧 Planned |
+| FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-3 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-4 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-5 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-6 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-7 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 Planned |
 
 ## Authenticated temporal artifact selections (L5/L6)

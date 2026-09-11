@@ -48,7 +48,7 @@ evidence. The rollup is not a count of four missing automated tests.
 
 | Matrix | Bound test cases |
 | --- | --- |
-| model-linking | 35/35 |
+| model-linking | 41/42; TC-115 is unwritten |
 | native-lowering | 5/5 |
 | native-packages | 14/14 |
 | native-readiness | 9/9 |
@@ -77,6 +77,58 @@ trees. No live matrix, production source or producer module was altered.
 2. Add a declared but unimplemented FR-999-AC-1 control and point TC-999998's
    Traces To cell at it. The report retains the seven functional lies and adds
    the test-summary `traces-to` lie under its ordinary `Status` header.
+
+## Status repair re-run (#28)
+
+The same commands were re-run on the same pinned stack after the
+`spec/model-linking/tests.md` status repair. The CLI reported its own revision
+`ff638b9802178aa62c757aab914cf0288c1cbe67` / engine
+`d3bc2baff191c9521f1064480a56c8dc0bd1c7fa`, both `clean`. `coverage` exits 0
+with `status_lies: []`, no `status-column-matches-nothing` diagnostic and
+`coverage.backed` 374/383 matrix rows over 264 criteria; `validate --scope .
+'spec/**/*.md'` exits 0.
+
+`status_lies: []` on the pinned stack means the check ran and found nothing. The
+same empty list from the installed CLI `4f6ed024` means the check was skipped,
+because that revision raises `status-column-matches-nothing` for all seven
+matrices. The two are indistinguishable in the field, so only the pinned stack's
+result may be cited as a status verification.
+
+Four limits of that clean result are worth stating, because none is caught by the
+absence of status diagnostics:
+
+- **A row is classified by its `Test Cases` cell, not per acceptance criterion.**
+  A row naming a backed test case reads complete whatever criterion sits in its
+  `Acceptance Criteria` cell. Per-criterion honesty therefore rests on the minted
+  acceptance-criterion targets and their group counts, never on the row status.
+- **The group counts, not the row counts, expose `FR-042-AC-10`.** Its matrix row
+  names `TC-121`, and `TC-121` binds through nine test modules, so the row is not
+  listed in `unbacked_rows`; only the FR-042 group count, 9/10, shows the
+  criterion itself has no tagged evidence. A completion status on that row would
+  not have been reported as a status lie. It stays `🚧 Planned` and waits on the
+  `quire-protocol` IT-001 handoff.
+- **One `tag-on-non-binding-symbol` diagnostic remains.** Trace id `FR-041` is
+  written on the production function `check_selected_profiles` at
+  `src/linking/native.rs:19`, which binds nothing. Every FR-041 acceptance row is
+  independently backed by `tests/native_model_profiles.rs`, so no status depends
+  on that tag, but the tag itself should become an `Implements:` marker.
+- **Seven `section-matches-nothing` diagnostics remain, and they are not a
+  status defect.** The `nfr-acceptance-criterion` declaration selects every NFR
+  by archetype and reports that none has an `Acceptance Criteria` section. None
+  does: the seven NFRs state their obligations as `Measurement and Evaluation`
+  metric rows plus a prose `Verification` section, and no `NFR-nnn-AC-n` id
+  exists anywhere in this repository. The NFR archetype makes
+  `Acceptance Criteria` optional while a trace-target declaration has no way to
+  say a section is optional, which is the `agent-ix/quire-rs#327` class of false
+  alarm the process module already documents for `## Constraints`. Renaming
+  `## Verification` to `## Acceptance Criteria` is not the fix: measured on
+  `NFR-001`, it makes `quire validate` exit 1 with `required 'verification'
+  (section_body(Verification)) is missing` plus an `acceptance_criteria` assert
+  demanding an `| ID | Criteria | Verification |` table, while `coverage` mints
+  exactly nothing more (374/383 before and after) and only trades the diagnostic
+  for `section-holds-no-table`. Authoring such a table would be inventing
+  acceptance criteria that no requirement states and no test carries; it is not
+  done here.
 
 [SR-275](../reviews/26-09-09-matrix-status-review.md) records the bounded review.
 Compiler [#28](https://github.com/agent-ix/quire-spec-language/issues/28) remains
