@@ -79,6 +79,16 @@ impl Inputs {
         Self::with_model(units, composed_inputs::model("NativeEmission"))
     }
 
+    /// The shared fixture scalars are narrow by construction; this variant also
+    /// carries the full signed-64 integer and exact-rational domains.
+    #[allow(dead_code)]
+    pub fn with_signed64_domains(units: &[Unit<'_>]) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_signed64_domains("NativeEmission"),
+        )
+    }
+
     pub fn with_model(units: &[Unit<'_>], model: NativeModel) -> Self {
         let sources: Vec<_> = units
             .iter()
