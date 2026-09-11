@@ -18,13 +18,18 @@ declarations were delivered earlier and are covered by TM-002, TM-005 and TM-007
 this matrix adds no claim about them. The emission half of the native-to-TL
 bridge remains outside the matrix: it depends on `quire-contract-ir#63`,
 `quire-contract-ir#64` and actual TL capability. FR-045 covers only the support
-classification, which is decidable from the admitted declaration alone.
+classification, which is decidable from the admitted declaration plus the
+requested surrounding-execution closure, with no bridge and no backend report.
 
-Two obligations are explicitly outstanding rather than covered. Mutation testing
+Three obligations are explicitly outstanding rather than covered. Mutation testing
 of NFR-008's exhaustion paths is not performed by this revision. Independent
 artifact-side checking of a declared sample period, epoch, timestamp unit or
 sequence authority is impossible while the emitted body carries none of them; the
-evaluator retains them as trace premises instead. Both are recorded on compiler
+evaluator retains them as trace premises instead. Two semantic questions are referred for a ruling rather than settled here: the
+pointwise reading of the temporal Boolean connectives, which no owned rule pins,
+and the precedence between a reached ceiling and an already-settled sibling
+obligation. FR-043 records the reading this scope selects for each so the choice
+is visible in results. All three are recorded on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38).
 
 Status values are set from local runs only; hosted workflows remain
@@ -110,7 +115,8 @@ authoritative origin against a bare history cutoff, and zero, exact, one-short
 and clamped ceilings each have explicit controls.
 
 Two state machines are under test. Activation transitions through inactive,
-unknown-open, unknown-incomplete, unknown-refused, guard-false and active, with
+unknown-open, unknown-incomplete, unknown-refused and active, with a guard-false
+trigger controlled in both a closed-complete and an open scope, and with
 first delivery, repeated delivery, conflicting redelivery, distinct-trigger
 delivery and whole-execution origin each controlled. Settlement transitions
 through `closed-scope`, `decisive-witness`, `decisive-counterexample`,

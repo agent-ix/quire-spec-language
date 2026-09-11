@@ -25,18 +25,23 @@ The support table is owned by `ix://agent-ix/quire-specification/FR-095`. This
 requirement implements the classification only; it emits no TL formula, no
 valuation request and no correspondence record, and it establishes no bridge.
 
-The classification SHALL be a total function of the declaration's selected
-profile, its temporal operator set and its decision-scope closure. It SHALL NOT
-consult a backend capability report, an installed TL version, a syntax match or a
-historical result. This keeps the classification decidable in this repository
+The classification SHALL be a total function of three inputs and nothing else:
+the declaration's selected profile, the operator kinds reachable from its root,
+and the surrounding-execution closure named in the request. The first two come
+from the admitted declaration; the third comes from the request, because the
+support table keys on it. It SHALL NOT consult a backend capability report, an
+installed TL version, a syntax match or a historical result. This keeps the classification decidable in this repository
 while `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability
 remain outstanding; the emission half of FR-095 stays outside this scope.
 
 ## Inputs
 
-An admitted temporal declaration: its selected profile identity and revision, the
-operator kinds reachable from its root, and the requested decision-scope closure
-of the mapping request.
+An admitted temporal declaration: its selected profile identity and revision, and
+the operator kinds reachable from its root. From the request: the
+surrounding-execution closure the mapping is asked for. Decision-scope closure is
+a separate axis under
+[FR-043](./FR-043-evaluate-bounded-native-temporal.md)-AC-10 and is not
+substituted for it.
 
 ## Outputs
 
@@ -47,19 +52,30 @@ selected profile identity and its activation record.
 ## Behavior
 
 The classifier SHALL use exactly this table, which restates the reviewed
-correspondence disposition:
+correspondence disposition in
+`ix://agent-ix/quire-specification/FR-095` at baseline
+`4d6230eb8aa9766ff3017360962f2d6368d74cb3`. The rows are evaluated in order and
+the first two are mutually exclusive with the last two, so the table is total:
 
-| Native request | Disposition |
-| --- | --- |
-| Event-position false-extension, bounded future operators only, closed decision scope | Supported, subject to every bridge premise |
-| Event-position false-extension, bounded future operators only, open prefix | Supported, subject to every bridge premise |
-| Fixed-sample false-extension, bounded future operators only | Supported only with one total valuation per required sample and retained epoch, period and unit correspondence |
-| Timestamped-event finite window, any request | Unsupported; no index conversion is inferred |
-| Any bounded past operator, any profile | Unsupported until a separately reviewed TL past profile exists |
-| Finite-window future semantics against an index-based TL profile | Unsupported, because that profile extends atoms false beyond closure |
+| Native request | TL target | Disposition |
+| --- | --- | --- |
+| Timestamped-event finite window | none | Unsupported on the finite-window dimension; no index conversion is inferred, and this subsumes the source table's separate finite-window-against-index-profile row |
+| Any bounded past operator reachable from the root | none | Unsupported on the past-operator dimension, until a separately reviewed TL past profile exists |
+| Event-position false-extension, no past operator reachable, complete surrounding execution | `mltl.closed-trace/v1` | Supported, subject to every outstanding bridge premise |
+| Event-position false-extension, no past operator reachable, open surrounding execution | `mltl.online-prefix/v1` | Supported, subject to every outstanding bridge premise |
+| Fixed-sample false-extension, no past operator reachable | the same two targets, selected by surrounding-execution closure | Supported only with one total valuation per required sample and retained epoch, period and unit correspondence |
+| A declaration reaching no bounded temporal operator, under either false-extension profile | the same two targets | Supported; a formula with no bounded operator imposes no additional TL obligation |
+
+The first two rows accumulate: a declaration matching both SHALL return both
+dimensions.
 
 The classifier SHALL name every unmatched dimension on an unsupported result,
 rather than a single summary cause.
+
+The classifier SHALL name the TL target identity of a supported classification
+exactly as the table gives it, and SHALL record the source table's baseline
+revision alongside it, so a later revision of that table is a visible change
+rather than silent staleness.
 
 The classifier SHALL retain the native declaration subject, its selected profile
 identity and its activation record on every unsupported result, and SHALL NOT
@@ -80,11 +96,11 @@ encode. Naming them is not discharging them.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-045-AC-1 | Every row of the support table is exercised by an admitted declaration and returns that row's disposition; the classification is derived from the declaration alone, with no backend capability report, installed version or syntax match consulted. | Test (TC-125), Inspection |
+| FR-045-AC-1 | Every row of the support table is exercised by an admitted declaration and returns that row's disposition and TL target; the classification is derived only from the selected profile, the reachable operator kinds and the requested surrounding-execution closure, with no backend capability report, installed version, syntax match or decision-scope closure consulted. | Test (TC-125); Inspection |
 | FR-045-AC-2 | A timestamped-event request and a bounded-past request each return unsupported naming the finite-window and past-operator dimensions respectively, and emit no substitute formula, profile or clock. | Test (TC-125) |
 | FR-045-AC-3 | An unsupported result retains the native declaration subject, its selected profile identity and revision, and its activation record; a source-valid declaration is unchanged by the classification. | Test (TC-125) |
 | FR-045-AC-4 | An unsupported result names every unmatched dimension rather than one summary cause, and a declaration unmatched on two dimensions names both. | Test (TC-125) |
-| FR-045-AC-5 | A supported classification names its outstanding bridge premises and asserts no correspondence; two declarations with equal temporal formula bytes but different selected profiles do not receive the same classification. | Test (TC-125) |
+| FR-045-AC-5 | A supported classification names its outstanding bridge premises, its TL target identity and the source table's baseline revision, and asserts no correspondence; two declarations with equal temporal formula bytes but different selected profiles do not receive the same classification. | Test (TC-125) |
 
 ## Dependencies
 

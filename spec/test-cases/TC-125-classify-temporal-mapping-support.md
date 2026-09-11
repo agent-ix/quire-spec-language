@@ -24,14 +24,16 @@ a total function of the admitted declaration.
 
 ## Test Procedure
 
-1. Compile one admitted declaration per support-table row: event-position with
-   bounded future operators under a closed decision scope; the same under an open
-   prefix; fixed-sample with bounded future operators; timestamped-event finite
-   window; a bounded past operator under each of the three profiles; and a
-   finite-window future request against an index-based target. Require each to
-   return exactly that row's disposition. Inspect the classifier's inputs and
-   require that no backend capability report, installed version, syntax match or
-   historical result is consulted.
+1. Compile one admitted declaration per support-table row: timestamped-event
+   finite window; a bounded past operator under each of the three profiles;
+   event-position with bounded future operators under a complete
+   surrounding execution and again under an open one; fixed-sample with bounded
+   future operators under each closure; and a declaration reaching no bounded
+   temporal operator under each false-extension profile. Require each to return
+   exactly that row's disposition and, where supported, its TL target identity —
+   `mltl.closed-trace/v1` or `mltl.online-prefix/v1`. Inspect the classifier's
+   inputs and require that no backend capability report, installed version,
+   syntax match, historical result or decision-scope closure is consulted.
 2. Require the timestamped-event request to return unsupported naming the
    finite-window dimension, and the bounded-past request to return unsupported
    naming the past-operator dimension. Require neither result to carry a
@@ -43,7 +45,9 @@ a total function of the admitted declaration.
 4. Compile a declaration unmatched on two dimensions at once — a bounded past
    operator under the timestamped-event profile — and require both the
    past-operator and finite-window dimensions named, not one summary cause.
-5. Require a supported classification to name its outstanding bridge premises —
+5. Require a supported classification to name its TL target identity, the source
+   table's baseline revision `4d6230eb8aa9766ff3017360962f2d6368d74cb3`, and its
+   outstanding bridge premises —
    total Boolean predicate projection, source and clause identity, model, type and
    predicate bindings, evaluation anchor and capture environment, clock and
    observation binding, interval, closure and history premises, and the

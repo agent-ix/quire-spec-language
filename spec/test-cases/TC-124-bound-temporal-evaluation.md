@@ -27,28 +27,37 @@ score is claimed.
 
 ## Test Procedure
 
-1. Enumerate the declared finite population of nested future and past formulas
-   whose composed horizon or history need approaches and then exceeds the checked
-   i64 domain, including intervals at the admitted upper extremum and a nesting
-   depth whose composition overflows. Require rejection before any position is
+1. Enumerate the overflow population declared in NFR-008's Verification section —
+   eight operators x three profiles x nesting depths one through four x four
+   interval bound pairs x three anchor offsets, 1,152 cases — and evaluate each. Require rejection before any position is
    visited, with reported `positions` usage zero and the overflow named against
    its operator and interval. Compare each accepted composed horizon against an
    independently computed checked value, and require refusal rather than a wrapped,
    saturated or narrowed result.
-2. Independently force each of the five stops against otherwise evaluable
-   declarations: horizon overflow, work exhaustion, active-instance exhaustion,
-   capture exhaustion and retention exhaustion. Require each to produce an
+2. Independently force a stop in each of the eight charged dimensions against
+   otherwise evaluable declarations, including horizon overflow, work exhaustion,
+   active-instance exhaustion, capture exhaustion and retention exhaustion. Require each to produce an
    incomplete or refused result naming the reached dimension and the affected
-   obligation. Require the returned truth field to be absent in all five cases,
-   including a case whose observed prefix would have settled the obligation had
-   evaluation continued.
+   obligation. Require the returned truth field to be absent in
+   every case, including one whose observed prefix would have settled the
+   obligation had evaluation continued. Separately, settle one obligation over
+   complete exact decision support and then reach a ceiling while assessing a
+   second obligation in the same evaluation; require the settled obligation to
+   retain its truth, basis and support and the second to carry the stop, per
+   FR-043's recorded selection on that open question.
 3. Generate obligation populations paired with eviction schedules over a declared
    finite model: for each unsettled obligation, the set of retained valuations and
-   captures it still requires, and an eviction point inside that set. Drive
-   incremental re-evaluation and require every still-required record retained until
-   the obligation settles. At each eviction point require an explicit incomplete
-   result naming the evicted subject and retaining the obligation identity, and
-   require the evaluated interval unchanged rather than silently narrowed.
+   captures it still requires, and an eviction point inside that set. Inject each
+   eviction through the trace's explicit eviction list, which names the retained
+   valuation or capture record by node and clock coordinate, or by instance and
+   declared capture index; that seam is what makes the eviction point selectable
+   rather than a side effect of a ceiling. Drive incremental re-evaluation and
+   require every still-required record retained until the obligation settles. At
+   each eviction point require an explicit incomplete result naming the evicted
+   subject and retaining the obligation identity, and require the evaluated
+   interval unchanged rather than silently narrowed. Separately reach the
+   retention ceiling with no injected eviction and require a distinct result, so
+   the two events are not one.
 4. Evaluate one declaration to a retained result, then re-evaluate with a changed
    work ceiling, a changed active-instance ceiling, a changed clock binding, a
    changed declared clock parameter and an admitted restoration state. Require each
@@ -60,7 +69,8 @@ score is claimed.
    required ceiling, a one-step-insufficient ceiling and a ceiling above the
    published default. Require the first unaffordable operation to remain
    unperformed, require reported usage to reflect only successful charges and to
-   distinguish the peak dimensions from the cumulative ones, and require a retry
+   distinguish the four peak dimensions — instances, retention, depth and horizon —
+   from the four cumulative ones, and require a retry
    under sufficient ceilings to produce the full result from unmutated inputs.
    Exercise counter overflow through the public accounting boundary.
 
@@ -76,5 +86,6 @@ returned from each forced stop — is not performed here and is recorded as
 outstanding assurance work on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38). Agent F's
 observation storage, replay and lateness mechanisms are outside this case; every
-eviction above is forced through the evaluator's own retention table. Catalog
+eviction above is injected through the trace's own eviction list against the
+evaluator's own retained-state table. Catalog
 validation establishes document conformance, not test completion.
