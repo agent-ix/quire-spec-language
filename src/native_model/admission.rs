@@ -63,14 +63,22 @@ fn preflight(
     let mut entries_left = limits.entries;
     for role in &roles.scalars {
         spend(source, &mut entries_left, role.sites.len(), "entries")?;
-        if matches!(profile, NativeModelProfile::V1)
-            && matches!(role.kind, ScalarKind::Rational { .. })
-        {
-            return Err(failure(
-                source,
-                Code::UnsupportedConstruct,
-                "rational roles are outside native-state-model/1",
-            ));
+        match profile {
+            NativeModelProfile::V1 => match role.kind {
+                ScalarKind::Integer { .. } | ScalarKind::Text { .. } => {}
+                ScalarKind::Rational { .. } => {
+                    return Err(failure(
+                        source,
+                        Code::UnsupportedConstruct,
+                        "rational roles are outside native-state-model/1",
+                    ));
+                }
+            },
+            NativeModelProfile::V2 => match role.kind {
+                ScalarKind::Integer { .. }
+                | ScalarKind::Rational { .. }
+                | ScalarKind::Text { .. } => {}
+            },
         }
     }
     for operation in &roles.operations {
@@ -389,21 +397,30 @@ impl<'a> Catalog<'a> {
                         "primitive declaration site has multiple scalar roles",
                     ));
                 }
-                let valid = match (&scalar.kind, self.sites.get(&site).copied()) {
-                    (ScalarKind::Integer { .. }, Some(ir::ValueType::Integer { value })) => {
-                        let same = integer.is_none_or(|prior| prior == value);
-                        integer = Some(value);
-                        same
+                let representation = self.sites.get(&site).copied();
+                let valid = match &scalar.kind {
+                    ScalarKind::Integer { .. } => {
+                        if let Some(ir::ValueType::Integer { value }) = representation {
+                            let same = integer.is_none_or(|prior| prior == value);
+                            integer = Some(value);
+                            same
+                        } else {
+                            false
+                        }
                     }
-                    (ScalarKind::Rational { .. }, Some(ir::ValueType::Rational { value })) => {
-                        let same = rational.is_none_or(|prior| prior == value);
-                        rational = Some(value);
-                        same
+                    ScalarKind::Rational { .. } => {
+                        if let Some(ir::ValueType::Rational { value }) = representation {
+                            let same = rational.is_none_or(|prior| prior == value);
+                            rational = Some(value);
+                            same
+                        } else {
+                            false
+                        }
                     }
-                    (ScalarKind::Text { max_scalars }, Some(ir::ValueType::Text)) => {
-                        *max_scalars <= ir::MAX_TEXT_LENGTH
+                    ScalarKind::Text { max_scalars } => {
+                        matches!(representation, Some(ir::ValueType::Text))
+                            && *max_scalars <= ir::MAX_TEXT_LENGTH
                     }
-                    _ => false,
                 };
                 if !valid {
                     return Err(failure(
@@ -465,8 +482,12 @@ impl<'a> Catalog<'a> {
                     "reference carrier must have exactly one ID field",
                 ));
             };
-            let bounded_id = scalars.get(&Site::Field(&object.reference, &object.identity_field))
-                .is_some_and(|scalar| matches!(scalar.kind, ScalarKind::Text { max_scalars } if max_scalars > 0));
+            let bounded_id = scalars
+                .get(&Site::Field(&object.reference, &object.identity_field))
+                .is_some_and(|scalar| match scalar.kind {
+                    ScalarKind::Text { max_scalars } => max_scalars > 0,
+                    ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => false,
+                });
             if field.name() != &object.identity_field
                 || field.value_type() != &ir::ValueType::Text
                 || !bounded_id

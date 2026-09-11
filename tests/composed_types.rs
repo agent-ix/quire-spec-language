@@ -259,6 +259,8 @@ fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee
         |binding, formal| {
             let report = composed::admit_types(binding, formal, TypeLimits::default());
             refused(&report, "CorePredicate", CauseKind::UpstreamBinding);
+            assert!(report.declaration(id(binding, "CorePredicate")).unwrap()
+                .causes().iter().all(|cause| cause.profile.is_none()));
             for name in ["CoreCall", "CoreQuery", "Narrow"] {
                 refused(&report, name, CauseKind::ProfilePermission);
             }
@@ -269,7 +271,7 @@ fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee
             let causes = report.declaration(id(binding, "Narrow")).unwrap().causes();
             let definitions = binding.definitions().unwrap();
             for cause in causes.iter().filter(|cause| cause.kind == CauseKind::ProfilePermission) {
-                assert_eq!(definitions.declarations[id(binding, "Narrow").index()].uses[cause.profile].closure[0],
+                assert_eq!(definitions.declarations[id(binding, "Narrow").index()].uses[cause.profile.unwrap()].closure[0],
                     quire_spec_language::linking::composed::definition_source::RegisteredDefinition::StateQueries);
             }
         },
@@ -784,6 +786,44 @@ fn public_accounting_clamps_limits_and_refuses_overflow_atomically() {
                 (64, 64, 65)
             );
             assert_eq!(depth.usage().max_depth, 64);
+        },
+    );
+}
+
+#[test]
+#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-9")]
+fn partially_created_upstream_records_leave_forward_targets_unfinished() {
+    let model = setup::model("Partial");
+    let sources = [setup::source(
+        "partial",
+        &model,
+        "predicate Caller using S (): Boolean { Later() }\n\
+         predicate Independent using S (): Boolean { true }\n\
+         predicate Later using S (): Boolean { true }",
+    )];
+    let formal = setup::formal_sources(&sources);
+    setup::with_binding(
+        &sources,
+        &[&model],
+        BindingLimits {
+            bindings: 1,
+            ..BindingLimits::default()
+        },
+        |binding| {
+            assert_eq!(binding.namespace().declarations().len(), 3);
+            assert_eq!(binding.declarations().len(), 1);
+            assert!(binding.exhaustion().is_some());
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            assert!(report.exhaustion().is_none());
+            assert_eq!(report.declarations().len(), 1);
+            for name in ["Caller", "Independent", "Later"] {
+                assert_eq!(
+                    report.disposition(id(binding, name)),
+                    Some(TypeDisposition::Unfinished)
+                );
+            }
+            assert!(report.declarations()[0].nodes().is_empty());
+            assert!(report.declarations()[0].causes().is_empty());
         },
     );
 }

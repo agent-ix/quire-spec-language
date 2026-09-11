@@ -146,10 +146,12 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
         ("native-state-model/1", NativeModelProfile::V1),
         ("native-state-model/2", NativeModelProfile::V2),
     ] {
+        assert_eq!(name.parse::<NativeModelProfile>(), Ok(expected));
         assert_eq!(NativeModelProfile::try_from(name), Ok(expected));
         assert_eq!(expected.as_str(), name);
     }
     for unknown in ["", "native-state-model/3", "native-rule-model/2"] {
+        assert!(unknown.parse::<NativeModelProfile>().is_err());
         assert!(NativeModelProfile::try_from(unknown).is_err());
     }
     assert_eq!(
@@ -162,6 +164,87 @@ fn explicit_profiles_preserve_the_frozen_historical_artifact() {
         .code(),
         Code::UnknownWire
     );
+}
+
+#[test]
+#[trace("TC-120", "FR-041-AC-1", "FR-041-AC-4", "FR-041-AC-6")]
+fn integer_and_text_source_meanings_agree_across_explicit_profiles() {
+    let text = include_str!("fixtures/native-rule-model.json");
+    let old = read(source(text), FORMAT, ModelSourceLimits::default()).unwrap();
+    let selected = read(source(text), FORMAT_V2, ModelSourceLimits::default()).unwrap();
+    assert_eq!(old.profile(), NativeModelProfile::V1);
+    assert_eq!(selected.profile(), NativeModelProfile::V2);
+    assert_eq!(old.environment, selected.environment);
+    assert_eq!(old.roles, selected.roles);
+    assert!(old.roles.scalars.iter().any(|role| matches!(
+        role.kind,
+        ScalarKind::Integer {
+            unit: Unit::Dimensionless
+        }
+    )));
+    assert!(old.roles.scalars.iter().any(|role| matches!(
+        role.kind,
+        ScalarKind::Integer {
+            unit: Unit::Named(_)
+        }
+    )));
+    assert!(old
+        .roles
+        .scalars
+        .iter()
+        .any(|role| matches!(role.kind, ScalarKind::Text { max_scalars: 256 })));
+
+    let old = old.admit(ModelLimits::default()).unwrap();
+    let selected = selected.admit(ModelLimits::default()).unwrap();
+    assert_eq!(old.environment(), selected.environment());
+    assert_eq!(old.roles(), selected.roles());
+    assert_eq!(
+        old.source().source().digest(),
+        selected.source().source().digest()
+    );
+    let mut expected: Value = serde_json::from_slice(old.artifact_bytes()).unwrap();
+    expected["profile"] = json!("native-state-model/2");
+    assert_eq!(
+        serde_json::from_slice::<Value>(selected.artifact_bytes()).unwrap(),
+        expected
+    );
+    assert_ne!(old.artifact_bytes(), selected.artifact_bytes());
+    assert_ne!(old.digest(), selected.digest());
+}
+
+#[test]
+#[trace("TC-120", "FR-041-AC-1", "FR-041-AC-6")]
+fn replacing_public_draft_payloads_cannot_retag_the_selected_profile() {
+    let legacy = include_str!("fixtures/native-rule-model.json");
+    let rational_text = document(RATIONAL, "", AMOUNT);
+    let mut old = read(source(legacy), FORMAT, ModelSourceLimits::default()).unwrap();
+    let mut selected = draft(&rational_text);
+    let explicit_v2 = read(source(legacy), FORMAT_V2, ModelSourceLimits::default())
+        .unwrap()
+        .admit(ModelLimits::default())
+        .unwrap();
+
+    // These payload fields are public. Swap their exact source correspondence
+    // together, leaving each draft's original source-format selection intact.
+    std::mem::swap(&mut old.source, &mut selected.source);
+    std::mem::swap(&mut old.environment, &mut selected.environment);
+    std::mem::swap(&mut old.roles, &mut selected.roles);
+    assert_eq!(old.profile(), NativeModelProfile::V1);
+    assert_eq!(selected.profile(), NativeModelProfile::V2);
+
+    let error = old.admit(ModelLimits::default()).unwrap_err();
+    let ModelSourceCause::Admission(cause) = &error.cause else {
+        panic!("historical admission must refuse rational payload: {error:?}")
+    };
+    assert_eq!(cause.code, Code::UnsupportedConstruct);
+    assert_eq!(error.source().source().text(), rational_text);
+
+    let admitted = selected.admit(ModelLimits::default()).unwrap();
+    assert_eq!(admitted.profile(), NativeModelProfile::V2);
+    assert_eq!(admitted.source().source().text(), legacy);
+    assert_eq!(admitted.environment(), explicit_v2.environment());
+    assert_eq!(admitted.roles(), explicit_v2.roles());
+    assert_eq!(admitted.artifact_bytes(), explicit_v2.artifact_bytes());
 }
 
 #[test]
@@ -432,20 +515,50 @@ fn every_rational_site_requires_one_consistent_role() {
         "",
         &format!("{AMOUNT},{}", AMOUNT.replace("amount", "other")),
     );
-    for mutation in 0..12 {
+    let foreign = named_source(&text, "foreign:native", "ForeignSource");
+    let foreign_span = foreign
+        .to_ir(foreign.source(), Span { start: 0, end: 1 })
+        .unwrap();
+    for (mutation, description) in [
+        "missing scalar role",
+        "empty role alongside completely mapped sites",
+        "duplicate scalar identity with disjoint sites",
+        "repeated site within one role",
+        "absent extra site alongside completely mapped sites",
+        "integer role for rational sites",
+        "text role for rational sites",
+        "same sites assigned to different scalar identities",
+        "inconsistent numerator minimum",
+        "inconsistent numerator maximum",
+        "inconsistent maximum denominator",
+        "foreign scalar declaration locus",
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let mut input = draft(&text);
+        let owner = input.environment.owner().clone();
         match mutation {
             0 => input.roles.scalars.clear(),
-            1 => input.roles.scalars[0].sites.clear(),
-            2 => input.roles.scalars.push(input.roles.scalars[0].clone()),
+            1 => {
+                let mut empty = input.roles.scalars[0].clone();
+                empty.name = symbol("EmptyRatio");
+                empty.sites.clear();
+                input.roles.scalars.push(empty);
+            }
+            2 => {
+                let mut duplicate = input.roles.scalars[0].clone();
+                duplicate.sites = input.roles.scalars[0].sites.split_off(1);
+                input.roles.scalars.push(duplicate);
+            }
             3 => {
                 let site = input.roles.scalars[0].sites[0].clone();
                 input.roles.scalars[0].sites.push(site);
             }
             4 => {
-                input.roles.scalars[0].sites[0] = ScalarSite::Value {
+                input.roles.scalars[0].sites.push(ScalarSite::Value {
                     name: symbol("absent"),
-                }
+                });
             }
             5 => {
                 input.roles.scalars[0].kind = ScalarKind::Integer {
@@ -484,20 +597,31 @@ fn every_rational_site_requires_one_consistent_role() {
                 .unwrap();
             }
             11 => {
-                let foreign = named_source(&text, "foreign:native", "ForeignSource");
-                input.roles.scalars[0].source = foreign
-                    .to_ir(foreign.source(), Span { start: 0, end: 1 })
-                    .unwrap();
+                input.roles.scalars[0].source = foreign_span.clone();
             }
             _ => unreachable!(),
         }
         let error = input.admit(ModelLimits::default()).unwrap_err();
+        assert_eq!(error.code(), Code::InvalidModelBinding, "{description}");
+        let ModelSourceCause::Admission(cause) = &error.cause else {
+            panic!("{description}: expected native admission refusal, got {error:?}")
+        };
         assert_eq!(
-            error.code(),
-            Code::InvalidModelBinding,
-            "mutation {mutation}"
+            &cause.source,
+            error.source().source().identity(),
+            "{description}"
         );
-        assert!(matches!(error.cause, ModelSourceCause::Admission(_)));
+        if mutation == 11 {
+            let [related] = cause.related.as_slice() else {
+                panic!("foreign scalar refusal must retain exactly its locus: {cause:?}")
+            };
+            assert_eq!(related.identity.owner, owner);
+            assert_eq!(
+                related.identity.key,
+                DeclarationKey::Scalar(symbol("Ratio"))
+            );
+            assert_eq!(related.source, foreign_span);
+        }
         assert_eq!(error.source().source().text(), text);
     }
     assert_eq!(model(&text).roles().scalars[0].sites.len(), 2);

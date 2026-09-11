@@ -167,6 +167,47 @@ impl<'a> BoundOperation<'a> {
 struct Exports<'a> {
     catalog: Catalog<'a>,
     scalars: BTreeMap<&'a str, &'a ScalarRole>,
+    records: BTreeMap<&'a str, &'a ir::RecordDeclaration>,
+    enumerations: BTreeMap<&'a str, &'a ir::EnumDeclaration>,
+    values: BTreeMap<&'a str, &'a ir::ValueDeclaration>,
+    operations: BTreeMap<(&'a str, &'a str), &'a OperationRole>,
+}
+
+impl<'a> Exports<'a> {
+    // charge_exports reserves these borrowed indexes before their allocation.
+    fn new(model: &'a NativeModel) -> Self {
+        let catalog = Catalog::composed(model);
+        Self {
+            records: catalog
+                .records
+                .values()
+                .map(|declaration| (declaration.name().as_str(), *declaration))
+                .collect(),
+            enumerations: catalog
+                .enumerations
+                .values()
+                .map(|declaration| (declaration.name().as_str(), *declaration))
+                .collect(),
+            values: catalog
+                .values
+                .values()
+                .map(|declaration| (declaration.name().as_str(), *declaration))
+                .collect(),
+            scalars: model
+                .roles()
+                .scalars
+                .iter()
+                .map(|role| (role.name.as_str(), role))
+                .collect(),
+            operations: model
+                .roles()
+                .operations
+                .iter()
+                .map(|role| ((role.context.as_str(), role.name.as_str()), role))
+                .collect(),
+            catalog,
+        }
+    }
 }
 
 /// Partial import evidence remains inspectable after exhaustion. Qualified
@@ -215,9 +256,10 @@ impl<'a> ModelBindings<'a> {
 
 /// Charge supplied Models and artifact/selector Bytes first. Bindings count
 /// export-index entries, imports and returned resolution records; References
-/// count lookup attempts plus each inspected catalog, operation, parameter,
-/// member, owner/source comparison and conflict-input entry. Borrowed indexes
-/// retain their existing lookup charge. No dependency edge is added.
+/// count lookup attempts, entries used to build borrowed name indexes, and each
+/// inspected catalog, parameter, member, owner/source comparison and conflict
+/// input. An indexed lookup is one attempt, not a scan of unrelated exports.
+/// No dependency edge is added.
 pub fn bind_models<'a>(
     namespace: &SyntaxNamespace,
     inputs: &'a [ModelInput<'a>],
@@ -297,15 +339,7 @@ impl<'a> ModelBindings<'a> {
                         .or_default()
                         .push(index);
                     charge_exports(model, work)?;
-                    self.catalogs.push(Some(Exports {
-                        catalog: Catalog::new(model),
-                        scalars: model
-                            .roles()
-                            .scalars
-                            .iter()
-                            .map(|role| (role.name.as_str(), role))
-                            .collect(),
-                    }));
+                    self.catalogs.push(Some(Exports::new(model)));
                 }
                 ModelInput::UnsupportedProducer {
                     package,
@@ -530,6 +564,15 @@ impl<'a> ModelBindings<'a> {
         work: &mut Work,
     ) -> Result<BoundType<'a>, ModelError> {
         let exports = self.alias(unit, &name.model, work)?;
+        Self::export_type(exports, unit, name, work)
+    }
+
+    fn export_type(
+        exports: &Exports<'a>,
+        unit: UnitId,
+        name: &QualifiedName,
+        work: &mut Work,
+    ) -> Result<BoundType<'a>, ModelError> {
         charge(work, Dimension::References, 1, unit, name.name.span)?;
         charge(
             work,
@@ -539,20 +582,8 @@ impl<'a> ModelBindings<'a> {
             name.name.span,
         )?;
         let catalog = &exports.catalog;
-        let record = find_charged(
-            catalog.records.values().copied(),
-            work,
-            unit,
-            name.name.span,
-            |record| record.name().as_str() == name.name.value,
-        )?;
-        let enumeration = find_charged(
-            catalog.enumerations.values().copied(),
-            work,
-            unit,
-            name.name.span,
-            |enumeration| enumeration.name().as_str() == name.name.value,
-        )?;
+        let record = exports.records.get(name.name.value.as_str()).copied();
+        let enumeration = exports.enumerations.get(name.name.value.as_str()).copied();
         let scalar = exports.scalars.get(name.name.value.as_str()).copied();
         if scalar.is_some() && (record.is_some() || enumeration.is_some()) {
             return Err(failure(
@@ -619,7 +650,8 @@ impl<'a> ModelBindings<'a> {
         operation: &Operation,
         work: &mut Work,
     ) -> Result<BoundOperation<'a>, ModelError> {
-        let context = self.resolve_type(unit, &operation.context, work)?;
+        let exports = self.alias(unit, &operation.context.model, work)?;
+        let context = Self::export_type(exports, unit, &operation.context, work)?;
         let NativeType::Object { role, .. } = &context.native else {
             return Err(failure(
                 unit,
@@ -635,16 +667,11 @@ impl<'a> ModelBindings<'a> {
             unit,
             operation.name.span,
         )?;
-        let role = find_charged(
-            &context.model.roles().operations,
-            work,
-            unit,
-            operation.name.span,
-            |candidate| {
-                candidate.context == role.record && candidate.name.as_str() == operation.name.value
-            },
-        )?
-        .ok_or_else(|| failure(unit, operation.name.span, ModelErrorKind::MissingExport))?;
+        let role = exports
+            .operations
+            .get(&(role.record.as_str(), operation.name.value.as_str()))
+            .copied()
+            .ok_or_else(|| failure(unit, operation.name.span, ModelErrorKind::MissingExport))?;
         charge(work, Dimension::Bindings, 1, unit, operation.name.span)?;
         Ok(BoundOperation {
             model: context.model,
@@ -660,13 +687,13 @@ impl<'a> ModelBindings<'a> {
         })
     }
 
-    fn catalog_for(
+    fn exports_for(
         &self,
         model: &NativeModel,
         unit: UnitId,
         span: Span,
         work: &mut Work,
-    ) -> Result<&Catalog<'a>, ModelError> {
+    ) -> Result<&Exports<'a>, ModelError> {
         if !self.complete {
             return Err(failure(unit, span, ModelErrorKind::IncompleteCatalog));
         }
@@ -684,7 +711,7 @@ impl<'a> ModelBindings<'a> {
                 {
                     charge(work, Dimension::References, 1, unit, span)?;
                     if imports.len() == 1 && self.imports[imports[0]].selection == Ok(input) {
-                        return Ok(&exports.catalog);
+                        return Ok(exports);
                     }
                 }
                 return Err(failure(unit, span, ModelErrorKind::ForeignModel));
@@ -702,7 +729,8 @@ impl<'a> ModelBindings<'a> {
         name: &Spanned<String>,
         work: &mut Work,
     ) -> Result<BoundType<'a>, ModelError> {
-        let catalog = self.catalog_for(operation.model, unit, name.span, work)?;
+        let exports = self.exports_for(operation.model, unit, name.span, work)?;
+        let catalog = &exports.catalog;
         charge(work, Dimension::Bytes, name.value.len(), unit, name.span)?;
         charge(work, Dimension::References, 1, unit, name.span)?;
         let parameter = find_charged(&operation.role.parameters, work, unit, name.span, |value| {
@@ -722,14 +750,11 @@ impl<'a> ModelBindings<'a> {
         if parameter.is_none() && result.is_none() {
             return Err(failure(unit, name.span, ModelErrorKind::MissingExport));
         }
-        let value = find_charged(
-            catalog.values.values().copied(),
-            work,
-            unit,
-            name.span,
-            |value| value.name().as_str() == name.value,
-        )?
-        .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
+        let value = exports
+            .values
+            .get(name.value.as_str())
+            .copied()
+            .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
         formal_type(
             catalog,
             value.value_type(),
@@ -760,7 +785,9 @@ impl<'a> ModelBindings<'a> {
         name: &Spanned<String>,
         work: &mut Work,
     ) -> Result<BoundType<'a>, ModelError> {
-        let catalog = self.catalog_for(receiver.model, unit, name.span, work)?;
+        let catalog = &self
+            .exports_for(receiver.model, unit, name.span, work)?
+            .catalog;
         charge(work, Dimension::Bytes, name.value.len(), unit, name.span)?;
         charge(work, Dimension::References, 1, unit, name.span)?;
         let record = match &receiver.native {
@@ -846,10 +873,12 @@ impl<'a> ModelBindings<'a> {
     }
 }
 
-// Reserve the existing Catalog's export/index records before it allocates them.
+// Reserve the shared Catalog and each additional borrowed-name entry before
+// either index allocates. Name-index construction inspects each export once.
 fn charge_exports(model: &NativeModel, work: &mut Work) -> Result<(), Exhaustion> {
     for ty in model.environment().types() {
-        work.charge(Dimension::Bindings, 1)?;
+        work.charge(Dimension::References, 1)?;
+        work.charge(Dimension::Bindings, 2)?;
         match ty {
             ir::TypeDeclaration::Record { declaration } => {
                 work.charge(Dimension::Bindings, declaration.fields().len())?
@@ -860,13 +889,16 @@ fn charge_exports(model: &NativeModel, work: &mut Work) -> Result<(), Exhaustion
         }
     }
     work.charge(Dimension::Bindings, model.environment().values().len())?;
+    work.charge(Dimension::References, model.environment().values().len())?;
+    work.charge(Dimension::Bindings, model.environment().values().len())?;
     for scalar in &model.roles().scalars {
         work.charge(Dimension::Bindings, 1)?;
         work.charge(Dimension::Bindings, scalar.sites.len())?;
     }
     work.charge(Dimension::Bindings, model.roles().objects.len())?;
     for operation in &model.roles().operations {
-        work.charge(Dimension::Bindings, 1)?;
+        work.charge(Dimension::References, 1)?;
+        work.charge(Dimension::Bindings, 2)?;
         work.charge(Dimension::Bindings, operation.parameters.len())?;
         work.charge(Dimension::Bindings, operation.frame.fields.len())?;
         work.charge(Dimension::Bindings, operation.frame.created.len())?;
