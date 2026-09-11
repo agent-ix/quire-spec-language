@@ -133,7 +133,7 @@ real producer and cannot pass from a model-shaped mock.
 
 ## Six coverage rules
 
-Every existing FR-005/006 AC has a case. There is one selected native profile;
+Every existing FR-005/006 AC has a case. Their historical scope has one selected native profile;
 current/post operation contexts and matching/mismatching observation-qualified
 guards are explicit case pairs. Numeric upper-bound equality and the strict
 guard edge distinguish safe addition from possible overflow. Missing,
@@ -162,7 +162,7 @@ judgments and FR-016 has nine qualified criteria. The
 known functional-table Status/Coverage Status classifier limitation is retained;
 explicit TC statuses and executed logs supply the separate completion evidence.
 
-This packet specifies evidence for LC02. Native linking and static checking are
+The historical rows specify evidence for LC02. Native linking and static checking are
 implemented; runtime validation/evaluation and qualified projection remain incomplete. The accepted IR ADR-0054
 removes the earlier prerequisite for a shared Filament model adapter. The
 generic lane uses the public formal declaration API; A owns concrete native

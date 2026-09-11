@@ -26,6 +26,11 @@ from the valid template. Integration with the real producer belongs to IT-009.
    duplicate a declaration/name authority, replace a temporal target with a state
    target and reference a trigger outside its scope. Check the relevant original
    source occurrences and every affected declaration's disposition.
+   Supply individually valid units from different available editions in one
+   inventory, then separately change the inventory edition while keeping all
+   headers equal. Both conflicts must refuse namespace admission and retain the
+   inventory selection and each conflicting header location. Keep an otherwise
+   identical matching-edition control that admits.
 4. Create self recursion, mutual predicate recursion and a definition-dependency
    cycle. Compare with a diamond dependency and explicitly bounded protocol
    repetition; the latter two are valid graph shapes.
@@ -33,9 +38,15 @@ from the valid template. Integration with the real producer belongs to IT-009.
    export owner or producer/native correspondence at a time. Substitute a model
    canonical digest in its native byte-digest position. Keep an unrelated valid
    declaration and require its binding to survive each dependency-local refusal.
-6. Repeat chain/diamond/cycle cases with zero, exact and one-step-insufficient
-   traversal budgets. Retry with sufficient budget and inspect the original
-   source/model inputs for mutation.
+6. Read the public accounting version, dimension charging rules, capacities and
+   effective limits before traversal. Derive expected charges independently for
+   controlled chain/diamond/cycle cases, including the declared treatment of
+   shared dependencies, cache hits and revisits. Repeat with zero, exact and
+   one-step-insufficient budgets for each exercised dimension. Check refusal
+   before unaffordable work and counter-overflow exhaustion through the same
+   accounting boundary. Retry with sufficient budget and inspect the original
+   source/model inputs and prior report for mutation. Never infer the expected
+   exact limit from the run's own reported consumption.
 
 ## Expected Results
 
