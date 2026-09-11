@@ -1,5 +1,7 @@
 # Contributor and session guidance
 
+For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
+
 Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a private bootstrap repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is

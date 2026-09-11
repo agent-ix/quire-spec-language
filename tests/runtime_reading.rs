@@ -6,6 +6,12 @@
 #[path = "support/runtime_setup.rs"]
 mod setup;
 
+#[path = "runtime_reading_cases/wire.rs"]
+mod wire;
+
+#[path = "runtime_reading_cases/schema.rs"]
+mod schema;
+
 use ix_trace_rs::trace;
 use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{

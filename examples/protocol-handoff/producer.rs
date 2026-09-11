@@ -30,14 +30,97 @@ use serde::Serialize;
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
 const STANDARD: &str = "ix://agent-ix/quire-specification";
-const NATIVE_ID: &str = "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow";
-const SOURCE_PATH: &str = "examples/protocol-handoff/workflow.native";
 const FORMAL_NAMESPACE: &str = "quire-contract-ir/source-revision";
 const REQUIREMENT_NAMESPACE: &str = "quire-contract-ir/requirement-revision";
 const DEFINITION_NAMESPACE: &str = "quire/native-definition-revision";
 const BINARY_BYTES: usize = 16 * 1_048_576;
-const NAMES: &[&str] = &["Allowed", "Healthy", "Due", "Flow"];
 const CONTRACT: &[u8] = include_bytes!("../../docs/compiled-protocol-v1.md");
+
+/// The recipe author selects clause owners and execution points before parsing.
+struct UnitRecipe {
+    file: &'static str,
+    identity: &'static str,
+    document: &'static str,
+    requirement: &'static str,
+    body: &'static str,
+    clauses: &'static [AuthoredClause],
+}
+
+struct AuthoredClause {
+    name: &'static str,
+    clause: &'static str,
+    execution: AuthoredExecution,
+}
+
+#[derive(Clone, Copy)]
+enum AuthoredExecution {
+    Handler,
+    Pre,
+    Post,
+}
+
+const UNITS: &[UnitRecipe] = &[
+    UnitRecipe {
+        file: "predicates.native",
+        identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/predicates",
+        document: "ProtocolHandoffPredicates",
+        requirement: "HandoffPredicates",
+        body: include_str!("predicates.body.native"),
+        clauses: &[AuthoredClause {
+            name: "Allowed",
+            clause: "allowed",
+            execution: AuthoredExecution::Handler,
+        }],
+    },
+    UnitRecipe {
+        file: "state.native",
+        identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/state",
+        document: "ProtocolHandoffState",
+        requirement: "HandoffState",
+        body: include_str!("state.body.native"),
+        clauses: &[
+            AuthoredClause {
+                name: "Healthy",
+                clause: "healthy",
+                execution: AuthoredExecution::Handler,
+            },
+            AuthoredClause {
+                name: "BeforeApply",
+                clause: "before_apply",
+                execution: AuthoredExecution::Pre,
+            },
+            AuthoredClause {
+                name: "AfterApply",
+                clause: "after_apply",
+                execution: AuthoredExecution::Post,
+            },
+        ],
+    },
+    UnitRecipe {
+        file: "temporal.native",
+        identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/temporal",
+        document: "ProtocolHandoffTemporal",
+        requirement: "HandoffTemporal",
+        body: include_str!("temporal.body.native"),
+        clauses: &[AuthoredClause {
+            name: "Due",
+            clause: "due",
+            execution: AuthoredExecution::Handler,
+        }],
+    },
+    UnitRecipe {
+        file: "workflow.native",
+        identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow",
+        document: "ProtocolHandoffWorkflow",
+        requirement: "HandoffWorkflow",
+        body: include_str!("workflow.body.native"),
+        clauses: &[AuthoredClause {
+            name: "Flow",
+            clause: "flow",
+            execution: AuthoredExecution::Handler,
+        }],
+    },
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -79,12 +162,56 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
-    #[error("authored declaration {name}: {problem}")]
-    Declaration { name: String, problem: &'static str },
+    #[error("authored declaration {name}: {cause}")]
+    Declaration {
+        name: String,
+        #[source]
+        cause: DeclarationCause,
+    },
     #[error("dependency {identity}: expected one selection, found {matches}")]
     Dependency { identity: String, matches: usize },
     #[error("source span {span:?} exceeds the wire offset range")]
     Span { span: quire_spec_language::Span },
+    #[error("the authored recipe requires one operation, found {count}")]
+    OperationCount { count: usize },
+    #[error("the authored recipe requires Workflow::apply, found {context:?}::{name:?}")]
+    OperationIdentity {
+        context: ir::SymbolName,
+        name: ir::SymbolName,
+    },
+    #[error(
+        "authored precondition {name}: expected operation anchor {expected:?}, found {actual:?}"
+    )]
+    PreAnchorMismatch {
+        name: String,
+        expected: ir::AnchorName,
+        actual: ir::AnchorName,
+    },
+    #[error(
+        "authored postcondition {name}: expected operation anchor {expected:?}, found {actual:?}"
+    )]
+    PostAnchorMismatch {
+        name: String,
+        expected: ir::AnchorName,
+        actual: ir::AnchorName,
+    },
+    #[error("the authored recipe inventory exceeds the wire index range")]
+    InventoryLimit,
+}
+
+/// Distinct failures of the recipe's authored declaration correspondence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DeclarationCause {
+    #[error("not present in the original namespace")]
+    Missing,
+    #[error("ambiguous in the original namespace: {matches} declarations")]
+    Ambiguous { matches: usize },
+    #[error("original syntax is unavailable")]
+    MissingSyntax,
+    #[error("original unit is unavailable")]
+    MissingUnit,
+    #[error("clause was selected in a different source unit")]
+    DifferentSource,
 }
 
 /// Fixed-size summaries never retain a report, source body or diagnostic list.
@@ -229,7 +356,7 @@ fn selected_definitions() -> Vec<R> {
     selected.into_iter().collect()
 }
 
-fn source(model: &NativeModel) -> Result<Source, Error> {
+fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, definition) in [
         ("G", R::StateGraph),
@@ -248,13 +375,13 @@ fn source(model: &NativeModel) -> Result<Source, Error> {
         model.environment().owner().revision().get(),
         model.digest()
     ));
-    text.push_str(include_str!("workflow.body.native"));
+    text.push_str(recipe.body);
     Ok(Source::read(
         SourceIdentity {
-            identity: NATIVE_ID.into(),
+            identity: recipe.identity.into(),
             revision: "1".into(),
         },
-        SOURCE_PATH,
+        format!("examples/protocol-handoff/{}", recipe.file),
         text.as_bytes(),
         quire_spec_language::Limits::default().source_bytes,
     )?)
@@ -285,6 +412,7 @@ struct SelectedDeclaration {
 
 #[derive(Serialize)]
 struct SelectedSource {
+    file: &'static str,
     source: w::Source,
     declarations: Vec<SelectedDeclaration>,
 }
@@ -312,25 +440,47 @@ struct Selection {
 
 fn declaration_selection(
     namespace: &linking::SyntaxNamespace,
-    clauses: &[ClauseBinding],
+    unit: &UnitInput,
+    operation: &OperationSelection,
 ) -> Result<Vec<SelectedDeclaration>, Error> {
-    clauses
+    unit.mapping
+        .clauses
         .iter()
         .map(|clause| {
-            let [id] = namespace.lookup(&clause.name) else {
+            let candidates = namespace.lookup(&clause.name);
+            let [id] = candidates else {
                 return Err(Error::Declaration {
                     name: clause.name.clone(),
-                    problem: if namespace.lookup(&clause.name).is_empty() {
-                        "not present in the original namespace"
+                    cause: if candidates.is_empty() {
+                        DeclarationCause::Missing
                     } else {
-                        "ambiguous in the original namespace"
+                        DeclarationCause::Ambiguous {
+                            matches: candidates.len(),
+                        }
                     },
                 });
             };
             let syntax = namespace.syntax(*id).ok_or_else(|| Error::Declaration {
                 name: clause.name.clone(),
-                problem: "original syntax is unavailable",
+                cause: DeclarationCause::MissingSyntax,
             })?;
+            let original = namespace
+                .declaration(*id)
+                .and_then(|entry| namespace.unit(entry.unit()))
+                .ok_or_else(|| Error::Declaration {
+                    name: clause.name.clone(),
+                    cause: DeclarationCause::MissingUnit,
+                })?;
+            let expected = unit.mapping.source.source();
+            if original.source().identity() != expected.identity()
+                || original.source().path() != expected.path()
+                || original.source().text() != expected.text()
+            {
+                return Err(Error::Declaration {
+                    name: clause.name.clone(),
+                    cause: DeclarationCause::DifferentSource,
+                });
+            }
             Ok(SelectedDeclaration {
                 name: clause.name.clone(),
                 span: w::Span {
@@ -352,12 +502,35 @@ fn declaration_selection(
                     ir::ExecutionPoint::Handler { name } => w::Execution::Handler {
                         name: name.as_str().into(),
                     },
-                    ir::ExecutionPoint::Initialization { .. }
-                    | ir::ExecutionPoint::Pre { .. }
-                    | ir::ExecutionPoint::Post { .. } => {
-                        return Err(Error::Declaration {
+                    ir::ExecutionPoint::Initialization { name } => w::Execution::Initialization {
+                        name: name.as_str().into(),
+                    },
+                    ir::ExecutionPoint::Pre { operation: anchor }
+                        if anchor == &operation.anchor =>
+                    {
+                        w::Execution::Pre {
+                            operation: operation.export.clone(),
+                        }
+                    }
+                    ir::ExecutionPoint::Post { operation: anchor }
+                        if anchor == &operation.anchor =>
+                    {
+                        w::Execution::Post {
+                            operation: operation.export.clone(),
+                        }
+                    }
+                    ir::ExecutionPoint::Pre { operation: anchor } => {
+                        return Err(Error::PreAnchorMismatch {
                             name: clause.name.clone(),
-                            problem: "example requires an authored handler execution point",
+                            expected: operation.anchor.clone(),
+                            actual: anchor.clone(),
+                        })
+                    }
+                    ir::ExecutionPoint::Post { operation: anchor } => {
+                        return Err(Error::PostAnchorMismatch {
+                            name: clause.name.clone(),
+                            expected: operation.anchor.clone(),
+                            actual: anchor.clone(),
                         })
                     }
                 },
@@ -379,45 +552,126 @@ fn dependency_inputs(dependencies: &[Dependency]) -> Vec<artifact::SuppliedDepen
 
 struct Inputs {
     model: NativeModel,
-    sources: [Source; 1],
-    formal_sources: [FormalSource; 1],
-    mappings: [CheckBindings; 1],
+    units: Vec<UnitInput>,
+    operation: OperationSelection,
     definitions: DefinitionInputs,
+}
+
+/// Keep each exact source, formal correspondence and publication path together.
+struct UnitInput {
+    file: &'static str,
+    artifact: w::ArtifactRef,
+    mapping: CheckBindings,
+}
+
+struct OperationSelection {
+    anchor: ir::AnchorName,
+    export: w::ExportRef,
+}
+
+impl OperationSelection {
+    fn new(model: &NativeModel) -> Result<Self, Error> {
+        let [operation] = model.roles().operations.as_slice() else {
+            return Err(Error::OperationCount {
+                count: model.roles().operations.len(),
+            });
+        };
+        if operation.context.as_str() != "Workflow" || operation.name.as_str() != "apply" {
+            return Err(Error::OperationIdentity {
+                context: operation.context.clone(),
+                name: operation.name.clone(),
+            });
+        }
+        // The wire orders exports by kind label then path. In this actual native
+        // model, enums, fields and objects precede its single operation. Derive
+        // its expected handle from admitted inputs, never from the emitted table.
+        let preceding = model.environment().types().iter().try_fold(
+            model.roles().objects.len(),
+            |count, declaration| {
+                count
+                    .checked_add(match declaration {
+                        ir::TypeDeclaration::Record { declaration } => declaration.fields().len(),
+                        ir::TypeDeclaration::Enum { .. } => 1,
+                    })
+                    .ok_or(Error::InventoryLimit)
+            },
+        )?;
+        Ok(Self {
+            anchor: operation.anchor.clone(),
+            export: w::ExportRef {
+                model: 0,
+                export: u32::try_from(preceding).map_err(|_| Error::InventoryLimit)?,
+            },
+        })
+    }
+}
+
+impl UnitInput {
+    fn new(
+        recipe: &UnitRecipe,
+        model: &NativeModel,
+        operation: &OperationSelection,
+    ) -> Result<Self, Error> {
+        let source = formal(source(model, recipe)?, recipe.document)?;
+        let owner = ir::RequirementRef::new(
+            ir::PackageId::new("agent-ix/quire-spec-language").map_err(Error::Identifier)?,
+            ir::RequirementId::new(recipe.requirement).map_err(Error::Identifier)?,
+            ir::RequirementRevision::new(1).map_err(Error::Identifier)?,
+        );
+        let clauses = recipe
+            .clauses
+            .iter()
+            .map(|clause| {
+                Ok(ClauseBinding {
+                    name: clause.name.into(),
+                    requirement: owner.clone(),
+                    clause: ir::ClauseId::new(clause.clause).map_err(Error::Identifier)?,
+                    execution_point: match clause.execution {
+                        AuthoredExecution::Handler => ir::ExecutionPoint::Handler {
+                            name: ir::AnchorName::new("validate").map_err(Error::Identifier)?,
+                        },
+                        AuthoredExecution::Pre => ir::ExecutionPoint::Pre {
+                            operation: operation.anchor.clone(),
+                        },
+                        AuthoredExecution::Post => ir::ExecutionPoint::Post {
+                            operation: operation.anchor.clone(),
+                        },
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Self {
+            file: recipe.file,
+            artifact: reference(
+                AUTHORITY,
+                w::ArtifactKind::Source,
+                recipe.identity,
+                revision(
+                    "native-source-revision",
+                    &source.source().identity().revision,
+                ),
+                "ix:native",
+                "1-draft",
+                source.source().text().as_bytes(),
+            ),
+            mapping: CheckBindings { source, clauses },
+        })
+    }
 }
 
 impl Inputs {
     fn new() -> Result<Self, Error> {
         let model = model()?;
-        let sources = [source(&model)?];
-        let formal_sources = [formal(sources[0].clone(), "ProtocolHandoff")?];
-        let owner = ir::RequirementRef::new(
-            ir::PackageId::new("agent-ix/quire-spec-language").map_err(Error::Identifier)?,
-            ir::RequirementId::new("ProtocolHandoff").map_err(Error::Identifier)?,
-            ir::RequirementRevision::new(1).map_err(Error::Identifier)?,
-        );
-        let clauses = NAMES
+        let operation = OperationSelection::new(&model)?;
+        let units = UNITS
             .iter()
-            .map(|name| {
-                Ok(ClauseBinding {
-                    name: (*name).into(),
-                    requirement: owner.clone(),
-                    clause: ir::ClauseId::new(name.to_lowercase()).map_err(Error::Identifier)?,
-                    execution_point: ir::ExecutionPoint::Handler {
-                        name: ir::AnchorName::new("validate").map_err(Error::Identifier)?,
-                    },
-                })
-            })
+            .map(|recipe| UnitInput::new(recipe, &model, &operation))
             .collect::<Result<Vec<_>, Error>>()?;
-        let mappings = [CheckBindings {
-            source: formal_sources[0].clone(),
-            clauses,
-        }];
 
         Ok(Self {
             model,
-            sources,
-            formal_sources,
-            mappings,
+            units,
+            operation,
             definitions: DefinitionInputs::new(),
         })
     }
@@ -466,7 +720,6 @@ struct SelectedInputs {
     baseline: w::ArtifactRef,
     producer: w::Producer,
     language: w::Language,
-    source: w::Source,
     model: SelectedModel,
     dependencies: Vec<Dependency>,
 }
@@ -474,16 +727,6 @@ struct SelectedInputs {
 impl SelectedInputs {
     fn new(inputs: &Inputs, binary: Vec<u8>) -> Result<Self, Error> {
         let model = &inputs.model;
-        let sources = &inputs.sources;
-        let source_reference = reference(
-            AUTHORITY,
-            w::ArtifactKind::Source,
-            NATIVE_ID,
-            revision("native-source-revision", &sources[0].identity().revision),
-            "ix:native",
-            "1-draft",
-            sources[0].text().as_bytes(),
-        );
         let contract = reference(
             AUTHORITY,
             w::ArtifactKind::Source,
@@ -543,7 +786,6 @@ impl SelectedInputs {
                 identity: "ix:native".into(),
                 edition: "1-draft".into(),
             },
-            source: wire_source(source_reference, &inputs.formal_sources[0]),
             model: SelectedModel {
                 artifact: model_ref,
                 source: wire_source(foreign_ref, model.source()),
@@ -554,14 +796,18 @@ impl SelectedInputs {
         })
     }
 
-    fn output_selection(&self, artifact: w::ArtifactRef, source: SelectedSource) -> Selection {
+    fn output_selection(
+        &self,
+        artifact: w::ArtifactRef,
+        sources: Vec<SelectedSource>,
+    ) -> Selection {
         Selection {
             artifact,
             contract: self.contract.clone(),
             baseline: self.baseline.clone(),
             producer: self.producer.clone(),
             language: self.language.clone(),
-            sources: vec![source],
+            sources,
             dependencies: self
                 .dependencies
                 .iter()
@@ -692,18 +938,39 @@ struct Output {
 }
 
 fn compile(inputs: &Inputs, selected: &SelectedInputs) -> Result<Output, Error> {
+    // These short-lived API views preserve the same authored unit order; the
+    // owning records above keep source, correspondence and identity together.
+    let sources = inputs
+        .units
+        .iter()
+        .map(|unit| unit.mapping.source.source().clone())
+        .collect::<Vec<_>>();
+    let formal_sources = inputs
+        .units
+        .iter()
+        .map(|unit| unit.mapping.source.clone())
+        .collect::<Vec<_>>();
+    let mappings = inputs
+        .units
+        .iter()
+        .map(|unit| unit.mapping.clone())
+        .collect::<Vec<_>>();
     let inventory = linking::SourceInventory {
         language: "ix:native".into(),
         edition: "1-draft".into(),
-        units: vec![linking::ExpectedSource {
-            authority: NATIVE_ID.into(),
-            identity: inputs.sources[0].identity().clone(),
-            digest: inputs.sources[0].digest(),
-        }],
+        units: inputs
+            .units
+            .iter()
+            .map(|unit| linking::ExpectedSource {
+                authority: unit.artifact.identity.clone(),
+                identity: unit.mapping.source.source().identity().clone(),
+                digest: unit.mapping.source.source().digest(),
+            })
+            .collect(),
     };
     let namespace = linking::admit_namespace(
         &inventory,
-        &inputs.sources,
+        &sources,
         linking::WorkLimits::default(),
         quire_spec_language::Limits::default(),
     );
@@ -722,17 +989,25 @@ fn compile(inputs: &Inputs, selected: &SelectedInputs) -> Result<Output, Error> 
         &model_inputs,
         linking::binding_work::Limits::default(),
     );
-    let typed = composed::admit_types(
-        &binding,
-        &inputs.formal_sources,
-        composed::TypeLimits::default(),
-    );
-    let proofs = proofs::discharge(&typed, &inputs.mappings, proofs::ProofLimits::default());
-    require_proofs(&proofs)?;
-    let original = SelectedSource {
-        source: selected.source.clone(),
-        declarations: declaration_selection(namespace, &inputs.mappings[0].clauses)?,
-    };
+    let typed = composed::admit_types(&binding, &formal_sources, composed::TypeLimits::default());
+    let proofs = proofs::discharge(&typed, &mappings, proofs::ProofLimits::default());
+    let expected = inputs.units.iter().try_fold(0usize, |count, unit| {
+        count
+            .checked_add(unit.mapping.clauses.len())
+            .ok_or(Error::InventoryLimit)
+    })?;
+    require_proofs(&proofs, expected)?;
+    let original = inputs
+        .units
+        .iter()
+        .map(|unit| {
+            Ok(SelectedSource {
+                file: unit.file,
+                source: wire_source(unit.artifact.clone(), &unit.mapping.source),
+                declarations: declaration_selection(namespace, unit, &inputs.operation)?,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
     emit_and_read(inputs, selected, &proofs, original)
 }
 
@@ -799,14 +1074,14 @@ fn namespace_issue(issue: &linking::InventoryIssue) -> StageIssue {
     }
 }
 
-fn require_proofs(report: &proofs::ProofReport<'_, '_, '_>) -> Result<(), Error> {
+fn require_proofs(report: &proofs::ProofReport<'_, '_, '_>, expected: usize) -> Result<(), Error> {
     let completed = report
         .declarations()
         .iter()
         .filter(|declaration| declaration.disposition() == proofs::ProofDisposition::Discharged)
         .count();
-    if completed == NAMES.len()
-        && report.declarations().len() == NAMES.len()
+    if completed == expected
+        && report.declarations().len() == expected
         && report.exhaustion().is_none()
     {
         return Ok(());
@@ -829,7 +1104,7 @@ fn require_proofs(report: &proofs::ProofReport<'_, '_, '_>) -> Result<(), Error>
     Err(Error::Stage {
         stage: "type/definedness",
         completed,
-        expected: NAMES.len(),
+        expected,
         issues: report
             .declarations()
             .iter()
@@ -862,7 +1137,7 @@ fn emit_and_read(
     inputs: &Inputs,
     selected: &SelectedInputs,
     proofs: &proofs::ProofReport<'_, '_, '_>,
-    selected_source: SelectedSource,
+    selected_sources: Vec<SelectedSource>,
 ) -> Result<Output, Error> {
     let supplied = dependency_inputs(&selected.dependencies);
     let foreign = artifact::ExpectedForeignSource {
@@ -875,11 +1150,15 @@ fn emit_and_read(
         model: &inputs.model,
         source: &foreign,
     }];
-    let native_sources = [native::SourceSelection {
-        artifact: &selected.source.artifact,
-        source: &inputs.formal_sources[0],
-        revision_namespace: FORMAL_NAMESPACE,
-    }];
+    let native_sources = inputs
+        .units
+        .iter()
+        .map(|unit| native::SourceSelection {
+            artifact: &unit.artifact,
+            source: &unit.mapping.source,
+            revision_namespace: FORMAL_NAMESPACE,
+        })
+        .collect::<Vec<_>>();
     let selections = native::Selections {
         contract: &selected.contract,
         baseline: &selected.baseline,
@@ -909,26 +1188,14 @@ fn emit_and_read(
         "1",
         emitted.bytes(),
     );
-    let expected_declarations = selected_source
-        .declarations
+    let expected_units = selected_sources
         .iter()
-        .map(|declaration| artifact::ExpectedDeclaration {
-            name: &declaration.name,
-            span: &declaration.span,
-            requirement: &declaration.requirement,
-            clause: &declaration.clause,
-            execution: &declaration.execution,
-        })
+        .map(ExpectedUnit::new)
         .collect::<Vec<_>>();
-    let original = &selected_source.source;
-    let expected_sources = [artifact::ExpectedSource {
-        artifact: &original.artifact,
-        native: &original.native,
-        path: &original.path,
-        formal: &original.formal,
-        text: &original.text,
-        declarations: &expected_declarations,
-    }];
+    let expected_sources = expected_units
+        .iter()
+        .map(ExpectedUnit::source)
+        .collect::<Vec<_>>();
     let read = artifact_result(
         "independent selection reader",
         artifact::read(
@@ -951,9 +1218,45 @@ fn emit_and_read(
     }
 
     Ok(Output {
-        selection: selected.output_selection(output, selected_source),
+        selection: selected.output_selection(output, selected_sources),
         emitted,
     })
+}
+
+/// Borrowed public-reader inputs, still selected from the authored recipe.
+struct ExpectedUnit<'a> {
+    original: &'a w::Source,
+    declarations: Vec<artifact::ExpectedDeclaration<'a>>,
+}
+
+impl<'a> ExpectedUnit<'a> {
+    fn new(selected: &'a SelectedSource) -> Self {
+        Self {
+            original: &selected.source,
+            declarations: selected
+                .declarations
+                .iter()
+                .map(|declaration| artifact::ExpectedDeclaration {
+                    name: &declaration.name,
+                    span: &declaration.span,
+                    requirement: &declaration.requirement,
+                    clause: &declaration.clause,
+                    execution: &declaration.execution,
+                })
+                .collect(),
+        }
+    }
+
+    fn source(&self) -> artifact::ExpectedSource<'_> {
+        artifact::ExpectedSource {
+            artifact: &self.original.artifact,
+            native: &self.original.native,
+            path: &self.original.path,
+            formal: &self.original.formal,
+            text: &self.original.text,
+            declarations: &self.declarations,
+        }
+    }
 }
 
 /// Compile the authored recipe and publish its exact selections in a fresh directory.
@@ -1026,10 +1329,12 @@ fn write_files(
     for dependency in dependencies {
         write_file(&directory.join(&dependency.file), &dependency.bytes)?;
     }
-    write_file(
-        &directory.join("workflow.native"),
-        selection.sources[0].source.text.as_bytes(),
-    )?;
+    for selected in &selection.sources {
+        write_file(
+            &directory.join(selected.file),
+            selected.source.text.as_bytes(),
+        )?;
+    }
     write_file(
         &directory.join(selection.model.source_file),
         selection.model.source.text.as_bytes(),

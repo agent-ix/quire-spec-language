@@ -499,8 +499,8 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
 fn shared_values_cannot_raise_hard_work_or_unicode_limits() {
     for text in [false, true] {
         let mut ty = json!({"kind": "scalar", "name": if text { "ObjectId" } else { "Version" }});
-        let levels = if text { 1 } else { 20 };
-        let width = if text { 40_000 } else { 2 };
+        // Preserve 40,000 text occurrences with profile-admitted declarations.
+        let (levels, width) = if text { (2, 200) } else { (20, 2) };
         for _ in 0..levels {
             ty = json!({"kind": "sequence", "maximum": width, "value": ty});
         }

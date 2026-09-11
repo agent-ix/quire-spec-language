@@ -2,13 +2,12 @@
 //! FR-018/024: flat native input drafts, closed decoding and structural error context.
 
 use quire_contract_ir as ir;
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
-use crate::serde_object::{
-    deserialize_empty_object as deserialize_absent, deserialize_objects,
-    from_object as deserialize_object,
-};
+use crate::serde_object::Object;
 use crate::{ByteDigest, Code, SourceIdentity};
+
+pub(super) mod wire;
 
 /// One version shared by native input construction and reading.
 pub(super) const FORMAT: &str = crate::wire_format::WireFormat::RuntimeInput.as_str();
@@ -32,43 +31,34 @@ impl ValueId {
 
 /// Exact model-owned declaration selector; this does not admit its semantics.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::QualifiedName>")]
 pub struct QualifiedName {
     /// Exact model owner and revision.
-    #[serde(deserialize_with = "deserialize_requirement")]
     pub model: ir::RequirementRef,
     /// Declaration name within that model.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub name: ir::SymbolName,
 }
 
 /// Exact input binding to an already admitted native model artifact.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::ModelBinding>")]
 pub struct ModelBinding {
     /// Model requirement owner, including its selected revision.
-    #[serde(deserialize_with = "deserialize_requirement")]
     pub model: ir::RequirementRef,
     /// Complete native model artifact digest.
-    #[serde(
-        serialize_with = "serialize_digest",
-        deserialize_with = "deserialize_digest"
-    )]
+    #[serde(serialize_with = "serialize_digest")]
     pub digest: ByteDigest,
 }
 
 /// Object identity within an exact model, type and declared universe.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::ObjectIdentity>")]
 pub struct ObjectIdentity {
     /// Exact model requirement.
-    #[serde(deserialize_with = "deserialize_requirement")]
     pub model: ir::RequirementRef,
     /// Object payload record name.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub record: ir::SymbolName,
     /// Declared population universe.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub universe: ir::SymbolName,
     /// Exact Unicode key; its model bound is checked during runtime validation.
     pub key: String,
@@ -76,10 +66,9 @@ pub struct ObjectIdentity {
 
 /// One named field pointing into its containing artifact's arena.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::FieldBinding>")]
 pub struct FieldBinding {
     /// Original field name, without duplicate coalescing.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub name: ir::SymbolName,
     /// Local field value.
     pub value: ValueId,
@@ -87,10 +76,9 @@ pub struct FieldBinding {
 
 /// A State or invocation-parameter declaration pointing into the local arena.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::ValueBinding>")]
 pub struct ValueBinding {
     /// Exact declaration owner and name; runtime validation checks its role.
-    #[serde(deserialize_with = "deserialize_object")]
     pub declaration: QualifiedName,
     /// Local value root.
     pub value: ValueId,
@@ -98,7 +86,11 @@ pub struct ValueBinding {
 
 /// Flat value structure. Container children must precede their parent node.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    from = "Object<wire::ValueNode>"
+)]
 pub enum ValueNode {
     /// Exact Boolean value.
     Boolean {
@@ -118,23 +110,18 @@ pub enum ValueNode {
     /// Explicit model-owned enum variant.
     Enum {
         /// Enum declaration.
-        #[serde(deserialize_with = "deserialize_object")]
         declaration: QualifiedName,
         /// Variant name.
-        #[serde(deserialize_with = "deserialize_symbol")]
         variant: ir::SymbolName,
     },
     /// Structural record, distinct from object identity.
     Record {
         /// Exact record declaration.
-        #[serde(deserialize_with = "deserialize_object")]
         declaration: QualifiedName,
         /// Original field bindings, preserving order and duplicates.
-        #[serde(deserialize_with = "deserialize_objects")]
         fields: Vec<FieldBinding>,
     },
     /// Explicit optional absence; this is not missing input.
-    #[serde(deserialize_with = "deserialize_absent")]
     Absent,
     /// Present optional payload.
     Present {
@@ -149,106 +136,84 @@ pub enum ValueNode {
     /// Opaque object reference captured at its containing observation.
     Reference {
         /// Target identity; no snapshot retagging is supplied here.
-        #[serde(deserialize_with = "deserialize_object")]
         identity: ObjectIdentity,
     },
     /// Identity-bearing object access, distinct from an opaque reference.
     Object {
         /// Object identity within the containing observation.
-        #[serde(deserialize_with = "deserialize_object")]
         identity: ObjectIdentity,
     },
 }
 
 /// One object's original field bindings.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::ObjectEntry>")]
 pub struct ObjectEntry {
     /// Exact key within the enclosing population.
     pub key: String,
     /// Fields with artifact-local roots.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub fields: Vec<FieldBinding>,
 }
 
 /// An explicitly declared finite population; completeness is still an assertion.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::Population>")]
 pub struct Population {
     /// Exact model owner.
-    #[serde(deserialize_with = "deserialize_requirement")]
     pub model: ir::RequirementRef,
     /// Object payload record.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub record: ir::SymbolName,
     /// Declared universe.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub universe: ir::SymbolName,
     /// Whether the caller asserts this offered population is complete.
     pub complete: bool,
     /// Original objects, without duplicate identity coalescing.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub objects: Vec<ObjectEntry>,
 }
 
 /// Caller-owned snapshot draft, structurally checked by Snapshot::new.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::SnapshotDraft>")]
 pub struct SnapshotDraft {
     /// Explicit observation role; invocation validation checks correspondence.
     pub observation: ir::StateObservation,
     /// Exact native model artifact bindings.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub models: Vec<ModelBinding>,
     /// Offered finite populations.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub populations: Vec<Population>,
     /// Named State roots; self/parameter/result roles are checked later.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub values: Vec<ValueBinding>,
     /// Flat local values, including any unused nodes.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub arena: Vec<ValueNode>,
 }
 
 /// Caller-owned recorded invocation; frame permissions come only from the model.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::InvocationDraft>")]
 pub struct InvocationDraft {
     /// Exact native model artifact bindings.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub models: Vec<ModelBinding>,
     /// Exact operation context declaration.
-    #[serde(deserialize_with = "deserialize_object")]
     pub context: QualifiedName,
     /// Operation name within the context.
-    #[serde(deserialize_with = "deserialize_symbol")]
     pub operation: ir::SymbolName,
     /// Original selected operation anchor.
     pub anchor: ir::AnchorName,
     /// Invocation self identity.
-    #[serde(deserialize_with = "deserialize_object")]
     pub self_object: ObjectIdentity,
     /// Explicit pre observation selection.
-    #[serde(deserialize_with = "deserialize_object")]
     pub pre: SnapshotRef,
     /// Explicit post observation selection.
-    #[serde(deserialize_with = "deserialize_object")]
     pub post: SnapshotRef,
     /// Ordered parameter bindings captured at pre.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub parameters: Vec<ValueBinding>,
     /// Optional declared result root captured at post.
-    #[serde(deserialize_with = "deserialize_required_option")]
     pub result: Option<ValueId>,
     /// Original declared created identities.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub created: Vec<ObjectIdentity>,
     /// Original declared deleted identities.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub deleted: Vec<ObjectIdentity>,
     /// Flat local parameter/result values.
-    #[serde(deserialize_with = "deserialize_objects")]
     pub arena: Vec<ValueNode>,
 }
 
@@ -260,17 +225,11 @@ pub struct InvocationDraft {
 /// fn swapped(value: InvocationRef) -> SnapshotRef { value }
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::Reference>")]
 pub struct SnapshotRef {
-    #[serde(
-        serialize_with = "serialize_identity",
-        deserialize_with = "deserialize_identity"
-    )]
+    #[serde(serialize_with = "serialize_identity")]
     identity: SourceIdentity,
-    #[serde(
-        serialize_with = "serialize_digest",
-        deserialize_with = "deserialize_digest"
-    )]
+    #[serde(serialize_with = "serialize_digest")]
     digest: ByteDigest,
 }
 
@@ -297,17 +256,11 @@ impl SnapshotRef {
 
 /// Expected invocation identity and byte digest, distinct from a snapshot.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "Object<wire::Reference>")]
 pub struct InvocationRef {
-    #[serde(
-        serialize_with = "serialize_identity",
-        deserialize_with = "deserialize_identity"
-    )]
+    #[serde(serialize_with = "serialize_identity")]
     identity: SourceIdentity,
-    #[serde(
-        serialize_with = "serialize_digest",
-        deserialize_with = "deserialize_digest"
-    )]
+    #[serde(serialize_with = "serialize_digest")]
     digest: ByteDigest,
 }
 
@@ -432,62 +385,5 @@ pub(super) fn serialize_identity<S: Serializer>(
 }
 
 fn serialize_digest<S: Serializer>(digest: &ByteDigest, serializer: S) -> Result<S::Ok, S::Error> {
-    // native-state-input/1 specifies raw lowercase hex; ByteDigest's general
-    // display additionally identifies its algorithm. This stays a byte domain.
-    let display = digest.to_string();
-    serializer.serialize_str(display.trim_start_matches("sha256:"))
-}
-
-fn deserialize_digest<'de, D: Deserializer<'de>>(deserializer: D) -> Result<ByteDigest, D::Error> {
-    let hex = String::deserialize(deserializer)?;
-    format!("sha256:{hex}").parse().map_err(D::Error::custom)
-}
-
-pub(super) fn deserialize_identity<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<SourceIdentity, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Labels {
-        identity: String,
-        revision: String,
-    }
-    let labels: Labels = deserialize_object(deserializer)?;
-    super::construction::reference_identity(SourceIdentity {
-        identity: labels.identity,
-        revision: labels.revision,
-    })
-    .map_err(D::Error::custom)
-}
-
-fn deserialize_requirement<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<ir::RequirementRef, D::Error> {
-    // The upstream value's general Deserialize surface is permissive about keys.
-    // Decode this closed native wire shape, then use its existing constructors.
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Reference {
-        package: String,
-        requirement: String,
-        revision: u64,
-    }
-    let value: Reference = deserialize_object(deserializer)?;
-    ir::RequirementRef::parse(&value.package, &value.requirement, value.revision)
-        .map_err(D::Error::custom)
-}
-
-fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    // A present null is valid; omission of the invocation result field is not.
-    Option::deserialize(deserializer)
-}
-
-fn deserialize_symbol<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<ir::SymbolName, D::Error> {
-    ir::SymbolName::new(String::deserialize(deserializer)?).map_err(D::Error::custom)
+    serializer.collect_str(&format_args!("{digest:x}"))
 }

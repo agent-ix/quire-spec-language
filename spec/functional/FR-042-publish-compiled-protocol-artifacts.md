@@ -267,7 +267,12 @@ their compiler wire representation. [TC-121](../test-cases/TC-121-publish-compil
 and [B's IT-001](ix://agent-ix/quire-protocol/IT-001) retain full producer/consumer
 acceptance under compiler #40. The wire reader and numeric/type components
 implement part of this contract. The native path emits supported complete
-families from real source/type/proof owners; strict-reader fixtures alone do not
-establish that authority. General family proofs, recovery, unavailable producer
-exports and the actual producer/consumer handoff remain open until implemented
-and exercised through the corresponding public interfaces.
+families from real source/type/proof owners, including static compensation and
+full/partial recovery requirements; strict-reader fixtures alone do not establish
+that authority. The [Rust producer recipe](../../examples/protocol-handoff/README.md)
+retains four original source units, cross-unit dependencies, queries,
+population/reference roles, admitted model operations and actual executable bytes.
+General dynamic choice/progress proofs, first-class relationship exports,
+runtime recovery and the actual B public consumer handoff remain open until
+implemented and exercised through the corresponding public interfaces. A's
+emission and local reader check do not satisfy FR-042-AC-10 by themselves.
