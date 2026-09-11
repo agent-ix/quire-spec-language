@@ -18,6 +18,7 @@ use super::{
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
+use crate::native_model::ScalarKind;
 use crate::syntax::{BinaryOp, Builtin, ExprId, ExprKind, UnaryOp};
 use crate::{Code, Source, Span};
 use facts::{Facts, Outcomes};
@@ -173,30 +174,64 @@ impl Meter<'_> {
 }
 
 fn proof_type(ty: &NativeType<'_>) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
-    representation(ty, false)
+    representation(ty, Interpretation::HistoricalFinite)
 }
 
-// Historical conversion remains unchanged; composed scalar admission explicitly
-// selects the rational representation supplied by the existing model/IR path.
+/// Admitted input profile, not a request to approximate an unknown scalar kind.
+#[derive(Clone, Copy)]
+pub(super) enum Interpretation {
+    HistoricalFinite,
+    ComposedValues,
+}
+
+// Native model admission establishes the scalar role/representation invariant;
+// the historical link guard additionally excludes selected rational models.
 pub(super) fn representation(
     ty: &NativeType<'_>,
-    rational: bool,
+    interpretation: Interpretation,
 ) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
     Ok(match ty {
         NativeType::Scalar {
-            representation: ir::ValueType::Integer { value },
+            role,
+            representation,
             ..
-        } => ir::ValueType::integer(value.clone()),
-        NativeType::Scalar {
-            representation: ir::ValueType::Rational { value },
-            ..
-        } if rational => ir::ValueType::rational(value.clone()),
-        NativeType::Option(value) => ir::ValueType::option(representation(value, rational)?),
+        } => match representation {
+            ir::ValueType::Integer { value } => match &role.kind {
+                ScalarKind::Integer { .. } => ir::ValueType::integer(value.clone()),
+                ScalarKind::Rational { .. } | ScalarKind::Text { .. } => {
+                    unreachable!("admitted scalar role matches its integer representation")
+                }
+            },
+            ir::ValueType::Rational { value } => match &role.kind {
+                ScalarKind::Rational { .. } => match interpretation {
+                    Interpretation::ComposedValues => ir::ValueType::rational(value.clone()),
+                    Interpretation::HistoricalFinite => {
+                        unreachable!("historical linking excludes selected rational models")
+                    }
+                },
+                ScalarKind::Integer { .. } | ScalarKind::Text { .. } => {
+                    unreachable!("admitted scalar role matches its rational representation")
+                }
+            },
+            ir::ValueType::Text => match &role.kind {
+                ScalarKind::Text { .. } => ir::ValueType::Boolean,
+                ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => {
+                    unreachable!("admitted scalar role matches its text representation")
+                }
+            },
+            ir::ValueType::Boolean
+            | ir::ValueType::Enum { .. }
+            | ir::ValueType::Record { .. }
+            | ir::ValueType::Option { .. }
+            | ir::ValueType::Collection { .. } => {
+                unreachable!("admitted scalar roles have primitive scalar representations")
+            }
+        },
+        NativeType::Option(value) => ir::ValueType::option(representation(value, interpretation)?),
         NativeType::Sequence { element, maximum } => ir::ValueType::Collection {
-            value: ir::CollectionType::new(representation(element, rational)?, *maximum)?,
+            value: ir::CollectionType::new(representation(element, interpretation)?, *maximum)?,
         },
         NativeType::Boolean
-        | NativeType::Scalar { .. }
         | NativeType::Enumeration { .. }
         | NativeType::Record { .. }
         | NativeType::Object { .. }

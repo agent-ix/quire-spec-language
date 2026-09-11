@@ -79,8 +79,9 @@ impl Mappings {
         }
         let namespace = types.binding().namespace();
         let mut declarations = BTreeMap::new();
-        for entry in namespace.declarations() {
-            let id = entry.id();
+        for bound in types.binding().declarations() {
+            let id = bound.declaration();
+            let entry = namespace.declaration(id).expect("retained binding owner");
             let syntax = namespace.syntax(id).expect("original syntax");
             let local_site = Site {
                 declaration: id,

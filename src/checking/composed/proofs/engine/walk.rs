@@ -112,7 +112,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                     self.symbolic(Key::Expression(at.0), at, self.ty(at), true)?
                 }
                 ExprKind::Name(_) | ExprKind::SelfValue | ExprKind::ResultValue => self.read(at)?,
-                ExprKind::Field { base, field } => {
+                ExprKind::Field { base, name: field } => {
                     let value = self.visit(*base, path, depth + 1)?;
                     let (model, record) = match self.ty(*base) {
                         NativeType::Record { model, declaration } => {
