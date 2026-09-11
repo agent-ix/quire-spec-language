@@ -36,7 +36,7 @@ observations belong only to the later consumer fixture.
    producer artifact can result.
    The [native producer recipe](../../examples/protocol-handoff/README.md)
    exercises four original predicate/state/temporal/workflow units with cross-unit
-   references, ordered queries, population/reference roles, actual model
+   references, bounded `sum`/`size` queries, population/reference roles, actual model
    operations and distinct full/partial recovery requirements. It preserves
    source-owned registration/activation/retry anchors without supplying runtime
    recovery observations; it does not cover this case's full choreography fixture.
