@@ -1,22 +1,54 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The producer prepends exact registered profile and admitted model imports.
-predicate Allowed using G (ratio: M::Ratio): Boolean {
-    ratio <= rational(1,1)
-}
-
-invariant Healthy using G on M::Workflow at current {
-    Allowed(self.ratio) and self.peer = self.peer
-}
-
-temporal Due using T over (view: M::Workflow) clock "events" on origin {
-    always[0,1] holds(Allowed(view.ratio))
-}
-
+// Domain/activation-implied capture conjuncts exercise binding correspondence;
+// the receipt/target comparisons specify the distinct recovery conditions.
 protocol Flow using P over (view: M::Workflow) on origin {
     role Service on M::Workflow;
+
+    compensate Full for Main::Applied as (forwardFull: M::Workflow)
+        by Service on M::Workflow::apply using T clock "full-recovery" {
+        capture targetFull: M::Total = forwardFull.total;
+        activate first (triggerFull: M::Notice) when { not triggerFull.ready } {
+            capture activatedFull: Boolean = triggerFull.ready;
+        }
+        within [0,30]; attempts 3 of M::Workflow;
+        retry (earlierFull: M::Workflow, laterFull: M::Workflow) {
+            earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1
+            and targetFull >= 0 and not activatedFull
+        };
+        commit Main::Committed;
+        recover (recoveredFull: M::Workflow) {
+            sum<M::Total>(refundFull in recoveredFull.receipts: refundFull) = targetFull
+            and not activatedFull
+        };
+    }
+
     requires temporal Due;
+
+    compensate Partial for Main::Applied as (forwardPartial: M::Workflow)
+        by Service on M::Workflow::apply using T clock "partial-recovery" {
+        capture targetPartial: M::Total = forwardPartial.total;
+        activate first (triggerPartial: M::Notice) when { not triggerPartial.ready } {
+            capture activatedPartial: Boolean = triggerPartial.ready;
+        }
+        within [0,30]; attempts 3 of M::Workflow;
+        retry (earlierPartial: M::Workflow, laterPartial: M::Workflow) {
+            earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1
+            and targetPartial >= 0 and not activatedPartial
+        };
+        commit never;
+        recover (recoveredPartial: M::Workflow) {
+            let restoredPartial = sum<M::Total>(refundPartial in recoveredPartial.receipts: refundPartial)
+            in restoredPartial > 0 and restoredPartial < targetPartial and not activatedPartial
+        };
+    }
+
     run sequence Main {
         check Ready using G { Allowed(view.ratio) and deref(view.peer).ready };
+        attempt Tried by Service on M::Workflow::apply contracts [BeforeApply,AfterApply]
+            as (attempted: M::Notice) { attempted.ready };
+        effect Applied of Main::Tried as (applied: M::Workflow) { Allowed(applied.ratio) };
+        event Recovered by Service for Full as (recoveryEvent: M::Notice) { recoveryEvent.ready };
+        commit Committed by Service as (committed: M::Notice) { committed.ready };
     }
     finish Closed as (closed: M::Workflow) { Allowed(closed.ratio) };
 }
