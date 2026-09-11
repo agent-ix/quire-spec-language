@@ -64,6 +64,8 @@ observations belong only to the later consumer fixture.
    zero takes normal/exhausted control without the repeat body; checks alone
    cannot establish continuing progress. Test both event and compensation await
    anchors, inclusive deadline matches and separately supplied timeout closure.
+   Remove the static progress/closure requirement, change its await subject or
+   remove its clock-binding dependency; require `Invalid::Binding` from the reader.
 6. Bind O1 and O2 to the same provider through distinct instance requirements.
    Preserve one message, two delivery observations and one effect. Inspect
    effect-before-registration, separate registration/activation captures,
