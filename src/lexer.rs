@@ -14,6 +14,17 @@ pub(crate) struct Token {
 }
 
 pub(crate) fn lex(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
+    let mut tokens = recognize(source, limits)?;
+    for token in &mut tokens {
+        token.kind = token
+            .kind
+            .clone()
+            .historical(source.slice(token.span).expect("token span"));
+    }
+    Ok(tokens)
+}
+
+pub(crate) fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
     let mut tokens = Vec::new();
     let mut delimiters = Vec::new();
     for (result, range) in Kind::lexer(source.text()).spanned() {
