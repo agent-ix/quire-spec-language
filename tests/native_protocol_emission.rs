@@ -49,6 +49,21 @@ fn integer_value(value: &w::Integer) -> i64 {
     value.value()
 }
 
+fn control_inputs(name: &str, run: &str) -> Inputs {
+    let body = format!(
+        "protocol Controls using P over (view: M::Node) on origin {{
+        role Service on M::Node;
+        run {run}
+        finish Closed as (closed: M::Node) {{ true }};
+    }}"
+    );
+    Inputs::new(&[Unit {
+        name,
+        body: &body,
+        declarations: &["Controls"],
+    }])
+}
+
 #[test]
 #[trace("TC-121", "FR-042-AC-1", "FR-042-AC-3", "FR-042-AC-7")]
 fn native_protocol_reaches_private_family_admission_and_independent_reader() {
@@ -1096,6 +1111,394 @@ fn nonprogressing_native_repeat_is_refused_after_real_value_discharge() {
             failure(
                 &native::admit(proofs, selected, Limits::default()),
                 Error::Invalid(Invalid::Control),
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
+fn native_owned_choice_proves_nonliteral_constant_guards_and_preserves_both_branches() {
+    let guard = "((not false) and (false or true)) and ((false implies false) = (true != false))
+        and (if true then true else false) and (if false then view.plain.ready else true)";
+    let run = format!("choice Decide by Service visible ((true or view.plain.ready), (false and view.plain.ready)) {{
+        case yes when {{ {guard} }} event Accepted by Service as (accepted: M::Plain) {{ accepted.ready }};
+        case no when {{ not ({guard}) }} event Rejected by Service as (rejected: M::Plain) {{ rejected.ready }};
+    }}");
+    let inputs = control_inputs("constant-choice", &run);
+    inputs.with_proofs(TypeLimits::default(), proofs::ProofLimits::default(), |proofs, selected| {
+        discharged(proofs);
+        let admitted = native::admit(proofs, selected, Limits::default()).into_result().expect("one true nonliteral choice guard");
+        let package = admitted.package();
+        let declaration = &package.declarations[0];
+        let w::Body::Protocol { controls, causal_edges, run, .. } = &declaration.body else { panic!("protocol") };
+        let w::ControlOperation::Choice { owner, visible, cases } = &controls[run.index as usize].operation else { panic!("owned choice") };
+        assert_eq!(owner, &w::Handle { declaration: 0, index: 0 });
+        assert_eq!(visible.len(), 2);
+        assert_eq!(cases.iter().map(|case| case.label.as_str()).collect::<Vec<_>>(), ["yes", "no"]);
+        assert_eq!(controls[cases[0].body.index as usize].name, "Accepted");
+        assert_eq!(controls[cases[1].body.index as usize].name, "Rejected");
+        for case in cases {
+            assert_eq!(case.guard.declaration, 0);
+            assert!(causal_edges.iter().any(|edge| edge.owner == *run && edge.kind == w::EdgeKind::Branch && edge.from.node == *run && edge.from.port == w::Port::Enter && edge.to.node == case.body && edge.to.port == w::Port::Enter));
+            assert!(causal_edges.iter().any(|edge| edge.owner == *run && edge.kind == w::EdgeKind::Join && edge.from.node == case.body && edge.from.port == w::Port::Exit && edge.to.node == *run && edge.to.port == w::Port::Exit));
+        }
+        for operator in [w::Binary::And, w::Binary::Or, w::Binary::Implies, w::Binary::Equal, w::Binary::NotEqual] {
+            assert!(declaration.values.iter().any(|value| matches!(&value.operation, w::ValueOperation::Binary { operator: actual, .. } if *actual == operator)), "original {operator:?} expression retained");
+        }
+        assert!(declaration.values.iter().any(|value| matches!(value.operation, w::ValueOperation::Unary { operator: w::Unary::Not, .. })));
+        assert!(declaration.values.iter().any(|value| matches!(value.operation, w::ValueOperation::Group { .. })));
+        assert_eq!(declaration.values.iter().filter(|value| matches!(value.operation, w::ValueOperation::If { .. })).count(), 4);
+        let emitted = native::emit(&admitted, Limits::default()).into_result().unwrap();
+        assert_eq!(inputs.read(proofs, &emitted).result().expect("independent reader accepts source-produced choice").package(), package);
+    });
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn native_choice_refuses_overlap_uncovered_and_unproved_dynamic_decisions() {
+    for (visible, yes, no, expected) in [
+        (
+            "true",
+            "true or false",
+            "not false",
+            Error::Invalid(Invalid::Control),
+        ),
+        (
+            "true",
+            "false and true",
+            "true implies false",
+            Error::Invalid(Invalid::Control),
+        ),
+        (
+            "true",
+            "view.plain.ready",
+            "not view.plain.ready",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+        (
+            "view.plain.ready",
+            "true",
+            "false",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+        (
+            "true",
+            "if view.plain.ready then true else false",
+            "false",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+    ] {
+        let run = format!(
+            "choice Decide by Service visible ({visible}) {{
+            case yes when {{ {yes} }} check Accept using S {{ true }};
+            case no when {{ {no} }} check Reject using S {{ true }};
+        }}"
+        );
+        let inputs = control_inputs("refused-choice", &run);
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                failure(
+                    &native::admit(proofs, selected, Limits::default()),
+                    expected,
+                );
+            },
+        );
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
+fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
+    for (maximum, guard, body, observable) in [
+        (
+            2,
+            "true = true",
+            "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
+            true,
+        ),
+        (0, "not false", "check Skipped using S { true };", false),
+        (
+            2,
+            "false or false",
+            "check Skipped using S { true };",
+            false,
+        ),
+    ] {
+        let run = format!(
+            "repeat Loop by Service visible (not false) max {maximum} while {{ {guard} }}
+            {body} exhausted sequence Stopped {{ check Exhausted using S {{ true }}; }}"
+        );
+        let inputs = control_inputs("bounded-repeat", &run);
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                let admitted = native::admit(proofs, selected, Limits::default())
+                    .into_result()
+                    .expect("bounded event progress or explicit body bypass");
+                let package = admitted.package();
+                let w::Body::Protocol {
+                    controls,
+                    causal_edges,
+                    run,
+                    ..
+                } = &package.declarations[0].body
+                else {
+                    panic!("protocol")
+                };
+                let w::ControlOperation::Repeat {
+                    owner,
+                    maximum: limit,
+                    body,
+                    exhausted,
+                    ..
+                } = &controls[run.index as usize].operation
+                else {
+                    panic!("repeat")
+                };
+                assert_eq!(
+                    owner,
+                    &w::Handle {
+                        declaration: 0,
+                        index: 0
+                    }
+                );
+                assert_eq!(integer_value(limit), maximum);
+                assert_eq!(
+                    matches!(
+                        controls[body.index as usize].operation,
+                        w::ControlOperation::Event { .. }
+                    ),
+                    observable
+                );
+                assert_eq!(controls[exhausted.index as usize].name, "Stopped");
+                let back: Vec<_> = causal_edges
+                    .iter()
+                    .filter(|edge| edge.kind == w::EdgeKind::RepeatProgress)
+                    .collect();
+                assert_eq!(back.len(), 1);
+                assert_eq!(back[0].owner, *run);
+                assert_eq!(back[0].from.node, *body);
+                assert_eq!(back[0].from.port, w::Port::Exit);
+                assert_eq!(back[0].to.node, *run);
+                assert_eq!(back[0].to.port, w::Port::Enter);
+                assert_eq!(integer_value(back[0].maximum.0.as_ref().unwrap()), maximum);
+                let emitted = native::emit(&admitted, Limits::default())
+                    .into_result()
+                    .unwrap();
+                assert_eq!(
+                    inputs
+                        .read(proofs, &emitted)
+                        .result()
+                        .expect("original bounded control graph")
+                        .package(),
+                    package
+                );
+            },
+        );
+    }
+}
+
+#[test]
+#[trace(
+    "TC-121",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-042-AC-8"
+)]
+fn native_await_emits_clock_authority_but_a_deadline_alone_cannot_prove_repeat_progress() {
+    let await_node = "await Response after Main::Started using T clock \"reply-clock\" within [0,2]
+        match event Reply by Service as (reply: M::Plain) { reply.ready };
+        then check Received using S { reply.ready };
+        timeout check TimedOut using S { true };";
+    let run = format!("sequence Main {{ event Started by Service as (started: M::Plain) {{ started.ready }}; {await_node} }}");
+    let inputs = control_inputs("await-response", &run);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("explicit await with selected static clock and progress authorities");
+            let package = admitted.package();
+            let declaration = &package.declarations[0];
+            let w::Body::Protocol {
+                controls,
+                causal_edges,
+                ..
+            } = &declaration.body
+            else {
+                panic!("protocol")
+            };
+            let handle = |name| w::Handle {
+                declaration: 0,
+                index: controls.iter().position(|c| c.name == name).unwrap() as u32,
+            };
+            let response = handle("Response");
+            let started = handle("Started");
+            let w::ControlOperation::Await {
+                after,
+                profile,
+                clock,
+                within,
+                event,
+                then_body,
+                timeout,
+            } = &controls[response.index as usize].operation
+            else {
+                panic!("await")
+            };
+            assert_eq!(
+                after,
+                &w::AwaitAnchor::Event {
+                    node: started.clone()
+                }
+            );
+            assert_eq!(
+                package.definitions[*profile as usize].identity,
+                R::EventPosition.identity()
+            );
+            assert_eq!(
+                (integer_value(&within.lower), integer_value(&within.upper)),
+                (0, 2)
+            );
+            let clock_binding = &declaration.bindings[*clock as usize];
+            assert_eq!(clock_binding.kind, w::BindingKind::Clock);
+            assert_eq!(
+                clock_binding.subject,
+                w::Subject::Control {
+                    control: response.clone()
+                }
+            );
+            assert_eq!(
+                declaration.anchors[clock_binding.anchor.index as usize].kind,
+                w::AnchorKind::Control
+            );
+            let namespace = proofs.types().binding().namespace();
+            let [original] = namespace.lookup("Controls") else {
+                panic!("original protocol declaration")
+            };
+            let unit = namespace
+                .unit(namespace.declaration(*original).unwrap().unit())
+                .unwrap();
+            let quire_spec_language::syntax::composed::ControlKind::Await {
+                clock: authored_clock,
+                ..
+            } = &unit.controls()[controls[response.index as usize].original_node as usize].kind
+            else {
+                panic!("original await node")
+            };
+            assert_eq!(authored_clock.value, "reply-clock");
+            assert_eq!(clock_binding.locus.source, declaration.locus.source);
+            assert_eq!(
+                clock_binding.locus.span,
+                w::Span {
+                    start: authored_clock.span.start as u32,
+                    end: authored_clock.span.end as u32,
+                }
+            );
+            for kind in [w::BindingKind::Progress, w::BindingKind::Closure] {
+                let requirement = declaration
+                    .bindings
+                    .iter()
+                    .find(|b| {
+                        b.kind == kind
+                            && b.subject
+                                == w::Subject::Control {
+                                    control: response.clone(),
+                                }
+                    })
+                    .unwrap();
+                assert_eq!(requirement.requires, [*clock]);
+                assert_eq!(requirement.anchor, clock_binding.anchor);
+            }
+            for (kind, from, from_port, to, to_port) in [
+                (
+                    w::EdgeKind::Sequence,
+                    &started,
+                    w::Port::Exit,
+                    &response,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::AwaitSuccess,
+                    &response,
+                    w::Port::Enter,
+                    event,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::AwaitSuccess,
+                    event,
+                    w::Port::Exit,
+                    then_body,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::AwaitTimeout,
+                    &response,
+                    w::Port::Enter,
+                    timeout,
+                    w::Port::Enter,
+                ),
+                (
+                    w::EdgeKind::Join,
+                    then_body,
+                    w::Port::Exit,
+                    &response,
+                    w::Port::Exit,
+                ),
+                (
+                    w::EdgeKind::Join,
+                    timeout,
+                    w::Port::Exit,
+                    &response,
+                    w::Port::Exit,
+                ),
+            ] {
+                assert!(causal_edges.iter().any(|edge| edge.owner == response
+                    && edge.kind == kind
+                    && edge.from.node == *from
+                    && edge.from.port == from_port
+                    && edge.to.node == *to
+                    && edge.to.port == to_port));
+            }
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            assert_eq!(
+                inputs
+                    .read(proofs, &emitted)
+                    .result()
+                    .expect("original timed static requirements")
+                    .package(),
+                package
+            );
+        },
+    );
+    let repeated = format!(
+        "sequence Main {{ event Started by Service as (started: M::Plain) {{ started.ready }};
+        repeat WaitAgain by Service visible (true) max 2 while {{ true }}
+            {await_node} exhausted check Stopped using S {{ true }};
+    }}"
+    );
+    let inputs = control_inputs("deadline-needs-authority", &repeated);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            failure(
+                &native::admit(proofs, selected, Limits::default()),
+                Error::Unsupported(Unsupported::FamilyProof),
             );
         },
     );
