@@ -39,6 +39,10 @@ implementation checkpoints. This supersedes earlier review-before-implementation
 timing instructions. Keep necessary specification and plan changes scoped; do not
 create a review or detailed log for every increment. Avoid premature optimization.
 Use the requested QUOIN workflows and actual code/Rust review for the PR gate.
+At substantial PR checkpoints, run `/code-review`, including the actual
+`agent-skills/rust-review/SKILL.md`, and QUOIN `/gap-analysis`. Rust idioms and
+code smells are part of that review. For `/spec-review`, select the analyses
+applicable to the change; running all seven optional analyses is not required.
 
 Owner update: keep prototype bookkeeping minimal. Use ordinary Git history, PR
 links and brief test results. Do not maintain manual SHA inventories or

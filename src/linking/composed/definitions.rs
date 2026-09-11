@@ -257,16 +257,16 @@ fn run(
                     )?;
                 }
             }
-            // Flat controls belong to their declaration's source region. Walk
-            // only this region; native control handles are unit-local.
+            // Visit only the owning declaration's contiguous arena region.
             let unit = namespace.unit(entry.unit()).expect("closed namespace unit");
-            for control in unit.controls() {
+            let controls = super::arena::owned(
+                unit.controls(),
+                declaration.span,
+                |control| control.span,
+                work,
+            )?;
+            for control in controls {
                 work.charge(Dimension::References, 1)?;
-                if control.span.start < declaration.span.start
-                    || control.span.end > declaration.span.end
-                {
-                    continue;
-                }
                 match &control.kind {
                     ControlKind::Await { profile: alias, .. } => profile(
                         namespace,
@@ -493,6 +493,9 @@ impl<'a> Catalog<'a> {
         let mut active = BTreeSet::new();
         let mut identities = BTreeMap::<&str, RegisteredDefinition>::new();
         let mut stack = vec![(root, false)];
+        // The current closed registry is acyclic with one revision per identity.
+        // Retain these defensive refusals for explicit future registry changes;
+        // caller-supplied metadata cannot manufacture either condition today.
         while let Some((definition, leaving)) = stack.pop() {
             work.charge(Dimension::References, 1)?;
             if leaving {

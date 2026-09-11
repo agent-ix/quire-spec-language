@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use quire_spec_language::linking::composed::binding_work::{
-    Dimension, Limits as BindingLimits, Work,
+    Dimension, Limits as BindingLimits, Work, ACCOUNTING_VERSION,
 };
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{
@@ -14,7 +14,7 @@ use quire_spec_language::linking::composed::definitions::{
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
 };
-use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
+use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity, Span};
 
 fn definitions() -> Vec<Artifact<'static>> {
     R::all()
@@ -324,6 +324,158 @@ fn duplicate_aliases_and_definition_entries_do_not_select_first_candidate() {
 }
 
 #[test]
+#[trace("TC-114", "FR-036-AC-3")]
+fn known_state_definition_cannot_substitute_for_the_edition() {
+    let sources = [source(
+        "edition",
+        &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
+    )];
+    let selection = inventory(&sources);
+    let namespace = admit_namespace(
+        &selection,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    let definitions = definitions();
+    let rules = rules();
+    let selected = Inventory {
+        edition: R::StateCore.selection(),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let report = definitions::resolve(
+        namespace.namespace().unwrap(),
+        &selected,
+        &mut Work::new(BindingLimits::default()),
+    );
+    assert!(report.complete);
+    assert_eq!(report.exhaustion, None);
+    assert_eq!(
+        report.edition_refusal,
+        Some(Cause::WrongEdition(R::StateCore.selection()))
+    );
+    assert!(report.edition.is_empty());
+    assert_eq!(report.inventory.edition, R::StateCore.selection());
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3")]
+fn duplicate_rule_entries_refuse_even_when_their_exact_bytes_agree() {
+    let sources = [source(
+        "rules",
+        &(profile("Q", R::StateQueries)
+            + &profile("S", R::StateCore)
+            + "predicate Check using Q (): Boolean { true }\n\
+               invariant Independent using S on M::View at current { true }"),
+    )];
+    let selection = inventory(&sources);
+    let namespace = admit_namespace(
+        &selection,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    let definitions = definitions();
+    let mut rules = rules();
+    let path = "spec/functional/FR-033-admit-reusable-predicates.md";
+    let first = rules.iter().position(|rule| rule.path == path).unwrap();
+    let repeated = rules.len();
+    rules.push(rules[first]);
+    let selected = Inventory {
+        edition: R::Edition.selection(),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let report = definitions::resolve(
+        namespace.namespace().unwrap(),
+        &selected,
+        &mut Work::new(BindingLimits::default()),
+    );
+    assert!(report.complete);
+    assert_eq!(report.exhaustion, None);
+    assert_eq!(report.edition_refusal, None);
+    assert_eq!(report.declarations.len(), 2);
+    let dependent = &report.declarations[0].uses[0];
+    assert_eq!(
+        dependent.refusal,
+        Some(Cause::AmbiguousRule {
+            path,
+            entries: vec![first, repeated],
+        })
+    );
+    assert!(dependent.closure.is_empty());
+    let independent = &report.declarations[1].uses[0];
+    assert!(independent.complete);
+    assert_eq!(independent.refusal, None);
+    assert_eq!(independent.closure, [R::StateCore, R::Edition]);
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-3")]
+fn absent_local_profile_alias_is_not_filled_from_another_unit() {
+    let sources = [
+        // A source must declare at least one profile. P keeps this unit valid
+        // syntax while Q remains absent from its own profile namespace.
+        source(
+            "missing",
+            &(profile("P", R::StateQueries) + "predicate Missing using Q (): Boolean { true }"),
+        ),
+        source(
+            "supplied",
+            &(profile("Q", R::StateQueries) + "predicate Healthy using Q (): Boolean { true }"),
+        ),
+    ];
+    let selection = inventory(&sources);
+    let namespace = admit_namespace(
+        &selection,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    assert!(namespace.issues().is_empty(), "{:?}", namespace.issues());
+    assert_eq!(namespace.exhaustion(), None);
+    let definitions = definitions();
+    let rules = rules();
+    let selected = Inventory {
+        edition: R::Edition.selection(),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let report = definitions::resolve(
+        namespace.namespace().unwrap(),
+        &selected,
+        &mut Work::new(BindingLimits::default()),
+    );
+    assert!(report.complete);
+    assert_eq!(report.exhaustion, None);
+    assert_eq!(report.edition_refusal, None);
+    assert_eq!(report.declarations.len(), 2);
+    let missing = &report.declarations[0].uses[0];
+    assert!(missing.complete);
+    assert_eq!(missing.refusal, Some(Cause::MissingAlias));
+    assert!(missing.closure.is_empty());
+    assert_eq!(missing.alias.value, "Q");
+    let start = sources[0].text().find("using Q").unwrap() + "using ".len();
+    assert_eq!(
+        missing.alias.span,
+        Span {
+            start,
+            end: start + 1
+        }
+    );
+    assert_eq!(
+        missing.unit,
+        namespace.namespace().unwrap().declarations()[0].unit()
+    );
+    let healthy = &report.declarations[1].uses[0];
+    assert_eq!(healthy.refusal, None);
+    assert!(healthy.complete);
+    assert_eq!(healthy.closure, [R::StateQueries, R::StateCore, R::Edition]);
+    assert_ne!(missing.unit, healthy.unit);
+}
+
+#[test]
 #[trace("TC-114", "FR-036-AC-1")]
 fn profile_kind_does_not_follow_the_callers_preferred_spelling() {
     for definition in [
@@ -365,6 +517,7 @@ fn profile_kind_does_not_follow_the_callers_preferred_spelling() {
 #[test]
 #[trace("TC-114", "FR-036-AC-7")]
 fn zero_and_exact_limits_keep_immutable_partial_reports_and_fresh_retries() {
+    assert_eq!(ACCOUNTING_VERSION, "composed-binding-work/1");
     let sources = [source(
         "queries",
         &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
