@@ -51,18 +51,23 @@ pub(super) fn discharge<'p, 'r, 'a>(
     };
     let run = (|| -> std::result::Result<(), Exhaustion> {
         let namespace = types.binding().namespace();
-        let Some(first) = namespace.declarations().first() else {
+        let Some(first) = types.binding().declarations().first() else {
             return Ok(());
         };
+        let first_id = first.declaration();
+        let first_entry = namespace
+            .declaration(first_id)
+            .expect("retained binding owner");
         let site = Site {
-            declaration: first.id(),
-            unit: first.unit(),
+            declaration: first_id,
+            unit: first_entry.unit(),
             expression: None,
-            span: namespace.syntax(first.id()).expect("syntax").span,
+            span: namespace.syntax(first_id).expect("syntax").span,
         };
         let mappings = correspondence::Mappings::new(types, bindings, &mut work, site)?;
-        for entry in namespace.declarations() {
-            let id = entry.id();
+        for bound in types.binding().declarations() {
+            let id = bound.declaration();
+            let entry = namespace.declaration(id).expect("retained binding owner");
             let syntax = namespace.syntax(id).expect("syntax");
             let site = Site {
                 declaration: id,
@@ -357,7 +362,7 @@ impl<'s, 'a> Builder<'s, 'a> {
     }
     fn representation(&mut self, ty: &NativeType<'a>, at: ExprId) -> Result<ir::ValueType> {
         self.type_work(ty, at, 1)?;
-        proof::representation(ty, true)
+        proof::representation(ty, proof::Interpretation::ComposedValues)
             .map_err(|_| self.unsupported(at, Unsupported::ValueRepresentation))
     }
     fn type_work(&mut self, ty: &NativeType<'a>, at: ExprId, depth: usize) -> Result<()> {
