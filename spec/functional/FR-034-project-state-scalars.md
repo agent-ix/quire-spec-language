@@ -36,8 +36,12 @@ retain the projection, validated context, exact artifact reference, optional
 object identity and arena location. These are local backend inputs, not a
 portable evidence envelope or a generated execution result.
 Materialization failures distinguish ContextMismatch, ResourceExhausted,
-Cancelled and defensive InvalidCorrespondence, with completed work and a
-boundary-specific explanation. Existing lowering failures retain their codes.
+Cancelled and Invariant with a typed correspondence reason and completed work.
+An invariant failure retains the original projected read, including its linked
+declaration, model digest and observations; classification never requires message
+parsing. Every missing-correspondence path after complete validation is a
+defensive invariant failure, not a caller input error. The public error and reason
+types are non-exhaustive. Existing lowering failures retain their codes.
 
 ## Behavior
 
@@ -46,6 +50,7 @@ The compiler shall retain separate pre/post read correspondences for the same de
 The compiler shall derive field types from checked model declarations and use deterministic aliases that cannot collide with model value names or other field aliases.
 The compiler shall preserve linked field identity, model digest, source coordinates and native/IR observation correspondence.
 The compiler shall count every traversed native node, including field receivers and pre/group wrappers, against the existing lowering limits.
+The compiler shall charge one unit of existing lowering node work before generating or inspecting each fresh field-alias candidate, including colliding candidates, while alias reuse adds no candidate work and candidate search adds no AST depth.
 If a receiver is not self wrapped only in groups or pre, or a field is nonprimitive, then the compiler shall refuse the complete projection.
 The compiler shall preserve the existing Boolean and integer target contracts.
 The standalone lower command shall accept the explicit state-scalar-ir/v1 target and emit its exact IR bytes.
@@ -54,6 +59,13 @@ The materializer shall read primitives from the selected snapshot or captured in
 The materializer shall retain inputs in projection read order for the selected clause only.
 If materialization reaches its work ceiling or is cancelled, then the materializer shall return a classified failure without partial inputs.
 The materializer shall charge each inspected read, parameter, field and arena value against fresh per-call work.
+
+Native linking and runtime validation retain their own failure boundaries:
+invocation parameters cannot be accessed by an invariant; a current snapshot
+cannot satisfy a pre/post selection; missing selected invocations or required
+parameters produce no ValidatedContext. These predecessor failures retain their
+existing typed causes and original input locations rather than being reclassified
+as materialization invariants.
 
 ## Acceptance Criteria
 
