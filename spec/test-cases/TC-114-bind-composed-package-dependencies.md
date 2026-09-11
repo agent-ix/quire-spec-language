@@ -14,6 +14,11 @@ Exercise composed linking through the public Rust boundary with exact supplied
 models/definitions and source units. Concrete observations are deliberately absent
 from the valid template. Integration with the real producer belongs to IT-009.
 
+`tests/composed_namespace.rs` and `tests/composed_linking.rs` exercise the source
+inventory and native declaration-reference portions through `admit_namespace`.
+Their unresolved profile/model selectors do not qualify the remaining definition,
+model/type, lexical-scope or runtime-role binding procedures below.
+
 ## Test Procedure
 
 1. Split the standard order/refund package across two inventoried units. Include

@@ -218,7 +218,12 @@ impl Parser {
             Err(self.unexpected("quoted string"))
         }
     }
-    fn header(&mut self, keyword: K, expected: &str, code: Code) -> Result<(), Box<Diagnostic>> {
+    fn header(
+        &mut self,
+        keyword: K,
+        expected: &str,
+        code: Code,
+    ) -> Result<Spanned<String>, Box<Diagnostic>> {
         self.expect(keyword.clone())?;
         let literal = self.string()?;
         if literal.value != expected {
@@ -229,11 +234,11 @@ impl Parser {
                 format!("supported {} is {expected}", keyword.description()),
             ));
         }
-        Ok(())
+        Ok(literal)
     }
     fn unit(&mut self) -> Result<ParsedUnit, Box<Diagnostic>> {
-        self.header(K::Language, LANGUAGE, Code::UnknownLanguage)?;
-        self.header(K::Edition, EDITION, Code::UnknownEdition)?;
+        let language = self.header(K::Language, LANGUAGE, Code::UnknownLanguage)?;
+        let edition = self.header(K::Edition, EDITION, Code::UnknownEdition)?;
         self.expect(K::Semicolon)?;
         self.header(K::Profile, PROFILE, Code::UnknownProfile)?;
         self.expect(K::Semicolon)?;
@@ -247,6 +252,8 @@ impl Parser {
         }
         Ok(ParsedUnit {
             source: self.source.clone(),
+            language,
+            edition,
             imports,
             clauses,
             expressions: std::mem::take(&mut self.nodes),

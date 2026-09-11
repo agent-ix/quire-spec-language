@@ -5,8 +5,11 @@ either a historical unit or a typed, source-located `1-draft` syntax unit.
 The composed path extends the existing Logos recognizer and Pratt parser across
 predicates, state, temporal and choreography forms. [Issue #35](https://github.com/agent-ix/quire-spec-language/issues/35)
 tracks this work under [FR-035](spec/functional/FR-035-parse-composed-native-units.md);
-[package linking](spec/functional/FR-036-link-composed-native-packages.md) remains
-open. Existing `parse`, format, CLI and checked-package APIs retain their
+[package linking](spec/functional/FR-036-link-composed-native-packages.md) continues
+with `linking::composed::admit_namespace`: exact source inventory, package-wide
+native names, typed declaration references and cycle/dependent refusals under
+explicit work limits. Definition/model/type binding and derived runtime roles
+remain open. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
