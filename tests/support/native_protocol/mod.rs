@@ -76,7 +76,10 @@ fn owner() -> ir::RequirementRef {
 
 impl Inputs {
     pub fn new(units: &[Unit<'_>]) -> Self {
-        let model = composed_inputs::model("NativeEmission");
+        Self::with_model(units, composed_inputs::model("NativeEmission"))
+    }
+
+    pub fn with_model(units: &[Unit<'_>], model: NativeModel) -> Self {
         let sources: Vec<_> = units
             .iter()
             .map(|unit| composed_inputs::source(unit.name, &model, unit.body))
@@ -355,6 +358,17 @@ impl Inputs {
         proofs: &proofs::ProofReport<'_, '_, '_>,
         emitted: &native::EmittedPackage,
     ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.read_bytes(proofs, emitted.bytes(), emitted.digest())
+    }
+
+    /// Check transport against the original selections and an independently
+    /// selected seal. Adverse bytes never acquire native emission authority.
+    pub fn read_bytes(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+    ) -> artifact::Report<artifact::AdmittedPackage> {
         let namespace = proofs.types().binding().namespace();
         let spans: Vec<Vec<_>> = self
             .mappings
@@ -454,16 +468,16 @@ impl Inputs {
             "fixture-native-output",
             "quire.compiled-protocol",
             "1",
-            emitted.bytes(),
+            bytes,
         );
-        artifact.digest = emitted.digest();
+        artifact.digest = digest;
         let language = w::Language {
             identity: "ix:native".into(),
             edition: "1-draft".into(),
         };
         self.with_selections(|selected| {
             artifact::read(
-                emitted.bytes(),
+                bytes,
                 &artifact::Expected {
                     artifact: &artifact,
                     contract: &self.contract,
