@@ -173,6 +173,7 @@ mod tests {
                 ProtocolNumber::Integer(ExactInteger::new(i64::MIN)),
                 ProtocolNumber::Integer(ExactInteger::new(i64::MAX)),
                 ProtocolNumber::Rational(ExactRational::new(i64::MAX, i64::MAX - 1).unwrap()),
+                ProtocolNumber::Rational(ExactRational::new(i64::MIN, i64::MAX).unwrap()),
             ]
         );
         for (name, expected) in [

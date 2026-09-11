@@ -13,15 +13,15 @@ use quire_spec_language::protocol_artifact::{
 };
 use setup::{Inputs, Unit};
 
-/// The exact rational at the admitted denominator ceiling. Consecutive integers
-/// are coprime, so this is already reduced and the reader must not repair it.
-const CEILING_NUMERATOR: i64 = i64::MAX;
-const CEILING_DENOMINATOR: i64 = i64::MAX - 1;
+/// Adjacent magnitudes are coprime. These pairs exercise both numerator
+/// endpoints and the admitted denominator ceiling without reduction hiding it.
+const RATIONAL_BOUNDARIES: [(i64, i64); 2] = [(i64::MAX, i64::MAX - 1), (i64::MIN, i64::MAX)];
 
 const BOUNDED: &str = "predicate Bounded using G (wide: M::Wide, exact: M::Exact): Boolean {
     wide >= -9223372036854775808
     and wide <= 9223372036854775807
     and exact <= rational(9223372036854775807, 9223372036854775806)
+    and exact >= rational(-9223372036854775808, 9223372036854775807)
 }";
 
 const FLOW: &str = "protocol Flow using P over (view: M::Node) on origin {
@@ -107,7 +107,12 @@ fn signed64_extrema_and_ceiling_rational_survive_native_emission_and_independent
                     ProtocolNumber::Integer(ExactInteger::new(i64::MIN)),
                     ProtocolNumber::Integer(ExactInteger::new(i64::MAX)),
                     ProtocolNumber::Rational(
-                        ExactRational::new(CEILING_NUMERATOR, CEILING_DENOMINATOR).unwrap()
+                        ExactRational::new(RATIONAL_BOUNDARIES[0].0, RATIONAL_BOUNDARIES[0].1)
+                            .unwrap()
+                    ),
+                    ProtocolNumber::Rational(
+                        ExactRational::new(RATIONAL_BOUNDARIES[1].0, RATIONAL_BOUNDARIES[1].1)
+                            .unwrap()
                     ),
                 ],
                 "the authored endpoints reach the wire unnarrowed"
@@ -123,6 +128,7 @@ fn signed64_extrema_and_ceiling_rational_survive_native_emission_and_independent
                 "\"decimal\":\"-9223372036854775808\"",
                 "\"decimal\":\"9223372036854775807\"",
                 "\"numerator\":\"9223372036854775807\",\"denominator\":\"9223372036854775806\"",
+                "\"numerator\":\"-9223372036854775808\",\"denominator\":\"9223372036854775807\"",
             ] {
                 assert!(
                     bytes.contains(spelling),

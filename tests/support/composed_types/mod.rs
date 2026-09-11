@@ -17,17 +17,26 @@ use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "Shared fixture module; each test binary selects its own constructor"
+)]
 pub fn model(name: &str) -> NativeModel {
     model_with_maximum(name, 5)
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "Shared fixture module; each test binary selects its own constructor"
+)]
 pub fn model_with_maximum(name: &str, maximum: u32) -> NativeModel {
     try_model_with_maximum(name, maximum).expect("admitted model fixture")
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "Shared fixture module; each test binary selects its own constructor"
+)]
 pub fn try_model_with_maximum(
     name: &str,
     maximum: u32,
@@ -39,7 +48,10 @@ pub fn try_model_with_maximum(
 /// but every rational domain in it is narrow. This variant adds `Exact`, the
 /// rational domain at the denominator ceiling `ir::RationalType::new` admits, so
 /// a literal can reach both signed-64 endpoints and that ceiling.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "Only numeric-boundary consumers need this shared fixture variant"
+)]
 pub fn model_with_signed64_domains(name: &str) -> NativeModel {
     try_model_with(name, 5, |document| {
         document["scalars"].as_array_mut().unwrap().push(
