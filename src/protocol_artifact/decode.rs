@@ -113,6 +113,8 @@ impl<'de> Visitor<'de> for Census<'_> {
 pub(super) fn package(bytes: &[u8], work: &mut Work) -> Result<wire::Package, Error> {
     work.bytes(bytes.len())?;
     let mut decoder = serde_json::Deserializer::from_slice(bytes);
+    // The census charges our lower, caller-selected depth before descending.
+    // Its successful whole-input pass bounds the subsequent typed decode too.
     decoder.disable_recursion_limit();
     let mut refusal = None;
     let census = Census {

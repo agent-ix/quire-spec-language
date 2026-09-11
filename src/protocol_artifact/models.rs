@@ -188,6 +188,7 @@ pub(super) fn validate(
     }
     for declaration in &package.declarations {
         work.visit()?;
+        work.locus = Some(declaration.locus.clone());
         validate_operations(package, declaration, &views, work)?;
         for value in &declaration.values {
             work.visit()?;
@@ -801,7 +802,7 @@ fn matches_native(
                 matches!(selected, Target::Object(actual, _) if same_model(view.catalog.model, model) && actual == *role)
             }
             (w::Type::Reference { .. }, NativeType::Reference { .. }) => {
-                return Err(Error::Unsupported(Unsupported::Export))
+                return Err(Error::Unsupported(Unsupported::Export));
             }
             _ => false,
         };

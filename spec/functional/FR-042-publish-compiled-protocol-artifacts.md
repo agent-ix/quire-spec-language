@@ -124,6 +124,8 @@ independent compilation results. Unknown wire/type/version, missing or substitut
 selection, unsupported required feature/domain and resource exhaustion have
 typed discriminating causes. Known refusals survive later budget exhaustion;
 human-readable diagnostic text does not select their classification. Wire
+refusals use the contract's published typed vocabulary and pass precedence;
+package-wide output work carries no unrelated last-visited source locus. Wire
 verification does not imply global replay, projection, realizability or recovery
 success. These remain separately requested consumer capabilities.
 
