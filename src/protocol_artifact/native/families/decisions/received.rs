@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-042: lexical/flow and model authority for received and own-attempt atoms.
+//! The private Received context covers both admitted observation kinds.
 
 use std::collections::BTreeMap;
 
@@ -148,7 +149,9 @@ impl<'s, 'm> Received<'s, 'm> {
                 )? == self.owner);
             }
             c::EventKind::Receive { channel, .. } => channel,
-            _ => return Ok(false),
+            c::EventKind::Send { .. }
+            | c::EventKind::Effect { .. }
+            | c::EventKind::Event { .. } => return Ok(false),
         };
         let target = structural(
             self.context,
