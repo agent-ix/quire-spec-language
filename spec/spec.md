@@ -10,6 +10,12 @@ standards_alignment:
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-038
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-035
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-036
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-009
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-033
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
@@ -117,11 +123,15 @@ relationships:
 ---
 # Master Requirements Specification
 
-## Native finite-state compiler and executable core
+## Native compiler, composed admission and executable profiles
 
 ## 1. Purpose
 
-This root indexes the discrete requirements for Agent A's assigned native finite-state work. It corrects the earlier proposal-only authoring by using the requested /specify catalog contract. All artifacts remain draft with conditional /spec-review findings; retrospective documentation does not retroactively approve implementation.
+This root indexes the native compiler requirements, including the historical
+finite-state implementation and the proposed composed-language admission under
+[compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35).
+Discrete requirements distinguish planned composed behavior from existing
+implementation and its recorded qualification.
 
 ## 2. Scope
 
@@ -129,15 +139,30 @@ This root indexes the discrete requirements for Agent A's assigned native finite
 
 LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned fixture verification under FR-012/NFR-005.
 
+L2 adds edition-selected syntax and exact package linking across state, temporal
+and choreography declarations through
+[FR-035](functional/FR-035-parse-composed-native-units.md) and
+[FR-036](functional/FR-036-link-composed-native-packages.md). It consumes the shared
+language/model/binding contracts without claiming the downstream family engines.
+
 ### 2.2 Out of Scope
 
-Temporal/protocol/message semantics, B's portable method/plan/result schemas, C's existing-repository integration work, a duplicate archetype model or Contract IR type authority, a second executable binder, public publication and standard-wide license selection are outside this repository's implementation ownership. A owns native semantics and concrete source-to-formal projections needed by its proof cases. These boundaries do not remove the full supported-state workflow.
+The standard owns temporal/protocol/message meaning; the existing family tickets
+own its downstream execution and projections. This L2 slice does not implement
+those engines, B's portable result schemas, D's model producer or C's assurance
+campaign. Duplicate model/type authorities, a second executable binder, public
+publication and standard-wide license selection remain outside this scope.
 
 ## 3. System Overview
 
 ### 3.1 System Description
 
-The language defines an explicit finite-state profile. The native pipeline preserves source identity through parsing, model linking, runtime validation, reference evaluation and qualified backend projection. Archetype schemas, explicit formal declarations and runtime populations are distinct. Contract IR owns formal types and its executable binder; the modeling language owns the semantics and qualified projection of concepts its clauses require.
+The existing implementation selects an explicit finite-state profile. The proposed
+composed path preserves source identity through edition recognition and typed
+package dependencies before downstream checking, assessment binding or execution.
+Archetype schemas, explicit formal declarations and runtime populations remain
+distinct. Contract IR owns formal types and its executable binder; the native
+language standard owns the meaning of the clauses being compiled.
 
 ### 3.2 Intended Users
 
@@ -167,7 +192,7 @@ Runtime inputs are immutable typed finite populations with explicit closure assu
 
 ### 8.2 Transition Semantics
 
-Operation observations belong to one invocation with an authored frame and exact object delta. This first profile does not define a protocol state machine or temporal clock semantics.
+Operation observations belong to one invocation with an authored frame and exact object delta. The historical finite-state profile does not define a protocol state machine or temporal clock semantics. Composed parsing/linking retains the selected family's typed forms and dependencies; the shared standard and downstream family requirements own their evaluation.
 
 ### 8.3 Determinism Guarantees
 
@@ -199,7 +224,7 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 ## 12. Verification Strategy
 
-Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The end-state acceptance remains a supported healthy, violating and refused/incomplete native state workflow. Existing syntax tests and authored semantic examples are partial evidence only.
+Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. These are planned controls; syntax acceptance cannot qualify later temporal or choreography evaluation.
 
 ## 13. Change Management
 
@@ -217,7 +242,7 @@ specification does not close LC02/FS03 acceptance or replace IT-002.
 
 ## 15. Governance Notes
 
-Use private owning issues and isolated worktrees. A owns the native producer and these requirements; B owns portable verification contracts; C owns coordinated existing-repository consumers. Do not spawn additional agents under the current assignment. Preserve original dependency/template grants. Standard-wide publication terms remain unresolved.
+Use private owning issues and isolated worktrees. Under the approved initial specification cycle, A owns the compiler and shared language foundation; B owns protocol/results, D model/configuration, E temporal meaning and F observations/consumers. C continues engineering-assurance independently. Preserve original dependency/template grants. Standard-wide publication terms remain unresolved.
 
 ## 16. References
 
@@ -264,3 +289,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
+| [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Proposed composed syntax; compiler #35 |
+| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Proposed composed package linking; compiler #35 |
+| [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
