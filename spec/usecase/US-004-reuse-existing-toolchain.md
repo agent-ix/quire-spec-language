@@ -3,6 +3,8 @@ id: US-004
 title: "Use native clauses through the existing toolchain"
 type: US
 relationships:
+  - target: "ix://agent-ix/quire-spec-language/FR-038"
+    type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
   - target: "ix://agent-ix/quire-spec-language/FR-009"
@@ -23,6 +25,9 @@ relationships:
 ## Context
 
 This story drives the native finite-state work assigned to Agent A. The requirements below remain draft until the requested specification review is completed. Existing implementation observations do not establish the unimplemented pipeline stages.
+
+Compiler #40 extends this consumer need to compiled choreography: downstream
+tools must retain exact numeric values without interpreting native source.
 
 ## Acceptance Examples (Illustrative)
 
@@ -48,3 +53,4 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 - [FR-011](../functional/FR-011-integrate-opaque-extraction.md)
 
 - [FR-012](../functional/FR-012-audit-fixtures-in-rust.md) covers Rust verification of selected fixtures.
+- [FR-038](../functional/FR-038-encode-exact-protocol-numbers.md) preserves exact integer/rational wire values for protocol consumers.
