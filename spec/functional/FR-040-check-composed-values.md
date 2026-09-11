@@ -163,10 +163,13 @@ Compiler [#35](https://github.com/agent-ix/quire-spec-language/issues/35),
 delivery obligations. The pinned IR already supplies rational types, literals,
 arithmetic and definedness. [FR-041](FR-041-admit-rational-native-model-profile.md)
 specifies the explicit `/2` native model producer extension while historical
-`/1` admission retains its rational refusal. Composed proof correspondence still
-needs to consume those exact representations before its positive cases can
-execute. `NativeType::Scalar` already retains the underlying IR value type;
-a second numeric type authority is unnecessary.
+`/1` admission retains its rational refusal. Composed definedness consumes those
+exact representations with the original authored correspondence. Query-body
+safety covers the admitted element domain; sum safety requires every bounded
+prefix. Broader rational sum-domain transfer remains an explicit unsupported
+prerequisite where the selected proof interface cannot establish it. This does
+not remove rational sums from the requirement. The existing native scalar type
+retains the underlying IR value type; a second numeric authority is unnecessary.
 D's exact producer/native correspondence and authoritative relationship exports
 remain producer-owned prerequisites. Unsupported prerequisites are implementation
 gaps, not a narrower definition of this requirement; reference evaluation,

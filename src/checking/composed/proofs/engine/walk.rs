@@ -336,7 +336,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                 }
                 ExprKind::Call { builtin, argument } => {
                     if *builtin == Builtin::Size {
-                        return Err(self.unsupported(at, Unsupported::OrderedQuery));
+                        return self.size(at, *argument, path, depth);
                     }
                     let value = self.visit(*argument, path, depth + 1)?;
                     match builtin {
@@ -362,7 +362,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                         Builtin::Deref => {
                             self.symbolic(Key::Deref(value.key), at, self.ty(at)?, value.stable)?
                         }
-                        Builtin::Size => unreachable!("unsupported query handled before its body"),
+                        Builtin::Size => return Err(upstream(self.site(at))),
                     }
                 }
                 ExprKind::Let { name, value, body } => {
@@ -442,9 +442,12 @@ impl<'s, 'a> Builder<'s, 'a> {
                         self.symbolic(Key::Expression(at.0), at, self.ty(at)?, false)?
                     }
                 }
-                ExprKind::Quantifier { .. } => {
-                    return Err(self.unsupported(at, Unsupported::OrderedQuery))
-                }
+                ExprKind::Quantifier {
+                    name,
+                    domain,
+                    predicate,
+                    ..
+                } => self.quantified(at, name, *domain, *predicate, path, depth)?,
                 ExprKind::Reaches { start, target, .. } => {
                     self.visit(*start, path, depth + 1)?;
                     self.visit(*target, path, depth + 1)?;
@@ -492,11 +495,11 @@ impl<'s, 'a> Builder<'s, 'a> {
                 }
                 self.symbolic(Key::Expression(at.0), at, &NativeType::Boolean, false)?
             }
-            c::ValueKind::Size { .. }
-            | c::ValueKind::Contains { .. }
-            | c::ValueKind::Query { .. } => {
-                return Err(self.unsupported(at, Unsupported::OrderedQuery))
+            c::ValueKind::Size { argument, .. } => self.size(at, *argument, path, depth)?,
+            c::ValueKind::Contains { collection, member } => {
+                self.contains(at, *collection, *member, path, depth)?
             }
+            c::ValueKind::Query { .. } => self.query(at, path, depth)?,
         };
         if self.ty(at)? == &NativeType::Boolean {
             value.graph = self.protect(

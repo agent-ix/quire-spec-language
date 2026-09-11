@@ -20,8 +20,11 @@ disposition establishes type admission only; exact authored formal sources suppl
 the existing IR rational normalizer. `checking::composed::proofs::discharge`
 then checks supported guarded values through the existing IR prover and exact
 authored `CheckBindings`, preserving actual goals and dependent refusals.
-Ordered-query proof representation, general family admission and runtime
-validation remain open. Existing `parse`, format, CLI and checked-package APIs retain their
+Ordered queries retain their original binder, collection and body through
+definedness and native emission. Sum admission checks every prefix in supported
+integer or denominator-one rational domains; broader rational sum transfer
+remains explicitly unsupported. General family admission and runtime validation
+remain open. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
 Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
