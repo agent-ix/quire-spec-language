@@ -232,6 +232,8 @@ impl Inputs {
 
     /// The fixture has one Node::step operation; derive its ordered export index
     /// from the original IR declarations, before any native emission exists.
+    // Shared fixtures also serve event-only tests without operation contracts.
+    #[allow(dead_code)]
     pub fn step_contracts(&mut self, pre: &str, post: &str) -> w::ExportRef {
         let [operation] = self.model.roles().operations.as_slice() else {
             panic!("one original fixture operation")
