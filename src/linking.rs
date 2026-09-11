@@ -2,6 +2,7 @@
 //! FR-005/013/015: exact imports and formal/native declaration correspondence.
 //! Linking establishes names and provenance, not typing or evaluability.
 
+pub mod composed;
 mod native;
 
 use std::collections::BTreeSet;

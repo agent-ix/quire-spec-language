@@ -109,9 +109,11 @@ invented for that criterion.
 ## Composed language admission (L2)
 
 TC-113 exercises the composed parser through thirteen public Rust tests in
-`tests/composed_syntax.rs`; the historical corpus checks compatibility. TC-114/115
-and [IT-009](../integration/IT-009-composed-package-boundary.md) remain planned
-linker/producer work under compiler #35. Syntax success grants no semantic or
+`tests/composed_syntax.rs`; the historical corpus checks compatibility. TC-114's
+source namespace and native dependency portions have public tests in
+`tests/composed_namespace.rs` and `tests/composed_linking.rs`. Its model/profile and
+role binding portions, TC-115 and [IT-009](../integration/IT-009-composed-package-boundary.md)
+remain planned linker/producer work under compiler #35. Syntax success grants no semantic or
 execution admission. Status records local runs, not engine-verified coverage.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
