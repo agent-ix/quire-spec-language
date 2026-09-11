@@ -124,8 +124,9 @@ observations belong only to the later consumer fixture.
    concrete counterexample. Closed literal overlap/hole remains `Invalid::Control`.
    Numeric comparisons, queries and callee expansion remain unsupported.
    Admit an observed repeat guard over the same fragment, and require
-   `Unsupported::FamilyProof` for a foreign-role, unlisted, composite or
-   body-established guard atom. Put hidden inputs behind `false and`, `true or`,
+   `Unsupported::FamilyProof` for a foreign-role, unlisted or composite guard
+   atom, and an out-of-scope type discharge refusal, before family admission,
+   for an atom established only inside the repeat body. Put hidden inputs behind `false and`, `true or`,
    `false implies` and an unselected conditional branch; require FamilyProof
    rather than admission through the closed-decision path. Closed Boolean let
    aliases retain the evaluated overlap/hole `Invalid::Control` classification.
