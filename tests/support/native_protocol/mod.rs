@@ -75,12 +75,13 @@ fn owner() -> ir::RequirementRef {
 }
 
 impl Inputs {
+    #[allow(dead_code)]
     pub fn new(units: &[Unit<'_>]) -> Self {
         Self::with_model(units, composed_inputs::model("NativeEmission"))
     }
 
-    /// The shared fixture scalars are narrow by construction; this variant also
-    /// carries the full signed-64 integer and exact-rational domains.
+    /// The shared fixture already carries the full signed-64 integer scalar;
+    /// this variant also carries the exact-rational domain at its ceiling.
     #[allow(dead_code)]
     pub fn with_signed64_domains(units: &[Unit<'_>]) -> Self {
         Self::with_model(
