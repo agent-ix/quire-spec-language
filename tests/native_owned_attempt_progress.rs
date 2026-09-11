@@ -7,7 +7,9 @@
 
 // The shared setup module also serves tests that rebind operation contracts;
 // these cases author none, so its contract helper is unused in this target.
-#[allow(dead_code)]
+// `expect` rather than `allow`: if a later case here authors a contract, the
+// suppression itself must fail rather than linger unexamined.
+#[expect(dead_code)]
 #[path = "support/native_protocol/mod.rs"]
 mod setup;
 
@@ -72,6 +74,12 @@ fn an_immutable_alias_retains_the_exact_owned_attempt_boolean_atom() {
             "definedness of the attempt decides no case: both alternatives stay"
         );
 
+        let boolean = declaration
+            .values
+            .iter()
+            .find(|value| matches!(value.operation, w::ValueOperation::Boolean { .. }))
+            .expect("an authored Boolean literal fixes the Boolean type")
+            .value_type;
         for name in [SEEN, DECIDED, REFUSED] {
             let alias = declaration
                 .binders
@@ -82,6 +90,10 @@ fn an_immutable_alias_retains_the_exact_owned_attempt_boolean_atom() {
             assert_ne!(
                 alias.value_type, record.value_type,
                 "{name} aliases the Boolean field, not the whole attempt record"
+            );
+            assert_eq!(
+                alias.value_type, boolean,
+                "{name} carries the same Boolean type an authored literal carries"
             );
             assert_ne!(
                 alias.anchor, record.anchor,
@@ -132,10 +144,28 @@ fn an_immutable_alias_retains_the_exact_owned_attempt_boolean_atom() {
 fn an_unused_initializer_cannot_hide_an_unavailable_or_foreign_role_atom() {
     // The guard discards the alias, but the atom still has to be visible to,
     // and owned by, the deciding role.
-    for (case, owner, visible, admits) in [
-        ("visible own attempt", "Receiver", "attempted.ready", true),
-        ("atom not made visible", "Receiver", "true", false),
-        ("foreign deciding role", "Sender", "attempted.ready", false),
+    for (case, owner, visible, admits, authored) in [
+        (
+            "visible own attempt",
+            "Receiver",
+            "attempted.ready",
+            true,
+            "",
+        ),
+        (
+            "atom not made visible",
+            "Receiver",
+            "true",
+            false,
+            "choice Decide by Receiver visible (true)",
+        ),
+        (
+            "foreign deciding role",
+            "Sender",
+            "attempted.ready",
+            false,
+            "attempted.ready",
+        ),
     ] {
         let decision = choice(
             owner,
@@ -195,7 +225,7 @@ fn an_unused_initializer_cannot_hide_an_unavailable_or_foreign_role_atom() {
                 no_effect(controls);
             });
         } else {
-            refused(&inputs, case);
+            refused(&inputs, case, authored);
         }
     }
 }
@@ -275,7 +305,11 @@ fn a_continuing_repeat_admits_when_every_feasible_attempt_branch_progresses() {
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
 fn a_repeat_refuses_when_a_feasible_attempt_branch_makes_no_progress() {
     let inputs = inputs(&loop_body("check Rejected using S { true };", ""));
-    refused(&inputs, "feasible branch without progress");
+    refused(
+        &inputs,
+        "feasible branch without progress",
+        "repeat Loop by Receiver",
+    );
 }
 
 #[test]
@@ -444,7 +478,11 @@ fn discharged(report: &proofs::ProofReport<'_, '_, '_>) {
     }
 }
 
-fn refused(inputs: &Inputs, case: &str) {
+/// `Unsupported::FamilyProof` is one code covering every unmet family
+/// obligation, so the code alone cannot say which obligation failed. `authored`
+/// is the opening text of the construct that must own the refusal; pinning it
+/// keeps a refusal for an unrelated reason from passing as this case.
+fn refused(inputs: &Inputs, case: &str, authored: &str) {
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),
@@ -456,6 +494,16 @@ fn refused(inputs: &Inputs, case: &str) {
                 Some(&Error::Unsupported(Unsupported::FamilyProof)),
                 "{case}; locus {:?}",
                 report.locus()
+            );
+            let locus = report
+                .locus()
+                .unwrap_or_else(|| panic!("{case} refuses at an authored locus"));
+            assert_eq!(locus.source, 0, "{case} refuses in the original source");
+            let text =
+                &inputs.sources[0].text()[locus.span.start as usize..locus.span.end as usize];
+            assert!(
+                text.starts_with(authored),
+                "{case} must refuse at {authored:?}, not {text:?}"
             );
         },
     );
