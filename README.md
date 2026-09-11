@@ -1,12 +1,13 @@
 # quire-spec-language
 
-The composed-language work under [issue #35](https://github.com/agent-ix/quire-spec-language/issues/35)
-is specified in [edition-selected parsing](spec/functional/FR-035-parse-composed-native-units.md)
-and [package linking](spec/functional/FR-036-link-composed-native-packages.md).
-It extends the current lexer/parser and exact model pipeline across state,
-temporal and choreography declarations. These are proposed requirements;
-composed admission is not implemented. The behavior below describes the existing
-historical profile.
+`parse_native` and `parse_native_source` select the authored edition and return
+either a historical unit or a typed, source-located `1-draft` syntax unit.
+The composed path extends the existing Logos recognizer and Pratt parser across
+predicates, state, temporal and choreography forms. [Issue #35](https://github.com/agent-ix/quire-spec-language/issues/35)
+tracks this work under [FR-035](spec/functional/FR-035-parse-composed-native-units.md);
+[package linking](spec/functional/FR-036-link-composed-native-packages.md) remains
+open. Existing `parse`, format, CLI and checked-package APIs retain their
+historical profile; parsing alone grants no semantic admission or execution.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
