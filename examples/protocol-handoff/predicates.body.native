@@ -4,10 +4,11 @@ predicate Allowed using G (ratio: M::Ratio): Boolean {
     ratio <= rational(1,1)
 }
 
-// The signed-64 extrema and the exact rational at the denominator ceiling are
+// The signed-64 extrema and exact rationals at both component boundaries are
 // authored here so the emitted package carries them as M::Wide/M::Exact literals.
 predicate Bounded using G (wide: M::Wide, exact: M::Exact): Boolean {
     wide >= -9223372036854775808
     and wide <= 9223372036854775807
     and exact <= rational(9223372036854775807, 9223372036854775806)
+    and exact >= rational(-9223372036854775808, 9223372036854775807)
 }
