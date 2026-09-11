@@ -2,6 +2,7 @@
 //! Source-owned composed evaluation order feeding the shared proof kernel.
 
 mod graph;
+mod queries;
 mod roots;
 mod walk;
 
@@ -165,6 +166,7 @@ enum Key<'a> {
     Deref(ValueKey),
     Expression(usize),
     Capture(usize),
+    Element(usize, ValueKey),
 }
 struct KeyInfo {
     native: ExprId,
@@ -212,7 +214,7 @@ struct Builder<'s, 'a> {
     output: &'s mut DeclarationProof,
     work: &'s mut Work,
     declaration_site: Site,
-    keys: BTreeMap<Key<'a>, ValueKey>,
+    keys: BTreeMap<(usize, Key<'a>), ValueKey>,
     key_info: Vec<KeyInfo>,
     graph: Vec<Node<'a>>,
     widths: Vec<usize>,
@@ -220,6 +222,9 @@ struct Builder<'s, 'a> {
     pending: Vec<Pending>,
     locals: BTreeMap<usize, Value>,
     binders: BTreeMap<usize, usize>,
+    sequences: BTreeMap<ValueKey, queries::Sequence>,
+    context: usize,
+    next_context: usize,
 }
 impl<'s, 'a> Builder<'s, 'a> {
     fn new(
@@ -262,6 +267,9 @@ impl<'s, 'a> Builder<'s, 'a> {
             pending: Vec::new(),
             locals: BTreeMap::new(),
             binders,
+            sequences: BTreeMap::new(),
+            context: 0,
+            next_context: 1,
         })
     }
     fn site(&self, at: ExprId) -> Site {
@@ -291,6 +299,11 @@ impl<'s, 'a> Builder<'s, 'a> {
     }
     fn key(&mut self, key: Key<'a>, at: ExprId) -> Result<ValueKey> {
         self.work.charge(D::Types, 1, self.site(at))?;
+        let context = match key {
+            Key::Expression(_) | Key::Capture(_) | Key::Element(..) => self.context,
+            Key::Binder(..) | Key::Field(..) | Key::Unwrap(_) | Key::Deref(_) => 0,
+        };
+        let key = (context, key);
         if let Some(&key) = self.keys.get(&key) {
             return Ok(key);
         }

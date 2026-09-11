@@ -416,68 +416,72 @@ pub(super) fn build(
             result.scopes[i as usize].parent = w::Nullable(None);
         }
     }
-    // Lower lexical lets from the actual bound initializer identity. The binder
-    // scope includes its token and body; the initializer remains in its parent.
+    // Preserve lexical let/query owners from their actual initializer/domain.
+    // The binder scope includes its token and body; the initializer/collection
+    // stays in the parent, including for a query nested in another collection.
     let mut regions = Vec::new();
     for id in &result.values {
         work.visit()?;
-        if let c::ValueKind::Shared(ExprKind::Let { name, value, body }) =
-            &unit.expressions()[id.0].kind
-        {
-            let binder = scope
-                .binders
-                .iter()
-                .enumerate()
-                .find(|(_, b)| {
-                    b.kind == BinderKind::Let
-                        && b.span == name.span
-                        && matches!(b.ty,BinderType::Initializer(v) if v==*value)
-                })
-                .map(|(i, _)| i)
-                .ok_or(Error::Invalid(Invalid::Scope))?;
+        let binding = match &unit.expressions()[id.0].kind {
+            c::ValueKind::Shared(ExprKind::Let { name, value, body }) => {
+                Some((name.span, BinderKind::Let, *value, *body))
+            }
+            c::ValueKind::Shared(ExprKind::Quantifier {
+                name,
+                domain,
+                predicate,
+                ..
+            }) => Some((name.span, BinderKind::Query, *domain, *predicate)),
+            c::ValueKind::Query {
+                binder,
+                domain,
+                body,
+                ..
+            } => Some((binder.span, BinderKind::Query, *domain, *body)),
+            _ => None,
+        };
+        if let Some((span, kind, input, body)) = binding {
+            let mut found = None;
+            for (index, binder) in scope.binders.iter().enumerate() {
+                work.visit()?;
+                let same_input = match (&binder.ty, kind) {
+                    (BinderType::Initializer(value), BinderKind::Let)
+                    | (BinderType::ElementOf(value), BinderKind::Query) => *value == input,
+                    _ => false,
+                };
+                if binder.kind == kind
+                    && binder.span == span
+                    && same_input
+                    && found.replace(index).is_some()
+                {
+                    return Err(Error::Invalid(Invalid::Duplicate));
+                }
+            }
+            let binder = found.ok_or(Error::Invalid(Invalid::Scope))?;
             work.charge(Dimension::Entries, 1)?;
             regions.push((
                 Span {
-                    start: name.span.start,
+                    start: span.start,
                     end: unit.expressions()[body.0].span.end,
                 },
                 unit.expressions()[body.0].span,
                 binder,
-                *result
-                    .value_scopes
-                    .get(&id.0)
-                    .ok_or(Error::Invalid(Invalid::Scope))?,
+                *id,
             ));
         }
     }
     regions.sort_by_key(|(s, _, _, _)| (s.start, std::cmp::Reverse(s.end)));
-    for (region, body, binder, original_parent) in regions {
+    for (region, body, binder, expression) in regions {
         work.charge(Dimension::Entries, 1)?;
         let i = index(result.scopes.len())?;
-        let mut parent = original_parent;
-        let mut size = usize::MAX;
-        for (p, other) in result.scopes.iter().enumerate() {
-            work.visit()?;
-            let width = other
-                .locus
-                .span
-                .end
-                .checked_sub(other.locus.span.start)
-                .ok_or(Error::Invalid(Invalid::Locus))? as usize;
-            if other.locus.span.start as usize <= region.start
-                && region.end <= other.locus.span.end as usize
-                && width < size
-                && width
-                    < syntax
-                        .span
-                        .end
-                        .checked_sub(syntax.span.start)
-                        .ok_or(Error::Invalid(Invalid::Locus))?
-            {
-                parent = index(p)?;
-                size = width;
-            }
-        }
+        // Prior outer regions assigned only their bodies. A nested query in an
+        // outer collection therefore retains the true surrounding environment,
+        // even though the outer binder token precedes that collection in text.
+        work.visit()?;
+        let parent = *result
+            .value_scopes
+            .get(&expression.0)
+            .ok_or(Error::Invalid(Invalid::Scope))?;
         result.scopes.push(w::Scope {
             parent: w::Nullable(Some(result.handle(parent))),
             locus: result.locus(region)?,

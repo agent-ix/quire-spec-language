@@ -244,9 +244,12 @@ non-self origin references form an acyclic graph. `Origin.Selected` may name its
 own value: the native checker uses this marker for mixed immutable provenance,
 not recursive evaluation. It retains the same owner/range checks; an actual
 self operand or a cycle through different origin nodes still refuses.
-Reads select a visible binder at
-that occurrence and retain its initializer's immutable anchor. Wrapper-type
-indices are acyclic; nominal recursion remains an explicit producer export,
+Reads select a visible binder using that value's admitted `scope` handle and
+the scope parent chain to the selected binder's `scope`; source-locus containment
+does not grant lexical availability. Scope loci retain original source provenance
+and may include a query binder token and collection even though the binder is
+available only in its body. Reads retain the initializer's immutable anchor.
+Wrapper-type indices are acyclic; nominal recursion remains an explicit producer export,
 not a cyclic wrapper table. All handles must be in range and match their field's
 kind and declaration owner, including unused entries.
 
@@ -530,8 +533,19 @@ owners, lexical binder identities and evaluation anchors across predicate,
 state, temporal and protocol families. It requires completed native typing and
 definedness before family checks. Supported constant decisions establish their
 coverage and non-overlap directly; continuing bounded loops must establish
-observable progress. General symbolic choice/visibility proofs, unsupported
-ordered-query proofs, recovery admission and absent authoritative producer
+observable progress. The native path lowers `size`, `contains`, `forall`,
+`exists`, `filter`, `map`, `count` and `sum` from their original AST occurrences
+after supported query definedness completes. It retains collection/body order,
+query binder identity, result domain and provenance. The admitted per-value
+`scope` handle and its parent chain govern binder availability: the query body
+uses the binder's scope, while its collection retains the surrounding scope.
+The scope locus is source provenance, not an availability oracle. Proof-side
+symbolic or empty-domain simplification does not replace the emitted query with
+a witness, constant or unrolled graph.
+Sum discharge supports integer and denominator-one rational prefix domains;
+broader rational sum-domain transfer remains explicitly unsupported unless the
+sum is statically empty. General symbolic choice/visibility proofs,
+recovery admission and absent authoritative producer
 exports still refuse explicitly. These are remaining implementation obligations,
 not a reduced language specification. The caller retains the upstream compilation
 reports when family admission refuses; no partial package is emitted. A successful
