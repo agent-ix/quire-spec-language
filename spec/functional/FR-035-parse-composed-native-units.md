@@ -21,10 +21,9 @@ When a source selects an admitted composed edition, the compiler SHALL construct
 ## Inputs
 
 Exact source bytes and identity, the source header and existing caller-lowered
-source/token/node/nesting limits. The proposed `ix:native` / `1-draft` grammar is
-the [shared grammar in standard PR #15](https://github.com/agent-ix/quire-specification/blob/agent-a/v1-shared-spec-cycle/proposals/quire-v1/shared-grammar.md).
-This is a working dependency; acceptance must select the coherent standard before
-the composed edition is enabled. No new definition checksum catalog is required.
+source/token/node/nesting limits. The `ix:native` / `1-draft` grammar is the
+[shared grammar](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/shared-grammar.md)
+landed in [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15).
 
 ## Outputs
 
@@ -85,5 +84,6 @@ existing roadmap tickets; this requirement does not claim them from parsing.
 
 ## Status
 
-Proposed compiler requirement. Composed standard acceptance, PR-time review and
-implementation remain outstanding. TC-113 is planned, not executed evidence.
+The syntax implementation uses `parse_native` and `parse_native_source`;
+TC-113 exercises their typed output and historical compatibility. This completes
+the syntax portion of compiler #35. FR-036's package linking remains open.

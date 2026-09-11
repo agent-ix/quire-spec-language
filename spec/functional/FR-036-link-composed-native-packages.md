@@ -45,10 +45,10 @@ expectations derivable from a controlled input and traversal, not from elapsed
 time or available memory. Historical per-unit limits remain separate; they do
 not silently define new whole-package capacities.
 
-The [standard package contract](https://github.com/agent-ix/quire-specification/blob/agent-a/v1-shared-spec-cycle/proposals/quire-v1/package-contract.md)
-owns the static/assessment split and producer/native digest domains. Its accepted
-selection is a prerequisite for implementation, together with the affected model
-producer contract. The compiler consumes producer interfaces; it introduces no
+The [standard package contract](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/package-contract.md),
+landed in [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15),
+owns the static/assessment split and producer/native digest domains. Model binding
+also requires the affected producer contract. The compiler consumes producer interfaces; it introduces no
 parallel model schema, canonicalizer, predicate semantics or observation store.
 
 ## Outputs
@@ -143,6 +143,26 @@ against the same bound identities; this specification does not invent those engi
 
 ## Status
 
-Proposed under [compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35).
-Affected standard/producer acceptance, PR-time review and implementation remain
-outstanding. Planned controls do not demonstrate implemented composed admission.
+Under [compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35),
+`linking::composed::admit_namespace` implements closed source intake and native
+declaration dependency resolution, including forward references, target kinds,
+cycles, dependent refusals and versioned work limits. Its constructor-private
+syntax namespace retains original units and unfinished dispositions on exhaustion.
+`linking::composed::binding::bind` composes exact definition/rule closure,
+NativeModel imports and nominal exports, lexical/capture environments, protocol
+structural references and dependency-local refusal propagation. Declaration-owned
+binders retain original types and anchors. It accepts no runtime observations.
+
+The compiler recognizes a closed registry of the reviewed baseline's exact
+definition and rule bytes; callers explicitly supply those artifacts. The
+registry is implementation support, not a Markdown reader or an implicit source
+of omitted dependencies. Its normative resources preserve the selected standard
+bytes and original licensing. The existing native-state-model/1 producer binds
+through NativeModel. D's canonical/native correspondence and relationship export
+authority remain explicit unsupported boundaries; a same-shaped record grants
+neither authority.
+
+`NamesResolved` precedes expression/type/profile checking, complete typed runtime
+requirements and downstream request handling. These remain open, as does IT-009's
+actual D producer integration. No result from this stage is a checked or executable
+package. The historical package path remains separate.

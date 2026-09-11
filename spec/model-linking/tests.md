@@ -102,10 +102,12 @@ invented for that criterion.
 | TC-052 | Retain population and invocation obligations after checking | Integration | P1 | FR-016-AC-9 | ✅ Passed |
 | TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | ✅ Passed |
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
-| TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | 🚧 Planned |
+| TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
 | TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Planned |
 | TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 Planned |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
+| TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
+| TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
 
 ## Compiled protocol numeric component
 
@@ -126,20 +128,34 @@ run, not a Quire-engine coverage or complete compiler-to-consumer claim.
 
 ## Composed language admission (L2)
 
-These criteria are planned under compiler #35. Historical passed rows above do
-not qualify the new edition or package boundary. The cases use typed outputs and
-independent source/model selections; no parser success stands in for checking or
-execution. [IT-009](../integration/IT-009-composed-package-boundary.md) requires the
-real producer and cannot pass from a model-shaped mock.
+TC-113 exercises the composed parser through thirteen public Rust tests in
+`tests/composed_syntax.rs`; the historical corpus checks compatibility. TC-114's
+source namespace and native dependency portions have public tests in
+`tests/composed_namespace.rs` and `tests/composed_linking.rs`. The combined path in
+`tests/composed_binding.rs` adds exact definition/rule and NativeModel export
+selection, lexical/capture scope and protocol references, with dedicated adverse
+tests in the corresponding modules. Full typing/runtime-role criteria, TC-115
+and [IT-009](../integration/IT-009-composed-package-boundary.md) remain open under
+compiler #35; the broad rows below therefore remain Planned. Names resolved at
+this stage grant no checked or executable package. Status records local runs,
+not engine-verified coverage.
+
+TC-120's public rational-model controls are implemented and pass locally through
+the real frontend, admission and composed exports. Its Planned matrix rows retain
+the remaining review/assurance acceptance; they do not mean the producer is unbuilt.
+TC-119 now has public type-admission controls across predicates, state, temporal
+and protocol consumers, including partial upstream reports. Definedness, complete
+runtime obligations and remaining acceptance controls stay open. Neither test set
+establishes complete compiler #35/#40.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
-| FR-035 | FR-035-AC-1 | TC-113 | 🚧 Planned |
-| FR-035 | FR-035-AC-2 | TC-113 | 🚧 Planned |
-| FR-035 | FR-035-AC-3 | TC-113 | 🚧 Planned |
-| FR-035 | FR-035-AC-4 | TC-113 | 🚧 Planned |
-| FR-035 | FR-035-AC-5 | TC-113 | 🚧 Planned |
-| FR-035 | FR-035-AC-6 | TC-113 | 🚧 Planned |
+| FR-035 | FR-035-AC-1 | TC-113 | ✅ Passed |
+| FR-035 | FR-035-AC-2 | TC-113 | ✅ Passed |
+| FR-035 | FR-035-AC-3 | TC-113 | ✅ Passed |
+| FR-035 | FR-035-AC-4 | TC-113 | ✅ Passed |
+| FR-035 | FR-035-AC-5 | TC-113 | ✅ Passed |
+| FR-035 | FR-035-AC-6 | TC-113 | ✅ Passed |
 | FR-036 | FR-036-AC-1 | TC-114 | 🚧 Planned |
 | FR-036 | FR-036-AC-2 | TC-114 | 🚧 Planned |
 | FR-036 | FR-036-AC-3 | TC-114 | 🚧 Planned |
@@ -148,6 +164,23 @@ real producer and cannot pass from a model-shaped mock.
 | FR-036 | FR-036-AC-6 | TC-115 | 🚧 Planned |
 | FR-036 | FR-036-AC-7 | TC-114 | 🚧 Planned |
 | FR-036 | FR-036-AC-8 | TC-115 | 🚧 Planned |
+| FR-040 | FR-040-AC-1 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-2 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-3 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-4 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-5 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-6 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-7 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-8 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-9 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-10 | TC-119 | 🚧 Planned |
+| FR-041 | FR-041-AC-1 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-2 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-3 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-4 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-5 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-6 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-7 | TC-120 | 🚧 Planned |
 
 ## Six coverage rules
 
