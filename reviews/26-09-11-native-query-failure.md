@@ -24,22 +24,25 @@ increment needed most — per-occurrence element identity and per-occurrence fil
 guards — are explicit in the code and directly tested. The gaps are unstated
 constraints: an arithmetic-cost bound nobody wrote down, an availability oracle
 with two candidate authorities, and a normative non-simplification promise with no
-control behind it.
+control behind it. Rechecked at `baf93f5`: all three are closed, and the reworked
+sum abstraction was re-derived from the code rather than accepted from its
+comments.
 
 ## Verdict
 
-**CONDITIONAL** — three medium unstated constraints; no missing failure mode that
-admits an unsound proof or an executable artifact.
+**CONDITIONAL** (recheck) — all three mediums resolved at `baf93f5`; two low
+unstated constraints remain (template nesting limit, mixed-denominator sum). No
+missing failure mode that admits an unsound proof or an executable artifact.
 
 ## Findings
 
 | ID      | Severity | Summary                                                                              | Refs                                                        | Escape Cause                    |
 | ------- | -------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------- |
-| FND-001 | medium   | No requirement bounds sum proof cost against declared capacity; exhaustion is the only outcome past it | spec/functional/FR-040-check-composed-values.md:143; src/checking/composed/proofs/engine/queries.rs:274 | missing-requirement             |
-| FND-002 | medium   | Binder availability has two candidate authorities in the wire — scope handle and scope locus | docs/compiled-protocol-v1.md:533; src/protocol_artifact/native/layout.rs:462 | wrong-requirement               |
-| FND-003 | medium   | The normative "no witness, constant or unrolled graph" promise has no emission control for a statically empty query | docs/compiled-protocol-v1.md:535; tests/composed_query_proofs.rs:467 | correct-requirement-no-evidence |
+| FND-001 | medium   | RESOLVED at `baf93f5` — no requirement bounds sum proof cost against declared capacity; exhaustion is the only outcome past it | spec/functional/FR-040-check-composed-values.md:143; src/checking/composed/proofs/engine/queries.rs:274 | missing-requirement             |
+| FND-002 | medium   | RESOLVED at `baf93f5` — binder availability has two candidate authorities in the wire — scope handle and scope locus | docs/compiled-protocol-v1.md:533; src/protocol_artifact/native/layout.rs:462 | wrong-requirement               |
+| FND-003 | medium   | RESOLVED at `baf93f5` — the normative "no witness, constant or unrolled graph" promise has no emission control for a statically empty query | docs/compiled-protocol-v1.md:535; tests/composed_query_proofs.rs:467 | correct-requirement-no-evidence |
 | FND-004 | low      | Template reinstantiation depth is bounded only by the generic Depth high-water mark; no requirement states the nesting limit or its cause | src/checking/composed/proofs/engine/queries.rs:55; src/checking/composed/proofs/work.rs:72 | missing-requirement             |
-| FND-005 | low      | A mixed-denominator sum (projection 1, total 2, or the reverse) has no stated outcome and no control | spec/functional/FR-040-check-composed-values.md:163; src/checking/composed/proofs/engine/queries.rs:288 | missing-requirement             |
+| FND-005 | low      | A mixed-denominator sum (projection 1 into total 2) is reachable, refused as `SumDomainTransfer`, and still has no control | spec/functional/FR-040-check-composed-values.md:163; src/checking/composed/solver/validation.rs:163 | missing-requirement             |
 
 ### 1. Extension points and trust boundaries
 
@@ -138,6 +141,56 @@ mixing them has no stated outcome and no control. Given the aggregate-domain typ
 checks that run first, the mixed case may be unreachable — which is itself worth
 recording, because an unreachable arm in the sum domain check is currently
 indistinguishable from an untested one.
+
+### Recheck at `baf93f5`
+
+**FND-001 resolved, and the failure domain of the sum abstraction changed.** The
+per-prefix loop is gone; `sum_prefixes` now emits exactly two endpoint goals and
+one `D::Expressions` charge per endpoint, so sum proof cost is constant in the
+declared capacity and exhaustion is no longer reachable through capacity at all.
+The arithmetic-bounds argument in §5 above still holds, with the coverage step
+made explicit: because type admission requires `A <= 0 <= B` and `[a,b] ⊆ [A,B]`,
+a prefix can only leave Total downwards through a negative `a` and upwards through
+a positive `b`, and `k*a`/`k*b` are monotone, so the worst case for each direction
+is `k = N`. `prefix = min(N, safe + 1)` picks the worst verified prefix or the
+first crossing one, so a refusal still lands at the earliest failing `k` — checked
+against `Prefix` (crossing at k=2 under N=10,000) as well as `LateUpper`/
+`LateLower` (crossing first possible at k=10,000). FR-040's narrative now states
+the interval and monotone-endpoint argument, so the transfer is a requirement
+rather than a code comment, and AC-5 names caller-lowered exhaustion as distinct
+from semantic refusal.
+
+Two new failure paths were inspected for misreporting. The precondition block at
+`queries.rs:303` mirrors `solver/validation.rs:152-164` exactly, so under an
+admitted type it is unreachable and its `UpstreamType` refusal cannot be mistaken
+for a semantic verdict; `TinyTotal 0..10` vs `Amount 1..20` is the tested case,
+refusing upstream as `InvalidAggregateDomain` at the original sum with a
+proof-side `UpstreamType`. `maximum == 0` is pre-empted by the zero-return at
+`queries.rs:249`. The `i64::try_from` fallback on `prior` is likewise
+unreachable, since `|prior| <= |bound|` by construction, and every widening
+happens before the division and the multiplication, including `i64::MIN / -1`.
+
+**FND-002 resolved.** `docs/compiled-protocol-v1.md:246,539` names the per-value
+`scope` handle and the scope parent chain as the sole availability authority and
+records that a scope locus keeps source provenance and may cover a collection
+that cannot read the binder. One authority, one oracle.
+
+**FND-003 resolved.** `statically_empty_filter_emits_its_original_collection_binder_and_body`
+is the missing control: a `filter(kept in input.amounts: false)` whose proof-side
+maximum is 0 still emits an original `Query { operator: Filter }` with its binder,
+its `input.amounts` collection, a `Boolean { value: false }` body at the original
+span and the retained sequence maximum 5, with `size`/`count`/`sum` still reading
+the `absent` binder. The package survives `native::emit` and an independent read
+with matching package and digest, so proof-only emptiness does not rewrite an
+executable source graph.
+
+**FND-005 sharpened.** The mixed case is no longer "may be unreachable" in one
+direction: `solver/validation.rs:163` admits
+`total.maximum_denominator() >= projection.maximum_denominator()`, so denominator
+1 into denominator 2 reaches the proof engine and is refused as
+`SumDomainTransfer`; the reverse mixing refuses upstream as
+`InvalidAggregateDomain`. Only the both-denominator-2 case has a test. FND-004 is
+unchanged.
 
 ### Not established by these controls
 

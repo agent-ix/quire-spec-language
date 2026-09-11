@@ -25,20 +25,23 @@ is installed in this spec scope — `spec/assurance/` does not exist and no docu
 declares `review_selection` — so the review set is the user-chosen base plus
 failure-domain, matching the parent-scope finding. ID formats, link integrity and
 the six coverage rules pass; the findings are wording precision, not structure.
+Rechecked at `baf93f5`, which rewrites FR-040-AC-4/AC-5, TC-119 step 5 and the
+wire contract's availability and scope-locus sentences.
 
 ## Verdict
 
-**CONDITIONAL** — two medium wording gaps in FR-040-AC-5 that let an unreachable
-case read as accepted; three low precision items.
+**CONDITIONAL** (recheck) — both mediums and two of the three lows are resolved
+at `baf93f5`; FND-005 (no direct non-flattening assertion for TC-119 step 5's
+"preserved population roles") remains the only open item.
 
 ## Findings
 
 | ID      | Severity | Summary                                                                             | Refs                                              | Escape Cause        |
 | ------- | -------- | ------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------- |
-| FND-001 | medium   | FR-040-AC-5 says N=0 is "checked against authored maxima"; the adopted behaviour refuses it at the model boundary | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
-| FND-002 | medium   | FR-040-AC-5 asserts N=10,000 for all eight forms without bounding proof cost; `sum` cannot reach it | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
-| FND-003 | low      | The rational sum-transfer carve-out lives only in FR-040 narrative, not in AC-4 or AC-5 | spec/functional/FR-040-check-composed-values.md:163 | missing-requirement |
-| FND-004 | low      | The wire contract's binder-availability sentence does not name the value `scope` handle as the authority | docs/compiled-protocol-v1.md:533                  | wrong-requirement   |
+| FND-001 | medium   | RESOLVED at `baf93f5` — FR-040-AC-5 says N=0 is "checked against authored maxima"; the adopted behaviour refuses it at the model boundary | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
+| FND-002 | medium   | RESOLVED at `baf93f5` — FR-040-AC-5 asserts N=10,000 for all eight forms without bounding proof cost; `sum` cannot reach it | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
+| FND-003 | low      | RESOLVED at `baf93f5` — the rational sum-transfer carve-out lives only in FR-040 narrative, not in AC-4 or AC-5 | spec/functional/FR-040-check-composed-values.md:163 | missing-requirement |
+| FND-004 | low      | RESOLVED at `baf93f5` — the wire contract's binder-availability sentence does not name the value `scope` handle as the authority | docs/compiled-protocol-v1.md:533                  | wrong-requirement   |
 | FND-005 | low      | TC-119 step 5 requires "preserved population roles" and no flattening; no assertion targets non-flattening directly | spec/test-cases/TC-119-check-composed-values.md:58 | correct-requirement-no-evidence |
 
 ### FND-001 — N=0 is refused, not checked
@@ -83,6 +86,41 @@ handle and the scope parent chain; the binder's scope *locus* lexically spans th
 collection, because the region starts at the binder token. Name the handle as the
 authority in the same sentence, otherwise a consumer implementing availability
 from locus containment builds a conforming reader that disagrees with the emitter.
+
+### Recheck at `baf93f5`
+
+The selected review set stayed base plus failure-domain; the optional semantic
+gap extension remained declined. The four documents changed as follows.
+
+- **FND-001 resolved.** AC-5 now says producer sequence maxima are 1..10,000 and
+  that declared maxima 0 and 10,001 refuse *at model admission*, and separately
+  that an admitted collection may be empty at runtime and that checking admits
+  provably empty filter results. The refusal boundary and the `Empty` proposition
+  are now distinct sentences, matching the delivered behaviour.
+- **FND-002 resolved.** AC-5 now claims maximum 10,000 for each form "including
+  sum" only "with sufficient effective proof limits", and states that
+  caller-lowered exhaustion is distinct from semantic refusal. That matches the
+  code twice over: `sum` proof cost is now constant in N, so default limits
+  suffice, and `query_body_proof_exhaustion_keeps_original_types_and_a_fresh_retry`
+  backs the exhaustion clause TC-119 step 5 now requires.
+- **FND-003 resolved.** AC-4 carries the carve-out ("including unsupported
+  rational sum-domain transfer"), so the acceptance table no longer reads as
+  though denominator-2 sums are in scope and passing.
+- **FND-004 resolved.** `docs/compiled-protocol-v1.md:246,539` names the admitted
+  per-value `scope` handle and its parent chain as the availability authority and
+  demotes the scope locus to source provenance, in both the reads paragraph and
+  the query paragraph.
+- **FND-005 open.** TC-119 step 5 still requires "preserved population roles" and
+  no flattening. The new empty-filter emission test is indirect evidence — the
+  operator histogram and the assertion that `size`/`count`/`sum` each read the
+  `absent` binder rather than an inlined constant — but no assertion targets
+  non-flattening as such.
+
+The new AC-5 and TC-119 text adds no unmeasurable clause: each new sentence names
+a scalar bound, a named boundary or a typed outcome. FR-040's narrative addition
+(the k-prefix interval and monotone-endpoint argument) states the transfer
+argument the implementation relies on, which previously existed only as a code
+comment.
 
 ### Base checklist
 
