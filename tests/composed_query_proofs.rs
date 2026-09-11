@@ -567,45 +567,46 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
             discharged(report, "Empty");
         },
     );
-    for maximum in [10_000, 10_001] {
-        let model = query_model(maximum);
-        inspect(
-            &model,
-            "predicate Bounded using S (input: M::Node): Boolean {
+    // Native model admission now owns this ceiling, before a type/proof report exists.
+    let excess = setup::try_model_with_maximum("ExcessQueryMaximum", 10_001).unwrap_err();
+    assert_eq!(
+        excess.code(),
+        quire_spec_language::Code::UnsupportedConstruct
+    );
+    assert!(!excess.is_incomplete());
+    let model_source::ModelSourceCause::Admission(cause) = &excess.cause else {
+        panic!("native admission must own the sequence refusal: {excess}")
+    };
+    assert_eq!(cause.code, quire_spec_language::Code::UnsupportedConstruct);
+    assert_eq!(cause.phase, quire_spec_language::Phase::Link);
+    assert_eq!(cause.source.identity, "model:ExcessQueryMaximum");
+    assert_eq!(cause.source.revision, "authored");
+    assert_eq!(cause.path, "ExcessQueryMaximum.json");
+    assert_eq!(&cause.source, excess.source().source().identity());
+    assert_eq!(
+        cause.span,
+        excess
+            .source()
+            .source()
+            .locate(quire_spec_language::Span { start: 0, end: 0 })
+            .unwrap()
+    );
+
+    let model = query_model(10_000);
+    inspect(
+        &model,
+        "predicate Bounded using S (input: M::Node): Boolean {
             size<M::LargeCount>(input.amounts) >= 0
             and count<M::LargeCount>(counted in input.amounts: counted >= 1) >= 0
             and forall(item in input.amounts: item >= 1)
         }",
-            &["Bounded"],
-            handler(),
-            |report| {
-                if maximum == 10_000 {
-                    discharged(report, "Bounded");
-                    assert!(report.exhaustion().is_none());
-                } else {
-                    let at = id(report.types(), "Bounded");
-                    assert_eq!(
-                        report.types().disposition(at),
-                        Some(TypeDisposition::Refused)
-                    );
-                    assert!(report
-                        .types()
-                        .declaration(at)
-                        .unwrap()
-                        .causes()
-                        .iter()
-                        .any(|cause| cause.kind == TypeCause::ModelDomain { input: 0 }));
-                    assert_eq!(report.disposition(at), Some(ProofDisposition::Refused));
-                    assert!(report
-                        .declaration(at)
-                        .unwrap()
-                        .causes()
-                        .iter()
-                        .any(|cause| matches!(cause.kind, CauseKind::UpstreamType)));
-                }
-            },
-        );
-    }
+        &["Bounded"],
+        handler(),
+        |report| {
+            discharged(report, "Bounded");
+            assert!(report.exhaustion().is_none());
+        },
+    );
 }
 
 #[test]
