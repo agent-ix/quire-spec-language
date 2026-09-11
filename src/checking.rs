@@ -6,6 +6,7 @@ mod constraints;
 mod inputs;
 mod proof;
 mod types;
+mod variables;
 
 use quire_contract_ir as ir;
 

@@ -31,6 +31,8 @@ formats! {
     RunResult => "native-run-result/1",
     /// Source-aware rule-model authoring profile.
     RuleModel => "native-rule-model/1",
+    /// Rule-model authoring profile with exact IR rational scalar roles.
+    RuleModelV2 => "native-rule-model/2",
     /// Selected snapshot or invocation artifact.
     RuntimeInput => "native-state-input/1",
     /// Linked native package artifact.

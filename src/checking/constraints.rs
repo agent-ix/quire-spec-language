@@ -7,6 +7,7 @@ use quire_contract_ir as ir;
 
 use super::inputs::Populations;
 use super::types::Catalog;
+use super::variables::Variables;
 use super::{
     failure, CheckLimits, CheckUsage, NativeType, Observation, Result, RuntimeRequirements,
 };
@@ -25,72 +26,6 @@ pub(super) struct NodeType<'a> {
 pub(super) struct TypedClause<'a> {
     pub nodes: Vec<NodeType<'a>>,
     pub runtime: RuntimeRequirements<'a>,
-}
-
-struct Variables<'a> {
-    parents: Vec<usize>,
-    ranks: Vec<u8>,
-    known: Vec<Option<NativeType<'a>>>,
-}
-
-impl<'a> Variables<'a> {
-    fn new(count: usize) -> Self {
-        Self {
-            parents: (0..count).collect(),
-            ranks: vec![0; count],
-            known: vec![None; count],
-        }
-    }
-    fn fresh(&mut self) -> usize {
-        let id = self.parents.len();
-        self.parents.push(id);
-        self.ranks.push(0);
-        self.known.push(None);
-        id
-    }
-    fn root(&mut self, mut var: usize) -> usize {
-        while self.parents[var] != var {
-            self.parents[var] = self.parents[self.parents[var]];
-            var = self.parents[var];
-        }
-        var
-    }
-    fn get(&mut self, var: usize) -> Option<NativeType<'a>> {
-        let root = self.root(var);
-        self.known[root].clone()
-    }
-    fn assign(&mut self, var: usize, ty: NativeType<'a>) -> std::result::Result<bool, ()> {
-        let root = self.root(var);
-        match &self.known[root] {
-            Some(prior) if prior != &ty => Err(()),
-            Some(_) => Ok(false),
-            None => {
-                self.known[root] = Some(ty);
-                Ok(true)
-            }
-        }
-    }
-    fn unify(&mut self, left: usize, right: usize) -> std::result::Result<(), ()> {
-        let mut a = self.root(left);
-        let mut b = self.root(right);
-        if a == b {
-            return Ok(());
-        }
-        if matches!((&self.known[a], &self.known[b]), (Some(a), Some(b)) if a != b) {
-            return Err(());
-        }
-        if self.ranks[a] < self.ranks[b] {
-            std::mem::swap(&mut a, &mut b);
-        }
-        self.parents[b] = a;
-        if self.ranks[a] == self.ranks[b] {
-            self.ranks[a] += 1;
-        }
-        if self.known[a].is_none() {
-            self.known[a] = self.known[b].take();
-        }
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy)]

@@ -122,6 +122,30 @@ fn lower_scalar(declaration: Located<Scalar>) -> Result<ScalarBinding> {
         Scalar::Text { name, max_scalars } => {
             (name, ScalarKind::Text { max_scalars }, ir::ValueType::Text)
         }
+        Scalar::Rational {
+            name,
+            numerator_minimum,
+            numerator_maximum,
+            maximum_denominator,
+            unit,
+        } => {
+            let rational =
+                ir::RationalType::new(numerator_minimum, numerator_maximum, maximum_denominator)
+                    .map_err(|mut error| {
+                        error.span = Some(Box::new(declaration.source.clone()));
+                        error
+                    })?;
+            let unit = unit
+                .as_deref()
+                .map(try_symbol)
+                .transpose()?
+                .map_or(Unit::Dimensionless, Unit::Named);
+            (
+                name,
+                ScalarKind::Rational { unit },
+                ir::ValueType::rational(rational),
+            )
+        }
     };
     let role = ScalarRole {
         name: try_symbol(&name)?,

@@ -308,6 +308,7 @@ pub fn link_native(
     preflight(&unit, models.len(), limits)?;
     let catalog = native::catalog(&unit, models, limits)?;
     let models = select_models(&unit, &catalog)?;
+    native::check_selected_profiles(&unit, &models)?;
     let clauses = resolve_clauses(&unit, &models, limits, BindingProfile::Native)?;
     Ok(LinkedPackage {
         profile: BindingProfile::Native,
