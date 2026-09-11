@@ -1120,8 +1120,8 @@ fn nonprogressing_native_repeat_is_refused_after_real_value_discharge() {
 #[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
 fn native_owned_choice_proves_nonliteral_constant_guards_and_preserves_both_branches() {
     let guard = "((not false) and (false or true)) and ((false implies false) = (true != false))
-        and (if true then true else false) and (if false then view.plain.ready else true)";
-    let run = format!("choice Decide by Service visible ((true or view.plain.ready), (false and view.plain.ready)) {{
+        and (if true then true else false) and (if false then false else true)";
+    let run = format!("choice Decide by Service visible ((true or false), (false and true)) {{
         case yes when {{ {guard} }} event Accepted by Service as (accepted: M::Plain) {{ accepted.ready }};
         case no when {{ not ({guard}) }} event Rejected by Service as (rejected: M::Plain) {{ rejected.ready }};
     }}");
@@ -1158,6 +1158,14 @@ fn native_owned_choice_proves_nonliteral_constant_guards_and_preserves_both_bran
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
 fn native_choice_refuses_overlap_uncovered_and_unproved_dynamic_decisions() {
     for (visible, yes, no, expected) in [
+        // The received-Boolean admission rule checks every original operand.
+        // These formerly folded inputs cannot acquire visibility from truth.
+        (
+            "(true or view.plain.ready), (false and view.plain.ready)",
+            "if false then view.plain.ready else true",
+            "false",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
         (
             "true",
             "true or false",
