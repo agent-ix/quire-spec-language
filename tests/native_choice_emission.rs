@@ -569,6 +569,178 @@ fn own_attempt_parallel_sibling_preserves_inherited_scope_refusal() {
     );
 }
 
+#[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-3", "FR-042-AC-5", "FR-042-AC-7")]
+fn received_object_boolean_field_uses_its_admitted_record_owner() {
+    // Extend the fixture's original model source before admission and before
+    // constructing any native source or selected model/dependency inventory.
+    let original = Inputs::new(&[]);
+    let model_source = original.model.source();
+    let mut document: serde_json::Value =
+        serde_json::from_str(model_source.source().text()).unwrap();
+    let node = document["records"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|record| record["name"] == "Node")
+        .unwrap();
+    node["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"name":"ready", "type":{"kind":"boolean"}}));
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let source = quire_spec_language::Source::read(
+        model_source.source().identity().clone(),
+        model_source.source().path(),
+        &bytes,
+        quire_spec_language::Limits::default().source_bytes,
+    )
+    .unwrap();
+    let formal = quire_spec_language::formal_source::FormalSource::new(
+        source,
+        model_source.identity().clone(),
+    );
+    let model = quire_spec_language::model_source::read(
+        formal,
+        quire_spec_language::model_source::FORMAT_V2,
+        quire_spec_language::model_source::ModelSourceLimits::default(),
+    )
+    .unwrap()
+    .admit(quire_spec_language::native_model::ModelLimits::default())
+    .unwrap();
+    let inputs = Inputs::with_model(&[Unit {
+        name: "received-object", declarations: &["Decisions"],
+        body: "protocol Decisions using P over (view: M::Node) on origin {
+            role Sender on M::Node; role Receiver on M::Node;
+            channel Messages from Sender to Receiver carries M::Node ordering unordered delivery [1,1];
+            run sequence Main {
+                send Sent via Messages as (sent: M::Node) { true };
+                receive Got via Messages of Sent as (got: M::Node) { true };
+                choice Decide by Receiver visible (got.ready) {
+                    case yes when { got.ready } check Accepted using S { true };
+                    case no when { not got.ready } check Rejected using S { true };
+                }
+            }
+            finish Closed as (closed: M::Node) { true };
+        }",
+    }], model);
+    admitted(&inputs, |proofs, package| {
+        original_choices(proofs, package);
+        let declaration = &package.declarations[0];
+        let binder = declaration
+            .binders
+            .iter()
+            .find(|binder| binder.name == "got")
+            .unwrap();
+        let w::Type::Object { export } = &package.types[binder.value_type as usize] else {
+            panic!("received binder must exercise Object, not Record")
+        };
+        let selected_model = &package.models[export.model as usize];
+        assert_eq!(
+            selected_model.exports[export.export as usize].path,
+            ["Node"]
+        );
+        assert_eq!(
+            package.dependencies[selected_model.artifact as usize].artifact,
+            inputs.model_reference
+        );
+        let fields: Vec<_> = declaration
+            .values
+            .iter()
+            .filter_map(|value| match &value.operation {
+                w::ValueOperation::Field { field, .. } => Some(field),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fields.len(), 3);
+        for field in fields {
+            assert_eq!(field.model, export.model);
+            assert_eq!(
+                package.models[field.model as usize].exports[field.export as usize].path,
+                ["Node", "ready"]
+            );
+        }
+    });
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-9")]
+fn multiple_received_choices_preserve_entry_budget_boundaries() {
+    let first = choice("Receiver", "gotA.ready", "gotA.ready", "not gotA.ready");
+    let second = "choice Later by Receiver visible (gotB.ready) {
+        case yes when { gotB.ready } check LaterYes using S { true };
+        case no when { not gotB.ready } check LaterNo using S { true };
+    }";
+    let inputs = inputs(&format!(
+        "sequence Main {{ {RECEIVE_A} {RECEIVE_B} {first} {second} }}"
+    ));
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let baseline = native::admit(proofs, selected, Limits::default());
+            assert!(baseline.result().is_ok(), "{:?}", baseline.result().err());
+            let entries = baseline.usage().entries;
+            assert!(entries > 0);
+            let limited = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    entries: entries - 1,
+                    ..Limits::default()
+                },
+            );
+            let Err(Error::Incomplete(exhaustion)) = limited.result() else {
+                panic!("one-short Entries must refuse")
+            };
+            assert_eq!(exhaustion.dimension, artifact::Dimension::Entries);
+            assert_eq!(exhaustion.limit, entries - 1);
+            assert!(exhaustion.used <= exhaustion.limit);
+            assert!(exhaustion.requested > exhaustion.limit - exhaustion.used);
+            let exact = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    entries,
+                    ..Limits::default()
+                },
+            );
+            assert!(
+                exact.result().is_ok(),
+                "{:?}; {:?}",
+                exact.result().err(),
+                exact.locus()
+            );
+            assert_eq!(exact.usage().entries, entries);
+            let exact = exact.into_result().unwrap();
+            assert_eq!(exact.package(), baseline.result().unwrap().package());
+            original_choices(proofs, exact.package());
+            let w::Body::Protocol { controls, .. } = &exact.package().declarations[0].body else {
+                panic!("protocol")
+            };
+            assert_eq!(
+                controls
+                    .iter()
+                    .filter(|node| matches!(node.operation, w::ControlOperation::Choice { .. }))
+                    .count(),
+                2
+            );
+            let emitted = native::emit(&exact, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs.read(proofs, &emitted);
+            assert!(
+                read.result().is_ok(),
+                "{:?}; {:?}",
+                read.result().err(),
+                read.locus()
+            );
+            assert_eq!(read.into_result().unwrap().package(), exact.package());
+        },
+    );
+}
+
 fn inputs(run: &str) -> Inputs {
     let body = format!(
         "protocol Decisions using P over (view: M::Node) on origin {{
