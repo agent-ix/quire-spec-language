@@ -246,12 +246,13 @@ impl<'a> ModelBindings<'a> {
     }
 }
 
-/// Charge supplied Models and artifact/selector Bytes first. Bindings count
-/// export-index entries, imports and returned resolution records; References
-/// count lookup attempts, entries used to build borrowed name indexes, and each
-/// inspected catalog, parameter, member, owner/source comparison and conflict
-/// input. An indexed lookup is one attempt, not a scan of unrelated exports.
-/// No dependency edge is added.
+/// Charge every supplied Model and its artifact Bytes before import selection.
+/// Only exact selected inputs receive export indexes, once per input. Bindings
+/// reserve stored map/set entries and field-vector elements, plus imports and
+/// returned records; borrowed operation parameters allocate no index entries.
+/// References count each successful import's cache lookup, each borrowed-name
+/// index entry, lookup attempts, field-search comparisons, and inspected catalog,
+/// parameter, variant, owner/source and conflict candidates. No edge is added.
 pub fn bind_models<'a>(
     namespace: &SyntaxNamespace,
     inputs: &'a [ModelInput<'a>],
@@ -330,8 +331,7 @@ impl<'a> ModelBindings<'a> {
                         .entry(model.source().identity())
                         .or_default()
                         .push(index);
-                    charge_exports(model, work)?;
-                    self.catalogs.push(Some(Exports::new(model)));
+                    self.catalogs.push(None);
                 }
                 ModelInput::UnsupportedProducer {
                     package,
@@ -411,6 +411,7 @@ impl<'a> ModelBindings<'a> {
                         work,
                     )?,
                 };
+                let native_input = selected.as_ref().ok().copied();
                 self.aliases
                     .entry(unit)
                     .or_default()
@@ -422,6 +423,14 @@ impl<'a> ModelBindings<'a> {
                     import,
                     selection: selected,
                 });
+                if let Some(input) = native_input {
+                    work.charge(Dimension::References, 1)?;
+                    if self.catalogs[input].is_none() {
+                        let model = self.native(input);
+                        charge_exports(model, work)?;
+                        self.catalogs[input] = Some(Exports::new(model));
+                    }
+                }
             }
         }
         Ok(())
@@ -794,16 +803,30 @@ impl<'a> ModelBindings<'a> {
                 return Err(failure(unit, name.span, ModelErrorKind::WrongExportKind));
             }
         };
-        // The receiver supplies the actual SymbolName, so use the existing
-        // borrowed record index before scanning only that record's fields.
+        // Catalog stores each record's fields sorted by their exact names.
+        // Charge each binary-search comparison before inspecting its candidate.
         let fields = catalog
             .ordered_fields
             .get(record)
             .expect("admitted record fields");
-        let field = find_charged(fields.iter().copied(), work, unit, name.span, |field| {
-            field.name().as_str() == name.value
-        })?
-        .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
+        let mut low = 0;
+        let mut high = fields.len();
+        let mut selected = None;
+        while low < high {
+            charge(work, Dimension::References, 1, unit, name.span)?;
+            let middle = low + (high - low) / 2;
+            let field = fields[middle];
+            match field.name().as_str().cmp(name.value.as_str()) {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => {
+                    selected = Some(field);
+                    break;
+                }
+            }
+        }
+        let field =
+            selected.ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
         let native = formal_type(
             catalog,
             field.value_type(),
@@ -865,15 +888,18 @@ impl<'a> ModelBindings<'a> {
     }
 }
 
-// Reserve the shared Catalog and each additional borrowed-name entry before
-// either index allocates. Name-index construction inspects each export once.
+// Reserve every stored entry of the selected shared Catalog and Exports before
+// constructing either. This counts entries, not allocator capacity or byte size.
 fn charge_exports(model: &NativeModel, work: &mut Work) -> Result<(), Exhaustion> {
     for ty in model.environment().types() {
         work.charge(Dimension::References, 1)?;
-        work.charge(Dimension::Bindings, 2)?;
+        // Shared name map + ordered-fields/variant map + borrowed-name map.
+        work.charge(Dimension::Bindings, 3)?;
         match ty {
             ir::TypeDeclaration::Record { declaration } => {
-                work.charge(Dimension::Bindings, declaration.fields().len())?
+                // Shared field map and the ordered field vector.
+                work.charge(Dimension::Bindings, declaration.fields().len())?;
+                work.charge(Dimension::Bindings, declaration.fields().len())?;
             }
             ir::TypeDeclaration::Enum { declaration } => {
                 work.charge(Dimension::Bindings, declaration.variants().len())?
@@ -884,14 +910,15 @@ fn charge_exports(model: &NativeModel, work: &mut Work) -> Result<(), Exhaustion
     work.charge(Dimension::References, model.environment().values().len())?;
     work.charge(Dimension::Bindings, model.environment().values().len())?;
     for scalar in &model.roles().scalars {
+        work.charge(Dimension::References, 1)?;
         work.charge(Dimension::Bindings, 1)?;
         work.charge(Dimension::Bindings, scalar.sites.len())?;
     }
     work.charge(Dimension::Bindings, model.roles().objects.len())?;
+    work.charge(Dimension::Bindings, model.roles().objects.len())?;
     for operation in &model.roles().operations {
         work.charge(Dimension::References, 1)?;
         work.charge(Dimension::Bindings, 2)?;
-        work.charge(Dimension::Bindings, operation.parameters.len())?;
         work.charge(Dimension::Bindings, operation.frame.fields.len())?;
         work.charge(Dimension::Bindings, operation.frame.created.len())?;
         work.charge(Dimension::Bindings, operation.frame.deleted.len())?;
