@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Planned public Rust API controls for
+Public Rust API controls for
 [FR-040](../functional/FR-040-check-composed-values.md), using the real native
 parser, exact supplied definition/rule registry and available admitted model
 producer through `binding::Report`. The case checks static value judgments and
@@ -20,8 +20,10 @@ Each numbered group below corresponds to the matching acceptance criterion.
 Expected type identities, source spans, proof premises and costs come from fixed
 authored source/model contracts and the public charging rules. Missing producer
 or proof capability has its own expected refusal control; that control does not
-pass the positive semantic case it blocks. Full rational, query and graph cases
-remain planned until their real prerequisites and assertions execute.
+pass the positive semantic case it blocks. Type-admission controls execute in
+`tests/composed_types.rs` and `tests/composed_type_pipeline.rs`. Full rational,
+query and graph definedness cases remain planned until their real prerequisites
+and assertions execute.
 
 ## Test Procedure
 
@@ -108,5 +110,5 @@ none becomes Boolean false, absent optional data or aggregate success.
 Independent successful values remain inspectable beside a failed dependency.
 Runtime requirements preserve exact authority/anchor/scope without manufacturing
 observations. Whole-family execution and external producer qualification remain
-outside this test case. All groups are planned; catalog validation establishes
-document conformance, not implementation or test completion.
+outside this test case. The implemented type-admission controls do not complete
+all groups; catalog validation establishes document conformance, not test completion.

@@ -259,6 +259,8 @@ fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee
         |binding, formal| {
             let report = composed::admit_types(binding, formal, TypeLimits::default());
             refused(&report, "CorePredicate", CauseKind::UpstreamBinding);
+            assert!(report.declaration(id(binding, "CorePredicate")).unwrap()
+                .causes().iter().all(|cause| cause.profile.is_none()));
             for name in ["CoreCall", "CoreQuery", "Narrow"] {
                 refused(&report, name, CauseKind::ProfilePermission);
             }
@@ -269,7 +271,7 @@ fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee
             let causes = report.declaration(id(binding, "Narrow")).unwrap().causes();
             let definitions = binding.definitions().unwrap();
             for cause in causes.iter().filter(|cause| cause.kind == CauseKind::ProfilePermission) {
-                assert_eq!(definitions.declarations[id(binding, "Narrow").index()].uses[cause.profile].closure[0],
+                assert_eq!(definitions.declarations[id(binding, "Narrow").index()].uses[cause.profile.unwrap()].closure[0],
                     quire_spec_language::linking::composed::definition_source::RegisteredDefinition::StateQueries);
             }
         },

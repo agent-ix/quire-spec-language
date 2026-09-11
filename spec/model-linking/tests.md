@@ -125,8 +125,10 @@ not engine-verified coverage.
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports. Its Planned matrix rows retain
 the remaining review/assurance acceptance; they do not mean the producer is unbuilt.
-TC-119's full composed typing, definedness and runtime obligations remain planned
-in this producer PR. Neither test set establishes complete compiler #35/#40.
+TC-119 now has public type-admission controls across predicates, state, temporal
+and protocol consumers, including partial upstream reports. Definedness, complete
+runtime obligations and remaining acceptance controls stay open. Neither test set
+establishes complete compiler #35/#40.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |

@@ -75,10 +75,15 @@ pub(super) fn finish(report: &mut TypeReport<'_, '_>, work: &mut Work, site: Sit
                 TypeDisposition::Refused => {
                     work.charge(D::Records, 1, site)?;
                     let target = report.declarations[target].declaration;
+                    let profile = site.expression.and_then(|expression| {
+                        report.declarations[caller]
+                            .node(expression)
+                            .map(|node| node.profile)
+                    });
                     report.declarations[caller].causes.push(TypeCause {
                         site,
                         kind: CauseKind::Dependency { target },
-                        profile: 0,
+                        profile,
                     });
                 }
                 TypeDisposition::Typed => {
