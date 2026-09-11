@@ -34,6 +34,21 @@ installed TL version, a syntax match or a historical result. This keeps the clas
 while `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability
 remain outstanding; the emission half of FR-095 stays outside this scope.
 
+### Open question referred to the IR/TL owners
+
+FR-095's support table uses two axis vocabularies in adjacent rows: its first row
+keys on "complete execution" and its second on "open prefix". This requirement
+normalizes both to surrounding-execution closure, which is unambiguous for the
+first row. For the second it is a **selection**, not a restatement: the target's
+own name, `mltl.online-prefix/v1`, and FR-091's "open decision scope" language
+both point instead at decision-scope openness, and
+[FR-043](./FR-043-evaluate-bounded-native-temporal.md)-AC-10 forbids substituting
+one axis for the other. Reading that row as decision-scope openness would change
+which target an open-scoped, completely-executed declaration maps to. The
+selection is recorded on compiler
+[#38](https://github.com/agent-ix/quire-spec-language/issues/38) for the IR/TL
+owners to rule on, and SHALL be changed to match that ruling.
+
 ## Inputs
 
 An admitted temporal declaration: its selected profile identity and revision, and
@@ -61,13 +76,14 @@ the first two are mutually exclusive with the last two, so the table is total:
 | --- | --- | --- |
 | Timestamped-event finite window | none | Unsupported on the finite-window dimension; no index conversion is inferred, and this subsumes the source table's separate finite-window-against-index-profile row |
 | Any bounded past operator reachable from the root | none | Unsupported on the past-operator dimension, until a separately reviewed TL past profile exists |
-| Event-position false-extension, no past operator reachable, complete surrounding execution | `mltl.closed-trace/v1` | Supported, subject to every outstanding bridge premise |
-| Event-position false-extension, no past operator reachable, open surrounding execution | `mltl.online-prefix/v1` | Supported, subject to every outstanding bridge premise |
-| Fixed-sample false-extension, no past operator reachable | the same two targets, selected by surrounding-execution closure | Supported only with one total valuation per required sample and retained epoch, period and unit correspondence |
-| A declaration reaching no bounded temporal operator, under either false-extension profile | the same two targets | Supported; a formula with no bounded operator imposes no additional TL obligation |
+| Event-position false-extension, at least one bounded future operator reachable and no past operator, complete surrounding execution | `mltl.closed-trace/v1` | Supported, subject to every outstanding bridge premise |
+| Event-position false-extension, at least one bounded future operator reachable and no past operator, open surrounding execution | `mltl.online-prefix/v1` | Supported, subject to every outstanding bridge premise |
+| Fixed-sample false-extension, at least one bounded future operator reachable and no past operator | the same two targets, selected by surrounding-execution closure | Supported only with one total valuation per required sample and retained epoch, period and unit correspondence |
+| Either false-extension profile, no bounded temporal operator reachable at all | the same two targets, selected by surrounding-execution closure | Supported; a formula with no bounded operator imposes no additional TL obligation |
 
 The first two rows accumulate: a declaration matching both SHALL return both
-dimensions.
+dimensions. The last four are mutually exclusive, so every admitted declaration
+matches exactly one row and each row is reachable by some declaration.
 
 The classifier SHALL name every unmatched dimension on an unsupported result,
 rather than a single summary cause.
@@ -96,7 +112,7 @@ encode. Naming them is not discharging them.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-045-AC-1 | Every row of the support table is exercised by an admitted declaration and returns that row's disposition and TL target; the classification is derived only from the selected profile, the reachable operator kinds and the requested surrounding-execution closure, with no backend capability report, installed version, syntax match or decision-scope closure consulted. | Test (TC-125); Inspection |
+| FR-045-AC-1 | Every row of the support table is reachable and is exercised by an admitted declaration that matches it and no other, returning that row's disposition and TL target; the classification is derived only from the selected profile, the reachable operator kinds and the requested surrounding-execution closure, with no backend capability report, installed version, syntax match or decision-scope closure consulted. | Test (TC-125); Inspection |
 | FR-045-AC-2 | A timestamped-event request and a bounded-past request each return unsupported naming the finite-window and past-operator dimensions respectively, and emit no substitute formula, profile or clock. | Test (TC-125) |
 | FR-045-AC-3 | An unsupported result retains the native declaration subject, its selected profile identity and revision, and its activation record; a source-valid declaration is unchanged by the classification. | Test (TC-125) |
 | FR-045-AC-4 | An unsupported result names every unmatched dimension rather than one summary cause, and a declaration unmatched on two dimensions names both. | Test (TC-125) |

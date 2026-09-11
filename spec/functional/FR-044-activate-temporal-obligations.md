@@ -28,10 +28,37 @@ divergence.
 
 | Behavior subsection | Owned source |
 | --- | --- |
-| Instance identity | FR-093 Behavior paragraph 1; FR-093-AC-1, FR-093-AC-2 |
-| Activation guard | FR-093 Inputs; temporal-common.md activation-scope rule |
+| Instance identity — trigger-keyed instances, repeated delivery | FR-093 Behavior paragraph 1; FR-093-AC-1, FR-093-AC-2 |
+| Instance identity — whole-execution origin | temporal-common.md "Each activation has its own exact semantic trigger/origin identity" |
 | Captures | FR-093 Behavior paragraph 2; FR-093-AC-3, FR-093-AC-4; FR-094-AC-6 |
 | Dispositions | FR-093 Behavior paragraph 3; FR-093-AC-5; FR-094-AC-3 |
+
+### Open questions referred to agent E
+
+Two rules below are **not** restatements. Both are defensible selections that no
+owned rule states, and both are visible in results, so they are recorded on
+compiler [#38](https://github.com/agent-ix/quire-spec-language/issues/38) for a
+ruling and SHALL be changed to match it.
+
+**Activation-guard dispositions.** FR-093's Inputs name a "scope/trigger
+definition" and temporal-common.md mentions activation guards only in passing,
+as one of the expressions the shared checker admits. Neither states what a guard
+that evaluates false produces, nor what an unestablished guard produces. This
+requirement selects: a false guard creates no instance and is not a refusal, so
+a closed-complete scope whose every admitted trigger is guard-false reports
+`inactive`; and an unestablished guard reports incomplete or refused activation
+rather than being read as false. The alternative readings — guard-false as its
+own disposition, or an unestablished guard defaulting to false — would change
+what an `inactive` result means.
+
+**Conflicting redelivery.** FR-093 requires that repeated delivery of one
+semantic trigger create no second instance, and that a capture never be replaced
+after activation. It does not say what happens when two deliveries assert one
+trigger identity with conflicting payloads. This requirement selects a typed
+contradiction refusal, on the reading that silently keeping the first payload
+would make the conflict invisible. The alternative — accepting the first
+delivery and discarding the second as a duplicate — is equally consistent with
+the owned text.
 
 The refusal of an ambient `self`, operation `result` or `pre(expr)` inside a
 capture initializer is not restated here: it is owned by

@@ -5,7 +5,7 @@ type: SpecReview
 analysis: scope-boundary
 scope: "FR-043, FR-044, FR-045, NFR-008, TC-122-125, TM-008"
 review_set: subset
-evaluated_revision: "87bc83f5fad724413737e0a707cf80bdbcba931a"
+evaluated_revision: "1f0ff952045ca9298eeec81f1e6871730e115355"
 review_date: "2026-09-11"
 ---
 
@@ -15,40 +15,54 @@ Agent A owns native temporal compilation and the compiler-side evaluation of the
 `quire.compiled-protocol/1` temporal body it already emits; agent E owns native
 temporal meaning, agent B the protocol activation/participation result contract,
 agent F observation transport and authority, and the existing IR/TL owners the
-bridge. This revision re-runs the analysis against 87bc83f after the ten findings
-raised against 4c1eee8 were dispositioned. All ten are resolved. The boundary is
-now stated normatively rather than as Dependencies prose, the four closure and
-completeness axes are represented, silent deadlines and the origin-versus-cutoff
-discriminator have rules and controls, the bridge residue has moved off FR-044
-into FR-045, and the accounting contract is published. Four new findings replace
-them, one of them high: FR-043's blanket "every rule below is a restatement"
-clause now shelters at least one rule that no owned shared requirement states,
-which converts a divergence from E into something that reads as compliance.
+bridge. This is the third pass. The blocking finding against 87bc83f — a blanket
+"every rule below is a restatement" clause sheltering a rule no owned requirement
+states — is resolved in FR-043, and resolved properly: every row of its new
+source table was checked against the cited artifact and each cited rule says what
+the subsection beside it claims, while the one rule that has no owned source is
+now named as a selection, not a restatement, with its visible consequence stated
+and a ruling requested. FR-045's table is now keyed on the same axis its source
+uses, pinned to a baseline revision and carrying TL target identities.
+
+The same treatment did not reach FR-044. Its source table claims FR-093 rows for
+two rules FR-093 does not contain, and FR-044 has no open-questions subsection to
+catch them. That is the FND-011 defect class recurring one requirement to the
+left, and it is recorded at the same severity for the same reason.
 
 ### Disposition
 
-| Prior finding | Disposition at 87bc83f | Evidence |
+| Prior finding | Disposition at 1f0ff95 | Evidence |
 | --- | --- | --- |
-| FND-001 E's semantics restated as local SHALLs | Resolved, with residue FND-011 | FR-043 and FR-044 "Semantic authority and boundary"; FR-091, FR-092, FR-094 now `depends_on` |
-| FND-002 closed-execution axis absent | Resolved | FR-043 Inputs, "Progress, closure and settlement", AC-10, TC-122 group 10 |
-| FND-003 silent deadlines unspecified | Resolved | FR-043 watermark rule, AC-11, TC-122 group 11 |
-| FND-004 origin versus cutoff untested | Resolved | FR-043 past-operator boundary rule, AC-9, TC-122 group 9 |
-| FND-005 unsupported-mapping oracle unowned | Resolved, with residues FND-012 and FND-013 | FR-045 total classification over FR-095's table, consulting no backend report; TC-125 |
-| FND-006 bridge residue misallocated and thin | Resolved | Residue moved off FR-044 to FR-045; FR-045-AC-4 requires every unmatched dimension named |
-| FND-007 F's trace schema restated unmarked | Resolved | FR-043 boundary section: trusted as supplied, not verified, retained as premises |
-| FND-008 B's result contract not excluded | Resolved | FR-043 and FR-044 boundary sections; receipt identity opaque; conflicting-redelivery contradiction added |
-| FND-009 charging contract dangling | Resolved | docs/native-temporal-evaluation.md, label `quire.native.temporal-work/1`, eight counters, named in NFR-008 Scope |
-| FND-010 relationship declarations inconsistent | Resolved | FR-043 references FR-044 and FR-045, `depends_on` FR-094 |
+| FND-011 blanket restatement claim sheltering an unsourced rule | Resolved, verified row by row | FR-043 source table; "Open questions referred to agent E" naming the pointwise reading as a selection, its visible consequence, the reversed earlier revision and the #38 ruling |
+| FND-012 one-axis substitution in FR-045's table | Resolved | Rows keyed on complete/open surrounding execution as FR-095 does; decision-scope closure named as separate in the boundary section and Inputs; AC-1 asserts it is not consulted. New FND-016 records the residual axis ambiguity in the source itself |
+| FND-013 unpinned table, no TL target, "declaration alone" contradiction | Resolved | Baseline `4d6230eb8aa9766ff3017360962f2d6368d74cb3` cited; TL target column naming `mltl.closed-trace/v1` and `mltl.online-prefix/v1`; classification stated as a total function of exactly three named inputs, two from the declaration and one from the request; AC-5 |
+| FND-014 clock parameters unverifiable | Resolved | FR-043 Behavior marks the rule "retention, not checking", states FR-090-AC-2 is only partly satisfiable here and that no criterion claims otherwise; Dependencies limitation extended to the definition digest |
+| FND-015 US-004 allocation asserted, not derived | Resolved | Reciprocal `exercises` edge in US-004 frontmatter and traceability list |
 
 ## Findings
 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
-| FND-011 | high | FR-043's boundary section asserts that "every semantic rule below is a local restatement of an owned shared rule". That universal is false. The pointwise-connective rule — `not`, `and`, `or` and `implies` evaluated at every offset the enclosing operator ranges over, explicitly "not untimed" — has no owned shared source: FR-091, FR-092 and FR-094 do not state it, and the shared definition artifact only admits "temporal Boolean connectives" without fixing their timing. The same requirement at 4c1eee8 stated the opposite reading ("untimed Boolean connectives"), so both spellings cannot be restatements of one owned rule. The fix for FND-001 therefore made this case worse: an unowned semantic decision, now tested by FR-043-AC-6, is labelled as E's and inherits E's authority. Every other checked rule does have a source — empty-window truth in FR-091 and temporal-timestamped-window.md, the five settlement bases and the missing-fact-inside-decision-support rule in FR-094-AC-7 and FR-091, the lower-bound convention in FR-091-AC-3 and FR-092-AC-3 — which is what makes the unsourced one hard to see. | FR-043 "Semantic authority and boundary"; FR-043 Operators; FR-043-AC-6; TC-122 group 6; ix://agent-ix/quire-specification/FR-091; proposals/quire-v1/definitions/temporal-common.md | wrong-requirement |
-| FND-012 | medium | FR-045 substitutes one closure axis for another while restating FR-095's table. FR-095 keys its first supported row on a **complete execution**; FR-045 keys the same row on a **closed decision scope**, and keys its whole classification on "the requested decision-scope closure". FR-043-AC-10 refuses exactly this kind of one-axis substitution between decision-scope closure, surrounding-execution closure, assessment execution and input completeness, so the scope contradicts itself: the axis discipline it enforces on evaluation it abandons on classification. TC-125 group 1 inherits the substitution. | FR-045 Behavior table row 1; FR-045 "Semantic authority and boundary"; FR-043-AC-10; ix://agent-ix/quire-specification/FR-095 support table | wrong-requirement |
-| FND-013 | medium | FR-045's `Supported` verdict is a durable claim about another owner's artifact with nothing pinning it. It restates FR-095's table without recording that table's revision or digest, and it drops FR-095's "Existing TL target" column, so a supported classification names no TL profile and cannot be rechecked when the TL owners revise `mltl.closed-trace/v1` or `mltl.online-prefix/v1`. Refusing to consult an installed TL version is correct and is what keeps the classification decidable here; refusing to record which reviewed revision was classified against is not, and it leaves the verdict silently stale. A second, smaller inconsistency rides along: the boundary section and TC-125's Expected Results say the classification is derived "from the admitted declaration alone", while FR-045 Inputs correctly takes the requested decision-scope closure from the mapping request, which is not a property of the declaration. | FR-045 Behavior table; FR-045 Outputs; FR-045-AC-5; TC-125 Expected Results; ix://agent-ix/quire-specification/FR-095 | wrong-requirement |
-| FND-014 | medium | The declared clock parameters now have no checkable owner. FR-043-AC-3 was narrowed to profile identity, profile revision and clock binding name, because the emitted body carries no sample period, epoch, timestamp unit or sequence authority; those arrive only as caller-asserted trace premises that change result identity. The narrowing is honestly disclosed in FR-043 Dependencies and TM-008 and correctly allocated to an FR-042 wire extension. It nevertheless leaves this scope unable to satisfy FR-090-AC-2 for stale or internally inconsistent clock definitions: a trace asserting a wrong sample period is neither refused nor detectable, only recorded. Nothing in FR-042's current requirement set obliges it to emit those values. | FR-043-AC-3; FR-043 Dependencies; TM-008 Overview; FR-042; ix://agent-ix/quire-specification/FR-090-AC-2 | missing-requirement |
-| FND-015 | low | FR-045 is allocated as implementing US-004 (reuse the existing toolchain) while FR-043 and FR-044 implement US-003. That is defensible, but no requirement or matrix row states why a classification that emits no TL artifact serves toolchain reuse rather than the bounded-evaluation story, and TM-008's stakeholder line asserts the mapping without argument. The allocation reads as placement rather than derivation. | FR-045 frontmatter; TM-008 "Stakeholder and User Story Coverage"; US-004 | wrong-requirement |
+| FND-018 | high | FR-044's source table repeats the defect FR-043 just fixed, and FR-044 has no "Open questions referred to agent E" subsection to catch it. Two rules it attributes to FR-093 are not in FR-093. First, "Activation guard" cites FR-093 Inputs and a temporal-common.md "activation-scope rule"; FR-093 Inputs names only a "scope/trigger definition", and temporal-common.md mentions activation guards once, as something the expression checker covers. Neither states the dispositions FR-044 asserts and FR-044-AC-7 tests: that a guard evaluating false creates no instance and is not a refusal, and that an unestablished guard is not treated as false. Second, the conflicting-redelivery rule — two deliveries asserting one semantic trigger identity with conflicting payloads return a typed contradiction refusal — sits under "Instance identity", cited to FR-093 Behavior paragraph 1 and FR-093-AC-1/AC-2, which cover duplicate delivery and equal payloads and say nothing about conflicting ones. Both are defensible selections; neither is a restatement, and both change results. A third, smaller case is miscitation rather than invention: the whole-execution-origin instance identity rule is sourced in temporal-common.md ("Each activation has its own exact semantic trigger/origin identity and captures"), which that row does not cite. | FR-044 "Semantic authority and boundary" table; FR-044 Activation guard; FR-044 Instance identity; FR-044-AC-2; FR-044-AC-7; FR-044-AC-8; ix://agent-ix/quire-specification/FR-093; proposals/quire-v1/definitions/temporal-common.md | wrong-requirement |
+| FND-016 | medium | FR-045 resolves an ambiguity in FR-095's own table unilaterally, in the direction opposite to the one FND-012 named, and does not record that it did. FR-095 keys its first supported row on "complete execution" and its second on "open prefix" — two different axis vocabularies in adjacent rows of one table. FR-045 normalizes both onto surrounding-execution closure. That is right for the first row and unsupported for the second: `mltl.online-prefix/v1` and FR-091's own "open decision scope" language both point at an open prefix being a decision-scope property, and FR-045-AC-1 now asserts that decision-scope closure is never consulted. FR-043 and FR-044 both gained an open-questions subsection for exactly this situation; FR-045 has none, so a second unilateral axis reading is now load-bearing with no ruling requested. | FR-045 Behavior table rows 3 and 4; FR-045-AC-1; ix://agent-ix/quire-specification/FR-095 support table; FR-091 Behavior | wrong-requirement |
+| FND-017 | medium | FR-045's last table row cannot fire, so FR-045-AC-1 is unsatisfiable as written. The table is declared to be evaluated in order, and rows 3, 4 and 5 are keyed on "no past operator reachable", which a declaration reaching no bounded temporal operator at all satisfies. Every such declaration under either false-extension profile is therefore matched by row 3, 4 or 5 before row 6 is reached, and a timestamped one is matched by row 1. Row 6 is unreachable. AC-1 nevertheless requires that "every row of the support table is exercised by an admitted declaration and returns that row's disposition and TL target", and row 6's disposition wording differs from rows 3 to 5, so it is also ambiguous which disposition an operator-free declaration is supposed to receive. Totality is not harmed — the table covers every input combination — only reachability and the criterion that asserts it. | FR-045 Behavior table row 6; FR-045 Behavior ordering sentence; FR-045-AC-1; TC-125 group 1 | wrong-requirement |
+| FND-019 | low | FR-045 is the only one of the three functional requirements in this scope with no "Open questions referred to agent E" subsection and no statement of which rules are selections rather than restatements, although it restates another owner's table in full. FND-016 is the concrete instance; the structural gap is that nothing in FR-045 would surface the next one. | FR-045 "Semantic authority and boundary"; FR-043 "Open questions referred to agent E"; FR-044 | missing-requirement |
+
+FR-043's table was checked row by row and is honest. Profile and clock selection
+does restate FR-090 Behavior and the three profile artifacts. The eight operators,
+inclusive intervals and `once[1,1]` as strong previous with no weak-previous
+spelling are verbatim obligations of temporal-common.md's "Temporal forms and
+obligations". The lower-bound convention and the release/triggered duals are in
+FR-091-AC-3, FR-092-AC-3 and temporal-common.md's until/since rule. The
+order-sensitive refusal is FR-090-AC-4. Atoms, constants and boundaries — the
+holds/constant distinction, false extension outside a closed complete scope,
+finite-window quantification, the instant at the inclusive upper endpoint
+participating, empty-existential and empty-universal truth only under
+completeness, incomplete input suppressing both boundary rules, and history
+against an authoritative origin — are carried by FR-091-AC-2, FR-092-AC-2 and
+temporal-timestamped-window.md, all cited. Progress, closure and settlement match
+FR-094 Behavior, FR-094-AC-1 to AC-8 and FR-091-AC-4. No rule in FR-043 was found
+attributed to a source that does not contain it.
 
 ## Context
 
@@ -58,7 +72,7 @@ flowchart LR
   subgraph A ["Agent A - this repository"]
     Parse["Parser composed temporal"]
     Link["Linker composed definitions and profile aliases"]
-    Check["Composed checker"]
+    Check["Composed checker and FR-036 scope refusals"]
     Emit["FR-042 compiled-protocol temporal body"]
     Act["FR-044 activation and immutable captures"]
     Eval["FR-043 bounded temporal evaluation"]
@@ -71,11 +85,13 @@ flowchart LR
   Bound --> Eval
   Bound --> Act
   Bound --> Class
-  E["Agent E - temporal meaning FR-090 to FR-094"] -->|assumed, governs on divergence| Eval
+  E["Agent E - temporal meaning FR-090 to FR-094"] -->|owned rules govern on divergence| Eval
+  E -->|owned rules govern on divergence| Act
+  Open["Open questions on #38 - pointwise connectives, ceiling precedence"] -.->|selection pending E ruling| Eval
   F["Agent F - observation transport, progress, provenance"] -->|assumed, caller-supplied trace| Eval
   D["Agent D - model and registered profile definitions"] -->|assumed| Link
   B["Agent B - protocol activation and result serialization"] -.->|excluded, consumes disposition| Act
-  Table["FR-095 reviewed correspondence support table"] -->|assumed, unpinned revision| Class
+  Table["FR-095 table at baseline 4d6230e"] -->|assumed, revision pinned| Class
   Bridge["IR and TL owners - emission half, contract-ir 63 and 64"] -.->|excluded and blocked| Class
 ```
 
@@ -87,63 +103,70 @@ flowchart LR
 | FR-044 | Native activation and immutable capture binder | core |
 | FR-045 | Native-to-TL mapping support classifier, table-only | core |
 | NFR-008 | Temporal work accounting and the evaluator's own retained-state table | cross-cutting |
-| TC-122 | Local Rust integration suite, tests/composed_temporal_evaluation.rs | core |
-| TC-123 | Local Rust integration suite, tests/composed_temporal_activation.rs | core |
-| TC-124 | Local Rust property suite, tests/composed_temporal_limits.rs | cross-cutting |
-| TC-125 | Local Rust unit suite, tests/composed_temporal_mapping.rs | core |
+| TC-122 | Local Rust integration suite for FR-043 | core |
+| TC-123 | Local Rust integration suite for FR-044 | core |
+| TC-124 | Local Rust property suite for NFR-008 | cross-cutting |
+| TC-125 | Local Rust unit suite for FR-045 | core |
 | TM-008 | Native temporal traceability matrix | cross-cutting |
 
-The four premise axes FR-043 now carries — decision-scope closure,
-surrounding-execution closure, assessment execution and input completeness — are
-allocated identically: each is asserted by agent F's trace, interpreted by this
-evaluator under agent E's meaning, and represented as an independent field so no
-axis can close or complete another. None of the four is computed here.
+Two decisions are allocated to agent E and held open on compiler #38 rather than
+owned here: the pointwise reading of the Boolean connectives, and precedence
+between a reached ceiling and an already-settled sibling obligation. Both are
+recorded with the reading this scope selects and an undertaking to change to
+match E's ruling, which is the correct allocation for a rule this repository must
+implement but does not own. FND-018 and FND-016 identify three further decisions
+of the same kind that are not yet allocated this way. The ambient `self`,
+`result` and `pre(expr)` capture refusal is correctly allocated away from FR-044
+to FR-036's delivered scope checking under TM-002 rather than duplicated.
 
 ## External contracts
 
 | Dependency | Assumed or guaranteed | Boundary |
 | --- | --- | --- |
-| Agent E shared temporal meaning (FR-090, FR-091, FR-092, FR-094) | Assumed, and now normatively governing | FR-043 and FR-044 declare that the shared rule governs on divergence and that the local rule is then defective. Sound for every rule with a shared source; FND-011 records the one that has none |
-| Agent F observation contract: trace content, order keys, watermark, four closure and completeness assertions, authoritative-origin claim | Assumed, explicitly trusted and not verified | Retained as premises so a later contradiction can identify the dependent results. Declared clock parameters are retained the same way and cannot be checked against the artifact, which FND-014 records |
-| Agent F duplicate-delivery provenance and receipt identity | Assumed, opaque | A receipt identity is a caller-supplied opaque value. A deduplicates instances by semantic trigger identity and never interprets transport |
+| Agent E shared temporal meaning (FR-090, FR-091, FR-092, FR-094) | Assumed, normatively governing, now cited per subsection | FR-043's per-subsection source table verified accurate. FR-044's is not, which FND-018 records |
+| Agent E rulings pending on compiler #38 | Assumed, explicitly unresolved | Pointwise connectives and ceiling-versus-settled-sibling precedence are declared selections, with their visible consequences stated and a commitment to conform |
+| Agent F observation contract: trace content, order keys, watermark, four closure and completeness assertions, authoritative-origin claim | Assumed, explicitly trusted and not verified | Retained as premises so a later contradiction can identify dependent results. Declared clock parameters and the definition digest are retained the same way and cannot be checked against the artifact; FR-043 now states that FR-090-AC-2 is only partly satisfiable here |
+| Agent F duplicate-delivery provenance and receipt identity | Assumed, opaque | A receipt identity is a caller-supplied opaque value. A deduplicates instances by semantic trigger identity. The conflicting-payload refusal built on top of that is A's own selection, which FND-018 records |
 | Agent B protocol activation, participation and result serialization | Assumed, excluded in requirement text | FR-043 and FR-044 each state they produce no protocol result and no wire encoding of their own |
-| Agent D model and registered profile definitions | Guaranteed in-repo through the existing linker | src/linking/composed/definition_source.rs pins the three concrete profile identities and the shared bounded facet; FR-043 refuses an asserted identity or revision that differs |
-| FR-042 emitted temporal body, clock binding index, activation record and closed operation graph | Guaranteed | Already implemented in src/protocol_artifact/native/runtime.rs and wire.rs and covered by TM-007. The body carries no declared clock parameters, which is the gap in FND-014 |
-| FR-095 reviewed correspondence support table | Assumed, unpinned | FR-045 restates six rows and consults no backend report, installed version, syntax match or historical result. The table revision is not recorded and the TL target column is dropped, which FND-012 and FND-013 record |
-| quire-contract-ir #63 and #64, actual TL capability, FR-095 emission half | Absent, excluded and blocked | No TL formula, valuation request or correspondence record is produced. TM-008 and TC-125 both state that a supported classification is a statement about the table, not evidence of a mapping |
-| Caller-lowered ceilings and the accounting contract | Assumed for the values, published for the rules | Eight counters, their units and traversal rules are published in docs/native-temporal-evaluation.md under `quire.native.temporal-work/1`; expected charges in TC-124 derive from there, not from reported usage |
-| Agent F observation storage, replay and lateness | Assumed, explicitly out | NFR-008 Scope separates the evaluator's own retained-state table, which the retention ceiling bounds, from F's mechanisms, which it does not constrain |
+| Agent D model and registered profile definitions | Guaranteed in-repo through the existing linker | src/linking/composed/definition_source.rs pins the three concrete profile identities and the shared bounded facet; the shared facet is not a selectable clause profile, so FR-045's table covers every admissible profile |
+| FR-042 emitted temporal body, clock binding index, activation record and closed operation graph | Guaranteed | Covered by TM-007. The body carries no declared clock parameters and no definition digest; both are recorded as remaining work on #38 |
+| FR-095 reviewed correspondence support table | Assumed, revision pinned | FR-045 cites baseline `4d6230eb8aa9766ff3017360962f2d6368d74cb3`, reports the TL target identity and that baseline on a supported classification, and consults no backend report, installed version, syntax match or historical result. The source table's own axis ambiguity is resolved unilaterally, which FND-016 records |
+| quire-contract-ir #63 and #64, actual TL capability, FR-095 emission half | Absent, excluded and blocked | No TL formula, valuation request or correspondence record is produced. A supported classification is a statement about the table, not evidence of a mapping |
+| Caller-lowered ceilings and the accounting contract | Assumed for the values, published for the rules | Counters, units, traversal rules, the ceiling table and the clamp rule are published in docs/native-temporal-evaluation.md under `quire.native.temporal-work/1`; expected charges derive from there, not from reported usage |
+| Agent F observation storage, replay and lateness | Assumed, explicitly out | NFR-008 separates the evaluator's own retained-state table, which the retention ceiling bounds and whose eviction seam is named, from F's mechanisms |
 
 Classifying mapping support without a bridge does not encroach on the IR or TL
-owners. FR-045 emits no TL artifact, establishes no correspondence, consults no
-backend capability report or installed version, and names the premises an absent
-bridge would still have to discharge while stating that naming them is not
-discharging them. The encroachment risk is not the classification but its
-durability: an unpinned restatement of another owner's table, recorded in
-FND-013. No new observation store, evidence framework, bridge crate or shared
-temporal definition is introduced. The evaluator, its accounting and its controls
-are domain-specific Rust driven through the public API, consistent with the
-repository's Rust-only and local-checks-only directives.
+owners, and pinning the baseline revision has closed the staleness route. FR-045
+emits no TL artifact, establishes no correspondence, and names the premises an
+absent bridge would still have to discharge while stating that naming them is not
+discharging them. No new observation store, evidence framework, bridge crate or
+shared temporal definition is introduced. `src/temporal/` and `tests/` are under
+concurrent edit by another session and were deliberately not read as evidence;
+nothing in this review rests on their state.
 
 ## Verdict and provenance
 
-FAIL, on one high finding with a narrow remedy. FND-011 is a boundary defect of
-exactly the kind this analysis exists to catch: a blanket restatement clause that
-grants E's authority to a rule E never wrote, and that reverses the same
-requirement's previous reading without anyone owning the reversal. The remedy is
-wording, not redesign — cite the owned source per rule or per rule group, and
-move the pointwise-connective reading into an explicitly open question referred to
-E rather than leaving it inside the restatement blanket. FND-012 and FND-013
-should be resolved in the same pass, since both are single-sentence corrections to
-FR-045. FND-014 and FND-015 are recorded, not blocking; FND-014 already carries a
-named owner, a remaining-work entry on compiler #38 and an honest matrix note.
+FAIL, on one high finding, narrower than the last. FND-018 is the FND-011 defect
+class recurring in FR-044: a source table that lends agent E's authority to two
+rules FR-093 does not contain — the activation-guard dispositions and the
+conflicting-redelivery contradiction — with no open-questions subsection to catch
+them. The remedy is the one already applied to FR-043 one requirement to the
+right: give FR-044 an "Open questions referred to agent E" subsection naming both
+selections and their visible consequences, request the ruling on #38, and cite
+temporal-common.md beside the whole-execution-origin row that actually rests on
+it. FND-016 and FND-017 are single-sentence corrections to FR-045 and should land
+in the same pass; FND-019 is the structural gap behind FND-016.
 
-All ten findings raised against 4c1eee8 are resolved and none was resolved by
-narrowing the claim rather than meeting it, with the single disclosed exception of
-FR-043-AC-3, which FND-014 records in full. Nothing in scope belongs to another
-agent's delivery, and nothing another agent owns has been implemented here.
+The remedy applied to FR-043 is sound and was verified rather than accepted:
+every row of its source table was checked against the cited artifact, and the one
+rule with no owned source is now labelled a selection with its consequence,
+its reversed history and its pending ruling on the record. All five findings
+raised against 87bc83f are resolved, none by narrowing the claim instead of
+meeting it. Nothing in scope belongs to another agent's delivery, and nothing
+another agent owns has been implemented here.
 
 Scope-and-boundary analysis only, run against the working tree at the recorded
-revision. No FR, NFR, TC, matrix or documentation file was edited by this review.
-No subagents, builds or hosted workflows were started. `quire validate`
-establishes document conformance, not finding resolution and not test completion.
+revision. No FR, NFR, TC, matrix or documentation file was edited by this review,
+and no file under `src/` or `tests/` was read or written. No subagents, builds or
+hosted workflows were started. `quire validate` establishes document conformance,
+not finding resolution and not test completion.
