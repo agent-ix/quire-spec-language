@@ -292,7 +292,8 @@ pub enum ScopeIssue {
     InvalidAwaitEvent { control: c::ControlId, span: Span },
     /// A receive selects a different channel than its exact referenced send.
     IncompatibleReference { reference: usize },
-    /// An internal scope result did not extend its inherited frame chain.
+    /// Defensive: a future scheduler invariant violation failed to extend the
+    /// inherited frame chain; current constructor-private scheduling prevents it.
     InvalidEnvironment { span: Span },
 }
 
