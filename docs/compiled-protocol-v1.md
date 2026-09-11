@@ -52,7 +52,8 @@ Unknown, duplicate or missing fields/tags and positional-array substitutes refus
 
 `String` is a Unicode scalar string, possibly empty; `Name` is nonempty.
 Names/identity components are at most 4,096 UTF-8 bytes; text/source content is
-bounded by the reader's content limits. `U` is a bare JSON integer in 0..1,048,576,
+bounded by the reader's content limits. `U` is a bare JSON integer from zero
+through 1,048,576 **inclusive**,
 with no sign, exponent, fraction or leading zero. It is used only for structure,
 source coordinates and array indices. Native values and authored bounds use
 `Number`; `Integer` is its integer alternative. Counts such as repeat maxima,
@@ -132,8 +133,14 @@ sources sort by their artifact key; definitions by `(identity,revision.namespace
 models by dependency index; exports by `(kind,path)`; declarations by
 `(source index,span.start,span.end)`. Comparisons use lexicographic UTF-8 byte
 order. Equal immutable keys with different content refuse, as do repeated
-entries even when equal. Types are first-occurrence indexed during this
-declaration/value order, sharing only exactly equal resolved types. Declaration
+entries even when equal. Types share an index only when their resolved forms
+are exactly equal. Visit declarations in the order above, and within each
+declaration visit binder types, non-null binding-requirement types, then value
+types in their respective table order. Next visit the predicate result type,
+or, for a protocol, channel message types followed by compensation attempt
+types in table order. On the first visit to a type, assign its index before
+recursively visiting its option value or sequence element type. Later visits
+reuse that index; unreferenced types refuse. Declaration
 local tables follow original source occurrence order, using original arena
 index only to break an equal-span tie. Every index is rewritten consistently
 after ordering. Semantic arrays preserve authored order: arguments, sequence
@@ -305,7 +312,12 @@ per branch, with `join` indexing exactly the authored branch completion set;
 array order, timestamps and FIFO on another channel add no edges. Await targets,
 receive/send pairs, effects/attempts and compensation/commit references are
 kind-checked. Choice ownership, branch labels, non-overlap and decision-visible
-facts are family-admission obligations, not assumed from graph shape.
+facts are compiler family-admission obligations under
+[FR-042](../spec/functional/FR-042-publish-compiled-protocol-artifacts.md),
+consuming the accepted standard's FR-050–059. They are not assumed from graph
+shape or a reader-admitted package. The constructor-private producer admission
+must establish them before emission; the reader verifies the derived data and
+its independently selected producer, not the source proof.
 Choice guards are also collectively exhaustive over admitted decision inputs.
 At each repeat decision, false exits normally; true below the maximum enters
 the body, and true at the maximum enters the exhausted child once. Maximum zero
@@ -362,17 +374,32 @@ acyclic. `type` and `model` may be null only when the selected binding contract
 defines a non-value/non-model role, such as a clock or closure authority; null
 cannot erase a required instance type or authoritative model export.
 
-Compensation registers only after the paired successful effect, once per effect
-identity. Registration and activation captures have separate anchors; retries
+At runtime each authored compensation obligation registers only after its paired
+successful effect, once for that obligation and effect identity. Distinct
+compensation definitions may name the same forward control: the standard's
+FR-056 registers exactly the obligations paired with an effect, not a single
+global compensator. Registration and activation captures have separate anchors; retries
 have distinct attempt identities under the same obligation. Null commit means
 the authored `never` boundary, not unknown commit input. A non-null commit
-forbids the selected subsequent registration/recovery. Recovery retains the
+forbids the selected subsequent runtime registration/recovery under standard
+FR-057. Its presence does not forbid declaring a recovery relation. The static
+reader checks the commit's kind and owner; the consumer checks actual ordering
+against bound observations. Recovery retains the
 actual predicate, target captures and required population/relationship authorities;
 operation success alone is not restoration. Full and partial recovery therefore
 remain different authored relations. Missing future observations are not static
 admission failures; missing required static binding contracts are.
 
 ## Bounded read and emission
+
+The current native adapter admits `ix:native` edition `1-draft` and registered
+definitions with actual `NativeModel` views. A different edition cannot satisfy
+that definition selection (`Invalid::Definition`). Producer/native
+correspondence and relationship, population, component, endpoint and reference
+population exports remain explicit `Unsupported` prerequisites until their
+authoritative producer adapters exist; raw dependency bytes or object-universe
+names cannot substitute for those adapters. These refusals keep full FR-042
+emission and handoff acceptance open.
 
 The Rust reader accepts bytes plus an explicit expected selection. It hashes
 the bounded offered bytes against the external seal, decodes the closed shape,
@@ -382,6 +409,36 @@ invariants, then performs bounded canonical byte comparison. Source text is
 hashed/indexed for original loci; it is never parsed. External producer digests
 are verified only by their selected domain adapter. Profile/rule closure, source
 inventory and every retained dependency must match the expected inputs exactly.
+
+The public Rust refusal vocabulary is part of this boundary; callers inspect
+variants and fields, never `Display` text. It is not a serialized error protocol.
+
+| Result class | Meaning and typed detail |
+| --- | --- |
+| `Error::Allocation` | A bounded reservation failed. |
+| `Error::Json { line, column }` | Closed JSON shape or syntax failed at the original byte-oriented position. |
+| `Error::Numeric(NumberError)` | `NonCanonicalDecimal` or `ComponentOutOfRange` identifies `Decimal`, `Numerator` or `Denominator`; `NonPositiveDenominator` and `UnreducedRational` retain the exact numeric refusal. |
+| `Error::Invalid(Invalid)` | Recognized data violates the selected contract; discriminants below identify the violated invariant. |
+| `Error::Unsupported(Unsupported)` | `Wire`, `Feature`, `Definition` or `Profile` lacks an interpretation; `ProducerCorrespondence` or `Export` lacks the required authoritative adapter. |
+| `Error::Incomplete(Exhaustion)` | `dimension`, successful prior `used`, next `requested`, effective `limit` and available original `locus` identify the unaffordable operation. |
+
+`Invalid` distinguishes `Selection` (independent identity mismatch), `Seal`
+(exact-byte mismatch), `Name`, `StructuralInteger`, `WrongNumericKind`,
+`NumericDomain`, `Inventory` (missing/extra entries), `Order`, `Duplicate`,
+`Dependency`, `Definition`, `Model`, `ForeignLocus`, `Locus`, `Reference`
+(dangling handle), `Owner`, `Scope`, `Type`, `Profile`, `Call`, `Binding`,
+`Control`, `Cycle`, `Feature` (inconsistent recognized capability inventory),
+`Canonical` (byte spelling/order) and `Encoding` (writer failure).
+Resource dimensions are `PayloadBytes`, `OutputBytes`, `SourceBytes`,
+`ContentBytes`, `Sources`, `Dependencies`, `Definitions`, `Models`,
+`Declarations`, `Entries`, `References`, `ByteWork` and `Depth`.
+
+The first failed check in the stated pass order wins. In particular, after the
+seal and closed-shape checks, an unknown wire version refuses as
+`Unsupported::Wire` before dependency inventory checks, even if the latter would
+also fail. A failed prerequisite prevents interpretation of dependent records.
+Package-wide canonical output has no native source locus; it must not inherit
+the last visited value's region. Source-owned validation retains its actual locus.
 
 The following independent dimensions each use the listed default and hard maximum:
 8 MiB payload/output bytes;

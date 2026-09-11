@@ -496,8 +496,8 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Seal));
         }
         let package = super::decode::package(bytes, &mut work)?;
-        let supplied = selected(&package, expected, &mut work)?;
         headers(&package, expected, &mut work)?;
+        let supplied = selected(&package, expected, &mut work)?;
         sources(&package, expected, &mut work)?;
         definitions(&package, &supplied, &mut work)?;
         super::validate::package(&package, &mut work)?;
