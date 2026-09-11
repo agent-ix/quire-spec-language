@@ -350,6 +350,7 @@ impl Graph<'_, '_> {
                 } => {
                     self.profile(*profile, Family::Temporal)?;
                     self.binding(owner, *clock, &[BindingKind::Clock])?;
+                    self.timeout_authority(owner, index, *clock)?;
                     match after {
                         AwaitAnchor::Event { node } => {
                             let after = self.local(owner, node, Local::Control)?;
@@ -633,6 +634,31 @@ impl Graph<'_, '_> {
             }
         }
         acyclic(&graph, self.work)
+    }
+
+    fn timeout_authority(&mut self, owner: usize, control: usize, clock: u32) -> Result {
+        for requirement in &self.package.declarations[owner].bindings {
+            self.work.visit()?;
+            if !matches!(
+                requirement.kind,
+                BindingKind::Progress | BindingKind::Closure
+            ) {
+                continue;
+            }
+            let Subject::Control { control: subject } = &requirement.subject else {
+                continue;
+            };
+            if subject.declaration as usize != owner || subject.index as usize != control {
+                continue;
+            }
+            for required in &requirement.requires {
+                self.work.visit()?;
+                if *required == clock {
+                    return Ok(());
+                }
+            }
+        }
+        Err(Error::Invalid(Invalid::Binding))
     }
 
     fn compensations(
