@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Received Boolean decision facts pass through actual compiler stages. These
+//! Observed Boolean decision facts pass through actual compiler stages. These
 //! tests establish static admission and retained graphs, not runtime choices.
 
 #[path = "support/native_protocol/mod.rs"]
@@ -18,6 +18,556 @@ const RECEIVE_A: &str = "send SentA via Messages as (sentA: M::Plain) { true };
     receive GotA via Messages of SentA as (gotA: M::Plain) { true };";
 const RECEIVE_B: &str = "send SentB via Messages as (sentB: M::Plain) { true };
     receive GotB via Messages of SentB as (gotB: M::Plain) { true };";
+
+const OWN_ATTEMPT: &str = "attempt Tried by Receiver on M::Node::step contracts []
+    as (attempted: M::Plain) { true };";
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn send_event_and_effect_records_never_become_choice_observations() {
+    for (kind, owner, record, run) in [
+        (
+            "send",
+            "Sender",
+            "sent",
+            "send Sent via Messages as (sent: M::Plain) { true };",
+        ),
+        (
+            "event",
+            "Receiver",
+            "observed",
+            "event Observed by Receiver as (observed: M::Plain) { true };",
+        ),
+        (
+            "effect",
+            "Receiver",
+            "applied",
+            "attempt Tried by Receiver on M::Node::step contracts [] as (attempted: M::Plain) { true };
+             effect Applied of Main::Tried as (applied: M::Plain) { true };",
+        ),
+    ] {
+        let decision = choice(owner, &format!("{record}.ready"), &format!("{record}.ready"), &format!("not {record}.ready"));
+        let inputs = inputs(&format!("sequence Main {{ {run} {decision} }}"));
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                assert_eq!(
+                    native::admit(proofs, selected, Limits::default()).result().err(),
+                    Some(&Error::Unsupported(Unsupported::FamilyProof)),
+                    "{kind} record must not become a Boolean choice observation"
+                );
+            },
+        );
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn own_attempt_non_boolean_field_comparisons_remain_unsupported() {
+    let decision = choice(
+        "Receiver",
+        "attempted.signed >= 0",
+        "attempted.signed >= 0",
+        "attempted.signed < 0",
+    );
+    let inputs = inputs(&format!(
+        "sequence Main {{
+        attempt Tried by Receiver on M::Node::step contracts [] as (attempted: M::Node) {{ true }};
+        {decision}
+    }}"
+    ));
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            assert_eq!(
+                native::admit(proofs, selected, Limits::default())
+                    .result()
+                    .err(),
+                Some(&Error::Unsupported(Unsupported::FamilyProof))
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-9")]
+fn own_attempt_reference_budget_exhaustion_preserves_original_locus_and_retries() {
+    let mut attempts = String::new();
+    let mut visible = Vec::new();
+    for index in 0..12 {
+        attempts.push_str(&format!("attempt Tried{index} by Receiver on M::Node::step contracts [] as (attempted{index}: M::Plain) {{ true }};"));
+        visible.push(format!("attempted{index}.ready"));
+    }
+    let decision = choice(
+        "Receiver",
+        &visible.join(","),
+        "attempted0.ready",
+        "not attempted0.ready",
+    );
+    let inputs = inputs(&format!("sequence Main {{ {attempts} {decision} }}"));
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let namespace = proofs.types().binding().namespace();
+            let [id] = namespace.lookup("Decisions") else {
+                panic!("original declaration")
+            };
+            let unit = namespace
+                .unit(proofs.types().declaration(*id).unwrap().unit())
+                .unwrap();
+            let original = unit
+                .controls()
+                .iter()
+                .find(|node| node.name.value == "Decide")
+                .unwrap();
+            // 4096 valuations each visit at least the A/not-A guard nodes, so this
+            // bound necessarily interrupts the real decision partition work.
+            let limited = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    references: 10_000,
+                    ..Limits::default()
+                },
+            );
+            let Err(Error::Incomplete(exhaustion)) = limited.result() else {
+                panic!("{:?}", limited.result().err())
+            };
+            assert_eq!(exhaustion.dimension, artifact::Dimension::References);
+            assert_eq!(exhaustion.limit, 10_000);
+            assert!(exhaustion.used <= exhaustion.limit);
+            assert!(exhaustion.requested > exhaustion.limit - exhaustion.used);
+            let locus = limited
+                .locus()
+                .expect("original choice owns valuation exhaustion");
+            assert_eq!(Some(locus), exhaustion.locus.as_ref());
+            assert_eq!(locus.source, 0);
+            assert_eq!(
+                (locus.span.start as usize, locus.span.end as usize),
+                (original.span.start, original.span.end)
+            );
+
+            let baseline = native::admit(proofs, selected, Limits::default());
+            assert!(baseline.result().is_ok(), "{:?}", baseline.result().err());
+            let required = baseline.usage().references;
+            assert!(required > 10_000);
+            let one_short = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    references: required - 1,
+                    ..Limits::default()
+                },
+            );
+            let Err(Error::Incomplete(exhaustion)) = one_short.result() else {
+                panic!("one-short reference budget must refuse")
+            };
+            assert_eq!(exhaustion.dimension, artifact::Dimension::References);
+            assert_eq!(exhaustion.limit, required - 1);
+            assert!(exhaustion.used <= exhaustion.limit);
+            assert!(exhaustion.requested > exhaustion.limit - exhaustion.used);
+            let exact = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    references: required,
+                    ..Limits::default()
+                },
+            );
+            assert!(
+                exact.result().is_ok(),
+                "{:?}; {:?}",
+                exact.result().err(),
+                exact.locus()
+            );
+            assert_eq!(exact.usage().references, required);
+            let exact = exact.into_result().unwrap();
+            assert_eq!(exact.package(), baseline.result().unwrap().package());
+            original_choices(proofs, exact.package());
+            let emitted = native::emit(&exact, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs.read(proofs, &emitted);
+            assert!(
+                read.result().is_ok(),
+                "{:?}; {:?}",
+                read.result().err(),
+                read.locus()
+            );
+            assert_eq!(read.into_result().unwrap().package(), exact.package());
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-5", "FR-042-AC-7")]
+fn own_attempt_choice_preserves_cross_unit_contract_and_observation_owners() {
+    let mut inputs = Inputs::new(&[
+        Unit { name: "attempt-contracts", body: "pre Ready using S on M::Node::step { delta >= 0 }\npost Done using S on M::Node::step { result }", declarations: &["Ready", "Done"] },
+        Unit { name: "attempt-choice", body: "protocol Decisions using P over (view: M::Node) on origin {
+            role Receiver on M::Node;
+            run sequence Main {
+                attempt Tried by Receiver on M::Node::step contracts [Ready,Done] as (attempted: M::Plain) { true };
+                choice Decide by Receiver visible (attempted.ready) {
+                    case yes when { attempted.ready } check Accepted using S { true };
+                    case no when { not attempted.ready } check Rejected using S { true };
+                }
+            }
+            finish Closed as (closed: M::Node) { true };
+        }", declarations: &["Decisions"] },
+    ]);
+    let expected_operation = inputs.step_contracts("Ready", "Done");
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let report = native::admit(proofs, selected, Limits::default());
+            assert!(
+                report.result().is_ok(),
+                "{:?}; {:?}",
+                report.result().err(),
+                report.locus()
+            );
+            let admission = report.into_result().unwrap();
+            let package = admission.package();
+            assert_eq!((package.sources.len(), package.declarations.len()), (2, 3));
+            let find = |name| {
+                package
+                    .declarations
+                    .iter()
+                    .position(|d| d.name == name)
+                    .unwrap() as u32
+            };
+            let ready = find("Ready");
+            let done = find("Done");
+            let owner = find("Decisions");
+            for (id, source_index) in [(ready, 0), (done, 0), (owner, 1)] {
+                let declaration = &package.declarations[id as usize];
+                let source = &package.sources[declaration.locus.source as usize];
+                assert_eq!(
+                    source.native.identity,
+                    inputs.sources[source_index].identity().identity
+                );
+                assert_eq!(source.text, inputs.sources[source_index].text());
+                let namespace = proofs.types().binding().namespace();
+                let [original] = namespace.lookup(&declaration.name) else {
+                    panic!("one original owner")
+                };
+                let syntax = namespace.syntax(*original).unwrap();
+                assert_eq!(
+                    (
+                        declaration.locus.span.start as usize,
+                        declaration.locus.span.end as usize
+                    ),
+                    (syntax.span.start, syntax.span.end)
+                );
+            }
+            assert_eq!(
+                package.declarations[ready as usize].execution,
+                w::Execution::Pre {
+                    operation: expected_operation.clone()
+                }
+            );
+            assert_eq!(
+                package.declarations[done as usize].execution,
+                w::Execution::Post {
+                    operation: expected_operation.clone()
+                }
+            );
+            let model = &package.models[expected_operation.model as usize];
+            assert_eq!(
+                package.dependencies[model.artifact as usize].artifact,
+                inputs.model_reference
+            );
+            assert_eq!(
+                model.exports[expected_operation.export as usize].path,
+                ["Node", "step"]
+            );
+            let declaration = &package.declarations[owner as usize];
+            assert!(declaration
+                .bindings
+                .iter()
+                .all(|binding| binding.kind != w::BindingKind::Effect));
+            let mut contracts = vec![ready, done];
+            contracts.sort_unstable();
+            assert_eq!(declaration.requires, contracts);
+            let w::Body::Protocol {
+                roles, controls, ..
+            } = &declaration.body
+            else {
+                panic!("protocol")
+            };
+            assert!(controls.iter().all(|control| !matches!(
+                control.operation,
+                w::ControlOperation::Event {
+                    event: w::Event::Effect { .. },
+                    ..
+                }
+            )));
+            let handle = |name| w::Handle {
+                declaration: owner,
+                index: controls.iter().position(|node| node.name == name).unwrap() as u32,
+            };
+            let tried = handle("Tried");
+            let w::ControlOperation::Event {
+                event:
+                    w::Event::Attempt {
+                        owner: attempt_owner,
+                        operation,
+                        contracts: retained,
+                        ..
+                    },
+                binder,
+                ..
+            } = &controls[tried.index as usize].operation
+            else {
+                panic!("attempt")
+            };
+            assert_eq!(operation, &expected_operation);
+            assert_eq!(retained, &contracts);
+            let w::ControlOperation::Choice {
+                owner: chooser,
+                visible,
+                cases,
+            } = &controls[handle("Decide").index as usize].operation
+            else {
+                panic!("choice")
+            };
+            assert_eq!(chooser, attempt_owner);
+            assert_eq!(chooser.declaration, owner);
+            assert_eq!(roles[chooser.index as usize].name, "Receiver");
+            assert_eq!(binder.declaration, owner);
+            let observation = &declaration.binders[binder.index as usize];
+            assert_eq!(observation.name, "attempted");
+            assert_eq!(observation.kind, w::BinderKind::Event);
+            assert_eq!(observation.anchor.declaration, owner);
+            assert_eq!(
+                declaration.anchors[observation.anchor.index as usize]
+                    .owner
+                    .0
+                    .as_ref(),
+                Some(&tried)
+            );
+            for value in [&visible[0], &cases[0].guard] {
+                assert_eq!(value.declaration, owner);
+                let value = &declaration.values[value.index as usize];
+                let w::ValueOperation::Field { base, field } = &value.operation else {
+                    panic!("attempt observation field")
+                };
+                assert_eq!(base.declaration, owner);
+                assert_eq!(
+                    declaration.values[base.index as usize].operation,
+                    w::ValueOperation::Read {
+                        binder: binder.clone()
+                    }
+                );
+                assert_eq!(
+                    package.models[field.model as usize].exports[field.export as usize].path,
+                    ["Plain", "ready"]
+                );
+                assert_eq!(value.locus.source, declaration.locus.source);
+                let text = &package.sources[value.locus.source as usize].text;
+                assert_eq!(
+                    &text[value.locus.span.start as usize..value.locus.span.end as usize],
+                    "attempted.ready"
+                );
+            }
+            let emitted = native::emit(&admission, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs.read(proofs, &emitted);
+            assert!(
+                read.result().is_ok(),
+                "{:?}; {:?}",
+                read.result().err(),
+                read.locus()
+            );
+            assert_eq!(read.into_result().unwrap().package(), package);
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn foreign_role_cannot_use_an_attempt_even_with_the_same_model_type() {
+    let decision = choice(
+        "Sender",
+        "attempted.ready",
+        "attempted.ready",
+        "not attempted.ready",
+    );
+    let inputs = inputs(&format!("sequence Main {{ {OWN_ATTEMPT} {decision} }}"));
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let report = native::admit(proofs, selected, Limits::default());
+            assert_eq!(
+                report.result().err(),
+                Some(&Error::Unsupported(Unsupported::FamilyProof))
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+fn all_joined_own_attempts_keep_distinct_boolean_atoms() {
+    for (yes, no, succeeds) in [
+        (
+            "left.ready and right.ready",
+            "not (left.ready and right.ready)",
+            true,
+        ),
+        ("left.ready", "not right.ready", false),
+    ] {
+        let decision = choice("Receiver", "left.ready,right.ready", yes, no);
+        let inputs = inputs(&format!("sequence Main {{
+            parallel Gather {{
+                branch left attempt Left by Receiver on M::Node::step contracts [] as (left: M::Plain) {{ true }};
+                branch right attempt Right by Receiver on M::Node::step contracts [] as (right: M::Plain) {{ true }};
+            }} join all [left,right]; {decision}
+        }}"));
+        if succeeds {
+            admitted(&inputs, |proofs, package| {
+                original_choices(proofs, package);
+                let declaration = &package.declarations[0];
+                let w::Body::Protocol {
+                    controls,
+                    causal_edges,
+                    ..
+                } = &declaration.body
+                else {
+                    panic!("protocol")
+                };
+                let gather = w::Handle {
+                    declaration: 0,
+                    index: controls
+                        .iter()
+                        .position(|node| node.name == "Gather")
+                        .unwrap() as u32,
+                };
+                let w::ControlOperation::Parallel { branches, join } =
+                    &controls[gather.index as usize].operation
+                else {
+                    panic!("all join")
+                };
+                assert_eq!(join, &[0, 1]);
+                let mut observations = Vec::new();
+                for branch in branches {
+                    let w::ControlOperation::Event {
+                        event: w::Event::Attempt { .. },
+                        binder,
+                        ..
+                    } = &controls[branch.body.index as usize].operation
+                    else {
+                        panic!("attempt")
+                    };
+                    let observation = &declaration.binders[binder.index as usize];
+                    assert_eq!(
+                        declaration.anchors[observation.anchor.index as usize]
+                            .owner
+                            .0
+                            .as_ref(),
+                        Some(&branch.body)
+                    );
+                    observations.push(observation);
+                    for (kind, from, to) in [
+                        (w::EdgeKind::Branch, &gather, &branch.body),
+                        (w::EdgeKind::Join, &branch.body, &gather),
+                    ] {
+                        assert!(causal_edges.iter().any(|edge| edge.owner == gather
+                            && edge.kind == kind
+                            && edge.from.node == *from
+                            && edge.to.node == *to));
+                    }
+                }
+                assert_eq!(observations.len(), 2);
+                assert_eq!(observations[0].value_type, observations[1].value_type);
+                assert_ne!(observations[0].anchor, observations[1].anchor);
+            });
+        } else {
+            inputs.with_proofs(
+                TypeLimits::default(),
+                proofs::ProofLimits::default(),
+                |proofs, selected| {
+                    discharged(proofs);
+                    assert_eq!(
+                        native::admit(proofs, selected, Limits::default())
+                            .result()
+                            .err(),
+                        Some(&Error::Unsupported(Unsupported::FamilyProof))
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+// The linker/type checker owns this pre-existing lexical-flow refusal; attempt
+// eligibility is reached only after the record is available at the choice.
+fn own_attempt_parallel_sibling_preserves_inherited_scope_refusal() {
+    let decision = choice(
+        "Receiver",
+        "attempted.ready",
+        "attempted.ready",
+        "not attempted.ready",
+    );
+    let inputs = inputs(&format!("parallel Both {{ branch performing {OWN_ATTEMPT} branch deciding {decision} }} join all [performing,deciding];"));
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            let namespace = proofs.types().binding().namespace();
+            let [id] = namespace.lookup("Decisions") else {
+                panic!("one declaration")
+            };
+            let scope = proofs
+                .types()
+                .binding()
+                .scopes()
+                .unwrap()
+                .declaration(*id)
+                .unwrap();
+            let unavailable: Vec<_> = scope
+                .issues
+                .iter()
+                .filter_map(|issue| match issue {
+                    ScopeIssue::OutOfScope { name, span, .. } if name == "attempted" => Some(span),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(unavailable.len(), 3, "{:?}", scope.issues);
+            for span in unavailable {
+                assert_eq!(&inputs.sources[0].text()[span.start..span.end], "attempted");
+            }
+            assert_eq!(
+                proofs.types().disposition(*id),
+                Some(TypeDisposition::Refused)
+            );
+            assert_eq!(
+                proofs.disposition(*id),
+                Some(proofs::ProofDisposition::Refused)
+            );
+            assert_eq!(
+                native::admit(proofs, selected, Limits::default())
+                    .result()
+                    .err(),
+                Some(&Error::Unsupported(Unsupported::FamilyProof))
+            );
+        },
+    );
+}
 
 #[test]
 #[trace("TC-121", "FR-042-AC-1", "FR-042-AC-3", "FR-042-AC-5", "FR-042-AC-7")]
