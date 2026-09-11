@@ -510,9 +510,11 @@ pub(super) fn body(
                 let ty = model_type(context, qualified_span(&role.model), work)?;
                 let model = nominal(ty, builder, work)?;
                 let value_type = builder.ty(ty, work)?;
+                work.bytes(role.name.value.len().saturating_add(5))?;
+                let name = format!("role:{}", role.name.value);
                 let at = runtime.add(
                     Requirement {
-                        name: &format!("role:{}", role.name.value),
+                        name: &name,
                         kind: w::BindingKind::RoleInstance,
                         selected: R::ObservationBinding,
                         value_type: Some(value_type),
