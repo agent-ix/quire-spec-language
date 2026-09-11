@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Domain/activation-implied capture conjuncts exercise binding correspondence;
+// the receipt/target comparisons specify the distinct recovery conditions.
 protocol Flow using P over (view: M::Workflow) on origin {
     role Service on M::Workflow;
 

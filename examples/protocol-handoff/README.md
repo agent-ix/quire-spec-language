@@ -9,7 +9,7 @@ family-admission APIs. It emits through
 `protocol_artifact::read` against selections derived from the original inputs.
 The output seal is selected by the producer after emission; this local reader
 check does not independently authenticate that seal or exercise tamper controls.
-The units retain cross-unit calls, ordered queries, exact rational types and
+The units retain cross-unit calls, bounded `sum`/`size` queries, exact rational types and
 object/reference population requirements. The actual `Workflow::apply` operation
 and its pre/post contracts retain their model and source owners. Both `Full` and
 `Partial` compensation obligations pair with `Main::Applied`: `Full` requires the
@@ -24,6 +24,18 @@ Build and run the Rust example with a new output directory:
 ```console
 CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_handoff -- /tmp/quire-native-handoff
 ```
+
+Run the named producer test with its actual stripped release test executable:
+
+```console
+CARGO_PROFILE_RELEASE_STRIP=symbols cargo test --locked --offline --release --no-default-features --example native_protocol_handoff stripped_release_producer_keeps_original_owners_and_compensations -- --ignored --test-threads=1
+```
+
+This test uses a fresh temporary output directory and checks original source and
+declaration owners plus Full/Partial compensation records after the producer's
+independent reader succeeds. It is ignored in ordinary test runs because the
+executable must fit the producer's ELF binary limit. It does not exercise B's
+acceptance interface.
 
 This recipe supports Linux ELF executables; Mach-O and PE executables are refused.
 The producer reads its actual `current_exe()` bytes, identifies an ELF version-1
