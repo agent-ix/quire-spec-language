@@ -874,7 +874,7 @@ fn equal_rational_representations_preserve_distinct_names_and_owners() {
     .admit(ModelLimits::default())
     .unwrap();
     let program = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\" version \"1\" digest \"{}\";\nmodel N = \"test/second\" version \"1\" digest \"{}\";\npredicate Rule using S (first: M::Ratio, other: M::OtherRatio, second: N::Ratio): Boolean {{ true }}", first.digest(), second.digest()
+        "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\" version \"1\" digest \"unresolved\";\nmodel M = \"test/rational\" version \"1\" digest \"{}\";\nmodel N = \"test/second\" version \"1\" digest \"{}\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean {{ true }}", first.digest(), second.digest()
     );
     let inputs = [ModelInput::Native(&first), ModelInput::Native(&second)];
     with_namespace(&program, |namespace| {

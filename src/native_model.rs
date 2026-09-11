@@ -11,6 +11,7 @@ use crate::{formal_source::FormalSource, ByteDigest, Code, Diagnostic, Phase};
 
 /// Explicit producer semantics retained in the immutable native artifact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum NativeModelProfile {
     /// Historical integer/text model admission.
     V1,
