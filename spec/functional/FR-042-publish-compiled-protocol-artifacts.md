@@ -45,6 +45,9 @@ exact model/definition/rule/dependency selections, and constructor-private
 family-admission evidence derived from that same compilation. Source/profile
 acceptance comes from the independently supplied accepted inventory, not a
 payload flag, current Git revision, installed default or similar display name.
+The caller explicitly supplies revision namespaces for authored formal sources,
+requirements and registered semantic definitions; source-artifact revision labels
+remain separate from the semantic revisions derived from those owners.
 
 The reader takes canonical bytes, an independently selected external artifact
 reference, that accepted inventory, exact local dependency bytes/admitted
@@ -55,9 +58,9 @@ workflow instances, observations, clocks, assessment requests or backend results
 
 An immutable `quire.compiled-protocol/1` package and its external exact-byte
 reference, or a typed refused, unsupported or resource-incomplete result with
-original available loci and partial compilation evidence. The Rust
-`protocol_artifact::native::admit` / `native::emit` path and the `read` entry point expose structured
-results; source stdout, shell commands and hand-edited JSON are not the producer
+original available loci and partial compilation evidence. The public Rust
+admission, emission and reader interfaces expose structured results through the
+wire contract; source stdout, shell commands and hand-edited JSON are not the producer
 handoff. Successfully verified wire content remains distinct from compiler-owned
 family admission and B-owned assessment admission/execution.
 

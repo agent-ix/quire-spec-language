@@ -71,12 +71,12 @@ pub(super) fn controls(
                 }
                 for name in join {
                     work.visit()?;
-                    let index = branches
+                    let position = branches
                         .iter()
                         .position(|b| b.name.value == name.value)
                         .ok_or(Error::Invalid(Invalid::Control))?;
                     work.charge(Dimension::Entries, 1)?;
-                    joined.push(index as u32);
+                    joined.push(index(position)?);
                 }
                 joined.sort_unstable();
                 w::ControlOperation::Parallel {
@@ -155,6 +155,9 @@ pub(super) fn controls(
                 let subject = w::Subject::Control {
                     control: layout.control(original)?,
                 };
+                // Seven prefix/separator bytes plus at most twenty decimal digits
+                // for the source index, before the temporary formatted string.
+                work.bytes(clock.value.len().saturating_add(27))?;
                 let name = format!("await:{}:{}", original.0, clock.value);
                 let clock_index = runtime.add(
                     Requirement {
@@ -175,9 +178,11 @@ pub(super) fn controls(
                     (w::BindingKind::Closure, "closure"),
                 ] {
                     work.charge(Dimension::Entries, 1)?;
+                    work.bytes(name.len().saturating_add(suffix.len()).saturating_add(1))?;
+                    let name = format!("{name}:{suffix}");
                     runtime.add(
                         Requirement {
-                            name: &format!("{name}:{suffix}"),
+                            name: &name,
                             kind,
                             selected: R::Progress,
                             value_type: None,
