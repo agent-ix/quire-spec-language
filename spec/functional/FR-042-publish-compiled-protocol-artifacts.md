@@ -275,6 +275,8 @@ full/partial recovery requirements; strict-reader fixtures alone do not establis
 that authority. The [Rust producer recipe](../../examples/protocol-handoff/README.md)
 retains four original source units, cross-unit dependencies, queries,
 population/reference roles, admitted model operations and actual executable bytes.
+Its joined receive/Boolean-choice scenario retains both received facts and
+authored branches alongside those dependencies and recovery obligations.
 General dynamic choice/progress proofs, first-class relationship exports,
 runtime recovery and the actual B public consumer handoff remain open until
 implemented and exercised through the corresponding public interfaces. A's
