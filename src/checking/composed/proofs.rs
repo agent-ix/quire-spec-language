@@ -28,8 +28,6 @@ pub enum ProofDisposition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Unsupported {
-    /// Ordered query semantics cannot yet be represented by this proof graph.
-    OrderedQuery,
     /// The IR cannot transfer arbitrary rational denominators into a sum domain.
     SumDomainTransfer,
     /// A required native value has no sound conversion through the existing IR.

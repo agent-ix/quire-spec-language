@@ -51,6 +51,10 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
     }
     document["scalars"].as_array_mut().unwrap().extend([
         json!({"name":"LargeTotal","kind":"integer","minimum":0,"maximum":200000,"unit":"U"}),
+        json!({"name":"AlmostTotal","kind":"integer","minimum":0,"maximum":199999,"unit":"U"}),
+        json!({"name":"SignedTotal","kind":"integer","minimum":-100000,"maximum":100000}),
+        json!({"name":"AlmostSignedTotal","kind":"integer","minimum":-99999,"maximum":100000}),
+        json!({"name":"TinyTotal","kind":"integer","minimum":0,"maximum":10,"unit":"U"}),
         json!({"name":"LargeCount","kind":"integer","minimum":0,"maximum":10000}),
         json!({"name":"SmallCount","kind":"integer","minimum":0,"maximum":4}),
         json!({"name":"WrongTotal","kind":"integer","minimum":0,"maximum":100,"unit":"V"}),
@@ -61,6 +65,10 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
     ]);
     document["records"][0]["fields"].as_array_mut().unwrap().extend([
         json!({"name":"largeTotal","type":{"kind":"scalar","name":"LargeTotal"}}),
+        json!({"name":"almostTotal","type":{"kind":"scalar","name":"AlmostTotal"}}),
+        json!({"name":"signedTotal","type":{"kind":"scalar","name":"SignedTotal"}}),
+        json!({"name":"almostSignedTotal","type":{"kind":"scalar","name":"AlmostSignedTotal"}}),
+        json!({"name":"tinyTotal","type":{"kind":"scalar","name":"TinyTotal"}}),
         json!({"name":"largeCount","type":{"kind":"scalar","name":"LargeCount"}}),
         json!({"name":"smallCount","type":{"kind":"scalar","name":"SmallCount"}}),
         json!({"name":"wrongTotal","type":{"kind":"scalar","name":"WrongTotal"}}),
@@ -409,6 +417,76 @@ fn sum_proves_every_prefix_from_declared_capacity_not_a_convenient_final_result(
         // The admitted [10,10,-10] sequence has a final sum of 10, but its
         // second prefix is 20. Even a subsequent x-x result cannot repair it.
         unproved(report, "Intermediate", ir::DefinednessObligationKind::CheckedRange, "sum<M::Signed>(item in input.signeds: item)");
+    });
+}
+
+#[test]
+#[trace("TC-119", "FR-040-AC-3", "FR-040-AC-5", "FR-040-AC-8")]
+fn maximal_integer_sum_discharges_real_prefix_bounds_within_default_limits() {
+    let model = query_model(10_000);
+    inspect(&model, "predicate WideSum using S (input: M::Node): Boolean {
+        sum<M::LargeTotal>(item in input.amounts: item) >= 0
+    }
+    predicate SignedWide using S (input: M::Node): Boolean {
+        sum<M::SignedTotal>(item in input.signeds: item) >= 0
+    }
+    predicate LateUpper using S (input: M::Node): Boolean {
+        sum<M::AlmostTotal>(item in input.amounts: item) >= 0
+    }
+    predicate LateLower using S (input: M::Node): Boolean {
+        sum<M::AlmostSignedTotal>(item in input.signeds: item) >= 0
+    }
+    predicate TinyFirst using S (input: M::Node): Boolean {
+        sum<M::TinyTotal>(item in input.amounts: item) >= 0
+    }
+    predicate Prefix using S (input: M::Node): Boolean {
+        let accumulated = sum<M::Signed>(item in input.signeds: item) in accumulated - accumulated = 0
+    }", &["WideSum", "SignedWide", "LateUpper", "LateLower", "TinyFirst", "Prefix"], handler(), |report| {
+        let proof = discharged(report, "WideSum");
+        assert!(report.exhaustion().is_none());
+        assert_eq!(report.limits(), ProofLimits::default());
+        let typed = report.types().declaration(proof.declaration()).unwrap();
+        let unit = report.types().binding().namespace().unit(proof.unit()).unwrap();
+        let sum = typed.nodes().iter().find(|node| unit.source().slice(node.span) == Some("sum<M::LargeTotal>(item in input.amounts: item)")).unwrap();
+        let domain = typed.nodes().iter().find(|node| unit.source().slice(node.span) == Some("input.amounts")).unwrap();
+        let NativeType::Sequence { element, maximum } = domain.ty.as_ref().unwrap() else { panic!("real admitted collection domain") };
+        assert_eq!(*maximum, 10_000);
+        for (ty, name, bounds) in [
+            (element.as_ref(), "Amount", (1, 20)),
+            (sum.ty.as_ref().unwrap(), "LargeTotal", (0, 200_000)),
+        ] {
+            let NativeType::Scalar { model: owner, role, representation: ir::ValueType::Integer { value } } = ty else { panic!("actual nominal integer representation") };
+            assert!(std::ptr::eq(*owner, &model));
+            assert_eq!(role.name.as_str(), name);
+            assert_eq!((value.minimum(), value.maximum()), bounds);
+            assert!(matches!(&role.kind, quire_spec_language::native_model::ScalarKind::Integer { unit: quire_spec_language::native_model::Unit::Named(unit) } if unit.as_str() == "U"));
+        }
+        // The declared envelope is independently 10,000 * [1,20], with zero
+        // included for an empty collection. The real IR must discharge it.
+        let sum_goals: Vec<_> = proof.goals().iter().filter(|goal| goal.native_expression() == sum.expression).collect();
+        assert!(!sum_goals.is_empty());
+        assert!(sum_goals.iter().any(|goal| goal.checked().obligations().iter().any(|obligation| obligation.kind() == ir::DefinednessObligationKind::CheckedRange)));
+        for goal in sum_goals {
+            assert_eq!(report.bindings()[0].source.to_native(goal.source()).unwrap(), sum.span);
+        }
+        let signed = discharged(report, "SignedWide");
+        assert!(signed.goals().iter().any(|goal| goal.checked().obligations().iter().any(|obligation| obligation.kind() == ir::DefinednessObligationKind::CheckedRange)));
+        // 9,999 upper endpoints total 199,980; the 10,000th reaches 200,000.
+        // The negative endpoint reaches -100,000 at that same final position.
+        unproved(report, "LateUpper", ir::DefinednessObligationKind::CheckedRange, "sum<M::AlmostTotal>(item in input.amounts: item)");
+        unproved(report, "LateLower", ir::DefinednessObligationKind::CheckedRange, "sum<M::AlmostSignedTotal>(item in input.signeds: item)");
+        let tiny = id(report.types(), "TinyFirst");
+        assert_eq!(report.types().disposition(tiny), Some(TypeDisposition::Refused));
+        let cause = report.types().declaration(tiny).unwrap().causes().iter().find(|cause| cause.kind == TypeCause::InvalidAggregateDomain).unwrap();
+        assert_eq!(cause.site.declaration, tiny);
+        assert_eq!(cause.site.unit, typed.unit());
+        assert_eq!(unit.source().slice(cause.site.span), Some("sum<M::TinyTotal>(item in input.amounts: item)"));
+        assert_eq!(unit.expression(cause.site.expression.unwrap()).unwrap().span, cause.site.span);
+        assert_eq!(report.disposition(tiny), Some(ProofDisposition::Refused));
+        assert!(report.declaration(tiny).unwrap().causes().iter().any(|cause| matches!(cause.kind, CauseKind::UpstreamType)));
+        // [10,10,-10,-10] is permitted by this maximum and has final total zero,
+        // but its second prefix is 20. Cancellation cannot repair the fold.
+        unproved(report, "Prefix", ir::DefinednessObligationKind::CheckedRange, "sum<M::Signed>(item in input.signeds: item)");
     });
 }
 
