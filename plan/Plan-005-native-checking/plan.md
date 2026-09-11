@@ -76,3 +76,9 @@ bundle has one model task, one checker task, one qualification/handoff task
 and the owner's scoped construction-repair task. All four tasks are complete,
 with SR-083–087 and private PR #10 retaining their qualification and handoff.
 This completes the static-checking milestone, not the full Agent A assignment.
+
+Task-034 completes the ruling's native sequence-declaration ceiling under
+compiler issue #30, with SR-255–264 recording this amendment. The previous task
+evidence remains historical; broader source-profile reconciliation remains #30.
+Reviews occur at PR readiness under the owner's
+2026-09-09 workflow direction, superseding earlier intermediate review gates.

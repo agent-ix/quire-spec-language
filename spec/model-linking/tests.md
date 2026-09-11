@@ -10,8 +10,13 @@ LC02 verification after the owner's internal adoption of specification PR8 at
 e897f81. Ten linking cases, TC-020–024 and TC-030–034, now execute through the
 public formal linker API. Their eleven FR-005/013 criteria are backed by the
 Rust tests in tests/linking.rs. The five FR-006 typing cases now execute through
-the native checker. Model/checker qualification is complete; executable projection
+the native checker. Model/checker qualification covers the earlier adopted definition; executable projection
 and the full workflow remain open. TM-001/002 retain their existing native/audit evidence.
+
+Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065's
+hard exhaustion checks using admitted nested sequences. SR-263 records actual
+local execution. Source-profile reconciliation remains compiler #30; issue #28
+still prevents the engine from verifying these authored status-column labels.
 
 ## Requirements Traceability
 
