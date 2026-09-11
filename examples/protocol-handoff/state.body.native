@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Receipt order and duplicates survive the bounded aggregate.
+// A bounded sum and size over the declared receipt sequence.
 invariant Healthy using G on M::Workflow at current {
     Allowed(self.ratio)
     and size<M::Tally>(self.receipts) <= 5
@@ -8,6 +8,7 @@ invariant Healthy using G on M::Workflow at current {
 }
 
 pre BeforeApply using G on M::Workflow::apply {
+    // The domain-implied amount bound exercises operation-input correspondence.
     Allowed(self.ratio) and amount >= 1
 }
 

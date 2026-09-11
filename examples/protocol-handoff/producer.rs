@@ -162,16 +162,56 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
-    #[error("authored declaration {name}: {problem}")]
-    Declaration { name: String, problem: &'static str },
+    #[error("authored declaration {name}: {cause}")]
+    Declaration {
+        name: String,
+        #[source]
+        cause: DeclarationCause,
+    },
     #[error("dependency {identity}: expected one selection, found {matches}")]
     Dependency { identity: String, matches: usize },
     #[error("source span {span:?} exceeds the wire offset range")]
     Span { span: quire_spec_language::Span },
-    #[error("the authored recipe does not select exactly one Workflow::apply operation")]
-    Operation,
+    #[error("the authored recipe requires one operation, found {count}")]
+    OperationCount { count: usize },
+    #[error("the authored recipe requires Workflow::apply, found {context:?}::{name:?}")]
+    OperationIdentity {
+        context: ir::SymbolName,
+        name: ir::SymbolName,
+    },
+    #[error(
+        "authored precondition {name}: expected operation anchor {expected:?}, found {actual:?}"
+    )]
+    PreAnchorMismatch {
+        name: String,
+        expected: ir::AnchorName,
+        actual: ir::AnchorName,
+    },
+    #[error(
+        "authored postcondition {name}: expected operation anchor {expected:?}, found {actual:?}"
+    )]
+    PostAnchorMismatch {
+        name: String,
+        expected: ir::AnchorName,
+        actual: ir::AnchorName,
+    },
     #[error("the authored recipe inventory exceeds the wire index range")]
     InventoryLimit,
+}
+
+/// Distinct failures of the recipe's authored declaration correspondence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DeclarationCause {
+    #[error("not present in the original namespace")]
+    Missing,
+    #[error("ambiguous in the original namespace: {matches} declarations")]
+    Ambiguous { matches: usize },
+    #[error("original syntax is unavailable")]
+    MissingSyntax,
+    #[error("original unit is unavailable")]
+    MissingUnit,
+    #[error("clause was selected in a different source unit")]
+    DifferentSource,
 }
 
 /// Fixed-size summaries never retain a report, source body or diagnostic list.
@@ -407,26 +447,29 @@ fn declaration_selection(
         .clauses
         .iter()
         .map(|clause| {
-            let [id] = namespace.lookup(&clause.name) else {
+            let candidates = namespace.lookup(&clause.name);
+            let [id] = candidates else {
                 return Err(Error::Declaration {
                     name: clause.name.clone(),
-                    problem: if namespace.lookup(&clause.name).is_empty() {
-                        "not present in the original namespace"
+                    cause: if candidates.is_empty() {
+                        DeclarationCause::Missing
                     } else {
-                        "ambiguous in the original namespace"
+                        DeclarationCause::Ambiguous {
+                            matches: candidates.len(),
+                        }
                     },
                 });
             };
             let syntax = namespace.syntax(*id).ok_or_else(|| Error::Declaration {
                 name: clause.name.clone(),
-                problem: "original syntax is unavailable",
+                cause: DeclarationCause::MissingSyntax,
             })?;
             let original = namespace
                 .declaration(*id)
                 .and_then(|entry| namespace.unit(entry.unit()))
                 .ok_or_else(|| Error::Declaration {
                     name: clause.name.clone(),
-                    problem: "original unit is unavailable",
+                    cause: DeclarationCause::MissingUnit,
                 })?;
             let expected = unit.mapping.source.source();
             if original.source().identity() != expected.identity()
@@ -435,7 +478,7 @@ fn declaration_selection(
             {
                 return Err(Error::Declaration {
                     name: clause.name.clone(),
-                    problem: "clause was selected in a different source unit",
+                    cause: DeclarationCause::DifferentSource,
                 });
             }
             Ok(SelectedDeclaration {
@@ -476,8 +519,19 @@ fn declaration_selection(
                             operation: operation.export.clone(),
                         }
                     }
-                    ir::ExecutionPoint::Pre { .. } | ir::ExecutionPoint::Post { .. } => {
-                        return Err(Error::Operation)
+                    ir::ExecutionPoint::Pre { operation: anchor } => {
+                        return Err(Error::PreAnchorMismatch {
+                            name: clause.name.clone(),
+                            expected: operation.anchor.clone(),
+                            actual: anchor.clone(),
+                        })
+                    }
+                    ir::ExecutionPoint::Post { operation: anchor } => {
+                        return Err(Error::PostAnchorMismatch {
+                            name: clause.name.clone(),
+                            expected: operation.anchor.clone(),
+                            actual: anchor.clone(),
+                        })
                     }
                 },
             })
@@ -518,10 +572,15 @@ struct OperationSelection {
 impl OperationSelection {
     fn new(model: &NativeModel) -> Result<Self, Error> {
         let [operation] = model.roles().operations.as_slice() else {
-            return Err(Error::Operation);
+            return Err(Error::OperationCount {
+                count: model.roles().operations.len(),
+            });
         };
         if operation.context.as_str() != "Workflow" || operation.name.as_str() != "apply" {
-            return Err(Error::Operation);
+            return Err(Error::OperationIdentity {
+                context: operation.context.clone(),
+                name: operation.name.clone(),
+            });
         }
         // The wire orders exports by kind label then path. In this actual native
         // model, enums, fields and objects precede its single operation. Derive
