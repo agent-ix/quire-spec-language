@@ -14,71 +14,89 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` over the example-only increment at `6243ef9`, with a fresh
+QUOIN `gap-analysis` rerun over correction source `56c1621` with a fresh
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-handoff
---json` (quire 0.31.0, engine 0.46.0). The increment adds no test, no spec text
-and no matrix row, so the corpus reconciliation is unchanged from the parent:
-367/376 backed, six unbacked rows, twenty untracked `NFR-007-M-*` symbols, three
-unmatched `IT-004` tags, zero status lies. Every one of those is inherited from
-FR-036/FR-017/NFR-005/NFR-007 and untouched here. The optional semantic review
-(step 4) was declined. Steps 1-3 ran.
+--json` (quire 0.31.0). The correction adds one matrix row and no test, so the
+corpus reconciliation moves from 367/376 to 368/377 backed with the same six
+unbacked rows, two method-exempt rows, twenty untracked `NFR-007-M-*` symbols,
+three unmatched `IT-004` tags and zero status lies. Steps 1-3 ran; the optional
+semantic review (step 4) remains declined by the owner.
 
 ## Verdict
 
-**FAIL** — held by the skill's own rule that any matrix Test Case with no backing
-tagged test fails the gate. TC-115 and three FR-036 acceptance rows remain
-unbacked, all pre-existing and all outside this change. Read as a delivery signal
-for the reviewed increment the verdict is standing corpus debt: nothing the
-example adds is unbacked, nothing it claims is unevidenced, and no `high` finding
-exists against it.
+**FAIL** — unchanged, and unchanged in cause: the skill's own rule fails the gate
+on any matrix Test Case with no backing tagged test, and TC-115 plus three FR-036
+acceptance rows are still unbacked. All four are inherited, pre-existing and
+outside this increment. Read as a delivery signal for the reviewed increment this
+is standing corpus debt: the example adds nothing unbacked, claims nothing
+unevidenced, and carries no `high` finding.
+
+## Disposition of the prior findings
+
+| Prior | Disposition |
+| --- | --- |
+| FND-001 four inherited unbacked rows (TC-115, FR-036-AC-5/AC-6/AC-8) | open, inherited; identical rows at `spec/model-linking/tests.md:107` and `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` |
+| FND-002 twenty inherited untracked `NFR-007-M-*` symbols | open, inherited; count unchanged at 20 |
+| FND-003 one aggregated TC-121 row hid AC-10's distinct state | resolved at the matrix, with a correction to the earlier reading — see below |
+| FND-004 three `IT-004` tags matching no matrix target | open, inherited; count unchanged at 3 |
+| FND-005 no plan bundle owns FR-042 | open; `grep -rln FR-042 plan` still returns nothing |
+
+**FND-003 disposition.** `spec/model-linking/tests.md:111-112` now carries two
+rows: `TC-121 … FR-042-AC-1..FR-042-AC-9` and a separate
+`TC-121 | Actual compiler-to-consumer Rust handoff; requires B's IT-001 |
+FR-042-AC-10`. The open prerequisite is now named in the matrix with its actual
+external target. Two corrections to the earlier finding's reading, both from this
+run's coverage output: `FR-042-AC-10` reads `backed: false` in the FR-042
+criterion group (9/10 backed), so the open AC is machine-visible through the
+requirement's own verification row, which cites TC-121 *and* quire-protocol
+IT-001; and the per-AC table at `spec/model-linking/tests.md:212` still maps
+AC-10 to TC-121 alone, so the matrix carries two representations of that state.
+The split is an improvement in the human-readable matrix, not the source of the
+machine-visible flag.
 
 ## Step 1 — plan completion
 
-No plan bundle targets FR-042; `grep -rln FR-042 plan` returns nothing, so this
-skill's nominal target artifact does not exist for this scope, and the review
-targets the FR-042/TC-121 requirement set plus the matrix instead. Across all
-bundles 31 of 32 tasks are `done`; the single `in_progress` task is
-`Plan-008-native-lowering/tasks/Task-020-qualify-boolean-backend.md`, which owns
-generated Boolean execution and is unrelated to this example.
+No plan bundle targets FR-042, so this skill's nominal step-1 artifact does not
+exist for this scope and the review targets the FR-042/TC-121 requirement set
+plus the matrix. Across all bundles 31 of 32 tasks are `done`; the one
+`in_progress` task remains
+`plan/Plan-008-native-lowering/tasks/Task-020-qualify-boolean-backend.md`, which
+owns generated Boolean execution and is unrelated to this example.
 
 ## Step 2 — matrix verification
 
 | Reconciliation | Count | Attribution |
 | --- | --- | --- |
-| Backed targets | 367 / 376 | — |
+| Backed targets | 368 / 377 | +1/+1 from the AC-10 matrix row split |
 | Unbacked rows | 6 | 4 inherited FR-036/TC-115, 2 method-exempt |
 | Method-exempt (`no_symbol_rows`) | 2 | TC-010 `Manual`, FR-017-AC-2 `Inspection` |
 | Untracked symbols | 20 | `NFR-007-M-2..M-5` in `src/package/encoding/tests.rs` and siblings |
-| Unmatched tags | 3 | `IT-004` in `tests/fixture_audit.rs:231,275,345` |
+| Unmatched tags | 3 | `IT-004` in `tests/fixture_audit.rs` |
 | Status lies | 0 | — |
+| FR-042 acceptance criteria | 9 / 10 backed | `FR-042-AC-10` unbacked, pending quire-protocol IT-001 |
 
-The four non-exempt unbacked rows are TC-115 (`spec/model-linking/tests.md:107`)
-and FR-036-AC-5/AC-6/AC-8
-(`spec/functional/FR-036-link-composed-native-packages.md:129,130,132`). They
-belong to FR-036's delivery, not to FR-042.
+Raw report retained at `/tmp/quire-native-handoff-recheck-coverage.json`.
 
 ## Step 3 — underspecified code (reverse gap)
 
-The example is fully owned: both new Rust files carry `FR-042/TC-121` module
-headers, and the README states the requirement contract it implements. It adds no
-`pub` API to the library, no test symbol and no trace tag, so it neither raises
-nor lowers matrix backing — which is the correct outcome for a recipe that claims
-no acceptance criterion. No stub, placeholder return or re-export-only module was
-introduced; the delivered binary executes the whole chain and produces a verified
-package (see SR-340 for the byte-level verification).
+Unchanged and still fully owned: both example files carry `FR-042/TC-121` module
+headers, the README states the requirement contract, and the increment adds no
+`pub` library API, test symbol or trace tag. The restructuring in `915f479`
+introduced new private types (`Inputs`, `DefinitionInputs`, `SelectedInputs`,
+`StageIssue`, `ProofCause`) inside the example module only; none is a stub,
+placeholder return or re-export-only module, and the built binary still executes
+the whole chain into a verified package (SR-340 records the byte-level
+re-verification).
 
 ## Delivered scope versus the open AC-10 prerequisite
 
-FR-042-AC-10 requires accepted native source to emit a fixture "consumed
-unchanged by quire-protocol's public Rust admission/linking interface". This
-increment delivers the producer half of that sentence and nothing else: real
-compilation, real emission, real independent read, real selectors on disk. The
-consumer half — B's public Rust admission/linking interface and IT-001 — does not
-exist in any repository reachable from here, and the example README says so
-without hedging. That is an unmet integration prerequisite, exactly as TC-121
-step 10 anticipates ("a missing family, producer adapter or consumer
-implementation records the unmet positive integration prerequisite"), not a defect
-in the delivered recipe.
+Unchanged: this increment delivers the producer half of AC-10 and nothing else.
+B's public Rust admission/linking interface and IT-001 do not exist in any
+repository reachable from here, and neither the README nor the matrix now claims
+otherwise. The corrected FR-042 Inputs and TC-121 step 10 additionally name who
+owns the consumer-side selection, which narrows the specification ambiguity
+recorded in SR-342 — it does not create B's missing public Rust consumer, and it
+defines no production sidecar schema.
 
 ## Findings
 
@@ -86,24 +104,10 @@ in the delivered recipe.
 | ------- | -------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
 | FND-001 | medium   | Four inherited unbacked matrix rows (TC-115, FR-036-AC-5/AC-6/AC-8) hold the gate at FAIL | spec/model-linking/tests.md:107                     |
 | FND-002 | medium   | Twenty inherited untracked `NFR-007-M-*` symbols carry no matrix row      | src/package/encoding/tests.rs                       |
-| FND-003 | medium   | One matrix row aggregates FR-042-AC-1..AC-10, so the open AC-10 handoff is indistinguishable from covered ACs | spec/model-linking/tests.md:111                     |
+| FND-003 | low      | The per-AC table still maps FR-042-AC-10 to TC-121 alone, beside the new prerequisite row | spec/model-linking/tests.md:212                     |
 | FND-004 | low      | Three `IT-004` tags in `tests/fixture_audit.rs` match no matrix target    | tests/fixture_audit.rs:231                          |
 | FND-005 | low      | No plan bundle owns FR-042, so this skill's step-1 target is absent       | plan/                                               |
 
-## Finding detail
-
-**FND-003** is the one worth acting on for this workstream. `spec/model-linking/tests.md:111`
-records a single `TC-121 | … | FR-042-AC-1..FR-042-AC-10 | 🚧 Planned` row, and
-`spec/model-linking/tests.md:199-208` repeats one row per AC against the same test
-case. Tests tagged `TC-121` exist (`tests/native_protocol_emission.rs`,
-`tests/native_population_emission.rs`, `tests/protocol_artifact.rs`), so coverage
-counts all ten rows backed while AC-10's positive producer-to-consumer handoff is
-genuinely open. No status lie is reported because the rows are still `🚧 Planned`.
-The honest reading is that AC-10 needs its own row or an explicit blocked marker
-once B's interface lands; until then only prose records the distinction. This
-example neither caused nor worsened it, and correctly refrains from claiming
-AC-10.
-
 FND-001, FND-002 and FND-004 are the same inherited items carried in SR-334 and
-SR-328. They are reported here for reconciliation completeness only; no action
-belongs to this PR.
+SR-328, reported here for reconciliation completeness only; no action belongs to
+this PR. FND-003 is the residue of the earlier FND-003 and costs one cell.
