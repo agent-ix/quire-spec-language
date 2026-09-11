@@ -37,7 +37,11 @@ observations belong only to the later consumer fixture.
    The [native producer recipe](../../examples/protocol-handoff/README.md)
    exercises four original predicate/state/temporal/workflow units with cross-unit
    references, bounded `sum`/`size` queries, population/reference roles, actual model
-   operations and distinct full/partial recovery requirements. It preserves
+   operations and distinct full/partial recovery requirements. Two receives on
+   the original channel feed an owned Boolean choice after an all-branch join;
+   check both receive anchors, the channel recipient, original field operands
+   and both authored choice branches through the real stripped producer.
+   It preserves
    source-owned registration/activation/retry anchors without supplying runtime
    recovery observations; it does not cover this case's full choreography fixture.
 2. Compare emitted compact bytes with independently authored expected records
