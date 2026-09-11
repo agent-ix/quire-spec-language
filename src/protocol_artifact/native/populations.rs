@@ -24,6 +24,9 @@ pub(super) struct Need<'a> {
     pub span: Span,
 }
 
+// ModelBindings refuses same-owner/different-digest inputs (Owner conflict)
+// and duplicate exact selections (AmbiguousSelection), so a selected owner
+// identifies one admitted model here. Distinct model owners remain supported.
 type Key<'a> = (&'a ir::RequirementRef, &'a ir::SymbolName, u32);
 
 struct Collector<'s, 'm> {

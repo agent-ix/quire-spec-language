@@ -218,8 +218,18 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             let (Some(population), Some(closure)) = (population, closure) else {
                 return Err(Error::Invalid(Invalid::Binding));
             };
-            let pop = &self.declaration.bindings[*population as usize];
-            let close = &self.declaration.bindings[*closure as usize];
+            work.visit()?;
+            let pop = self
+                .declaration
+                .bindings
+                .get(*population as usize)
+                .ok_or(Error::Invalid(Invalid::Binding))?;
+            work.visit()?;
+            let close = self
+                .declaration
+                .bindings
+                .get(*closure as usize)
+                .ok_or(Error::Invalid(Invalid::Binding))?;
             if close.requires.as_slice() != [*population]
                 || close.value_type != pop.value_type
                 || close.model != pop.model
@@ -348,6 +358,23 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                         | ir::ValueType::Enum { .. } => break,
                     }
                 }
+            }
+        }
+        // Each offered pair names an admitted object role; the source-derived
+        // record closure must reach that same role at that same anchor.
+        for (key, (population, _)) in pairs {
+            work.visit()?;
+            work.bytes(key.1.as_str().len())?;
+            if !seen.contains(key) {
+                let population = population.ok_or(Error::Invalid(Invalid::Binding))?;
+                work.visit()?;
+                let binding = self
+                    .declaration
+                    .bindings
+                    .get(population as usize)
+                    .ok_or(Error::Invalid(Invalid::Binding))?;
+                work.locus = Some(binding.locus.clone());
+                return Err(Error::Invalid(Invalid::Binding));
             }
         }
         Ok(())
