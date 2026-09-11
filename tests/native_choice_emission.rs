@@ -1839,7 +1839,7 @@ fn an_observed_repeat_guard_carries_the_true_constant_guard_body_obligation() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-9")]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7")]
 fn a_zero_maximum_observed_repeat_keeps_its_authored_bound_without_a_body_obligation() {
     let loop_ = repeat(
         "Receiver",
@@ -1875,6 +1875,75 @@ fn a_zero_maximum_observed_repeat_keeps_its_authored_bound_without_a_body_obliga
             w::ValueOperation::Field { .. }
         ));
     });
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+fn an_observed_repeat_supplies_enclosing_progress_only_when_it_cannot_exit_early() {
+    for (case, guard, admits) in [
+        (
+            "a feasible false valuation exits before any iteration",
+            "gotA.ready",
+            false,
+        ),
+        (
+            "no valuation makes the guard false, so an iteration always runs",
+            "gotA.ready or not gotA.ready",
+            true,
+        ),
+    ] {
+        let run = format!(
+            "sequence Main {{ {RECEIVE_A}
+              repeat Outer by Receiver visible (true) max 2 while {{ true }}
+                repeat Inner by Receiver visible (gotA.ready) max 2 while {{ {guard} }}
+                  {PROGRESSING_BODY}
+                exhausted check Limit using S {{ true }};
+              exhausted check Done using S {{ true }}; }}"
+        );
+        let inputs = inputs(&run);
+        if admits {
+            admitted(&inputs, |_proofs, package| {
+                let w::Body::Protocol { controls, .. } = &package.declarations[0].body else {
+                    panic!("protocol")
+                };
+                let outer = controls.iter().find(|c| c.name == "Outer").unwrap();
+                let w::ControlOperation::Repeat { body, .. } = &outer.operation else {
+                    panic!("repeat")
+                };
+                // Same controls arena, so the outer body handle names the inner
+                // repeat that supplied the admitted progress.
+                let inner = &controls[body.index as usize];
+                assert_eq!(inner.name, "Inner");
+                let w::ControlOperation::Repeat { guard, .. } = &inner.operation else {
+                    panic!("repeat")
+                };
+                // The tautology stays the authored disjunction; progress comes
+                // from the infeasible false branch, not from a rewritten guard.
+                assert!(matches!(
+                    package.declarations[0].values[guard.index as usize].operation,
+                    w::ValueOperation::Binary {
+                        operator: w::Binary::Or,
+                        ..
+                    }
+                ));
+            });
+        } else {
+            inputs.with_proofs(
+                TypeLimits::default(),
+                proofs::ProofLimits::default(),
+                |proofs, selected| {
+                    discharged(proofs);
+                    let report = native::admit(proofs, selected, Limits::default());
+                    assert_eq!(
+                        report.result().err(),
+                        Some(&Error::Invalid(Invalid::Control)),
+                        "{case}; locus {:?}",
+                        report.locus()
+                    );
+                },
+            );
+        }
+    }
 }
 
 #[test]
