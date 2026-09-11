@@ -24,6 +24,47 @@ const OWN_ATTEMPT: &str = "attempt Tried by Receiver on M::Node::step contracts 
 
 #[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn send_event_and_effect_records_never_become_choice_observations() {
+    for (kind, owner, record, run) in [
+        (
+            "send",
+            "Sender",
+            "sent",
+            "send Sent via Messages as (sent: M::Plain) { true };",
+        ),
+        (
+            "event",
+            "Receiver",
+            "observed",
+            "event Observed by Receiver as (observed: M::Plain) { true };",
+        ),
+        (
+            "effect",
+            "Receiver",
+            "applied",
+            "attempt Tried by Receiver on M::Node::step contracts [] as (attempted: M::Plain) { true };
+             effect Applied of Main::Tried as (applied: M::Plain) { true };",
+        ),
+    ] {
+        let decision = choice(owner, &format!("{record}.ready"), &format!("{record}.ready"), &format!("not {record}.ready"));
+        let inputs = inputs(&format!("sequence Main {{ {run} {decision} }}"));
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                assert_eq!(
+                    native::admit(proofs, selected, Limits::default()).result().err(),
+                    Some(&Error::Unsupported(Unsupported::FamilyProof)),
+                    "{kind} record must not become a Boolean choice observation"
+                );
+            },
+        );
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
 fn own_attempt_non_boolean_field_comparisons_remain_unsupported() {
     let decision = choice(
         "Receiver",
@@ -473,7 +514,9 @@ fn all_joined_own_attempts_keep_distinct_boolean_atoms() {
 
 #[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
-fn own_attempt_is_unavailable_to_a_parallel_sibling_before_join() {
+// The linker/type checker owns this pre-existing lexical-flow refusal; attempt
+// eligibility is reached only after the record is available at the choice.
+fn own_attempt_parallel_sibling_preserves_inherited_scope_refusal() {
     let decision = choice(
         "Receiver",
         "attempted.ready",

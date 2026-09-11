@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-036/040/042: concrete family prerequisites and original temporal syntax.
-//! Closed decisions and received Boolean partitions have separate proof rules.
+//! Closed decisions and observed Boolean partitions have separate proof rules.
 
 mod decisions;
 

@@ -92,10 +92,11 @@ visibility/non-overlap, finite causal control, channel premises and recovery
 admission remain prerequisites; absent implementations or authoritative exports
 produce explicit unsupported prerequisites rather than omitted graph content.
 
-When admitting a received- or own-attempt-Boolean choice, the compiler SHALL derive each atom
-from the exact receive or attempt binder, admitted Boolean field/export and original anchor.
-The actual channel receiver or attempt role must equal the choice owner, and existing source
-scopes must establish guaranteed causal availability at that decision, including
+When admitting an observed-Boolean choice, the compiler SHALL derive each atom
+from the exact receive or own-attempt binder, admitted Boolean field/export and
+original anchor. The actual channel receiver or attempt role must equal the
+choice owner, and existing source scopes must establish guaranteed causal
+availability at that decision, including
 all-branch joins without exporting branch-local or await-success-only records.
 Immutable aliases and captures retain their actual initializer/provenance;
 source order, field spelling or a shared provider cannot replace this authority.
@@ -103,8 +104,8 @@ Attempt ownership uses the resolved role identity, not equality of role model
 types. An attempt observation does not prove operation success or a business
 effect; operation and contract admission remain independent prerequisites.
 
-The compiler SHALL require each `visible(...)` entry to be an eligible received or own-attempt
-Boolean field, transparent grouping/immutable alias to that exact atom, or a
+The compiler SHALL require each `visible(...)` entry to be an eligible received
+or own-attempt Boolean field, transparent grouping/immutable alias to that atom, or a
 closed Boolean constant, with every guard atom in the validated atom set.
 Composite visible-expression determinacy remains `Unsupported::FamilyProof`;
 listing `a and b` cannot grant individual visibility to `a` and `b`.
