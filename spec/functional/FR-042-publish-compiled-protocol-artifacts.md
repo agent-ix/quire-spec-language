@@ -242,6 +242,10 @@ fresh retry neither reuses spent counters nor mutates previous inputs/results.
 Private Boolean proof records, provenance/formula/valuation visits and traversal
 depth consume these existing counters before allocation or work; resource
 exhaustion remains incomplete rather than a failed or successful truth proof.
+Each dynamic choice rebuilds its private read index and lowering records;
+`Entries` charges their creation per choice, including transient records, rather
+than measuring peak live memory. Multiple individually admissible decisions may
+therefore exhaust one invocation's shared limits; this returns incomplete.
 
 ## Acceptance Criteria
 
