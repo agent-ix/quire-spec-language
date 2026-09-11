@@ -22,6 +22,11 @@ through artifact readers. Use valid objects as positive controls, then replace
 them with field-ordered positional arrays, remove each field, add an unknown
 field and duplicate a raw JSON key. Compare explicit null and missing invocation
 results. Exercise bare-hex digest length, case, character and prefix refusals.
+Apply schema mutations at every populated record: missing/unknown/wrong-type
+members and swapped envelope bodies, plus identifier and scalar boundaries.
+Keep schema-positive counterexamples for duplicate raw keys, noncanonical
+numeric tokens, stale selections and invalid arena references; the actual
+reader must still refuse at its owning stage.
 
 ## Expected Results
 
