@@ -2,6 +2,7 @@
 // A bounded sum and size over the declared receipt sequence.
 invariant Healthy using G on M::Workflow at current {
     Allowed(self.ratio)
+    and Bounded(self.wide, self.exact)
     and size<M::Tally>(self.receipts) <= 5
     and sum<M::Total>(receipt in self.receipts: receipt) <= self.total
     and self.peer = self.peer
