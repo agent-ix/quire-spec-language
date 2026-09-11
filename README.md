@@ -51,7 +51,8 @@ rational domains through `native-state-model/2`, retaining the actual IR bounds,
 units and source locations. Composed model exports consume these types; historical
 linking refuses a selected `/2` model. This supplies the model prerequisite for
 [composed value checking](spec/functional/FR-040-check-composed-values.md), whose
-expression and definedness work remains open.
+type admission is available through `checking::composed::admit_types`; guarded
+definedness and complete runtime obligations remain open.
 
 `checking::check` consumes a native linked package, exact `CheckBindings` and
 caller-lowered `CheckLimits`. It returns the original source/AST with native

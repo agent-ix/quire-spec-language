@@ -92,7 +92,7 @@ pub(super) fn admit<'r, 'a>(
                     output.causes.push(TypeCause {
                         site,
                         kind: CauseKind::UpstreamBinding,
-                        profile: 0,
+                        profile: None,
                     });
                     output.complete = true;
                 }
@@ -294,7 +294,7 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
         self.output.causes.push(TypeCause {
             site,
             kind,
-            profile: self.profiles[self.var(at)],
+            profile: Some(self.profiles[self.var(at)]),
         });
         Ok(())
     }
@@ -317,7 +317,7 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
         self.work.charge(D::Constraints, 1, self.site(at))?;
         match self.vars.assign(var, ty) {
             Ok(changed) => Ok(changed),
-            Err(()) => {
+            Err(_conflict) => {
                 self.cause(at, CauseKind::TypeMismatch)?;
                 Ok(false)
             }
