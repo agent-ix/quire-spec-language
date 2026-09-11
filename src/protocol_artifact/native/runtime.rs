@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-042: authored family bodies and static requirements for later runtime input.
+mod compensations;
 use super::context::Declaration;
 use super::{
     layout::DeclLayout,
@@ -52,10 +53,19 @@ pub(super) fn initializers(
     scope: &DeclarationScope,
     layout: &DeclLayout,
     binders: &mut [w::Binder],
+    work: &mut Work,
 ) -> Result<(), Error> {
     for (local, &original) in layout.binders.iter().enumerate() {
-        if let BinderType::Initializer(value) = scope.binders[original].ty {
-            binders[local].initializer = w::Nullable(Some(layout.value(value)?));
+        work.visit()?;
+        let source = scope
+            .binders
+            .get(original)
+            .ok_or(Error::Invalid(Invalid::Binding))?;
+        if let BinderType::Initializer(value) = source.ty {
+            binders
+                .get_mut(local)
+                .ok_or(Error::Invalid(Invalid::Binding))?
+                .initializer = w::Nullable(Some(layout.value(value)?));
         }
     }
     let captures = match &syntax.kind {
@@ -63,10 +73,33 @@ pub(super) fn initializers(
         c::DeclarationKind::Protocol(p) => p.captures.as_slice(),
         c::DeclarationKind::Predicate { .. } | c::DeclarationKind::State { .. } => &[],
     };
+    capture_initializers(captures, scope, layout, binders, work)?;
+    if let c::DeclarationKind::Protocol(protocol) = &syntax.kind {
+        for requirement in &protocol.requirements {
+            work.visit()?;
+            if let c::ProtocolRequirement::Compensation(value) = requirement {
+                capture_initializers(&value.registration_captures, scope, layout, binders, work)?;
+                capture_initializers(&value.activation_captures, scope, layout, binders, work)?;
+            }
+        }
+    }
+    Ok(())
+}
+fn capture_initializers(
+    captures: &[c::Capture],
+    scope: &DeclarationScope,
+    layout: &DeclLayout,
+    binders: &mut [w::Binder],
+    work: &mut Work,
+) -> Result<(), Error> {
     for capture in captures {
+        work.visit()?;
+        work.charge(Dimension::References, layout.binders.len())?;
         let binder = layout.binder_at(scope, capture.parameter.name.span, BinderKind::Capture)?;
-        binders[binder.index as usize].initializer =
-            w::Nullable(Some(layout.value(capture.value)?));
+        binders
+            .get_mut(binder.index as usize)
+            .ok_or(Error::Invalid(Invalid::Binding))?
+            .initializer = w::Nullable(Some(layout.value(capture.value)?));
     }
     Ok(())
 }
@@ -174,7 +207,37 @@ impl Runtime<'_, '_> {
     }
     pub(super) fn bind_anchor(&mut self, anchor: Anchor, binding: u32) -> Result<(), Error> {
         let index = self.layout.anchor(anchor)?.index as usize;
-        self.anchors[index].binding = w::Nullable(Some(binding));
+        self.anchors
+            .get_mut(index)
+            .ok_or(Error::Invalid(Invalid::Binding))?
+            .binding = w::Nullable(Some(binding));
+        Ok(())
+    }
+    fn anchor_binding(&self, anchor: Anchor, work: &mut Work) -> Result<u32, Error> {
+        work.visit()?;
+        self.anchors
+            .get(self.layout.anchor(anchor)?.index as usize)
+            .and_then(|value| value.binding.0)
+            .ok_or(Error::Invalid(Invalid::Binding))
+    }
+    fn require(&mut self, binding: u32, prerequisite: u32, work: &mut Work) -> Result<(), Error> {
+        work.visit()?;
+        self.bindings
+            .get(prerequisite as usize)
+            .ok_or(Error::Invalid(Invalid::Binding))?;
+        let binding = self
+            .bindings
+            .get_mut(binding as usize)
+            .ok_or(Error::Invalid(Invalid::Binding))?;
+        for existing in &binding.requires {
+            work.visit()?;
+            if *existing == prerequisite {
+                return Ok(());
+            }
+        }
+        work.charge(Dimension::Entries, 1)?;
+        binding.requires.push(prerequisite);
+        binding.requires.sort_unstable();
         Ok(())
     }
 }
@@ -317,10 +380,10 @@ pub(super) fn body(
         let owner = match a {
             Anchor::Control(c) => Some(layout.control(c)?),
             Anchor::Fifo(i) => Some(layout.handle(index(i)?)),
-            Anchor::Registration(_)
-            | Anchor::CompensationActivation(_)
-            | Anchor::Retry(_)
-            | Anchor::Recovery(_) => return Err(Error::Unsupported(Unsupported::Export)),
+            Anchor::Registration(i)
+            | Anchor::CompensationActivation(i)
+            | Anchor::Retry(i)
+            | Anchor::Recovery(i) => Some(layout.compensation(i)?),
             Anchor::Predicate
             | Anchor::Current
             | Anchor::InvocationInput
@@ -387,7 +450,7 @@ pub(super) fn body(
             runtime.bind_anchor(anchor, at)?;
         }
     }
-    let body = match &syntax.kind {
+    let mut body = match &syntax.kind {
         c::DeclarationKind::Predicate {
             parameters, body, ..
         } => {
@@ -497,11 +560,7 @@ pub(super) fn body(
             }
         }
         c::DeclarationKind::Protocol(p) => {
-            if !p.relationships.is_empty()
-                || p.requirements
-                    .iter()
-                    .any(|r| matches!(r, c::ProtocolRequirement::Compensation(_)))
-            {
+            if !p.relationships.is_empty() {
                 return Err(Error::Unsupported(Unsupported::Export));
             }
             let mut roles = Vec::new();
@@ -554,12 +613,11 @@ pub(super) fn body(
             temporal_requirements.dedup();
             let controls =
                 super::controls::controls(context, &roles, &channels, &mut runtime, builder, work)?;
+            let compensations =
+                compensations::lower(context, &roles, &controls, &mut runtime, builder, work)?;
             let causal_edges = super::controls::edges(&controls, layout, work)?;
             let finish = parameter_handle(layout, scope, &p.finish.parameter, BinderKind::Finish)?;
-            let closure = runtime.anchors[layout.anchor(Anchor::Finish)?.index as usize]
-                .binding
-                .0
-                .ok_or(Error::Invalid(Invalid::Binding))?;
+            let closure = runtime.anchor_binding(Anchor::Finish, work)?;
             w::Body::Protocol {
                 input: parameter_handle(layout, scope, &p.input, BinderKind::Input)?,
                 activation: activation(&p.activation, layout, scope)?,
@@ -567,7 +625,7 @@ pub(super) fn body(
                 roles,
                 relationships: Vec::new(),
                 channels,
-                compensations: Vec::new(),
+                compensations,
                 temporal_requirements,
                 controls,
                 causal_edges,
@@ -643,6 +701,7 @@ pub(super) fn body(
             work,
         )?;
     }
+    compensations::populations(context, &mut body, &runtime, work)?;
     Ok((runtime.anchors, runtime.bindings, body))
 }
 
@@ -705,6 +764,17 @@ pub(super) fn structural(
     layout: &DeclLayout,
     work: &mut Work,
 ) -> Result<w::Handle, Error> {
+    structural_symbol(scope, span, kind, work)?
+        .control
+        .map(|control| layout.control(control))
+        .ok_or(Error::Invalid(Invalid::Reference))?
+}
+pub(super) fn structural_symbol<'a>(
+    scope: &'a DeclarationScope,
+    span: Span,
+    kind: scopes::StructuralKind,
+    work: &mut Work,
+) -> Result<&'a scopes::Symbol, Error> {
     for reference in &scope.references {
         work.visit()?;
         if reference.span == span && reference.required == kind {
@@ -717,10 +787,7 @@ pub(super) fn structural(
                         .index(),
                 )
                 .ok_or(Error::Invalid(Invalid::Reference))?;
-            return symbol
-                .control
-                .map(|control| layout.control(control))
-                .ok_or(Error::Unsupported(Unsupported::Export))?;
+            return Ok(symbol);
         }
     }
     Err(Error::Invalid(Invalid::Reference))

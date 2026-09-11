@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::linking::composed::definition_source::RegisteredDefinition;
+
 use super::*;
 
 type EdgeKey = (
@@ -66,7 +68,7 @@ impl Derived {
     }
 }
 
-impl Graph<'_, '_> {
+impl<'a> Graph<'a, '_> {
     pub(super) fn protocol(&mut self, owner: usize) -> Result {
         let declaration = &self.package.declarations[owner];
         let Body::Protocol {
@@ -561,7 +563,7 @@ impl Graph<'_, '_> {
         Ok(())
     }
 
-    fn unique_names<'a>(&mut self, values: impl IntoIterator<Item = &'a str>) -> Result {
+    fn unique_names<'name>(&mut self, values: impl IntoIterator<Item = &'name str>) -> Result {
         let mut seen = BTreeSet::new();
         for name in values {
             self.work.visit()?;
@@ -661,13 +663,426 @@ impl Graph<'_, '_> {
         Err(Error::Invalid(Invalid::Binding))
     }
 
+    /// Every effect names its exact obligation and operation before payload
+    /// support is considered. No current producer supplies an effect-value view.
+    pub(super) fn compensation_effect_identity(
+        &mut self,
+        owner: usize,
+        index: usize,
+        binding: &BindingRequirement,
+    ) -> Result {
+        let Subject::Compensation { compensation } = &binding.subject else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        let selected = self.local(owner, compensation, Local::Compensation)?;
+        let Body::Protocol { compensations, .. } = &self.package.declarations[owner].body else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        let value = &compensations[selected];
+        if value.effect_instance as usize != index
+            || binding.model.0.as_ref() != Some(&value.operation)
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        self.export(&value.operation, &[ExportKind::Operation])?;
+        let attempt = self.binding(
+            owner,
+            value.attempt_instance,
+            &[BindingKind::CompensationAttempt],
+        )?;
+        let anchor = self.local(owner, &binding.anchor, Local::Anchor)?;
+        let anchor = &self.package.declarations[owner].anchors[anchor];
+        if attempt.anchor != binding.anchor
+            || !matches!(&attempt.subject, Subject::Compensation { compensation: subject } if subject == compensation)
+            || attempt.model.0.as_ref() != Some(&value.operation)
+            || anchor.kind != AnchorKind::Retry
+            || anchor.owner.0.as_ref() != Some(compensation)
+            || anchor.binding.0 != Some(value.attempt_instance)
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        self.compensation_binding(
+            owner,
+            value.effect_instance,
+            compensation,
+            &attempt.anchor,
+            &[value.attempt_instance],
+        )?;
+        if binding.value_type.0.is_some() {
+            return Err(Error::Unsupported(Unsupported::Export));
+        }
+        Ok(())
+    }
+
+    fn compensation_binding(
+        &mut self,
+        owner: usize,
+        index: u32,
+        subject: &Handle,
+        anchor: &Handle,
+        requires: &[u32],
+    ) -> Result<&'a BindingRequirement> {
+        let binding = self.compensation_subject(owner, index, subject, anchor, requires)?;
+        self.registered_binding(binding, RegisteredDefinition::ObservationBinding)?;
+        Ok(binding)
+    }
+
+    fn compensation_subject(
+        &mut self,
+        owner: usize,
+        index: u32,
+        subject: &Handle,
+        anchor: &Handle,
+        requires: &[u32],
+    ) -> Result<&'a BindingRequirement> {
+        let binding = self.binding(owner, index, &[])?;
+        self.work.charge(Dimension::References, requires.len())?;
+        if !matches!(&binding.subject, Subject::Compensation { compensation } if compensation == subject)
+            || &binding.anchor != anchor
+            || binding.scope.index != 0
+            || binding.requires.as_slice() != requires
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        Ok(binding)
+    }
+
+    fn registered_binding(
+        &mut self,
+        binding: &BindingRequirement,
+        selected: RegisteredDefinition,
+    ) -> Result {
+        for definition in &self.package.definitions {
+            self.work.visit()?;
+            self.work.bytes(definition.identity.len())?;
+            if definition.identity == selected.identity() && definition.artifact == binding.contract
+            {
+                return self.definition_binding(binding, definition);
+            }
+        }
+        Err(Error::Invalid(Invalid::Binding))
+    }
+
+    fn definition_binding(
+        &mut self,
+        binding: &BindingRequirement,
+        definition: &Definition,
+    ) -> Result {
+        self.work.visit()?;
+        if definition.artifact != binding.contract {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let dependency = self
+            .package
+            .dependencies
+            .get(binding.contract as usize)
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        intake::same_reference(&binding.authority, &dependency.artifact, self.work)
+    }
+
+    fn compensation_bindings(
+        &mut self,
+        owner: usize,
+        index: usize,
+        value: &Compensation,
+        controls: &[Control],
+    ) -> Result {
+        let subject = Handle {
+            declaration: u32::try_from(owner).map_err(|_| Error::Invalid(Invalid::Reference))?,
+            index: u32::try_from(index).map_err(|_| Error::Invalid(Invalid::Reference))?,
+        };
+        let declaration = &self.package.declarations[owner];
+        let Body::Protocol { roles, .. } = &declaration.body else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        let role = self.local(owner, &value.owner, Local::Role)?;
+        let role_instance = roles[role].instance;
+        let forward = self.local(owner, &value.forward_effect, Local::Control)?;
+        let ControlOperation::Event {
+            event: Event::Effect { instance, .. },
+            ..
+        } = &controls[forward].operation
+        else {
+            return Err(Error::Invalid(Invalid::Control));
+        };
+        let forward_instance = self.binding(owner, *instance, &[BindingKind::Effect])?;
+        let forward_binder = self.binder(owner, &value.forward, &[BinderKind::ForwardEffect])?;
+        let registration = self.compensation_binding(
+            owner,
+            value.registration_instance,
+            &subject,
+            &value.registration_anchor,
+            &[
+                (*instance).min(role_instance),
+                (*instance).max(role_instance),
+            ],
+        )?;
+        if forward_binder.anchor != value.registration_anchor
+            || registration.value_type.0 != Some(forward_binder.value_type)
+            || registration.value_type != forward_instance.value_type
+            || registration.model != forward_instance.model
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let activation_anchor = self.local(owner, &value.activation_anchor, Local::Anchor)?;
+        let activation_instance = declaration.anchors[activation_anchor]
+            .binding
+            .0
+            .ok_or(Error::Invalid(Invalid::Binding))?;
+        let activation = self.compensation_binding(
+            owner,
+            activation_instance,
+            &subject,
+            &value.activation_anchor,
+            &[value.registration_instance],
+        )?;
+        let trigger = self.binder(owner, &value.trigger, &[BinderKind::CompensationTrigger])?;
+        if activation.kind != BindingKind::Observation
+            || trigger.anchor != value.activation_anchor
+            || activation.value_type.0 != Some(trigger.value_type)
+            || activation.model.0.is_none()
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let earlier = self.binder(owner, &value.earlier, &[BinderKind::EarlierAttempt])?;
+        let later = self.binder(owner, &value.later, &[BinderKind::LaterAttempt])?;
+        let attempt = self.compensation_binding(
+            owner,
+            value.attempt_instance,
+            &subject,
+            &earlier.anchor,
+            &[
+                activation_instance.min(role_instance),
+                activation_instance.max(role_instance),
+            ],
+        )?;
+        if earlier.anchor != later.anchor
+            || attempt.value_type.0 != Some(value.attempt_type)
+            || attempt.model.0.as_ref() != Some(&value.operation)
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        for (handle, kind, binding) in [
+            (
+                &value.registration_anchor,
+                AnchorKind::Registration,
+                value.registration_instance,
+            ),
+            (
+                &value.activation_anchor,
+                AnchorKind::CompensationActivation,
+                activation_instance,
+            ),
+            (&earlier.anchor, AnchorKind::Retry, value.attempt_instance),
+        ] {
+            let anchor = self.local(owner, handle, Local::Anchor)?;
+            let anchor = &declaration.anchors[anchor];
+            if anchor.kind != kind
+                || anchor.owner.0.as_ref() != Some(&subject)
+                || anchor.binding.0 != Some(binding)
+            {
+                return Err(Error::Invalid(Invalid::Binding));
+            }
+        }
+        self.compensation_binding(
+            owner,
+            value.effect_instance,
+            &subject,
+            &earlier.anchor,
+            &[value.attempt_instance],
+        )?;
+        self.compensation_recovery(owner, value, &subject, activation_instance)
+    }
+
+    fn compensation_recovery(
+        &mut self,
+        owner: usize,
+        value: &Compensation,
+        subject: &Handle,
+        activation: u32,
+    ) -> Result {
+        self.locus(owner, &value.locus)?;
+        intake::sorted_indices(&value.recovery_bindings, self.work)?;
+        for index in &value.recovery_bindings {
+            self.binding(owner, *index, &[])?;
+        }
+        let clock = self.compensation_subject(
+            owner,
+            value.clock,
+            subject,
+            &value.activation_anchor,
+            &[activation],
+        )?;
+        if clock.kind != BindingKind::Clock
+            || clock.value_type.0.is_some()
+            || clock.model.0.is_some()
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        self.work.visit()?;
+        let definition = self
+            .package
+            .definitions
+            .get(value.profile as usize)
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        self.definition_binding(clock, definition)?;
+
+        let recovery = self.binder(owner, &value.recovery, &[BinderKind::Recovery])?;
+        let anchor = self.local(owner, &recovery.anchor, Local::Anchor)?;
+        let declaration = &self.package.declarations[owner];
+        let anchor = &declaration.anchors[anchor];
+        if anchor.kind != AnchorKind::Recovery || anchor.owner.0.as_ref() != Some(subject) {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let snapshot_index = anchor.binding.0.ok_or(Error::Invalid(Invalid::Binding))?;
+        let snapshot = self.compensation_binding(
+            owner,
+            snapshot_index,
+            subject,
+            &recovery.anchor,
+            &[activation],
+        )?;
+        let (Type::Record { export } | Type::Object { export }) = self.ty(recovery.value_type)?
+        else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        if snapshot.kind != BindingKind::Snapshot
+            || snapshot.value_type.0 != Some(recovery.value_type)
+            || snapshot.model.0.as_ref() != Some(export)
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let mut requires = [value.clock, value.effect_instance, snapshot_index];
+        self.work.charge(Dimension::References, requires.len())?;
+        requires.sort_unstable();
+        let mut progress = None;
+        let mut closure = None;
+        for (index, binding) in declaration.bindings.iter().enumerate() {
+            self.work.visit()?;
+            if !matches!(&binding.subject, Subject::Compensation { compensation } if compensation == subject)
+            {
+                continue;
+            }
+            let slot = match binding.kind {
+                BindingKind::Progress => &mut progress,
+                BindingKind::Closure => &mut closure,
+                _ => continue,
+            };
+            let index = u32::try_from(index).map_err(|_| Error::Invalid(Invalid::Reference))?;
+            self.compensation_subject(owner, index, subject, &recovery.anchor, &requires)?;
+            self.registered_binding(binding, RegisteredDefinition::Progress)?;
+            if slot.replace(index).is_some()
+                || binding.value_type.0.is_some()
+                || binding.model.0.is_some()
+                || binding.scope != snapshot.scope
+            {
+                return Err(Error::Invalid(Invalid::Binding));
+            }
+        }
+        let progress = progress.ok_or(Error::Invalid(Invalid::Binding))?;
+        let closure = closure.ok_or(Error::Invalid(Invalid::Binding))?;
+        self.work.charge(Dimension::Entries, 3)?;
+        let mut required = BTreeSet::from([snapshot_index, progress, closure]);
+        let anchors = self.recovery_origins(owner, value, subject, &recovery.anchor)?;
+        self.locus(owner, &value.locus)?;
+        // Model validation separately establishes exact nominal pair contents
+        // and set equality. Here only their attribution to this recovery is new.
+        for (index, binding) in declaration.bindings.iter().enumerate() {
+            self.work.visit()?;
+            if !matches!(binding.subject, Subject::Declaration { declaration } if declaration as usize == owner)
+                || !anchors.contains(&binding.anchor.index)
+            {
+                continue;
+            }
+            let population = match binding.kind {
+                BindingKind::Population => true,
+                BindingKind::Closure => match &binding.model.0 {
+                    Some(model) => self.export(model, &[])?.kind == ExportKind::Population,
+                    None => false,
+                },
+                _ => false,
+            };
+            if population {
+                let index = u32::try_from(index).map_err(|_| Error::Invalid(Invalid::Reference))?;
+                self.work.charge(Dimension::Entries, 1)?;
+                required.insert(index);
+            }
+        }
+        if value.recovery_bindings.len() != required.len() {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        for (offered, expected) in value.recovery_bindings.iter().zip(required) {
+            self.work.visit()?;
+            if *offered != expected {
+                return Err(Error::Invalid(Invalid::Binding));
+            }
+        }
+        Ok(())
+    }
+
+    fn recovery_origins(
+        &mut self,
+        owner: usize,
+        value: &Compensation,
+        subject: &Handle,
+        recovery: &Handle,
+    ) -> Result<BTreeSet<u32>> {
+        let start = self.local(owner, &value.recover, Local::Value)?;
+        self.work.charge(Dimension::Entries, 2)?;
+        let mut anchors = BTreeSet::from([recovery.index]);
+        let mut pending = vec![start];
+        let mut visited = BTreeSet::new();
+        let declaration = &self.package.declarations[owner];
+        while let Some(index) = pending.pop() {
+            self.work.visit()?;
+            if visited.contains(&index) {
+                continue;
+            }
+            self.work.charge(Dimension::Entries, 1)?;
+            visited.insert(index);
+            let node = &declaration.values[index];
+            self.work.locus = Some(node.locus.clone());
+            match &node.origin {
+                Origin::Anchor { anchor } => {
+                    let index = self.local(owner, anchor, Local::Anchor)?;
+                    let original = &declaration.anchors[index];
+                    if matches!(
+                        original.kind,
+                        AnchorKind::Registration
+                            | AnchorKind::CompensationActivation
+                            | AnchorKind::Retry
+                            | AnchorKind::Recovery
+                    ) && original.owner.0.as_ref() != Some(subject)
+                    {
+                        return Err(Error::Invalid(Invalid::Binding));
+                    }
+                    if !anchors.contains(&anchor.index) {
+                        self.work.charge(Dimension::Entries, 1)?;
+                        anchors.insert(anchor.index);
+                    }
+                }
+                // Selected origins, including captured initializers, already
+                // participate in value_edges; self-selected markers add no edge.
+                Origin::Selected { .. } | Origin::Independent {} => {}
+            }
+            for target in &self.value_edges[index] {
+                self.work.visit()?;
+                if !visited.contains(target) {
+                    self.work.charge(Dimension::Entries, 1)?;
+                    pending.push(*target);
+                }
+            }
+        }
+        Ok(anchors)
+    }
+
     fn compensations(
         &mut self,
         owner: usize,
         values: &[Compensation],
         controls: &[Control],
     ) -> Result {
-        for value in values {
+        for (index, value) in values.iter().enumerate() {
             self.locus(owner, &value.locus)?;
             let forward = self.local(owner, &value.forward_effect, Local::Control)?;
             if !matches!(
@@ -722,6 +1137,7 @@ impl Graph<'_, '_> {
                 value.effect_instance,
                 &[BindingKind::CompensationEffect],
             )?;
+            self.compensation_bindings(owner, index, value, controls)?;
             if let Some(commit) = &value.commit.0 {
                 let commit = self.local(owner, commit, Local::Control)?;
                 if !matches!(controls[commit].operation, ControlOperation::Commit { .. }) {
@@ -730,21 +1146,6 @@ impl Graph<'_, '_> {
             }
             self.binder(owner, &value.recovery, &[BinderKind::Recovery])?;
             self.boolean(owner, &value.recover)?;
-            intake::sorted_indices(&value.recovery_bindings, self.work)?;
-            for binding in &value.recovery_bindings {
-                self.binding(
-                    owner,
-                    *binding,
-                    &[
-                        BindingKind::Population,
-                        BindingKind::Relationship,
-                        BindingKind::Snapshot,
-                        BindingKind::Observation,
-                        BindingKind::Progress,
-                        BindingKind::Closure,
-                    ],
-                )?;
-            }
         }
         Ok(())
     }
