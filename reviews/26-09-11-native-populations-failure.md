@@ -14,69 +14,97 @@ relationships:
 
 ## Summary
 
-Failure-domain analysis of the nominal identity, anchor and closure boundaries
-introduced by the population/reference exports at `8590407`, selected alongside
-the base review (SR-338) because this change is almost entirely about which
-identity a requirement is attached to. Three of the four checklist areas hold as
-implemented; the gaps are that the identity keys and the termination rule they
-depend on are stated only as source comments and enforced invariants, not as
-requirements, and that one direction of the reader's trust boundary is unguarded.
+Failure-domain recheck at source commit `84aec59`, selected alongside the base
+review (SR-338) because this change is almost entirely about which identity a
+requirement is attached to. Four of the five initial findings are closed: the
+unguarded direction of the reader's trust boundary is now guarded in code and
+stated in both FR-042 and the wire contract, and the requirement key, the name
+opacity, the termination property and the anchor-selection rule are now written
+down rather than living as source comments. The fifth is corrected — its proposed
+StR overreached — and retained as a low residue. No StR or NFR artifact was
+created: proposed profiles are not authorized prototype gates, and the owner's
+directive is against a new artifact campaign, so the constraints landed as
+normative FR-042 and interchange-contract text instead.
 
 ## Verdict
 
-**CONDITIONAL** — no high finding. Object-role identity is explicit and correct:
-roles are unique by `record` at admission, `universe` deliberately is not, and
-the export triple and `Reaches` universe are bound by pointer identity against
-one catalog rather than by label. Anchors are preserved rather than collapsed
-across pre-state and capture, and both record traversals terminate on cyclic
-graphs under charged bounds. The findings are unstated constraints with real
-failure modes behind them, in the form this skill asks for: proposed StR/NFR
-additions rather than code changes.
+**CONDITIONAL** — no high finding, and the two mediums that carried the original
+verdict are gone. Object-role identity remains explicit and correct, anchors are
+preserved rather than collapsed across pre-state and capture, both record
+traversals terminate on cyclic graphs under charged bounds, and the reader now
+refuses in both directions. The residue is a single uncited use site of an
+invariant enforced two modules away.
+
+## Disposition of the initial findings
+
+- **FND-001 (medium, trust-boundary direction) — resolved.** The reader now
+  checks the reverse direction of its existing normalized traversal
+  (`models/populations.rs:365-379`), so a valid-but-surplus `Population`+`Closure`
+  pair refuses `Invalid::Binding` at the surplus population's binding locus.
+  Strict-versus-resilient is now settled in the same direction on both halves of
+  the boundary, and FR-042 plus the wire contract state it normatively. Code path
+  and red-test evidence: SR-336.
+- **FND-003 (low, requirement identity unstated) — resolved.** The wire contract
+  now states that within each declaration the population requirement key is the
+  exact selected model, object record and original observation anchor, and that
+  binding names are opaque labels (`docs/compiled-protocol-v1.md:112-114`). That
+  is exactly the reader's `pairs` key, the thing that makes a repeat an
+  `Invalid::Duplicate`, and the reason a consumer must resolve the export rather
+  than parse a name.
+- **FND-004 (low, topological guarantee unstated) — resolved.** "Nested
+  record/reference traversal visits each key once, including cycles, under the
+  declared work limits" (`docs/compiled-protocol-v1.md:118-119`) states the
+  termination property that FR-042-AC-9's exhaustion limits do not imply. Stated
+  in the interchange contract rather than as a new NFR, deliberately.
+- **FND-005 (low, anchor-selection rule as source comment) — resolved.**
+  "Derived binders retain their initializer's observation; selected values retain
+  their contributing origins without adding a population at the selection site"
+  (`FR-042:127-129`) makes the two load-bearing decisions requirements rather
+  than incidental implementation choices.
+- **FND-002 (medium, model identity) — corrected and retained below.**
 
 ## Checklist
 
 ### 1. Extension points and trust boundaries
 
-The reader is the only trust boundary added here, and its failure policy is
+The reader remains the only trust boundary added here, and its failure policy is
 strict throughout — every disagreement is a typed refusal, nothing is logged and
-suppressed, and no partial package is produced. The unstated half is direction:
-the reader refuses a *missing* population requirement and accepts an
-*unjustified extra* one (FND-001). Strict-versus-resilient is settled for the
-refusal path and unspecified for the surplus path.
+suppressed, no partial package is produced. Both directions are now covered:
+missing and surplus pairs refuse with the same cause, separated by locus. The
+locus attribution itself is unasserted by any test (SR-336 FND-005), which is an
+evidence gap rather than a boundary gap.
 
 ### 2. Entity identity
 
-Explicit and enforced where it matters: an `ObjectRole` is unique by `record`
-and by `reference` within a model (`native_model/admission.rs:461`), `universe`
-is explicitly not a key, and FR-042 and the wire contract now both say so. Two
-identities are left implicit — which model two roles belong to (FND-002) and
-what makes two population requirements the same requirement (FND-003).
+An `ObjectRole` is unique by `record` and by `reference` within a model
+(`native_model/admission.rs:461`), `universe` is explicitly not a key, and both
+FR-042 and the wire contract say so. Requirement identity is now stated
+(FND-003, closed). Model identity remains the one implicit key (FND-002 below),
+now documented at the emitter's use site but not at the solver's. Worth
+recording from this recheck: the emitter keys on declaration owner while the
+reader keys on wire model index, and those agree because distinct owners map to
+distinct indices — the guard is against two *same-owner* selections, not against
+two distinct model owners in one declaration, which are supported.
 
 ### 3. Evaluation purity
 
-Clean, and worth recording because it is the property the whole change rests on.
-Requirement derivation is a pure function of the admitted model, the typed
-declaration and the layout: no observation is read, no membership is computed, no
-closure truth is asserted, and the emitted `Closure` carries only a dependency on
-its `Population`. The reader performs no IO and consumes no observations, which
-FR-042's Inputs section already states normatively.
+Unchanged and clean. Requirement derivation is still a pure function of the
+admitted model, the typed declaration and the layout: no observation is read, no
+membership computed, no closure truth asserted. The new reverse check adds no
+input — it consults the same `seen` set the forward walk already built.
 
 ### 4. Topological robustness
 
-Termination on cyclic and self-referential record graphs is guaranteed on both
-sides by a visited set keyed on `(model, record, anchor)` with the field walk
-performed only on first visit, so total stack pushes are linear in the model's
-field count rather than in its path count. Every push and every set insertion is
-charged to `Dimension::Entries` before it happens, and `Dimension::Depth` is a
-peak dimension, so a deeply nested type refuses rather than recurses. None of
-this is required anywhere (FND-004).
+Unchanged and now required. Both sides key a visited set on
+`(model, record, anchor)` and perform the field walk only on first visit, so
+total stack pushes are linear in the model's field count rather than its path
+count; every push and set insertion is charged to `Dimension::Entries` before it
+happens, and `Dimension::Depth` is a peak dimension. The reverse check reuses
+that same `seen` set and charges one visit plus the key's bytes per offered
+pair, so it adds a linear charged pass and no new unbounded accumulator.
 
 ## Findings
 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
-| FND-001 | medium | Trust-boundary direction unspecified. FR-042 says what a population requirement must be derived from and that a crossed triple must be refused; it does not say the emitted requirement set is exactly the derived set. The reader implements sufficiency only, so a package carrying an extra well-formed `Population`+`Closure` pair for any bound object role at any anchor of that declaration is admitted, and the consumer is asked for observation inputs no authored value justifies. Proposed **StR**: the admitted population/closure requirement set of a declaration equals the set derived from its non-derived binders and anchored values; a surplus requirement is refused with the same typed cause as a missing one. See SR-336 FND-001 for the code path and SR-337 FND-002 for the traceability gap | src/protocol_artifact/models/populations.rs:257; src/protocol_artifact/models/populations.rs:304; spec/functional/FR-042-publish-compiled-protocol-artifacts.md:118 | missing-requirement |
-| FND-002 | medium | Identity confusion at the model level. "The exact selected model" appears in FR-042 and the wire contract, but the uniqueness key of a model is never stated, and three different keys are in use: `model.environment().owner()` alone in the emitter's need map, owner **and** digest in `same_model`, and the wire model index in the reader. They agree only because linking refuses two selected inputs sharing an owner — different digests become `ModelConflictKind::Owner`, equal digests become `AmbiguousSelection`. That is a real invariant, enforced two modules away and cited at neither use site. Proposed **StR**: a native model's identity is its declaration owner together with its artifact digest, and no two distinct models may be selected in one declaration's bindings. See SR-336 FND-002 | src/protocol_artifact/native/populations.rs:27; src/protocol_artifact/native/populations.rs:147; src/protocol_artifact/models.rs:812; src/linking/composed/models.rs:354 | missing-requirement |
-| FND-003 | low | Requirement identity unstated. What makes two population requirements the same is `(model, record, anchor)` — the reader's `pairs` key, which is also what makes a duplicate a `Invalid::Duplicate` refusal and what forces exactly one closure per population. Nothing states it. The emitted binding `name` is `population:{model index}:{export index}:{anchor}`, matching the module's existing `instance_name` idiom but carrying no role identity, so a consumer cannot recover the universe from a requirement name without resolving the export. Proposed **StR**: state the requirement key, and state that the name is an opaque per-declaration label rather than an identity | src/protocol_artifact/models/populations.rs:13; src/protocol_artifact/models/populations.rs:198; src/protocol_artifact/native/runtime.rs:643 | missing-requirement |
-| FND-004 | low | Topological guarantee unstated. FR-042-AC-9 requires independently counted limits per work dimension, which covers exhaustion, but nothing requires that population derivation *terminate* on a cyclic or self-referential record graph — the difference between refusing a large model and not returning on a small one. The implementation is correct on both sides and the property is cheap to state. Proposed **NFR**: nested record/reference traversal for population derivation terminates on cyclic and self-referential record graphs, visiting each `(model, record, anchor)` at most once, and refuses through the declared work dimensions rather than growing unbounded | src/protocol_artifact/native/populations.rs:167; src/protocol_artifact/models/populations.rs:313; spec/functional/FR-042-publish-compiled-protocol-artifacts.md:161 | missing-requirement |
-| FND-005 | low | Anchor-selection rule stated only as a source comment. Two decisions carry the pre-state/capture correctness the new FR-042 paragraph claims: derived binders (`Let`/`Capture`/`Query`) mint no population, because a derived token keeps its initializer's observation; and a value with a `Selected` origin mints none, because every contributing original value is enumerated separately by the layout and would otherwise have its distinct observations collapsed. Both are sound — the layout enumerates all values, and a cross-unit `Selected` origin is refused outright — and both are load-bearing for the anchor set. Neither appears in FR-042 or the wire contract, so a future reader of the requirement cannot tell that skipping a `let` binder is required rather than incidental | src/protocol_artifact/native/populations.rs:51; src/protocol_artifact/native/populations.rs:84; spec/functional/FR-042-publish-compiled-protocol-artifacts.md:122 | missing-requirement |
+| FND-002 | low | Corrected and narrowed. The proposed StR recorded initially — "no two distinct models may be selected in one declaration's bindings" — was wrong and is withdrawn: distinct model owners in one declaration are supported and are what the emitter's owner-keyed map relies on. The actual guard is narrower and intentional: `ModelBindings` refuses same-owner/different-digest inputs as `ModelConflictKind::Owner` and duplicate exact selections as `AmbiguousSelection`, so within one declaration a selected owner identifies exactly one admitted model and the emitter's owner key and the reader's model index stay bijective. The emitter now cites this at its `Key` type. What remains unstated is the model uniqueness key itself — `same_model` uses owner **and** digest while the emitter uses owner alone — and the second dependent site, `checking/composed/solver/validation.rs:265`, which admits a graph edge whose leaf reference lies in another model with an equal owner and cites nothing. If the linking guard ever relaxes, that is the site that widens silently | src/protocol_artifact/native/populations.rs:27; src/protocol_artifact/native/populations.rs:150; src/protocol_artifact/models.rs:812; src/linking/composed/models.rs:354; src/checking/composed/solver/validation.rs:265 | missing-requirement |
