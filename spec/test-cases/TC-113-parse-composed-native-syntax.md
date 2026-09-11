@@ -24,6 +24,8 @@ token stream is insufficient evidence.
 3. Mutate one form at a time: chained comparison/relation, temporal formula in a
    value argument, missing protocol operand, truncated compensation and trailing
    garbage. Require a diagnostic rather than a recovered successful unit.
+   Select an unavailable edition in an otherwise valid header and require the
+   typed unknown-edition diagnostic at that selection, with no successful unit.
 4. Use `M::result` and `view.retry` in qualified model positions, then use those
    spellings as native binders. Compare edition-specific keyword treatment with a
    valid historical identifier newly reserved by the composed edition.
