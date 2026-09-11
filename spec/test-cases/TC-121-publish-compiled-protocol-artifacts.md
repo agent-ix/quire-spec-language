@@ -76,6 +76,34 @@ observations belong only to the later consumer fixture.
    anchors, inclusive deadline matches and separately supplied timeout closure.
    Remove the static progress/closure requirement, change its await subject or
    remove its clock-binding dependency; require `Invalid::Binding` from the reader.
+   For received Boolean choices, admit a real record/object channel to the choice
+   owner and complementary guards `received.ready` / `not received.ready` with
+   that field in `visible(...)`. Exercise grouping, conjunction, disjunction,
+   implication, Boolean equality/inequality, conditionals and source-owned let
+   aliases in guards; visible entries retain direct atoms, transparent aliases or
+   closed constants. Check exact original receive binder, field export and anchor
+   through emission and independent reading. Repeated reads/aliases share an atom;
+   separate receive binders or fields cannot be merged by spelling or equal type.
+   Independently enumerate small Boolean assignments to confirm exactly one
+   case, retaining original guards and every original operand in the artifact.
+   Change the receiver role, omit a guard's visible atom, use an arbitrary input
+   or composite `a and b` in `visible(...)`, or replace a field with another
+   receive's field. Missing visibility/provenance returns `Unsupported::FamilyProof`
+   after prior stages; an already refused source/scope keeps its actual cause. A guaranteed receive
+   after a parallel all-join is positive; the sibling before the join, a
+   branch-local record after choice, and an await-success record on timeout are
+   unavailable. Aliases/captures cannot bypass those original scope checks.
+   Retain definedness success while giving symbolic guards an abstract overlap
+   or hole, including correlated facts whose model constraints are not imported
+   into this abstraction; require `Unsupported::FamilyProof`, not a claimed
+   concrete counterexample. Closed literal overlap/hole remains `Invalid::Control`.
+   Numeric comparisons, queries, callee expansion and dynamic repeat guards
+   remain unsupported. In a constant-guard continuing repeat, compare a symbolic
+   choice whose every feasible branch progresses with one having a feasible
+   check-only branch; one progressing branch cannot establish the choice's
+   progress. The latter remains FamilyProof unless another guaranteed body
+   event establishes whole-body progress. A closed check-only repeat retains
+   its `Invalid::Control` refusal.
 6. Bind O1 and O2 to the same provider through distinct instance requirements.
    Preserve one message, two delivery observations and one effect. Inspect
    effect-before-registration, separate registration/activation captures,
@@ -134,6 +162,10 @@ observations belong only to the later consumer fixture.
    depth, repeated/shared edge visits and diagnostic retention. Test above-hard
    clamping, arithmetic overflow and fresh retries. No reader/emitter may
    allocate an uncharged expansion or expose an unfinished package.
+   Include private Boolean atom/formula records, repeated provenance/operand
+   visits and case/valuation inspections in those independent vectors. Lowered
+   proof-work limits return source-located incomplete, preserving prior results
+   and distinguishing exhaustion from an unproved partition.
 10. Pass the actual production-emitted immutable artifact/reference to
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001) through the public
     Rust interfaces, preserving exact selectors and finite graph/source links.
