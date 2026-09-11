@@ -301,13 +301,13 @@ impl<'a> Catalog<'a> {
     pub fn formal(&self, ty: &'a ir::ValueType, site: &ScalarSite) -> Option<NativeType<'a>> {
         match ty {
             ir::ValueType::Boolean => Some(NativeType::Boolean),
-            ir::ValueType::Integer { .. } | ir::ValueType::Text => {
-                self.scalars.get(site).map(|role| NativeType::Scalar {
-                    model: self.model,
-                    role,
-                    representation: ty,
-                })
-            }
+            ir::ValueType::Integer { .. }
+            | ir::ValueType::Rational { .. }
+            | ir::ValueType::Text => self.scalars.get(site).map(|role| NativeType::Scalar {
+                model: self.model,
+                role,
+                representation: ty,
+            }),
             ir::ValueType::Enum { name } => {
                 self.enumerations
                     .get(name)
@@ -324,7 +324,6 @@ impl<'a> Catalog<'a> {
                 element: Box::new(self.formal(value.element(), site)?),
                 maximum: value.maximum_items(),
             }),
-            ir::ValueType::Rational { .. } => None,
         }
     }
 
