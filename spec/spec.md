@@ -222,7 +222,7 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 ## 12. Verification Strategy
 
-Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. TC-113 now exercises the composed parser; TC-114/115 and IT-009 remain planned. Syntax acceptance cannot qualify later temporal or choreography evaluation.
+Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. TC-113 exercises the composed parser; TC-114 exercises source inventory and native references. Its remaining model/profile/role binding portions, TC-115 and IT-009 remain planned. Syntax acceptance cannot qualify later temporal or choreography evaluation.
 
 ## 13. Change Management
 
@@ -287,5 +287,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
-| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Proposed composed package linking; compiler #35 |
+| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Source namespace/native dependencies implemented; model/profile linking open under #35 |
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |

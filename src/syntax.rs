@@ -320,6 +320,8 @@ pub struct Clause {
 #[derive(Clone, Debug)]
 pub struct ParsedUnit {
     pub(crate) source: Source,
+    pub(crate) language: Spanned<String>,
+    pub(crate) edition: Spanned<String>,
     pub(crate) imports: Vec<ModelImport>,
     pub(crate) clauses: Vec<Clause>,
     pub(crate) expressions: Vec<Expr>,
@@ -329,6 +331,14 @@ impl ParsedUnit {
     /// Exact source from which this unit was parsed.
     pub fn source(&self) -> &Source {
         &self.source
+    }
+    /// Authored language selection and its original string-literal region.
+    pub fn language(&self) -> &Spanned<String> {
+        &self.language
+    }
+    /// Authored edition selection and its original string-literal region.
+    pub fn edition(&self) -> &Spanned<String> {
+        &self.edition
     }
     /// Unresolved model imports in source order.
     pub fn imports(&self) -> &[ModelImport] {
