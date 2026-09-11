@@ -38,11 +38,18 @@ impl TryFrom<&str> for NativeModelProfile {
     type Error = UnknownNativeModelProfile;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "native-state-model/1" => Ok(Self::V1),
-            "native-state-model/2" => Ok(Self::V2),
-            _ => Err(UnknownNativeModelProfile),
-        }
+        value.parse()
+    }
+}
+
+impl std::str::FromStr for NativeModelProfile {
+    type Err = UnknownNativeModelProfile;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        [Self::V1, Self::V2]
+            .into_iter()
+            .find(|profile| profile.as_str() == value)
+            .ok_or(UnknownNativeModelProfile)
     }
 }
 

@@ -66,11 +66,16 @@ fn model_features(model: &NativeModel, features: &mut Features) -> Result<(), Bo
         features.extend(["object", "reference"]);
     }
     for scalar in &model.roles().scalars {
-        features.insert(match scalar.kind {
-            ScalarKind::Integer { .. } => "integer",
+        match scalar.kind {
+            ScalarKind::Integer { .. } => {
+                features.insert("integer");
+            }
+            ScalarKind::Text { .. } => {
+                features.insert("text");
+            }
+            // Defensive: CheckedPackage only admits historical model profiles.
             ScalarKind::Rational { .. } => return Err(invalid_model()),
-            ScalarKind::Text { .. } => "text",
-        });
+        }
     }
     if !model.roles().operations.is_empty() {
         features.insert("object");
@@ -106,13 +111,16 @@ fn native_type(ty: &NativeType<'_>, features: &mut Features) -> Result<(), Box<P
         NativeType::Boolean => {
             features.insert("boolean");
         }
-        NativeType::Scalar { role, .. } => {
-            features.insert(match role.kind {
-                ScalarKind::Integer { .. } => "integer",
-                ScalarKind::Rational { .. } => return Err(invalid_model()),
-                ScalarKind::Text { .. } => "text",
-            });
-        }
+        NativeType::Scalar { role, .. } => match role.kind {
+            ScalarKind::Integer { .. } => {
+                features.insert("integer");
+            }
+            ScalarKind::Text { .. } => {
+                features.insert("text");
+            }
+            // Defensive: historical type checking cannot emit a rational.
+            ScalarKind::Rational { .. } => return Err(invalid_model()),
+        },
         NativeType::Enumeration { .. } => {
             features.insert("enumeration");
         }

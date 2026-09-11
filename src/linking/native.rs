@@ -18,7 +18,18 @@ type Result<T> = std::result::Result<T, Box<Diagnostic>>;
 
 /// FR-041: only selected artifacts cross the historical semantic boundary.
 pub(super) fn check_selected_profiles(unit: &ParsedUnit, models: &[LinkedModel<'_>]) -> Result<()> {
+    // select_models preserves this shape and order. Defensively refuse a future
+    // constructor that breaks it, rather than letting zip silently omit imports.
+    if unit.imports().len() != models.len() {
+        return Err(failure(
+            unit,
+            Code::InvalidModelBinding,
+            Span { start: 0, end: 0 },
+            "selected model inventory does not match authored import count",
+        ));
+    }
     for (import, selected) in unit.imports().iter().zip(models) {
+        // Defensive: native::catalog always supplies admitted native models.
         let model = selected.native_model().ok_or_else(|| {
             failure(
                 unit,
@@ -34,7 +45,10 @@ pub(super) fn check_selected_profiles(unit: &ParsedUnit, models: &[LinkedModel<'
                     unit,
                     Code::UnsupportedConstruct,
                     import.span,
-                    "historical native linking does not admit native-state-model/2",
+                    format!(
+                        "historical native consumers do not admit {}",
+                        model.profile().as_str()
+                    ),
                 ))
             }
         }
