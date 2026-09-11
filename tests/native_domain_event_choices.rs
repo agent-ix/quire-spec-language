@@ -48,7 +48,7 @@ fn two_cases(record: &str) -> String {
 /// The compensation fixture is the already-admitted qualified-event source: one
 /// `Full` obligation over `Main::Applied`, its original `Node::step` operation,
 /// cross-unit pre/post contracts and the authored `event ... for Full` node.
-fn recovery(decision: &str) -> (Inputs, w::ExportRef) {
+fn recovery(decision: &str, after_commit: &str) -> (Inputs, w::ExportRef) {
     let body = format!(
         "protocol RecoveryFlow using P over (view: M::Node) on origin {{
           role Service on M::Node;
@@ -78,6 +78,7 @@ fn recovery(decision: &str) -> (Inputs, w::ExportRef) {
                 as (recoveryEvent: M::Plain) {{ recoveryEvent.ready }};
             {decision}
             commit Committed by Service as (committed: M::Plain) {{ committed.ready }};
+            {after_commit}
           }}
           finish Closed as (closed: M::Node) {{ true }};
         }}"
@@ -509,7 +510,7 @@ fn all_joined_event_and_received_records_keep_two_distinct_boolean_atoms() {
 fn a_compensation_qualified_event_decides_for_its_owner_and_keeps_the_association() {
     // The no-choice baseline proves this fixture is the already-admitted
     // qualified-event source before the decision is added.
-    let (baseline, baseline_operation) = recovery("");
+    let (baseline, baseline_operation) = recovery("", "");
     admitted(&baseline, "RecoveryFlow", |_, package, owner| {
         let w::Body::Protocol { controls, .. } = &package.declarations[owner as usize].body else {
             panic!("protocol family")
@@ -531,7 +532,7 @@ fn a_compensation_qualified_event_decides_for_its_owner_and_keeps_the_associatio
     });
 
     let cases = two_cases("recoveryEvent");
-    let (inputs, operation) = recovery(&choice("Service", "recoveryEvent.ready", &cases));
+    let (inputs, operation) = recovery(&choice("Service", "recoveryEvent.ready", &cases), "");
     assert_eq!(
         operation, baseline_operation,
         "adding a decision selects the same original operation export"
@@ -686,4 +687,15 @@ fn a_compensation_qualified_event_decides_for_its_owner_and_keeps_the_associatio
             boolean_field(package, declaration, value, binder, "recoveryEvent.ready");
         }
     });
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5")]
+fn a_commit_record_does_not_supply_a_boolean_decision_fact() {
+    let cases = two_cases("committed");
+    let (inputs, _) = recovery("", &choice("Service", "committed.ready", &cases));
+    refused(
+        &inputs,
+        "commit record is not an eligible event observation",
+    );
 }
