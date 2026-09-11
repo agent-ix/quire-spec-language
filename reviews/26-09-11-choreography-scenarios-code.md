@@ -22,8 +22,8 @@ public API, wire format, unsafe code or hosted workflow change is introduced.
 
 ## Verdict
 
-**CONDITIONAL** — no blocking implementation defect found in the reviewed diff.
-The remaining local gates below must finish before this checkpoint is ready.
+**PASS** for the reviewed implementation increment: the reported boundary-test
+gaps are resolved and local checks pass.
 Campaign acceptance, the specification-cycle decision under issue #66, and the
 actual B consumer handoff are separate unfinished work.
 
@@ -31,9 +31,15 @@ actual B consumer handoff are separate unfinished work.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | The nested-repeat regression directly covers feasible and infeasible false valuations at positive maximum. It does not independently exercise the zero-maximum enclosing-progress branch with an observable exhausted child, or an infeasible true valuation with a non-progressing body. These remain specific test gaps, not observed implementation failures. | tests/native_choice_emission.rs:1843; tests/native_choice_emission.rs:1882; src/protocol_artifact/native/families.rs:293 |
+| FND-001 | low | No unresolved implementation findings in the reviewed increment. | - |
 
 ## Review evidence
+
+The reported boundary-test gaps were resolved: the nested regression now covers
+zero maximum with an observable exhausted child under feasible and infeasible
+false valuations. An infeasible true valuation admits a standalone non-progressing
+body but cannot supply enclosing progress. The all-feature full suite and the
+minimal 23-test choice target both pass with these added controls.
 
 The repeat's body obligation and its contribution to an enclosing loop are
 distinct. A feasible false valuation prevents a progress contribution even when
@@ -67,8 +73,9 @@ found in this specification scope.
 
 - Formatting and git whitespace checks: passed.
 - Minimal full suite at 700f061: 625 passed, 0 failed, 4 inherited ignored.
-- All-feature Clippy with warnings denied: pending in the shared build queue.
-- Minimal Clippy and all-feature full suite: pending.
+- Both Clippy configurations with warnings denied: passed, including rechecks after the added boundary controls.
+- All-feature full suite including the added boundary controls: 641 passed, 0 failed, 4 inherited ignored.
+- Minimal choice target recheck with the added boundary controls: 23 passed, 0 failed. The production source is unchanged from the minimal full-suite run.
 - Pinned scoped specification validation: passed, 435 documents grammar-clean.
 - No deny.toml is present, so cargo-deny is not a configured repository gate.
 
