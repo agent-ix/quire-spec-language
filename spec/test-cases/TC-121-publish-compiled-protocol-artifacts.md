@@ -142,6 +142,10 @@ observations belong only to the later consumer fixture.
    carries the identical progress obligation, a non-progressing body remains
    `Invalid::Control`, an unproved one remains FamilyProof, and guard
    falsification is a normal exit rather than evidence of progress.
+   Nest that repeat inside an enclosing bounded repeat that has no other
+   progress source: a feasible false valuation supplies the enclosing repeat
+   no progress and refuses with `Invalid::Control`, while a guard no valuation
+   falsifies supplies it and admits with the authored guard retained.
    Author a payment retry as a bounded repeat over a pre-loop observed charge
    outcome. Require one static attempt identity for the authored attempt,
    distinct from the carrying delivery and from the single business effect,
