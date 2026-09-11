@@ -139,8 +139,8 @@ configuration provenance, separate from selected semantic identities.
 | FR-040-AC-1 | Exact multi-unit predicate/state inputs and shared values in temporal/protocol bodies retain unit-qualified expression types and source spans; names-resolved, typed, proof-discharged and family/execution dispositions cannot be interchanged. Refused or unfinished input produces no dependent checked value. | Test (TC-119) |
 | FR-040-AC-2 | StateCore refuses predicate/query-extension/graph forms where absent from its catalog; StateQueries admits its typed extension while refusing graph forms; StateGraph admits its eligible graph forms. Unused or unreachable prohibited forms still refuse and a wider caller cannot upgrade a callee. | Test (TC-119) |
 | FR-040-AC-3 | Exact parameter arity/order, nominal model/scalar/unit identity, enum/text/option/sequence constraints and Boolean roots distinguish valid inputs from same-spelled foreign types, ambiguous literals, wrong arguments and forbidden coercions or status-as-Boolean. | Test (TC-119) |
-| FR-040-AC-4 | Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing producer/proof representation yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
-| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. N=0 and N=10,000 are checked against authored maxima; N=10,001 refuses. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
+| FR-040-AC-4 | Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing producer/proof representation, including unsupported rational sum-domain transfer, yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
+| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. Producer sequence maxima are 1..10,000; declared maxima 0 and 10,001 refuse at model admission. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-lowered exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
 | FR-040-AC-6 | Guard-before-use and immutable aliases discharge supported presence/range obligations; reversed guards, invalid alternative joins, foreign receiver/observation and pre-retagged captures refuse at their original loci. Valid composite pre reads and same-invocation immutable parameters retain distinct provenance. | Test (TC-119) |
 | FR-040-AC-7 | Graph/context/operation/capture uses emit typed declaration-owned runtime requirements with exact universe, anchor, scope/completeness and frame selections without observations. Same-named roles, foreign universes and opaque scalar/relationship substitutions cannot satisfy them. | Test (TC-119) |
 | FR-040-AC-8 | Exact authored formal correspondence permits actual supported IR discharge. Omitted, duplicate, changed-source, foreign-declaration or wrong-execution-point correspondence prevents dependent proof without synthetic ownership. Unproved definedness, unsupported prerequisite and resource exhaustion retain distinct typed causes; typing remains inspectable. | Test (TC-119) |
@@ -163,10 +163,17 @@ Compiler [#35](https://github.com/agent-ix/quire-spec-language/issues/35),
 delivery obligations. The pinned IR already supplies rational types, literals,
 arithmetic and definedness. [FR-041](FR-041-admit-rational-native-model-profile.md)
 specifies the explicit `/2` native model producer extension while historical
-`/1` admission retains its rational refusal. Composed proof correspondence still
-needs to consume those exact representations before its positive cases can
-execute. `NativeType::Scalar` already retains the underlying IR value type;
-a second numeric type authority is unnecessary.
+`/1` admission retains its rational refusal. Composed definedness consumes those
+exact representations with the original authored correspondence. Query-body
+safety covers the admitted element domain; sum safety requires every bounded
+prefix. For admitted interval domains, each length-k prefix lies between k times
+the element minimum and maximum. Monotone endpoint witnesses cover every k up
+to the declared maximum and retain the first crossing as an actual IR checked-add
+failure; they neither use a realized final sum nor assume an in-range accumulator.
+Broader rational sum-domain transfer remains an explicit unsupported
+prerequisite where the selected proof interface cannot establish it. This does
+not remove rational sums from the requirement. The existing native scalar type
+retains the underlying IR value type; a second numeric authority is unnecessary.
 D's exact producer/native correspondence and authoritative relationship exports
 remain producer-owned prerequisites. Unsupported prerequisites are implementation
 gaps, not a narrower definition of this requirement; reference evaluation,
