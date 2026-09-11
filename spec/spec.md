@@ -8,6 +8,8 @@ standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-038
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-035
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-036
@@ -290,6 +292,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
+| [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared type/profile admission implemented; definedness and runtime acceptance open under #35/#36 |
