@@ -599,7 +599,13 @@ pub(super) fn body(
             work,
         )?;
         let anchor = layout.anchor(need.anchor)?.index;
-        let prerequisite = runtime.anchors[anchor as usize].binding.0;
+        work.visit()?;
+        let prerequisite = runtime
+            .anchors
+            .get(anchor as usize)
+            .ok_or(Error::Invalid(Invalid::Binding))?
+            .binding
+            .0;
         let mut requires = Vec::new();
         if let Some(prerequisite) = prerequisite {
             work.charge(Dimension::Entries, 1)?;

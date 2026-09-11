@@ -127,9 +127,15 @@ When a native reference requires a population, the compiler SHALL derive its
 population export and runtime input requirements from the exact admitted object
 role, selected model, universe and original evaluation anchor. The reader SHALL
 refuse a reference/object/population triple assembled from different roles or
-models, even when carrier types or universe labels agree. Pre-state and capture
+models as `Invalid::Type`, even when carrier types or universe labels agree. Pre-state and capture
 origins retain their original population/closure requirements; future membership
 and completeness remain consumer inputs rather than compilation prerequisites.
+The population/closure set SHALL equal the set required by the declaration's
+original input binders and anchored values: missing or surplus pairs refuse as
+`Invalid::Binding`. Derived binders retain their initializer's observation;
+selected values retain their contributing origins without adding a population
+at the selection site. FR-042-AC-4 and FR-042-AC-7 cover these identity and
+reader-refusal obligations under the wire contract's typed cause catalog.
 
 The artifact SHALL preserve effect-before-registration, separate registration
 and activation captures, bounded retries, commit restrictions and the exact
