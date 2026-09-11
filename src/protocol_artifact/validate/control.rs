@@ -69,7 +69,7 @@ impl Derived {
 }
 
 impl<'a> Graph<'a, '_> {
-    pub(super) fn protocol(&mut self, owner: usize) -> Result {
+    pub(super) fn protocol(&mut self, owner: usize, values: &ValueGraph<'_>) -> Result {
         let declaration = &self.package.declarations[owner];
         let Body::Protocol {
             input,
@@ -554,7 +554,7 @@ impl<'a> Graph<'a, '_> {
         }
         acyclic(&derived.children, self.work)?;
         self.compare_edges(owner, causal_edges, &derived, controls.len())?;
-        self.compensations(owner, compensations, controls)?;
+        self.compensations(owner, compensations, controls, values)?;
         self.locus(owner, &finish.locus)?;
         intake::name(&finish.name)?;
         self.binder(owner, &finish.binder, &[BinderKind::Finish])?;
@@ -786,6 +786,7 @@ impl<'a> Graph<'a, '_> {
         index: usize,
         value: &Compensation,
         controls: &[Control],
+        values: &ValueGraph<'_>,
     ) -> Result {
         let subject = Handle {
             declaration: u32::try_from(owner).map_err(|_| Error::Invalid(Invalid::Reference))?,
@@ -891,7 +892,7 @@ impl<'a> Graph<'a, '_> {
             &earlier.anchor,
             &[value.attempt_instance],
         )?;
-        self.compensation_recovery(owner, value, &subject, activation_instance)
+        self.compensation_recovery(owner, value, &subject, activation_instance, values)
     }
 
     fn compensation_recovery(
@@ -900,6 +901,7 @@ impl<'a> Graph<'a, '_> {
         value: &Compensation,
         subject: &Handle,
         activation: u32,
+        values: &ValueGraph<'_>,
     ) -> Result {
         self.locus(owner, &value.locus)?;
         intake::sorted_indices(&value.recovery_bindings, self.work)?;
@@ -983,30 +985,13 @@ impl<'a> Graph<'a, '_> {
         let closure = closure.ok_or(Error::Invalid(Invalid::Binding))?;
         self.work.charge(Dimension::Entries, 3)?;
         let mut required = BTreeSet::from([snapshot_index, progress, closure]);
-        let anchors = self.recovery_origins(owner, value, subject, &recovery.anchor)?;
-        self.locus(owner, &value.locus)?;
-        // Model validation separately establishes exact nominal pair contents
-        // and set equality. Here only their attribution to this recovery is new.
-        for (index, binding) in declaration.bindings.iter().enumerate() {
+        let populations = crate::protocol_artifact::recovery::population_members(
+            values, value, subject, self.work,
+        )?;
+        self.work.charge(Dimension::Entries, populations.len())?;
+        for index in populations {
             self.work.visit()?;
-            if !matches!(binding.subject, Subject::Declaration { declaration } if declaration as usize == owner)
-                || !anchors.contains(&binding.anchor.index)
-            {
-                continue;
-            }
-            let population = match binding.kind {
-                BindingKind::Population => true,
-                BindingKind::Closure => match &binding.model.0 {
-                    Some(model) => self.export(model, &[])?.kind == ExportKind::Population,
-                    None => false,
-                },
-                _ => false,
-            };
-            if population {
-                let index = u32::try_from(index).map_err(|_| Error::Invalid(Invalid::Reference))?;
-                self.work.charge(Dimension::Entries, 1)?;
-                required.insert(index);
-            }
+            required.insert(index);
         }
         if value.recovery_bindings.len() != required.len() {
             return Err(Error::Invalid(Invalid::Binding));
@@ -1020,67 +1005,12 @@ impl<'a> Graph<'a, '_> {
         Ok(())
     }
 
-    fn recovery_origins(
-        &mut self,
-        owner: usize,
-        value: &Compensation,
-        subject: &Handle,
-        recovery: &Handle,
-    ) -> Result<BTreeSet<u32>> {
-        let start = self.local(owner, &value.recover, Local::Value)?;
-        self.work.charge(Dimension::Entries, 2)?;
-        let mut anchors = BTreeSet::from([recovery.index]);
-        let mut pending = vec![start];
-        let mut visited = BTreeSet::new();
-        let declaration = &self.package.declarations[owner];
-        while let Some(index) = pending.pop() {
-            self.work.visit()?;
-            if visited.contains(&index) {
-                continue;
-            }
-            self.work.charge(Dimension::Entries, 1)?;
-            visited.insert(index);
-            let node = &declaration.values[index];
-            self.work.locus = Some(node.locus.clone());
-            match &node.origin {
-                Origin::Anchor { anchor } => {
-                    let index = self.local(owner, anchor, Local::Anchor)?;
-                    let original = &declaration.anchors[index];
-                    if matches!(
-                        original.kind,
-                        AnchorKind::Registration
-                            | AnchorKind::CompensationActivation
-                            | AnchorKind::Retry
-                            | AnchorKind::Recovery
-                    ) && original.owner.0.as_ref() != Some(subject)
-                    {
-                        return Err(Error::Invalid(Invalid::Binding));
-                    }
-                    if !anchors.contains(&anchor.index) {
-                        self.work.charge(Dimension::Entries, 1)?;
-                        anchors.insert(anchor.index);
-                    }
-                }
-                // Selected origins, including captured initializers, already
-                // participate in value_edges; self-selected markers add no edge.
-                Origin::Selected { .. } | Origin::Independent {} => {}
-            }
-            for target in &self.value_edges[index] {
-                self.work.visit()?;
-                if !visited.contains(target) {
-                    self.work.charge(Dimension::Entries, 1)?;
-                    pending.push(*target);
-                }
-            }
-        }
-        Ok(anchors)
-    }
-
     fn compensations(
         &mut self,
         owner: usize,
         values: &[Compensation],
         controls: &[Control],
+        dependencies: &ValueGraph<'_>,
     ) -> Result {
         for (index, value) in values.iter().enumerate() {
             self.locus(owner, &value.locus)?;
@@ -1137,7 +1067,7 @@ impl<'a> Graph<'a, '_> {
                 value.effect_instance,
                 &[BindingKind::CompensationEffect],
             )?;
-            self.compensation_bindings(owner, index, value, controls)?;
+            self.compensation_bindings(owner, index, value, controls, dependencies)?;
             if let Some(commit) = &value.commit.0 {
                 let commit = self.local(owner, commit, Local::Control)?;
                 if !matches!(controls[commit].operation, ControlOperation::Commit { .. }) {
