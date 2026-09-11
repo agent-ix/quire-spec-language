@@ -1,0 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+temporal Due using T over (view: M::Workflow) clock "events" on origin {
+    always[0,30] holds(Allowed(view.ratio))
+}
