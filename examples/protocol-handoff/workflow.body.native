@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// The producer prepends exact registered profile and admitted model imports.
+predicate Allowed using G (ratio: M::Ratio): Boolean {
+    ratio <= rational(1,1)
+}
+
+invariant Healthy using G on M::Workflow at current {
+    Allowed(self.ratio) and self.peer = self.peer
+}
+
+temporal Due using T over (view: M::Workflow) clock "events" on origin {
+    always[0,1] holds(Allowed(view.ratio))
+}
+
+protocol Flow using P over (view: M::Workflow) on origin {
+    role Service on M::Workflow;
+    requires temporal Due;
+    run sequence Main {
+        check Ready using G { Allowed(view.ratio) and deref(view.peer).ready };
+    }
+    finish Closed as (closed: M::Workflow) { Allowed(closed.ratio) };
+}
