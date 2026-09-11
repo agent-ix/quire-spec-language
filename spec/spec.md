@@ -295,9 +295,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
-| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Namespace, definition/model and lexical binding implemented; expression typing/runtime-role completion open under #35 |
-| [FR-040](functional/FR-040-check-composed-values.md) | FR | Planned composed type and definedness checking; compiler #35/#36 |
-| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; local tests pass, PR review corrections underway |
+| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
+| [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared types and supported guarded proofs implemented; query/runtime acceptance open under #35/#36 |
+| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; delivered producer reviews pass |
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
 | [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Planned full typed protocol artifact, strict reader and real source-to-consumer emission; compiler #40 |

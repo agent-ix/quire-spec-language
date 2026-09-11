@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-016: shared symbolic proof graph and actual bounded IR discharge.
 
-mod facts;
-mod graph;
+pub(super) mod facts;
+pub(super) mod graph;
 mod walk;
 
 use std::collections::BTreeMap;
@@ -18,14 +18,15 @@ use super::{
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
+use crate::native_model::ScalarKind;
 use crate::syntax::{BinaryOp, Builtin, ExprId, ExprKind, UnaryOp};
 use crate::{Code, Source, Span};
 use facts::{Facts, Outcomes};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ValueKey(usize);
+pub(super) struct ValueKey(pub(super) usize);
 #[derive(Clone, Copy, Debug)]
-struct GraphId(usize);
+pub(super) struct GraphId(pub(super) usize);
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 enum Step<'a> {
@@ -53,9 +54,11 @@ struct KeyInfo {
     symbol: Option<ir::SymbolName>,
 }
 
-enum Kind<'a> {
+#[derive(Clone)]
+pub(super) enum Kind<'a> {
     Boolean(bool),
     Integer(i64, &'a ir::IntegerType),
+    Rational(i64, i64, &'a ir::RationalType),
     Input(ValueKey),
     Present(GraphId),
     Unwrap(GraphId),
@@ -67,9 +70,9 @@ enum Kind<'a> {
     Witness(GraphId, ir::ValueType),
 }
 
-struct Node<'a> {
-    kind: Kind<'a>,
-    native: ExprId,
+pub(super) struct Node<'a> {
+    pub(super) kind: Kind<'a>,
+    pub(super) native: ExprId,
 }
 
 #[derive(Clone)]
@@ -171,17 +174,64 @@ impl Meter<'_> {
 }
 
 fn proof_type(ty: &NativeType<'_>) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
+    representation(ty, Interpretation::HistoricalFinite)
+}
+
+/// Admitted input profile, not a request to approximate an unknown scalar kind.
+#[derive(Clone, Copy)]
+pub(super) enum Interpretation {
+    HistoricalFinite,
+    ComposedValues,
+}
+
+// Native model admission establishes the scalar role/representation invariant;
+// the historical link guard additionally excludes selected rational models.
+pub(super) fn representation(
+    ty: &NativeType<'_>,
+    interpretation: Interpretation,
+) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
     Ok(match ty {
         NativeType::Scalar {
-            representation: ir::ValueType::Integer { value },
+            role,
+            representation,
             ..
-        } => ir::ValueType::integer(value.clone()),
-        NativeType::Option(value) => ir::ValueType::option(proof_type(value)?),
+        } => match representation {
+            ir::ValueType::Integer { value } => match &role.kind {
+                ScalarKind::Integer { .. } => ir::ValueType::integer(value.clone()),
+                ScalarKind::Rational { .. } | ScalarKind::Text { .. } => {
+                    unreachable!("admitted scalar role matches its integer representation")
+                }
+            },
+            ir::ValueType::Rational { value } => match &role.kind {
+                ScalarKind::Rational { .. } => match interpretation {
+                    Interpretation::ComposedValues => ir::ValueType::rational(value.clone()),
+                    Interpretation::HistoricalFinite => {
+                        unreachable!("historical linking excludes selected rational models")
+                    }
+                },
+                ScalarKind::Integer { .. } | ScalarKind::Text { .. } => {
+                    unreachable!("admitted scalar role matches its rational representation")
+                }
+            },
+            ir::ValueType::Text => match &role.kind {
+                ScalarKind::Text { .. } => ir::ValueType::Boolean,
+                ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => {
+                    unreachable!("admitted scalar role matches its text representation")
+                }
+            },
+            ir::ValueType::Boolean
+            | ir::ValueType::Enum { .. }
+            | ir::ValueType::Record { .. }
+            | ir::ValueType::Option { .. }
+            | ir::ValueType::Collection { .. } => {
+                unreachable!("admitted scalar roles have primitive scalar representations")
+            }
+        },
+        NativeType::Option(value) => ir::ValueType::option(representation(value, interpretation)?),
         NativeType::Sequence { element, maximum } => ir::ValueType::Collection {
-            value: ir::CollectionType::new(proof_type(element)?, *maximum)?,
+            value: ir::CollectionType::new(representation(element, interpretation)?, *maximum)?,
         },
         NativeType::Boolean
-        | NativeType::Scalar { .. }
         | NativeType::Enumeration { .. }
         | NativeType::Record { .. }
         | NativeType::Object { .. }

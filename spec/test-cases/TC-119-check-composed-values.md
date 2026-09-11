@@ -21,9 +21,10 @@ Expected type identities, source spans, proof premises and costs come from fixed
 authored source/model contracts and the public charging rules. Missing producer
 or proof capability has its own expected refusal control; that control does not
 pass the positive semantic case it blocks. Type-admission controls execute in
-`tests/composed_types.rs` and `tests/composed_type_pipeline.rs`. Full rational,
-query and graph definedness cases remain planned until their real prerequisites
-and assertions execute.
+`tests/composed_types.rs` and `tests/composed_type_pipeline.rs`; supported guarded
+IR discharge and exact authored correspondence execute in `tests/composed_proofs.rs`.
+Full rational, query and graph acceptance remains planned where its actual proof
+representation, runtime prerequisites or assertions are still unavailable.
 
 ## Test Procedure
 
@@ -110,5 +111,5 @@ none becomes Boolean false, absent optional data or aggregate success.
 Independent successful values remain inspectable beside a failed dependency.
 Runtime requirements preserve exact authority/anchor/scope without manufacturing
 observations. Whole-family execution and external producer qualification remain
-outside this test case. The implemented type-admission controls do not complete
+outside this test case. The implemented type and supported proof controls do not complete
 all groups; catalog validation establishes document conformance, not test completion.
