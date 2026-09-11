@@ -310,9 +310,9 @@ impl<'s, 'a> Builder<'s, 'a> {
         self.work.charge(D::GraphNodes, 1, self.site(at))?;
         self.work.charge(D::Records, 1, self.site(at))?;
         let width = match &kind {
-            Kind::Numeric(_, left, right) => self.widths[left.0]
-                .checked_mul(self.widths[right.0])
-                .unwrap_or(usize::MAX),
+            Kind::Numeric(_, left, right) => {
+                self.widths[left.0].saturating_mul(self.widths[right.0])
+            }
             Kind::Negate(value) => self.widths[value.0],
             Kind::Unwrap(_) | Kind::Input(_) => 2,
             Kind::Boolean(_)
