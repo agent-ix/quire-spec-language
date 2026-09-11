@@ -130,8 +130,10 @@ observations belong only to the later consumer fixture.
    or hole, including correlated facts whose model constraints are not imported
    into this abstraction; require `Unsupported::FamilyProof`, not a claimed
    concrete counterexample. Closed literal overlap/hole remains `Invalid::Control`.
-   Numeric comparisons, queries, callee expansion and dynamic repeat guards
-   remain unsupported. Put hidden inputs behind `false and`, `true or`,
+   Numeric comparisons, queries and callee expansion remain unsupported.
+   Admit an observed repeat guard over the same fragment, and require
+   `Unsupported::FamilyProof` for a foreign-role, unlisted, composite or
+   body-established guard atom. Put hidden inputs behind `false and`, `true or`,
    `false implies` and an unselected conditional branch; require FamilyProof
    rather than admission through the closed-decision path. Closed Boolean let
    aliases retain the evaluated overlap/hole `Invalid::Control` classification.
@@ -143,6 +145,16 @@ observations belong only to the later consumer fixture.
    progress. The latter remains FamilyProof unless another guaranteed body
    event establishes whole-body progress. A closed check-only repeat retains
    its `Invalid::Control` refusal.
+   Repeat the same comparison under an observed guard: the continuing body
+   carries the identical progress obligation, a non-progressing body remains
+   `Invalid::Control`, an unproved one remains FamilyProof, and guard
+   falsification is a normal exit rather than evidence of progress.
+   Author a payment retry as a bounded repeat over a pre-loop observed charge
+   outcome. Require one attempt identity per bounded occurrence carrying its
+   iteration ordinal, distinct from the carrying delivery and from the single
+   business effect, and require that a retried attempt inherit no earlier
+   effect. Exercise zero, exact and one-short budgets for the repeat's
+   valuation work.
 6. Bind O1 and O2 to the same provider through distinct instance requirements.
    Preserve one message, two delivery observations and one effect. Inspect
    effect-before-registration, separate registration/activation captures,
