@@ -16,8 +16,14 @@ from the valid template. Integration with the real producer belongs to IT-009.
 
 `tests/composed_namespace.rs` and `tests/composed_linking.rs` exercise the source
 inventory and native declaration-reference portions through `admit_namespace`.
-Their unresolved profile/model selectors do not qualify the remaining definition,
-model/type, lexical-scope or runtime-role binding procedures below.
+Their unresolved profile/model selectors do not qualify later binding.
+`tests/composed_binding.rs` exercises the combined three-family path with the
+actual native rule-model producer and exact normative definition/rule inputs.
+`composed_definitions`, `composed_definition_source`, `composed_models` and
+`composed_scopes` cover its adverse selections, original owners, lexical/causal
+environments and bounded retries. Expression typing, complete runtime roles and
+D's selected producer correspondence remain outstanding; these cases do not
+discharge all of TC-114 or IT-009.
 
 ## Test Procedure
 

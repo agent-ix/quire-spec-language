@@ -3,8 +3,14 @@
 //! This stage precedes definition, model, lexical/type and family admission.
 //! Its output cannot construct a historical LinkedPackage or CheckedPackage.
 
+pub mod binding;
+pub mod binding_work;
+pub mod definition_source;
+pub mod definitions;
 mod dependencies;
 mod inventory;
+pub mod models;
+pub mod scopes;
 mod work;
 
 use std::collections::BTreeMap;

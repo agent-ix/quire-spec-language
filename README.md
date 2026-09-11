@@ -8,8 +8,11 @@ tracks this work under [FR-035](spec/functional/FR-035-parse-composed-native-uni
 [package linking](spec/functional/FR-036-link-composed-native-packages.md) continues
 with `linking::composed::admit_namespace`: exact source inventory, package-wide
 native names, typed declaration references and cycle/dependent refusals under
-explicit work limits. Definition/model/type binding and derived runtime roles
-remain open. Existing `parse`, format, CLI and checked-package APIs retain their
+explicit work limits. `linking::composed::binding::bind` then resolves exact
+supplied definition/rule closures, native model exports, lexical/capture scopes
+and protocol structural references, preserving dependency-local refusals and
+unfinished work. Its `NamesResolved` result precedes expression/profile checking
+and complete runtime-role derivation. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
