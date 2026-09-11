@@ -357,6 +357,50 @@ shape or a reader-admitted package. The constructor-private producer admission
 must establish them before emission; the reader verifies the derived data and
 its independently selected producer, not the source proof.
 Choice guards are also collectively exhaustive over admitted decision inputs.
+
+The native received-Boolean choice fragment uses atoms from actual Boolean fields
+of received record/object binders. An atom retains the exact receive binder,
+selected model field/export and original observation anchor; repeated reads or
+immutable aliases reuse that identity, while distinct receives remain distinct.
+The receive's actual channel `to` role must equal the choice owner, and the
+existing admitted source scopes must establish guaranteed causal availability
+at the decision. A preceding sequence receive, or a guaranteed receive after an
+all-branch join, can qualify. A sibling receive before that join, a branch-only
+receive after its choice, or an await-success receive outside its success
+path cannot acquire availability from textual order or timestamps.
+
+`visible(...)` declares the information obligation. Each entry in this fragment
+is a direct eligible received Boolean field, transparent grouping/immutable alias
+to that exact atom, or a closed Boolean constant; every guard atom must occur in
+that validated atom set. A composite visible expression such as `a and b` does
+not disclose its individual atoms and remains `Unsupported::FamilyProof`.
+Listing an arbitrary input or another role's received value grants no visibility.
+Supported guard formulas are Boolean literals and fields, grouping, `not`, `and`,
+`or`, `implies`, Boolean `=`/`!=`, Boolean conditionals and immutable `let` aliases.
+Alias/capture tracing uses the existing source-owned initializer and observation
+provenance, with the same availability checks; it cannot manufacture a prior
+receive. All original
+operands are checked, including unused initializers and conditional branches.
+Numeric comparisons, queries, arbitrary input atoms, callee-body expansion and
+dynamic repeat guards remain outside this proof fragment.
+
+Family admission proves that exactly one case guard holds for every valuation
+of a conservative abstraction in which distinct received atoms are independent.
+This establishes coverage and non-overlap even when actual inputs are correlated.
+A failing abstract valuation does not establish an admissible runtime input:
+failure to prove the partition returns `Unsupported::FamilyProof`, without a
+fabricated concrete overlap/hole. Fully closed decisions retain `Invalid::Control`
+for an evaluated overlap or hole. Missing supported visibility/provenance also
+leaves family proof unestablished; earlier source/type/scope refusals retain their
+own causes. Existing IR `check_expression` establishes definedness, not truth of
+the partition. This private Boolean proof changes neither the emitted original
+guards/AST handles nor the wire schema and supplies no runtime observations.
+When such a choice supplies a continuing repeat body's progress proof, every
+case feasible in the abstraction must guarantee observable progress; one
+progressing case is insufficient. If the continuing body's progress remains
+unproved, admission returns `Unsupported::FamilyProof`; other guaranteed progress
+in the body retains its ordinary sequence/parallel meaning.
+
 At each repeat decision, false exits normally; true below the maximum enters
 the body, and true at the maximum enters the exhausted child once. Maximum zero
 therefore admits only the normal/exhausted paths, without entering the body.
@@ -564,6 +608,14 @@ their successful work accumulates in this invocation's counters, and retry
 starts a new invocation. Retained diagnostic-list entries are charged before
 allocation. The reader's single inline terminal refusal needs no entry allocation
 and cannot be replaced by exhaustion of a diagnostic budget.
+
+Native Boolean choice proof uses these same counters: retained atom, formula and
+work records charge `Entries`; each provenance/reference/operand and case or
+valuation inspection charges `References`; byte traversal and explicit traversal
+depth retain their existing dimensions. Reservations and visits charge before
+work. Exhaustion remains `Incomplete` with the original decision/expression locus,
+never a proved partition or an abstract counterexample. No public proof platform
+or separate unbounded truth-table allocation is introduced.
 
 Production emission consumes the actual fully admitted family graph, original
 source/formal correspondence and exact definitions/models/runtime requirements.

@@ -92,6 +92,39 @@ visibility/non-overlap, finite causal control, channel premises and recovery
 admission remain prerequisites; absent implementations or authoritative exports
 produce explicit unsupported prerequisites rather than omitted graph content.
 
+When admitting a received-Boolean choice, the compiler SHALL derive each atom
+from the exact receive binder, admitted Boolean field/export and original anchor.
+The actual channel receiver must equal the choice owner, and existing source
+scopes must establish guaranteed causal availability at that decision, including
+all-branch joins without exporting branch-local or await-success-only records.
+Immutable aliases and captures retain their actual initializer/provenance;
+source order, field spelling or a shared provider cannot replace this authority.
+
+The compiler SHALL require each `visible(...)` entry to be an eligible received
+Boolean field, transparent grouping/immutable alias to that exact atom, or a
+closed Boolean constant, with every guard atom in the validated atom set.
+Composite visible-expression determinacy remains `Unsupported::FamilyProof`;
+listing `a and b` cannot grant individual visibility to `a` and `b`.
+The selected guard fragment admits Boolean literals/fields, grouping, `not`,
+`and`, `or`, `implies`, Boolean `=`/`!=`, Boolean conditionals and immutable `let`
+aliases. Arbitrary inputs, numeric comparisons, queries, callee-body expansion
+and dynamic repeat guards remain unsupported family prerequisites, including
+when present in an unused operand.
+
+The compiler SHALL establish exactly one case for every valuation of the
+conservative independent-atom abstraction before admitting a symbolic choice.
+If that proof fails, then the compiler SHALL return `Unsupported::FamilyProof`
+without claiming a concrete overlap or hole from an abstract valuation.
+Fully closed decisions retain `Invalid::Control` for an evaluated overlap/hole.
+Definedness discharge remains a separate prerequisite: IR `check_expression`
+does not establish Boolean validity. Original operands, guards, handles and
+anchors remain in emitted code rather than proof witnesses or simplified output.
+When a symbolic choice contributes continuing-loop progress, the compiler SHALL
+require observable progress in every abstractly feasible branch.
+An unproved branch leaves the choice's progress unestablished; if the continuing
+body depends on that proof, admission returns FamilyProof. Other guaranteed
+progress in the body retains its ordinary control meaning.
+
 The encoder SHALL produce the selected compact JSON bytes with the contract's
 fixed member order, array/set ordering, exact [FR-038](FR-038-encode-exact-protocol-numbers.md)
 numeric objects and independently bounded structural integers. The existing Rust
@@ -203,6 +236,9 @@ limits and charge-before-work rules in the wire contract, with exact effective
 limits, successful usage and the source-owned next unaffordable operation.
 Zero disables no limit; above-hard requests clamp; overflow is incomplete;
 fresh retry neither reuses spent counters nor mutates previous inputs/results.
+Private Boolean proof records, provenance/formula/valuation visits and traversal
+depth consume these existing counters before allocation or work; resource
+exhaustion remains incomplete rather than a failed or successful truth proof.
 
 ## Acceptance Criteria
 
@@ -212,7 +248,7 @@ fresh retry neither reuses spent counters nor mutates previous inputs/results.
 | FR-042-AC-2 | Fixed compact JSON vectors retain field order, Unicode escaping and authored sequence order; permitted inventory reordering yields identical bytes. Integer safe endpoints, signed-64 extrema and normalized rationals retain exact kind/components in every value/bound field; invalid field-domain values, bare native numbers, floats and noncanonical structural integers refuse without rounding or repair. | Test (TC-121) |
 | FR-042-AC-3 | One-axis changes to producer, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
 | FR-042-AC-4 | Typed values preserve exact nominal/unit/domain identities, cross-unit callee owners, ordered arguments, all eight query forms, graph-export authority, Boolean roots, source loci, scope and pre/post/activation/capture origins. Wrong type/owner, dangling/cyclic value references, missing totality and proof-witness substitution cannot produce an emitted package. | Test (TC-121) |
-| FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Missing/foreign joins, unbounded or zero-progress repetition, unobservable/overlapping choices, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
+| FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Received Boolean choices preserve exact atom/owner/provenance identity and prove one case for every abstract valuation; unsupported visibility or an unproved partition returns FamilyProof, while evaluated closed overlap/hole remains Invalid(Control). A dynamic choice establishes continuing-loop progress only when every feasible branch progresses. Missing/foreign joins, unbounded or zero-progress repetition, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
 | FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. Effect-dependent registration, bounded retries through the signed-64 maximum, commit boundaries and full versus partial recovery retain exact relations and authorities. Producer and reader derive identical recovery population membership through original operand, binder-initializer and selected-origin reachability, preserving captured anchors without span-based or proof-folded substitutions. Compensation effects retain exact operation/subject/retry/attempt identity even when a type is inserted; an otherwise valid typed compensation effect remains explicitly unsupported. Missing/cross-wired registration, activation, clock or recovery prerequisites, unrelated recovery/population records, null model, an ordinary effect with null type, or an operation-success shortcut refuse. | Test (TC-121) |
 | FR-042-AC-7 | The public reader verifies canonical bytes and external selection without a native parser. Unknown/duplicate/missing fields, wrong tags, noncanonical encodings, out-of-range/foreign handles and changed content refuse with typed causes. Resealing a tampered payload under an unchanged expected reference still refuses; digest success alone is never evidence of native-source equivalence. | Test (TC-121) |
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. | Test (TC-121) |

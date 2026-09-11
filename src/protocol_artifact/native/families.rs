@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-036/040/042: concrete family prerequisites and original temporal syntax.
-//! Constant Boolean decisions need no external visibility premise. Other
-//! decisions retain an explicit missing family-proof interface.
+//! Closed decisions and received Boolean partitions have separate proof rules.
+
+mod decisions;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,6 +10,7 @@ use crate::checking::composed::proofs::{ProofDisposition, ProofReport};
 use crate::checking::composed::DeclarationTypes;
 use crate::linking::composed::definition_source::RegisteredDefinition as Definition;
 use crate::linking::composed::definitions::UseKind;
+use crate::linking::composed::scopes::DeclarationScope;
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed::{self as c, ComposedUnit};
 use crate::syntax::{BinaryOp, ExprId, ExprKind, UnaryOp};
@@ -95,7 +97,11 @@ pub(super) fn check(
                     .types()
                     .declaration(proof.declaration())
                     .ok_or(Error::Invalid(Invalid::Type))?;
-                protocol_check(unit, typed, syntax.span, source, protocol, work)?;
+                let scope = binding
+                    .scopes()
+                    .and_then(|scopes| scopes.declaration(proof.declaration()))
+                    .ok_or(Error::Invalid(Invalid::Binding))?;
+                protocol_check(unit, typed, scope, syntax.span, source, protocol, work)?;
             }
         }
     }
@@ -139,6 +145,7 @@ enum Progress {
 fn protocol_check(
     unit: &ComposedUnit,
     typed: &DeclarationTypes<'_>,
+    scope: &DeclarationScope,
     span: Span,
     source: u32,
     protocol: &c::Protocol,
@@ -182,28 +189,63 @@ fn protocol_check(
                 )?
             }
             c::ControlKind::Choice { visible, cases, .. } => {
-                visible_constants(visible, &constants, work)?;
-                let mut selected = None;
-                for case in cases {
+                let mut closed = true;
+                for expression in visible
+                    .iter()
+                    .copied()
+                    .chain(cases.iter().map(|case| case.guard))
+                {
                     work.visit()?;
-                    locate(
-                        source,
-                        unit.expression(case.guard)
-                            .ok_or(Error::Invalid(Invalid::Reference))?
-                            .span,
-                        work,
-                    )?;
-                    if constant(case.guard, &constants, work)?
-                        && selected.replace(case.control).is_some()
-                    {
-                        return Err(Error::Invalid(Invalid::Control));
-                    }
+                    closed &= constants.contains_key(&expression.0);
                 }
-                child(
-                    selected.ok_or(Error::Invalid(Invalid::Control))?,
-                    &progress,
-                    work,
-                )?
+                if !closed {
+                    let context = decisions::Context {
+                        unit,
+                        typed,
+                        scope,
+                        protocol,
+                        source,
+                    };
+                    let feasible = decisions::partition(&context, c::ControlId(at), work)?;
+                    let mut result = Progress::Observable;
+                    for (case, feasible) in cases.iter().zip(feasible) {
+                        work.visit()?;
+                        if feasible
+                            && !matches!(
+                                child(case.control, &progress, work)?,
+                                Progress::Observable
+                            )
+                        {
+                            // Conservative atom independence can retain branches
+                            // excluded by an unavailable correlation authority.
+                            result = Progress::NeedsAuthority;
+                        }
+                    }
+                    result
+                } else {
+                    visible_constants(visible, &constants, work)?;
+                    let mut selected = None;
+                    for case in cases {
+                        work.visit()?;
+                        locate(
+                            source,
+                            unit.expression(case.guard)
+                                .ok_or(Error::Invalid(Invalid::Reference))?
+                                .span,
+                            work,
+                        )?;
+                        if constant(case.guard, &constants, work)?
+                            && selected.replace(case.control).is_some()
+                        {
+                            return Err(Error::Invalid(Invalid::Control));
+                        }
+                    }
+                    child(
+                        selected.ok_or(Error::Invalid(Invalid::Control))?,
+                        &progress,
+                        work,
+                    )?
+                }
             }
             c::ControlKind::Repeat {
                 visible,
