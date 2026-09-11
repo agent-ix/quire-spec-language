@@ -34,6 +34,9 @@ observations belong only to the later consumer fixture.
    exact selectors and external SHA-256 over the emitted bytes. Attempt emission
    with type-only/unfinished evidence and a decoded wire value; no accepted
    producer artifact can result.
+   The [native producer recipe](../../examples/protocol-handoff/README.md)
+   provides the delivered source-to-artifact path for a smaller composed subject;
+   it does not yet cover this case's full choreography fixture.
 2. Compare emitted compact bytes with independently authored expected records
    and escape vectors (ASCII controls, quote/backslash, supplementary Unicode,
    slash, no NFC conversion). Reorder dependency/source sets without changing
@@ -113,6 +116,11 @@ observations belong only to the later consumer fixture.
 10. Pass the actual production-emitted immutable artifact/reference to
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001) through the public
     Rust interfaces, preserving exact selectors and finite graph/source links.
+    In B's Rust integration harness, independently select the supplied original
+    sources, admitted models, registry/contract and producer bytes to construct
+    the reader's accepted inventory. Compare the offered package against that
+    inventory; neither the payload nor the fixture's `expected.json` authorizes
+    its own selections.
     Perform its one-axis adverse controls and numeric boundary handoff. A
     missing family, producer adapter or consumer implementation records the
     unmet positive integration prerequisite; a negative unsupported test cannot

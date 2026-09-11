@@ -108,7 +108,7 @@ invented for that criterion.
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
-| TC-121 | Full compiled protocol artifact and real Rust handoff | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 Planned |
+| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 Planned |
 
 ## Composed language admission (L2)
 
