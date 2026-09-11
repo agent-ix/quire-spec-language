@@ -29,6 +29,12 @@ unraisable hard reference ceiling.
 parser's own 50 000-node ceiling cannot be bound at any caller limit setting.
 Everything else is medium or low.
 
+**Current verdict (correction re-review of 9aa788a, 2026-09-10): CONDITIONAL.**
+FND-001 is resolved and re-verified by a gate-run test; every other original
+finding is resolved or dispositioned. Three residual findings remain, all
+medium or low. The original FAIL above records the state at 92313b7 and is
+retained as evidence, not as the current gate.
+
 ## Gates
 
 All run in this session from the worktree, one heavy command at a time under
@@ -68,6 +74,9 @@ agree with these outcomes; its `quire-binding-fmt.log` and
 | FND-012 | low | Six requirement ids preserved under `resources/native-v1/spec/**` collide with local `spec/` ids; only tool scoping convention keeps them apart | resources/native-v1/spec/functional/FR-036-retain-lexical-source-locations.md:2, spec/functional/FR-036-link-composed-native-packages.md:2 |
 | FND-013 | low | `Cause::DefinitionCycle` and `Cause::IncompatibleRequirement` are structurally unreachable in the closed registry | src/linking/composed/definitions.rs:86, src/linking/composed/definitions.rs:88 |
 | FND-014 | low | Three new submodules omit the `FR-` owning-requirement `//!` header the other six carry | src/linking/composed/scopes/values.rs:2, src/linking/composed/scopes/protocol.rs:2, src/linking/composed/scopes/protocol/flow.rs:2 |
+| FND-015 | medium | Catalog name lookups are now honestly charged but remain linear in model size, so a large-model package that bound at 92313b7 now exhausts References | src/linking/composed/models.rs:534, src/linking/composed/models.rs:541, src/linking/composed/models.rs:717, src/linking/composed/models.rs:169 |
+| FND-016 | low | The new binary boundary lookup's arena precondition is neither asserted nor unit-tested; a violation silently returns a partial region instead of refusing | src/linking/composed/arena.rs:7, src/linking/composed/arena.rs:25, src/linking/composed/arena.rs:35, src/linking/composed/dependencies.rs:195 |
+| FND-017 | low | `ScopeIssue::InvalidEnvironment` is structurally unreachable and untested, without the "defensive, retained for future change" label its analogue got | src/linking/composed/scopes.rs:295, src/linking/composed/scopes.rs:571, src/linking/composed/definitions.rs:496 |
 
 ## Detail
 
@@ -269,3 +278,106 @@ registry that may grow, but it is currently dead and should be labelled as such.
 - The control arenas have no cycle guard, but `ComposedUnit`'s fields are
   `pub(crate)` and only the parser builds them, so no caller can inject one; the
   charged loops would exhaust rather than hang regardless.
+
+## Correction re-review (9aa788a, 2026-09-10)
+
+Targeted re-review of the remediation commit against this review's findings.
+Read-only over source, tests, spec and Git; the only writes are this section,
+the current-verdict paragraph and rows FND-015..017. All four gates were re-run
+in this session from the worktree, one heavy command at a time under
+`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
+`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`.
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | pass (exit 0) |
+| `cargo clippy --locked --all-targets --no-default-features -- -D warnings` | pass (exit 0) |
+| `cargo clippy --locked --all-targets --all-features -- -D warnings` | pass (exit 0, and re-run after touching `src/lib.rs` to force a real re-lint: exit 0, no diagnostics) |
+| `cargo test --locked --no-default-features -- --test-threads=1` | pass — 419 passed, 0 failed, 4 ignored |
+| `cargo test --locked --all-features -- --test-threads=1` | pass — 435 passed, 0 failed, 4 ignored |
+| `cargo deny check` | not applicable — no `deny.toml` in the repo |
+
+Counts rose from 401/417 to 419/435; the four `#[ignore]`d tests are the same
+pre-existing named lanes. Logs are `/tmp/quire-binding-rereview-*.log`.
+
+### Disposition of the original findings
+
+| ID | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | resolved | `src/linking/composed/arena.rs:13-36` replaces both per-declaration whole-arena rescans with a charged binary boundary lookup; `definitions.rs:260-268` and `models.rs:1081-1126` call it. Two scale tests now gate it: `tests/composed_binding.rs:91-135` (100 declarations over a 39 900-node expression arena, `references < 200_000`, where the old rescan needed 3 990 000) and `tests/composed_binding.rs:137-187` (200 protocols over 10 200 controls, where the old scan needed 2 040 000). Both pass in the runs above. |
+| FND-002 | resolved | All three `unreachable!()` are gone. `Task::Sequence`/`Parallel` carry the borrowed child/branch slices (`flow.rs:5-14`), so the scheduler never re-matches a control it already classified; `protocol.rs:553` renames the shadowed binding to `awaited` and uses `*event` directly. No `unreachable!()` remains under `src/linking/composed/scopes/`. |
+| FND-003 | resolved | `export_without` and `merge_branch` are folded into one `Resolver::export_frames` (`scopes.rs:551-582`) that states the invariant, validates the whole frame suffix before exporting anything, and refuses with the new typed `ScopeIssue::InvalidEnvironment` instead of `.expect()`. The `frame.parent < index` guard also bounds the walk, so a malformed chain terminates rather than looping. Three panic sites removed. |
+| FND-004 | resolved | Every cited catch-all is exhaustive: `models.rs:761-768` (`NativeType`), `models.rs:967-975` (`ModelErrorKind`), and the single shared `primitive()` unwrap loop `models.rs:908-927` (`ir::ValueType`). A new `quire-contract-ir` container variant is now a compile error at each site. |
+| FND-005 | resolved, and the remaining difference is sound | `scalar_type` and `formal_type` share one `primitive()` traversal (`models.rs:870-927`). The traversal charges References only; `formal_type` then charges `layers` Bindings *before* `Catalog::formal` allocates. That is exact, not approximate: `Catalog::formal` (`src/checking/types.rs:301-329`) constructs one `NativeType` node per Option/Collection wrapper plus the leaf, which is precisely `layers`. The paths legitimately still differ because their outputs differ — a scalar-name lookup collapses to one primitive `NativeType::Scalar` and is covered by the single Binding at `models.rs:581`, while a field/value lookup materialises the whole Option/Sequence chain. `Limits::bindings` was widened to name the layer (`binding_work.rs:16`). `tests/composed_models.rs:772-845` and `:846-894` pin the exact per-dimension costs of both paths and their off-by-one exhaustion boundaries. |
+| FND-006 | resolved | `ModelWalk::record` charges one Binding per retained cause (`models.rs:1193-1196`), and relationship refusals now go through `visit()` + `record()` (`models.rs:1046-1056`) instead of pushing onto `report.refusals` directly. This matches the scope stage, which already charged a Binding per issue (`scopes.rs:448-452`); the extra Binding `binding.rs:301-310` charges for the composite `Refusal::Model` record is a second, genuinely separate record, not a double charge. `tests/composed_models.rs:1019-1092` drives `resolve_declaration` directly and asserts both the exact Bindings total and that the charge is refused *before* the cause record is created. |
+| FND-007 | resolved | `ImportRefusal::InvalidRevision` (`models.rs:59-60`) is a typed refusal; the revision is parsed once outside the candidate loop (`models.rs:411-419`), removing the per-candidate `String`. `tests/composed_models.rs:735-771` is a twelve-case table covering `01`, `+1`, leading/trailing space, `0`, `-1`, `1.0`, `1e0`, `u64` overflow and the empty string, and asserts that a genuinely stale `2` still reports `StaleSelection`. The `+1` case matters: `u64::from_str` accepts a leading `+`, and only the `is_ascii_digit` filter rejects it. `RequirementRevision::new(0)` is itself an error upstream, so refusing `"0"` introduces no false negative. |
+| FND-008 | resolved in part; see FND-015 | The clone-per-lookup half is fixed: `ModelBindings::aliases` is now `BTreeMap<UnitId, BTreeMap<String, _>>` and `Names::children` is `BTreeMap<Option<SymbolId>, BTreeMap<String, _>>`, both looked up with a borrowed `&str` (`models.rs:489-492`, `protocol.rs:157-163`, `:342-346`, `:361-366`). `catalog_for` indexes by unit first (`models.rs:668-677`). The mis-billing half is fixed by `find_charged` (`models.rs:256-271`), which charges each inspected entry. The scans themselves remain linear — carried forward as FND-015. |
+| FND-009 | resolved | `parameter_type` now has a caller-facing test asserting both branches and their exact costs (`tests/composed_models.rs:772-845`); `ACCOUNTING_VERSION` is pinned at `tests/composed_definitions.rs:520`. |
+| FND-010 | resolved | All eleven causes now have tests: `WrongEdition`, `AmbiguousRule`, `Cause::MissingAlias` (`tests/composed_definitions.rs:326-478`); `ModelErrorKind::{MissingAlias, IncompleteCatalog}`, `AmbiguousExport`, `ImportRefusal::AmbiguousSelection` (`tests/composed_models.rs:610-734`); `MissingValue`, `ModelOperationUnavailable`, `DuplicateSymbol`, `InvalidAwaitEvent`, `IncompatibleReference` (`tests/composed_scopes.rs:536-754`). The `MissingValue` test uses a name bound nowhere in the declaration, so it fails if `finish_names`' rewrite to `OutOfScope` is made unconditional — the specific hole this review named. |
+| FND-011 | resolved | `resources/native-v1/README.md` states the originating standard PR, that the standard's document licence remains deferred and that this snapshot applies no new licence, that the compiler's AGPL does not relicense it, that FR-036 owns the resources' use, and that `external/` means external *to the standard repository* while retaining the copied Rust file's own AGPL notice. `README.md:18` and `LICENSE-DECISION.md:30` both link it. The drift concern is answered by reframing rather than by a control: the resources are an explicitly selected historical snapshot that must **not** track current compiler diagnostics, and `tests/composed_definition_source.rs:270-278` compares the registry's embedded bytes against the retained resource files (via `resource()` at `:128-135`, reading `resources/native-v1/`), never against `src/diagnostic.rs`. Exact-byte admission plus that comparison is the product boundary; no SHA inventory is added, per `CLAUDE.md`. |
+| FND-012 | resolved by documentation | `resources/native-v1/README.md:4-6` records that standard-relative paths and document ids keep the standard repository's meaning and that compiler requirement tooling scans the local `spec/` tree separately. |
+| FND-013 | resolved by documentation | `definitions.rs:496-498` labels the `identities`/`active` refusals as defensive against an explicit future registry change and states that caller-supplied metadata cannot manufacture either condition today. |
+| FND-014 | resolved | `values.rs:2`, `protocol.rs:2` and `flow.rs:2` now carry `FR-036:` headers; the new `arena.rs:2` carries one too. |
+
+### Residual findings
+
+**FND-015.** `find_charged` made the catalog scans honest, but it did not make
+them cheaper: `resolve_type` still compares every record and every enumeration
+in the model for each authored occurrence (`models.rs:534-547`), and `value()`
+still compares every exported value (`models.rs:717-724`). The new tests state
+the cost as a property of the model, not a constant —
+`tests/composed_models.rs:814-815` derives its expected 6 References as "alias/
+type lookups + **both record candidates** + Sequence + scalar leaf", and
+`tests/composed_models.rs:863` as "…**ten Node fields**". Scenario: a model with
+5 000 single-field records is admissible (10 000 formal nodes, exactly
+`ModelLimits::nodes`, `src/native_model.rs:132-145`), and a unit of 100
+declarations with four typed parameters each is ordinary source; that is
+400 × ~5 003 ≈ 2 001 200 References against the unraisable ceiling of 2 000 000
+(`binding_work.rs:30`, `:42-51`), so the package reports `Unfinished`. This
+input bound successfully at 92313b7, where the same scan was billed as one
+Reference — so the honest-charging fix, taken alone, converts a hidden cost into
+a refusal for legal input. The remedy is local and does not touch the shared
+`Catalog`: `Exports` already carries exactly the right pattern for scalars — a
+borrowed `BTreeMap<&'a str, _>` built once at `bind_models` (`models.rs:169`,
+`:292-300`) and reserved by `charge_exports`, which already charges one Binding
+per type declaration and per value (`models.rs:843-854`). Extending that index
+to records, enumerations and values makes each lookup logarithmic and leaves the
+charging contract truthful.
+
+**FND-016.** `arena::owned` is correct under the stated invariant — the
+predicate `span.start < at` really is monotone across the arena when
+declarations are source-ordered, their nodes are contiguous and every node is
+contained in its owner — but nothing checks the invariant. The precedent the
+module cites does: `dependencies.rs:195-196` carries `debug_assert!` on both
+containment bounds. A future parser change that emits one declaration's nodes
+outside its own span makes `owned` return a partial region, and the declaration
+then binds and scopes with nodes silently missing and **no** refusal — a wrong
+`NamesResolved`, not a panic and not an `Exhaustion`. The function is
+`pub(super)`, so `tests/` cannot reach it; it has no `#[cfg(test)]` module, so
+its boundary cases (empty arena, empty owned region, first and last
+declaration) are covered only incidentally through the two scale tests.
+
+**FND-017.** `ScopeIssue::InvalidEnvironment` (`scopes.rs:295-296`) is a new
+public variant that no input can produce today and no test exercises. Replacing
+a panic with a typed refusal is the right call and the surrounding comment
+(`scopes.rs:551-553`) explains the invariant, but the variant's own doc reads as
+though it were reachable. FND-013's analogous branches were dispositioned by
+labelling them defensive; the same label belongs here.
+
+### Verified safe, not findings
+
+- `models.rs:770-775` adds `ordered_fields.get(record).expect("admitted record
+  fields")`. `ordered_fields` is keyed by every record in the environment
+  including field-less ones (`src/checking/types.rs:200-207`), object roles are
+  admitted only when their record is declared (`src/native_model/admission.rs:
+  398-400`), and `NativeType::Record`'s declaration comes from
+  `catalog.records`. This is the same admission-guarded class as the indexes
+  this review already declined to flag.
+- `record()` drops a semantic cause when the Binding charge for it is refused
+  (`models.rs:1193-1196`), retaining only the exhaustion. That is charge-before-
+  work behaving correctly — the record was never created — and
+  `tests/composed_models.rs:1065-1075` asserts exactly that boundary.
+- `ACCOUNTING_VERSION` stays at `composed-binding-work/1` despite a materially
+  changed charging contract. Both `92313b7` and `9aa788a` are unmerged commits
+  on the same branch, so `/1` has never been published and no bump is owed;
+  a comparable change after this ships would owe one.
