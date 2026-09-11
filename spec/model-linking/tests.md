@@ -105,6 +105,8 @@ invented for that criterion.
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
 | TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Planned |
 | TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 Planned |
+| TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
+| TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
 
 ## Composed language admission (L2)
 
@@ -119,6 +121,12 @@ and [IT-009](../integration/IT-009-composed-package-boundary.md) remain open und
 compiler #35; the broad rows below therefore remain Planned. Names resolved at
 this stage grant no checked or executable package. Status records local runs,
 not engine-verified coverage.
+
+TC-120's public rational-model controls are implemented and pass locally through
+the real frontend, admission and composed exports. Its Planned matrix rows retain
+the remaining review/assurance acceptance; they do not mean the producer is unbuilt.
+TC-119's full composed typing, definedness and runtime obligations remain planned
+in this producer PR. Neither test set establishes complete compiler #35/#40.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
@@ -136,6 +144,23 @@ not engine-verified coverage.
 | FR-036 | FR-036-AC-6 | TC-115 | 🚧 Planned |
 | FR-036 | FR-036-AC-7 | TC-114 | 🚧 Planned |
 | FR-036 | FR-036-AC-8 | TC-115 | 🚧 Planned |
+| FR-040 | FR-040-AC-1 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-2 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-3 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-4 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-5 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-6 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-7 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-8 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-9 | TC-119 | 🚧 Planned |
+| FR-040 | FR-040-AC-10 | TC-119 | 🚧 Planned |
+| FR-041 | FR-041-AC-1 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-2 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-3 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-4 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-5 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-6 | TC-120 | 🚧 Planned |
+| FR-041 | FR-041-AC-7 | TC-120 | 🚧 Planned |
 
 ## Six coverage rules
 
