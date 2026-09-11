@@ -267,6 +267,9 @@ fn direct_rules_retain_the_selected_file_inventory_and_original_bytes() {
         let unique: BTreeSet<_> = rules.iter().map(|rule| rule.path).collect();
         assert_eq!(unique.len(), rules.len());
         for rule in rules {
+            // External keys select the historical sources named by the native
+            // diagnostic definition, not this checkout's evolving compiler.
+            // Compare the embedded selection with its retained snapshot bytes.
             let resource_path = match rule.path {
                 "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs" => "external/quire-spec-language/src/diagnostic.rs",
                 "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md" => "external/quire-spec-language/docs/native-error-codes.md",

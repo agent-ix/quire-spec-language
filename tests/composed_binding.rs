@@ -89,6 +89,104 @@ fn inventory(sources: &[Source]) -> SourceInventory {
 }
 
 #[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-7")]
+fn a_large_legal_unit_binds_without_rescanning_other_declarations() {
+    let model = native_rule_model::parts().model();
+    let body = vec!["true"; 200].join(" and ");
+    let declarations = (0..100)
+        .map(|index| format!("predicate Rule{index} using S (): Boolean {{ {body} }}\n"))
+        .collect::<String>();
+    let sources = [source(
+        "large",
+        &model,
+        &[("S", R::StateQueries)],
+        &declarations,
+    )];
+    let selected_sources = inventory(&sources);
+    let admitted = admit_namespace(
+        &selected_sources,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    assert!(admitted.issues().is_empty(), "{:?}", admitted.issues());
+    let namespace = admitted.namespace().unwrap();
+    assert!(namespace.dependencies_complete());
+    assert_eq!(namespace.units()[0].expressions().len(), 39_900);
+    assert_eq!(namespace.declarations().len(), 100);
+    let (definitions, rules) = artifacts();
+    let selected = Inventory {
+        edition: R::Edition.selection(),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let models = [ModelInput::Native(&model)];
+    let report = binding::bind(namespace, &selected, &models, BindingLimits::default());
+    assert!(report.complete(), "{:?}", report.exhaustion());
+    for result in report.declarations() {
+        assert_eq!(
+            report.disposition(result.declaration()),
+            Some(Disposition::NamesResolved)
+        );
+    }
+    // Two arena walks plus bounded profile/boundary overhead fit this ceiling.
+    // A per-declaration whole-arena scan requires 3,990,000 reads on its own.
+    assert!(report.usage().references < 200_000, "{:?}", report.usage());
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-2", "FR-036-AC-7")]
+fn definition_binding_visits_only_its_protocols_own_control_region() {
+    let model = native_rule_model::parts().model();
+    let checks = (0..50)
+        .map(|index| format!("check Check{index} using Missing {{ true }};\n"))
+        .collect::<String>();
+    let declarations = (0..200)
+        .map(|index| format!("protocol Flow{index} using P over (view: M::Node) on origin {{ role Service on M::Node; run sequence Main {{ {checks} }} finish Closed as (closed: M::Node) {{ true }}; }}\n"))
+        .collect::<String>();
+    let sources = [source(
+        "many-protocols",
+        &model,
+        &[("P", R::Protocol)],
+        &declarations,
+    )];
+    let selected_sources = inventory(&sources);
+    let admitted = admit_namespace(
+        &selected_sources,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    assert!(admitted.issues().is_empty(), "{:?}", admitted.issues());
+    let namespace = admitted.namespace().unwrap();
+    assert!(namespace.dependencies_complete());
+    assert_eq!(namespace.units()[0].controls().len(), 10_200);
+    let (definitions, rules) = artifacts();
+    let selected = Inventory {
+        edition: R::Edition.selection(),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let mut work =
+        quire_spec_language::linking::composed::binding_work::Work::new(BindingLimits::default());
+    let report = quire_spec_language::linking::composed::definitions::resolve(
+        namespace, &selected, &mut work,
+    );
+    assert!(report.complete, "{:?}", report.exhaustion);
+    assert_eq!(report.declarations.len(), 200);
+    for declaration in &report.declarations {
+        assert!(declaration.complete);
+        assert_eq!(declaration.uses.len(), 51);
+        assert!(declaration.uses[0].refusal.is_none());
+        assert!(declaration.uses[1..].iter().all(|usage| usage.refusal
+            == Some(quire_spec_language::linking::composed::definitions::Cause::MissingAlias)));
+    }
+    // All 10,000 missing aliases are retained with original owning declarations.
+    // Scanning every protocol's arena would need 2,040,000 reads before lookup.
+    assert!(work.usage().references < 200_000, "{:?}", work.usage());
+}
+
+#[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-4")]
 fn one_binding_path_resolves_three_families_and_preserves_owned_anchors() {
     let model = native_rule_model::parts().model();
