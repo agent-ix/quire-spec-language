@@ -135,6 +135,21 @@ full/partial recovery predicates with their declared population/relationship
 and closure authorities. A compensation operation's success cannot replace its
 recovery relation or completeness premises.
 
+When the source declares no separate compensation-effect payload, the compiler SHALL
+emit an effect-instance requirement with null value type, the exact
+compensation operation export, and its owning obligation, retry anchor and
+attempt-binding prerequisite. This narrow identity role does not select an
+attempt, operation-result or recovery-view payload as effect evidence. The null
+type does not authorize an untyped observation or waive F's later admission of
+the actual effect subject and its typed signal/value mapping under the unchanged
+selected observation-binding contract.
+
+The reader SHALL refuse a null-type compensation effect without its exact
+operation, subject, anchor and registration/activation/attempt prerequisite
+chain under the selected observation-binding contract. Ordinary effects retain
+non-null value type and model; an explicitly selected typed compensation-effect
+view retains its own value type and authoritative model export.
+
 If any required declaration or dependency is refused, unsupported or unfinished,
 then the emitter SHALL return no full-package artifact while retaining the
 independent compilation results. Unknown wire/type/version, missing or substituted
@@ -161,7 +176,7 @@ fresh retry neither reuses spent counters nor mutates previous inputs/results.
 | FR-042-AC-3 | One-axis changes to producer, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
 | FR-042-AC-4 | Typed values preserve exact nominal/unit/domain identities, cross-unit callee owners, ordered arguments, all eight query forms, graph-export authority, Boolean roots, source loci, scope and pre/post/activation/capture origins. Wrong type/owner, dangling/cyclic value references, missing totality and proof-witness substitution cannot produce an emitted package. | Test (TC-121) |
 | FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Missing/foreign joins, unbounded or zero-progress repetition, unobservable/overlapping choices, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
-| FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. Effect-dependent registration, retries, commit boundaries and full versus partial recovery retain exact typed relations and authorities; identity substitution, missing static authority or an operation-success shortcut cannot satisfy emission/admission. | Test (TC-121) |
+| FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. Effect-dependent registration, retries, commit boundaries and full versus partial recovery retain exact typed relations and authorities. A null-type compensation effect retains its exact operation, subject, retry anchor and attempt prerequisite; missing/cross-wired registration or activation links, null model, an ordinary effect with null type, or an operation-success shortcut refuse. | Test (TC-121) |
 | FR-042-AC-7 | The public reader verifies canonical bytes and external selection without a native parser. Unknown/duplicate/missing fields, wrong tags, noncanonical encodings, out-of-range/foreign handles and changed content refuse with typed causes. Resealing a tampered payload under an unchanged expected reference still refuses; digest success alone is never evidence of native-source equivalence. | Test (TC-121) |
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow/clamping and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
