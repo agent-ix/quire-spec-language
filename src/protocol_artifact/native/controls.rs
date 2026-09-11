@@ -5,7 +5,7 @@ use super::{
     layout::DeclLayout,
     runtime::{
         binder_type, nominal, operation_export, parameter_handle, selected_profile, structural,
-        Requirement, Runtime,
+        structural_symbol, Requirement, Runtime,
     },
     types::{index, integer, text, ValueBuilder},
 };
@@ -107,7 +107,7 @@ pub(super) fn controls(
                     });
                 }
                 w::ControlOperation::Choice {
-                    owner: role_handle(protocol, scope, layout, original, owner, work)?,
+                    owner: role_handle(protocol, scope, layout, Some(original), owner, work)?,
                     visible: values(visible, work)?,
                     cases: selected,
                 }
@@ -129,7 +129,7 @@ pub(super) fn controls(
                     return Err(Error::Invalid(Invalid::NumericDomain));
                 }
                 w::ControlOperation::Repeat {
-                    owner: role_handle(protocol, scope, layout, original, owner, work)?,
+                    owner: role_handle(protocol, scope, layout, Some(original), owner, work)?,
                     visible: values(visible, work)?,
                     maximum: integer(maximum, work)?,
                     guard: layout.value(*guard)?,
@@ -147,6 +147,26 @@ pub(super) fn controls(
                 timeout,
             } => {
                 let profile = selected_profile(context, profile, work)?;
+                let symbol = structural_symbol(
+                    scope,
+                    after.span,
+                    scopes::StructuralKind::AwaitAnchor,
+                    work,
+                )?;
+                let after = if symbol.kind == scopes::SymbolKind::Compensation {
+                    w::AwaitAnchor::Compensation {
+                        compensation: layout.compensation_named(
+                            protocol,
+                            symbol.name.span,
+                            work,
+                        )?,
+                    }
+                } else {
+                    w::AwaitAnchor::Event {
+                        node: layout
+                            .control(symbol.control.ok_or(Error::Invalid(Invalid::Reference))?)?,
+                    }
+                };
                 let selected = *runtime
                     .metadata()
                     .registered
@@ -196,15 +216,7 @@ pub(super) fn controls(
                     )?;
                 }
                 w::ControlOperation::Await {
-                    after: w::AwaitAnchor::Event {
-                        node: structural(
-                            scope,
-                            after.span,
-                            scopes::StructuralKind::AwaitAnchor,
-                            layout,
-                            work,
-                        )?,
-                    },
+                    after,
                     profile,
                     clock: clock_index,
                     within: super::families::interval(within, work)?,
@@ -241,10 +253,23 @@ pub(super) fn controls(
                         role: owner,
                         compensation,
                     } => {
-                        if compensation.is_some() {
-                            return Err(Error::Unsupported(Unsupported::Export));
-                        }
-                        let owner = role_handle(protocol, scope, layout, original, owner, work)?;
+                        let compensation = compensation
+                            .as_ref()
+                            .map(|path| {
+                                let symbol = structural_symbol(
+                                    scope,
+                                    path.span,
+                                    scopes::StructuralKind::Compensation,
+                                    work,
+                                )?;
+                                if symbol.kind != scopes::SymbolKind::Compensation {
+                                    return Err(Error::Invalid(Invalid::Owner));
+                                }
+                                layout.compensation_named(protocol, symbol.name.span, work)
+                            })
+                            .transpose()?;
+                        let owner =
+                            role_handle(protocol, scope, layout, Some(original), owner, work)?;
                         let role_instance = roles
                             .get(owner.index as usize)
                             .ok_or(Error::Invalid(Invalid::Owner))?
@@ -255,7 +280,7 @@ pub(super) fn controls(
                             vec![role_instance],
                             w::Event::Event {
                                 owner,
-                                compensation: w::Nullable(None),
+                                compensation: w::Nullable(compensation),
                                 instance: 0,
                             },
                         )
@@ -265,7 +290,8 @@ pub(super) fn controls(
                         operation,
                         contracts,
                     } => {
-                        let owner = role_handle(protocol, scope, layout, original, owner, work)?;
+                        let owner =
+                            role_handle(protocol, scope, layout, Some(original), owner, work)?;
                         let selected_role = roles
                             .get(owner.index as usize)
                             .ok_or(Error::Invalid(Invalid::Owner))?;
@@ -477,7 +503,7 @@ pub(super) fn controls(
                 parameter,
                 constraint,
             } => {
-                let owner = role_handle(protocol, scope, layout, original, owner, work)?;
+                let owner = role_handle(protocol, scope, layout, Some(original), owner, work)?;
                 let selected_role = roles
                     .get(owner.index as usize)
                     .ok_or(Error::Invalid(Invalid::Owner))?;
@@ -528,7 +554,7 @@ pub(super) fn controls(
     }
     Ok(controls)
 }
-fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {
+pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {
     match ty {
         crate::checking::NativeType::Record { .. } | crate::checking::NativeType::Object { .. } => {
             Ok(())
@@ -541,11 +567,11 @@ fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {
         | crate::checking::NativeType::Sequence { .. } => Err(Error::Invalid(Invalid::Type)),
     }
 }
-fn role_handle(
+pub(super) fn role_handle(
     protocol: &c::Protocol,
     scope: &DeclarationScope,
     layout: &DeclLayout,
-    original: c::ControlId,
+    original: Option<c::ControlId>,
     name: &Spanned<String>,
     work: &mut Work,
 ) -> Result<w::Handle, Error> {
@@ -553,7 +579,7 @@ fn role_handle(
     for reference in &scope.references {
         work.visit()?;
         if reference.span == name.span
-            && reference.site == Some(original)
+            && reference.site == original
             && reference.required == scopes::StructuralKind::Role
         {
             if target.is_some() {
@@ -622,7 +648,7 @@ fn channel_handle(
     }
     Err(Error::Invalid(Invalid::Owner))
 }
-fn operation_context(
+pub(super) fn operation_context(
     context: &Declaration<'_, '_>,
     span: crate::Span,
     builder: &ValueBuilder<'_>,

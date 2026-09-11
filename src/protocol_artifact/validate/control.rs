@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::linking::composed::definition_source::RegisteredDefinition;
+
 use super::*;
 
 type EdgeKey = (
@@ -66,7 +68,7 @@ impl Derived {
     }
 }
 
-impl Graph<'_, '_> {
+impl<'a> Graph<'a, '_> {
     pub(super) fn protocol(&mut self, owner: usize) -> Result {
         let declaration = &self.package.declarations[owner];
         let Body::Protocol {
@@ -561,7 +563,7 @@ impl Graph<'_, '_> {
         Ok(())
     }
 
-    fn unique_names<'a>(&mut self, values: impl IntoIterator<Item = &'a str>) -> Result {
+    fn unique_names<'name>(&mut self, values: impl IntoIterator<Item = &'name str>) -> Result {
         let mut seen = BTreeSet::new();
         for name in values {
             self.work.visit()?;
@@ -661,13 +663,188 @@ impl Graph<'_, '_> {
         Err(Error::Invalid(Invalid::Binding))
     }
 
+    /// A payload-free effect names an exact obligation and operation; it cannot
+    /// borrow an attempt or recovery view as evidence of a business effect.
+    pub(super) fn compensation_effect_identity(
+        &mut self,
+        owner: usize,
+        index: usize,
+        binding: &BindingRequirement,
+    ) -> Result {
+        let Subject::Compensation { compensation } = &binding.subject else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        let selected = self.local(owner, compensation, Local::Compensation)?;
+        let Body::Protocol { compensations, .. } = &self.package.declarations[owner].body else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        let value = &compensations[selected];
+        if value.effect_instance as usize != index
+            || binding.model.0.as_ref() != Some(&value.operation)
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        self.export(&value.operation, &[ExportKind::Operation])?;
+        // The complete registration/activation/attempt chain is checked by
+        // compensations(), for both identity-only and explicitly typed effects.
+        Ok(())
+    }
+
+    fn compensation_binding(
+        &mut self,
+        owner: usize,
+        index: u32,
+        subject: &Handle,
+        anchor: &Handle,
+        requires: &[u32],
+    ) -> Result<&'a BindingRequirement> {
+        let binding = self.binding(owner, index, &[])?;
+        self.work.charge(Dimension::References, requires.len())?;
+        if !matches!(&binding.subject, Subject::Compensation { compensation } if compensation == subject)
+            || &binding.anchor != anchor
+            || binding.requires.as_slice() != requires
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        for definition in &self.package.definitions {
+            self.work.visit()?;
+            self.work.bytes(definition.identity.len())?;
+            if definition.identity == RegisteredDefinition::ObservationBinding.identity()
+                && definition.artifact == binding.contract
+            {
+                let dependency = self
+                    .package
+                    .dependencies
+                    .get(binding.contract as usize)
+                    .ok_or(Error::Invalid(Invalid::Reference))?;
+                intake::same_reference(&binding.authority, &dependency.artifact, self.work)?;
+                return Ok(binding);
+            }
+        }
+        Err(Error::Invalid(Invalid::Binding))
+    }
+
+    fn compensation_bindings(
+        &mut self,
+        owner: usize,
+        index: usize,
+        value: &Compensation,
+        controls: &[Control],
+    ) -> Result {
+        let subject = Handle {
+            declaration: u32::try_from(owner).map_err(|_| Error::Invalid(Invalid::Reference))?,
+            index: u32::try_from(index).map_err(|_| Error::Invalid(Invalid::Reference))?,
+        };
+        let declaration = &self.package.declarations[owner];
+        let Body::Protocol { roles, .. } = &declaration.body else {
+            return Err(Error::Invalid(Invalid::Binding));
+        };
+        let role = self.local(owner, &value.owner, Local::Role)?;
+        let role_instance = roles[role].instance;
+        let forward = self.local(owner, &value.forward_effect, Local::Control)?;
+        let ControlOperation::Event {
+            event: Event::Effect { instance, .. },
+            ..
+        } = &controls[forward].operation
+        else {
+            return Err(Error::Invalid(Invalid::Control));
+        };
+        let forward_instance = self.binding(owner, *instance, &[BindingKind::Effect])?;
+        let forward_binder = self.binder(owner, &value.forward, &[BinderKind::ForwardEffect])?;
+        let registration = self.compensation_binding(
+            owner,
+            value.registration_instance,
+            &subject,
+            &value.registration_anchor,
+            &[
+                (*instance).min(role_instance),
+                (*instance).max(role_instance),
+            ],
+        )?;
+        if forward_binder.anchor != value.registration_anchor
+            || registration.value_type.0 != Some(forward_binder.value_type)
+            || registration.value_type != forward_instance.value_type
+            || registration.model != forward_instance.model
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let activation_anchor = self.local(owner, &value.activation_anchor, Local::Anchor)?;
+        let activation_instance = declaration.anchors[activation_anchor]
+            .binding
+            .0
+            .ok_or(Error::Invalid(Invalid::Binding))?;
+        let activation = self.compensation_binding(
+            owner,
+            activation_instance,
+            &subject,
+            &value.activation_anchor,
+            &[value.registration_instance],
+        )?;
+        let trigger = self.binder(owner, &value.trigger, &[BinderKind::CompensationTrigger])?;
+        if activation.kind != BindingKind::Observation
+            || trigger.anchor != value.activation_anchor
+            || activation.value_type.0 != Some(trigger.value_type)
+            || activation.model.0.is_none()
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        let earlier = self.binder(owner, &value.earlier, &[BinderKind::EarlierAttempt])?;
+        let later = self.binder(owner, &value.later, &[BinderKind::LaterAttempt])?;
+        let attempt = self.compensation_binding(
+            owner,
+            value.attempt_instance,
+            &subject,
+            &earlier.anchor,
+            &[
+                activation_instance.min(role_instance),
+                activation_instance.max(role_instance),
+            ],
+        )?;
+        if earlier.anchor != later.anchor
+            || attempt.value_type.0 != Some(value.attempt_type)
+            || attempt.model.0.as_ref() != Some(&value.operation)
+        {
+            return Err(Error::Invalid(Invalid::Binding));
+        }
+        for (handle, kind, binding) in [
+            (
+                &value.registration_anchor,
+                AnchorKind::Registration,
+                value.registration_instance,
+            ),
+            (
+                &value.activation_anchor,
+                AnchorKind::CompensationActivation,
+                activation_instance,
+            ),
+            (&earlier.anchor, AnchorKind::Retry, value.attempt_instance),
+        ] {
+            let anchor = self.local(owner, handle, Local::Anchor)?;
+            let anchor = &declaration.anchors[anchor];
+            if anchor.kind != kind
+                || anchor.owner.0.as_ref() != Some(&subject)
+                || anchor.binding.0 != Some(binding)
+            {
+                return Err(Error::Invalid(Invalid::Binding));
+            }
+        }
+        self.compensation_binding(
+            owner,
+            value.effect_instance,
+            &subject,
+            &earlier.anchor,
+            &[value.attempt_instance],
+        )?;
+        Ok(())
+    }
+
     fn compensations(
         &mut self,
         owner: usize,
         values: &[Compensation],
         controls: &[Control],
     ) -> Result {
-        for value in values {
+        for (index, value) in values.iter().enumerate() {
             self.locus(owner, &value.locus)?;
             let forward = self.local(owner, &value.forward_effect, Local::Control)?;
             if !matches!(
@@ -722,6 +899,7 @@ impl Graph<'_, '_> {
                 value.effect_instance,
                 &[BindingKind::CompensationEffect],
             )?;
+            self.compensation_bindings(owner, index, value, controls)?;
             if let Some(commit) = &value.commit.0 {
                 let commit = self.local(owner, commit, Local::Control)?;
                 if !matches!(controls[commit].operation, ControlOperation::Commit { .. }) {

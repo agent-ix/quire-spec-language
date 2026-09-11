@@ -617,7 +617,9 @@ impl Graph<'_, '_> {
             if let Some(model) = &binding.model.0 {
                 self.export(model, &[])?;
             }
-            if (binding.value_type.0.is_none() || binding.model.0.is_none())
+            if binding.kind == BindingKind::CompensationEffect && binding.value_type.0.is_none() {
+                self.compensation_effect_identity(owner, index, binding)?;
+            } else if (binding.value_type.0.is_none() || binding.model.0.is_none())
                 && !matches!(
                     binding.kind,
                     BindingKind::Clock

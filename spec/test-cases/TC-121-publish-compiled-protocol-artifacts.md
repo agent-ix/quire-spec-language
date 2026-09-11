@@ -81,6 +81,16 @@ observations belong only to the later consumer fixture.
    O1's, omit required static population/relationship authority, or replace
    recovery with operation success. Require refusal of the relevant boundary;
    an absent future trigger/observation is not fabricated during compilation.
+   For an identity-only compensation effect, check null value type with the
+   exact operation export, owning compensation subject, retry anchor and sole
+   attempt-binding prerequisite. Independently remove its model, select a wrong
+   export, swap subject/anchor/attempt with another obligation, or sever the
+   registration-to-forward, activation-to-registration or attempt-to-activation
+   chain. Require `Invalid::Binding` for these semantic mismatches, retaining
+   `Invalid::Owner` for foreign-declaration handles. Null an ordinary effect's
+   value type and require refusal; an explicitly selected typed effect view
+   retains its payload/model fields. No operation result or recovery snapshot
+   supplies the missing effect identity or correspondence.
 7. Give exact emitted bytes and external reference to the bounded public reader
    without invoking native parsing. Mutate every closed object/tag/member,
    duplicate equal entries, introduce invalid indices/cycles/noncanonical bytes,
