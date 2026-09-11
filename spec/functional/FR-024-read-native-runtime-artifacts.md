@@ -45,6 +45,11 @@ body decoding, using unknown_wire or invalid_runtime_input respectively.
 The reader shall require envelope identity to equal the selected reference.
 The reader shall reject unknown, missing or duplicate fields throughout the body,
 invalid identifiers, non-integer numeric values and non-lowercase 64-digit digests.
+Each public runtime record's Serde decoder shall enforce its closed object shape
+and validated scalar fields when decoded directly or nested, without requiring
+the caller to select a field adapter. An invocation result field shall be present;
+explicit null decodes to no result. Native digest fields shall admit exactly
+64 lowercase hexadecimal digits without an algorithm prefix.
 The reader shall preserve explicit null operation results and duplicate vector entries.
 The reader shall run the existing structural constructor before admitting an artifact.
 The reader shall retain the original input bytes and their digest on success.
@@ -67,7 +72,7 @@ predicate truth. It defines no portable reference/result envelope and performs n
 | --- | --- | --- |
 | FR-024-AC-1 | Snapshot and invocation bytes round-trip into artifacts with exact selected references, bytes and flat drafts, including whitespace and reordered object fields. | Test |
 | FR-024-AC-2 | Stale digests/identities, foreign roles, unknown versions and malformed/unknown/missing/duplicate JSON fields refuse with the actual stage and a distinct typed cause; byte-limit causes retain the actual length and effective ceiling, and envelope/body errors retain their original JSON diagnostics. | Test |
-| FR-024-AC-3 | Every admitted value variant decodes exactly; invalid identifier, numeric, digest and local-index values refuse while vector duplicates remain intact. | Test |
+| FR-024-AC-3 | Every admitted value variant decodes exactly; direct and nested decoding of each public runtime record rejects positional arrays and unknown, missing or duplicate fields. Invalid identifier, numeric, digest and local-index values refuse while vector duplicates remain intact; explicit null invocation results are admitted but omitted results refuse. | Test |
 | FR-024-AC-4 | Byte and structural limits return incomplete without partial artifacts; fresh reads can succeed and actual execution of reread snapshots/invocations preserves truth and frame refusals. | Test |
 
 ## Dependencies
