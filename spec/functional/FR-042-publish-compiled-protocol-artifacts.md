@@ -56,7 +56,7 @@ workflow instances, observations, clocks, assessment requests or backend results
 An immutable `quire.compiled-protocol/1` package and its external exact-byte
 reference, or a typed refused, unsupported or resource-incomplete result with
 original available loci and partial compilation evidence. The planned Rust
-`protocol_artifact` emitter and `read_verified` entry points expose structured
+`protocol_artifact` emitter and the `read` entry point expose structured
 results; source stdout, shell commands and hand-edited JSON are not the producer
 handoff. Successfully verified wire content remains distinct from compiler-owned
 family admission and B-owned assessment admission/execution.
@@ -158,5 +158,6 @@ numeric component. The accepted standard package/protocol contracts and FR-050â€
 own static versus runtime identity and protocol meaning; this requirement fixes
 their compiler wire representation. [TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md)
 and [B's IT-001](ix://agent-ix/quire-protocol/IT-001) retain full producer/consumer
-acceptance under compiler #40. This contract is planned implementation scope;
-numeric/type components and strict-reader fixtures alone do not close it.
+acceptance under compiler #40. The wire reader and numeric/type components
+implement part of this contract; strict-reader fixtures alone do not close
+native emission, family admission or producer/consumer acceptance.
