@@ -57,15 +57,21 @@ representation, runtime prerequisites or assertions are still unavailable.
    rational producer/proof representation and require the precise prerequisite
    refusal, without claiming those positive cases have executed.
 5. Check size/contains/forall/exists/filter/map/count/sum over an authored finite
-   sequence, including nested binders and empty/maximal admitted bounds. Inspect
-   source occurrence order, result element/max and preserved population roles;
+   sequence, including nested binders, potentially empty values under a positive
+   declared maximum, provably empty filter results and maximal admitted bounds.
+   Inspect source occurrence order, result element/max and preserved population roles;
    no checking step deduplicates or flattens the query. Use Amount 1..20/U,
    maximum 5, Total 0..100/U and dimensionless Count 0..5, then independently
    change maximum to 6, Count upper bound to 4, Total unit or representation,
    and Total to exclude zero. Add a fold whose final mathematical sum fits but
    an intermediate prefix can exceed the selected total. Verify these proof
    obligations from domains/lengths rather than executing sample observations.
-   Distinguish N=0, 10,000 and 10,001 at the earliest actual admission boundary.
+   Refuse declared producer maxima 0 and 10,001 at model admission. Check all
+   eight forms, including sum, at maximum 10,000 with suitable authored element
+   and result domains and sufficient effective proof limits. Independently lower
+   a proof limit and require typed exhaustion without changing the semantic
+   maximum or treating that outcome as a failed query predicate. These static
+   checks do not execute empty or populated runtime sequences.
 6. Compare a valid optional-value guard and immutable let alias with reversed
    guards, a different receiver, a pre guard for post access and an invalid
    alternative-join union. Check composite `pre(self.version + delta)` and
