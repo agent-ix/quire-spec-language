@@ -8,6 +8,7 @@ mod controls;
 mod families;
 mod layout;
 mod metadata;
+mod populations;
 mod runtime;
 mod types;
 mod values;

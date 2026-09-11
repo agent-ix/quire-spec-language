@@ -55,6 +55,13 @@ observations belong only to the later consumer fixture.
    selected profile. Place prohibited forms in unused/unreachable source.
    No erased operand, symbolic proof witness or guessed model authority can
    repair the refused emission.
+   For native reference populations, use two admitted object roles sharing a
+   universe label and independently selected models. Check the exact original
+   role locus and model/object/universe binding through current, pre-state and
+   captured-reference uses without supplying observations. Substitute one
+   reference, object, population export, model owner or source locus at a time;
+   require the corresponding typed refusal. Population closure remains a
+   declared input requirement, not an observed compilation result.
 5. Compare the explicit causal graph with the authored structured controls.
    Exercise both branch interleavings and equal-time observations without added
    edges. Mutate owner/visibility, overlapping labels/guards, join targets,

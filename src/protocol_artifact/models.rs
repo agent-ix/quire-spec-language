@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-042: exact exports and value types from constructor-admitted native models.
 
+mod populations;
+
 use std::collections::BTreeMap;
 
 use quire_contract_ir as ir;
@@ -33,6 +35,7 @@ enum Target<'a> {
     Record(&'a ir::RecordDeclaration),
     Object(&'a ObjectRole, &'a ir::RecordDeclaration),
     Reference(&'a ObjectRole),
+    Population(&'a ObjectRole),
     Field(&'a ir::RecordDeclaration, &'a ir::RecordFieldDeclaration),
     Operation(&'a OperationRole),
 }
@@ -44,7 +47,7 @@ impl<'a> Target<'a> {
             Self::Enum(value) => value.source(),
             Self::Variant(_, value) => value.source(),
             Self::Record(value) => value.source(),
-            Self::Object(role, _) | Self::Reference(role) => &role.source,
+            Self::Object(role, _) | Self::Reference(role) | Self::Population(role) => &role.source,
             Self::Field(_, value) => value.source(),
             Self::Operation(value) => &value.source,
         }
@@ -192,6 +195,12 @@ pub(super) fn validate(
         work.visit()?;
         work.locus = Some(declaration.locus.clone());
         validate_operations(package, declaration, &views, work)?;
+        let populations = populations::Validation {
+            package,
+            declaration,
+            views: &views,
+        };
+        populations.bindings(work)?;
         for value in &declaration.values {
             work.visit()?;
             work.locus = Some(value.locus.clone());
@@ -245,6 +254,14 @@ pub(super) fn validate(
                     };
                     matches_native(package, &views, value.value_type, &native, work)?;
                 }
+                w::ValueOperation::Reaches { .. } => {
+                    populations.value(value, work)?;
+                }
+                // No native Parent operator is admitted by the composed frontend.
+                // Population identity alone does not establish its result semantics.
+                w::ValueOperation::Parent { .. } => {
+                    return Err(Error::Unsupported(Unsupported::Feature));
+                }
                 w::ValueOperation::Boolean { .. }
                 | w::ValueOperation::Number { .. }
                 | w::ValueOperation::Text { .. }
@@ -258,9 +275,7 @@ pub(super) fn validate(
                 | w::ValueOperation::Call { .. }
                 | w::ValueOperation::Size { .. }
                 | w::ValueOperation::Contains { .. }
-                | w::ValueOperation::Query { .. }
-                | w::ValueOperation::Parent { .. }
-                | w::ValueOperation::Reaches { .. } => {}
+                | w::ValueOperation::Query { .. } => {}
             }
         }
     }
@@ -542,6 +557,16 @@ fn exports<'a>(
             work,
         )?;
     }
+    for role in &catalog.model.roles().objects {
+        insert(
+            &mut result,
+            w::ExportKind::Population,
+            role.record.as_str(),
+            role.universe.as_str(),
+            Target::Population(role),
+            work,
+        )?;
+    }
     Ok(result)
 }
 
@@ -573,11 +598,13 @@ fn export_key<'a>(export: &'a w::Export, work: &mut Work) -> Result<ExportKey<'a
         | w::ExportKind::Record
         | w::ExportKind::Object
         | w::ExportKind::Reference => 1,
-        w::ExportKind::Field | w::ExportKind::Variant | w::ExportKind::Operation => 2,
-        w::ExportKind::Relationship
-        | w::ExportKind::Population
-        | w::ExportKind::Component
-        | w::ExportKind::Endpoint => return Err(Error::Unsupported(Unsupported::Export)),
+        w::ExportKind::Field
+        | w::ExportKind::Variant
+        | w::ExportKind::Operation
+        | w::ExportKind::Population => 2,
+        w::ExportKind::Relationship | w::ExportKind::Component | w::ExportKind::Endpoint => {
+            return Err(Error::Unsupported(Unsupported::Export))
+        }
     };
     if export.path.len() != arity {
         return Err(Error::Invalid(Invalid::Model));
@@ -647,6 +674,35 @@ fn integer(value: &w::Integer, work: &mut Work) -> Result<i64, Error> {
     }
 }
 
+/// The three references name one admitted role, not three matching labels.
+fn reference_target<'a, 'v>(
+    views: &'v [View<'a>],
+    export: &w::ExportRef,
+    object: &w::ExportRef,
+    universe: &w::ExportRef,
+    work: &mut Work,
+) -> Result<(&'v View<'a>, &'a ObjectRole), Error> {
+    let (view, reference) = target(views, export, work)?;
+    let (_, object_target) = target(views, object, work)?;
+    let (_, population) = target(views, universe, work)?;
+    let (
+        Target::Reference(reference),
+        Target::Object(object_role, _),
+        Target::Population(population),
+    ) = (reference, object_target, population)
+    else {
+        return Err(Error::Invalid(Invalid::Type));
+    };
+    if export.model != object.model
+        || export.model != universe.model
+        || !std::ptr::eq(reference, object_role)
+        || !std::ptr::eq(reference, population)
+    {
+        return Err(Error::Invalid(Invalid::Type));
+    }
+    Ok((view, reference))
+}
+
 fn validate_type(ty: &w::Type, views: &[View<'_>], work: &mut Work) -> Result<(), Error> {
     let valid = match ty {
         w::Type::Boolean {} | w::Type::Option { .. } => true,
@@ -667,7 +723,14 @@ fn validate_type(ty: &w::Type, views: &[View<'_>], work: &mut Work) -> Result<()
         w::Type::Enum { export } => matches!(target(views, export, work)?.1, Target::Enum(_)),
         w::Type::Record { export } => matches!(target(views, export, work)?.1, Target::Record(_)),
         w::Type::Object { export } => matches!(target(views, export, work)?.1, Target::Object(..)),
-        w::Type::Reference { .. } => return Err(Error::Unsupported(Unsupported::Export)),
+        w::Type::Reference {
+            export,
+            object,
+            universe,
+        } => {
+            reference_target(views, export, object, universe, work)?;
+            true
+        }
     };
     if valid {
         Ok(())
@@ -803,8 +866,16 @@ fn matches_native(
                 let (view, selected) = target(views, export, work)?;
                 matches!(selected, Target::Object(actual, _) if same_model(view.catalog.model, model) && actual == *role)
             }
-            (w::Type::Reference { .. }, NativeType::Reference { .. }) => {
-                return Err(Error::Unsupported(Unsupported::Export));
+            (
+                w::Type::Reference {
+                    export,
+                    object,
+                    universe,
+                },
+                NativeType::Reference { model, role },
+            ) => {
+                let (view, actual) = reference_target(views, export, object, universe, work)?;
+                same_model(view.catalog.model, model) && actual == *role
             }
             _ => false,
         };
