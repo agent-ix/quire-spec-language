@@ -100,6 +100,14 @@ observations belong only to the later consumer fixture.
    after a parallel all-join is positive; the sibling before the join, a
    branch-local record after choice, and an await-success record on timeout are
    unavailable. Aliases/captures cannot bypass those original scope checks.
+   Repeat the positive with an attempt owned by the choice role and real pre/post
+   contracts from another source unit. Preserve its operation, contract handles,
+   result binder and original anchor through emission and reading. Two owned
+   attempts after an all-branch join retain distinct atoms even with equal record
+   types; `left.ready` / `not right.ready` is not a valid partition. Change only
+   the choice role to another role on the same model and require FamilyProof.
+   An attempt in a parallel sibling remains unavailable before the join. None
+   of these cases treats the attempt result as proof that an effect occurred.
    Retain definedness success while giving symbolic guards an abstract overlap
    or hole, including correlated facts whose model constraints are not imported
    into this abstraction; require `Unsupported::FamilyProof`, not a claimed
