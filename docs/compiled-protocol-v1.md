@@ -522,8 +522,16 @@ owners, lexical binder identities and evaluation anchors across predicate,
 state, temporal and protocol families. It requires completed native typing and
 definedness before family checks. Supported constant decisions establish their
 coverage and non-overlap directly; continuing bounded loops must establish
-observable progress. General symbolic choice/visibility proofs, unsupported
-ordered-query proofs, recovery admission and absent authoritative producer
+observable progress. The native path lowers `size`, `contains`, `forall`,
+`exists`, `filter`, `map`, `count` and `sum` from their original AST occurrences
+after supported query definedness completes. It retains collection/body order,
+query binder identity, result domain and provenance; a binder is available in
+its body, not its collection. Proof-side symbolic or empty-domain simplification
+does not replace the emitted query with a witness, constant or unrolled graph.
+Sum discharge supports integer and denominator-one rational prefix domains;
+broader rational sum-domain transfer remains explicitly unsupported unless the
+sum is statically empty. General symbolic choice/visibility proofs,
+recovery admission and absent authoritative producer
 exports still refuse explicitly. These are remaining implementation obligations,
 not a reduced language specification. The caller retains the upstream compilation
 reports when family admission refuses; no partial package is emitted. A successful
