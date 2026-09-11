@@ -372,6 +372,133 @@ fn all_eight_queries_emit_original_ordered_graphs_after_actual_discharge() {
 
 #[test]
 #[trace("TC-119", "TC-121", "FR-040-AC-5", "FR-042-AC-4", "FR-042-AC-7")]
+fn statically_empty_filter_emits_its_original_collection_binder_and_body() {
+    let inputs = Inputs::new(&[
+        Unit {
+            name: "empty-query",
+            body: "predicate Queries using S (input: M::Node): Boolean {
+                let absent = filter(kept in input.amounts: false) in
+                size<M::Tally>(absent) = 0
+                and count<M::Tally>(counted in absent: true) = 0
+                and sum<M::Total>(summed in absent: summed) = 0
+            }",
+            declarations: &["Queries"],
+        },
+        Unit {
+            name: "empty-flow",
+            body: FLOW,
+            declarations: &["Flow"],
+        },
+    ]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("actual statically empty query source");
+            let package = admitted.package();
+            assert_eq!(original_queries(proofs, package), [1, 0, 0, 0, 1, 0, 1, 1]);
+            let owner = package
+                .declarations
+                .iter()
+                .position(|declaration| declaration.name == "Queries")
+                .unwrap() as u32;
+            let declaration = &package.declarations[owner as usize];
+            let namespace = proofs.types().binding().namespace();
+            let [original_id] = namespace.lookup("Queries") else {
+                panic!("original query declaration")
+            };
+            let original_unit = namespace
+                .unit(namespace.declaration(*original_id).unwrap().unit())
+                .unwrap();
+            let filter = declaration
+                .values
+                .iter()
+                .find(|value| {
+                    matches!(
+                        value.operation,
+                        w::ValueOperation::Query {
+                            operator: w::Query::Filter,
+                            ..
+                        }
+                    )
+                })
+                .expect("proof-side empty abstraction cannot replace the executable filter");
+            let w::ValueOperation::Query {
+                binder,
+                collection,
+                body,
+                result,
+                ..
+            } = &filter.operation
+            else {
+                panic!("retained Filter operation")
+            };
+            assert_eq!(declaration.binders[binder.index as usize].name, "kept");
+            let domain = value_at(declaration, owner, collection);
+            assert!(matches!(domain.operation, w::ValueOperation::Field { .. }));
+            assert_eq!(
+                original_unit
+                    .source()
+                    .slice(original_unit.expressions()[domain.original_expression as usize].span),
+                Some("input.amounts")
+            );
+            let predicate = value_at(declaration, owner, body);
+            assert!(matches!(
+                predicate.operation,
+                w::ValueOperation::Boolean { value: false }
+            ));
+            assert_eq!(
+                original_unit.source().slice(
+                    original_unit.expressions()[predicate.original_expression as usize].span
+                ),
+                Some("false")
+            );
+            scalar(package, sequence(package, *result), "Amount", Some("U"));
+            let empty = declaration
+                .binders
+                .iter()
+                .find(|binder| binder.name == "absent")
+                .unwrap();
+            let initializer = empty.initializer.0.as_ref().unwrap();
+            assert_eq!(
+                value_at(declaration, owner, initializer).original_expression,
+                filter.original_expression
+            );
+            for value in &declaration.values {
+                let collection = match &value.operation {
+                    w::ValueOperation::Size { collection, .. }
+                    | w::ValueOperation::Query {
+                        operator: w::Query::Count | w::Query::Sum,
+                        collection,
+                        ..
+                    } => collection,
+                    _ => continue,
+                };
+                let w::ValueOperation::Read { binder } =
+                    &value_at(declaration, owner, collection).operation
+                else {
+                    panic!("aggregate retains captured sequence input")
+                };
+                assert_eq!(declaration.binders[binder.index as usize], *empty);
+            }
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs
+                .read(proofs, &emitted)
+                .into_result()
+                .expect("independently selected reader preserves empty-filter source graph");
+            assert_eq!(read.package(), package);
+            assert_eq!(read.digest(), emitted.digest());
+        },
+    );
+}
+
+#[test]
+#[trace("TC-119", "TC-121", "FR-040-AC-5", "FR-042-AC-4", "FR-042-AC-7")]
 fn nested_queries_preserve_body_scopes_and_captured_pre_origin_in_emitted_contracts() {
     let mut inputs = Inputs::new(&[
         Unit { name: "query-contracts", body: "pre Before using S on M::Node::step { forall(prior in self.amounts: prior >= 1) }
