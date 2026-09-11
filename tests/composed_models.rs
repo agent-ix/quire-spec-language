@@ -524,13 +524,15 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
                 .sum::<usize>();
             // Independent fixture inventory: 2 types + 11 fields + 3 values + 7
             // scalar roles + 9 scalar sites + 1 object + 1 operation + 1 frame field
-            // + 1 import. Counts reflect the authored fixture, not runtime usage.
-            let bindings_count = 2 + 11 + 3 + 7 + 9 + 1 + 1 + 1 + 1;
+            // + 1 import, plus borrowed name indexes for 2 types, 3 values and
+            // 1 operation. Each new name-index entry is also inspected once.
+            let bindings_count = 2 + 11 + 3 + 7 + 9 + 1 + 1 + 1 + 1 + 2 + 3 + 1;
+            let references = 2 + 3 + 1 + 1; // name indexes + import candidate
             let exact = BindingLimits {
                 bytes,
                 models: 1,
                 bindings: bindings_count,
-                references: 1,
+                references,
                 definitions: 0,
                 edges: 0,
             };
@@ -539,6 +541,7 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
             assert!(bound.complete(), "{:?}", bound.exhaustion());
             assert_eq!(exact_work.usage().bytes, bytes);
             assert_eq!(exact_work.usage().bindings, bindings_count);
+            assert_eq!(exact_work.usage().references, references);
             for (dimension, limits) in [
                 (Dimension::Models, BindingLimits { models: 0, ..exact }),
                 (
@@ -552,6 +555,13 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
                     Dimension::Bindings,
                     BindingLimits {
                         bindings: bindings_count - 1,
+                        ..exact
+                    },
+                ),
+                (
+                    Dimension::References,
+                    BindingLimits {
+                        references: references - 1,
                         ..exact
                     },
                 ),
@@ -693,16 +703,17 @@ fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
             "predicate Rule using S (item: M::Node): Boolean { true }",
         )],
         |namespace| {
-            // Two inputs in each owner/source comparison, then two import candidates.
+            // Each input indexes two types, three values and one operation;
+            // then two inputs in each owner/source comparison and import selection.
             let exact = BindingLimits {
-                references: 2 + 2 + 2,
+                references: 2 * (2 + 3 + 1) + 2 + 2 + 2,
                 ..BindingLimits::default()
             };
             let mut meter = Work::new(exact);
             let bindings = bind_models(namespace, &inputs, &mut meter);
             assert!(bindings.complete());
             assert!(bindings.conflicts().is_empty());
-            assert_eq!(meter.usage().references, 6);
+            assert_eq!(meter.usage().references, 18);
             assert_eq!(
                 bindings.imports()[0].selection,
                 Err(ImportRefusal::AmbiguousSelection { inputs: vec![0, 1] })
@@ -719,13 +730,13 @@ fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
                 namespace,
                 &inputs,
                 &mut Work::new(BindingLimits {
-                    references: 5,
+                    references: 17,
                     ..exact
                 }),
             );
             assert!(!partial.complete());
             assert!(partial.imports().is_empty());
-            assert_eq!(partial.exhaustion().unwrap().used, 5);
+            assert_eq!(partial.exhaustion().unwrap().used, 17);
             assert_eq!(partial.exhaustion().unwrap().requested, 1);
         },
     );
@@ -811,10 +822,10 @@ fn parameter_types_preserve_boolean_and_nominal_types_with_exact_scan_costs() {
                 matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
                 if exhaustion.dimension == Dimension::References && exhaustion.used == 0)
             );
-            // Alias/type lookups + both record candidates + Sequence + scalar
+            // Indexed alias/type lookups + Sequence + scalar
             // leaf: Version's first normalized site is Node.items, before Node.n.
             let exact = BindingLimits {
-                references: 6,
+                references: 4,
                 ..BindingLimits::default()
             };
             let mut nominal = Work::new(exact);
@@ -823,20 +834,20 @@ fn parameter_types_preserve_boolean_and_nominal_types_with_exact_scan_costs() {
                 .unwrap();
             assert!(matches!(ty, NativeType::Scalar { model: owner, role, .. }
                 if std::ptr::eq(owner, &model) && role.name.as_str() == "Version"));
-            assert_eq!(nominal.usage().references, 6);
+            assert_eq!(nominal.usage().references, 4);
             let error = bindings
                 .parameter_type(
                     unit,
                     &parameters[1].ty,
                     &mut Work::new(BindingLimits {
-                        references: 5,
+                        references: 3,
                         ..exact
                     }),
                 )
                 .unwrap_err();
             assert!(
                 matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
-                if exhaustion.dimension == Dimension::References && exhaustion.used == 5)
+                if exhaustion.dimension == Dimension::References && exhaustion.used == 3)
             );
         },
     );
@@ -893,7 +904,7 @@ fn missing_field_scan_exhausts_before_its_last_candidate() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-7")]
-fn operation_parameters_values_and_enum_members_charge_each_candidate() {
+fn indexed_operations_and_values_charge_only_selected_parameters_and_members() {
     let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
     document["enums"] = serde_json::json!([{ "name": "Color", "variants": ["Red", "Blue"] }]);
     document["values"].as_array_mut().unwrap().extend([
@@ -916,30 +927,30 @@ fn operation_parameters_values_and_enum_members_charge_each_candidate() {
                 value: "Missing".into(),
                 span: color.name.span,
             };
-            // Two lookup attempts + two records + one enum + member lookup + two variants.
+            // Indexed alias/type lookup + member lookup + two variants.
             let mut variants = Work::new(BindingLimits {
-                references: 8,
+                references: 5,
                 ..BindingLimits::default()
             });
             let error = bindings
                 .variant(unit, color, &missing, &mut variants)
                 .unwrap_err();
             assert_eq!(error.kind, ModelErrorKind::MissingExport);
-            assert_eq!(variants.usage().references, 8);
+            assert_eq!(variants.usage().references, 5);
             let error = bindings
                 .variant(
                     unit,
                     color,
                     &missing,
                     &mut Work::new(BindingLimits {
-                        references: 7,
+                        references: 4,
                         ..BindingLimits::default()
                     }),
                 )
                 .unwrap_err();
             assert!(
                 matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
-            if exhaustion.dimension == Dimension::References && exhaustion.used == 7)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 4)
             );
 
             let id = namespace.lookup("After")[0];
@@ -955,36 +966,36 @@ fn operation_parameters_values_and_enum_members_charge_each_candidate() {
                 context: context.clone(),
                 name: name.clone(),
             };
-            // Alias/type lookup, Node record, Color enum, operation lookup and one role.
+            // Indexed alias, type and operation lookups.
             let mut operations = Work::new(BindingLimits {
-                references: 6,
+                references: 3,
                 ..BindingLimits::default()
             });
             let bound = bindings
                 .resolve_operation(unit, &operation, &mut operations)
                 .unwrap();
-            assert_eq!(operations.usage().references, 6);
+            assert_eq!(operations.usage().references, 3);
             let error = bindings
                 .resolve_operation(
                     unit,
                     &operation,
                     &mut Work::new(BindingLimits {
-                        references: 5,
+                        references: 2,
                         ..BindingLimits::default()
                     }),
                 )
                 .unwrap_err();
             assert!(
                 matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
-            if exhaustion.dimension == Dimension::References && exhaustion.used == 5)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 2)
             );
             let result = Spanned {
                 value: "step_result".into(),
                 span: name.span,
             };
-            // Catalog + alias + lookup, two parameters, result, five values, Boolean leaf.
+            // Catalog + alias + indexed lookup, two parameters, result, Boolean leaf.
             let mut values = Work::new(BindingLimits {
-                references: 12,
+                references: 7,
                 ..BindingLimits::default()
             });
             assert_eq!(
@@ -994,21 +1005,21 @@ fn operation_parameters_values_and_enum_members_charge_each_candidate() {
                     .native(),
                 &NativeType::Boolean
             );
-            assert_eq!(values.usage().references, 12);
+            assert_eq!(values.usage().references, 7);
             let error = bindings
                 .value(
                     unit,
                     &bound,
                     &result,
                     &mut Work::new(BindingLimits {
-                        references: 11,
+                        references: 6,
                         ..BindingLimits::default()
                     }),
                 )
                 .unwrap_err();
             assert!(
                 matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
-            if exhaustion.dimension == Dimension::References && exhaustion.used == 11)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 6)
             );
         },
     );
