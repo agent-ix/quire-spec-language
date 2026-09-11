@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Syntax fixture: exact model/profile selections are deliberately unresolved.
+language "ix:native" edition "1-draft";
+profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
+profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
+profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
+model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+
+protocol Orders using P over (view: M::WorkflowView)
+on each (started: M::StartView) when (started.ready) {
+  capture requested: M::Money = view.amount;
+  role OrdersService on M::OrderService;
+  role PaymentsService on M::PaymentService;
+  relationship Owner = M::OrderPayment;
+  channel Requests from OrdersService to PaymentsService carries M::ChargeRequest
+    ordering fifo by (message: M::ChargeRequest) { message.key } delivery [0,3];
+  requires temporal RefundDue;
+  compensate Undo for Main::Applied as (forward: M::EffectView)
+    by PaymentsService on M::Payment::refund using T clock "payment-clock" {
+    capture saved: M::Money = forward.amount;
+    activate first (trigger: M::TriggerView) when { trigger.failed } {
+      capture expected: M::Money = trigger.remaining;
+    }
+    within [0,5];
+    attempts 2 of M::AttemptView;
+    retry (older: M::AttemptView, newer: M::AttemptView) { newer.previous = older.id };
+    commit Main::Committed;
+    recover (recovery: M::RecoveryView) { recovery.remaining = expected };
+  }
+  run sequence Main {
+    send Sent via Requests as (sent: M::SendView)
+      related by Owner(view.order, sent.payment) { sent.amount = requested };
+    receive Received via Requests of Sent as (received: M::ReceiptView) { received.ok };
+    attempt Charged by PaymentsService on M::Payment::charge contracts [CanCharge, ChargedCorrectly]
+      as (charged: M::AttemptView) { charged.ok };
+    effect Applied of Charged as (applied: M::EffectView) { applied.ok };
+    event Failed by OrdersService for Undo as (failed: M::FailureView) { failed.confirmed };
+    choice Choose by OrdersService visible (view.confirmed) {
+      case yes when { view.confirmed } sequence YesBody {}
+      case no when { not view.confirmed } sequence NoBody {}
+    }
+    parallel Both {
+      branch left sequence Left { check Paid using S { view.paid }; }
+      branch right sequence Right { check Recorded using S { view.recorded }; }
+    } join all [left,right];
+    repeat Retry by PaymentsService visible (view.pending) max 2 while { view.pending }
+      sequence Again {
+        attempt Retried by PaymentsService on M::Payment::charge contracts []
+          as (retried: M::AttemptView) { retried.ok };
+      }
+      exhausted sequence LimitReached {}
+    await Refund after Applied using T clock "payment-clock" within [0,5]
+      match event Refunded by PaymentsService for Undo as (refunded: M::RecoveryView) { refunded.complete };
+      then sequence GotRefund {}
+      timeout sequence Expired {}
+    commit Committed by OrdersService as (committed: M::CommitView) { committed.ok };
+  }
+  finish Closed as (closed: M::ClosureView) { closed.complete };
+}

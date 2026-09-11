@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_ir as ir;
 
-use super::{failure, ModelLimits, NativeRoles, ScalarKind, ScalarRole, ScalarSite};
+use super::{
+    failure, ModelLimits, NativeModelProfile, NativeRoles, ScalarKind, ScalarRole, ScalarSite,
+};
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation};
 use crate::{Code, Diagnostic};
@@ -15,12 +17,13 @@ type Result<T> = std::result::Result<T, Box<Diagnostic>>;
 const MAX_SEQUENCE_ITEMS: u32 = 10_000;
 
 pub(super) fn check(
+    profile: NativeModelProfile,
     source: &FormalSource,
     environment: &ir::DeclarationEnvironment,
     roles: &NativeRoles,
     limits: ModelLimits,
 ) -> Result<()> {
-    preflight(source, environment, roles, limits)?;
+    preflight(profile, source, environment, roles, limits)?;
     check_loci(source, environment, roles)?;
     let catalog = Catalog::new(environment);
     let scalars = catalog.check_scalars(source, roles)?;
@@ -45,6 +48,7 @@ fn spend(
 }
 
 fn preflight(
+    profile: NativeModelProfile,
     source: &FormalSource,
     environment: &ir::DeclarationEnvironment,
     roles: &NativeRoles,
@@ -61,6 +65,23 @@ fn preflight(
     let mut entries_left = limits.entries;
     for role in &roles.scalars {
         spend(source, &mut entries_left, role.sites.len(), "entries")?;
+        match profile {
+            NativeModelProfile::V1 => match role.kind {
+                ScalarKind::Integer { .. } | ScalarKind::Text { .. } => {}
+                ScalarKind::Rational { .. } => {
+                    return Err(failure(
+                        source,
+                        Code::UnsupportedConstruct,
+                        "rational roles are outside native-state-model/1",
+                    ));
+                }
+            },
+            NativeModelProfile::V2 => match role.kind {
+                ScalarKind::Integer { .. }
+                | ScalarKind::Rational { .. }
+                | ScalarKind::Text { .. } => {}
+            },
+        }
     }
     for operation in &roles.operations {
         for count in [
@@ -87,7 +108,14 @@ fn preflight(
             ir::TypeDeclaration::Record { declaration } => {
                 spend(source, &mut nodes_left, declaration.fields().len(), "nodes")?;
                 for field in declaration.fields() {
-                    check_type(source, field.value_type(), &mut nodes_left, 0, limits.depth)?;
+                    check_type(
+                        profile,
+                        source,
+                        field.value_type(),
+                        &mut nodes_left,
+                        0,
+                        limits.depth,
+                    )?;
                 }
             }
             ir::TypeDeclaration::Enum { declaration } => {
@@ -101,7 +129,14 @@ fn preflight(
         }
     }
     for value in environment.values() {
-        check_type(source, value.value_type(), &mut nodes_left, 0, limits.depth)?;
+        check_type(
+            profile,
+            source,
+            value.value_type(),
+            &mut nodes_left,
+            0,
+            limits.depth,
+        )?;
     }
     // String content is a lower bound on serialized size. Check it before
     // borrowed-key comparisons or metadata normalization; JSON escaping and
@@ -110,6 +145,7 @@ fn preflight(
 }
 
 fn check_type(
+    profile: NativeModelProfile,
     source: &FormalSource,
     ty: &ir::ValueType,
     remaining: &mut usize,
@@ -136,15 +172,18 @@ fn check_type(
                 ));
             }
         }
-        ir::ValueType::Rational { .. } => {
-            return Err(failure(
-                source,
-                Code::UnsupportedConstruct,
-                "rational values are outside the native model profile",
-            ))
-        }
+        ir::ValueType::Rational { .. } => match profile {
+            NativeModelProfile::V1 => {
+                return Err(failure(
+                    source,
+                    Code::UnsupportedConstruct,
+                    "rational values are outside the native model profile",
+                ))
+            }
+            NativeModelProfile::V2 => {}
+        },
         ir::ValueType::Option { value } => {
-            check_type(source, value, remaining, depth + 1, maximum_depth)?
+            check_type(profile, source, value, remaining, depth + 1, maximum_depth)?
         }
         ir::ValueType::Collection { value } => {
             if value.maximum_items() > MAX_SEQUENCE_ITEMS {
@@ -157,7 +196,14 @@ fn check_type(
                     ),
                 ));
             }
-            check_type(source, value.element(), remaining, depth + 1, maximum_depth)?
+            check_type(
+                profile,
+                source,
+                value.element(),
+                remaining,
+                depth + 1,
+                maximum_depth,
+            )?;
         }
         ir::ValueType::Boolean
         | ir::ValueType::Text
@@ -355,6 +401,7 @@ impl<'a> Catalog<'a> {
                 ));
             }
             let mut integer = None;
+            let mut rational = None;
             for site in &scalar.sites {
                 let site = Site::from(site);
                 if assignments.insert(site, scalar).is_some() {
@@ -364,16 +411,30 @@ impl<'a> Catalog<'a> {
                         "primitive declaration site has multiple scalar roles",
                     ));
                 }
-                let valid = match (&scalar.kind, self.sites.get(&site).copied()) {
-                    (ScalarKind::Integer { .. }, Some(ir::ValueType::Integer { value })) => {
-                        let same = integer.is_none_or(|prior| prior == value);
-                        integer = Some(value);
-                        same
+                let representation = self.sites.get(&site).copied();
+                let valid = match &scalar.kind {
+                    ScalarKind::Integer { .. } => {
+                        if let Some(ir::ValueType::Integer { value }) = representation {
+                            let same = integer.is_none_or(|prior| prior == value);
+                            integer = Some(value);
+                            same
+                        } else {
+                            false
+                        }
                     }
-                    (ScalarKind::Text { max_scalars }, Some(ir::ValueType::Text)) => {
-                        *max_scalars <= ir::MAX_TEXT_LENGTH
+                    ScalarKind::Rational { .. } => {
+                        if let Some(ir::ValueType::Rational { value }) = representation {
+                            let same = rational.is_none_or(|prior| prior == value);
+                            rational = Some(value);
+                            same
+                        } else {
+                            false
+                        }
                     }
-                    _ => false,
+                    ScalarKind::Text { max_scalars } => {
+                        matches!(representation, Some(ir::ValueType::Text))
+                            && *max_scalars <= ir::MAX_TEXT_LENGTH
+                    }
                 };
                 if !valid {
                     return Err(failure(
@@ -385,8 +446,12 @@ impl<'a> Catalog<'a> {
             }
         }
         for (site, ty) in &self.sites {
-            if matches!(ty, ir::ValueType::Integer { .. } | ir::ValueType::Text)
-                && !assignments.contains_key(site)
+            if matches!(
+                ty,
+                ir::ValueType::Integer { .. }
+                    | ir::ValueType::Rational { .. }
+                    | ir::ValueType::Text
+            ) && !assignments.contains_key(site)
             {
                 return Err(failure(
                     source,
@@ -431,8 +496,12 @@ impl<'a> Catalog<'a> {
                     "reference carrier must have exactly one ID field",
                 ));
             };
-            let bounded_id = scalars.get(&Site::Field(&object.reference, &object.identity_field))
-                .is_some_and(|scalar| matches!(scalar.kind, ScalarKind::Text { max_scalars } if max_scalars > 0));
+            let bounded_id = scalars
+                .get(&Site::Field(&object.reference, &object.identity_field))
+                .is_some_and(|scalar| match scalar.kind {
+                    ScalarKind::Text { max_scalars } => max_scalars > 0,
+                    ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => false,
+                });
             if field.name() != &object.identity_field
                 || field.value_type() != &ir::ValueType::Text
                 || !bounded_id
