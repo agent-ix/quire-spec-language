@@ -206,3 +206,36 @@ producer prerequisite.
    L2 section of TM-003 (FND-002).
 4. Add the owning `FR-` id to `src/checking/variables.rs` before it acquires its
    second consumer (FND-005).
+
+## Correction disposition (a4344d0)
+
+Re-reconciled at a4344d0 with
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-composed-checking --json`
+(quire 0.31.0, engine ca7362d4). Delivered scope remains the FR-041/TC-120
+rational model producer and historical isolation; FR-040/TC-119 is subsequent-branch work.
+
+| ID | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | unchanged — tracked later work | TC-119 and FR-040-AC-1..10 are still 11 of the 17 unbacked rows; no FR-040 code on this branch |
+| FND-002 | fixed | TC-120:13 and :78 now state implemented, locally passing controls; FR-041:138; spec.md:296; new L2 paragraph at `spec/model-linking/tests.md:125-129` separates unbuilt (TC-119) from built-but-unblessed (TC-120). Matrix rows correctly stay `🚧 Planned` |
+| FND-003 | fixed | historical catalog refusal restored (SR-323 FND-001); the admitted-rational path is again owned solely by FR-041-AC-5 through composed binding |
+| FND-004 | unchanged — no bundle required by owner direction | plan/ |
+| FND-005 | fixed | `src/checking/variables.rs:2` now cites FR-016/040 |
+| FND-006 | residual low | `FromStr`/`TryFrom` still have no production caller; the correction added a second parse path rather than retiring surface (SR-323 FND-011) |
+| FND-007 | unchanged — pre-existing | same three IT-004 unmatched tags, 20 untracked symbols, one suspicion |
+
+| Measure (a4344d0) | Value |
+| --- | --- |
+| Matrix rows backed | 340 / 359 (unchanged) |
+| Status lies | 0 |
+| Unbacked rows | 17 — 11 FR-040/TC-119 |
+| FR-041 ACs / TC-120 backed | 7 / 7; yes |
+| Untracked symbols or unmatched tags added | 0 |
+| Test suite | 440 (`--no-default-features`) / 456 (`--all-features`) passed, 0 failed, 4 pre-existing ignored lanes |
+
+**Verdict: FAIL stands for the full ticket.** TC-119 is still a matrix Test Case
+with no backing tagged test (FND-001), which is tracked FR-040 work on later
+branches, not a defect of this producer PR. **Delivered FR-041/TC-120 producer
+scope: PASS** — seven of seven ACs and TC-120 engine-backed, zero status lies,
+and every delivered-scope gap (FND-002, FND-003, FND-005) closed, with FND-006
+residual low. Nothing above converts the ticket-level FAIL into a PASS.

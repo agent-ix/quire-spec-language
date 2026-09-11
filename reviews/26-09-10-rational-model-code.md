@@ -288,3 +288,67 @@ statement.
   and should not be: the pinned IR does it at the literal-checking boundary
   (`expression.rs:1682-1692`), not in the type constructor, so FR-041's
   producer-only scope is the right cut.
+
+## Correction disposition (a4344d0)
+
+Targeted re-review of correction 96d9240 and its integration merge a4344d0,
+same skills and gates. Binding indexes inherited from PR48 have their own
+review and were not re-reviewed here. Historical proof semantics are unchanged
+and no false nominal equivalence was introduced: `Catalog::historical` restores
+the exact pre-FR-041 `Rational => None` refusal (`types.rs:346`), `equality`
+refuses a rational scalar reached directly *or* through a record field
+(`types.rs:386`, `:403`), the `integer()`/`dimensionless()` tightening is
+redundant with admission's role↔representation check, and the remaining
+rewritten matches are behaviour-preserving.
+
+**Verdict: CONDITIONAL cleared.** Seven of nine findings closed, two partially;
+the residue is low and latent. All five gates re-run and pass.
+
+| ID | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | fixed | private `Interpretation` + `Catalog::historical`/`composed` (`types.rs:205-225`, `:346`), wired at `checking.rs:326` / `linking/composed/models.rs:179`; control `types.rs:438` |
+| FND-002 | fixed | `binding_profile` derives from `NativeModelProfile::V1.as_str()` (`linking.rs:200`); `require_historical_native` rechecks actual selections (`linking.rs:207`, `checking/bindings.rs:17`) |
+| FND-003 | partial | cross-profile parity test on one fixture's integer/text meanings and artifact JSON (`tests/native_model_profiles.rs:171`); `ScalarV1` remains a hand copy (`model_source/wire.rs:32`) |
+| FND-004 | fixed | exhaustive profile×kind decisions at `admission.rs:66`, `:173`, `:400`, `:485`; `types.rs:110`, `:139`, `:385`; `constraints.rs:500`; `features.rs:69`, `:114` |
+| FND-005 | fixed | explicit import/model length refusal and ordering comment (`linking/native.rs:23`, `linking.rs:397`); the former unreachable arm now covered (`linking.rs:1060`) |
+| FND-006 | fixed | `parents` private, `len()` accessor, typed `TypeConflict`, `FR-016/040` header (`checking/variables.rs:2-30`) |
+| FND-007 | partial | per-mutation descriptions and an exact foreign-declaration-locus assertion (`tests/native_model_profiles.rs:512`); the six FR-041-AC-2 causes still share one asserted code |
+| FND-008 | fixed | `FromStr` added with `TryFrom` delegating (`native_model.rs:45`); retag control `tests/native_model_profiles.rs:217` |
+| FND-009 | fixed | arms hoisted to statements with defensive comments (`features.rs:76`, `:121`) |
+
+### Gates (a4344d0)
+
+Whole sequential batch under one `flock /tmp/quire-heavy-check.lock`, with
+`CARGO_BUILD_JOBS=1`, `CARGO_TARGET_DIR=/tmp/formalization-a-language-target`,
+`nice -n 10`, `--locked`; `src/lib.rs` mtime touched once under the lock
+(content unchanged) to defeat cross-worktree reuse. Exit statuses captured
+directly, no pipes.
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | pass (0) |
+| `clippy --all-targets --no-default-features -- -D warnings` | pass (0) |
+| `clippy --all-targets --all-features -- -D warnings` | pass (0) |
+| `test --locked --no-default-features -- --test-threads=1` | pass (0) — 440 passed, 0 failed, 4 ignored |
+| `test --locked --all-features -- --test-threads=1` | pass (0) — 456 passed, 0 failed, 4 ignored |
+| `cargo deny check` | not applicable — no `deny.toml` |
+
+`tests/native_model_profiles.rs` runs 16 tests in both configurations. The 4
+ignored lanes are the pre-existing named IT-004/LC04 ones.
+
+### Residual findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | Structural half of FND-003 open: the parity test uses one fixed fixture, so a field added to `Scalar::Integer` but not `ScalarV1::Integer` still forks the two profiles with the suite green | src/model_source/wire.rs:32, tests/native_model_profiles.rs:171 |
+| FND-011 | low | `FromStr` matches over a hand-maintained `[Self::V1, Self::V2]`; a future variant fails to parse instead of failing to compile, and neither `TryFrom` nor `FromStr` has a production caller (SR-324 FND-006) | src/native_model.rs:48 |
+| FND-012 | low | `proof_type`'s `NativeType::Scalar { .. }` catch-all still maps any non-integer scalar to `ir::ValueType::Boolean` — the one FND-004 site left absorbing a new representation silently; unreachable for rational today | src/checking/proof.rs:184 |
+| FND-013 | low | FND-007 residue: twelve mutations still assert one shared code, so a representation check that stopped firing would be masked by the unmapped-site sweep | tests/native_model_profiles.rs:607 |
+| FND-014 | low (style) | `bindings.rs` rewrites `error.phase` on a diagnostic returned by the linker rather than the producer taking the phase | src/checking/bindings.rs:17 |
+
+The two new in-`src` `#[cfg(test)]` controls (`linking.rs:1006`,
+`types.rs:438`) deliberately bypass `link_native`/`Catalog::new` to reach
+defensive arms unreachable from the public API; both are commented as such, run
+the real `check`/`admit` paths, and add no production test seam. That is the
+correct trade-off here, and it is the only departure from this branch's
+otherwise public-API-only test posture.
