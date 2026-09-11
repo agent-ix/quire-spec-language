@@ -3,6 +3,8 @@ id: US-001
 title: "Author native source with precise feedback"
 type: US
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-035
+    type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
   - target: "ix://agent-ix/quire-spec-language/FR-001"
@@ -24,7 +26,9 @@ relationships:
 
 ## Context
 
-This story drives the native finite-state work assigned to Agent A. The requirements below remain draft until the requested specification review is completed. Existing implementation observations do not establish the unimplemented pipeline stages.
+This story covers historical state clauses and the proposed composed native
+edition. Precise feedback applies equally to predicate, temporal and choreography
+syntax. Existing parser evidence does not establish the composed grammar.
 
 ## Acceptance Examples (Illustrative)
 
@@ -46,6 +50,7 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 ## Traceability (Informative)
 
+- [FR-035](../functional/FR-035-parse-composed-native-units.md)
 - [FR-001](../functional/FR-001-read-exact-source.md)
 - [FR-002](../functional/FR-002-parse-native-units.md)
 - [FR-003](../functional/FR-003-format-native-source.md)
