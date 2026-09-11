@@ -207,7 +207,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
         match ty {
             NativeType::Boolean | NativeType::Scalar { .. } | NativeType::Enumeration { .. } => {}
             NativeType::Object { .. } | NativeType::Reference { .. } => {
-                self.require(at, false, true)?
+                self.require(at, Capability::Graph)?
             }
             NativeType::Record { .. } | NativeType::Option(_) | NativeType::Sequence { .. } => {
                 self.cause(at, CauseKind::ForbiddenOperator)?
