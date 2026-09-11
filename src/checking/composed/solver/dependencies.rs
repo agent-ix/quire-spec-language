@@ -42,10 +42,17 @@ pub(super) fn finish(report: &mut TypeReport<'_, '_>, work: &mut Work, site: Sit
             };
             work.charge(D::Edges, 1, site)?;
             if let Some(target) = reference.target {
+                // Upstream binding can exhaust while creating declaration records.
+                // Its namespace still names later declarations; an unvisited target
+                // keeps this caller's edge unsatisfied rather than indexing past
+                // the retained type evidence or inventing a successful target.
+                let Some(target) = states.get_mut(target.index()) else {
+                    continue;
+                };
                 // Every occurrence remains an edge; repeated calls retain their
                 // own cause locus without copying a target's complete evidence.
                 work.charge(D::Records, 1, site)?;
-                states[target.index()].incoming.push((index, site));
+                target.incoming.push((index, site));
             }
         }
     }
