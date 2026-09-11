@@ -1880,24 +1880,66 @@ fn a_zero_maximum_observed_repeat_keeps_its_authored_bound_without_a_body_obliga
 #[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
 fn an_observed_repeat_supplies_enclosing_progress_only_when_it_cannot_exit_early() {
-    for (case, guard, admits) in [
+    // An infeasible true valuation carries no body obligation, even though its
+    // authored body contains only a check. It still contributes no progress.
+    let never = repeat(
+        "Receiver",
+        "gotA.ready",
+        2,
+        "gotA.ready and not gotA.ready",
+        "check Stalled using S { true };",
+    );
+    let standalone = inputs(&format!("sequence Main {{ {RECEIVE_A} {never} }}"));
+    admitted(&standalone, |_proofs, _package| {});
+
+    for (case, guard, maximum, body, exhausted, admits) in [
         (
             "a feasible false valuation exits before any iteration",
             "gotA.ready",
+            2,
+            PROGRESSING_BODY,
+            "check Limit using S { true };",
             false,
         ),
         (
             "no valuation makes the guard false, so an iteration always runs",
             "gotA.ready or not gotA.ready",
+            2,
+            PROGRESSING_BODY,
+            "check Limit using S { true };",
             true,
+        ),
+        (
+            "a zero maximum cannot force exhaustion when the guard may be false",
+            "gotA.ready",
+            0,
+            "check Stalled using S { true };",
+            "event Limit by Receiver as (limited: M::Plain) { true };",
+            false,
+        ),
+        (
+            "an always-true zero-maximum guard contributes exhausted-child progress",
+            "gotA.ready or not gotA.ready",
+            0,
+            "check Stalled using S { true };",
+            "event Limit by Receiver as (limited: M::Plain) { true };",
+            true,
+        ),
+        (
+            "an infeasible true valuation cannot contribute exhausted-child progress",
+            "gotA.ready and not gotA.ready",
+            2,
+            "check Stalled using S { true };",
+            "event Limit by Receiver as (limited: M::Plain) { true };",
+            false,
         ),
     ] {
         let run = format!(
             "sequence Main {{ {RECEIVE_A}
               repeat Outer by Receiver visible (true) max 2 while {{ true }}
-                repeat Inner by Receiver visible (gotA.ready) max 2 while {{ {guard} }}
-                  {PROGRESSING_BODY}
-                exhausted check Limit using S {{ true }};
+                repeat Inner by Receiver visible (gotA.ready) max {maximum} while {{ {guard} }}
+                  {body}
+                exhausted {exhausted}
               exhausted check Done using S {{ true }}; }}"
         );
         let inputs = inputs(&run);
