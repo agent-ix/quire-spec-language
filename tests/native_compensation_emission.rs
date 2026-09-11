@@ -178,6 +178,347 @@ fn nominal(package: &w::Package, at: u32, expected: &str) {
 
 #[test]
 #[trace("TC-121", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
+fn recovery_population_origins_follow_used_capture_operands_not_neighboring_source() {
+    for reads_capture in [true, false] {
+        let mut body = source();
+        for (from, to) in [
+            (
+                "capture targetFull: M::Total = forwardFull.total;",
+                "capture targetFull: M::Total = forwardFull.total;
+                 capture recordedFull: Boolean =
+                   let discardedSelectionFull = if true then forwardFull else view in true;",
+            ),
+            (
+                "capture targetPartial: M::Total = forwardPartial.total;",
+                "capture targetPartial: M::Total = forwardPartial.total;
+                 capture neighborPartial: Boolean = let discardedNeighborPartial = view in true;",
+            ),
+            (
+                "restoredPartial < targetPartial and not activatedPartial",
+                "restoredPartial < targetPartial and not activatedPartial and neighborPartial",
+            ),
+        ] {
+            assert_eq!(body.matches(from).count(), 1);
+            body = body.replacen(from, to, 1);
+        }
+        let original_recovery = "sum<M::Total>(refundFull in recoveredFull.amounts: refundFull) = targetFull and not activatedFull";
+        let recovery = format!(
+            "let filteredFull = filter(refundFull in recoveredFull.amounts: refundFull >= 1)
+             in let totalFull = sum<M::Total>(totalItemFull in
+               map(mappedItemFull in filteredFull: mappedItemFull): totalItemFull)
+             in totalFull = targetFull and {}",
+            if reads_capture {
+                "recordedFull"
+            } else {
+                "true"
+            }
+        );
+        assert_eq!(body.matches(original_recovery).count(), 1);
+        body = body.replacen(original_recovery, &recovery, 1);
+        let (inputs, _) = inputs(&body);
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                let admitted = native::admit(proofs, selected, Limits::default());
+                assert!(
+                    admitted.result().is_ok(),
+                    "reads capture {reads_capture}: {:?}; locus {:?}",
+                    admitted.result().err(),
+                    admitted.locus()
+                );
+                let admitted = admitted.into_result().unwrap();
+                let package = admitted.package();
+                let owner = package
+                    .declarations
+                    .iter()
+                    .position(|d| d.name == "RecoveryFlow")
+                    .unwrap() as u32;
+                let declaration = &package.declarations[owner as usize];
+                let w::Body::Protocol { compensations, .. } = &declaration.body else {
+                    panic!("protocol")
+                };
+                let [full, partial] = compensations.as_slice() else {
+                    panic!("two original compensations")
+                };
+                assert_eq!(
+                    (full.name.as_str(), partial.name.as_str()),
+                    ("Full", "Partial")
+                );
+                let namespace = proofs.types().binding().namespace();
+                let id = flow(proofs);
+                let typed = proofs.types().declaration(id).unwrap();
+                let unit = namespace.unit(typed.unit()).unwrap();
+                let scope = proofs
+                    .types()
+                    .binding()
+                    .scopes()
+                    .unwrap()
+                    .declaration(id)
+                    .unwrap();
+                let c::DeclarationKind::Protocol(original) = &namespace.syntax(id).unwrap().kind
+                else {
+                    panic!("original protocol")
+                };
+                assert_eq!(
+                    package.sources[declaration.locus.source as usize].text,
+                    unit.source().text()
+                );
+                let named = |name: &str| {
+                    let found: Vec<_> = declaration
+                        .binders
+                        .iter()
+                        .filter(|b| b.name == name)
+                        .collect();
+                    assert_eq!(found.len(), 1, "one original binder {name}");
+                    found[0]
+                };
+                let view = named("view");
+                assert_eq!(
+                    declaration.anchors[view.anchor.index as usize].kind,
+                    w::AnchorKind::ProtocolInstant
+                );
+                for (name, expected) in [
+                    ("view", Anchor::ProtocolInstant),
+                    ("recordedFull", Anchor::Registration(0)),
+                    ("neighborPartial", Anchor::Registration(2)),
+                    ("recoveredFull", Anchor::Recovery(0)),
+                    ("recoveredPartial", Anchor::Recovery(2)),
+                ] {
+                    let retained = named(name);
+                    let original = scope
+                        .binders
+                        .iter()
+                        .find(|b| b.name.as_deref() == Some(name))
+                        .unwrap();
+                    assert_eq!(original.anchor, expected);
+                    assert_eq!(
+                        (
+                            retained.locus.span.start as usize,
+                            retained.locus.span.end as usize
+                        ),
+                        (original.span.start, original.span.end)
+                    );
+                }
+
+                let assert_original = |handle: &w::Handle, expression| {
+                    let retained = value(declaration, owner, handle);
+                    let original = unit.expression(expression).unwrap();
+                    assert_eq!(
+                        &unit.expressions()[retained.original_expression as usize],
+                        original
+                    );
+                    assert_eq!(
+                        (
+                            retained.locus.span.start as usize,
+                            retained.locus.span.end as usize
+                        ),
+                        (original.span.start, original.span.end)
+                    );
+                };
+                for (index, name) in [(0, "recordedFull"), (2, "neighborPartial")] {
+                    let c::ProtocolRequirement::Compensation(original) =
+                        &original.requirements[index]
+                    else {
+                        panic!("original compensation")
+                    };
+                    let capture = original
+                        .registration_captures
+                        .iter()
+                        .find(|c| c.parameter.name.value == name)
+                        .unwrap();
+                    let initializer = named(name)
+                        .initializer
+                        .0
+                        .as_ref()
+                        .expect("original capture initializer");
+                    assert_original(initializer, capture.value);
+                    assert!(
+                        capture.span.end < unit.expression(original.recover).unwrap().span.start,
+                        "capture initializer is outside recovery's source region"
+                    );
+                    assert!(
+                        matches!(
+                            value(declaration, owner, initializer).origin,
+                            w::Origin::Independent {}
+                        ),
+                        "the discarded object operand is not the captured Boolean's result origin"
+                    );
+                }
+
+                // Compare original edges, including unused let initializers and
+                // both conditional branches. This is not the inventory algorithm.
+                let mut forms = [0; 5];
+                for (index, retained) in declaration.values.iter().enumerate() {
+                    let original = &unit.expressions()[retained.original_expression as usize];
+                    match &original.kind {
+                        c::ValueKind::Shared(quire_spec_language::syntax::ExprKind::Let {
+                            name,
+                            value: initial,
+                            body,
+                        }) => {
+                            let w::ValueOperation::Let {
+                                binder: target,
+                                initializer,
+                                body: result,
+                            } = &retained.operation
+                            else {
+                                panic!("authored let")
+                            };
+                            assert_eq!(binder(declaration, owner, target).name, name.value);
+                            assert_eq!(
+                                binder(declaration, owner, target).initializer.0.as_ref(),
+                                Some(initializer)
+                            );
+                            assert_original(initializer, *initial);
+                            assert_original(result, *body);
+                            forms[0] += 1;
+                        }
+                        c::ValueKind::Shared(quire_spec_language::syntax::ExprKind::If {
+                            condition,
+                            then_value,
+                            else_value,
+                        }) => {
+                            let w::ValueOperation::If {
+                                condition: test,
+                                then_value: yes,
+                                else_value: no,
+                            } = &retained.operation
+                            else {
+                                panic!("authored selection")
+                            };
+                            assert_original(test, *condition);
+                            assert_original(yes, *then_value);
+                            assert_original(no, *else_value);
+                            assert_eq!(
+                                retained.origin,
+                                w::Origin::Selected {
+                                    value: w::Handle {
+                                        declaration: owner,
+                                        index: index as u32
+                                    }
+                                }
+                            );
+                            for (handle, name) in [(yes, "forwardFull"), (no, "view")] {
+                                let w::ValueOperation::Read { binder: target } =
+                                    &value(declaration, owner, handle).operation
+                                else {
+                                    panic!("original object read")
+                                };
+                                assert_eq!(binder(declaration, owner, target).name, name);
+                            }
+                            forms[1] += 1;
+                        }
+                        c::ValueKind::Query {
+                            op,
+                            binder: name,
+                            domain,
+                            body,
+                            ..
+                        } => {
+                            let (expected, counter) = match op.value {
+                                c::QueryOp::Filter => (w::Query::Filter, 2),
+                                c::QueryOp::Map => (w::Query::Map, 3),
+                                c::QueryOp::Sum => (w::Query::Sum, 4),
+                                c::QueryOp::Count => panic!("fixture has no count"),
+                            };
+                            let w::ValueOperation::Query {
+                                operator,
+                                binder: target,
+                                collection,
+                                body: result,
+                                ..
+                            } = &retained.operation
+                            else {
+                                panic!("original query graph")
+                            };
+                            assert_eq!(*operator, expected);
+                            assert_eq!(binder(declaration, owner, target).name, name.value);
+                            assert_original(collection, *domain);
+                            assert_original(result, *body);
+                            forms[counter] += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                assert_eq!(forms, [5, 1, 1, 1, 2]);
+
+                let full_recovery = &named("recoveredFull").anchor;
+                let partial_recovery = &named("recoveredPartial").anchor;
+                let mut full_anchors = vec![full.registration_anchor.index, full_recovery.index];
+                if reads_capture {
+                    full_anchors.push(view.anchor.index);
+                }
+                for (compensation, anchors) in [
+                    (full, full_anchors),
+                    (
+                        partial,
+                        vec![
+                            partial.registration_anchor.index,
+                            partial_recovery.index,
+                            view.anchor.index,
+                        ],
+                    ),
+                ] {
+                    let mut actual = Vec::new();
+                    for at in &compensation.recovery_bindings {
+                        let requirement = &declaration.bindings[*at as usize];
+                        if let w::Subject::Declaration {
+                            declaration: original_owner,
+                        } = requirement.subject
+                        {
+                            assert_eq!(original_owner, owner);
+                            let closure = match requirement.kind {
+                                w::BindingKind::Population => false,
+                                w::BindingKind::Closure => true,
+                                _ => panic!("expected a nominal population pair"),
+                            };
+                            let export = requirement
+                                .model
+                                .0
+                                .as_ref()
+                                .expect("actual ObjectRole population");
+                            assert_eq!(
+                                package.models[export.model as usize].exports
+                                    [export.export as usize]
+                                    .path,
+                                ["Node", "nodes"]
+                            );
+                            nominal(package, requirement.value_type.0.unwrap(), "Node");
+                            actual.push((requirement.anchor.index, closure));
+                        }
+                    }
+                    let mut expected: Vec<_> = anchors
+                        .into_iter()
+                        .flat_map(|anchor| [(anchor, false), (anchor, true)])
+                        .collect();
+                    actual.sort_unstable();
+                    expected.sort_unstable();
+                    assert_eq!(
+                        actual, expected,
+                        "{} reads capture {reads_capture}: exact original anchor membership",
+                        compensation.name
+                    );
+                }
+                let emitted = native::emit(&admitted, Limits::default())
+                    .into_result()
+                    .unwrap();
+                let read = inputs.read(proofs, &emitted);
+                assert!(
+                    read.result().is_ok(),
+                    "independent reader: {:?}; locus {:?}",
+                    read.result().err(),
+                    read.locus()
+                );
+                assert_eq!(read.into_result().unwrap().package(), package);
+            },
+        );
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
 fn native_compensation_keeps_registration_activation_retry_and_authored_recovery_relations() {
     let (inputs, expected_operation) = inputs(&source());
     inputs.with_proofs(TypeLimits::default(), proofs::ProofLimits::default(), |proofs, selected| {
