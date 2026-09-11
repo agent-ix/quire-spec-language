@@ -3,6 +3,12 @@ id: US-002
 title: "Link clauses to the intended domain model"
 type: US
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-036
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-040
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-041
+    type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
   - target: "ix://agent-ix/quire-spec-language/FR-004"
@@ -28,7 +34,10 @@ relationships:
 
 ## Context
 
-This story drives the native finite-state work assigned to Agent A. The requirements below remain draft until the requested specification review is completed. Existing implementation observations do not establish the unimplemented pipeline stages.
+This story covers exact model selection for historical clauses and the proposed
+composed package. Cross-system and related-instance templates must retain their
+model/definition/binding requirements before concrete assessment inputs exist.
+Historical linkage evidence does not establish the composed path.
 
 ## Acceptance Examples (Illustrative)
 
@@ -50,6 +59,9 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 ## Traceability (Informative)
 
+- [FR-036](../functional/FR-036-link-composed-native-packages.md)
+- [FR-040](../functional/FR-040-check-composed-values.md)
+- [FR-041](../functional/FR-041-admit-rational-native-model-profile.md)
 - [FR-004](../functional/FR-004-verify-source-maps.md)
 - [FR-005](../functional/FR-005-link-shared-model.md)
 - [FR-006](../functional/FR-006-check-defined-expressions.md)

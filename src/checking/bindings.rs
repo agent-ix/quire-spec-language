@@ -14,14 +14,10 @@ pub(super) fn validate(linked: &LinkedPackage<'_>, bindings: &CheckBindings) -> 
     let unit = linked.unit();
     let at_start = Span { start: 0, end: 0 };
     let invalid = |message| failure(unit.source(), Code::InvalidModelBinding, at_start, message);
-    if linked.binding_profile() != "native-state-model/1" {
-        return Err(failure(
-            unit.source(),
-            Code::UnsupportedConstruct,
-            at_start,
-            "checking requires the explicit native model binding profile",
-        ));
-    }
+    linked.require_historical_native().map_err(|mut error| {
+        error.phase = crate::Phase::Check;
+        error
+    })?;
     let bound = bindings.source.source();
     if bound.identity() != unit.source().identity()
         || bound.path() != unit.source().path()
