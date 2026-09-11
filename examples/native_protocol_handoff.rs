@@ -34,6 +34,7 @@ mod tests {
     #[trace(
         "TC-121",
         "FR-042-AC-1",
+        "FR-042-AC-2",
         "FR-042-AC-4",
         "FR-042-AC-5",
         "FR-042-AC-6",
@@ -74,9 +75,10 @@ mod tests {
             );
             assert_eq!(source.formal.revision.value, "1");
         }
-        assert_eq!(package.declarations.len(), 6);
+        assert_eq!(package.declarations.len(), 7);
         for (name, unit, requirement, clause) in [
             ("Allowed", "predicates", "HandoffPredicates", "allowed"),
+            ("Bounded", "predicates", "HandoffPredicates", "bounded"),
             ("Healthy", "state", "HandoffState", "healthy"),
             ("BeforeApply", "state", "HandoffState", "before_apply"),
             ("AfterApply", "state", "HandoffState", "after_apply"),
@@ -140,7 +142,80 @@ mod tests {
             partial.commit.0.is_none(),
             "Partial retains authored commit never"
         );
+        signed64_literals(&package);
         received_choice(&package, owner, &output);
+    }
+
+    /// FR-042-AC-2: the fixture admits the full signed-64 integer domain and an
+    /// exact rational at the denominator ceiling, and carries their literals to
+    /// the wire unnarrowed. Every handle below stays inside Bounded's own arena.
+    fn signed64_literals(package: &w::Package) {
+        use quire_spec_language::protocol_artifact::{ExactInteger, ExactRational, ProtocolNumber};
+
+        let declaration = package
+            .declarations
+            .iter()
+            .find(|d| d.name == "Bounded")
+            .expect("authored signed-64 predicate");
+        let literals = declaration
+            .values
+            .iter()
+            .filter_map(|value| match &value.operation {
+                w::ValueOperation::Number { value } => {
+                    Some(value.checked().expect("canonical emitted number"))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            literals,
+            [
+                ProtocolNumber::Integer(ExactInteger::new(i64::MIN)),
+                ProtocolNumber::Integer(ExactInteger::new(i64::MAX)),
+                ProtocolNumber::Rational(ExactRational::new(i64::MAX, i64::MAX - 1).unwrap()),
+            ]
+        );
+        for (name, expected) in [
+            ("Wide", vec![i64::MIN, i64::MAX]),
+            ("Exact", vec![i64::MIN, i64::MAX, i64::MAX]),
+        ] {
+            let export = package.models[0]
+                .exports
+                .iter()
+                .position(|export| {
+                    export.kind == w::ExportKind::Scalar && export.path == [name.to_owned()]
+                })
+                .unwrap_or_else(|| panic!("{name} scalar export")) as u32;
+            let representation = package
+                .types
+                .iter()
+                .find_map(|ty| match ty {
+                    w::Type::Scalar {
+                        export: selected,
+                        representation,
+                        ..
+                    } if selected.model == 0 && selected.export == export => Some(representation),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{name} scalar type"));
+            let bounds = match representation {
+                w::Representation::Integer { minimum, maximum } => vec![minimum, maximum],
+                w::Representation::Rational {
+                    numerator_minimum,
+                    numerator_maximum,
+                    maximum_denominator,
+                } => vec![numerator_minimum, numerator_maximum, maximum_denominator],
+                w::Representation::Text { .. } => panic!("{name} is a numeric scalar"),
+            };
+            let bounds = bounds
+                .into_iter()
+                .map(|bound| match bound.checked().expect("canonical bound") {
+                    ProtocolNumber::Integer(value) => value.value(),
+                    ProtocolNumber::Rational(_) => panic!("{name} bound is an integer position"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(bounds, expected, "{name} retains its full domain");
+        }
     }
 
     fn received_choice(package: &w::Package, owner: usize, output: &std::path::Path) {
