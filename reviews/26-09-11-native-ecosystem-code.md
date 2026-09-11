@@ -21,15 +21,75 @@ bytes; the findings are one coverage gap and a cluster of expressiveness/idiom
 issues. No `AssuranceProfile` document exists anywhere in `spec/` — none applied,
 consistent with the previous producer recipe review.
 
+**Updated 2026-09-11 (recheck):** correction `b34ab8c` rechecked against the recorded
+findings at `549dd81`, integrated at `485573b`. Both `medium` findings are resolved;
+see the disposition table below.
+
 ## Verdict
 
-**CONDITIONAL** — no `high` finding; one `medium` coverage gap (nothing executes the
-example) and one `medium` error-discrimination smell, plus three `low` items.
+**CONDITIONAL** — recheck of `b34ab8c` against `549dd81`, integrated at `485573b`.
+Both `medium` findings are resolved and verified; two `low` residuals remain
+(FND-003 and FND-005). FND-006 was resolved by local author verification after
+Claude's recheck, as distinguished below. No `high` finding at any point.
+
+## Recheck disposition (b34ab8c vs 549dd81)
+
+Finding recheck only, not a second campaign. PR59's shared recovery provenance was
+separately reviewed and is not re-examined here.
+
+| Finding | Disposition | Evidence |
+| ------- | ----------- | -------- |
+| FND-001 | **Resolved** | Named ignored release test now runs the real `producer::write`; executed 1 passed / 0 failed / 0 ignored |
+| FND-002 | **Resolved** | Typed `DeclarationCause` + four typed operation/anchor variants replace the `&'static str` discriminant |
+| FND-003 | **Open (low)** | Unchanged by design; no new public model interface was added |
+| FND-004 | **Resolved** | Source comments now distinguish domain/activation-implied correspondence conjuncts from the real recovery conditions |
+| FND-005 | **Open (low)** | Branches now carry accurate typed context but stay unreachable for the current recipe |
+| FND-006 | **Resolved — local author verification** | After Claude's recheck, the bare trace attribute binds the example test; all five ids are backed and absent from `unmatched_tags` |
+
+**FND-001 — resolved.** `examples/native_protocol_handoff.rs:29-135` adds
+`stripped_release_producer_keeps_original_owners_and_compensations`: it calls the real
+`super::producer::write` into a fresh `tempfile::tempdir()` child, so the producer
+selects this actual test executable's ELF bytes through `current_exe()` and runs its
+own `artifact::read` before any assertion. It then decodes the output as the existing
+typed `w::Package` and asserts four original source identities/paths/formal documents
+and revisions, six declaration→source/requirement/clause owners, exactly two
+compensations named `Full`/`Partial`, a shared `forward_effect` resolving to control
+`Applied`, `Full`'s commit resolving to control `Committed` with
+`ControlOperation::Commit`, and `Partial.commit.0.is_none()`. Seam discipline holds
+(real producer, real reader, no doubles, no `#[cfg(test)]` branch in production code),
+the oracle literals are authored in the test rather than read back from `UNITS`, and
+every destructuring guard has a failing `else`. It adds no second parser, runner or B
+consumer substitute: `serde_json::from_slice::<w::Package>` is post-hoc inspection of
+output the canonical reader already accepted inside `write`. It traces to
+`TC-121, FR-042-AC-1/4/6/7` and correctly never claims AC-10.
+
+**FND-002 — resolved.** `DeclarationCause` is a five-variant typed enum
+(`Missing`, `Ambiguous { matches }` retaining the candidate count, `MissingSyntax`,
+`MissingUnit`, `DifferentSource`) attached with `#[source]`. `Error::Operation` is
+split into `OperationCount { count }` and `OperationIdentity { context, name }`, and
+the pre/post fallbacks into `PreAnchorMismatch`/`PostAnchorMismatch` carrying
+`expected` and `actual` anchors plus the clause name — so no refusal now reports a
+cause that did not occur. The `ExecutionPoint` match remains exhaustive with no
+catch-all arm.
+
+**FND-004 — resolved.** `state.body.native:2` now reads "A bounded sum and size over
+the declared receipt sequence"; `state.body.native:11` and `workflow.body.native:2-3`
+name the domain/activation-implied conjuncts as correspondence exercises and point at
+the receipt/target comparisons as the real recovery conditions.
 
 ## Evidence verified
 
-Read only `/tmp/quire-native-ecosystem-fixture-reviewed-20260911`, not the earlier
-initial-run directory.
+Re-verified against the final integrated fixture
+`/tmp/quire-native-ecosystem-fixture-integrated-20260911`; the corrected and earlier
+reviewed fixtures are retained historical output and were not re-read. All 67
+dependency digests re-checked with `sha256sum --check`; `dependencies/0.bin`
+(`c58585d3…`) is byte-identical to the live main executable
+`/tmp/formalization-a-language-target/release/examples/native_protocol_handoff`; the
+output seal equals SHA-256 of `compiled-protocol.json` (`424e4942…`). Four isolated
+source identities/formal documents, six declarations with `pre`/`post` on
+`before_apply`/`after_apply`, `Full` commit → control `Committed` and `Partial`
+`commit: null` all reproduce. Everything below was established on the pre-correction
+tree and still holds.
 
 - **Identity isolation is real.** Four distinct source identities, `native` refs,
   formal documents (`ProtocolHandoffPredicates`/`State`/`Temporal`/`Workflow`) and
@@ -77,13 +137,14 @@ initial-run directory.
 
 | ID      | Severity | Summary                                                                                      | Refs                                                  | Escape Cause                   |
 | ------- | -------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------ |
-| FND-001 | medium   | No automated gate executes the producer recipe; a library regression breaks it silently        | examples/native_protocol_handoff.rs:1                 | correct-requirement-no-evidence |
-| FND-002 | medium   | `Error::Declaration`/`Error::Operation` discriminate refusals by message, and `Operation`'s message names only one of its two causes | examples/protocol-handoff/producer.rs:165, 171, 479   | correct-requirement-no-evidence |
-| FND-003 | low      | Wire export-ordering rule restated as arithmetic in the example; no single source of truth      | examples/protocol-handoff/producer.rs:526-545         | correct-requirement-no-evidence |
-| FND-004 | low      | New authored conjuncts are implied by their own guards or scalar domains, so they constrain nothing | examples/protocol-handoff/workflow.body.native:14, 34; state.body.native:11 | missing-requirement |
-| FND-005 | low      | Unreachable `Initialization` and anchor-mismatch arms added with no caller and no test          | examples/protocol-handoff/producer.rs:462, 479        | correct-requirement-no-evidence |
+| FND-001 | medium   | RESOLVED in b34ab8c — named ignored release test now executes the real producer recipe          | examples/native_protocol_handoff.rs:29                | correct-requirement-no-evidence |
+| FND-002 | medium   | RESOLVED in b34ab8c — typed `DeclarationCause` and typed operation/anchor variants replace message discrimination | examples/protocol-handoff/producer.rs:165, 175, 519 | correct-requirement-no-evidence |
+| FND-003 | low      | OPEN — wire export-ordering rule restated as arithmetic in the example; no single source of truth | examples/protocol-handoff/producer.rs:580-599         | correct-requirement-no-evidence |
+| FND-004 | low      | RESOLVED in b34ab8c — source comments now separate correspondence conjuncts from recovery conditions | examples/protocol-handoff/workflow.body.native:2; state.body.native:2, 11 | missing-requirement |
+| FND-005 | low      | OPEN — anchor-mismatch and `Initialization` arms carry accurate typed context but stay unreachable for the current recipe | examples/protocol-handoff/producer.rs:505, 522        | correct-requirement-no-evidence |
+| FND-006 | low      | RESOLVED — local author verification confirms the bare trace attribute binds the example test | examples/native_protocol_handoff.rs:33                | correct-requirement-no-evidence |
 
-### FND-001 — nothing runs the example
+### FND-001 — nothing runs the example (as recorded at 549dd81; resolved in b34ab8c)
 
 `grep` for `native_protocol_handoff` / `protocol-handoff` across `tests/` and `src/`
 returns nothing. `cargo test` never invokes the recipe; `cargo clippy --all-targets`
@@ -99,7 +160,7 @@ sentence true. An `#[ignore]`d integration test in a named lane that runs `write
 into a temp dir and asserts the four sources / six declarations / two compensations
 would close it without adding cost to the default run.
 
-### FND-002 — refusals discriminated by message
+### FND-002 — refusals discriminated by message (as recorded at 549dd81; resolved in b34ab8c)
 
 `Error::Declaration { name, problem: &'static str }` now stands for four distinct
 refusals ("not present in the original namespace", "ambiguous in the original
@@ -124,7 +185,7 @@ checking neither. It fails closed (the reader refuses a wrong handle) rather tha
 silently, which is why this is `low` and not higher; a `pub` helper on the model or
 emitter that names an export's handle would remove the second edit site.
 
-### FND-004 — conjuncts that cannot be false
+### FND-004 — conjuncts that cannot be false (as recorded at 549dd81; resolved in b34ab8c)
 
 `amount >= 1` (state.body.native:11) restates `Amount`'s declared minimum of 1.
 `targetFull >= 0` / `targetPartial >= 0` restate `Total`'s minimum of 0.
@@ -141,23 +202,62 @@ behavioral evidence. The same shape in the inherited `self.peer = self.peer`
 (state.body.native:7) and in `Allowed`'s domain-implied `ratio <= rational(1,1)`
 predates this change and is out of scope here.
 
-### FND-005 — dead arms
+### FND-006 — trace ids did not bind (low; resolved by local author verification)
+
+Claude's recheck found all five ids (`TC-121`, `FR-042-AC-1/4/6/7`) in
+`unmatched_tags`: the fully qualified attribute did not match the configured
+`rust-trace-attribute` marker. The criteria already had backing from other tests.
+
+Local author verification after that recheck confirms the correction to
+`use ix_trace_rs::trace;` and bare `#[trace(...)]`. Completed `quire coverage`
+output identifies the example's actual
+`tests::stripped_release_producer_keeps_original_owners_and_compensations` symbol
+under `TC-121`; all five ids are backed and none is unmatched. Only the three
+inherited `IT-004` unmatched tags remain. The unchanged 367/376 rollup reflects
+additional evidence for already-backed criteria, not a new acceptance claim.
+The root's named stripped release rerun also passed: 1 passed, 0 failed, 0 ignored.
+This disposition is local author verification, not an additional Claude recheck.
+
+### FND-005 — unreachable arms, now accurately typed
 
 `AuthoredExecution` has only `Handler`/`Pre`/`Post`, and `UnitInput::new` always
 builds `Pre`/`Post` from the single selected anchor. The
 `ExecutionPoint::Initialization` arm and the anchor-mismatch fallback are therefore
-unreachable for every input the recipe can construct. They are cheap insurance rather
-than a defect, but they are untested branches in a file whose whole job is to be
-audited.
+unreachable for every input the recipe can construct. `b34ab8c` improves them — the
+mismatch arms now report `expected`/`actual` anchors instead of a misattributed cause —
+but they remain untested branches. Retained as a recorded low residual; no new public
+model interface was added for them, and none is being asked for.
+
+## Merge disposition
+
+**May merge.** No `high` finding was ever open and both `medium` findings are resolved
+and independently verified. The two residuals are `low` and deliberately
+retained; FND-006 has the separate local verification above. FR-042-AC-10 / B's IT-001
+and the inherited matrix debt stay open and are disclosed in FR-042, TC-121 and both
+READMEs; per the owner directive of 2026-09-09
+incomplete assurance is tracked separately from implementation delivery, so this
+review does not convert that deferred acceptance into a prototype engineering gate.
 
 ## Gates
 
-Inspected, not re-run (root-completed at `336e3ec`; green heavy checks not repeated):
-`/tmp/quire-native-ecosystem-final-{fmt,clippy-minimal,clippy-all,run,spec}.log`.
-Both Clippy lanes and `fmt` finish clean and the release `--no-default-features`
-example run succeeds into the reviewed fixture; the logs record the outcomes but not
-the invoked flag sets, so the "both strict all-target configurations" characterisation
-rests on the root's statement, not on the log text. Library suites at the unchanged
-parent `b7aafe1`: `/tmp/quire-native-compensation-corrections-test-{minimal,all}.log`
-(557/573, 0 fail, 4 inherited ignored). `cargo deny` — no `deny.toml` in this
-repository. Re-run here: `quire coverage --scope <worktree> --json` (see SR-352).
+Executed by the root at the integrated head `485573b`, inspected here, not re-run
+(no green heavy-check repeats):
+`/tmp/quire-native-ecosystem-integrated-{fmt,clippy-minimal,clippy-all,release-test,run,spec}.log`.
+`fmt` clean; both Clippy lanes finish clean; 398/398 specs grammar-clean. The named
+release test log records `Running unittests examples/native_protocol_handoff.rs
+(/tmp/formalization-a-language-target/release/examples/native_protocol_handoff-6f7d642293608482)`
+and `1 passed; 0 failed; 0 ignored`, confirming it ran against actual ELF test-executable
+bytes. The release main example run emits the integrated fixture. As before, the logs
+record outcomes but not the invoked flag sets, so `--all-targets -D warnings` with
+respective `--no-default-features` / `--all-features` rests on the root's statement,
+not on the log text.
+
+**Default versus named execution.** `cargo test` does not reach this test by two
+independent mechanisms: the example has no `[[example]] test = true` in `Cargo.toml`,
+so examples are not test-built by default, and the test additionally carries
+`#[ignore]`. It runs only under the command documented at
+`examples/protocol-handoff/README.md:28-31`. That is the intended design, and the
+example README states the `#[ignore]` reason (the 16 MiB producer binary limit) though
+not the example-target mechanism. Library suites at parent PR59: 558/574, not re-run
+for an example-only change. `cargo deny` — no `deny.toml` in this repository. Re-run
+here: `quire coverage --scope <worktree> --json` (see SR-352) and `quire validate`.

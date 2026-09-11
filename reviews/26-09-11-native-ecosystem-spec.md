@@ -18,10 +18,38 @@ was declined. No `AssuranceProfile` exists in `spec/`, so no profile-driven
 not delivered; the one substantive issue is a narrative claim the fixture does not
 support.
 
+**Updated 2026-09-11 (recheck):** correction `b34ab8c` rechecked against `549dd81`,
+integrated at `485573b`. The `medium` finding is resolved; two `low` residuals remain.
+
 ## Verdict
 
-**CONDITIONAL** — one `medium` unsupported capability claim and two `low` items; no
-`high` finding.
+**CONDITIONAL** — the `medium` unsupported capability claim is resolved; two `low`
+items remain open. No `high` finding at any point.
+
+## Recheck disposition (b34ab8c vs 549dd81)
+
+| Finding | Disposition | Evidence |
+| ------- | ----------- | -------- |
+| FND-001 | **Resolved** | "ordered queries" replaced with "bounded `sum`/`size` queries" in TC-121 and the example README; the source comment now reads "A bounded sum and size over the declared receipt sequence" |
+| FND-002 | **Open (low)** | A named gate now exists and the example README documents it, but `README.md` is unchanged and still does not distinguish default-suite evidence from the named release lane |
+| FND-003 | **Open (low)** | `README.md` unchanged; attribution point stands |
+
+**FND-001 — resolved.** `spec/test-cases/TC-121-publish-compiled-protocol-artifacts.md:39`
+and `examples/protocol-handoff/README.md:12` now say "bounded `sum`/`size` queries",
+which is exactly what the emitted package contains, and
+`examples/protocol-handoff/state.body.native:2` no longer claims receipt order
+survives an order-insensitive aggregate. Re-verified against the integrated fixture:
+`Healthy` still emits one `size` and one `sum` query, and each compensation recovery
+one `sum`. No AC, TC id, verification row or relationship changed, so the ID-format,
+cross-reference and six-coverage-rule results below are unaffected.
+
+**FND-002 — residual.** The substance has shifted rather than cleared: a named,
+executed release-lane test now exists (SR-351 FND-001), and
+`examples/protocol-handoff/README.md:28-38` documents its exact command, its fresh
+temp directory, what it checks and that it does not exercise B's acceptance interface.
+The root `README.md` still places the recipe beside "Real source-to-reader tests"
+without naming the separate lane. Low, and arguably fine given the link one hop away;
+recorded rather than pressed.
 
 ## Checklist result
 
@@ -61,11 +89,11 @@ support.
 
 | ID      | Severity | Summary                                                                            | Refs                                                             | Escape Cause      |
 | ------- | -------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------- |
-| FND-001 | medium   | "ordered queries" overstates the recipe: one of six query operators, order unobservable | spec/test-cases/TC-121-publish-compiled-protocol-artifacts.md:38 | wrong-requirement |
-| FND-002 | low      | Root README asserts the recipe as delivered evidence without naming its manual-only gate | README.md:48                                                     | wrong-requirement |
-| FND-003 | low      | "static compensation registration, activation, retries" reads as new capability, not composition | README.md:48                                                     | wrong-requirement |
+| FND-001 | medium   | RESOLVED in b34ab8c — TC-121, the example README and the source comment now say "bounded `sum`/`size`" | spec/test-cases/TC-121-publish-compiled-protocol-artifacts.md:39 | wrong-requirement |
+| FND-002 | low      | OPEN — root README still does not distinguish default-suite evidence from the named release lane | README.md:48                                                     | wrong-requirement |
+| FND-003 | low      | OPEN — "static compensation registration, activation, retries" reads as new capability, not composition | README.md:48                                                     | wrong-requirement |
 
-### FND-001 — "ordered queries"
+### FND-001 — "ordered queries" (as recorded at 549dd81; resolved in b34ab8c)
 
 TC-121 step 1 and the example README both say the recipe exercises "ordered queries".
 The emitted package contains three aggregate sites: one `size` in `Healthy` and three
@@ -82,7 +110,7 @@ demonstrates. The same overstatement appears in the authored source comment
 is not observed. Suggested wording: "a bounded `sum` aggregate and a `size` over the
 declared receipt sequence".
 
-### FND-002 — delivered evidence with a manual-only gate
+### FND-002 — delivered evidence, lane not named (as recorded at 549dd81; see disposition above)
 
 `README.md` now presents the Rust producer recipe alongside "Real source-to-reader
 tests exercise native predicate, state, temporal and protocol emission". The tests
@@ -106,7 +134,9 @@ record.
 
 Base checklist only. The seven optional analyses (failure-domain, integrity,
 dependency, evidence, risk-complexity, scope-boundary, ears-conformance) were not
-selected and were not run; the optional semantic gap extension was declined. Spec
-grammar was validated by the root's completed gate — 398/398 documents grammar-clean,
-0 grammar findings (`/tmp/quire-native-ecosystem-final-spec.log`) — and was not
-re-run for ceremony.
+selected and were not run; the optional semantic gap extension remains declined at the
+recheck. Spec grammar was validated by the root's completed integrated gate — 398/398
+documents grammar-clean, 0 grammar findings
+(`/tmp/quire-native-ecosystem-integrated-spec.log`) — and was not re-run for ceremony.
+The three review artifacts were revalidated here with
+`quire validate --scope /home/peter/dev/worktrees/quire-language-native-ecosystem-handoff "reviews/26-09-11-native-ecosystem-*.md"`.
