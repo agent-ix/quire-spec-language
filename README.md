@@ -1,5 +1,13 @@
 # quire-spec-language
 
+The `protocol_artifact` library module supplies the exact numeric component of
+[compiler #40](https://github.com/agent-ix/quire-spec-language/issues/40):
+tagged canonical decimal strings for signed-64 integers and reduced rationals,
+with typed validation errors. The [numeric contract](spec/functional/FR-038-encode-exact-protocol-numbers.md)
+defines its closed shapes. `NumberWire` retains unvalidated strings for typed
+conversion; `ProtocolNumber` contains only admitted numeric components. This
+does not yet provide a complete compiled-protocol reader or native producer.
+
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
 The library links exact imports and scoped names against supplied Contract IR
