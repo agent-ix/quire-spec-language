@@ -658,6 +658,43 @@ fn identity_only_compensation_effects_keep_exact_operation_obligation_and_attemp
                 .value_type
                 .0
                 .is_some());
+            let activation = declaration.anchors[full.activation_anchor.index as usize]
+                .binding
+                .0
+                .expect("original compensation activation binding");
+            for (name, binding, prerequisite) in [
+                (
+                    "registration without its forward effect",
+                    full.registration_instance,
+                    *ordinary_effect,
+                ),
+                (
+                    "activation without registration",
+                    activation,
+                    full.registration_instance,
+                ),
+                (
+                    "attempt without activation",
+                    full.attempt_instance,
+                    activation,
+                ),
+            ] {
+                assert!(declaration.bindings[binding as usize]
+                    .requires
+                    .contains(&prerequisite));
+                let mut offered = package.clone();
+                offered.declarations[owner].bindings[binding as usize]
+                    .requires
+                    .retain(|required| *required != prerequisite);
+                let bytes = serde_json::to_vec(&offered).unwrap();
+                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Invalid(Invalid::Binding)),
+                    "{name}; locus {:?}",
+                    report.locus()
+                );
+            }
             let mut offered = package.clone();
             offered.declarations[owner].bindings[*ordinary_effect as usize]
                 .value_type
