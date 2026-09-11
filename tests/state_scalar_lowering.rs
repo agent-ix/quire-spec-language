@@ -510,17 +510,17 @@ fn observation_reads_limits_cancellation_and_context_mismatch_are_atomic() {
         || false,
     )
     .unwrap();
-    assert_eq!(
-        projection
-            .inputs(&other, InputProjectionLimits::default(), || false)
-            .unwrap_err()
-            .code,
-        InputProjectionCode::ContextMismatch
-    );
+    let mismatch = projection
+        .inputs(&other, InputProjectionLimits::default(), || false)
+        .unwrap_err();
+    assert_eq!(mismatch.code, InputProjectionCode::ContextMismatch);
+    assert_eq!(mismatch.work, 0);
+    assert!(mismatch.read.is_none());
     let usage = projection.usage();
     assert_eq!(
         usage.nodes,
-        native.checked().linked().unit().expressions().len()
+        native.checked().linked().unit().expressions().len() + 1,
+        "one fresh self.n alias candidate; repeated pre/group uses reuse it"
     );
     let exact = LoweringLimits {
         nodes: usage.nodes,
@@ -649,4 +649,319 @@ fn current_and_pre_context_fields_keep_boolean_values_and_distinct_aliases() {
             InputProjectionCode::Cancelled
         );
     }
+}
+
+#[test]
+#[trace("TC-112", "FR-034-AC-3", "FR-034-AC-4")]
+fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() {
+    let models = [setup::authored_model(|model| {
+        model["values"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"flag","kind":"input","type":{"kind":"boolean"}}));
+        model["operations"][0]["parameters"] = json!(["flag"]);
+    })];
+    // A current invariant cannot statically acquire invocation parameters.
+    let rejected = setup::request(&models, "flag", ClauseKind::Invariant).unwrap_err();
+    assert_eq!(rejected.code, quire_spec_language::Code::MissingDeclaration);
+    assert_eq!(rejected.source.identity, "test:runtime-rule");
+
+    let native = package(&models, "flag", ClauseKind::Postcondition);
+    let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
+    let recorded = |include_parameter| {
+        setup::recorded(
+            &models[0],
+            setup::draft(&models[0]),
+            setup::draft(&models[0]),
+            |invocation| {
+                if include_parameter {
+                    invocation.parameters.push(ValueBinding {
+                        declaration: setup::qualified(&models[0], "flag"),
+                        value: ValueId::new(0),
+                    });
+                }
+            },
+        )
+    };
+    let (input, selection) = recorded(true);
+    let context = runtime::validate(
+        native.checked(),
+        input.clone(),
+        selection.clone(),
+        ValidationLimits::default(),
+        || false,
+    )
+    .unwrap();
+    let materialized = projection
+        .inputs(&context, InputProjectionLimits::default(), || false)
+        .unwrap();
+    assert_eq!(
+        materialized.work(),
+        3,
+        "one read, one actual parameter, one arena value"
+    );
+    assert_eq!(
+        projection
+            .inputs(&context, InputProjectionLimits { work: 3 }, || false)
+            .unwrap()
+            .work(),
+        3
+    );
+    let exhausted = projection
+        .inputs(&context, InputProjectionLimits { work: 2 }, || false)
+        .unwrap_err();
+    assert_eq!(exhausted.code, InputProjectionCode::ResourceExhausted);
+    assert_eq!(exhausted.work, 2);
+    assert!(exhausted.read.is_none());
+    let [value] = materialized.inputs() else {
+        panic!("one actual captured Boolean")
+    };
+    assert_eq!(value.value(), PrimitiveValue::Boolean(true));
+    assert_eq!(
+        value.artifact(),
+        RuntimeReference::Invocation(context.invocation().unwrap().reference())
+    );
+
+    let mut without_invocation = input;
+    without_invocation.invocations.clear();
+    let missing = runtime::validate(
+        native.checked(),
+        without_invocation,
+        selection.clone(),
+        ValidationLimits::default(),
+        || false,
+    )
+    .unwrap_err();
+    assert_eq!(missing.status, runtime::ValidationStatus::Incomplete);
+    let diagnostic = missing
+        .diagnostics
+        .iter()
+        .find(|d| d.code == quire_spec_language::Code::UnavailableObservation)
+        .expect("missing selected invocation is a validation failure");
+    let location = diagnostic.runtime.as_ref().unwrap();
+    assert_eq!(
+        location.artifact,
+        RuntimeReference::Invocation(context.invocation().unwrap().reference())
+    );
+    assert_eq!(location.requirement, selection.requirement);
+    assert_eq!(location.clause, selection.clause);
+
+    let snapshot = setup::snapshot(setup::draft(&models[0]));
+    let current_selection = setup::selection(&models[0], snapshot.reference());
+    let current = runtime::validate(
+        native.checked(),
+        setup::input(snapshot),
+        current_selection,
+        ValidationLimits::default(),
+        || false,
+    )
+    .unwrap_err();
+    assert_eq!(current.status, runtime::ValidationStatus::Refused);
+    assert!(current
+        .diagnostics
+        .iter()
+        .any(|d| d.code == quire_spec_language::Code::WrongSnapshot));
+
+    let (input, selection) = recorded(false);
+    let invocation = input.invocations[0].reference();
+    let parameter = runtime::validate(
+        native.checked(),
+        input,
+        selection.clone(),
+        ValidationLimits::default(),
+        || false,
+    )
+    .unwrap_err();
+    assert_eq!(parameter.status, runtime::ValidationStatus::Refused);
+    let diagnostic = parameter
+        .diagnostics
+        .iter()
+        .find(|d| {
+            d.code == quire_spec_language::Code::InvalidRuntimeInput
+                && d.runtime.as_ref().is_some_and(|location| {
+                    location.path
+                        == [runtime::RuntimePathSegment::Parameter(setup::qualified(
+                            &models[0], "flag",
+                        ))]
+                })
+        })
+        .expect("missing declared parameter remains a typed, located validation failure");
+    let location = diagnostic.runtime.as_ref().unwrap();
+    assert_eq!(location.artifact, RuntimeReference::Invocation(invocation));
+    assert_eq!(location.requirement, selection.requirement);
+    assert_eq!(location.clause, selection.clause);
+    // None of these failed public validations yields a context to pass to inputs().
+}
+
+#[test]
+#[trace("TC-112", "FR-034-AC-3", "FR-034-AC-5")]
+fn every_projection_target_keeps_its_boolean_and_signed_integer_capability() {
+    let models = [setup::authored_model(|model| {
+        model["values"].as_array_mut().unwrap().extend([
+            json!({"name":"flag","kind":"state","type":{"kind":"boolean"}}),
+            json!({"name":"signedValue","kind":"state","type":{"kind":"scalar","name":"Signed"}}),
+        ]);
+    })];
+    for (text, integer) in [
+        ("flag and not false", false),
+        ("flag and signedValue = -1", true),
+    ] {
+        let native = package(&models, text, ClauseKind::Invariant);
+        let mut draft = setup::draft(&models[0]);
+        draft.arena.extend([
+            ValueNode::Boolean { value: true },
+            ValueNode::Integer { value: -1 },
+        ]);
+        draft.values = vec![
+            ValueBinding {
+                declaration: setup::qualified(&models[0], "flag"),
+                value: ValueId::new(5),
+            },
+            ValueBinding {
+                declaration: setup::qualified(&models[0], "signedValue"),
+                value: ValueId::new(6),
+            },
+        ];
+        let snapshot = setup::snapshot(draft);
+        let selection = setup::selection(&models[0], snapshot.reference());
+        let context = runtime::validate(
+            native.checked(),
+            setup::input(snapshot),
+            selection,
+            ValidationLimits::default(),
+            || false,
+        )
+        .unwrap();
+        for (target, supports_integer) in [
+            (ProjectionTarget::BooleanOracleV1, false),
+            (ProjectionTarget::IntegerIrV1, true),
+            (ProjectionTarget::StateScalarIrV1, true),
+        ] {
+            let result = lower_for(&native, target, LoweringLimits::default());
+            if integer && !supports_integer {
+                let error = result.unwrap_err();
+                assert_eq!(error.code, LoweringCode::Unsupported);
+                assert_eq!(
+                    error.code.code(),
+                    quire_spec_language::Code::UnsupportedProjection
+                );
+                assert_eq!(error.clause.unwrap().clause().as_str(), "population_rule");
+                continue;
+            }
+            let projection = result.unwrap();
+            assert_eq!(
+                ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap(),
+                *projection.bound()
+            );
+            let values = projection
+                .inputs(&context, InputProjectionLimits::default(), || false)
+                .unwrap();
+            let expected = if integer {
+                vec![PrimitiveValue::Boolean(true), PrimitiveValue::Integer(-1)]
+            } else {
+                vec![PrimitiveValue::Boolean(true)]
+            };
+            assert_eq!(
+                values
+                    .inputs()
+                    .iter()
+                    .map(|v| v.value())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert!(values
+                .inputs()
+                .iter()
+                .all(|v| v.read().origin
+                    == ProjectedReadOrigin::Value(ir::ValueDeclarationKind::State)));
+            assert!(matches!(
+                runtime::evaluate(&context, runtime::EvaluationLimits::default(), || false)
+                    .outcome(),
+                runtime::EvaluationOutcome::Completed(true)
+            ));
+        }
+    }
+}
+
+#[test]
+#[trace("TC-112", "FR-034-AC-1", "FR-034-AC-4")]
+fn real_model_alias_collisions_consume_bounded_work_before_candidate_creation() {
+    let models = [setup::authored_model(|model| {
+        for index in 0..16 {
+            model["values"].as_array_mut().unwrap().push(json!({
+                "name":format!("nativeField{index}"), "kind":"state",
+                "type":{"kind":"scalar", "name":"Version"}
+            }));
+        }
+    })];
+    let native = package(&models, "self.n = 1", ClauseKind::Invariant);
+    let unit = native.checked().linked().unit();
+    // Rule has equality, field, self and literal nodes; Other has one true node.
+    // Sixteen real declaration collisions precede the successful seventeenth name.
+    assert_eq!(unit.expressions().len(), 5);
+    let limits = LoweringLimits {
+        nodes: 5 + 17,
+        ..LoweringLimits::default()
+    };
+    let exact = lower_for(&native, TARGET, limits).unwrap();
+    assert_eq!(exact.usage().nodes, 22);
+    assert_eq!(exact.usage().max_depth, 3);
+    let [read] = exact.reads() else {
+        panic!("one exact self field read")
+    };
+    assert_eq!(read.name.as_str(), "nativeField16");
+    assert_eq!(read.origin, ProjectedReadOrigin::SelfField);
+    assert_eq!(read.model_digest, models[0].digest());
+    assert_eq!(
+        &read.declaration.identity.owner,
+        models[0].environment().owner()
+    );
+
+    // Three AST visits precede alias search. After sixteen charged collisions,
+    // the next candidate is refused at the original field without partial IR.
+    let blocked = lower_for(
+        &native,
+        TARGET,
+        LoweringLimits {
+            nodes: 3 + 16,
+            ..limits
+        },
+    )
+    .unwrap_err();
+    assert_eq!(blocked.code, LoweringCode::ResourceExhausted);
+    assert_eq!(
+        blocked.code.code(),
+        quire_spec_language::Code::ResourceExhausted
+    );
+    assert_eq!(
+        blocked.clause.as_ref().unwrap().clause().as_str(),
+        "population_rule"
+    );
+    assert_eq!(
+        unit.source().slice(blocked.source.unwrap()).unwrap(),
+        "self.n"
+    );
+    let one_short = lower_for(
+        &native,
+        TARGET,
+        LoweringLimits {
+            nodes: 21,
+            ..limits
+        },
+    )
+    .unwrap_err();
+    assert_eq!(one_short.code, LoweringCode::ResourceExhausted);
+    assert_eq!(
+        one_short.clause.as_ref().unwrap().clause().as_str(),
+        "other_rule"
+    );
+    assert_eq!(
+        unit.source().slice(one_short.source.unwrap()).unwrap(),
+        "true"
+    );
+    assert_eq!(
+        lower_for(&native, TARGET, limits).unwrap().bytes(),
+        exact.bytes(),
+        "fresh retry restarts alias work and preserves bytes"
+    );
 }
