@@ -744,7 +744,10 @@ fn a_choice_inside_the_retry_and_a_following_event_keep_their_nested_edges() {
 
 /// Item 7. The accumulating work dimensions each distinguish a zero, a
 /// one-short and an exact budget over the same retry, and a fresh retry at the
-/// default budget still emits a package the public reader accepts.
+/// default budget still emits a package the public reader accepts. The retry's
+/// own guard is observed, so the repeat's partition work — its lowering,
+/// visible basis, both branch roots and their valuations — is inside the
+/// measured budget rather than only the inner choice's.
 #[test]
 #[trace("TC-121", "FR-042-AC-9")]
 fn accumulating_work_dimensions_separate_zero_exact_and_one_short_retry_budgets() {
@@ -757,7 +760,14 @@ fn accumulating_work_dimensions_separate_zero_exact_and_one_short_retry_budgets(
           }}
         }}"
     );
-    let run = order(&retry("Provider", "true", 2, "true", &body, REFUNDS));
+    let run = order(&retry(
+        "Provider",
+        "shipmentS2.ready",
+        2,
+        "shipmentS2.ready",
+        &body,
+        REFUNDS,
+    ));
     let inputs = inputs(&run);
     inputs.with_proofs(
         TypeLimits::default(),
@@ -768,6 +778,17 @@ fn accumulating_work_dimensions_separate_zero_exact_and_one_short_retry_budgets(
             assert!(baseline.result().is_ok(), "{:?}", baseline.result().err());
             let usage = baseline.usage();
             let expected = baseline.result().unwrap().package();
+            // The measured work only covers the repeat's own partition while
+            // its guard is observed; a closed guard would charge the inner
+            // choice alone and leave these budgets blind to the repeat.
+            let declaration = &expected.declarations[0];
+            let (_, operation) = repeat(protocol(expected).controls, "Retry");
+            let w::ControlOperation::Repeat { visible, guard, .. } = operation else {
+                panic!("authored bounded repeat")
+            };
+            assert_eq!(visible.len(), 1);
+            assert_eq!(atom(declaration, &visible[0]).binder.name, "shipmentS2");
+            assert_eq!(atom(declaration, guard).binder.name, "shipmentS2");
             for (dimension, required, budget) in [
                 (
                     artifact::Dimension::References,
