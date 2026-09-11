@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Exact selected profile/model imports are prepended by the Rust producer.
+predicate Allowed using G (ratio: M::Ratio): Boolean {
+    ratio <= rational(1,1)
+}
