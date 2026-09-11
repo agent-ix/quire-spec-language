@@ -971,3 +971,422 @@ fn compensation_await_and_associated_event_keep_original_activation_prerequisite
         },
     );
 }
+#[test]
+#[trace("TC-121", "FR-042-AC-6", "FR-042-AC-7", "FR-042-AC-8")]
+fn adding_a_payload_type_cannot_bypass_compensation_effect_authority() {
+    let (inputs, _) = inputs(&source());
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("actual identity-only source baseline");
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            inputs
+                .read(proofs, &emitted)
+                .into_result()
+                .expect("original null-type effect passes independent admission");
+            let package = admitted.package();
+            let owner = package
+                .declarations
+                .iter()
+                .position(|declaration| declaration.name == "RecoveryFlow")
+                .unwrap();
+            let declaration = &package.declarations[owner];
+            let w::Body::Protocol { compensations, .. } = &declaration.body else {
+                panic!("protocol")
+            };
+            let full = &compensations[0];
+            let effect = &declaration.bindings[full.effect_instance as usize];
+            assert_eq!(effect.kind, w::BindingKind::CompensationEffect);
+            assert!(effect.value_type.0.is_none());
+            assert!(
+                effect.relation.0.is_none(),
+                "this source selects no typed-effect correspondence"
+            );
+            assert_eq!(effect.model.0.as_ref(), Some(&full.operation));
+            assert!(package
+                .definitions
+                .iter()
+                .any(
+                    |definition| definition.identity == R::ObservationBinding.identity()
+                        && definition.artifact == effect.contract
+                ));
+            let trigger_type = declaration.binders[full.trigger.index as usize].value_type;
+            assert_ne!(
+                trigger_type, full.attempt_type,
+                "two actual model views remain distinct"
+            );
+            for (name, value_type) in [
+                ("attempt record", full.attempt_type),
+                ("trigger record", trigger_type),
+            ] {
+                let mut offered = package.clone();
+                offered.declarations[owner].bindings[full.effect_instance as usize]
+                    .value_type
+                    .0 = Some(value_type);
+                // This negative offer adds only a type. Its unchanged operation,
+                // subject and identity chain cannot establish payload correspondence.
+                let bytes = serde_json::to_vec(&offered).unwrap();
+                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Unsupported(Unsupported::Export)),
+                    "unauthorized {name}; locus {:?}",
+                    report.locus()
+                );
+            }
+            let w::Type::Object { export } = &package.types[full.attempt_type as usize] else {
+                panic!("actual Object export")
+            };
+            let mut offered = package.clone();
+            let changed = &mut offered.declarations[owner].bindings[full.effect_instance as usize];
+            changed.value_type.0 = Some(full.attempt_type);
+            changed.model.0 = Some(export.clone());
+            // The offered Object genuinely exists, but it is not the compensating
+            // Operation. Adding a payload must not bypass that identity check.
+            let bytes = serde_json::to_vec(&offered).unwrap();
+            failure(
+                &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
+                Error::Invalid(Invalid::Binding),
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-6", "FR-042-AC-7")]
+fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_edges() {
+    let (inputs, _) = inputs(&source());
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("actual two-obligation recovery baseline");
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            inputs
+                .read(proofs, &emitted)
+                .into_result()
+                .expect("original authority edges pass independent admission");
+            let package = admitted.package();
+            let owner = package
+                .declarations
+                .iter()
+                .position(|declaration| declaration.name == "RecoveryFlow")
+                .unwrap();
+            let declaration = &package.declarations[owner];
+            let w::Body::Protocol { compensations, .. } = &declaration.body else {
+                panic!("protocol")
+            };
+            let [full, partial] = compensations.as_slice() else {
+                panic!("two authored obligations")
+            };
+            assert_eq!(
+                (full.name.as_str(), partial.name.as_str()),
+                ("Full", "Partial")
+            );
+            let requirement = |compensation: &w::Compensation, index: u32, kind| {
+                let subject = w::Subject::Compensation {
+                    compensation: w::Handle {
+                        declaration: owner as u32,
+                        index,
+                    },
+                };
+                let matches: Vec<_> = compensation
+                    .recovery_bindings
+                    .iter()
+                    .copied()
+                    .filter(|at| {
+                        let binding = &declaration.bindings[*at as usize];
+                        binding.kind == kind && binding.subject == subject
+                    })
+                    .collect();
+                assert_eq!(matches.len(), 1, "one original {kind:?} per obligation");
+                matches[0]
+            };
+            let snapshot = requirement(full, 0, w::BindingKind::Snapshot);
+            let activation = declaration.anchors[full.activation_anchor.index as usize]
+                .binding
+                .0
+                .unwrap();
+            assert_eq!(
+                declaration.bindings[snapshot as usize].requires,
+                [activation]
+            );
+            assert_ne!(full.clock, partial.clock);
+            for compensation in [full, partial] {
+                assert_eq!(
+                    declaration.bindings[compensation.clock as usize].kind,
+                    w::BindingKind::Clock
+                );
+            }
+            for (name, full_clock, partial_clock) in [
+                ("Full selects Partial clock", partial.clock, partial.clock),
+                ("both clock selections exchanged", partial.clock, full.clock),
+            ] {
+                let mut offered = package.clone();
+                let w::Body::Protocol { compensations, .. } = &mut offered.declarations[owner].body
+                else {
+                    panic!("protocol")
+                };
+                compensations[0].clock = full_clock;
+                compensations[1].clock = partial_clock;
+                let bytes = serde_json::to_vec(&offered).unwrap();
+                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Invalid(Invalid::Binding)),
+                    "{name}; locus {:?}",
+                    report.locus()
+                );
+            }
+            for kind in [
+                w::BindingKind::Snapshot,
+                w::BindingKind::Progress,
+                w::BindingKind::Closure,
+            ] {
+                let original = requirement(full, 0, kind);
+                let foreign = requirement(partial, 1, kind);
+                assert_ne!(original, foreign);
+                assert!(!full.recovery_bindings.contains(&foreign));
+                let mut offered = package.clone();
+                let w::Body::Protocol { compensations, .. } = &mut offered.declarations[owner].body
+                else {
+                    panic!("protocol")
+                };
+                let slots = &mut compensations[0].recovery_bindings;
+                let positions: Vec<_> = slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, at)| **at == original)
+                    .map(|(index, _)| index)
+                    .collect();
+                assert_eq!(positions.len(), 1, "original edge exists exactly once");
+                slots[positions[0]] = foreign;
+                slots.sort_unstable();
+                let bytes = serde_json::to_vec(&offered).unwrap();
+                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Invalid(Invalid::Binding)),
+                    "Full selects Partial {kind:?}; locus {:?}",
+                    report.locus()
+                );
+            }
+            let population_pair = |compensation: &w::Compensation| {
+                let recovered = &declaration.binders[compensation.recovery.index as usize];
+                let subject = w::Subject::Declaration {
+                    declaration: owner as u32,
+                };
+                let populations: Vec<_> = compensation
+                    .recovery_bindings
+                    .iter()
+                    .copied()
+                    .filter(|at| {
+                        let binding = &declaration.bindings[*at as usize];
+                        binding.kind == w::BindingKind::Population
+                            && binding.subject == subject
+                            && binding.anchor == recovered.anchor
+                    })
+                    .collect();
+                assert_eq!(populations.len(), 1, "one actual recovered Node population");
+                let population_index = populations[0];
+                let population = &declaration.bindings[population_index as usize];
+                assert_eq!(population.value_type.0, Some(recovered.value_type));
+                let model = population
+                    .model
+                    .0
+                    .as_ref()
+                    .expect("actual population export");
+                assert_eq!(
+                    package.models[model.model as usize].exports[model.export as usize].path,
+                    ["Node", "nodes"]
+                );
+                let closures: Vec<_> = compensation
+                    .recovery_bindings
+                    .iter()
+                    .copied()
+                    .filter(|at| {
+                        let binding = &declaration.bindings[*at as usize];
+                        binding.kind == w::BindingKind::Closure
+                            && binding.subject == subject
+                            && binding.anchor == recovered.anchor
+                            && binding.value_type == population.value_type
+                            && binding.model == population.model
+                            && binding.requires == [population_index]
+                    })
+                    .collect();
+                assert_eq!(closures.len(), 1, "one exact recovered population closure");
+                [population_index, closures[0]]
+            };
+            let full_pair = population_pair(full);
+            let partial_pair = population_pair(partial);
+            assert_ne!(
+                declaration.binders[full.recovery.index as usize].anchor,
+                declaration.binders[partial.recovery.index as usize].anchor,
+                "the two actual recovery populations have distinct anchors"
+            );
+            for member in partial_pair {
+                assert!(!full.recovery_bindings.contains(&member));
+            }
+
+            for member in full_pair {
+                let mut offered = package.clone();
+                let w::Body::Protocol { compensations, .. } = &mut offered.declarations[owner].body
+                else {
+                    panic!("protocol")
+                };
+                let slots = &mut compensations[0].recovery_bindings;
+                assert_eq!(slots.iter().filter(|at| **at == member).count(), 1);
+                slots.retain(|at| *at != member);
+                let bytes = serde_json::to_vec(&offered).unwrap();
+                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Invalid(Invalid::Binding)),
+                    "Full omits required population member {member}; locus {:?}",
+                    report.locus()
+                );
+            }
+
+            let mut offered = package.clone();
+            let w::Body::Protocol { compensations, .. } = &mut offered.declarations[owner].body
+            else {
+                panic!("protocol")
+            };
+            let slots = &mut compensations[0].recovery_bindings;
+            slots.extend(partial_pair);
+            slots.sort_unstable();
+            assert!(slots.windows(2).all(|pair| pair[0] < pair[1]));
+            let bytes = serde_json::to_vec(&offered).unwrap();
+            let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+            assert_eq!(
+                report.result().err(),
+                Some(&Error::Invalid(Invalid::Binding)),
+                "Full adds the genuine Partial-only population pair; locus {:?}",
+                report.locus()
+            );
+            let mut edges = vec![(snapshot, activation)];
+            for kind in [w::BindingKind::Progress, w::BindingKind::Closure] {
+                let record = requirement(full, 0, kind);
+                for prerequisite in [full.clock, full.effect_instance, snapshot] {
+                    edges.push((record, prerequisite));
+                }
+            }
+            for (record, prerequisite) in edges {
+                assert_eq!(
+                    declaration.bindings[record as usize]
+                        .requires
+                        .iter()
+                        .filter(|at| **at == prerequisite)
+                        .count(),
+                    1,
+                    "original prerequisite exists exactly once"
+                );
+                let mut offered = package.clone();
+                offered.declarations[owner].bindings[record as usize]
+                    .requires
+                    .retain(|at| *at != prerequisite);
+                let bytes = serde_json::to_vec(&offered).unwrap();
+                let report = inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes));
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Invalid(Invalid::Binding)),
+                    "missing edge {record}->{prerequisite}; locus {:?}",
+                    report.locus()
+                );
+            }
+        },
+    );
+}
+#[test]
+#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-6", "FR-042-AC-7")]
+fn compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond() {
+    let body = changed(
+        "within [0,30]; attempts 3 of M::Node;\n          retry (earlierFull",
+        "within [0,30]; attempts 9223372036854775807 of M::Node;\n          retry (earlierFull",
+    );
+    let (inputs, _) = inputs(&body);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("signed64 maximum is a static authored attempt bound");
+            let package = admitted.package();
+            let declaration = package
+                .declarations
+                .iter()
+                .find(|declaration| declaration.name == "RecoveryFlow")
+                .unwrap();
+            let w::Body::Protocol { compensations, .. } = &declaration.body else {
+                panic!("protocol")
+            };
+            let [full, partial] = compensations.as_slice() else {
+                panic!("two original obligations")
+            };
+            assert_eq!(
+                (full.name.as_str(), integer(&full.maximum_attempts)),
+                ("Full", i64::MAX)
+            );
+            assert_eq!(
+                (partial.name.as_str(), integer(&partial.maximum_attempts)),
+                ("Partial", 3)
+            );
+            let namespace = proofs.types().binding().namespace();
+            let id = flow(proofs);
+            let c::DeclarationKind::Protocol(original) = &namespace.syntax(id).unwrap().kind else {
+                panic!("original protocol")
+            };
+            let c::ProtocolRequirement::Compensation(authored) = &original.requirements[0] else {
+                panic!("original Full obligation")
+            };
+            let unit = namespace
+                .unit(namespace.declaration(id).unwrap().unit())
+                .unwrap();
+            assert_eq!(authored.attempts.value, "9223372036854775807");
+            assert_eq!(
+                unit.source().slice(authored.attempts.span),
+                Some("9223372036854775807")
+            );
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs
+                .read(proofs, &emitted)
+                .into_result()
+                .expect("independent reader preserves the exact maximum");
+            assert_eq!(read.package(), package);
+            assert_eq!(read.digest(), emitted.digest());
+
+            // Change exactly this numeric field in the actually emitted bytes. All
+            // original source/model/dependency selectors remain independently fixed.
+            let text = std::str::from_utf8(emitted.bytes()).unwrap();
+            let from = r#""maximum_attempts":{"kind":"integer","decimal":"9223372036854775807"}"#;
+            let to = r#""maximum_attempts":{"kind":"integer","decimal":"9223372036854775808"}"#;
+            assert_eq!(text.matches(from).count(), 1);
+            let offered = text.replacen(from, to, 1);
+            failure(
+                &inputs.read_bytes(
+                    proofs,
+                    offered.as_bytes(),
+                    ByteDigest::of(offered.as_bytes()),
+                ),
+                Error::Numeric(artifact::NumberError::ComponentOutOfRange {
+                    component: artifact::NumberComponent::Decimal,
+                }),
+            );
+        },
+    );
+}
