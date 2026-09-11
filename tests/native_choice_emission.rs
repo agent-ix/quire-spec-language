@@ -419,6 +419,329 @@ fn parallel_all_join_supplies_two_distinct_received_atoms_to_a_four_way_partitio
 }
 
 #[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-5", "FR-042-AC-7")]
+fn received_choice_with_cross_unit_operation_contracts_retains_original_owners() {
+    let mut inputs = Inputs::new(&[
+        Unit {
+            name: "decision-contracts",
+            body: "pre Ready using S on M::Node::step { delta >= 0 }\npost Done using S on M::Node::step { result }",
+            declarations: &["Ready", "Done"],
+        },
+        Unit {
+            name: "decision-operation",
+            body: "protocol Decisions using P over (view: M::Node) on origin {
+                role Sender on M::Node;
+                role Receiver on M::Node;
+                channel Messages from Sender to Receiver carries M::Plain
+                    ordering unordered delivery [1,1];
+                run sequence Main {
+                    send Sent via Messages as (sent: M::Plain) { true };
+                    receive Got via Messages of Sent as (got: M::Plain) { true };
+                    choice Decide by Receiver visible (got.ready) {
+                        case yes when { got.ready }
+                            attempt Tried by Receiver on M::Node::step contracts [Ready,Done]
+                                as (attempted: M::Plain) { attempted.ready };
+                        case no when { not got.ready } check Skipped using S { true };
+                    }
+                }
+                finish Closed as (closed: M::Node) { true };
+            }",
+            declarations: &["Decisions"],
+        },
+    ]);
+    let expected_operation = inputs.step_contracts("Ready", "Done");
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admission = native::admit(proofs, selected, Limits::default());
+            assert!(
+                admission.result().is_ok(),
+                "{:?}; {:?}",
+                admission.result().err(),
+                admission.locus()
+            );
+            let admission = admission.into_result().unwrap();
+            let package = admission.package();
+            assert_eq!((package.sources.len(), package.declarations.len()), (2, 3));
+            for source in &package.sources {
+                let original = inputs
+                    .sources
+                    .iter()
+                    .find(|s| s.identity().identity == source.native.identity)
+                    .unwrap();
+                assert_eq!(source.native.revision, original.identity().revision);
+                assert_eq!(source.text, original.text());
+            }
+            let find = |name| {
+                package
+                    .declarations
+                    .iter()
+                    .position(|d| d.name == name)
+                    .unwrap() as u32
+            };
+            let ready = find("Ready");
+            let done = find("Done");
+            let decisions = find("Decisions");
+            let declaration = &package.declarations[decisions as usize];
+            let namespace = proofs.types().binding().namespace();
+            for (name, index, source_index) in [
+                ("Ready", ready, 0),
+                ("Done", done, 0),
+                ("Decisions", decisions, 1),
+            ] {
+                let retained = &package.declarations[index as usize];
+                let [id] = namespace.lookup(name) else {
+                    panic!("one authored declaration")
+                };
+                let original = namespace.syntax(*id).unwrap();
+                assert_eq!(
+                    (
+                        retained.locus.span.start as usize,
+                        retained.locus.span.end as usize
+                    ),
+                    (original.span.start, original.span.end)
+                );
+                assert_eq!(
+                    package.sources[retained.locus.source as usize]
+                        .native
+                        .identity,
+                    inputs.sources[source_index].identity().identity
+                );
+            }
+            assert_ne!(
+                declaration.locus.source,
+                package.declarations[ready as usize].locus.source
+            );
+            assert_eq!(
+                package.declarations[ready as usize].execution,
+                w::Execution::Pre {
+                    operation: expected_operation.clone()
+                }
+            );
+            assert_eq!(
+                package.declarations[done as usize].execution,
+                w::Execution::Post {
+                    operation: expected_operation.clone()
+                }
+            );
+            assert_eq!(
+                package.models[expected_operation.model as usize].exports
+                    [expected_operation.export as usize]
+                    .path,
+                ["Node", "step"]
+            );
+            assert_eq!(
+                package.dependencies
+                    [package.models[expected_operation.model as usize].artifact as usize]
+                    .artifact,
+                inputs.model_reference
+            );
+            let mut contracts = vec![ready, done];
+            contracts.sort_unstable();
+            assert_eq!(declaration.requires, contracts);
+            let w::Body::Protocol {
+                roles,
+                channels,
+                controls,
+                causal_edges,
+                ..
+            } = &declaration.body
+            else {
+                panic!("protocol")
+            };
+            let handle = |name| w::Handle {
+                declaration: decisions,
+                index: controls.iter().position(|c| c.name == name).unwrap() as u32,
+            };
+            let decide = handle("Decide");
+            let tried = handle("Tried");
+            let got = handle("Got");
+            let [original_id] = namespace.lookup("Decisions") else {
+                panic!("one original protocol")
+            };
+            let original_unit = namespace
+                .unit(proofs.types().declaration(*original_id).unwrap().unit())
+                .unwrap();
+            let original_choice =
+                &original_unit.controls()[controls[decide.index as usize].original_node as usize];
+            assert_eq!(original_choice.name.value, "Decide");
+            assert!(matches!(
+                original_choice.kind,
+                c::ControlKind::Choice { .. }
+            ));
+            assert_eq!(
+                controls[decide.index as usize].locus.source,
+                declaration.locus.source
+            );
+            assert_eq!(
+                (
+                    controls[decide.index as usize].locus.span.start as usize,
+                    controls[decide.index as usize].locus.span.end as usize
+                ),
+                (original_choice.span.start, original_choice.span.end)
+            );
+            let w::ControlOperation::Choice {
+                owner,
+                visible,
+                cases,
+            } = &controls[decide.index as usize].operation
+            else {
+                panic!("received choice")
+            };
+            assert_eq!(
+                *owner,
+                w::Handle {
+                    declaration: decisions,
+                    index: 1
+                }
+            );
+            assert_eq!(roles[owner.index as usize].name, "Receiver");
+            assert_eq!(owner, &channels[0].to);
+            assert_eq!(
+                cases.iter().map(|c| c.label.as_str()).collect::<Vec<_>>(),
+                ["yes", "no"]
+            );
+            assert_eq!(cases[0].body, tried);
+            assert_eq!(cases[1].body, handle("Skipped"));
+            let w::ControlOperation::Event {
+                event: w::Event::Receive { channel, .. },
+                binder: received,
+                ..
+            } = &controls[got.index as usize].operation
+            else {
+                panic!("actual receive")
+            };
+            assert_eq!(
+                *channel,
+                w::Handle {
+                    declaration: decisions,
+                    index: 0
+                }
+            );
+            assert_eq!(received.declaration, decisions);
+            for value in [&visible[0], &cases[0].guard] {
+                assert_eq!(value.declaration, decisions);
+                let retained = &declaration.values[value.index as usize];
+                let w::ValueOperation::Field { base, field } = &retained.operation else {
+                    panic!("dynamic received field")
+                };
+                assert_eq!(base.declaration, decisions);
+                assert_eq!(
+                    declaration.values[base.index as usize].operation,
+                    w::ValueOperation::Read {
+                        binder: received.clone()
+                    }
+                );
+                assert_eq!(
+                    package.models[field.model as usize].exports[field.export as usize].path,
+                    ["Plain", "ready"]
+                );
+                assert_eq!(retained.locus.source, declaration.locus.source);
+                let source = &package.sources[retained.locus.source as usize].text;
+                assert_eq!(
+                    &source[retained.locus.span.start as usize..retained.locus.span.end as usize],
+                    "got.ready"
+                );
+            }
+            let w::ControlOperation::Event {
+                event:
+                    w::Event::Attempt {
+                        owner: attempt_owner,
+                        operation,
+                        contracts: actual_contracts,
+                        ..
+                    },
+                ..
+            } = &controls[tried.index as usize].operation
+            else {
+                panic!("actual operation attempt")
+            };
+            assert_eq!(attempt_owner, owner);
+            assert_eq!(operation, &expected_operation);
+            assert_eq!(actual_contracts, &contracts);
+            for case in cases {
+                assert_eq!(case.guard.declaration, decisions);
+                assert!(causal_edges.iter().any(|edge| edge.owner == decide
+                    && edge.kind == w::EdgeKind::Branch
+                    && edge.from.node == decide
+                    && edge.to.node == case.body));
+                assert!(causal_edges.iter().any(|edge| edge.owner == decide
+                    && edge.kind == w::EdgeKind::Join
+                    && edge.from.node == case.body
+                    && edge.to.node == decide));
+            }
+            let emitted = native::emit(&admission, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs.read(proofs, &emitted);
+            assert!(
+                read.result().is_ok(),
+                "{:?}; {:?}",
+                read.result().err(),
+                read.locus()
+            );
+            assert_eq!(read.into_result().unwrap().package(), package);
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn closed_choice_classification_requires_every_authored_operand_to_be_closed() {
+    for (yes, no, expected) in [
+        (
+            "false and view.plain.ready",
+            "true",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+        (
+            "true or view.plain.ready",
+            "false",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+        (
+            "false implies view.plain.ready",
+            "false",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+        (
+            "if true then true else view.plain.ready",
+            "false",
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+        (
+            "let decisionConstant = true in decisionConstant",
+            "true",
+            Error::Invalid(Invalid::Control),
+        ),
+        (
+            "let decisionConstant = false in decisionConstant",
+            "false",
+            Error::Invalid(Invalid::Control),
+        ),
+    ] {
+        let decision = choice("Receiver", "true", yes, no);
+        let inputs = inputs(&decision);
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                let admission = native::admit(proofs, selected, Limits::default());
+                assert_eq!(
+                    admission.result().err(),
+                    Some(&expected),
+                    "guard {yes}; {:?}",
+                    admission.locus()
+                );
+            },
+        );
+    }
+}
+
+#[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
 fn role_knowledge_visible_basis_and_abstract_partition_failures_do_not_grant_admission() {
     for (case, role, visible, yes, no, expected) in [
@@ -756,9 +1079,7 @@ fn finite_boolean_valuation_work_exhausts_at_choice_and_fresh_retry_emits() {
                     ..Limits::default()
                 },
             );
-            let Error::Incomplete(exhaustion) =
-                limited.result().err().expect("finite valuation ceiling")
-            else {
+            let Err(Error::Incomplete(exhaustion)) = limited.result() else {
                 panic!(
                     "expected resource refusal, found {:?}",
                     limited.result().err()

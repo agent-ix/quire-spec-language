@@ -116,6 +116,9 @@ conservative independent-atom abstraction before admitting a symbolic choice.
 If that proof fails, then the compiler SHALL return `Unsupported::FamilyProof`
 without claiming a concrete overlap or hole from an abstract valuation.
 Fully closed decisions retain `Invalid::Control` for an evaluated overlap/hole.
+Closed classification requires every original operand and immutable initializer
+to be closed; short-circuit truth or an unselected conditional branch cannot
+erase a visibility or unsupported-fragment prerequisite.
 Definedness discharge remains a separate prerequisite: IR `check_expression`
 does not establish Boolean validity. Original operands, guards, handles and
 anchors remain in emitted code rather than proof witnesses or simplified output.

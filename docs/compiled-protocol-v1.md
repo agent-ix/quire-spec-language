@@ -392,7 +392,9 @@ failure to prove the partition returns `Unsupported::FamilyProof`, without a
 fabricated concrete overlap/hole. Fully closed decisions retain `Invalid::Control`
 for an evaluated overlap or hole. Missing supported visibility/provenance also
 leaves family proof unestablished; earlier source/type/scope refusals retain their
-own causes. Existing IR `check_expression` establishes definedness, not truth of
+own causes. Closed classification covers every original operand and initializer;
+short-circuit truth and unselected branches cannot erase a prerequisite.
+Existing IR `check_expression` establishes definedness, not truth of
 the partition. This private Boolean proof changes neither the emitted original
 guards/AST handles nor the wire schema and supplies no runtime observations.
 When such a choice supplies a continuing repeat body's progress proof, every

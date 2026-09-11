@@ -10,7 +10,7 @@ use crate::checking::composed::proofs::{ProofDisposition, ProofReport};
 use crate::checking::composed::DeclarationTypes;
 use crate::linking::composed::definition_source::RegisteredDefinition as Definition;
 use crate::linking::composed::definitions::UseKind;
-use crate::linking::composed::scopes::DeclarationScope;
+use crate::linking::composed::scopes::{BinderKind, BinderType, DeclarationScope};
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed::{self as c, ComposedUnit};
 use crate::syntax::{BinaryOp, ExprId, ExprKind, UnaryOp};
@@ -151,7 +151,7 @@ fn protocol_check(
     protocol: &c::Protocol,
     work: &mut Work,
 ) -> Result<(), Error> {
-    let constants = constants(unit, typed, source, work)?;
+    let constants = constants(unit, typed, scope, source, work)?;
     let range = c::arena::owned_range(unit.controls(), span, |node| node.span, || work.visit())?;
     let mut progress = BTreeMap::new();
     for at in range {
@@ -354,6 +354,7 @@ fn combined(
 fn constants(
     unit: &ComposedUnit,
     typed: &DeclarationTypes<'_>,
+    scope: &DeclarationScope,
     source: u32,
     work: &mut Work,
 ) -> Result<BTreeMap<usize, bool>, Error> {
@@ -377,21 +378,11 @@ fn constants(
                     argument,
                 } => get(*argument)?.map(|value| !value),
                 ExprKind::Binary { op, left, right } => match op {
-                    BinaryOp::And => match (get(*left)?, get(*right)?) {
-                        (Some(false), _) | (_, Some(false)) => Some(false),
-                        (Some(true), Some(true)) => Some(true),
-                        _ => None,
-                    },
-                    BinaryOp::Or => match (get(*left)?, get(*right)?) {
-                        (Some(true), _) | (_, Some(true)) => Some(true),
-                        (Some(false), Some(false)) => Some(false),
-                        _ => None,
-                    },
-                    BinaryOp::Implies => match (get(*left)?, get(*right)?) {
-                        (Some(false), _) | (_, Some(true)) => Some(true),
-                        (Some(true), Some(false)) => Some(false),
-                        _ => None,
-                    },
+                    // Closed means every original operand is closed. Truth
+                    // simplification cannot hide a visibility obligation.
+                    BinaryOp::And => get(*left)?.zip(get(*right)?).map(|(a, b)| a & b),
+                    BinaryOp::Or => get(*left)?.zip(get(*right)?).map(|(a, b)| a | b),
+                    BinaryOp::Implies => get(*left)?.zip(get(*right)?).map(|(a, b)| !a | b),
                     BinaryOp::Equal => get(*left)?
                         .zip(get(*right)?)
                         .map(|(left, right)| left == right),
@@ -412,14 +403,34 @@ fn constants(
                     condition,
                     then_value,
                     else_value,
-                } => match get(*condition)? {
-                    Some(true) => get(*then_value)?,
-                    Some(false) => get(*else_value)?,
-                    None => None,
-                },
+                } => get(*condition)?
+                    .zip(get(*then_value)?)
+                    .zip(get(*else_value)?)
+                    .map(
+                        |((condition, then_value), else_value)| {
+                            if condition {
+                                then_value
+                            } else {
+                                else_value
+                            }
+                        },
+                    ),
+                ExprKind::Let { value, body, .. } => {
+                    get(*value)?.zip(get(*body)?).map(|(_, body)| body)
+                }
+                ExprKind::Name(_) => {
+                    let original = node
+                        .binder
+                        .and_then(|binder| scope.binders.get(binder.index()));
+                    match original.map(|binder| (&binder.kind, &binder.ty)) {
+                        Some((BinderKind::Let, BinderType::Initializer(initializer))) => {
+                            get(*initializer)?
+                        }
+                        _ => None,
+                    }
+                }
                 ExprKind::Integer(_)
                 | ExprKind::Text(_)
-                | ExprKind::Name(_)
                 | ExprKind::SelfValue
                 | ExprKind::ResultValue
                 | ExprKind::EnumValue { .. }
@@ -429,7 +440,6 @@ fn constants(
                     ..
                 }
                 | ExprKind::Call { .. }
-                | ExprKind::Let { .. }
                 | ExprKind::Quantifier { .. }
                 | ExprKind::Reaches { .. } => None,
             },
