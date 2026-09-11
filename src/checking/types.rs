@@ -119,6 +119,30 @@ impl PartialEq for NativeType<'_> {
 impl Eq for NativeType<'_> {}
 
 impl<'a> NativeType<'a> {
+    /// Exact rational representation, without integer conversion or new bounds.
+    pub(super) fn rational(&self) -> Option<&'a ir::RationalType> {
+        match self {
+            Self::Scalar {
+                representation: ir::ValueType::Rational { value },
+                ..
+            } => Some(value),
+            _ => None,
+        }
+    }
+    /// Numeric unit shared by integer and rational nominal roles.
+    pub(super) fn numeric_unit(&self) -> Option<&'a Unit> {
+        match self {
+            Self::Scalar {
+                role:
+                    ScalarRole {
+                        kind: ScalarKind::Integer { unit } | ScalarKind::Rational { unit },
+                        ..
+                    },
+                ..
+            } => Some(unit),
+            _ => None,
+        }
+    }
     pub(super) fn integer(&self) -> Option<&'a ir::IntegerType> {
         match self {
             Self::Scalar {
