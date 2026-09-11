@@ -258,16 +258,42 @@ fn protocol_check(
                 exhausted,
                 ..
             } => {
-                visible_constants(visible, &constants, work)?;
+                let observed = if constants.contains_key(&guard.0) {
+                    visible_constants(visible, &constants, work)?;
+                    None
+                } else {
+                    // An observed guard partitions every valuation into exactly
+                    // the continuing and the exhausting branch, under the same
+                    // atom, ownership and visibility obligations as a choice.
+                    let context = decisions::Context {
+                        unit,
+                        typed,
+                        scope,
+                        protocol,
+                        source,
+                    };
+                    Some(decisions::partition(&context, c::ControlId(at), work)?)
+                };
                 let maximum = natural(&maximum.value, work)?;
-                let guard = constant(*guard, &constants, work)?;
+                let continuing = match &observed {
+                    None => constant(*guard, &constants, work)?,
+                    Some(feasible) => {
+                        let [continuing, _exhausting] = feasible[..] else {
+                            return Err(Error::Invalid(Invalid::Control));
+                        };
+                        continuing
+                    }
+                };
                 let body = child(*body, &progress, work)?;
                 let exhausted = child(*exhausted, &progress, work)?;
-                if !guard {
+                if !continuing {
                     Progress::None
                 } else if maximum == 0 {
                     exhausted
                 } else {
+                    // A feasible observed guard carries the same body obligation
+                    // as a true constant one; falsification is a normal exit and
+                    // never evidence of body progress.
                     match body {
                         Progress::Observable => Progress::Observable,
                         Progress::None => return Err(Error::Invalid(Invalid::Control)),
