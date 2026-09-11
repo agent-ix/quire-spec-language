@@ -35,6 +35,63 @@ fn inspect(body: &str, test: impl FnOnce(&binding::Report<'_>, &[FormalSource]))
     });
 }
 
+#[test]
+#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-3")]
+fn model_values_use_selected_inventory_and_ambiguous_inputs_refuse_upstream() {
+    let selected = setup::model("SelectedValues");
+    let spare = setup::model("UnusedValues");
+    let sources = [setup::source("model-values", &selected,
+        "post Changed using S on M::Node::step { self.signed = pre(self.signed + delta) and result }")];
+    let formal = setup::formal_sources(&sources);
+    setup::with_binding(
+        &sources,
+        &[&spare, &selected],
+        BindingLimits::default(),
+        |binding| {
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            let declaration = id(binding, "Changed");
+            assert_eq!(
+                report.disposition(declaration),
+                Some(TypeDisposition::Typed)
+            );
+            let typed = report.declaration(declaration).unwrap();
+            let delta = typed
+                .nodes()
+                .iter()
+                .find(|node| sources[0].slice(node.span) == Some("delta"))
+                .unwrap();
+            let Some(NativeType::Scalar { model, role, .. }) = &delta.ty else {
+                panic!("selected model input must retain its nominal scalar type");
+            };
+            assert_eq!(model.digest(), selected.digest());
+            assert_eq!(model.environment().owner(), selected.environment().owner());
+            assert_eq!(role.name.as_str(), "Signed");
+            assert!(report.exhaustion().is_none());
+        },
+    );
+    // Equal duplicate inputs cannot manufacture an unambiguous model binding.
+    setup::with_binding(
+        &sources,
+        &[&selected, &selected],
+        BindingLimits::default(),
+        |binding| {
+            let declaration = id(binding, "Changed");
+            assert_eq!(
+                binding.disposition(declaration),
+                Some(BindingDisposition::Refused)
+            );
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            refused(&report, "Changed", CauseKind::UpstreamBinding);
+            assert!(report
+                .declaration(declaration)
+                .unwrap()
+                .causes()
+                .iter()
+                .all(|cause| cause.profile.is_none()));
+        },
+    );
+}
+
 fn scalar_name<'a>(ty: &'a NativeType<'_>) -> &'a str {
     let NativeType::Scalar { role, .. } = ty else {
         panic!("expected actual nominal scalar, got {ty:?}")
@@ -466,13 +523,22 @@ fn aggregate_domain_checks_are_distinct_from_pending_prefix_proofs() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, ir::DiagnosticCode::UnboundedCollection);
 
-    for maximum in [1, 6, 10_000] {
+    for maximum in [1, 6, 10_000, 10_001] {
         let model = setup::model_with_maximum("Bounded", maximum);
         let sources = [setup::source("bounded", &model, "predicate Fold using S (input: M::Node): Boolean { size<M::Wide>(input.amounts) >= 0 and sum<M::Total>(item in input.amounts: item) >= 0 }")];
         let formal = setup::formal_sources(&sources);
         setup::with_binding(&sources, &[&model], BindingLimits::default(), |binding| {
             let report = composed::admit_types(binding, &formal, TypeLimits::default());
             let declaration = id(binding, "Fold");
+            if maximum == 10_001 {
+                refused(&report, "Fold", CauseKind::ModelDomain { input: 0 });
+                assert_eq!(
+                    binding.disposition(declaration),
+                    Some(BindingDisposition::NamesResolved)
+                );
+                assert!(report.exhaustion().is_none());
+                return;
+            }
             assert_eq!(
                 report.disposition(declaration),
                 Some(TypeDisposition::Typed)
