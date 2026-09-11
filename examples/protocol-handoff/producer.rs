@@ -66,11 +66,18 @@ const UNITS: &[UnitRecipe] = &[
         document: "ProtocolHandoffPredicates",
         requirement: "HandoffPredicates",
         body: include_str!("predicates.body.native"),
-        clauses: &[AuthoredClause {
-            name: "Allowed",
-            clause: "allowed",
-            execution: AuthoredExecution::Handler,
-        }],
+        clauses: &[
+            AuthoredClause {
+                name: "Allowed",
+                clause: "allowed",
+                execution: AuthoredExecution::Handler,
+            },
+            AuthoredClause {
+                name: "Bounded",
+                clause: "bounded",
+                execution: AuthoredExecution::Handler,
+            },
+        ],
     },
     UnitRecipe {
         file: "state.native",
