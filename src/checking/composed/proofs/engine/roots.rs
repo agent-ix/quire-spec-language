@@ -5,23 +5,36 @@ use super::*;
 
 impl Builder<'_, '_> {
     pub(super) fn roots(&mut self, syntax: &c::Declaration) -> Result<()> {
-        let Some(first) = self.typed.nodes().first() else {
-            return Ok(());
-        };
-        let start = first.expression.0;
+        let site = self.declaration_site();
+        let range = c::arena::owned_range(
+            self.unit.expressions(),
+            syntax.span,
+            |node| node.span,
+            || self.work.charge(D::Expressions, 1, site),
+        )?;
+        // The parser owns contiguous declaration arenas; the type result must
+        // retain exactly that window before proof-local indexing is permitted.
+        if range.len() != self.typed.nodes().len() {
+            return Err(upstream(site));
+        }
+        let start = range.start;
         self.work.charge(
             D::Records,
             self.typed.nodes().len(),
             self.declaration_site(),
         )?;
         let mut child = vec![false; self.typed.nodes().len()];
-        for node in self.typed.nodes() {
+        for (index, node) in self.typed.nodes().iter().enumerate() {
             let at = node.expression;
             self.work.charge(D::Expressions, 1, self.site(at))?;
             let site = self.site(at);
+            if at.0 != start + index {
+                return Err(upstream(site));
+            }
             let mut mark = |id: ExprId| -> Result<()> {
                 self.work.charge(D::Expressions, 1, site)?;
-                child[id.0 - start] = true;
+                let index = id.0.checked_sub(start).ok_or_else(|| upstream(site))?;
+                *child.get_mut(index).ok_or_else(|| upstream(site))? = true;
                 Ok(())
             };
             match &self.unit.expressions()[at.0].kind {
@@ -134,7 +147,10 @@ impl Builder<'_, '_> {
         for capture in authored {
             self.work.charge(D::Types, 1, self.site(capture.value))?;
             self.work.charge(D::Records, 1, self.site(capture.value))?;
-            let binder = self.binders[&capture.parameter.name.span.start];
+            let binder = *self
+                .binders
+                .get(&capture.parameter.name.span.start)
+                .ok_or_else(|| upstream(self.site(capture.value)))?;
             output.insert(capture.value.0, binder);
         }
         Ok(())

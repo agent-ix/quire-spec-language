@@ -119,6 +119,10 @@ fn unproved(
         Some(ProofDisposition::Refused)
     );
     let proof = report.declaration(declaration).unwrap();
+    assert!(
+        !proof.complete(),
+        "a refused declaration cannot be complete"
+    );
     let cause = proof
         .causes()
         .iter()
@@ -666,6 +670,7 @@ fn callee_totality_and_call_argument_definedness_are_independent_obligations() {
             report.disposition(dependent),
             Some(ProofDisposition::Refused)
         );
+        assert!(!report.declaration(dependent).unwrap().complete());
         assert!(report.declaration(dependent).unwrap().causes().iter().any(|cause|
             matches!(cause.kind, CauseKind::Dependency { target } if target == id(types, "Partial"))));
         for (name, unit_index) in [("SafeCall", 0), ("Total", 1)] {
@@ -680,7 +685,7 @@ fn callee_totality_and_call_argument_definedness_are_independent_obligations() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-5", "FR-040-AC-8")]
+#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-4", "FR-040-AC-8")]
 fn unsupported_ordered_query_proofs_remain_distinct_from_type_admission() {
     inspect("predicate Ordered using S (input: M::Node): Boolean { forall(item in input.amounts: item >= 1) }\n\
         predicate Consumer using S (input: M::Node): Boolean { Ordered(input) }\n\
@@ -690,12 +695,142 @@ fn unsupported_ordered_query_proofs_remain_distinct_from_type_admission() {
             let consumer = id(types, "Consumer");
             assert_eq!(types.disposition(ordered), Some(TypeDisposition::Typed));
             assert_eq!(report.disposition(ordered), Some(ProofDisposition::Refused));
-            assert!(report.declaration(ordered).unwrap().causes().iter().any(|cause|
-                matches!(cause.kind, CauseKind::Unsupported(Unsupported::OrderedQuery))));
+            assert!(!report.declaration(ordered).unwrap().complete());
+            let cause = report.declaration(ordered).unwrap().causes().iter().find(|cause|
+                matches!(cause.kind, CauseKind::Unsupported(Unsupported::OrderedQuery))).unwrap();
+            assert_eq!(cause.site.declaration, ordered);
+            assert_eq!(cause.site.unit, types.declaration(ordered).unwrap().unit());
+            let unit = types.binding().namespace().unit(cause.site.unit).unwrap();
+            assert_eq!(unit.source().slice(cause.site.span), Some("forall(item in input.amounts: item >= 1)"));
+            assert_eq!(unit.expression(cause.site.expression.unwrap()).unwrap().span, cause.site.span);
             assert_eq!(report.disposition(consumer), Some(ProofDisposition::Refused));
+            assert!(!report.declaration(consumer).unwrap().complete());
             assert!(report.declaration(consumer).unwrap().causes().iter().any(|cause|
                 matches!(cause.kind, CauseKind::Dependency { target } if target == ordered)));
             discharged(&report, "Independent");
+        });
+}
+
+#[test]
+#[trace("TC-119", "FR-040-AC-3", "FR-040-AC-4", "FR-040-AC-8")]
+fn excluded_numeric_meanings_keep_the_actual_type_refusal_and_original_locus() {
+    // These source meanings cannot reach the proof adapter's defensive
+    // ValueRepresentation paths through a constructor-admitted TypeReport.
+    for (expression, original, expected) in [
+        (
+            "lhs_arg / rhs_arg = lhs_arg",
+            "lhs_arg / rhs_arg",
+            composed::CauseKind::ForbiddenOperator,
+        ),
+        (
+            "lhs_arg div rhs_arg = lhs_arg",
+            "lhs_arg div rhs_arg",
+            composed::CauseKind::ForbiddenOperator,
+        ),
+        (
+            "lhs_arg rem rhs_arg = lhs_arg",
+            "lhs_arg rem rhs_arg",
+            composed::CauseKind::ForbiddenOperator,
+        ),
+        (
+            "lhs_arg mod rhs_arg = lhs_arg",
+            "lhs_arg mod rhs_arg",
+            composed::CauseKind::ForbiddenOperator,
+        ),
+        (
+            "lhs_arg = 9223372036854775808",
+            "9223372036854775808",
+            composed::CauseKind::LiteralDomain,
+        ),
+        (
+            "fraction = rational(9223372036854775808,9223372036854775808)",
+            "rational(9223372036854775808,9223372036854775808)",
+            composed::CauseKind::UnsupportedPrerequisite(
+                composed::Prerequisite::RationalNormalization,
+            ),
+        ),
+    ] {
+        let body = format!(
+            "predicate Excluded using S (lhs_arg: M::Signed, rhs_arg: M::Signed, fraction: M::Q): Boolean {{ {expression} }}\n\
+             predicate Independent using S (): Boolean {{ true }}"
+        );
+        inspect(&body, &["Excluded", "Independent"], |types, bindings| {
+            let declaration = id(types, "Excluded");
+            assert_eq!(
+                types.disposition(declaration),
+                Some(TypeDisposition::Refused)
+            );
+            let typed = types.declaration(declaration).unwrap();
+            let cause = typed
+                .causes()
+                .iter()
+                .find(|cause| cause.kind == expected)
+                .unwrap_or_else(|| panic!("{expression}: {:?}", typed.causes()));
+            let unit = types.binding().namespace().unit(typed.unit()).unwrap();
+            assert_eq!(unit.source().slice(cause.site.span), Some(original));
+            assert_eq!(cause.site.declaration, declaration);
+            assert_eq!(cause.site.unit, typed.unit());
+            assert_eq!(
+                unit.expression(cause.site.expression.unwrap())
+                    .unwrap()
+                    .span,
+                cause.site.span
+            );
+            let report = proofs::discharge(types, bindings, ProofLimits::default());
+            let proof = report.declaration(declaration).unwrap();
+            assert_eq!(proof.disposition(), ProofDisposition::Refused);
+            assert!(!proof.complete());
+            assert!(proof.environment().is_none());
+            assert!(proof.goals().is_empty());
+            assert_eq!(proof.causes().len(), 1);
+            assert!(matches!(proof.causes()[0].kind, CauseKind::UpstreamType));
+            assert_eq!(proof.causes()[0].site.declaration, declaration);
+            assert_eq!(proof.causes()[0].site.unit, typed.unit());
+            assert_eq!(
+                proof.causes()[0].site.span,
+                types
+                    .binding()
+                    .namespace()
+                    .syntax(declaration)
+                    .unwrap()
+                    .span
+            );
+            discharged(&report, "Independent");
+        });
+    }
+}
+
+#[test]
+#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-4", "FR-040-AC-8")]
+fn opaque_proof_witnesses_preserve_native_types_without_proving_numeric_guards() {
+    inspect("predicate Opaque using G (input: M::Node, other: M::Node, candidate: M::Plain, lhs_ref: M::NodeRef, rhs_ref: M::NodeRef): Boolean {\n\
+        input.label = \"ok\" and input.mode = M::Mode::Ready and input.plain.ready and candidate.ready and input = other and lhs_ref = rhs_ref\n\
+        }\n\
+        predicate OpaqueGuard using S (label: M::Label, amount: M::Signed): Boolean { label = \"ok\" implies amount + 1 <= 10 }",
+        &["Opaque", "OpaqueGuard"], |types, bindings| {
+            let report = proofs::discharge(types, bindings, ProofLimits::default());
+            let proof = discharged(&report, "Opaque");
+            let typed = types.declaration(id(types, "Opaque")).unwrap();
+            let mut kinds = std::collections::BTreeSet::new();
+            for value in proof.values() {
+                let native = typed.node(value.expression).unwrap().ty.as_ref().unwrap();
+                let kind = match native {
+                    quire_spec_language::checking::NativeType::Scalar { role, .. }
+                        if matches!(role.kind, quire_spec_language::native_model::ScalarKind::Text { .. }) => "text",
+                    quire_spec_language::checking::NativeType::Enumeration { .. } => "enum",
+                    quire_spec_language::checking::NativeType::Record { .. } => "record",
+                    quire_spec_language::checking::NativeType::Object { .. } => "object",
+                    quire_spec_language::checking::NativeType::Reference { .. } => "reference",
+                    _ => continue,
+                };
+                kinds.insert(kind);
+                let symbol = proof.environment().unwrap().values().iter()
+                    .find(|input| input.name() == &value.symbol).unwrap();
+                assert_eq!(symbol.value_type(), &ir::ValueType::Boolean);
+                assert_eq!(bindings[0].source.to_native(&value.source).unwrap(), typed.node(value.expression).unwrap().span);
+            }
+            assert_eq!(kinds, ["text", "enum", "record", "object", "reference"].into_iter().collect());
+            unproved(&report, "OpaqueGuard", ir::DefinednessObligationKind::CheckedRange, "amount + 1");
         });
 }
 
