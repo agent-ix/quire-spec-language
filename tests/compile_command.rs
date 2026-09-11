@@ -247,6 +247,7 @@ fn shared_format_catalog_preserves_existing_wire_spellings() {
             json!("native-compile/1"),
             json!("native-run-result/1"),
             json!("native-rule-model/1"),
+            json!("native-rule-model/2"),
             json!("native-state-input/1"),
             json!("native-linked-package/1")
         ]

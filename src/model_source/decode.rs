@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-025: bounded entry decoding with original declaration occurrences.
 
-use super::wire::{Enumeration, Field, Object, Operation, Record, RuleModel, Scalar, Value};
+use super::wire::{
+    Enumeration, Field, Object, Operation, Record, RuleModel, Scalar, ScalarV1, Value,
+};
 use super::{EntryKind, ModelSourceCause, ModelSourceLimits, Result};
 use crate::formal_source::FormalSource;
 use crate::located_json::{self, Located};
+use crate::native_model::NativeModelProfile;
 use crate::serde_object::Object as JsonObject;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::value::RawValue;
@@ -45,6 +48,7 @@ fn decode_items<T: DeserializeOwned>(
 pub(super) fn decode_model(
     source: &FormalSource,
     limits: ModelSourceLimits,
+    profile: NativeModelProfile,
 ) -> Result<DecodedModel> {
     let JsonObject(input): JsonObject<RuleModel<'_>> =
         located_json::read(source, limits.source_bytes)?;
@@ -126,7 +130,16 @@ pub(super) fn decode_model(
         package: input.package,
         requirement: input.requirement,
         revision: input.revision,
-        scalars: decode_items(source, input.scalars)?,
+        scalars: match profile {
+            NativeModelProfile::V1 => decode_items::<ScalarV1>(source, input.scalars)?
+                .into_iter()
+                .map(|Located { value, source }| Located {
+                    value: value.into(),
+                    source,
+                })
+                .collect(),
+            NativeModelProfile::V2 => decode_items(source, input.scalars)?,
+        },
         records,
         enums,
         values: decode_items(source, input.values)?,
