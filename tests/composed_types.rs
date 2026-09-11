@@ -787,3 +787,41 @@ fn public_accounting_clamps_limits_and_refuses_overflow_atomically() {
         },
     );
 }
+
+#[test]
+#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-9")]
+fn partially_created_upstream_records_leave_forward_targets_unfinished() {
+    let model = setup::model("Partial");
+    let sources = [setup::source(
+        "partial",
+        &model,
+        "predicate Caller using S (): Boolean { Later() }\n\
+         predicate Independent using S (): Boolean { true }\n\
+         predicate Later using S (): Boolean { true }",
+    )];
+    let formal = setup::formal_sources(&sources);
+    setup::with_binding(
+        &sources,
+        &[&model],
+        BindingLimits {
+            bindings: 1,
+            ..BindingLimits::default()
+        },
+        |binding| {
+            assert_eq!(binding.namespace().declarations().len(), 3);
+            assert_eq!(binding.declarations().len(), 1);
+            assert!(binding.exhaustion().is_some());
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            assert!(report.exhaustion().is_none());
+            assert_eq!(report.declarations().len(), 1);
+            for name in ["Caller", "Independent", "Later"] {
+                assert_eq!(
+                    report.disposition(id(binding, name)),
+                    Some(TypeDisposition::Unfinished)
+                );
+            }
+            assert!(report.declarations()[0].nodes().is_empty());
+            assert!(report.declarations()[0].causes().is_empty());
+        },
+    );
+}
