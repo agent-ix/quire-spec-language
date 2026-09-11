@@ -189,8 +189,10 @@ run, not a Quire-engine coverage or complete compiler-to-consumer claim.
 
 [TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md) covers the
 full [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) contract.
-The numeric component above does not establish its family-admission, complete
-wire-reader or actual source-to-consumer acceptance.
+Twenty public reader/encoder controls in `tests/protocol_artifact.rs` exercise
+actual admitted model exports and independently supplied wire selections. Their
+manually authored transport fixtures do not establish native family admission
+or actual source-to-consumer emission; full acceptance remains planned.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
