@@ -102,8 +102,20 @@ observations belong only to the later consumer fixture.
    sever the snapshot's activation edge or each progress/closure dependency on
    clock, effect or snapshot independently. Require `Invalid::Binding` and retain
    a positive control with every original prerequisite present. Unrelated
-   population pairs cannot enter a compensation's recovery inventory. Retain the
-   exact signed-64 maximum attempt bound through compilation and reading;
+   population pairs cannot enter a compensation's recovery inventory. Derive
+   expected recovery anchors independently from the original recover-root
+   operand, binder-initializer and selected-origin dependencies, including the
+   recovery anchor itself. Compare native emission with reading the unchanged
+   bytes for captured aliases and mixed origins. A self-selected marker adds no
+   edge, and proof simplification cannot remove an original operand. Distinguish
+   actual dependencies from merely enclosing source spans: use a Boolean capture
+   with an unused let initializer and an unselected conditional operand, then
+   compare recovery that reads the capture with recovery that does not. The
+   unread capture and a neighboring obligation cannot add recovery populations.
+   Omit a contributing population/closure pair or add an unrelated pair and
+   require `Invalid::Binding`.
+   Calls retain original argument dependencies without guessing callee captures.
+   Retain the exact signed-64 maximum attempt bound through compilation and reading;
    refuse an overflowing bound without expanding attempts. No operation result
    or recovery snapshot supplies the missing effect identity or correspondence.
 7. Give exact emitted bytes and external reference to the bounded public reader

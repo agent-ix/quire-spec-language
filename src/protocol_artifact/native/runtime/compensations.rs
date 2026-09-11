@@ -5,7 +5,6 @@ use super::{
     binder_type, captures, model_type, nominal, operation_export, parameter_handle, qualified_span,
     selected_profile, structural, Requirement, Runtime,
 };
-use crate::checking::composed::ObservationOrigin;
 use crate::linking::composed::{
     definition_source::RegisteredDefinition as R,
     scopes::{Anchor, BinderKind, StructuralKind},
@@ -21,7 +20,6 @@ use crate::protocol_artifact::{
     Dimension, Error, Invalid,
 };
 use crate::syntax::composed as c;
-use std::collections::BTreeSet;
 
 pub(super) fn lower(
     context: &Declaration<'_, '_>,
@@ -421,106 +419,4 @@ fn add(
         },
         work,
     )
-}
-
-/// Attach the already-derived population authorities for the recovery view and
-/// its actual captured origins; no new population or observation is created.
-pub(super) fn populations(
-    context: &Declaration<'_, '_>,
-    body: &mut w::Body,
-    runtime: &Runtime<'_, '_>,
-    work: &mut Work,
-) -> Result<(), Error> {
-    let w::Body::Protocol { compensations, .. } = body else {
-        return Ok(());
-    };
-    for (index, value) in compensations.iter_mut().enumerate() {
-        work.visit()?;
-        let original = *context
-            .layout
-            .compensations
-            .get(index)
-            .ok_or(Error::Invalid(Invalid::Reference))?;
-        work.charge(Dimension::Entries, 2)?;
-        let mut anchors =
-            BTreeSet::from([context.layout.anchor(Anchor::Recovery(original))?.index]);
-        let mut pending = vec![*context
-            .layout
-            .values
-            .get(value.recover.index as usize)
-            .ok_or(Error::Invalid(Invalid::Reference))?];
-        let mut visited = BTreeSet::new();
-        while let Some(expression) = pending.pop() {
-            work.visit()?;
-            if visited.contains(&expression.0) {
-                continue;
-            }
-            work.charge(Dimension::Entries, 1)?;
-            visited.insert(expression.0);
-            let region = context
-                .unit
-                .expressions()
-                .get(expression.0)
-                .ok_or(Error::Invalid(Invalid::Reference))?
-                .span;
-            for node in context.typed.nodes() {
-                work.visit()?;
-                if node.span.start < region.start || region.end < node.span.end {
-                    continue;
-                }
-                match node.origin.ok_or(Error::Invalid(Invalid::Owner))? {
-                    ObservationOrigin::Anchored(anchor) => {
-                        let anchor = context.layout.anchor(anchor)?.index;
-                        if !anchors.contains(&anchor) {
-                            work.charge(Dimension::Entries, 1)?;
-                            anchors.insert(anchor);
-                        }
-                    }
-                    ObservationOrigin::Selected { unit, expression } => {
-                        if unit != context.typed.unit() {
-                            return Err(Error::Invalid(Invalid::Owner));
-                        }
-                        if !visited.contains(&expression.0) {
-                            work.charge(Dimension::Entries, 1)?;
-                            pending.push(expression);
-                        }
-                    }
-                    ObservationOrigin::Independent => {}
-                }
-            }
-        }
-        for (index, binding) in runtime.bindings.iter().enumerate() {
-            work.visit()?;
-            if !anchors.contains(&binding.anchor.index)
-                || !matches!(binding.subject, w::Subject::Declaration { .. })
-            {
-                continue;
-            }
-            let population = binding.kind == w::BindingKind::Population
-                || (binding.kind == w::BindingKind::Closure && binding.model.0.is_some());
-            if !population {
-                continue;
-            }
-            if binding.kind == w::BindingKind::Closure {
-                let [required] = binding.requires.as_slice() else {
-                    continue;
-                };
-                work.visit()?;
-                if runtime
-                    .bindings
-                    .get(*required as usize)
-                    .map(|value| value.kind)
-                    != Some(w::BindingKind::Population)
-                {
-                    continue;
-                }
-            }
-            work.charge(Dimension::Entries, 1)?;
-            value
-                .recovery_bindings
-                .push(super::super::types::index(index)?);
-        }
-        value.recovery_bindings.sort_unstable();
-    }
-    Ok(())
 }
