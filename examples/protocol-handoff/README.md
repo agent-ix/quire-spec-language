@@ -14,8 +14,14 @@ object/reference population requirements. The `Wide` and `Exact` scalars declare
 full signed-64 integer domain and the exact-rational domain at the denominator
 ceiling that `ir::RationalType::new` admits, and the `Bounded` predicate types and
 literalises `-9223372036854775808`, `9223372036854775807` and
-`rational(9223372036854775807, 9223372036854775806)` so a consumer sees those
+`rational(9223372036854775807, 9223372036854775806)` and
+`rational(-9223372036854775808, 9223372036854775807)` so a consumer sees those
 endpoints as emitted `M::Wide`/`M::Exact` values rather than inferring them.
+The second rational exercises the actual denominator ceiling `i64::MAX`, which
+the pinned Contract IR `RationalType::new` accepts; the first exercises the
+maximum numerator without reduction collapsing the pair. The negative pair
+also exercises the minimum numerator. No declared domain or compiler limit is
+weakened to admit these values.
 Adding those two scalars renumbers the name-ordered model export table; consumers
 must re-derive every `"export"` index rather than reuse a frozen one. Two `Notice` records received by
 `Service` on the `Decisions` channel become available after the explicit
