@@ -58,6 +58,9 @@ with no sign, exponent, fraction or leading zero. It is used only for structure,
 source coordinates and array indices. Native values and authored bounds use
 `Number`; `Integer` is its integer alternative. Counts such as repeat maxima,
 delivery bounds, type maxima and temporal intervals are authored bounds, not `U`.
+Compensation `maximum_attempts` is in `1..=9223372036854775807`. Compilation
+and reading retain that finite signed-64 bound without expanding attempts;
+consumer execution budgets limit actual work separately from the authored bound.
 Revisions remain names in their explicit revision namespace, including exact
 canonical decimal strings where the selected producer requires that spelling.
 
@@ -416,6 +419,49 @@ acyclic. `type` and `model` may be null only when the selected binding contract
 defines a non-value/non-model role, such as a clock or closure authority; null
 cannot erase a required instance type or authoritative model export.
 
+One explicit exception represents a compensation effect's instance identity
+without inventing a payload: `kind:"compensation_effect"` may have `type:null`
+only with non-null `model` selecting that compensation's exact `operation`
+export. It uses the owning compensation subject and retry anchor, and requires
+exactly that compensation's `attempt_instance`. This is neither an untyped
+observation nor a substitution of the attempt, operation result or recovery view
+for effect evidence. F must later admit the distinct actual effect subject and
+its typed signal/value mapping under the unchanged selected observation-binding
+contract; the null type does not waive that requirement. Every compensation
+effect passes the exact operation/obligation identity checks. The current native
+profile supplies no authoritative effect-payload selector or correspondence:
+adding a non-null `type` to an otherwise valid effect instance returns
+`Unsupported::Export`. A foreign operation remains `Invalid::Binding`, even
+with a type present. A future typed effect view needs that explicit producer
+interface; an attempt, operation-result or recovery type cannot supply it.
+Ordinary `effect` bindings still require both type and model.
+
+The registration, activation observation, attempt and effect bindings select the
+registered observation-binding definition and retain the same compensation
+subject. Registration uses the registration anchor and requires exactly the
+paired forward effect and owner role-instance bindings. The activation
+observation uses the compensation-activation anchor, retains the declared trigger
+type/model and requires exactly the registration binding. The attempt uses the
+retry anchor, declared `attempt_type` and exact operation export, and requires
+exactly the activation observation and owner role-instance bindings. Registration,
+activation and retry anchors belong to this compensation and their `binding`
+members select those respective records. The effect shares that retry anchor
+and requires exactly the attempt binding. These prerequisites preserve the
+obligation/activation/attempt/effect distinctions without supplying observations.
+Missing, foreign, cross-wired or differently contracted links refuse.
+
+The compensation clock belongs to the same subject at its activation anchor,
+requires the activation observation and selects the exact temporal profile's
+contract and authority. Its recovery snapshot belongs to that compensation's
+recovery anchor, has the recovery binder's exact type/model, requires the
+activation observation and selects the observation-binding contract. The
+recovery anchor names that snapshot. Recovery progress and closure each select
+the progress contract and require exactly the clock, effect instance and
+snapshot. `recovery_bindings` contains exactly that snapshot, progress, closure,
+and the declaration-owned population/closure pairs for the recovery view and
+its contributing captured origins. Other obligations' clocks or recovery
+records, missing prerequisite edges and unrelated population pairs refuse.
+
 At runtime each authored compensation obligation registers only after its paired
 successful effect, once for that obligation and effect identity. Distinct
 compensation definitions may name the same forward control: the standard's
@@ -544,9 +590,11 @@ symbolic or empty-domain simplification does not replace the emitted query with
 a witness, constant or unrolled graph.
 Sum discharge supports integer and denominator-one rational prefix domains;
 broader rational sum-domain transfer remains explicitly unsupported unless the
-sum is statically empty. General symbolic choice/visibility proofs,
-recovery admission and absent authoritative producer
-exports still refuse explicitly. These are remaining implementation obligations,
+sum is statically empty. Static compensation registration/activation, retries,
+commit/never and authored full/partial recovery requirements now emit with their
+original identities and dependencies. General symbolic choice/visibility proofs
+and absent authoritative producer exports still refuse explicitly. Runtime
+recovery remains a consumer judgment. These are remaining implementation obligations,
 not a reduced language specification. The caller retains the upstream compilation
 reports when family admission refuses; no partial package is emitted. A successful
 native emission followed by independent `read` is compiler-to-reader evidence;

@@ -3,7 +3,7 @@
 use crate::checking::composed::DeclarationTypes;
 use crate::linking::composed::scopes::{Anchor, BinderKind, BinderType, DeclarationScope};
 use crate::linking::composed::{DeclarationId, SyntaxNamespace};
-use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
+use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid};
 use crate::syntax::{composed as c, ExprId, ExprKind, UnaryOp};
 use crate::Span;
 use std::collections::BTreeMap;
@@ -15,12 +15,14 @@ pub(super) struct DeclLayout {
     pub source: u32,
     pub values: Vec<ExprId>,
     pub controls: Vec<c::ControlId>,
+    pub compensations: Vec<usize>,
     pub temporal: Vec<c::TemporalId>,
     pub binders: Vec<usize>,
     pub anchors: Vec<(Anchor, Span)>,
     pub scopes: Vec<w::Scope>,
     value_indices: BTreeMap<usize, u32>,
     control_indices: BTreeMap<usize, u32>,
+    compensation_indices: BTreeMap<usize, u32>,
     temporal_indices: BTreeMap<usize, u32>,
     binder_indices: BTreeMap<usize, u32>,
     value_scopes: BTreeMap<usize, u32>,
@@ -49,6 +51,28 @@ impl DeclLayout {
     }
     pub fn control(&self, id: c::ControlId) -> Result<w::Handle, Error> {
         self.lookup(&self.control_indices, id.0)
+    }
+    pub fn compensation(&self, requirement: usize) -> Result<w::Handle, Error> {
+        self.lookup(&self.compensation_indices, requirement)
+    }
+    pub fn compensation_named(
+        &self,
+        protocol: &c::Protocol,
+        name: Span,
+        work: &mut Work,
+    ) -> Result<w::Handle, Error> {
+        for &requirement in &self.compensations {
+            work.visit()?;
+            let Some(c::ProtocolRequirement::Compensation(value)) =
+                protocol.requirements.get(requirement)
+            else {
+                return Err(Error::Invalid(Invalid::Reference));
+            };
+            if value.name.span == name {
+                return self.compensation(requirement);
+            }
+        }
+        Err(Error::Invalid(Invalid::Reference))
     }
     pub fn temporal(&self, id: c::TemporalId) -> Result<w::Handle, Error> {
         self.lookup(&self.temporal_indices, id.0)
@@ -129,12 +153,14 @@ pub(super) fn build(
         source,
         values: Vec::new(),
         controls: Vec::new(),
+        compensations: Vec::new(),
         temporal: Vec::new(),
         binders: Vec::new(),
         anchors: Vec::new(),
         scopes: Vec::new(),
         value_indices: BTreeMap::new(),
         control_indices: BTreeMap::new(),
+        compensation_indices: BTreeMap::new(),
         temporal_indices: BTreeMap::new(),
         binder_indices: BTreeMap::new(),
         value_scopes: BTreeMap::new(),
@@ -147,6 +173,17 @@ pub(super) fn build(
         parent: w::Nullable(None),
         locus: result.locus(syntax.span)?,
     });
+    if let c::DeclarationKind::Protocol(protocol) = &syntax.kind {
+        for (original, requirement) in protocol.requirements.iter().enumerate() {
+            work.visit()?;
+            if matches!(requirement, c::ProtocolRequirement::Compensation(_)) {
+                let position = index(result.compensations.len())?;
+                work.charge(Dimension::Entries, 2)?;
+                result.compensations.push(original);
+                result.compensation_indices.insert(original, position);
+            }
+        }
+    }
     let mut folded = std::collections::BTreeSet::new();
     for node in typed.nodes() {
         work.visit()?;
@@ -380,6 +417,12 @@ pub(super) fn build(
             work.visit()?;
             if value.kind == BinderKind::Finish {
                 phase_scope(&mut result, unit, p.finish.span, binder, work)?;
+            }
+        }
+        for (original, requirement) in p.requirements.iter().enumerate() {
+            work.visit()?;
+            if let c::ProtocolRequirement::Compensation(value) = requirement {
+                compensation_scopes(&mut result, unit, scope, value, original, work)?;
             }
         }
     }
@@ -634,10 +677,29 @@ fn anchor_span(a: Anchor, decl: &c::Declaration, unit: &c::ComposedUnit) -> Resu
             }
             _ => return Err(Error::Invalid(Invalid::Owner)),
         },
-        Anchor::Registration(_)
-        | Anchor::CompensationActivation(_)
-        | Anchor::Retry(_)
-        | Anchor::Recovery(_) => return Err(Error::Unsupported(Unsupported::Export)),
+        Anchor::Registration(index)
+        | Anchor::CompensationActivation(index)
+        | Anchor::Retry(index)
+        | Anchor::Recovery(index) => {
+            let c::DeclarationKind::Protocol(protocol) = &decl.kind else {
+                return Err(Error::Invalid(Invalid::Owner));
+            };
+            let Some(c::ProtocolRequirement::Compensation(value)) =
+                protocol.requirements.get(index)
+            else {
+                return Err(Error::Invalid(Invalid::Reference));
+            };
+            match a {
+                Anchor::Registration(_) => value.forward.span,
+                Anchor::CompensationActivation(_) => value.trigger.span,
+                Anchor::Retry(_) => Span {
+                    start: value.earlier.span.start,
+                    end: value.later.span.end,
+                },
+                Anchor::Recovery(_) => value.recovery.span,
+                _ => return Err(Error::Invalid(Invalid::Owner)),
+            }
+        }
     })
 }
 
@@ -671,6 +733,32 @@ fn evaluation_anchor(
         }
         c::DeclarationKind::Protocol(p) => {
             let mut anchor = Anchor::ProtocolInstant;
+            for (original, requirement) in p.requirements.iter().enumerate() {
+                work.visit()?;
+                if let c::ProtocolRequirement::Compensation(value) = requirement {
+                    for capture in &value.registration_captures {
+                        work.visit()?;
+                        if contains(capture.span) {
+                            anchor = Anchor::Registration(original);
+                        }
+                    }
+                    if contains(expression_span(unit, value.guard)?) {
+                        anchor = Anchor::CompensationActivation(original);
+                    }
+                    for capture in &value.activation_captures {
+                        work.visit()?;
+                        if contains(capture.span) {
+                            anchor = Anchor::CompensationActivation(original);
+                        }
+                    }
+                    if contains(expression_span(unit, value.retry)?) {
+                        anchor = Anchor::Retry(original);
+                    }
+                    if contains(expression_span(unit, value.recover)?) {
+                        anchor = Anchor::Recovery(original);
+                    }
+                }
+            }
             for (index, channel) in p.channels.iter().enumerate() {
                 work.visit()?;
                 if let c::Ordering::Fifo { key, .. } = &channel.ordering {
@@ -699,6 +787,84 @@ fn evaluation_anchor(
             anchor
         }
     })
+}
+
+fn expression_span(unit: &c::ComposedUnit, id: ExprId) -> Result<Span, Error> {
+    unit.expressions()
+        .get(id.0)
+        .map(|value| value.span)
+        .ok_or(Error::Invalid(Invalid::Reference))
+}
+
+fn compensation_scopes(
+    layout: &mut DeclLayout,
+    unit: &c::ComposedUnit,
+    scope: &DeclarationScope,
+    value: &c::Compensation,
+    original: usize,
+    work: &mut Work,
+) -> Result<(), Error> {
+    let mut registration = value.forward.span;
+    for capture in &value.registration_captures {
+        work.visit()?;
+        registration.end = registration.end.max(capture.span.end);
+    }
+    let mut activation = Span {
+        start: value.trigger.span.start,
+        end: expression_span(unit, value.guard)?.end,
+    };
+    for capture in &value.activation_captures {
+        work.visit()?;
+        activation.end = activation.end.max(capture.span.end);
+    }
+    let phases = [
+        (Anchor::Registration(original), registration),
+        (Anchor::CompensationActivation(original), activation),
+        (
+            Anchor::Retry(original),
+            Span {
+                start: value.earlier.span.start,
+                end: expression_span(unit, value.retry)?.end,
+            },
+        ),
+        (
+            Anchor::Recovery(original),
+            Span {
+                start: value.recovery.span.start,
+                end: expression_span(unit, value.recover)?.end,
+            },
+        ),
+    ];
+    for (anchor, region) in phases {
+        let mut phase = None;
+        for (binder, bound) in scope.binders.iter().enumerate() {
+            work.visit()?;
+            if bound.anchor != anchor
+                || !matches!(
+                    bound.kind,
+                    BinderKind::ForwardEffect
+                        | BinderKind::CompensationTrigger
+                        | BinderKind::EarlierAttempt
+                        | BinderKind::LaterAttempt
+                        | BinderKind::Recovery
+                )
+            {
+                continue;
+            }
+            if let Some(phase) = phase {
+                layout.binder_scopes.insert(binder, phase);
+            } else {
+                phase_scope(layout, unit, region, binder, work)?;
+                phase = Some(
+                    *layout
+                        .binder_scopes
+                        .get(&binder)
+                        .ok_or(Error::Invalid(Invalid::Scope))?,
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn phase_scope(
