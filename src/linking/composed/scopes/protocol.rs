@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Typed protocol symbols, lexical paths and compensation environments.
+//! FR-036: typed protocol symbols, lexical paths and compensation environments.
 mod flow;
 use super::*;
 use std::collections::BTreeSet;
 
 struct Names {
-    children: BTreeMap<(Option<SymbolId>, String), Vec<SymbolId>>,
+    children: BTreeMap<Option<SymbolId>, BTreeMap<String, Vec<SymbolId>>>,
     controls: BTreeMap<usize, SymbolId>,
     branches: BTreeMap<(usize, usize), SymbolId>,
     compensation: Vec<SymbolId>,
@@ -93,7 +93,13 @@ impl Resolver<'_, '_> {
             forward_env,
             registered.anchor,
         )?;
-        let registration = self.export_without(captures, registered, Some(forward))?;
+        let registration = self.export_frames(
+            captures,
+            registered,
+            registered,
+            Some(forward),
+            compensation.span,
+        )?;
         let active = Environment {
             anchor: Anchor::CompensationActivation(index),
             ..registration
@@ -110,7 +116,8 @@ impl Resolver<'_, '_> {
             trigger_env,
             active.anchor,
         )?;
-        let captured = self.export_without(captured, active, Some(trigger))?;
+        let captured =
+            self.export_frames(captured, active, active, Some(trigger), compensation.span)?;
         let retry = Environment {
             anchor: Anchor::Retry(index),
             ..captured
@@ -137,30 +144,6 @@ impl Resolver<'_, '_> {
         self.expression(compensation.recover, recovery)
     }
 
-    // Export only definite immutable records, preserving each original BinderId.
-    fn export_without(
-        &mut self,
-        result: Environment,
-        base: Environment,
-        excluded: Option<BinderId>,
-    ) -> Result<Environment, Exhaustion> {
-        let mut cursor = result.frame;
-        let mut exports = Vec::new();
-        while cursor != base.frame {
-            self.work.charge(Dimension::Edges, 1)?;
-            let frame = &self.frames[cursor.expect("scope extends its base")];
-            if Some(frame.binder) != excluded {
-                exports.push(frame.binder);
-            }
-            cursor = frame.parent;
-        }
-        let mut output = base;
-        for binder in exports.into_iter().rev() {
-            output = self.extend(output, binder)?;
-        }
-        Ok(output)
-    }
-
     fn symbol(
         &mut self,
         names: &mut Names,
@@ -172,11 +155,11 @@ impl Resolver<'_, '_> {
     ) -> Result<SymbolId, Exhaustion> {
         self.work.charge(Dimension::Bindings, 1)?;
         self.work.charge(Dimension::References, 1)?;
-        let key = (parent, name.value.clone());
         let id = SymbolId(self.output.symbols.len());
         if let Some(previous) = names
             .children
-            .get(&key)
+            .get(&parent)
+            .and_then(|children| children.get(name.value.as_str()))
             .and_then(|ids| ids.first())
             .copied()
         {
@@ -185,7 +168,13 @@ impl Resolver<'_, '_> {
                 previous,
             })?;
         }
-        names.children.entry(key).or_default().push(id);
+        names
+            .children
+            .entry(parent)
+            .or_default()
+            .entry(name.value.clone())
+            .or_default()
+            .push(id);
         self.output.symbols.push(Symbol {
             name: name.clone(),
             kind,
@@ -350,7 +339,11 @@ impl Resolver<'_, '_> {
         let mut scope = parent;
         loop {
             self.work.charge(Dimension::Edges, 1)?;
-            if let Some(candidates) = names.children.get(&(scope, path[0].value.clone())) {
+            if let Some(candidates) = names
+                .children
+                .get(&scope)
+                .and_then(|children| children.get(path[0].value.as_str()))
+            {
                 match candidates.as_slice() {
                     [id] => target = Some(*id),
                     _ => ambiguous = true,
@@ -367,7 +360,8 @@ impl Resolver<'_, '_> {
                 self.work.charge(Dimension::Edges, 1)?;
                 match names
                     .children
-                    .get(&(Some(parent), member.value.clone()))
+                    .get(&Some(parent))
+                    .and_then(|children| children.get(member.value.as_str()))
                     .map(Vec::as_slice)
                 {
                     Some([id]) => target = Some(*id),
@@ -556,9 +550,9 @@ impl Resolver<'_, '_> {
                                 .push((reference, target));
                         }
                     }
-                    let event = self.unit.control(*event).expect("parser awaited event");
+                    let awaited = self.unit.control(*event).expect("parser awaited event");
                     if !matches!(
-                        event.kind,
+                        awaited.kind,
                         c::ControlKind::Event(c::Event {
                             kind: c::EventKind::Receive { .. }
                                 | c::EventKind::Effect { .. }
@@ -567,11 +561,8 @@ impl Resolver<'_, '_> {
                         })
                     ) {
                         self.issue(ScopeIssue::InvalidAwaitEvent {
-                            control: *match &control.kind {
-                                c::ControlKind::Await { event, .. } => event,
-                                _ => unreachable!(),
-                            },
-                            span: event.span,
+                            control: *event,
+                            span: awaited.span,
                         })?;
                     }
                 }
