@@ -388,8 +388,12 @@ The following independent dimensions each use the listed default and hard maximu
 1 MiB per source; 8 MiB decoded source/string content; 10,000 sources/dependencies/
 definitions/models/declarations each; 100,000 aggregate table entries; 1,000,000
 reference/edge/type visits; 64 MiB total copied, hashed, indexed or compared byte
-work; depth 64. Each created array entry/object member charges an entry before
-allocation; each subsequent reference/edge/type visit charges again. Content decoding,
+work; depth 64. Each logical wire array entry/object member and each compiler-owned
+index entry charges an entry before allocation; each subsequent reference/edge/type
+visit charges again. These are content/work limits, not measurements of allocator
+capacity or Serde's temporary buffers. The decode census bounds logical entries,
+decoded content and depth before typed deserialization; temporary Serde storage
+remains bounded by that input. Content decoding,
 hashing, indexing, reference validation and canonical writing charge before work.
 Bounded-repeat graphs are not eagerly unfolded. Lowered limits, including zero,
 are honored; overflow or the next unaffordable step yields typed incomplete with
@@ -398,7 +402,9 @@ partial package. Each report retains effective limits and successful usage in
 the versioned `quire.protocol.artifact-work/1` accounting contract. Input,
 dependency, decode, link and canonical passes each use fresh traversal state;
 their successful work accumulates in this invocation's counters, and retry
-starts a new invocation. Diagnostic records count as entries as well.
+starts a new invocation. Retained diagnostic-list entries are charged before
+allocation. The reader's single inline terminal refusal needs no entry allocation
+and cannot be replaced by exhaustion of a diagnostic budget.
 
 Production emission consumes the actual fully admitted family graph, original
 source/formal correspondence and exact definitions/models/runtime requirements.
