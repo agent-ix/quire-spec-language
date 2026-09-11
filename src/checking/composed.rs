@@ -3,6 +3,7 @@
 
 mod solver;
 mod sources;
+pub mod proofs;
 pub mod work;
 
 use super::NativeType;
