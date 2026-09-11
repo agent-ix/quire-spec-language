@@ -413,6 +413,32 @@ acyclic. `type` and `model` may be null only when the selected binding contract
 defines a non-value/non-model role, such as a clock or closure authority; null
 cannot erase a required instance type or authoritative model export.
 
+One explicit exception represents a compensation effect's instance identity
+without inventing a payload: `kind:"compensation_effect"` may have `type:null`
+only with non-null `model` selecting that compensation's exact `operation`
+export. It uses the owning compensation subject and retry anchor, and requires
+exactly that compensation's `attempt_instance`. This is neither an untyped
+observation nor a substitution of the attempt, operation result or recovery view
+for effect evidence. F must later admit the distinct actual effect subject and
+its typed signal/value mapping under the unchanged selected observation-binding
+contract; the null type does not waive that requirement. An explicitly
+selected typed effect view retains non-null `type` and its authoritative model
+export; ordinary `effect` bindings still require both fields.
+
+The registration, activation observation, attempt and effect bindings select the
+registered observation-binding definition and retain the same compensation
+subject. Registration uses the registration anchor and requires exactly the
+paired forward effect and owner role-instance bindings. The activation
+observation uses the compensation-activation anchor, retains the declared trigger
+type/model and requires exactly the registration binding. The attempt uses the
+retry anchor, declared `attempt_type` and exact operation export, and requires
+exactly the activation observation and owner role-instance bindings. Registration,
+activation and retry anchors belong to this compensation and their `binding`
+members select those respective records. The effect shares that retry anchor
+and requires exactly the attempt binding. These prerequisites preserve the
+obligation/activation/attempt/effect distinctions without supplying observations.
+Missing, foreign, cross-wired or differently contracted links refuse.
+
 At runtime each authored compensation obligation registers only after its paired
 successful effect, once for that obligation and effect identity. Distinct
 compensation definitions may name the same forward control: the standard's

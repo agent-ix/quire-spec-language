@@ -429,7 +429,7 @@ pub(super) fn lower(
         let (anchors, bindings, mut body) =
             super::runtime::body(&context, &meta, &binders, &mut builder, work)?;
         // Initializers reference values in the same original occurrence layout.
-        super::runtime::initializers(syntax, scope, &layout, &mut binders)?;
+        super::runtime::initializers(syntax, scope, &layout, &mut binders, work)?;
         let values = builder.lower_values(typed, unit, scope, &layout, &profile_indices, work)?;
         if let w::Body::Predicate { result, .. } = &mut body {
             *result = builder.ty(&crate::checking::NativeType::Boolean, work)?;
