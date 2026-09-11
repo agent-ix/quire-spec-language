@@ -13,6 +13,7 @@ mod decode;
 mod encoding;
 mod intake;
 mod models;
+pub mod native;
 mod number;
 mod validate;
 pub mod wire;
@@ -127,7 +128,7 @@ pub struct Expected<'a> {
     pub models: &'a [AdmittedModel<'a>],
 }
 
-/// A recognized authority or feature for which this reader has no interpretation.
+/// A recognized authority or feature lacking a supported artifact interpretation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Unsupported {
@@ -136,6 +137,8 @@ pub enum Unsupported {
     Definition,
     Profile,
     ProducerCorrespondence,
+    /// A native family obligation has no supplied supported proof interpretation.
+    FamilyProof,
     Export,
 }
 

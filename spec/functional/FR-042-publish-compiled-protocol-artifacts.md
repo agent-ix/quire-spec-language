@@ -45,6 +45,9 @@ exact model/definition/rule/dependency selections, and constructor-private
 family-admission evidence derived from that same compilation. Source/profile
 acceptance comes from the independently supplied accepted inventory, not a
 payload flag, current Git revision, installed default or similar display name.
+The caller explicitly supplies revision namespaces for authored formal sources,
+requirements and registered semantic definitions; source-artifact revision labels
+remain separate from the semantic revisions derived from those owners.
 
 The reader takes canonical bytes, an independently selected external artifact
 reference, that accepted inventory, exact local dependency bytes/admitted
@@ -55,9 +58,9 @@ workflow instances, observations, clocks, assessment requests or backend results
 
 An immutable `quire.compiled-protocol/1` package and its external exact-byte
 reference, or a typed refused, unsupported or resource-incomplete result with
-original available loci and partial compilation evidence. The planned Rust
-`protocol_artifact` emitter and the `read` entry point expose structured
-results; source stdout, shell commands and hand-edited JSON are not the producer
+original available loci and partial compilation evidence. The public Rust
+admission, emission and reader interfaces expose structured results through the
+wire contract; source stdout, shell commands and hand-edited JSON are not the producer
 handoff. Successfully verified wire content remains distinct from compiler-owned
 family admission and B-owned assessment admission/execution.
 
@@ -161,5 +164,8 @@ own static versus runtime identity and protocol meaning; this requirement fixes
 their compiler wire representation. [TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md)
 and [B's IT-001](ix://agent-ix/quire-protocol/IT-001) retain full producer/consumer
 acceptance under compiler #40. The wire reader and numeric/type components
-implement part of this contract; strict-reader fixtures alone do not close
-native emission, family admission or producer/consumer acceptance.
+implement part of this contract. The native path emits supported complete
+families from real source/type/proof owners; strict-reader fixtures alone do not
+establish that authority. General family proofs, recovery, unavailable producer
+exports and the actual producer/consumer handoff remain open until implemented
+and exercised through the corresponding public interfaces.
