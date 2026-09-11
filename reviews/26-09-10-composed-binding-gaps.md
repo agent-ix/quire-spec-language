@@ -30,6 +30,16 @@ causes are unverified.
 with no backing tagged test, and FND-001/FND-004 are high. This is the expected
 gate result for an intentionally partial slice of compiler #35, not a regression.
 
+**Current verdict (re-verified at 9aa788a, 2026-09-10): FAIL, unchanged.**
+The full-ticket gap is still open: TC-115 has no backing tagged test and IT-009
+is untouched, so FND-001 stands and the skill's verdict rule mandates FAIL.
+This is distinct from the correction status of FND-004 (scale/budget), which is
+**resolved** at 9aa788a and re-verified by a gate-run test. FND-005 through
+FND-008 are also resolved; FND-002, FND-003 and FND-009 remain as recorded.
+Compiler #35/#40 remains open by the owner's explicit decision to deliver this
+binding slice while TC-115, type/profile/runtime/family checking and D's IT-009
+correspondence continue; nothing here claims those ACs.
+
 ## Target selection
 
 The `gap-analysis` skill's Step 1 (plan completion) **could not be executed**:
@@ -169,3 +179,49 @@ relationship export authority (explicit unsupported boundaries today), TC-115 in
 full, and IT-009's real producer integration. Issue #40 artifact delivery is
 untouched. Local gates are green and the historical package path is unaffected;
 no result of this stage is a checked or executable package.
+
+## Correction re-review (9aa788a, 2026-09-10)
+
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-binding-fixes
+--json`, engine 0.46.0 (quire 0.31.0), re-run in this session against the
+remediation commit. The rollup is byte-for-byte the same picture as at 92313b7.
+
+| Measure | 92313b7 | 9aa788a |
+| --- | --- | --- |
+| Matrix rows backed | 332 / 340 | 332 / 340 |
+| Unbacked rows | 6 | 6 — TC-115, FR-036-AC-5/6/8, plus pre-existing TC-010 and FR-017-AC-2 |
+| Status lies | 0 | 0 |
+| Untracked test symbols | 20 | 20 — all pre-existing, in `src/package/encoding/tests.rs` and `tests/package_construction_cases/limits.rs` |
+| Unmatched tags | 3 | 3 — IT-004 in `tests/fixture_audit.rs`, pre-existing |
+| Suspicions | 1 | 1 — the same `id` oracle helper (FND-009) |
+
+The remediation adds 18 tests (401 → 419 with `--no-default-features`,
+417 → 435 with `--all-features`; both suites pass, four pre-existing `#[ignore]`
+lanes). Every new test carries a resolving `#[trace]` tag: the untracked-symbol
+and unmatched-tag counts did not move.
+
+### Disposition
+
+| ID | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | open, unchanged | `quire coverage` still reports `spec/model-linking/tests.md:107` (TC-115 → FR-036-AC-5/6/8) and the three matching `verification` rows at `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` as unbacked. No test carries a `TC-115` tag; `spec/integration/IT-009-composed-package-boundary.md` is untouched and no producer integration exists. `spec/` is unchanged by 9aa788a, so the matrix still records these rows Planned — an honest open gap, and the owner has explicitly permitted delivering the binding slice while it stands. Not softened, not claimed. |
+| FND-002 | open as an analysis limitation, not a defect | Still no plan bundle for compiler #35; the owner has confirmed no new Plan bundle is required to reformat the existing issue/FR scope, so Step 1 stays unexecutable and FR-036 plus TC-114 remain the target of record. |
+| FND-003 | open, unchanged | The engine still counts FR-036-AC-1/2/3/4/7 backed through `#[trace]` tags while `spec/model-linking/tests.md:124-131` keeps all eight rows Planned, with zero status lies. `backed` measures tag binding, not AC discharge; the spec's Planned status remains the correct reading. |
+| FND-004 | **resolved** | The missing control was a scale test, and it now exists. `tests/composed_binding.rs:93-135` binds 100 declarations over a 39 900-node expression arena through the full `binding::bind` path, asserts `report.complete()` and `Disposition::NamesResolved` for every declaration, and caps `usage().references` below 200 000 — where the per-declaration whole-arena rescan needed 3 990 000 against an unraisable ceiling of 2 000 000. `tests/composed_binding.rs:139-187` does the same for the definition stage over 200 protocols and 10 200 controls (2 040 000 under the old scan). Both were run green in this session. This closes the FR-036-AC-7 hole that let SR-319 FND-001 ship: the combined path's reference budget is now exercised against a realistically sized unit. |
+| FND-005 | **resolved** | All eleven producible typed causes now have tagged tests — see SR-319's disposition table for the per-cause references. The `ScopeIssue::MissingValue` case specifically uses a name bound nowhere in its declaration, so it fails if `finish_names`' rewrite to `OutOfScope` is made unconditional. |
+| FND-006 | **resolved** | The reverse gap is closed at the requirement level and the provenance level: `resources/native-v1/README.md` names FR-036 as the owner of the resources' use, records the originating standard PR, states that the standard's document licence remains deferred and that this snapshot adds none, and defines `external/` as external to the *standard* repository while retaining the copied Rust file's own AGPL notice. `README.md:18` and `LICENSE-DECISION.md:30` link it. The drift half is answered by the product boundary rather than by a new control: these are deliberately selected historical rule bytes that must not be synchronized to later compiler diagnostics, and `tests/composed_definition_source.rs:270-278` compares the registry's embedded bytes against the retained resource files (`resource()` at `:128-135` reads `resources/native-v1/`), never against `src/diagnostic.rs`. Exact registered-byte admission plus that comparison satisfies the boundary; no SHA inventory or checksum catalog was added, per `CLAUDE.md`. |
+| FND-007 | **resolved by documentation** | `resources/native-v1/README.md:4-6` states that standard-relative paths and document ids keep the standard repository's meaning and that compiler requirement tooling scans the local `spec/` tree separately. |
+| FND-008 | **resolved** | `src/linking/composed/scopes/values.rs:2`, `scopes/protocol.rs:2` and `scopes/protocol/flow.rs:2` now carry `FR-036:` owning-requirement headers, as does the new `arena.rs:2`. |
+| FND-009 | open, unchanged | The engine still flags the `id` helper shared by `tests/composed_scopes.rs:66` and `tests/composed_linking.rs:66` (reported against its use at `tests/composed_linking.rs:252`) at token similarity 1.00. Unremediated and still low: both are two-line namespace lookups. |
+| FND-010 | open, unchanged | Nothing in the tree references issue #40; artifact delivery is neither started nor claimed here, and this re-review neither advances nor verifies it. |
+
+### Remaining work for compiler #35
+
+Unchanged from the original review, and explicitly permitted to remain open:
+expression and type checking, profile/family admission, complete typed
+runtime-role derivation, downstream request handling, D's canonical/native
+correspondence, relationship export authority (an explicit unsupported boundary
+today), TC-115 in full, and IT-009's real producer integration. Issue #40
+artifact delivery is untouched. Local gates are green and the historical package
+path is unaffected; no result of this stage is a checked or executable package.
+The optional semantic review (Step 4) remains declined and was not run here.
