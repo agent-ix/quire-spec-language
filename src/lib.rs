@@ -25,6 +25,7 @@ pub mod model_source;
 pub mod native_model;
 pub mod package;
 mod parser;
+pub mod protocol_artifact;
 #[cfg(feature = "quire-extraction")]
 pub mod quire_source;
 pub mod runtime;
@@ -38,6 +39,6 @@ pub mod wire_format;
 pub use diagnostic::{Code, Diagnostic, Phase};
 pub use digest::ByteDigest;
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};
-pub use parser::{parse, parse_source};
+pub use parser::{parse, parse_native, parse_native_source, parse_source};
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};
 pub use syntax::{Limits, ParsedUnit};

@@ -27,6 +27,8 @@ The standard's document/reusable-artifact license remains deferred. This record
 does not license the separate specification repository, relicense bootstrap
 history, approve public release or close the ecosystem artifact review.
 
+The embedded native resources carry their own [provenance and licensing notice](resources/native-v1/README.md).
+
 LR02 adds serde 1.0.229 as a direct audit dependency, thiserror 2.0.20 for the
 audit error envelope, and tempfile 3.27.0 for isolated Rust test copies. These
 retain MIT OR Apache-2.0. The shared ix-trace-rs dev-dependency at
