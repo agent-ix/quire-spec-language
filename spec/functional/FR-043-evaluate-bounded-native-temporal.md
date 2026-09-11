@@ -28,10 +28,40 @@ that names the affected dimension.
 Agent E owns native temporal meaning through
 `ix://agent-ix/quire-specification/FR-090`, `FR-091`, `FR-092` and `FR-094`.
 This requirement SHALL NOT define a native temporal interpretation of its own: it
-specifies the compiler's evaluation of the artifact it emits, and every semantic
-rule below is a local restatement of an owned shared rule for verification
-purposes. If this evaluator's behavior and an owned shared rule diverge, then the
-shared rule governs and this requirement is defective.
+specifies the compiler's evaluation of the artifact it emits. Each Behavior
+subsection below names the owned rule it restates, and where an owned rule and
+this evaluator diverge, the owned rule governs and this requirement is defective.
+
+| Behavior subsection | Owned source |
+| --- | --- |
+| Profile and clock selection | FR-090 Behavior; the three profile definition artifacts |
+| Operators — the eight bounded operators, inclusive intervals, `once[1,1]` | temporal-common.md "Temporal forms and obligations"; FR-091, FR-092 |
+| Operators — lower-bound convention and the release/triggered duals | FR-091-AC-3, FR-092-AC-3; temporal-common.md until/since rule |
+| Operators — order-sensitive refusal on equal coordinates | FR-090-AC-4; temporal-timestamped-window.md |
+| Atoms, constants and boundaries | FR-091-AC-2, FR-092-AC-2; the three profile definition artifacts |
+| Progress, closure and settlement | FR-094 Behavior and FR-094-AC-1..AC-8; FR-091-AC-4 |
+
+### Open questions referred to agent E
+
+The pointwise reading of `not`, `and`, `or` and `implies` is **not** a
+restatement. `temporal-common.md` admits "temporal Boolean connectives" without
+fixing whether they are evaluated at each offset the enclosing operator ranges
+over, and no owned acceptance criterion pins it. This requirement selects the
+pointwise reading, which makes `always[0,1] not holds(p)` false on a
+one-position closed-complete trace with `p` true; an untimed reading would make
+it true. An earlier revision of this requirement asserted the untimed reading, so
+the two are not interchangeable and the choice is visible in results. The
+selection is recorded on compiler
+[#38](https://github.com/agent-ix/quire-spec-language/issues/38) for E's ruling
+and SHALL be changed to match that ruling.
+
+Precedence between a reached ceiling and an already-settled sibling obligation is
+also unresolved between this requirement and
+[NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). This
+requirement selects: an obligation already settled over complete exact decision
+support retains its truth, basis and support when a ceiling is later reached
+while assessing a different obligation, and only the unassessed obligation
+carries the stop. That selection is likewise recorded on #38 for a ruling.
 
 Agent F owns observation transport, storage, replay and completeness authority.
 The trace is a caller-supplied input. Its completeness assertion, admitted order
@@ -66,7 +96,12 @@ One caller-constructed observation trace supplying:
   assessment-execution disposition, its input-completeness assertion, and whether
   its lower boundary is an authoritative execution origin or a mere history
   cutoff;
-- a progress watermark in the profile's clock domain.
+- its admitted execution-origin identity, where the declaration activates on a
+  whole-execution origin;
+- a progress watermark in the profile's clock domain. The watermark is a
+  progress assertion, not a second clock authority: it may settle a deadline
+  only under the fixed-sample and timestamped-event profiles. Under
+  event-position it is retained as a premise and SHALL NOT advance the clock.
 
 Caller-lowered ceilings arrive as explicit values under
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). The evaluator
@@ -75,11 +110,20 @@ order or backend capability report.
 
 ## Outputs
 
-Per activated obligation: a truth of `true`, `false` or `pending`; a settlement
-basis of `closed-scope`, `decisive-witness`, `decisive-counterexample`,
-`unsettled` or `unavailable`; the exact decision-support position set; and the
-retained premises. Otherwise one located `Incomplete` or `Refused` result naming
-the affected obligation, position and dimension.
+Per activated obligation: a settlement basis of `closed-scope`,
+`decisive-witness`, `decisive-counterexample`, `unsettled` or `unavailable`; the
+exact decision-support position set; the retained premises; and a truth of
+`true`, `false` or `pending`.
+
+Truth SHALL be absent where the basis is `unavailable`, and both truth and basis
+SHALL be absent where activation carried no obligation to assess. A `pending`
+truth SHALL NOT be emitted for an unavailable, incomplete or exhausted result:
+those are distinct outcomes and collapsing them into `pending` is the failure
+this vocabulary exists to prevent.
+
+Otherwise one located `Incomplete` or `Refused` result naming the affected
+obligation, position and dimension. An activation that could not be established
+for one instance leaves every sibling instance separately inspectable.
 
 ## Behavior
 
@@ -95,7 +139,12 @@ clock, period, epoch, unit or sequence authority.
 
 The evaluator SHALL retain the declared clock parameters in the result premises,
 so that a changed period, epoch, unit or sequence authority yields a distinct
-result identity and refuses reuse of an earlier result.
+result identity and refuses reuse of an earlier result. **This is retention, not
+checking**: the emitted body carries no declared period, epoch, unit,
+sequence-authority value or definition digest, so a trace asserting a wrong one
+is recorded and never refused. `ix://agent-ix/quire-specification/FR-090`-AC-2 is
+therefore only partly satisfiable in this scope, and no acceptance criterion
+below claims otherwise.
 
 The evaluator SHALL interpret one interval tick as one admitted semantic-event
 position under `quire.temporal.event-position.false-extension/v1`, one declared
@@ -195,9 +244,9 @@ closure combination, and SHALL refuse any one-axis substitution.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-043-AC-1 | On one closed-complete position with `p` true, `always[0,1] holds(p)` is false with basis `closed-scope` and `always[0,1] true` is true under both false-extension profiles; the same distinction survives a grouping node and an enclosing connective, and neither the emitted graph nor evaluation folds the two. | Test (TC-122), Inspection |
-| FR-043-AC-2 | The same valuations and the same numeric interval under event-position, fixed-sample and timestamped-event selections yield three results retaining three distinct profile identities, revisions and clock premises, the finite-window case true where the false-extension cases are false; no two of the three share a result identity. | Test (TC-122), Analysis |
-| FR-043-AC-3 | A trace whose asserted profile identity, profile revision or clock binding name differs from the declaration's admitted selection refuses before any position is visited and names that dimension; no default or nearest-compatible selection is inserted. | Test (TC-122), Inspection |
+| FR-043-AC-1 | On one closed-complete position with `p` true, `always[0,1] holds(p)` is false with basis `closed-scope` and `always[0,1] true` is true under both false-extension profiles; the same distinction survives a grouping node and an enclosing connective, and neither the emitted graph nor evaluation folds the two. | Test (TC-122); Inspection |
+| FR-043-AC-2 | The same valuations and the same numeric interval under event-position, fixed-sample and timestamped-event selections yield three results retaining three distinct profile identities, revisions and clock premises, the finite-window case true where the false-extension cases are false; no two of the three share a result identity. | Test (TC-122); Analysis |
+| FR-043-AC-3 | A trace whose asserted profile identity, profile revision or clock binding name differs from the declaration's admitted selection refuses before any position is visited and names that dimension; no default or nearest-compatible selection is inserted. | Test (TC-122); Inspection |
 | FR-043-AC-4 | All eight bounded operators evaluate over inclusive intervals including the zero-width `[k,k]` form and a nonzero lower bound; `once[1,1]` is strong previous; `p until[1,2] q` is true with `p` false at the anchor and `q` true at offset one; `release` and `triggered` agree with the Boolean duals of `until` and `since` on the same traces. | Test (TC-122) |
 | FR-043-AC-5 | `until`, `release`, `since` and `triggered` refuse when participating positions share a clock coordinate and either lacks an admitted order key, or when two order keys come from different authorities; the same positions with one admitted order evaluate, and reversing insertion order changes nothing. | Test (TC-122) |
 | FR-043-AC-6 | `not`, `and`, `or` and `implies` evaluate pointwise: with `p` true at the single closed-complete position, `always[0,1] not holds(p)` is false and `eventually[0,1] not holds(p)` is true under false extension, distinguishing pointwise negation from an untimed reading. | Test (TC-122) |
@@ -207,7 +256,7 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-10 | Decision-scope closure, surrounding-execution closure, assessment execution and input completeness remain four independently represented dimensions; closing one cannot close or complete another, and every one-axis substitution of a settlement basis, truth or closure combination is refused. | Test (TC-122) |
 | FR-043-AC-11 | A fixed-sample or timestamped watermark reaching an inclusive deadline with complete valuations settles a silent obligation, an instant exactly at the deadline participates before settlement, an instant after it does not, and an event-position clock does not advance during silence. | Test (TC-122) |
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122) |
-| FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122), Analysis |
+| FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122); Analysis |
 
 ## Dependencies
 
@@ -222,8 +271,15 @@ closure combination, and SHALL refuse any one-axis substitution.
 - **Constrained by**:
   [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md).
 - **Known limitation, recorded as remaining work on compiler #38**: the emitted
-  temporal body carries a clock binding name and the selected definition entry,
-  but no declared sample period, epoch, timestamp unit or sequence-authority
-  value. Those are therefore retained trace premises that participate in result
-  identity, and are not independently checked against the artifact. Checking them
-  requires an FR-042 wire extension outside this scope.
+  temporal body carries a clock binding name and the selected definition entry's
+  identity and revision, but no definition digest and no declared sample period,
+  epoch, timestamp unit or sequence-authority value. Those five are therefore
+  retained trace premises that participate in result identity and are not
+  independently checked against the artifact, so
+  `ix://agent-ix/quire-specification/FR-090`-AC-2 is satisfied for identity and
+  revision only. Checking the rest requires an FR-042 wire extension outside this
+  scope.
+- **Open questions referred for ruling, recorded on compiler #38**: the pointwise
+  reading of the temporal Boolean connectives, and the precedence between a
+  reached ceiling and an already-settled sibling obligation. Both are stated in
+  Semantic authority and boundary above.

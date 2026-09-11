@@ -33,8 +33,11 @@ emit a Boolean truth for that obligation.
   is what the retention ceiling bounds and what eviction removes. Agent F's
   observation storage, replay and lateness mechanisms are separate and are not
   constrained here.
-- Numeric ceilings are explicit caller-lowered inputs. This requirement invents no
-  universal maximum.
+- Numeric ceilings are explicit caller-lowered inputs. The defaults tabulated
+  below are this evaluator's own hard ceilings, clamping a caller who asks for
+  more; they are an implementation bound on one Rust entry point and are not a
+  universal semantic maximum for native temporal obligations, which this
+  requirement does not invent.
 - The counters, their units and the traversal rules that charge them are published
   in [the temporal evaluation contract](../../docs/native-temporal-evaluation.md)
   under the accounting label `quire.native.temporal-work/1`.
@@ -62,6 +65,21 @@ evaluated.
 `Limits`, `Usage` and `Dimension` carry the eight counters below. A refused charge
 never increases usage, and the first unaffordable operation is not performed.
 
+| Counter | Kind | Default ceiling | Unit |
+| --- | --- | --- | --- |
+| `positions` | cumulative | 1,000,000 | admitted trace positions inspected |
+| `valuations` | cumulative | 1,000,000 | atomic valuation lookups |
+| `instances` | peak | 10,000 | obligation instances active at one time |
+| `captures` | cumulative | 100,000 | retained capture records |
+| `retention` | peak | 1,000,000 | retained valuation records required at one time |
+| `visits` | cumulative | 1,000,000 | temporal graph node visits |
+| `depth` | peak | 64 | temporal formula nesting levels |
+| `horizon` | peak | `i64::MAX` | greatest admitted interval bound |
+
+`horizon`'s default is the checked arithmetic domain itself, so at the default
+the overflow rejection always fires first and the ceiling is unreachable. It
+becomes reachable only where a caller lowers it, which is its purpose.
+
 - `positions` counts each admitted trace position the evaluator inspects,
   cumulative, including the same position inspected under two operators.
 - `valuations` counts each atomic valuation lookup, cumulative, including a lookup
@@ -85,13 +103,25 @@ The effective clamped ceilings participate in result identity.
 
 ## Verification
 
-Enumerate nested future and past formulas whose composed horizon approaches and
-then exceeds the checked integer domain, boundary intervals at the admitted
-extrema, and concurrent trigger instances around each ceiling. Independently force
+Enumerate the declared overflow population: for each of the eight bounded
+operators, each of the three profiles, and nesting depths one through four, the
+interval bound pairs `(0, i64::MAX)`, `(1, i64::MAX)`, `(i64::MAX - 1, i64::MAX)`
+and `(0, i64::MAX / 2)` evaluated at anchor offsets `0`, `1` and `i64::MAX / 2` —
+`8 x 3 x 4 x 4 x 3 = 1,152` cases, of which the composed-horizon overflow set is
+determined by checked arithmetic rather than by observation. Enumerate
+concurrent trigger instances at the active-instance ceiling minus one, at it,
+and at it plus one. Independently force
 horizon overflow, work exhaustion, active-instance exhaustion, capture exhaustion
-and retained-state eviction through the evaluator's own retention table, and
-require a typed incomplete or refused result retaining the affected obligation,
-position and limit identity. For each charged dimension, test the zero, exact,
+and retained-state eviction, and require a typed incomplete or refused result
+retaining the affected obligation, position and limit identity.
+
+Eviction is injected through the trace's explicit eviction list, which names the
+retained valuation or capture record the caller reports as no longer available.
+That seam exists so eviction can be placed at a chosen point rather than inferred
+from a ceiling: a reached retention ceiling and an evicted required record are
+two distinct events with two distinct results, and metric 3's target is
+falsifiable because the injected eviction can be placed on a record the
+obligation still requires. For each charged dimension, test the zero, exact,
 one-short and clamped ceiling and require the first unaffordable operation to
 remain unperformed.
 
@@ -106,10 +136,10 @@ implementation delivery. No metric row above claims it.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| NFR-008-AC-1 | Future horizon, past-history need and nested interval composition use checked i64 arithmetic and reject overflow before any position is visited, with no wrap, saturation or silent narrowing. | Test (TC-124), Analysis |
-| NFR-008-AC-2 | A reached work, active-instance, capture or retention ceiling produces an incomplete or refused result naming the dimension and the affected obligation, and never `true` or `false`, including where the observed prefix would otherwise have settled. | Test (TC-124) |
+| NFR-008-AC-1 | Future horizon, past-history need and nested interval composition use checked i64 arithmetic and reject overflow before any position is visited, with no wrap, saturation or silent narrowing. | Test (TC-124); Analysis |
+| NFR-008-AC-2 | A reached ceiling in any of the eight charged dimensions produces an incomplete or refused result naming that dimension and the affected obligation, and never `true` or `false`, including where the observed prefix would otherwise have settled. | Test (TC-124) |
 | NFR-008-AC-3 | Valuations and captures an unsettled obligation still requires remain in the evaluator's retained-state table until it settles; forced eviction produces an explicit incomplete result naming the evicted subject and never narrows the evaluated interval. | Test (TC-124) |
-| NFR-008-AC-4 | Effective clamped ceilings and any admitted restoration state participate in result identity; an unchanged configuration reproduces one identity and a changed ceiling refuses reuse of the earlier result. | Test (TC-124), Analysis |
+| NFR-008-AC-4 | Effective clamped ceilings and any admitted restoration state participate in result identity; an unchanged configuration reproduces one identity and a changed ceiling refuses reuse of the earlier result. | Test (TC-124); Analysis |
 | NFR-008-AC-5 | For every charged dimension, the first unaffordable operation remains unperformed, reported usage reflects only successful charges, and a retry under sufficient ceilings produces the full result from unmutated inputs. | Test (TC-124) |
 
 ## Dependencies

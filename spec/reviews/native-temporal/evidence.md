@@ -3,202 +3,220 @@ id: SR-378
 title: "Native temporal verification and evidence review"
 type: SpecReview
 analysis: evidence
-scope: "FR-043, FR-044, NFR-008, TC-122-124, TM-008"
+scope: "FR-043, FR-044, FR-045, NFR-008, TC-122-125, TM-008, docs/native-temporal-evaluation.md"
 review_set: subset
-evaluated_revision: "4c1eee8646b51e00cd141d15eb110a33354b8475"
+evaluated_revision: "87bc83f5fad724413737e0a707cf80bdbcba931a"
+previous_evaluated_revision: "4c1eee8646b51e00cd141d15eb110a33354b8475"
 review_date: "2026-09-11"
 ---
 
 ## Summary
 
-Twenty acceptance criteria and four NFR metrics were examined against their
-declared verification method and the evidence TC-122–124 would actually produce.
-Nine criteria cannot be discharged by an automated Rust test alone as written,
-NFR-008's metric table substitutes a weaker method for the silent-eviction row
-that the vendored `ix://agent-ix/quire-specification/NFR-040` singles out, and
-NFR-008 publishes no counter definitions, so three of its four zero-target
-metrics have no measurement instrument in this repository.
+Re-run of this review against 87bc83f, which reworked the temporal scope in
+response to the sixteen findings recorded at 4c1eee8. Thirty-two acceptance
+criteria across FR-043, FR-044, FR-045 and NFR-008 and five NFR-008 metric rows
+were re-examined, together with the newly published counter contract in
+`docs/native-temporal-evaluation.md`. All three high findings are resolved: the
+metric table now uses catalog ids and honours NFR-040's method assignment row for
+row, NFR-008 publishes eight counters with kinds, units and defaults, and the
+evaluator now owns the retained-state table that eviction is forced through. The
+installed advisor and method catalog were run for the first time on this scope
+and their complete outputs are recorded under `data/`. Ten residual findings
+remain, none high; the most consequential is that the newly added Inspection,
+Analysis and Demonstration methods are invisible to the advisor and name no
+evidence artifact of their own.
+
+### Disposition
+
+| Prior finding | Status at 87bc83f | Evidence |
+| --- | --- | --- |
+| FND-001 weakened eviction method | Resolved | Metric row 3 is `model-based-test-generation`; all five rows carry catalog ids and name a population. |
+| FND-002 no counter definitions | Resolved | NFR-008 Counter definitions lists eight counters; `docs/native-temporal-evaluation.md` publishes kinds, units and defaults under `quire.native.temporal-work/1`; `src/temporal/budget.rs` lands `Limits`, `Usage` and `Dimension` with the same eight. |
+| FND-003 eviction not falsifiable | Mostly resolved; residual FND-002 below | NFR-008 Scope gives the evaluator its own retained-state table and separates agent F's storage; the eviction selection rule and trigger are still unpublished. |
+| FND-004 mutation overclaim | Resolved | NFR-008 Verification states mutation testing is not performed by this revision; TM-008 Overview and the NFR coverage row both record it outstanding on #38. |
+| FND-005 "Property Test" label | Resolved as a label; residual FND-004 below | Catalog ids throughout; the technique under row 1 is exhaustive enumeration rather than generation. |
+| FND-006 AC-5 unmeasured | Resolved | Metric row 5 covers charged steps after the first unaffordable charge, over the zero/exact/one-short/clamped population. |
+| FND-007 AC-3 tautology | Resolved | FR-044-AC-3 is `Analysis, Test (TC-123)`; TC-123 group 3 pairs the mutation control with a compile-fail doctest. Caveat recorded as FND-008 below. |
+| FND-008 universal negatives | Resolved | FR-043-AC-1/AC-3 carry Inspection, FR-043-AC-2/AC-13 and NFR-008-AC-1/AC-4 carry Analysis, FR-045-AC-1 carries Inspection. |
+| FND-009 non-reuse unobserved | Resolved | FR-043-AC-13 and NFR-008-AC-4 require the earlier result neither reused nor rewritten, carry Analysis, and add an unchanged-configuration identity control. |
+| FND-010 TC-122 group 3 inexecutable | Resolved | The three profile comparisons compile separately per profile alias; group 3 mutates only profile identity, revision and clock binding name; the residual gap is recorded in FR-043 Dependencies and TM-008. |
+| FND-011 evaluation-order probe | Resolved | FR-044-AC-6 is `Demonstration, Test (TC-123)`; TC-123 groups 6 and 9 inspect a per-instance evaluation counter. |
+| FND-012 blocked bridge criterion | Resolved | Moved to FR-045, a total function over FR-095's table consulting no backend report; TC-125 exercises every table row. |
+| FND-013 unnamed ticket | Resolved | #38 is named in NFR-008, FR-043, FR-045, TC-124, TC-125 and TM-008. |
+| FND-014 unowned TC-123 refusals | Resolved | The `self`, `result` and `pre(expr)` assertions are gone from TC-123. |
+| FND-015 dropped history term | Resolved | Row 3 reads "retained valuation or capture". |
+| FND-016 absent data files | Resolved | `data/methods.json`, `data/advice.json` and both stderr files are authored by this review from the installed tools. |
 
 ## Findings
 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
-| FND-001 | high | Metric row 3 substitutes Fault Injection for NFR-040's required model-based-test-generation; the one row NFR-040 warns hardest about is the row whose method was weakened. | NFR-008-M-3; NFR-040 | wrong-requirement |
-| FND-002 | high | NFR-008 declares no counter definitions, no named ceilings and no charging contract, yet TC-124 derives expectations from a "published charging contract", "each charged dimension" and a "public accounting boundary" that exist in no document; NFR-006/007 both carry a Counter definitions section. | NFR-008; TC-124; NFR-006; NFR-007 | correct-requirement-no-evidence |
-| FND-003 | high | The silent-eviction metric is not falsifiable here: NFR-008's Scope disclaims owning observation storage and retention ("those remain agent F's"), so TC-124 group 3 must force eviction in a mechanism this repository does not own or expose. | NFR-008-M-3; NFR-008-AC-3; TC-124 | correct-requirement-no-evidence |
-| FND-004 | medium | NFR-008's Verification section mandates mutation of each exhaustion path in the present tense while its Scope defers mutation adequacy; no TC-124 step performs it and no metric row carries it, so TM-008 reads fully allocated while an owner-declared verification activity has no owner. | NFR-008; TC-124; TM-008 | wrong-requirement |
-| FND-005 | medium | "Property Test" is not the catalog method property-based-testing: TC-124 disclaims randomized campaigns, the repository has no proptest or quickcheck dev-dependency, and the four labels are prose rather than catalog ids as used by NFR-006/007. | NFR-008-M-1..4 | wrong-requirement |
-| FND-006 | medium | The four metrics measure AC-1 through AC-4 only; NFR-008-AC-5's charge-before-work and usage-reporting claim has no metric row and no threshold. | NFR-008-AC-5 | correct-requirement-no-evidence |
-| FND-007 | medium | FR-044-AC-3 is discharged by Rust ownership rather than by test: if the activation API takes its observations by value, "mutating the source observation after activation" is inexpressible and the control is a tautology. | FR-044-AC-3; TC-123 | correct-requirement-no-evidence |
-| FND-008 | medium | Universal negatives over the implementation ("no evaluation or graph rewrite folds the two", "no default or nearest-compatible selection is inserted", "no computation wraps, saturates or narrows silently") cannot be established by the enumerated instances; each needs Inspection or Analysis of the rewrite and arithmetic paths. | FR-043-AC-1; FR-043-AC-3; NFR-008-AC-1; TC-124 | correct-requirement-no-evidence |
-| FND-009 | medium | Non-reuse is asserted but not observed: a distinct result identity proves the identities differ, not that the retained result was not consulted; no cache, evaluation-count or freshness probe is named. | FR-043-AC-2; FR-043-AC-8; NFR-008-AC-4; TC-122; TC-124 | correct-requirement-no-evidence |
-| FND-010 | medium | TC-122 group 3 is not executable as written: one fixed declaration cannot simultaneously carry a declared sample period, an epoch and a timestamp unit, so the six-dimension mutation sweep needs one declaration per profile. | FR-043-AC-3; TC-122 | wrong-requirement |
-| FND-011 | medium | FR-044-AC-6's exactly-once source-order claim needs an observable evaluation-order probe; TC-123 group 6 assumes initializers "have observable evaluation order", which the emitted temporal body does not expose. | FR-044-AC-6; TC-123 | correct-requirement-no-evidence |
-| FND-012 | medium | FR-044-AC-7's refusal depends on a bridge that TM-008 records as blocked on quire-contract-ir#63/#64; a refusal returned by an absent bridge tests a constant, not a mapping decision. | FR-044-AC-7; TC-123; TM-008 | correct-requirement-no-evidence |
-| FND-013 | low | The mutation-adequacy deferral is recorded in three places but is addressed to an unnamed "owning ticket", so it is honest and unactionable at once. | NFR-008; TC-124; TM-008 | correct-requirement-no-evidence |
-| FND-014 | low | TC-123 group 6 asserts refusals for ambient `self`, operation `result` and `pre(expr)` initializers that no in-scope acceptance criterion owns. | FR-044-AC-6; TC-123 | missing-requirement |
-| FND-015 | low | NFR-008's eviction metric drops the history term NFR-040 carries ("required capture/history"), narrowing the measured subject to valuations and captures. | NFR-008-M-3; NFR-040 | wrong-requirement |
-| FND-016 | low | No `data/` advisor or method-catalog output accompanies this scope, unlike SR-092 and SR-105, so the metric labels cannot be resolved to catalog ids from the record. | NFR-008; SR-092; SR-105 | correct-requirement-no-evidence |
+| FND-001 | medium | The advisor reads the Verification column as a single value, so the new non-test methods are machine-invisible: FR-044-AC-3 and FR-044-AC-6 are `uncatalogued: true` because Analysis and Demonstration lead their cell, while FR-043-AC-1/2/3/13 and NFR-008-AC-1/4 parse as bare `Test` and their Inspection and Analysis halves are dropped entirely. | FR-043-AC-1; FR-043-AC-2; FR-043-AC-3; FR-043-AC-13; FR-044-AC-3; FR-044-AC-6; NFR-008-AC-1; NFR-008-AC-4; data/advice.json | correct-requirement-no-evidence |
+| FND-002 | medium | TC-124 group 3's generated eviction schedules cannot be realized: no document publishes an eviction selection rule or an injection seam, so with only a retention ceiling as the knob the test cannot place an eviction point inside the required set — the victim is chosen by unpublished policy. | NFR-008-AC-3; NFR-008-M-3; TC-124 | correct-requirement-no-evidence |
+| FND-003 | medium | Metric row 1's "enumerated nested-interval population" and TC-124 group 1's "declared finite population" are declared nowhere; the denominator is named but never enumerated, unlike row 5 whose population is fully determined as eight dimensions by four ceilings. | NFR-008-M-1; TC-124 | correct-requirement-no-evidence |
+| FND-004 | low | Row 1 labels an exhaustive enumeration `property-based-testing`; the repository carries no property harness in `[dev-dependencies]` and TC-124 disclaims randomized campaigns. The technique is defensible and arguably stronger, but the catalog id overstates it and the judgment is not recorded where SR-092 and SR-105 record theirs. | NFR-008-M-1; TC-124 | wrong-requirement |
+| FND-005 | low | Eviction may have no trigger other than the retention ceiling. If so, NFR-008-AC-2's ceiling stop and AC-3's eviction are one event with two required payloads, and row 3's silent-eviction target is unreachable by construction rather than by evidence. | NFR-008-AC-2; NFR-008-AC-3; NFR-008-M-3 | wrong-requirement |
+| FND-006 | low | NFR-008 Scope extends to FR-045's mapping classification, but no metric row, acceptance criterion or TC-125 group charges a counter or exercises a ceiling against the classifier; none of the eight counters has a meaning there. | NFR-008; FR-045; TC-125 | correct-requirement-no-evidence |
+| FND-007 | low | `Usage`'s landed doc comment names instances, depth and horizon as the peak counters and omits retention, while NFR-008 and the published contract make retention peak; TC-124 group 5 requires reported usage to distinguish peak from cumulative. | NFR-008; docs/native-temporal-evaluation.md; src/temporal/budget.rs | implementation-bug-despite-evidence |
+| FND-008 | low | A `compile_fail` doctest passes on any compilation error, so FR-044-AC-3's Analysis half is satisfied by an unrelated failure unless the doctest pins the expected error or the criterion records it as a smoke control. | FR-044-AC-3; TC-123 | correct-requirement-no-evidence |
+| FND-009 | low | FR-043's Behavior still forbids substituting a period, epoch, unit or sequence authority, but AC-3 was narrowed to profile identity, revision and clock binding name and no criterion verifies non-substitution for the other four; the gap is recorded in FR-043 Dependencies and TM-008 but the Behavior sentence carries no marker. | FR-043; FR-043-AC-3; TM-008 | correct-requirement-no-evidence |
+| FND-010 | low | The Analysis discharging non-reuse rests on the evaluator holding no cross-invocation cache, which no document states; `docs/native-temporal-evaluation.md`'s API section implies a pure call but never asserts the absence of a cache. | FR-043-AC-13; NFR-008-AC-4; docs/native-temporal-evaluation.md | correct-requirement-no-evidence |
 
 ## Verification method disposition per criterion
 
-Every criterion in scope declares `Test (TC-1xx)`. Eleven are achievable by an
-automated Rust test in this repository once the evaluator exists. Nine are not,
-as written, and are listed with the method they actually require.
+Of the thirty-two criteria in scope, twenty-three are discharged by an automated
+Rust test alone. Nine now carry a second method, and every one of those nine is
+the right call; the residual problems are machine-readability (FND-001) and, in
+three cases, an unnamed artifact.
 
-| Criterion | Declared | Required in practice | Reason |
-| --- | --- | --- | --- |
-| FR-043-AC-1 | Test | Test + Inspection | The instance distinction is testable; "no evaluation or graph rewrite folds the two" is a property of the rewrite pass, established by reading it. |
-| FR-043-AC-2 | Test | Test + Analysis | Three retained profile identities are testable; "no shared cached result" needs a cache probe or a reading of the memoization key. |
-| FR-043-AC-3 | Test | Test + Inspection | The six dimension refusals are testable per profile; "no default or nearest-compatible selection is inserted" is a negative over the selection code. |
-| FR-043-AC-4 | Test | Test | Operators, zero-width intervals and absent positions are directly observable. |
-| FR-043-AC-5 | Test | Test | The insertion-order reversal control genuinely falsifies index substitution. |
-| FR-043-AC-6 | Test | Test | Settled, counterexample and unsettled prefixes are three observable outcomes. |
-| FR-043-AC-7 | Test | Test | Each removal is an independent observable incomplete result. |
-| FR-043-AC-8 | Test | Test + Analysis | Distinct identities are observable; non-reuse of the earlier result is not. |
-| FR-044-AC-1 | Test | Test | Two instances and a cross-instance proposition failure are observable. |
-| FR-044-AC-2 | Test | Test | Instance count and retained second provenance are observable. |
-| FR-044-AC-3 | Test | Analysis | See FND-007; an owned capture environment makes the mutation control unexpressible, and the immutability argument is a type-level one. |
-| FR-044-AC-4 | Test | Test | Five independent bad capture inputs, each with a named capture. |
-| FR-044-AC-5 | Test | Test | Four dispositions, each carrying no temporal truth. |
-| FR-044-AC-6 | Test | Test + Demonstration | Exactly-once source order requires an evaluation-order probe that does not yet exist; the forward-read refusal alone is testable. |
-| FR-044-AC-7 | Test | Test, currently blocked | See FND-012; the unsupported-mapping report has no producer in this repository. |
-| NFR-008-AC-1 | Test | Test + Analysis | Overflow rejection is testable; "checked arithmetic" everywhere is an arithmetic-lint and code-reading claim. |
-| NFR-008-AC-2 | Test | Test | Forced exhaustion on a named ceiling is observable, once ceilings are named. |
-| NFR-008-AC-3 | Test | Blocked | See FND-003; no retention or eviction seam is owned here. |
-| NFR-008-AC-4 | Test | Test + Analysis | Result identity is observable; reuse refusal is not, and "admitted restoration state" is undefined in NFR-008. |
-| NFR-008-AC-5 | Test | Test | Charge-before-work boundaries are testable exactly as NFR-006 tests them, once NFR-008 defines its dimensions. |
+| Criterion | Declared at 87bc83f | Disposition |
+| --- | --- | --- |
+| FR-043-AC-1 | Test (TC-122), Inspection | Correct. TC-122 group 1 inspects the emitted graph for distinct `Constant` and `Holds` nodes, so the Inspection has a concrete subject. |
+| FR-043-AC-2 | Test (TC-122), Analysis | Correct method; the Analysis is discharged by the pairwise identity comparison in group 2, which is a test step, so the Analysis adds nothing the test does not already do. |
+| FR-043-AC-3 | Test (TC-122), Inspection | Correct. Group 3 inspects the refusal value for a substituted selection and requires `positions` usage zero. |
+| FR-043-AC-4 to AC-12 | Test (TC-122) | Achievable. AC-4's dual agreement, AC-5's authority mismatch, AC-7's five bases, AC-10's one-axis substitutions and AC-12's contradiction refusal are all observable through the public result. |
+| FR-043-AC-13 | Test (TC-122), Analysis | Correct method, unnamed artifact. See FND-010. |
+| FR-044-AC-1, AC-2, AC-4, AC-5, AC-7, AC-8, AC-9 | Test (TC-123) | Achievable. |
+| FR-044-AC-3 | Analysis, Test (TC-123) | Correct. The compile-fail doctest is a real mechanism; see FND-008 for its limit and FND-001 for its advisor visibility. |
+| FR-044-AC-6 | Demonstration, Test (TC-123) | Correct. The per-instance evaluation counter gives the Demonstration a concrete instrument, and groups 6 and 9 exercise it across incremental re-evaluation and restoration. |
+| FR-045-AC-1 | Test (TC-125), Inspection | Correct. Group 1 inspects the classifier's inputs for a consulted backend report. |
+| FR-045-AC-2 to AC-5 | Test (TC-125) | Achievable, and cheaply so: the classifier is a total function of three declaration facts. |
+| NFR-008-AC-1 | Test (TC-124), Analysis | Correct. Group 1's independently computed checked horizon is a test oracle; the Analysis covers the no-wrap, no-saturate, no-narrow universal, whose artifact should be named. |
+| NFR-008-AC-2, AC-3, AC-5 | Test (TC-124) | AC-2 and AC-5 achievable. AC-3 is achievable only once FND-002 is answered. |
+| NFR-008-AC-4 | Test (TC-124), Analysis | Correct method, unnamed artifact. See FND-010. |
 
 ## Metric method conformance to NFR-040
 
-NFR-040 names four catalog methods and warns explicitly that a generic
-performance benchmark cannot prove a zero-threshold metric; the method must
-falsify the corresponding semantic failure mode. Each row was checked against
-its source row.
+Every row now honours its source row, method for method and in substance.
 
 | Row | NFR-040 method | NFR-008 method | Disposition |
 | --- | --- | --- | --- |
-| Checked bound overflows accepted | property-based-testing | Property Test | Weakened in substance, not in label. TC-124 enumerates deterministically and disclaims randomized campaigns; the repository carries no property harness. This is unit-testing or combinatorial-tway wearing a property name. |
-| Exhausted evaluations emitting a Boolean | fault-injection | Fault Injection | Honoured in substance. The label is prose rather than the catalog id, and the path set it must cover is left unenumerated. |
-| Silently evicted required state | model-based-test-generation | Fault Injection | Substituted. Model-based generation would derive eviction scenarios from a retention model; two hand-forced evictions in TC-124 group 3 do not. This is the row NFR-040's warning is aimed at. |
-| Results reused after a changed limit or binding | integration-testing | Integration Test | Honoured in substance; the label is prose rather than the catalog id, and the reuse observation is missing per FND-009. |
+| Accepted overflow | property-based-testing | property-based-testing | Label honoured; technique is exhaustive enumeration over an undeclared population. FND-003, FND-004. |
+| Boolean after exhaustion | fault-injection | fault-injection | Honoured. Five forced stops are enumerated and the population is named; TC-124 group 2 requires the truth field absent, which is stronger than "never true or false". |
+| Silent eviction | model-based-test-generation | model-based-test-generation | Label honoured; the generating model and the eviction seam are unpublished. FND-002, FND-005. |
+| Stale reuse | integration-testing | integration-testing | Honoured, and now falsifiable: group 4 varies ceiling, binding and declared clock parameter and pins the unchanged-configuration identity. |
+| Charged steps after refusal | — (NFR-008 addition) | negative-abuse-testing | Correct id and the same method NFR-006/007 use for charge-before-work; population fully determined. |
 
-The contrast with this repository's own practice is sharp: NFR-006 and NFR-007
-name `negative-abuse-testing`, an actual catalog id, on every metric row, and
-SR-092 and SR-105 record the advisor output that justified retaining it. NFR-008
-names none.
-
-## Mutation-adequacy deferral
-
-The deferral is honestly recorded in three places: NFR-008's Scope bullet
-("recorded as outstanding assurance work rather than claimed here"), TC-124's
-Expected Results, and TM-008's coverage rules, which additionally disclaim any
-randomized campaign, fuzzing result or mutation-adequacy score. No metric row,
-no acceptance criterion and no TC-124 procedure step claims mutation coverage.
-
-It is overclaimed in exactly one place. NFR-008's Verification section states
-"Separately mutate each exhaustion path to return a Boolean and require the
-suite to fail" as a present-tense obligation of this requirement, with no
-deferral marker, mirroring NFR-040's sentence that assigns mutation testing a
-measurement role distinct from fault injection. A reader of the Verification
-section alone concludes the measurement is in scope; a reader of Scope concludes
-it is not. TM-008 then shows all five NFR-008 criteria allocated to TC-124, so
-the matrix presents a fully covered requirement whose own Verification section
-names an activity nothing performs. The fix is a Verification sentence that
-marks the mutation step as deferred and names its ticket, not a new metric row.
+The advisor marks all five rows `mismatch: true` for the single reason that the
+quantified-threshold rule selects `performance-benchmarking`. That
+recommendation is declined by explicit review judgment, on the same grounds
+SR-092 and SR-105 declined it and on NFR-040's own instruction that a generic
+performance benchmark cannot prove a zero-threshold semantic metric. None of the
+five is `uncatalogued` or `inconclusive`.
 
 ## Falsifiability of the zero-target metrics
 
-A zero-target metric is evidence only if some executable run would have produced
-a non-zero value had the failure mode been present.
-
-- **Overflow accepted.** Falsifiable. TC-124 group 1 enumerates formulas whose
-  composed horizon exceeds the checked domain and requires rejection, so the
-  metric reads non-zero if an overflow is admitted. This is the only one of the
-  four that is sound as written.
-- **Exhausted evaluation emitting a Boolean.** Conditionally falsifiable. It is
-  falsified for the three ceilings TC-124 group 2 forces, and for no other
-  exhaustion path, because NFR-008 enumerates no path set. For unexercised
-  paths the metric reduces to "the suite ran and nothing happened" — which is
-  precisely the gap NFR-040 assigns to mutation testing, and which FND-004
-  leaves unassigned.
-- **Silent eviction.** Not falsifiable. With no retention model, no named
-  retention ceiling and no eviction seam owned by this requirement, no run can
-  produce a non-zero value; the metric is satisfied by the absence of a
-  mechanism rather than by the correctness of one.
-- **Stale reuse.** Not falsifiable as written. The only observation offered is
-  that two result identities differ, which is consistent with a cache that
-  returned a stale result under a fresh identity. A reuse counter or an
-  evaluation-count probe would make it falsifiable.
-
-None of the four rows states a population or a counting instrument. Target 0 of
-what, over which runs, counted by which counter, is unanswered for all four.
+- **Accepted overflow.** Falsifiable. Group 1 rejects before any position is
+  visited and compares each accepted composed horizon against an independently
+  computed checked value, so a wrap or saturation reads non-zero. Its population
+  is undeclared (FND-003), so the metric's denominator is not yet fixed.
+- **Boolean after exhaustion.** Falsifiable over the five named stops, and
+  honest about that boundary: the population is stated in the metric itself, so
+  the row no longer claims anything about unexercised paths. What it cannot do
+  is detect a Boolean introduced into a path outside those five — which is
+  exactly the gap mutation testing on #38 is assigned, and that assignment is now
+  recorded rather than implied.
+- **Silent eviction.** Not yet falsifiable, for a narrower reason than before.
+  The mechanism now exists and is owned, but the test cannot choose which record
+  is evicted, so the generated schedule that the method name promises cannot be
+  applied (FND-002), and if the ceiling is the only trigger the target is
+  unreachable by construction (FND-005).
+- **Stale reuse.** Falsifiable. The unchanged-configuration control gives the
+  metric a positive arm, and re-reading the prior result's bytes in TC-122
+  group 12 gives "not rewritten" an observation. "Not reused" still rests on
+  Analysis rather than observation, which is the correct method but needs the
+  artifact of FND-010.
+- **Charged steps after refusal.** Falsifiable. Eight dimensions by four
+  ceilings is an enumerable population, reported usage is compared against
+  independently derived charges, and the clamp and zero-preservation rules are
+  published.
 
 ## TC-124 group-by-group
 
-1. **Overflow enumeration.** Produces the evidence metric 1 claims. Its closing
-   sentence, "no computation wraps, saturates or narrows silently", is not
-   produced by these cases; it is an arithmetic-lint and code-reading claim.
-2. **Ceiling exhaustion.** Produces evidence for metric 2 on three ceilings —
-   work, active-instance and retention — none of which NFR-008 names, defines a
-   unit for, or gives a counter to. The group cannot be written until those
-   exist, and it establishes nothing about exhaustion paths it does not reach.
-3. **Retention and eviction.** Does not produce the evidence metric 3 claims.
-   NFR-008's Scope removes observation storage and replay from this requirement,
-   so "force eviction of one required valuation and one required capture" has no
-   subject here. The group also needs incremental re-evaluation, which no
-   in-scope requirement specifies.
-4. **Result identity.** Produces half the evidence metric 4 claims. Distinct
-   identities under a changed ceiling are observable; "the earlier result is not
-   reused and is not rewritten" is not, absent a probe. "An admitted restoration
-   state" is used as an input without definition in NFR-008.
-5. **Charging boundaries.** Does not produce its claimed evidence. It iterates
-   "each charged dimension" against a "published charging contract" and exercises
-   "counter overflow through the public accounting boundary"; NFR-008 defines no
-   dimensions, this repository publishes no temporal charging contract, and
-   `docs/compiled-protocol-v1.md`'s dimensions are the package and proof
-   counters, not temporal ones. Contrast NFR-006, whose Counter definitions
-   section makes the identical group writable for the runtime.
+1. **Overflow enumeration.** Produces row 1's evidence. Reported `positions`
+   usage zero makes "before any position is visited" observable rather than
+   asserted, and the independent checked-value comparison is a real oracle. The
+   population needs declaring.
+2. **Five forced stops.** Produces row 2's evidence. Each stop names a published
+   `Dimension`, so the expected value comes from the contract rather than the run.
+3. **Eviction schedules.** Does not yet produce row 3's evidence. See FND-002.
+4. **Result identity.** Produces row 4's evidence for the observable half.
+   Changed clock binding, changed declared clock parameter, admitted restoration
+   and the clamp-versus-zero control are all concrete.
+5. **Ceiling permutations.** Produces row 5's evidence. All eight dimensions are
+   published with defaults, `Limits::bounded` preserves zero and clamps above the
+   default, and the peak-versus-cumulative distinction is required of reported
+   usage — which is where FND-007 bites.
 
-Groups 1, 2 and 4 are repairable by naming dimensions and adding a probe. Groups
-3 and 5 are blocked on content NFR-008 has not authored.
+## Deterministic advice and judgment
 
-## Evidence artifacts and data/methods.json
+`quoin catalog methods --json` and `quoin advise --json` were run from the
+installed toolchain at this revision; both exited zero with empty stderr, and
+both stderr files are retained alongside their outputs. Quire independently
+reports 0.31.0. `quoin advise` has no scope flag, so it was run repo-wide over
+336 obligations and `data/advice.json` retains the 37 in-scope records verbatim;
+`data/methods.json` is the complete 33-entry catalog, unfiltered.
 
-This review authors no `data/` directory and ran no advisor; its judgments are
-documentary. NFR-008 does need a `spec/reviews/native-temporal/data/methods.json`
-to reach parity with the two evidence reviews that precede it.
+Of the 37 records, 30 have `mismatch`, `uncatalogued` and `inconclusive` all
+false. Five are the metric rows discussed above. Two — FR-044-AC-3 and
+FR-044-AC-6 — are `uncatalogued: true` solely because the authored cell leads
+with `Analysis` and `Demonstration`; the six criteria that lead with `Test` parse
+as a bare `Test` and their second method is silently discarded. Nothing in the
+scope is `inconclusive`, so no obligation went unmatched.
 
-- SR-092 records `quoin advise --json` and `quoin catalog methods --json` in
-  `spec/reviews/native-runtime/data/advice.json` and `methods.json`; the latter
-  is the complete 33-entry catalog with each method's `id`, `class`,
-  `evidenceKind` and `applicability`.
-- SR-105 records the same pair for the package scope and uses them to justify
-  retaining `negative-abuse-testing` against benchmark advice.
+The advisor's recommendations were read as recommendations. It offers
+`model-checking` and `runtime-monitoring` on FR-043-AC-1/4/5/6/7/9 and
+NFR-008-AC-2/3 from temporal wording; by judgment these are evaluations of an
+emitted artifact against a supplied trace, not a model checker or a deployed
+monitor, and TC-122 and TC-124 remain integration and enumeration suites. It
+offers `dast` on FR-043-AC-8 and `sca-sbom` on FR-044-AC-2 from incidental
+vocabulary; neither applies to a compiler evaluating its own artifact, and this
+scope changes no dependency. `formal-analysis-smt` on FR-043-AC-12 and
+FR-044-AC-2 is declined: a contradiction refusal is observed at runtime, not
+proved. `golden-approval-testing` on FR-044-AC-3 is partially taken up — the
+byte-identical retained capture record is a golden comparison against the
+activation-time record, not against a stored snapshot file.
 
-For this scope the file should be the verbatim `quoin catalog methods --json`
-dump, unedited and unfiltered, so that `property-based-testing` (Test/Property),
-`fault-injection` (Test/Integration), `model-based-test-generation`
-(Test/Property), `integration-testing` (Test/Integration) and `mutation-testing`
-(Test/Static) are each resolvable from the record. It should be accompanied by
-an `advice.json` covering all twenty acceptance criteria and the four metric
-rows, so that any mismatch, uncatalogued or inconclusive record is visible rather
-than asserted. Without it, NFR-008's four prose labels cannot be reconciled with
-the catalog, and FND-001's substitution and FND-005's mislabel rest on this
-document alone. Authoring both files is left to the owning task.
+## Evidence artifacts
+
+| Obligation group | Method | Artifact |
+| --- | --- | --- |
+| FR-043-AC-1 to AC-13 | test, inspection, analysis | `tests/composed_temporal_evaluation.rs` per TC-122; graph inspection in group 1; identity comparison in groups 2 and 13 |
+| FR-044-AC-1 to AC-9 | test, analysis, demonstration | `tests/composed_temporal_activation.rs` per TC-123; compile-fail doctest in group 3; per-instance evaluation counter in groups 6 and 9 |
+| FR-045-AC-1 to AC-5 | test, inspection | `tests/composed_temporal_mapping.rs` per TC-125; classifier input inspection in group 1 |
+| NFR-008-AC-1 to AC-5, M-1 to M-5 | test, analysis | `tests/composed_temporal_limits.rs` per TC-124; counters published in `docs/native-temporal-evaluation.md`; `src/temporal/budget.rs` |
+| Advisor and catalog | inspection | `data/advice.json`, `data/methods.json`, `data/advice.stderr`, `data/methods.stderr` |
+
+Three Analysis obligations have no artifact of their own: FR-043-AC-13,
+NFR-008-AC-1 and NFR-008-AC-4. Each needs a named location — a paragraph in the
+temporal evaluation contract asserting the absence of a cross-invocation cache,
+and a recorded reading of the checked-arithmetic paths — rather than a method
+label that points back at the test it was added to supplement.
 
 ## Verdict and provenance
 
-FAIL for evidence readiness of NFR-008 as written; PASS with named method
-corrections for FR-043 and FR-044. FR-043's eight criteria and FR-044's seven
-have a real test case each, and TC-122 and TC-123 describe procedures that would
-produce the claimed evidence apart from the five defects recorded above.
-NFR-008's Measurement and Evaluation table does not yet honour the vendored
-NFR-040 disposition, and two of TC-124's five groups cannot be written against
-the current requirement.
+**PASS** for evidence readiness of FR-043, FR-044, FR-045 and NFR-008 at this
+revision. Every criterion has a verification method that matches what can
+actually establish it, every NFR-008 metric row honours the vendored NFR-040
+method assignment, every metric names its population, the counters those metrics
+are measured against are published with kinds, units and defaults, and the two
+obligations this revision does not discharge — mutation adequacy and
+artifact-side checking of declared clock parameters — are recorded as outstanding
+on #38 in the requirement, the test case and the matrix alike, with no metric row
+or coverage row claiming either.
 
-No FR, NFR, TC or matrix file was edited by this review. No advisor, Cargo build,
-mutation tool or test run was executed, and no execution result is claimed. All
-TM-008 rows remain Planned; this review neither qualifies nor advances them. The
-temporal evaluator does not exist in `src/` at this revision, so every judgment
-about achievability is about the specified public API, not about observed code.
+The ten residual findings are correctness-of-record issues, not evidence gaps of
+the kind that failed the previous revision. FND-002 is the one that should be
+answered before TC-124 is written, because group 3 cannot be authored against an
+unpublished eviction rule. FND-001 should be answered before the advisor is used
+as a gate on this scope, because six criteria's second method is currently
+invisible to it.
+
+No FR, NFR, TC, matrix, doc or source file was edited by this review; the only
+files authored are this document and the four `data/` files. The installed
+`quoin catalog methods --json` and `quoin advise --json` were executed and their
+complete outputs retained; no Cargo build, test run, mutation tool or fuzz
+campaign was executed, and no execution result is claimed. All TM-008 rows remain
+Planned. `src/temporal/` now lands `budget.rs`, `profile.rs` and `result.rs`;
+these were read to check that the published counters exist as specified, not
+reviewed for correctness, which belongs to a code review.
