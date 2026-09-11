@@ -333,6 +333,7 @@ fn reader_refuses_crossed_reference_object_universe_and_original_role_loci() {
                 "formal_owner",
                 "declaration_owner",
                 "closure_pair",
+                "surplus_pair",
             ] {
                 let mut changed = package.clone();
                 let expected = match axis {
@@ -416,6 +417,53 @@ fn reader_refuses_crossed_reference_object_universe_and_original_role_loci() {
                         closure.requires.clear();
                         Error::Invalid(Invalid::Binding)
                     }
+                    "surplus_pair" => {
+                        let node_object = export(package, w::ExportKind::Object, &["Node"]);
+                        let node_type = changed
+                            .types
+                            .iter()
+                            .position(|ty| {
+                                matches!(ty, w::Type::Object { export } if export == &node_object)
+                            })
+                            .unwrap() as u32;
+                        let declaration = changed
+                            .declarations
+                            .iter_mut()
+                            .find(|d| d.name == "Right")
+                            .unwrap();
+                        assert!(!declaration.bindings.iter().any(|binding| {
+                            binding.kind == w::BindingKind::Population
+                                && binding.model.0.as_ref() == Some(&population)
+                        }));
+                        let (original, original_population) = declaration
+                            .bindings
+                            .iter()
+                            .enumerate()
+                            .find(|(_, binding)| binding.kind == w::BindingKind::Population)
+                            .unwrap();
+                        let mut extra = original_population.clone();
+                        let mut closure = declaration
+                            .bindings
+                            .iter()
+                            .find(|binding| {
+                                binding.kind == w::BindingKind::Closure
+                                    && binding.requires == [original as u32]
+                            })
+                            .unwrap()
+                            .clone();
+                        // Every authority, owner and prerequisite is well formed;
+                        // Right's original inputs do not require the Node population.
+                        // Node's type already occurs in Left, preserving first-use order.
+                        extra.name = "zz-extra-0-population".into();
+                        extra.model.0 = Some(population.clone());
+                        extra.value_type.0 = Some(node_type);
+                        closure.name = "zz-extra-1-closure".into();
+                        closure.model = extra.model.clone();
+                        closure.value_type = extra.value_type.clone();
+                        closure.requires = vec![declaration.bindings.len() as u32];
+                        declaration.bindings.extend([extra, closure]);
+                        Error::Invalid(Invalid::Binding)
+                    }
                     _ => unreachable!(),
                 };
                 // This is adverse transport, independently resealed to reach the
@@ -477,8 +525,11 @@ fn foreign_object_graph_edges_refuse_before_native_family_admission() {
             name: "foreign-graph",
             body: "predicate Crossed using G (left: M::Node, right: M::Other): Boolean {
             reaches(left,right,parent)
+        }
+        predicate ScalarEdge using G (left: M::Node): Boolean {
+            reaches(left,left,n)
         }",
-            declarations: &["Crossed"],
+            declarations: &["Crossed", "ScalarEdge"],
         }],
         two_objects("ForeignGraph"),
     );
@@ -486,22 +537,24 @@ fn foreign_object_graph_edges_refuse_before_native_family_admission() {
         TypeLimits::default(),
         proofs::ProofLimits::default(),
         |proofs, selected| {
-            let [id] = proofs.types().binding().namespace().lookup("Crossed") else {
-                panic!("original declaration")
-            };
-            assert_eq!(
-                proofs.types().disposition(*id),
-                Some(TypeDisposition::Refused)
-            );
-            let typed = proofs.types().declaration(*id).unwrap();
-            assert!(typed
-                .causes()
-                .iter()
-                .any(|cause| matches!(cause.kind, CauseKind::TypeMismatch)));
-            assert_eq!(
-                proofs.disposition(*id),
-                Some(proofs::ProofDisposition::Refused)
-            );
+            for (name, expected) in [
+                ("Crossed", CauseKind::TypeMismatch),
+                ("ScalarEdge", CauseKind::InvalidGraphEdge),
+            ] {
+                let [id] = proofs.types().binding().namespace().lookup(name) else {
+                    panic!("original declaration")
+                };
+                assert_eq!(
+                    proofs.types().disposition(*id),
+                    Some(TypeDisposition::Refused)
+                );
+                let typed = proofs.types().declaration(*id).unwrap();
+                assert!(typed.causes().iter().any(|cause| cause.kind == expected));
+                assert_eq!(
+                    proofs.disposition(*id),
+                    Some(proofs::ProofDisposition::Refused)
+                );
+            }
             failure(
                 &native::admit(proofs, selected, Limits::default()),
                 Error::Unsupported(Unsupported::FamilyProof),
