@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-035: edition-selected syntax only; no model, profile or execution admission.
+pub(crate) mod arena;
+
 use super::{ClauseKind, ExprId, ExprKind, ModelImport, ParsedUnit};
 use crate::{Source, Span, Spanned};
 
