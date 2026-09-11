@@ -297,32 +297,47 @@ impl Builder<'_, '_> {
             } else {
                 return Err(upstream(self.site(at)));
             };
-        // Base is exactly zero. At each k <= the admitted maximum, addition is
-        // monotone in both operands, so these two independently checked endpoint
-        // transitions enclose every k-occurrence prefix, irrespective of order
-        // or duplicates. No accumulator is assumed to inhabit the desired Total.
-        let (mut lower, mut upper) = (0_i64, 0_i64);
-        for _prefix in 1..=maximum {
+        // Type admission establishes zero and the complete projection domain
+        // within Total. Keep that precondition explicit before endpoint division
+        // or construction of literals in the actual Total representation.
+        if total_minimum > 0
+            || total_maximum < 0
+            || minimum < total_minimum
+            || maximum_value > total_maximum
+            || maximum == 0
+        {
+            return Err(upstream(self.site(at)));
+        }
+        // For every k <= N, every k-occurrence prefix is in [k*a, k*b].
+        // Each endpoint is monotone from zero, independently of occurrence
+        // order, duplicates or later cancellation. Its final extreme therefore
+        // covers all prefixes. If it crosses Total first, select that transition
+        // instead, so both literal operands remain valid and the actual IR Add
+        // retains the first CheckedRange failure at the original sum.
+        for item in [minimum, maximum_value] {
             self.work.charge(D::Expressions, 1, self.site(at))?;
-            for (prior, item) in [(lower, minimum), (upper, maximum_value)] {
-                let prior = self.numeric_literal(at, prior)?;
-                let item = self.numeric_literal(at, item)?;
-                let addition =
-                    self.node(Kind::Numeric(ir::NumericOperator::Add, prior, item), at)?;
-                self.goal(at, addition, path)?;
-            }
-            let next_lower = i128::from(lower) + i128::from(minimum);
-            let next_upper = i128::from(upper) + i128::from(maximum_value);
-            if next_lower < i128::from(total_minimum) || next_upper > i128::from(total_maximum) {
-                // The just-retained actual IR goal diagnoses the first failing
-                // prefix; do not construct out-of-domain later prefix literals.
-                break;
-            }
-            lower = i64::try_from(next_lower).map_err(|_| upstream(self.site(at)))?;
-            upper = i64::try_from(next_upper).map_err(|_| upstream(self.site(at)))?;
-            if minimum == 0 && maximum_value == 0 {
-                break;
-            }
+            let prior = if item == 0 {
+                0
+            } else {
+                let bound = if item < 0 {
+                    total_minimum
+                } else {
+                    total_maximum
+                };
+                // Both operands have the same sign, so integer division gives
+                // the exact number of safe endpoint prefixes. Widen before
+                // division, including i64::MIN / -1, and before multiplication.
+                let safe = i128::from(bound) / i128::from(item);
+                let prefix = i128::from(maximum).min(safe + 1);
+                let prior = (prefix - 1) * i128::from(item);
+                i64::try_from(prior).map_err(|_| upstream(self.site(at)))?
+            };
+            // This prior is derived from cardinality and the element bound,
+            // never supplied as an assumption that an accumulator is in Total.
+            let prior = self.numeric_literal(at, prior)?;
+            let item = self.numeric_literal(at, item)?;
+            let addition = self.node(Kind::Numeric(ir::NumericOperator::Add, prior, item), at)?;
+            self.goal(at, addition, path)?;
         }
         Ok(())
     }
