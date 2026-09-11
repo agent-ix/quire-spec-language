@@ -3,9 +3,10 @@
 //! link, type, proof, admission, emission and public reader stages.
 //!
 //! Orders O1/O2 share payment provider P (`role Provider`). One charge message
-//! is observed by the two shipment deliveries S1/S2; the single authored
-//! forward payment attempt has the bounded occurrences A1/A2 inside the retry,
-//! E1 is its one business effect, and R1/R2 are the refunds on exhaustion.
+//! is observed by the two shipment deliveries S1/S2; A1 is the single authored
+//! forward payment attempt inside the retry and E1 is its one business effect,
+//! and R1/R2 are the refunds on exhaustion. Bounded iteration mints no further
+//! static attempt record, so there is one A1 and no A2 in the artifact.
 //! Every record here is a static identity requirement: no payment, delivery or
 //! recovery is observed, and no runtime outcome is supplied by these fixtures.
 

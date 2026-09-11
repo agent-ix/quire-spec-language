@@ -151,10 +151,10 @@ observations belong only to the later consumer fixture.
    `Invalid::Control`, an unproved one remains FamilyProof, and guard
    falsification is a normal exit rather than evidence of progress.
    Author a payment retry as a bounded repeat over a pre-loop observed charge
-   outcome. Require one attempt identity per bounded occurrence carrying its
-   iteration ordinal, distinct from the carrying delivery and from the single
-   business effect, and require that a retried attempt inherit no earlier
-   effect. Exercise zero, exact and one-short budgets for the repeat's
+   outcome. Require one static attempt identity for the authored attempt,
+   distinct from the carrying delivery and from the single business effect,
+   with no further attempt record minted per iteration, and require that a
+   retried attempt inherit no earlier effect. Exercise zero, exact and one-short budgets for the repeat's
    valuation work.
 6. Bind O1 and O2 to the same provider through distinct instance requirements.
    Preserve one message, two delivery observations and one effect. Inspect
