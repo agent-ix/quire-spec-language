@@ -211,8 +211,12 @@ maximum is 1..i64::MAX; sequence maximum retains its admitted producer bound.
 Each number also satisfies its node/field-specific type domain.
 
 Each declaration has one root lexical scope; every other scope reaches that
-root through an acyclic parent chain. Binder initializers and value child/origin
-references form an acyclic evaluation graph. Reads select a visible binder at
+root through an acyclic parent chain. Binder initializers, value children and
+non-self origin references form an acyclic graph. `Origin.Selected` may name its
+own value: the native checker uses this marker for mixed immutable provenance,
+not recursive evaluation. It retains the same owner/range checks; an actual
+self operand or a cycle through different origin nodes still refuses.
+Reads select a visible binder at
 that occurrence and retain its initializer's immutable anchor. Wrapper-type
 indices are acyclic; nominal recursion remains an explicit producer export,
 not a cyclic wrapper table. All handles must be in range and match their field's
@@ -328,6 +332,13 @@ An await anchor selects an exact preceding event or a compensation activation,
 never a group or guessed latest occurrence. Its matched child is receive, effect
 or domain event only. The upper endpoint is inclusive; timeout requires the
 selected progress/completeness authority, not a false constraint or absent datum.
+Its static association is a `Progress` or `Closure` binding requirement with
+`subject: Control(await)` and `requires` containing that await's clock **binding
+index**. Its `contract` and `authority` retain the independently selected static
+definition bytes; neither is a runtime observation. The reader refuses a missing
+association, foreign subject or absent clock dependency as `Invalid::Binding`.
+The compiler establishes the selected contract's meaning during family admission;
+the consumer supplies and validates actual progress/completeness inputs later.
 The finish constraint is reached after the run root exits and the selected
 join/completion requirements close; a source declaration position is no substitute
 for that termination dependency.

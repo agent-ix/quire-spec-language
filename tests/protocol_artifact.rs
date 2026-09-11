@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! TC-121: strict wire-reader controls; native family emission is a separate gate.
+//! AC-5/6 exercise only static wire branches; choice totality, runtime progress,
+//! delivery/recovery semantics and the complete acceptance criteria remain open.
 
 #[path = "support/protocol_artifact/mod.rs"]
 mod setup;
@@ -215,6 +217,28 @@ fn unknown_interpretations_and_features_are_explicitly_unsupported() {
         .required
         .retain(|feature| feature != "quire.protocol.bindings/1");
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Feature));
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-7")]
+fn unknown_wire_is_classified_before_its_foreign_dependency_inventory() {
+    let fixture = Fixture::new();
+    let mut offered = fixture.package.clone();
+    offered.wire = "quire.compiled-protocol/2".into();
+    offered.dependencies.push(w::Dependency {
+        artifact: setup::reference(
+            w::ArtifactKind::Source,
+            "future-input",
+            "test:future",
+            "2",
+            b"additional future input",
+        ),
+        requires: vec![],
+    });
+    failure(
+        &fixture.offered(&offered),
+        Error::Unsupported(Unsupported::Wire),
+    );
 }
 
 #[test]
@@ -439,7 +463,7 @@ fn references_preserve_local_owner_type_scope_and_original_utf8_locus() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-6", "FR-042-AC-8")]
+#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-8")]
 fn actual_export_authority_cannot_be_replaced_by_a_tag_path_or_foreign_locus() {
     let fixture = Fixture::new();
     for kind in [
@@ -577,7 +601,7 @@ fn selected_name_bounds_are_utf8_bytes_with_no_truncation() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace("TC-121", "FR-042-AC-7")]
 fn required_control_edges_and_closure_bindings_cannot_be_omitted_or_cross_wired() {
     let fixture = Fixture::new();
     for duplicate in [false, true] {
@@ -657,6 +681,10 @@ fn independently_counted_peak_limits_distinguish_exact_from_one_short() {
         };
         assert_eq!(exhaustion.dimension, dimension);
         assert_eq!(exhaustion.limit, exact - 1);
+        if dimension == Dimension::OutputBytes {
+            assert_eq!(refused.locus(), None);
+            assert_eq!(exhaustion.locus, None);
+        }
         assert!(exhaustion.requested > 0);
         assert!(exhaustion.used <= exhaustion.limit);
         assert!(fixture
@@ -919,5 +947,342 @@ fn caller_owned_string_is_reserved_before_json_escaping_or_output() {
             (4, 4096, 4099)
         );
         assert_eq!(report.usage().output_bytes, 0);
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-4", "FR-042-AC-7")]
+fn real_model_values_and_all_declaration_families_preserve_exact_references() {
+    let fixture = Fixture::families();
+    let candidate = fixture.candidate();
+    let report = fixture.read(
+        candidate.bytes(),
+        &Fixture::seal(candidate.bytes()),
+        Limits::default(),
+    );
+    let package = report
+        .result()
+        .unwrap_or_else(|error| {
+            panic!(
+                "four family reader data: {error:?}, locus {:?}",
+                report.locus()
+            )
+        })
+        .package();
+    assert_eq!(package.declarations.len(), 5);
+    assert!(matches!(
+        package.declarations[1].body,
+        w::Body::Predicate { result: 1, .. }
+    ));
+    assert!(matches!(
+        package.declarations[2].body,
+        w::Body::State {
+            clause_kind: w::ClauseKind::Invariant,
+            ..
+        }
+    ));
+    assert!(matches!(
+        package.declarations[3].body,
+        w::Body::Temporal { clock: 0, .. }
+    ));
+    assert_eq!(package.declarations[1].values.len(), 14);
+    assert_eq!(package.declarations[2].requires, [1]);
+    assert_eq!(package.declarations[3].requires, [1]);
+    assert_eq!(
+        package.declarations[4].values[2].operation,
+        w::ValueOperation::Text { value: "é".into() }
+    );
+    let mutations: [(fn(&mut w::Package), Error); 8] = [
+        (
+            |p| {
+                p.declarations[1].values[1].operation = w::ValueOperation::Number {
+                    value: w::Number(NumberWire::Integer {
+                        decimal: "11".into(),
+                    }),
+                }
+            },
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            |p| p.declarations[1].binders[1].initializer = w::Nullable(None),
+            Error::Invalid(Invalid::Binding),
+        ),
+        (
+            |p| {
+                p.declarations[2].values[0].operation = w::ValueOperation::Call {
+                    predicate: 1,
+                    arguments: vec![],
+                }
+            },
+            Error::Invalid(Invalid::Call),
+        ),
+        (
+            |p| {
+                p.declarations[2].values[0].operation = w::ValueOperation::Call {
+                    predicate: 2,
+                    arguments: vec![setup::owned(2, 2)],
+                }
+            },
+            Error::Invalid(Invalid::Call),
+        ),
+        (
+            |p| {
+                p.declarations[2].values[2].operation = w::ValueOperation::Field {
+                    base: setup::owned(1, 2),
+                    field: w::ExportRef {
+                        model: 0,
+                        export: 1,
+                    },
+                }
+            },
+            Error::Invalid(Invalid::Owner),
+        ),
+        (
+            |p| p.declarations[3].bindings[0].kind = w::BindingKind::Progress,
+            Error::Invalid(Invalid::Binding),
+        ),
+        (
+            |p| {
+                p.declarations[3].temporal[0].operation = w::TemporalOperation::Unary {
+                    operator: w::TemporalUnary::Eventually,
+                    interval: w::Nullable(None),
+                    value: setup::owned(3, 1),
+                }
+            },
+            Error::Invalid(Invalid::Profile),
+        ),
+        (
+            |p| {
+                p.declarations[4].values[2].operation = w::ValueOperation::Text {
+                    value: "é".repeat(257),
+                }
+            },
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+    ];
+    for (mutate, expected) in mutations {
+        let mut offered = fixture.package.clone();
+        mutate(&mut offered);
+        failure(&fixture.offered(&offered), expected);
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-4", "FR-042-AC-7")]
+fn selected_provenance_marker_is_distinct_from_an_evaluation_cycle() {
+    let fixture = Fixture::families();
+    let mut offered = fixture.package.clone();
+    offered.declarations[1].values[0].origin = w::Origin::Selected {
+        value: setup::owned(1, 0),
+    };
+    let report = fixture.offered(&offered);
+    assert_eq!(
+        report
+            .result()
+            .expect("self provenance marker")
+            .package()
+            .declarations[1]
+            .values[0]
+            .origin,
+        w::Origin::Selected {
+            value: setup::owned(1, 0)
+        }
+    );
+    offered.declarations[1].values[0].origin = w::Origin::Selected {
+        value: setup::owned(0, 0),
+    };
+    failure(&fixture.offered(&offered), Error::Invalid(Invalid::Owner));
+    offered.declarations[1].values[0].origin = w::Origin::Selected {
+        value: setup::owned(1, 10_000),
+    };
+    failure(
+        &fixture.offered(&offered),
+        Error::Invalid(Invalid::Reference),
+    );
+    offered.declarations[1].values[0].origin = w::Origin::Selected {
+        value: setup::owned(1, 1),
+    };
+    offered.declarations[1].values[1].origin = w::Origin::Selected {
+        value: setup::owned(1, 0),
+    };
+    failure(&fixture.offered(&offered), Error::Invalid(Invalid::Cycle));
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
+fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_kinds() {
+    let fixture = Fixture::controlled();
+    let candidate = fixture.candidate();
+    let report = fixture.read(
+        candidate.bytes(),
+        &Fixture::seal(candidate.bytes()),
+        Limits::default(),
+    );
+    let package = report
+        .result()
+        .unwrap_or_else(|error| {
+            panic!(
+                "finite static control records: {error:?}, locus {:?}",
+                report.locus()
+            )
+        })
+        .package();
+    let declaration = &package.declarations[0];
+    let w::Body::Protocol {
+        roles,
+        controls,
+        causal_edges,
+        ..
+    } = &declaration.body
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        (roles.len(), controls.len(), causal_edges.len()),
+        (1, 14, 33)
+    );
+    assert!(matches!(
+        controls[1].operation,
+        w::ControlOperation::Event {
+            event: w::Event::Attempt { instance: 5, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        controls[2].operation,
+        w::ControlOperation::Event {
+            event: w::Event::Effect { instance: 6, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        controls[3].operation,
+        w::ControlOperation::Choice { .. }
+    ));
+    let w::ControlOperation::Repeat { maximum, .. } = &controls[6].operation else {
+        unreachable!()
+    };
+    assert_eq!(maximum, &setup::integer(0));
+    assert!(matches!(
+        controls[9].operation,
+        w::ControlOperation::Await { clock: 4, .. }
+    ));
+    assert!(matches!(
+        controls[13].operation,
+        w::ControlOperation::Commit { instance: 9, .. }
+    ));
+    assert_eq!(declaration.bindings[5].kind, w::BindingKind::Attempt);
+    assert_eq!(declaration.bindings[6].kind, w::BindingKind::Effect);
+    assert_eq!(declaration.bindings[9].kind, w::BindingKind::Commit);
+    assert_eq!(declaration.bindings[10].kind, w::BindingKind::Progress);
+    assert_eq!(
+        declaration.bindings[10].subject,
+        w::Subject::Control { control: handle(9) }
+    );
+    assert_eq!(declaration.bindings[10].requires, [4]);
+    // These are independent future input requirements, not runtime identities.
+    assert_ne!(
+        declaration.bindings[5].subject,
+        declaration.bindings[6].subject
+    );
+    let mutants: [(fn(&mut Vec<w::Control>), Error); 7] = [
+        (
+            |controls| {
+                let w::ControlOperation::Choice { cases, .. } = &mut controls[3].operation else {
+                    unreachable!()
+                };
+                cases[1].label = "yes".into();
+            },
+            Error::Invalid(Invalid::Duplicate),
+        ),
+        (
+            |controls| {
+                let w::ControlOperation::Choice { cases, .. } = &mut controls[3].operation else {
+                    unreachable!()
+                };
+                cases[1].body = handle(4);
+            },
+            Error::Invalid(Invalid::Owner),
+        ),
+        (
+            |controls| {
+                let w::ControlOperation::Repeat { maximum, .. } = &mut controls[6].operation else {
+                    unreachable!()
+                };
+                *maximum = setup::integer(-1);
+            },
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            |controls| {
+                let w::ControlOperation::Await { after, .. } = &mut controls[9].operation else {
+                    unreachable!()
+                };
+                *after = w::AwaitAnchor::Event { node: handle(4) };
+            },
+            Error::Invalid(Invalid::Control),
+        ),
+        (
+            |controls| {
+                let w::ControlOperation::Await { clock, .. } = &mut controls[9].operation else {
+                    unreachable!()
+                };
+                *clock = 5;
+            },
+            Error::Invalid(Invalid::Binding),
+        ),
+        (
+            |controls| {
+                let w::ControlOperation::Event {
+                    event: w::Event::Effect { attempt, .. },
+                    ..
+                } = &mut controls[2].operation
+                else {
+                    unreachable!()
+                };
+                *attempt = handle(4);
+            },
+            Error::Invalid(Invalid::Control),
+        ),
+        (
+            |controls| {
+                let w::ControlOperation::Commit { instance, .. } = &mut controls[13].operation
+                else {
+                    unreachable!()
+                };
+                *instance = 6;
+            },
+            Error::Invalid(Invalid::Binding),
+        ),
+    ];
+    for (mutate, expected) in mutants {
+        let mut offered = fixture.package.clone();
+        let w::Body::Protocol { controls, .. } = &mut offered.declarations[0].body else {
+            unreachable!()
+        };
+        mutate(controls);
+        failure(&fixture.offered(&offered), expected);
+    }
+    let mut offered = fixture.package.clone();
+    let w::Body::Protocol { causal_edges, .. } = &mut offered.declarations[0].body else {
+        unreachable!()
+    };
+    causal_edges
+        .iter_mut()
+        .find(|edge| edge.kind == w::EdgeKind::RepeatProgress)
+        .unwrap()
+        .maximum = w::Nullable(Some(setup::integer(1)));
+    failure(&fixture.offered(&offered), Error::Invalid(Invalid::Control));
+    let await_mutants: [fn(&mut Vec<w::BindingRequirement>); 3] = [
+        |bindings| {
+            bindings.pop();
+        },
+        |bindings| bindings[10].subject = w::Subject::Control { control: handle(6) },
+        |bindings| bindings[10].requires.clear(),
+    ];
+    for mutate in await_mutants {
+        let mut offered = fixture.package.clone();
+        mutate(&mut offered.declarations[0].bindings);
+        failure(&fixture.offered(&offered), Error::Invalid(Invalid::Binding));
     }
 }

@@ -774,7 +774,11 @@ impl Graph<'_, '_> {
                 }
                 Origin::Selected { value } => {
                     let target = self.local(owner, value, Local::Value)?;
-                    edge(&mut graph, index, target, self.work)?;
+                    // A mixed-origin expression names itself as the selection
+                    // that produced its provenance; it does not evaluate itself.
+                    if target != index {
+                        edge(&mut graph, index, target, self.work)?;
+                    }
                 }
             }
             let mut child = |this: &mut Self, handle: &Handle| -> Result {

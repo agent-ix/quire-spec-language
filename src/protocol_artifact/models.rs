@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use quire_contract_ir as ir;
 
 use super::{
-    wire as w, work::Work, AdmittedModel, Dimension, Error, Expected, Invalid, Unsupported,
+    wire as w, work::Work, AdmittedModel, Dimension, Error, Invalid, SuppliedDependency,
+    Unsupported,
 };
 use crate::checking::{Catalog, NativeType};
 use crate::native_model::{
@@ -57,17 +58,18 @@ struct View<'a> {
 
 pub(super) fn validate(
     package: &w::Package,
-    expected: &Expected<'_>,
+    expected_models: &[AdmittedModel<'_>],
+    expected_dependencies: &[SuppliedDependency<'_>],
     work: &mut Work,
 ) -> Result<(), Error> {
-    if package.models.len() != expected.models.len() {
+    if package.models.len() != expected_models.len() {
         return Err(Error::Invalid(Invalid::Inventory));
     }
-    work.charge(Dimension::Models, expected.models.len())?;
+    work.charge(Dimension::Models, expected_models.len())?;
     let mut supplied = BTreeMap::new();
     let mut owners = BTreeMap::new();
     let mut sources = BTreeMap::new();
-    for model in expected.models {
+    for model in expected_models {
         work.visit()?;
         charge_ref(model.artifact, work)?;
         work.charge(Dimension::Entries, 3)?;
@@ -102,7 +104,7 @@ pub(super) fn validate(
         }
     }
     let mut dependencies = BTreeMap::new();
-    for dependency in expected.dependencies {
+    for dependency in expected_dependencies {
         work.visit()?;
         charge_ref(dependency.artifact, work)?;
         work.charge(Dimension::Entries, 1)?;

@@ -136,6 +136,7 @@ pub fn encode_candidate(package: &wire::Package, limits: Limits) -> Report<Candi
     let mut work = Work::new(limits);
     let result = (|| {
         super::validate::numbers(package, &mut work)?;
+        work.locus = None;
         census::reserve(package, &mut work)?;
         let bytes = bytes(package, &mut work)?;
         work.bytes(bytes.len())?;
