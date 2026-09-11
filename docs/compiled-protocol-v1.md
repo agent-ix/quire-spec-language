@@ -430,7 +430,7 @@ variants and fields, never `Display` text. It is not a serialized error protocol
 | `Error::Json { line, column }` | Closed JSON shape or syntax failed at the original byte-oriented position. |
 | `Error::Numeric(NumberError)` | `NonCanonicalDecimal` or `ComponentOutOfRange` identifies `Decimal`, `Numerator` or `Denominator`; `NonPositiveDenominator` and `UnreducedRational` retain the exact numeric refusal. |
 | `Error::Invalid(Invalid)` | Recognized data violates the selected contract; discriminants below identify the violated invariant. |
-| `Error::Unsupported(Unsupported)` | `Wire`, `Feature`, `Definition` or `Profile` lacks an interpretation; `ProducerCorrespondence` or `Export` lacks the required authoritative adapter. |
+| `Error::Unsupported(Unsupported)` | `Wire`, `Feature`, `Definition` or `Profile` lacks an interpretation; `ProducerCorrespondence` or `Export` lacks the required authoritative adapter; `FamilyProof` means the native family prerequisites are not established. |
 | `Error::Incomplete(Exhaustion)` | `dimension`, successful prior `used`, next `requested`, effective `limit` and available original `locus` identify the unaffordable operation. |
 
 `Invalid` distinguishes `Selection` (independent identity mismatch), `Seal`
@@ -481,6 +481,41 @@ as that authority. The emitter independently checks references and exact model/
 type/profile correspondence while deriving the records, then uses the existing
 Rust numeric codec, bounded Serde writer and SHA-256 machinery. Failure leaves
 the partial compilation report intact but returns no accepted full-package
-artifact or external seal. This contract's new constructors/readers and full
-family graph remain implementation obligations; current component APIs do not
-already provide them.
+artifact or external seal.
+
+The Rust path is `checking::composed::proofs::discharge` →
+`protocol_artifact::native::admit` → `native::emit`. Admission borrows the actual
+proof report and independent `native::Selections`: original formal sources,
+exact source/dependency references and bytes, admitted models, contract, baseline
+and producer. Each selected source retains its opaque external artifact revision
+separately from the native/formal revision. The caller explicitly selects
+namespaces for formal-source, requirement and registered-definition revisions;
+a registered definition's semantic revision comes from its actual registered
+bytes, not the source artifact's revision label. Successful admission owns a
+private `FamilyAdmission`; `emit` takes that type and returns `EmittedPackage`
+bytes and their raw-byte digest under a fresh invocation's limits. An arbitrary
+`wire::Package`, reader result or proof witness cannot be passed as this authority.
+
+The implemented path preserves original expression/control arenas, declaration
+owners, lexical binder identities and evaluation anchors across predicate,
+state, temporal and protocol families. It requires completed native typing and
+definedness before family checks. Supported constant decisions establish their
+coverage and non-overlap directly; continuing bounded loops must establish
+observable progress. General symbolic choice/visibility proofs, unsupported
+ordered-query proofs, recovery admission and absent authoritative producer
+exports still refuse explicitly. These are remaining implementation obligations,
+not a reduced language specification. The caller retains the upstream compilation
+reports when family admission refuses; no partial package is emitted. A successful
+native emission followed by independent `read` is compiler-to-reader evidence;
+the actual `quire-protocol` consumer handoff remains separately required.
+
+Channel delivery bounds are per-send cardinalities, not elapsed time. The native
+adapter retains separate message, send, receive and delivery requirements and
+channel-local FIFO key expressions. Event binders remain records as specified by
+the native surface. Its direct payload path requires the same exact model type
+for the channel message and send/receive record. A different record/payload pair
+needs the authoritative observation correspondence and currently refuses as
+`Unsupported::Export`; no record field is guessed as the payload. This boundary
+does not forbid scalar channel declarations or grant an observation identity from
+record contents. Concrete workflow/message/delivery correspondence remains a
+consumer input requirement.
