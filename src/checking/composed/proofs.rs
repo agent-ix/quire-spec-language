@@ -30,8 +30,6 @@ pub enum ProofDisposition {
 pub enum Unsupported {
     /// Ordered query semantics cannot yet be represented by this proof graph.
     OrderedQuery,
-    /// A family control requires an authored proof interface beyond value checking.
-    FamilyControl,
     /// A required native value has no sound conversion through the existing IR.
     ValueRepresentation,
 }
@@ -117,7 +115,10 @@ impl DeclarationProof {
     pub fn authored_binding(&self) -> Option<AuthoredBinding> {
         self.binding
     }
-    /// Actual IR input environment under the supplied requirement owner.
+    /// Symbolic definedness environment under the supplied requirement owner.
+    /// Numeric domains and option/sequence structure are retained; opaque native
+    /// values use Boolean witnesses. Consult types() on the report for native
+    /// types. This environment is proof input, never executable source IR.
     pub fn environment(&self) -> Option<&ir::DeclarationEnvironment> {
         self.environment.as_ref()
     }
@@ -135,7 +136,7 @@ impl DeclarationProof {
     }
     /// Local discharge and all required native dependencies have completed.
     pub fn complete(&self) -> bool {
-        self.complete
+        self.complete && self.causes.is_empty()
     }
     /// Proof-stage result, never interchangeable with executable admission.
     pub fn disposition(&self) -> ProofDisposition {

@@ -35,6 +35,13 @@ impl From<Exhaustion> for Error {
     }
 }
 
+fn upstream(site: Site) -> Error {
+    Error::Cause(Cause {
+        site,
+        kind: CauseKind::UpstreamType,
+    })
+}
+
 pub(super) fn discharge<'p, 'r, 'a>(
     types: &'p TypeReport<'r, 'a>,
     bindings: &'p [CheckBindings],
@@ -109,24 +116,29 @@ pub(super) fn discharge<'p, 'r, 'a>(
                     Ok(authored) => {
                         output.binding = Some(authored);
                         let source = &bindings[authored.source];
-                        let typed = types.declaration(id).expect("typed result");
-                        let mut builder = Builder::new(
-                            types.binding(),
-                            typed,
-                            &source.source,
-                            &source.clauses[authored.clause],
-                            output,
-                            &mut work,
-                        )?;
-                        match builder.run(syntax) {
-                            Ok(()) => {
-                                builder.output.local_complete = true;
-                                builder.output.complete = entry.references().is_empty();
-                            }
+                        let result = (|| -> Result<()> {
+                            let typed = types.declaration(id).ok_or_else(|| upstream(site))?;
+                            let mut builder = Builder::new(
+                                types.binding(),
+                                typed,
+                                &source.source,
+                                &source.clauses[authored.clause],
+                                output,
+                                &mut work,
+                                site,
+                            )?;
+                            builder.run(syntax)?;
+                            builder.output.local_complete = true;
+                            builder.output.complete =
+                                builder.output.causes.is_empty() && entry.references().is_empty();
+                            Ok(())
+                        })();
+                        match result {
+                            Ok(()) => {}
                             Err(Error::Exhaustion(error)) => return Err(error),
                             Err(Error::Cause(cause)) => {
-                                builder.work.charge(D::Records, 1, cause.site)?;
-                                builder.output.causes.push(cause);
+                                work.charge(D::Records, 1, cause.site)?;
+                                output.causes.push(cause);
                             }
                         }
                     }
@@ -192,7 +204,6 @@ struct Pending {
 }
 
 struct Builder<'s, 'a> {
-    binding: &'s binding::Report<'a>,
     unit: &'s c::ComposedUnit,
     typed: &'s DeclarationTypes<'a>,
     scope: &'s DeclarationScope,
@@ -200,6 +211,7 @@ struct Builder<'s, 'a> {
     clause: &'s ClauseBinding,
     output: &'s mut DeclarationProof,
     work: &'s mut Work,
+    declaration_site: Site,
     keys: BTreeMap<Key<'a>, ValueKey>,
     key_info: Vec<KeyInfo>,
     graph: Vec<Node<'a>>,
@@ -217,22 +229,16 @@ impl<'s, 'a> Builder<'s, 'a> {
         clause: &'s ClauseBinding,
         output: &'s mut DeclarationProof,
         work: &'s mut Work,
-    ) -> std::result::Result<Self, Exhaustion> {
-        let unit = binding.namespace().unit(typed.unit()).expect("typed unit");
+        site: Site,
+    ) -> Result<Self> {
+        let unit = binding
+            .namespace()
+            .unit(typed.unit())
+            .ok_or_else(|| upstream(site))?;
         let scope = binding
             .scopes()
             .and_then(|scopes| scopes.declaration(typed.declaration()))
-            .expect("typed scope");
-        let site = Site {
-            declaration: typed.declaration(),
-            unit: typed.unit(),
-            expression: None,
-            span: binding
-                .namespace()
-                .syntax(typed.declaration())
-                .expect("syntax")
-                .span,
-        };
+            .ok_or_else(|| upstream(site))?;
         let mut binders = BTreeMap::new();
         for (index, binder) in scope.binders.iter().enumerate() {
             work.charge(D::Types, 1, site)?;
@@ -240,7 +246,6 @@ impl<'s, 'a> Builder<'s, 'a> {
             binders.insert(binder.span.start, index);
         }
         Ok(Self {
-            binding,
             unit,
             typed,
             scope,
@@ -248,6 +253,7 @@ impl<'s, 'a> Builder<'s, 'a> {
             clause,
             output,
             work,
+            declaration_site: site,
             keys: BTreeMap::new(),
             key_info: Vec::new(),
             graph: Vec::new(),
@@ -259,31 +265,23 @@ impl<'s, 'a> Builder<'s, 'a> {
         })
     }
     fn site(&self, at: ExprId) -> Site {
-        Site {
-            declaration: self.output.declaration,
-            unit: self.output.unit,
-            expression: Some(at),
-            span: self.unit.expressions()[at.0].span,
-        }
+        self.unit
+            .expression(at)
+            .map_or(self.declaration_site, |expression| Site {
+                declaration: self.output.declaration,
+                unit: self.output.unit,
+                expression: Some(at),
+                span: expression.span,
+            })
     }
     fn declaration_site(&self) -> Site {
-        Site {
-            declaration: self.output.declaration,
-            unit: self.output.unit,
-            expression: None,
-            span: self
-                .binding
-                .namespace()
-                .syntax(self.output.declaration)
-                .expect("syntax")
-                .span,
-        }
+        self.declaration_site
     }
-    fn ty(&self, at: ExprId) -> &'s NativeType<'a> {
+    fn ty(&self, at: ExprId) -> Result<&'s NativeType<'a>> {
         self.typed
             .node(at)
             .and_then(|node| node.ty.as_ref())
-            .expect("completed original type fact")
+            .ok_or_else(|| upstream(self.site(at)))
     }
     fn unsupported(&self, at: ExprId, kind: Unsupported) -> Error {
         Error::Cause(Cause {
@@ -362,8 +360,21 @@ impl<'s, 'a> Builder<'s, 'a> {
     }
     fn representation(&mut self, ty: &NativeType<'a>, at: ExprId) -> Result<ir::ValueType> {
         self.type_work(ty, at, 1)?;
-        proof::representation(ty, proof::Interpretation::ComposedValues)
-            .map_err(|_| self.unsupported(at, Unsupported::ValueRepresentation))
+        match proof::representation(ty, proof::Interpretation::ComposedValues) {
+            Ok(value) => Ok(value),
+            Err(proof::RepresentationError::Unsupported) => {
+                Err(self.unsupported(at, Unsupported::ValueRepresentation))
+            }
+            Err(proof::RepresentationError::Ir(diagnostic)) => {
+                self.work.charge(D::Records, 1, self.site(at))?;
+                Err(Error::Cause(Cause {
+                    site: self.site(at),
+                    kind: CauseKind::Unproved {
+                        diagnostics: vec![diagnostic],
+                    },
+                }))
+            }
+        }
     }
     fn type_work(&mut self, ty: &NativeType<'a>, at: ExprId, depth: usize) -> Result<()> {
         self.work.charge(D::Depth, depth, self.site(at))?;
@@ -483,7 +494,7 @@ impl<'s, 'a> Builder<'s, 'a> {
         }
         self.work.charge(D::Goals, 1, self.site(at))?;
         self.work.charge(D::Records, 1, self.site(at))?;
-        let representation = self.representation(self.ty(at), at)?;
+        let representation = self.representation(self.ty(at)?, at)?;
         let mut graph = self.node(Kind::Witness(graph, representation), at)?;
         graph = self.protect(graph, &path.facts, at, ir::BooleanOperator::Implication)?;
         self.work
