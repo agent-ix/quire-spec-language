@@ -42,10 +42,17 @@ pub(super) fn finish(report: &mut TypeReport<'_, '_>, work: &mut Work, site: Sit
             };
             work.charge(D::Edges, 1, site)?;
             if let Some(target) = reference.target {
+                // Upstream binding can exhaust while creating declaration records.
+                // Its namespace still names later declarations; an unvisited target
+                // keeps this caller's edge unsatisfied rather than indexing past
+                // the retained type evidence or inventing a successful target.
+                let Some(target) = states.get_mut(target.index()) else {
+                    continue;
+                };
                 // Every occurrence remains an edge; repeated calls retain their
                 // own cause locus without copying a target's complete evidence.
                 work.charge(D::Records, 1, site)?;
-                states[target.index()].incoming.push((index, site));
+                target.incoming.push((index, site));
             }
         }
     }
@@ -68,10 +75,15 @@ pub(super) fn finish(report: &mut TypeReport<'_, '_>, work: &mut Work, site: Sit
                 TypeDisposition::Refused => {
                     work.charge(D::Records, 1, site)?;
                     let target = report.declarations[target].declaration;
+                    let profile = site.expression.and_then(|expression| {
+                        report.declarations[caller]
+                            .node(expression)
+                            .map(|node| node.profile)
+                    });
                     report.declarations[caller].causes.push(TypeCause {
                         site,
                         kind: CauseKind::Dependency { target },
-                        profile: 0,
+                        profile,
                     });
                 }
                 TypeDisposition::Typed => {

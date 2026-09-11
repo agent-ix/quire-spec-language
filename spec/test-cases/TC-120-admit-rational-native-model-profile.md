@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Planned public Rust controls for
+Public Rust controls for
 [FR-041](../functional/FR-041-admit-rational-native-model-profile.md), using the
 existing source-aware JSON frontend, real IR constructors, native admission and
 historical/composed linking boundaries. Fixed original JSON and typed IR/role
@@ -75,4 +75,6 @@ semantics into historical linking. Unsupported selections, invalid fields,
 IR bounds, role mismatches and exhausted limits retain typed causes and original
 source correspondence. Actual admitted `/2` exports reach composed model binding;
 that outcome does not certify expressions, execute rational arithmetic or
-complete compiler #40. All controls remain planned until implemented and run.
+complete compiler #40. Public controls are implemented in
+`tests/native_model_profiles.rs` and pass locally. PR review corrections and
+broader assurance acceptance remain separate from these executed controls.

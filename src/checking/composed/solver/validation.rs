@@ -12,7 +12,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                 self.output.causes.push(TypeCause {
                     site,
                     kind: CauseKind::ModelDomain { input },
-                    profile: 0,
+                    profile: None,
                 });
             }
         }
