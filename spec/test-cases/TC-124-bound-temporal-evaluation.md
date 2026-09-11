@@ -13,52 +13,68 @@ relationships:
 Public Rust API controls for
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). Each case
 derives its expected charges from the authored declaration, the supplied trace
-shape and the published charging contract, never from the run's own usage. Each
-numbered group corresponds to the matching acceptance criterion.
+shape and the counter definitions published in
+[the temporal evaluation contract](../../docs/native-temporal-evaluation.md)
+under accounting label `quire.native.temporal-work/1`, never from the run's own
+reported usage. Each numbered group corresponds to the matching acceptance
+criterion.
 
-Controls execute in `tests/composed_temporal_limits.rs`. Property groups enumerate
-bounded formula, interval and instance families deterministically; no randomized
-campaign or fuzzing result is claimed.
+Controls execute in `tests/composed_temporal_limits.rs`. Groups 1 and 5 enumerate
+bounded formula, interval and ceiling families deterministically over a declared
+finite population; group 3 generates obligation and eviction schedules from a
+declared finite model. No randomized campaign, fuzzing result or mutation-adequacy
+score is claimed.
 
 ## Test Procedure
 
-1. Enumerate nested future and past formulas whose composed horizon or history
-   need approaches and then exceeds the checked integer domain, including
-   intervals at the admitted upper extremum and a nesting depth whose product
-   overflows. Require rejection before any position is visited, with the overflow
-   named against its operator and interval. Require that no computation wraps,
-   saturates or narrows silently.
-2. Independently exhaust the work ceiling, the active-instance ceiling and the
-   retention ceiling against otherwise evaluable declarations. Require each to
-   produce an incomplete or refused result naming the reached limit and the
-   affected obligation. Require that the returned truth field carries no `true`
-   and no `false` in any of the three cases, including where the observed prefix
-   would have settled the obligation had evaluation continued.
-3. Drive an unsettled obligation whose required valuations and captures remain
-   needed, and require them retained across incremental re-evaluation. Then force
-   eviction of one required valuation and one required capture and require an
-   explicit incomplete result that records the loss, names the evicted subject and
-   retains the obligation identity. Require that no eviction silently narrows the
-   evaluated interval.
+1. Enumerate the declared finite population of nested future and past formulas
+   whose composed horizon or history need approaches and then exceeds the checked
+   i64 domain, including intervals at the admitted upper extremum and a nesting
+   depth whose composition overflows. Require rejection before any position is
+   visited, with reported `positions` usage zero and the overflow named against
+   its operator and interval. Compare each accepted composed horizon against an
+   independently computed checked value, and require refusal rather than a wrapped,
+   saturated or narrowed result.
+2. Independently force each of the five stops against otherwise evaluable
+   declarations: horizon overflow, work exhaustion, active-instance exhaustion,
+   capture exhaustion and retention exhaustion. Require each to produce an
+   incomplete or refused result naming the reached dimension and the affected
+   obligation. Require the returned truth field to be absent in all five cases,
+   including a case whose observed prefix would have settled the obligation had
+   evaluation continued.
+3. Generate obligation populations paired with eviction schedules over a declared
+   finite model: for each unsettled obligation, the set of retained valuations and
+   captures it still requires, and an eviction point inside that set. Drive
+   incremental re-evaluation and require every still-required record retained until
+   the obligation settles. At each eviction point require an explicit incomplete
+   result naming the evicted subject and retaining the obligation identity, and
+   require the evaluated interval unchanged rather than silently narrowed.
 4. Evaluate one declaration to a retained result, then re-evaluate with a changed
-   work ceiling, a changed active-instance ceiling and an admitted restoration
-   state. Require each to produce a distinct result identity and require the
-   earlier result not to be reused or rewritten. Require an unchanged
-   configuration to reproduce the identical result identity.
-5. For each charged dimension, test a zero ceiling, the exact required ceiling, a
-   one-step-insufficient ceiling and a hard-clamped ceiling. Require the first
-   unaffordable operation to remain unperformed, require reported usage to reflect
-   only successful charges, and require a retry under sufficient ceilings to
-   produce the full result from unmutated inputs. Exercise counter overflow through
-   the public accounting boundary.
+   work ceiling, a changed active-instance ceiling, a changed clock binding, a
+   changed declared clock parameter and an admitted restoration state. Require each
+   to produce a distinct result identity, and require the earlier result neither
+   reused nor rewritten. Require an unchanged configuration to reproduce the
+   identical result identity, and require a ceiling above the published default to
+   clamp while a zero ceiling is preserved.
+5. For each of the eight charged dimensions, test a zero ceiling, the exact
+   required ceiling, a one-step-insufficient ceiling and a ceiling above the
+   published default. Require the first unaffordable operation to remain
+   unperformed, require reported usage to reflect only successful charges and to
+   distinguish the peak dimensions from the cumulative ones, and require a retry
+   under sufficient ceilings to produce the full result from unmutated inputs.
+   Exercise counter overflow through the public accounting boundary.
 
 ## Expected Results
 
-Every resource stop is a typed incomplete or refused result that retains the
+Every resource stop is a typed incomplete or refused result retaining the
 obligation, position and limit identity. No exhaustion, overflow or eviction path
-produces a Boolean truth, and no ceiling change reuses a prior result.
+produces a Boolean truth, and no changed ceiling, profile, clock binding or
+declared clock parameter reuses a prior result.
 
-Mutation-adequacy measurement of this suite — whether it would detect an illicit
-Boolean fallback introduced into each exhaustion path — remains outstanding
-assurance work recorded on the owning ticket. Catalog validation establishes
-document conformance, not test completion.
+Mutation-adequacy measurement of this suite — whether it would detect a Boolean
+returned from each forced stop — is not performed here and is recorded as
+outstanding assurance work on compiler
+[#38](https://github.com/agent-ix/quire-spec-language/issues/38). Agent F's
+observation storage, replay and lateness mechanisms are outside this case; every
+eviction above is forced through the evaluator's own retention table. Catalog
+validation establishes document conformance, not test completion.
