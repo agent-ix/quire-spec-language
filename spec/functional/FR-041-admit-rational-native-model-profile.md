@@ -135,7 +135,8 @@ located JSON producer. This explicit extension supplies
 [FR-040](FR-040-check-composed-values.md) under compiler
 [#35](https://github.com/agent-ix/quire-spec-language/issues/35) and
 [#36](https://github.com/agent-ix/quire-spec-language/issues/36).
-[TC-120](../test-cases/TC-120-admit-rational-native-model-profile.md) is planned.
+[TC-120](../test-cases/TC-120-admit-rational-native-model-profile.md) has implemented
+public controls with passing local runs; PR review corrections are underway.
 The pinned IR already owns rational declarations, constructors, canonicalization
 and arithmetic; this requirement changes native producer selection/admission.
 It does not implement expression checks, execution, D's unrelated producer
