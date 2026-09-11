@@ -1,5 +1,55 @@
 # quire-spec-language
 
+`parse_native` and `parse_native_source` select the authored edition and return
+either a historical unit or a typed, source-located `1-draft` syntax unit.
+The composed path extends the existing Logos recognizer and Pratt parser across
+predicates, state, temporal and choreography forms. [Issue #35](https://github.com/agent-ix/quire-spec-language/issues/35)
+tracks this work under [FR-035](spec/functional/FR-035-parse-composed-native-units.md);
+[package linking](spec/functional/FR-036-link-composed-native-packages.md) continues
+with `linking::composed::admit_namespace`: exact source inventory, package-wide
+native names, typed declaration references and cycle/dependent refusals under
+explicit work limits. `linking::composed::binding::bind` then resolves exact
+supplied definition/rule closures, native model exports, lexical/capture scopes
+and protocol structural references, preserving dependency-local refusals and
+unfinished work. Its `NamesResolved` result precedes expression/profile checking
+and complete runtime-role derivation. `checking::composed::admit_types` now checks
+shared values across predicates, state, temporal and protocol declarations. It
+retains exact nominal types, profiles, query shapes, capture provenance and
+dependency-local refusals, with pending proof/runtime obligations. Its `Typed`
+disposition establishes type admission only; exact authored formal sources supply
+the existing IR rational normalizer. `checking::composed::proofs::discharge`
+then checks supported guarded values through the existing IR prover and exact
+authored `CheckBindings`, preserving actual goals and dependent refusals.
+Ordered queries retain their original binder, collection and body through
+definedness and native emission. Sum admission checks every prefix in supported
+integer or denominator-one rational domains; broader rational sum transfer
+remains explicitly unsupported. General family admission and runtime validation
+remain open. Existing `parse`, format, CLI and checked-package APIs retain their
+historical profile; parsing alone grants no semantic admission or execution.
+
+Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
+
+The `protocol_artifact` library module supplies typed wire records, a bounded
+canonical encoder and a parser-free reader under
+[compiler #40](https://github.com/agent-ix/quire-spec-language/issues/40).
+`read` checks independently selected artifact/source/dependency references,
+actual admitted model exports, typed local handles and structural control edges.
+`encode_candidate` returns transport bytes; its result and reader admission
+remain separate from native compilation authority. `protocol_artifact::native::admit`
+consumes the actual composed proof report and independently selected source,
+definition, model and producer inputs. It derives a constructor-private
+`FamilyAdmission` from supported complete native families;
+`native::emit` accepts only that authority and returns canonical bytes.
+See the
+[wire contract](docs/compiled-protocol-v1.md) for the exact encoding, identity
+domains and limits. The [numeric component](spec/functional/FR-038-encode-exact-protocol-numbers.md)
+uses tagged canonical decimal strings for signed-64 integers and reduced
+rationals, with typed validation errors. Real source-to-reader tests exercise
+native predicate, state, temporal and protocol emission. General decision
+proofs, recovery admission, unavailable producer exports and the actual
+producer-to-B handoff remain open; the supported boundary is stated in the
+wire contract.
+
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
 The library links exact imports and scoped names against supplied Contract IR
@@ -22,6 +72,14 @@ the existing model checks. Errors retain the original source and typed cause.
 The [example model](tests/fixtures/native-rule-model.json) shows the admitted source
 shape. Run `cargo test --test model_source` for fixed-artifact, failure and runtime
 cases. Test helpers now call this production frontend.
+
+Explicit `model_source::FORMAT_V2` selects `native-rule-model/2` and admits exact
+rational domains through `native-state-model/2`, retaining the actual IR bounds,
+units and source locations. Composed model exports consume these types; historical
+linking refuses a selected `/2` model. This supplies the model prerequisite for
+[composed value checking](spec/functional/FR-040-check-composed-values.md), whose
+type admission and supported guarded proofs are available through the composed
+checker. Complete runtime obligations remain open.
 
 `checking::check` consumes a native linked package, exact `CheckBindings` and
 caller-lowered `CheckLimits`. It returns the original source/AST with native
