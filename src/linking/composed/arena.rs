@@ -18,23 +18,10 @@ pub(super) fn owned<'a, T>(
     span: impl Fn(&T) -> Span,
     work: &mut Work,
 ) -> Result<&'a [T], Exhaustion> {
-    let mut boundary = |at| -> Result<usize, Exhaustion> {
-        let mut low = 0;
-        let mut high = nodes.len();
-        while low < high {
-            work.charge(Dimension::References, 1)?;
-            let middle = low + (high - low) / 2;
-            if span(&nodes[middle]).start < at {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        Ok(low)
-    };
-    let start = boundary(owner.start)?;
-    let end = boundary(owner.end)?;
-    Ok(&nodes[start..end])
+    let range = crate::syntax::composed::arena::owned_range(nodes, owner, span, || {
+        work.charge(Dimension::References, 1)
+    })?;
+    Ok(&nodes[range])
 }
 
 #[cfg(test)]
