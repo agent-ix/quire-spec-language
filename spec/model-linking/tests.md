@@ -107,6 +107,7 @@ invented for that criterion.
 | TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 Planned |
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
+| TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
 
 ## Composed language admission (L2)
 
@@ -163,6 +164,23 @@ establishes complete compiler #35/#40.
 | FR-041 | FR-041-AC-5 | TC-120 | 🚧 Planned |
 | FR-041 | FR-041-AC-6 | TC-120 | 🚧 Planned |
 | FR-041 | FR-041-AC-7 | TC-120 | 🚧 Planned |
+
+## Compiled protocol numeric component
+
+The separate numeric component of compiler #40 is tracked below; it does not
+establish composed parsing, model admission or source-to-artifact correspondence.
+
+| Functional Req | Acceptance Criteria | Test Cases | Status |
+| --- | --- | --- | --- |
+| FR-038 | FR-038-AC-1 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-2 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-3 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-4 | TC-117 | ✅ Passed |
+| FR-038 | FR-038-AC-5 | TC-117 | ✅ Passed |
+
+TC-117 executes nine public Rust API tests in `tests/protocol_number.rs` with
+`#[trace]` tags for these five criteria. This status records the local component
+run, not a Quire-engine coverage or complete compiler-to-consumer claim.
 
 ## Six coverage rules
 
