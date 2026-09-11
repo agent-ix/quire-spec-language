@@ -3,6 +3,9 @@
 // the receipt/target comparisons specify the distinct recovery conditions.
 protocol Flow using P over (view: M::Workflow) on origin {
     role Service on M::Workflow;
+    role Provider on M::Workflow;
+    channel Decisions from Provider to Service carries M::Notice
+        ordering unordered delivery [1,1];
 
     compensate Full for Main::Applied as (forwardFull: M::Workflow)
         by Service on M::Workflow::apply using T clock "full-recovery" {
@@ -44,6 +47,22 @@ protocol Flow using P over (view: M::Workflow) on origin {
 
     run sequence Main {
         check Ready using G { Allowed(view.ratio) and deref(view.peer).ready };
+        parallel Gather {
+            branch left sequence Left {
+                send LeftSent via Decisions as (leftSent: M::Notice) { true };
+                receive LeftReply via Decisions of LeftSent as (leftReply: M::Notice) { true };
+            }
+            branch right sequence Right {
+                send RightSent via Decisions as (rightSent: M::Notice) { true };
+                receive RightReply via Decisions of RightSent as (rightReply: M::Notice) { true };
+            }
+        } join all [left,right];
+        choice Outcome by Service visible (leftReply.ready,rightReply.ready) {
+            case ready when { leftReply.ready and rightReply.ready }
+                event Confirmed by Service as (confirmed: M::Notice) { true };
+            case notReady when { not (leftReply.ready and rightReply.ready) }
+                event Unconfirmed by Service as (unconfirmed: M::Notice) { true };
+        }
         attempt Tried by Service on M::Workflow::apply contracts [BeforeApply,AfterApply]
             as (attempted: M::Notice) { attempted.ready };
         effect Applied of Main::Tried as (applied: M::Workflow) { Allowed(applied.ratio) };
