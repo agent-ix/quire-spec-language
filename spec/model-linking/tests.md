@@ -15,8 +15,21 @@ and the full workflow remain open. TM-001/002 retain their existing native/audit
 
 Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065's
 hard exhaustion checks using admitted nested sequences. SR-263 records actual
-local execution. Source-profile reconciliation remains compiler #30; issue #28
-still prevents the engine from verifying these authored status-column labels.
+local execution. Source-profile reconciliation remains compiler #30.
+
+The status-column defect in #28 is not repairable from this repository. The
+shared `spec-artifacts-process` catalog contradicts itself: the TestMatrix
+archetype asserts the `functional_coverage` table columns as
+`Coverage Status`, while `traceability.status.column` selects `Status`. Authoring
+either spelling therefore fails the other check — renaming the column to `Status`
+makes `quire validate` report a column-assert failure at line 28, and keeping
+`Coverage Status` makes `quire coverage` skip status classification with
+`status-column-matches-nothing`. The mismatch must be corrected at the catalog,
+not forked here; remaining work: #28. A local negative control confirmed the
+engine does classify these rows once the spellings agree: with the column named
+`Status`, a row claiming `✅ Passed` against an unbacked test case is reported as
+a status lie. Until the catalog is fixed, every authored label in this matrix
+records local execution and trace binding, not engine-verified status.
 
 ## Requirements Traceability
 
@@ -63,6 +76,16 @@ still prevents the engine from verifying these authored status-column labels.
 | FR-017 | FR-017-AC-1 | TC-054 | ✅ Passed |
 | FR-017 | FR-017-AC-3 | TC-030, TC-031, TC-032, TC-033, TC-034 | ✅ Passed |
 | FR-017 | FR-017-AC-4 | TC-001, TC-002, TC-003, TC-004, TC-006 | ✅ Passed |
+| FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-3 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-4 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-5 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-6 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-7 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-10 | TC-121 | 🚧 Planned |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -194,26 +217,57 @@ run, not a Quire-engine coverage or complete compiler-to-consumer claim.
 
 [TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md) covers the
 full [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) contract.
+Its per-criterion rows are in the Functional Requirement Coverage table above
+rather than in a second local table, so one row per criterion carries the
+declaration the engine reconciles.
+
+### Owning native Quire requirements
+
+FR-042 owns the compiled-protocol wire contract, its canonical encoding and the
+parser-free reader. It consumes, and does not restate,
+[FR-035](../functional/FR-035-parse-composed-native-units.md) composed syntax,
+[FR-036](../functional/FR-036-link-composed-native-packages.md) composed package
+linking, [FR-040](../functional/FR-040-check-composed-values.md) typed values and
+guarded definedness, [FR-041](../functional/FR-041-admit-rational-native-model-profile.md)
+the rational model profile and [FR-038](../functional/FR-038-encode-exact-protocol-numbers.md)
+the exact numeric codec. Native Quire source stays the sole editable formal
+source; nothing in this section grants a second frontend or canonicalizer.
+
+### Evidence backing each criterion
+
 `tests/protocol_artifact.rs` exercises the reader/encoder with independently
 supplied wire selections and actual admitted model exports.
-`tests/native_protocol_emission.rs` and `tests/native_population_emission.rs`
-exercise real source through native family admission, emission and independent
-reading, including exact population requirements and substituted or surplus
-inputs. The actual producer-to-B consumer handoff and remaining full-family
-obligations stay open; full acceptance remains planned.
+`tests/native_protocol_emission.rs`, `tests/native_population_emission.rs`,
+`tests/native_choice_emission.rs`, `tests/native_compensation_emission.rs`,
+`tests/native_query_emission.rs`, `tests/native_domain_event_boundaries.rs`,
+`tests/native_domain_event_choices.rs` and
+`tests/native_mixed_observation_choices.rs` drive real source through native
+family admission, emission and independent reading.
+`tests/native_digest_domains.rs` proves the producer-owned source/model/config
+digest domains stay separate from the compiled-artifact seal and from a
+consumer's RFC 8785/JCS protocol-result identity: an exact producer reference
+survives emission and reading, either substituted digest refuses, and a
+recanonicalized producer reference refuses at producer admission.
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
-| --- | --- | --- | --- |
-| FR-042 | FR-042-AC-1 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-2 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-3 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-4 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-5 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-6 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-7 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-8 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-9 | TC-121 | 🚧 Planned |
-| FR-042 | FR-042-AC-10 | TC-121 | 🚧 Planned |
+FR-042-AC-1 through FR-042-AC-9 each carry `#[trace("TC-121", "FR-042-AC-n")]`
+tags on executed Rust tests, and `quire coverage --scope . --json` reports each of
+those minted acceptance-criterion targets as backed; FR-042-AC-10 is reported
+unbacked. Per-criterion backing therefore comes from the minted criterion
+targets, which the engine does reconcile; the authored status labels themselves
+stay unclassified while #28's catalog column mismatch stands. This status
+records engine-verified trace binding plus a local serial test run; it is not a
+claim of complete family semantics or of executed consumer integration.
+
+### Consumer handoff
+
+FR-042-AC-10 stays planned. No test carries its tag, the engine reports it
+unbacked, and the actual producer-to-consumer handoff has not been executed. The
+downstream intake of the native compiler artifact is
+[quire-protocol#11](https://github.com/agent-ix/quire-protocol/issues/11) under
+epic [quire-protocol#14](https://github.com/agent-ix/quire-protocol/issues/14);
+its integration caller owns
+[IT-001](ix://agent-ix/quire-protocol/IT-001) on the consumer side. Remaining
+work: FR-042-AC-10 and that handoff.
 
 ## Six coverage rules
 
