@@ -31,6 +31,11 @@ SR-114/115; PR specification review is under spec/reviews/native-lowering/.
 | FR-033 | FR-033-AC-3 | TC-111 | ✅ Tested |
 | FR-033 | FR-033-AC-4 | TC-111 | ✅ Tested |
 | FR-033 | FR-033-AC-5 | TC-111 | ✅ Tested |
+| FR-034 | FR-034-AC-1 | TC-112 | ✅ Tested |
+| FR-034 | FR-034-AC-2 | TC-112 | ✅ Tested |
+| FR-034 | FR-034-AC-3 | TC-112 | ✅ Tested |
+| FR-034 | FR-034-AC-4 | TC-112 | ✅ Tested |
+| FR-034 | FR-034-AC-5 | TC-112 | ✅ Tested |
 
 ## Test Case Summary
 
@@ -40,3 +45,4 @@ SR-114/115; PR specification review is under spec/reviews/native-lowering/.
 | TC-093 | Unsupported forms and bounded work | Integration | P1 | FR-009 | ✅ Tested |
 | TC-094 | Actual generated truth and activation through IT-008 | Integration | P1 | FR-009 | 🚧 Generated activation deferred |
 | TC-111 | Bounded integer IR and explicit command target | Integration | P1 | FR-033 | ✅ Tested |
+| TC-112 | State fields and validated primitive inputs | Integration | P1 | FR-034 | ✅ Tested |
