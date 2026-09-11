@@ -17,14 +17,17 @@ use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
+#[allow(dead_code)]
 pub fn model(name: &str) -> NativeModel {
     model_with_maximum(name, 5)
 }
 
+#[allow(dead_code)]
 pub fn model_with_maximum(name: &str, maximum: u32) -> NativeModel {
     try_model_with_maximum(name, maximum).expect("admitted model fixture")
 }
 
+#[allow(dead_code)]
 pub fn try_model_with_maximum(
     name: &str,
     maximum: u32,
