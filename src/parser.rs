@@ -5,7 +5,11 @@ use crate::syntax::*;
 use crate::token::Kind as K;
 use crate::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
 
-/// Parse the selected native grammar. Model imports stay unresolved here.
+mod composed;
+use crate::syntax::composed as c;
+
+/// Parse the historical `0-draft` grammar. Model imports stay unresolved here.
+/// Use [`parse_native`] for explicit source-selected edition dispatch.
 pub fn parse(
     identity: SourceIdentity,
     path: impl Into<String>,
@@ -17,7 +21,7 @@ pub fn parse(
     parse_source(source, limits)
 }
 
-/// Parse an already loaded (and optionally digest-verified) immutable source.
+/// Parse a historical source already loaded (and optionally digest-verified).
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
@@ -31,15 +35,40 @@ pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Di
         ));
     }
     let tokens = lexer::lex(&source, limits)?;
-    let mut parser = Parser {
-        source,
-        tokens,
-        at: 0,
-        nodes: Vec::new(),
-        depth: 0,
-        limits,
-    };
+    let mut parser = Parser::new(source, tokens, limits);
     parser.unit()
+}
+
+/// Parse the source-selected historical or composed edition, without semantic admission.
+pub fn parse_native(
+    identity: SourceIdentity,
+    path: impl Into<String>,
+    bytes: &[u8],
+    limits: Limits,
+) -> Result<c::NativeUnit, Box<Diagnostic>> {
+    let limits = limits.bounded();
+    let source = Source::read(identity, path, bytes, limits.source_bytes)?;
+    parse_native_source(source, limits)
+}
+
+/// Edition-dispatched parsing of an immutable, optionally digest-verified source.
+pub fn parse_native_source(
+    source: Source,
+    limits: Limits,
+) -> Result<c::NativeUnit, Box<Diagnostic>> {
+    let limits = limits.bounded();
+    if source.text().len() > limits.source_bytes {
+        return Err(crate::diagnostic::error(
+            &source,
+            Code::ResourceExhausted,
+            Phase::Source,
+            0,
+            0,
+            "source byte budget exhausted",
+        ));
+    }
+    let tokens = lexer::recognize(&source, limits)?;
+    Parser::new(source, tokens, limits).native_unit()
 }
 
 struct Parser {
@@ -49,9 +78,51 @@ struct Parser {
     nodes: Vec<Expr>,
     depth: usize,
     limits: Limits,
+    composed: bool,
+    values: Vec<c::Expression>,
+    temporal: Vec<c::Temporal>,
+    controls: Vec<c::Control>,
+    syntax_nodes: usize,
 }
 
 impl Parser {
+    fn new(source: Source, tokens: Vec<Token>, limits: Limits) -> Self {
+        Self {
+            source,
+            tokens,
+            at: 0,
+            nodes: Vec::new(),
+            depth: 0,
+            limits,
+            composed: false,
+            values: Vec::new(),
+            temporal: Vec::new(),
+            controls: Vec::new(),
+            syntax_nodes: 0,
+        }
+    }
+
+    fn expression_span(&self, id: ExprId) -> Span {
+        if self.composed {
+            self.values[id.0].span
+        } else {
+            self.nodes[id.0].span
+        }
+    }
+
+    fn add_operator(
+        &mut self,
+        kind: ExprKind,
+        start: usize,
+        end: usize,
+        operator_span: Span,
+    ) -> Result<ExprId, Box<Diagnostic>> {
+        let id = self.add(kind, start, end)?;
+        if self.composed {
+            self.values[id.0].operator_span = Some(operator_span);
+        }
+        Ok(id)
+    }
     fn peek(&self) -> &Token {
         &self.tokens[self.at]
     }
@@ -93,10 +164,12 @@ impl Parser {
         })
     }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {
-        if matches!(
-            self.peek().kind,
-            Kind::Unsupported | Kind::Fractional | Kind::Slash | Kind::OpenBracket
-        ) {
+        if !self.composed
+            && matches!(
+                self.peek().kind,
+                Kind::Unsupported | Kind::Fractional | Kind::Slash | Kind::OpenBracket
+            )
+        {
             let name = self.source.slice(self.peek().span).expect("token span");
             self.failure(
                 Code::UnsupportedConstruct,
@@ -180,7 +253,13 @@ impl Parser {
         })
     }
     fn model(&mut self) -> Result<ModelImport, Box<Diagnostic>> {
-        let start = self.expect(K::Model)?.span.start;
+        self.import(K::Model)
+    }
+    fn import(&mut self, keyword: K) -> Result<ModelImport, Box<Diagnostic>> {
+        if self.composed {
+            self.charge(self.peek().span)?;
+        }
+        let start = self.expect(keyword)?.span.start;
         let alias = self.identifier()?;
         self.expect(K::Equal)?;
         let package = self.string()?;
@@ -245,6 +324,9 @@ impl Parser {
         Ok(())
     }
     fn add(&mut self, kind: ExprKind, start: usize, end: usize) -> Result<ExprId, Box<Diagnostic>> {
+        if self.composed {
+            return self.add_value(c::ValueKind::Shared(kind), Span { start, end });
+        }
         if self.nodes.len() >= self.limits.nodes {
             return Err(self.failure(
                 Code::ResourceExhausted,
@@ -277,7 +359,7 @@ impl Parser {
             return self.add(
                 ExprKind::Let { name, value, body },
                 start,
-                self.nodes[body.0].span.end,
+                self.expression_span(body).end,
             );
         }
         if self.eat(K::If) {
@@ -293,7 +375,7 @@ impl Parser {
                     else_value,
                 },
                 start,
-                self.nodes[else_value.0].span.end,
+                self.expression_span(else_value).end,
             );
         }
         self.binary(0)
@@ -307,7 +389,10 @@ impl Parser {
     fn binary_inner(&mut self, minimum: u8) -> Result<ExprId, Box<Diagnostic>> {
         let mut left = self.unary()?;
         let mut comparison_seen = false;
-        while let Some(op) = binary_op(&self.peek().kind) {
+        while let Some(op) = binary_op(&self.peek().kind).or_else(|| {
+            (self.composed && matches!(self.peek().kind, K::Slash | K::Mod))
+                .then_some(BinaryOp::Multiply)
+        }) {
             if op.power() < minimum {
                 break;
             }
@@ -317,14 +402,37 @@ impl Parser {
             // A conjunction starts a new comparison operand; a second relation
             // without it is deliberately invalid rather than a guessed chain.
             comparison_seen = op.comparison();
-            self.take();
+            let operator = self.take();
             let right_min = op.power() + u8::from(op != BinaryOp::Implies);
             let right = self.binary(right_min)?;
-            left = self.add(
-                ExprKind::Binary { op, left, right },
-                self.nodes[left.0].span.start,
-                self.nodes[right.0].span.end,
-            )?;
+            let span = Span {
+                start: self.expression_span(left).start,
+                end: self.expression_span(right).end,
+            };
+            left = if self.composed && matches!(operator.kind, K::Slash | K::Mod) {
+                self.add_value(
+                    c::ValueKind::Product {
+                        op: Spanned {
+                            value: if operator.kind == K::Slash {
+                                c::ProductOp::Slash
+                            } else {
+                                c::ProductOp::Mod
+                            },
+                            span: operator.span,
+                        },
+                        left,
+                        right,
+                    },
+                    span,
+                )?
+            } else {
+                self.add_operator(
+                    ExprKind::Binary { op, left, right },
+                    span.start,
+                    span.end,
+                    operator.span,
+                )?
+            };
         }
         Ok(left)
     }
@@ -337,33 +445,51 @@ impl Parser {
             } else {
                 UnaryOp::Not
             };
-            operators.push((op, token.span.start));
+            operators.push((op, token.span));
         }
         let mut argument = self.primary()?;
         while self.eat(K::Dot) {
-            let name = self.identifier()?;
+            let name = self.member()?;
             let end = self.tokens[self.at - 1].span.end;
             argument = self.add(
                 ExprKind::Field {
                     base: argument,
                     name,
                 },
-                self.nodes[argument.0].span.start,
+                self.expression_span(argument).start,
                 end,
             )?;
         }
-        for (op, start) in operators.into_iter().rev() {
-            argument = self.add(
+        for (op, operator_span) in operators.into_iter().rev() {
+            argument = self.add_operator(
                 ExprKind::Unary { op, argument },
-                start,
-                self.nodes[argument.0].span.end,
+                operator_span.start,
+                self.expression_span(argument).end,
+                operator_span,
             )?;
         }
         Ok(argument)
     }
     fn primary(&mut self) -> Result<ExprId, Box<Diagnostic>> {
+        if self.composed {
+            if let Some(value) = self.extended_primary()? {
+                return Ok(value);
+            }
+        }
         let token = self.peek().clone();
         let start = token.span.start;
+        let operator_span = matches!(
+            token.kind,
+            K::Present
+                | K::Value
+                | K::Deref
+                | K::Size
+                | K::Pre
+                | K::Forall
+                | K::Exists
+                | K::Reaches
+        )
+        .then_some(token.span);
         let kind = match token.kind {
             Kind::Text(value) => {
                 self.take();
@@ -428,7 +554,7 @@ impl Parser {
                 self.expect(K::Comma)?;
                 let target = self.expression()?;
                 self.expect(K::Comma)?;
-                let field = self.identifier()?;
+                let field = self.member()?;
                 self.expect(K::CloseParen)?;
                 ExprKind::Reaches {
                     start: first,
@@ -451,9 +577,9 @@ impl Parser {
                     ));
                 }
                 if self.eat(K::Qualify) {
-                    let name = self.identifier()?;
+                    let name = self.member()?;
                     self.expect(K::Qualify)?;
-                    let variant = self.identifier()?;
+                    let variant = self.member()?;
                     ExprKind::EnumValue {
                         model,
                         name,
@@ -466,7 +592,11 @@ impl Parser {
             _ => return Err(self.unexpected("expression")),
         };
         let end = self.tokens[self.at - 1].span.end;
-        self.add(kind, start, end)
+        let id = self.add(kind, start, end)?;
+        if self.composed {
+            self.values[id.0].operator_span = operator_span;
+        }
+        Ok(id)
     }
 }
 

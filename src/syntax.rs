@@ -2,6 +2,8 @@
 //! FR-002: located syntax and parser ceilings, before model linking or evaluation.
 use crate::source::{Source, Span, Spanned};
 
+pub mod composed;
+
 /// Exact admitted language identifier.
 pub const LANGUAGE: &str = "ix:native";
 /// Exact admitted syntax edition.
@@ -16,9 +18,11 @@ pub struct Limits {
     pub source_bytes: usize,
     /// Maximum non-comment tokens, clamped to 100,000.
     pub tokens: usize,
-    /// Maximum flat expression nodes, clamped to 50,000.
+    /// Maximum syntax nodes, clamped to 50,000. The historical path counts
+    /// expressions; the composed path also counts declarations, parameters,
+    /// captures, activation/interval records and protocol binding/control records.
     pub nodes: usize,
-    /// Maximum recursive expression nesting, clamped to 64.
+    /// Maximum delimiter or recursive parser nesting, clamped to 64.
     pub nesting: usize,
 }
 
@@ -45,7 +49,7 @@ impl Limits {
     }
 }
 
-/// Expression handle local to one ParsedUnit; not a cross-unit identity.
+/// Expression handle local to one historical or composed unit; not a cross-unit identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExprId(pub(crate) usize);
 

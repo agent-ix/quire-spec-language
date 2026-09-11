@@ -38,6 +38,6 @@ pub mod wire_format;
 pub use diagnostic::{Code, Diagnostic, Phase};
 pub use digest::ByteDigest;
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};
-pub use parser::{parse, parse_source};
+pub use parser::{parse, parse_native, parse_native_source, parse_source};
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};
 pub use syntax::{Limits, ParsedUnit};
