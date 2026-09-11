@@ -6,8 +6,8 @@ mod target;
 mod wire;
 
 pub use inputs::{
-    InputProjection, InputProjectionCode, InputProjectionError, InputProjectionLimits,
-    PrimitiveInput, PrimitiveValue,
+    InputProjection, InputProjectionCode, InputProjectionError, InputProjectionInvariant,
+    InputProjectionLimits, PrimitiveInput, PrimitiveValue,
 };
 
 pub use target::{ProjectionTarget, UnknownProjectionTarget};
@@ -28,11 +28,14 @@ pub const PROFILE: &str = ProjectionTarget::BooleanOracleV1.name();
 
 impl ProjectionTarget {
     fn admits(self, ty: &ir::ValueType) -> bool {
+        matches!(ty, ir::ValueType::Boolean)
+            || (self.admits_integers() && matches!(ty, ir::ValueType::Integer { .. }))
+    }
+
+    fn admits_integers(self) -> bool {
         match self {
-            Self::BooleanOracleV1 => matches!(ty, ir::ValueType::Boolean),
-            Self::IntegerIrV1 | Self::StateScalarIrV1 => {
-                matches!(ty, ir::ValueType::Boolean | ir::ValueType::Integer { .. })
-            }
+            Self::BooleanOracleV1 => false,
+            Self::IntegerIrV1 | Self::StateScalarIrV1 => true,
         }
     }
 }
@@ -67,7 +70,7 @@ impl From<BinaryOp> for ProjectedOperator {
 /// Caller-lowered ceilings for one fresh atomic projection.
 #[derive(Clone, Copy, Debug)]
 pub struct LoweringLimits {
-    /// Visited native nodes, including parentheses; at most 10,000.
+    /// Native nodes (including parentheses) plus field-alias candidates; at most 10,000.
     pub nodes: usize,
     /// Native nesting depth, with each clause root at one; at most 64.
     pub depth: usize,
@@ -99,7 +102,7 @@ impl LoweringLimits {
 /// Completed lowering work; a new request starts at zero.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LoweringUsage {
-    /// Native nodes visited across the complete clause population.
+    /// Native nodes and field-alias candidates visited across all clauses.
     pub nodes: usize,
     /// Greatest visited native depth.
     pub max_depth: usize,
@@ -540,7 +543,7 @@ impl ClauseLowering<'_, '_> {
         let kind = match &node.kind {
             ExprKind::Group { inner } => return self.expression(*inner, depth + 1),
             ExprKind::Boolean(value) => ir::ExpressionKind::BooleanLiteral { value: *value },
-            ExprKind::Integer(text) if self.target != ProjectionTarget::BooleanOracleV1 => {
+            ExprKind::Integer(text) if self.target.admits_integers() => {
                 let ir::ValueType::Integer { value: value_type } = primitive else {
                     return Err(self.error(
                         LoweringCode::InvalidCorrespondence,
@@ -581,11 +584,9 @@ impl ClauseLowering<'_, '_> {
             ExprKind::Unary {
                 op: UnaryOp::Negate,
                 argument,
-            } if self.target != ProjectionTarget::BooleanOracleV1 => {
-                ir::ExpressionKind::NumericNegate {
-                    operand: Box::new(self.expression(*argument, depth + 1)?),
-                }
-            }
+            } if self.target.admits_integers() => ir::ExpressionKind::NumericNegate {
+                operand: Box::new(self.expression(*argument, depth + 1)?),
+            },
             ExprKind::Binary { op, left, right } => {
                 self.binary(*op, *left, *right, depth, node.span)?
             }
@@ -620,9 +621,7 @@ impl ClauseLowering<'_, '_> {
         span: Span,
     ) -> Result<ir::ExpressionKind> {
         let operator = ProjectedOperator::from(op);
-        if self.target == ProjectionTarget::BooleanOracleV1
-            && !matches!(operator, ProjectedOperator::Boolean(_))
-        {
+        if !self.target.admits_integers() && !matches!(operator, ProjectedOperator::Boolean(_)) {
             return Err(self.error(
                 LoweringCode::Unsupported,
                 span,
@@ -718,15 +717,27 @@ impl ClauseLowering<'_, '_> {
     }
 
     fn enter(&mut self, span: Span, depth: usize) -> Result<()> {
-        if self.usage.nodes >= self.limits.nodes || depth > self.limits.depth {
+        if depth > self.limits.depth {
             return Err(self.error(
                 LoweringCode::ResourceExhausted,
                 span,
                 "native lowering node/depth limit",
             ));
         }
-        self.usage.nodes += 1;
+        self.charge_node(span)?;
         self.usage.max_depth = self.usage.max_depth.max(depth);
+        Ok(())
+    }
+
+    fn charge_node(&mut self, span: Span) -> Result<()> {
+        if self.usage.nodes >= self.limits.nodes {
+            return Err(self.error(
+                LoweringCode::ResourceExhausted,
+                span,
+                "native lowering node/depth limit",
+            ));
+        }
+        self.usage.nodes += 1; // The caller limit is clamped to 10,000.
         Ok(())
     }
 
@@ -782,10 +793,20 @@ impl ClauseLowering<'_, '_> {
             name.clone()
         } else {
             let name = loop {
-                let name = ir::SymbolName::new(format!("nativeField{}", self.next_alias)).map_err(
-                    |error| upstream(Some(self.clause.binding()), Some(span), vec![error]),
-                )?;
-                self.next_alias += 1;
+                // A collision is real work even though it emits no native node.
+                self.charge_node(span)?;
+                let ordinal = self.next_alias;
+                self.next_alias = ordinal.checked_add(1).ok_or_else(|| {
+                    self.error(
+                        LoweringCode::ResourceExhausted,
+                        span,
+                        "field alias ordinal exceeds host width",
+                    )
+                })?;
+                let name =
+                    ir::SymbolName::new(format!("nativeField{ordinal}")).map_err(|error| {
+                        upstream(Some(self.clause.binding()), Some(span), vec![error])
+                    })?;
                 if !self.declarations.contains_key(&name) && !self.used.contains_key(&name) {
                     break name;
                 }
