@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-036/040/042: concrete family prerequisites and original temporal syntax.
-//! Constant Boolean decisions need no external visibility premise. Other
-//! decisions retain an explicit missing family-proof interface.
+//! Closed decisions and received Boolean partitions have separate proof rules.
+
+mod decisions;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,6 +10,7 @@ use crate::checking::composed::proofs::{ProofDisposition, ProofReport};
 use crate::checking::composed::DeclarationTypes;
 use crate::linking::composed::definition_source::RegisteredDefinition as Definition;
 use crate::linking::composed::definitions::UseKind;
+use crate::linking::composed::scopes::{BinderKind, BinderType, DeclarationScope};
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed::{self as c, ComposedUnit};
 use crate::syntax::{BinaryOp, ExprId, ExprKind, UnaryOp};
@@ -95,7 +97,11 @@ pub(super) fn check(
                     .types()
                     .declaration(proof.declaration())
                     .ok_or(Error::Invalid(Invalid::Type))?;
-                protocol_check(unit, typed, syntax.span, source, protocol, work)?;
+                let scope = binding
+                    .scopes()
+                    .and_then(|scopes| scopes.declaration(proof.declaration()))
+                    .ok_or(Error::Invalid(Invalid::Binding))?;
+                protocol_check(unit, typed, scope, syntax.span, source, protocol, work)?;
             }
         }
     }
@@ -139,12 +145,13 @@ enum Progress {
 fn protocol_check(
     unit: &ComposedUnit,
     typed: &DeclarationTypes<'_>,
+    scope: &DeclarationScope,
     span: Span,
     source: u32,
     protocol: &c::Protocol,
     work: &mut Work,
 ) -> Result<(), Error> {
-    let constants = constants(unit, typed, source, work)?;
+    let constants = constants(unit, typed, scope, source, work)?;
     let range = c::arena::owned_range(unit.controls(), span, |node| node.span, || work.visit())?;
     let mut progress = BTreeMap::new();
     for at in range {
@@ -182,28 +189,66 @@ fn protocol_check(
                 )?
             }
             c::ControlKind::Choice { visible, cases, .. } => {
-                visible_constants(visible, &constants, work)?;
-                let mut selected = None;
-                for case in cases {
+                let mut closed = true;
+                for expression in visible
+                    .iter()
+                    .copied()
+                    .chain(cases.iter().map(|case| case.guard))
+                {
                     work.visit()?;
-                    locate(
+                    closed &= constants.contains_key(&expression.0);
+                }
+                if !closed {
+                    let context = decisions::Context {
+                        unit,
+                        typed,
+                        scope,
+                        protocol,
                         source,
-                        unit.expression(case.guard)
-                            .ok_or(Error::Invalid(Invalid::Reference))?
-                            .span,
-                        work,
-                    )?;
-                    if constant(case.guard, &constants, work)?
-                        && selected.replace(case.control).is_some()
-                    {
+                    };
+                    let feasible = decisions::partition(&context, c::ControlId(at), work)?;
+                    if feasible.len() != cases.len() {
                         return Err(Error::Invalid(Invalid::Control));
                     }
+                    let mut result = Progress::Observable;
+                    for (case, feasible) in cases.iter().zip(feasible) {
+                        work.visit()?;
+                        if feasible
+                            && !matches!(
+                                child(case.control, &progress, work)?,
+                                Progress::Observable
+                            )
+                        {
+                            // Conservative atom independence can retain branches
+                            // excluded by an unavailable correlation authority.
+                            result = Progress::NeedsAuthority;
+                        }
+                    }
+                    result
+                } else {
+                    visible_constants(visible, &constants, work)?;
+                    let mut selected = None;
+                    for case in cases {
+                        work.visit()?;
+                        locate(
+                            source,
+                            unit.expression(case.guard)
+                                .ok_or(Error::Invalid(Invalid::Reference))?
+                                .span,
+                            work,
+                        )?;
+                        if constant(case.guard, &constants, work)?
+                            && selected.replace(case.control).is_some()
+                        {
+                            return Err(Error::Invalid(Invalid::Control));
+                        }
+                    }
+                    child(
+                        selected.ok_or(Error::Invalid(Invalid::Control))?,
+                        &progress,
+                        work,
+                    )?
                 }
-                child(
-                    selected.ok_or(Error::Invalid(Invalid::Control))?,
-                    &progress,
-                    work,
-                )?
             }
             c::ControlKind::Repeat {
                 visible,
@@ -312,6 +357,7 @@ fn combined(
 fn constants(
     unit: &ComposedUnit,
     typed: &DeclarationTypes<'_>,
+    scope: &DeclarationScope,
     source: u32,
     work: &mut Work,
 ) -> Result<BTreeMap<usize, bool>, Error> {
@@ -335,21 +381,11 @@ fn constants(
                     argument,
                 } => get(*argument)?.map(|value| !value),
                 ExprKind::Binary { op, left, right } => match op {
-                    BinaryOp::And => match (get(*left)?, get(*right)?) {
-                        (Some(false), _) | (_, Some(false)) => Some(false),
-                        (Some(true), Some(true)) => Some(true),
-                        _ => None,
-                    },
-                    BinaryOp::Or => match (get(*left)?, get(*right)?) {
-                        (Some(true), _) | (_, Some(true)) => Some(true),
-                        (Some(false), Some(false)) => Some(false),
-                        _ => None,
-                    },
-                    BinaryOp::Implies => match (get(*left)?, get(*right)?) {
-                        (Some(false), _) | (_, Some(true)) => Some(true),
-                        (Some(true), Some(false)) => Some(false),
-                        _ => None,
-                    },
+                    // Closed means every original operand is closed. Truth
+                    // simplification cannot hide a visibility obligation.
+                    BinaryOp::And => get(*left)?.zip(get(*right)?).map(|(a, b)| a & b),
+                    BinaryOp::Or => get(*left)?.zip(get(*right)?).map(|(a, b)| a | b),
+                    BinaryOp::Implies => get(*left)?.zip(get(*right)?).map(|(a, b)| !a | b),
                     BinaryOp::Equal => get(*left)?
                         .zip(get(*right)?)
                         .map(|(left, right)| left == right),
@@ -370,14 +406,34 @@ fn constants(
                     condition,
                     then_value,
                     else_value,
-                } => match get(*condition)? {
-                    Some(true) => get(*then_value)?,
-                    Some(false) => get(*else_value)?,
-                    None => None,
-                },
+                } => get(*condition)?
+                    .zip(get(*then_value)?)
+                    .zip(get(*else_value)?)
+                    .map(
+                        |((condition, then_value), else_value)| {
+                            if condition {
+                                then_value
+                            } else {
+                                else_value
+                            }
+                        },
+                    ),
+                ExprKind::Let { value, body, .. } => {
+                    get(*value)?.zip(get(*body)?).map(|(_, body)| body)
+                }
+                ExprKind::Name(_) => {
+                    let original = node
+                        .binder
+                        .and_then(|binder| scope.binders.get(binder.index()));
+                    match original.map(|binder| (&binder.kind, &binder.ty)) {
+                        Some((BinderKind::Let, BinderType::Initializer(initializer))) => {
+                            get(*initializer)?
+                        }
+                        _ => None,
+                    }
+                }
                 ExprKind::Integer(_)
                 | ExprKind::Text(_)
-                | ExprKind::Name(_)
                 | ExprKind::SelfValue
                 | ExprKind::ResultValue
                 | ExprKind::EnumValue { .. }
@@ -387,7 +443,6 @@ fn constants(
                     ..
                 }
                 | ExprKind::Call { .. }
-                | ExprKind::Let { .. }
                 | ExprKind::Quantifier { .. }
                 | ExprKind::Reaches { .. } => None,
             },
