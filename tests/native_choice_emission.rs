@@ -1486,11 +1486,11 @@ fn role_knowledge_visible_basis_and_abstract_partition_failures_do_not_grant_adm
             Error::Unsupported(Unsupported::FamilyProof),
         ),
         (
-            "composite advertised value",
+            "composite result does not disclose its individual operands",
             "Receiver",
             "gotA.ready and gotB.ready",
-            "gotA.ready and gotB.ready",
-            "not (gotA.ready and gotB.ready)",
+            "gotA.ready",
+            "not gotA.ready",
             Error::Unsupported(Unsupported::FamilyProof),
         ),
         (

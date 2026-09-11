@@ -354,12 +354,12 @@ fn mixed_observation_choices_refuse_foreign_owners_and_nonpartitions() {
             "not (got.ready and attempted.ready)",
         ),
         (
-            "composite value advertised instead of atoms",
+            "composite result does not disclose its individual operands",
             "Receiver",
             "Receiver",
             "got.ready and attempted.ready",
-            "got.ready and attempted.ready",
-            "not (got.ready and attempted.ready)",
+            "got.ready",
+            "not got.ready",
         ),
         (
             "distinct received and attempt atoms neither cover nor separate",
