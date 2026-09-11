@@ -207,6 +207,9 @@ fn protocol_check(
                         source,
                     };
                     let feasible = decisions::partition(&context, c::ControlId(at), work)?;
+                    if feasible.len() != cases.len() {
+                        return Err(Error::Invalid(Invalid::Control));
+                    }
                     let mut result = Progress::Observable;
                     for (case, feasible) in cases.iter().zip(feasible) {
                         work.visit()?;
