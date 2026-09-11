@@ -2,6 +2,8 @@
 
 Follow [AGENTS.md](AGENTS.md) for repository instructions.
 
+For unfinished issue references write `Remaining work: #N`; never put a GitHub closing keyword next to an issue number in a negated sentence, because GitHub may still close it.
+
 Keep prototype bookkeeping minimal. Use ordinary Git history, PR links and brief
 test results. Do not maintain manual SHA inventories or per-document checksum
 catalogs, refresh hashes for routine draft edits, create successor draft files

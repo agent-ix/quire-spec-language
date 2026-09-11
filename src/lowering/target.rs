@@ -41,6 +41,8 @@ targets! {
     BooleanOracleV1 => "boolean-oracle/v1",
     /// Bounded primitive integer expressions for the strict IR binder.
     IntegerIrV1 => "integer-ir/v1",
+    /// Primitive context fields and pre/post inputs, retaining native object authority.
+    StateScalarIrV1 => "state-scalar-ir/v1",
 }
 
 impl std::fmt::Display for ProjectionTarget {

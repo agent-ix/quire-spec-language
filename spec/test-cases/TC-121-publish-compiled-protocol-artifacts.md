@@ -35,8 +35,11 @@ observations belong only to the later consumer fixture.
    with type-only/unfinished evidence and a decoded wire value; no accepted
    producer artifact can result.
    The [native producer recipe](../../examples/protocol-handoff/README.md)
-   provides the delivered source-to-artifact path for a smaller composed subject;
-   it does not yet cover this case's full choreography fixture.
+   exercises four original predicate/state/temporal/workflow units with cross-unit
+   references, bounded `sum`/`size` queries, population/reference roles, actual model
+   operations and distinct full/partial recovery requirements. It preserves
+   source-owned registration/activation/retry anchors without supplying runtime
+   recovery observations; it does not cover this case's full choreography fixture.
 2. Compare emitted compact bytes with independently authored expected records
    and escape vectors (ASCII controls, quote/backslash, supplementary Unicode,
    slash, no NFC conversion). Reorder dependency/source sets without changing
@@ -174,6 +177,10 @@ observations belong only to the later consumer fixture.
     the reader's accepted inventory. Compare the offered package against that
     inventory; neither the payload nor the fixture's `expected.json` authorizes
     its own selections.
+    Retain all four original source files and the actual executing producer binary
+    from the recipe. Reconstruct its admitted model through the existing located
+    rule-model frontend; do not replace the model or binary with invented metadata.
+    A's local emission/reader round trip alone leaves this B acceptance incomplete.
     Perform its one-axis adverse controls and numeric boundary handoff. A
     missing family, producer adapter or consumer implementation records the
     unmet positive integration prerequisite; a negative unsupported test cannot

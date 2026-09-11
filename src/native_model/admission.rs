@@ -14,6 +14,8 @@ use crate::{Code, Diagnostic};
 
 type Result<T> = std::result::Result<T, Box<Diagnostic>>;
 
+const MAX_SEQUENCE_ITEMS: u32 = 10_000;
+
 pub(super) fn check(
     profile: NativeModelProfile,
     source: &FormalSource,
@@ -183,14 +185,26 @@ fn check_type(
         ir::ValueType::Option { value } => {
             check_type(profile, source, value, remaining, depth + 1, maximum_depth)?
         }
-        ir::ValueType::Collection { value } => check_type(
-            profile,
-            source,
-            value.element(),
-            remaining,
-            depth + 1,
-            maximum_depth,
-        )?,
+        ir::ValueType::Collection { value } => {
+            if value.maximum_items() > MAX_SEQUENCE_ITEMS {
+                return Err(failure(
+                    source,
+                    Code::UnsupportedConstruct,
+                    format!(
+                        "native sequence maximum {} exceeds {MAX_SEQUENCE_ITEMS}",
+                        value.maximum_items()
+                    ),
+                ));
+            }
+            check_type(
+                profile,
+                source,
+                value.element(),
+                remaining,
+                depth + 1,
+                maximum_depth,
+            )?;
+        }
         ir::ValueType::Boolean
         | ir::ValueType::Text
         | ir::ValueType::Enum { .. }

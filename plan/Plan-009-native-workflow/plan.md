@@ -38,6 +38,10 @@ adoption and assurance remain explicit acceptance work.
   through the standalone binary while earlier PRs await review.
 - [Task-031](tasks/Task-031-config-version.md): execute the concrete ConfigVersion
   parent, graph and update examples with real native and Markdown file requests.
+- [Task-035](tasks/Task-035-runtime-owned-wire.md): move native runtime decoding
+  constraints into their owning types, following PR #16's review under #27.
+- [Task-036](tasks/Task-036-runtime-input-schema.md): publish and exercise the
+  native runtime input schema, preserving the exact reader's authority.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;

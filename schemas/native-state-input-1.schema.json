@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:native-state-input:1",
+  "title": "Native state input version 1 — structural validation only",
+  "description": "FR-024 snapshot/invocation wire shape. Schema validity does not establish selected byte identity, artifact budgets, arena correspondence, model validity, population closure, operation frames or predicate truth.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only. Validate original bytes with the Rust reader. Parsed JSON data cannot retain duplicate raw members, noncanonical integer token spelling or precision already lost by a caller's parser.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "kind", "identity", "body"],
+  "properties": {
+    "version": {"const": "native-state-input/1"},
+    "kind": {"enum": ["snapshot", "invocation"]},
+    "identity": {"$ref": "#/$defs/source_identity"},
+    "body": {"type": "object"}
+  },
+  "oneOf": [
+    {"properties": {"kind": {"const": "snapshot"}, "body": {"$ref": "#/$defs/snapshot"}}},
+    {"properties": {"kind": {"const": "invocation"}, "body": {"$ref": "#/$defs/invocation"}}}
+  ],
+  "$defs": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]*(?![\\s\\S])"
+    },
+    "package": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "digest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "value_id": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "source_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "revision"],
+      "properties": {
+        "identity": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "minLength": 1}
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "requirement", "revision"],
+      "properties": {
+        "package": {"$ref": "#/$defs/package"},
+        "requirement": {"$ref": "#/$defs/symbol"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615}
+      }
+    },
+    "qualified_name": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "name"],
+      "properties": {
+        "model": {"$ref": "#/$defs/requirement"},
+        "name": {"$ref": "#/$defs/symbol"}
+      }
+    },
+    "model_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "digest"],
+      "properties": {
+        "model": {"$ref": "#/$defs/requirement"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "object_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "record", "universe", "key"],
+      "properties": {
+        "model": {"$ref": "#/$defs/requirement"},
+        "record": {"$ref": "#/$defs/symbol"},
+        "universe": {"$ref": "#/$defs/symbol"},
+        "key": {"type": "string"}
+      }
+    },
+    "field_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": {"$ref": "#/$defs/symbol"},
+        "value": {"$ref": "#/$defs/value_id"}
+      }
+    },
+    "fields": {"type": "array", "items": {"$ref": "#/$defs/field_binding"}},
+    "value_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declaration", "value"],
+      "properties": {
+        "declaration": {"$ref": "#/$defs/qualified_name"},
+        "value": {"$ref": "#/$defs/value_id"}
+      }
+    },
+    "value_bindings": {"type": "array", "items": {"$ref": "#/$defs/value_binding"}},
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "digest"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/source_identity"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "object_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "fields"],
+      "properties": {
+        "key": {"type": "string"},
+        "fields": {"$ref": "#/$defs/fields"}
+      }
+    },
+    "population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "record", "universe", "complete", "objects"],
+      "properties": {
+        "model": {"$ref": "#/$defs/requirement"},
+        "record": {"$ref": "#/$defs/symbol"},
+        "universe": {"$ref": "#/$defs/symbol"},
+        "complete": {"type": "boolean"},
+        "objects": {"type": "array", "items": {"$ref": "#/$defs/object_entry"}}
+      }
+    },
+    "models": {"type": "array", "items": {"$ref": "#/$defs/model_binding"}},
+    "arena": {"type": "array", "items": {"$ref": "#/$defs/value"}},
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation", "models", "populations", "values", "arena"],
+      "properties": {
+        "observation": {"enum": ["current", "pre", "post"]},
+        "models": {"$ref": "#/$defs/models"},
+        "populations": {"type": "array", "items": {"$ref": "#/$defs/population"}},
+        "values": {"$ref": "#/$defs/value_bindings"},
+        "arena": {"$ref": "#/$defs/arena"}
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "context", "operation", "anchor", "self_object", "pre", "post", "parameters", "result", "created", "deleted", "arena"],
+      "properties": {
+        "models": {"$ref": "#/$defs/models"},
+        "context": {"$ref": "#/$defs/qualified_name"},
+        "operation": {"$ref": "#/$defs/symbol"},
+        "anchor": {"$ref": "#/$defs/symbol"},
+        "self_object": {"$ref": "#/$defs/object_identity"},
+        "pre": {"$ref": "#/$defs/reference"},
+        "post": {"$ref": "#/$defs/reference"},
+        "parameters": {"$ref": "#/$defs/value_bindings"},
+        "result": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/value_id"}]},
+        "created": {"type": "array", "items": {"$ref": "#/$defs/object_identity"}},
+        "deleted": {"type": "array", "items": {"$ref": "#/$defs/object_identity"}},
+        "arena": {"$ref": "#/$defs/arena"}
+      }
+    },
+    "value": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+          "properties": {"kind": {"const": "boolean"}, "value": {"type": "boolean"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+          "properties": {"kind": {"const": "integer"}, "value": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+          "properties": {"kind": {"const": "text"}, "value": {"type": "string"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "declaration", "variant"],
+          "properties": {"kind": {"const": "enum"}, "declaration": {"$ref": "#/$defs/qualified_name"}, "variant": {"$ref": "#/$defs/symbol"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "declaration", "fields"],
+          "properties": {"kind": {"const": "record"}, "declaration": {"$ref": "#/$defs/qualified_name"}, "fields": {"$ref": "#/$defs/fields"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind"],
+          "properties": {"kind": {"const": "absent"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+          "properties": {"kind": {"const": "present"}, "value": {"$ref": "#/$defs/value_id"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "values"],
+          "properties": {"kind": {"const": "sequence"}, "values": {"type": "array", "items": {"$ref": "#/$defs/value_id"}}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "identity"],
+          "properties": {"kind": {"const": "reference"}, "identity": {"$ref": "#/$defs/object_identity"}}
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "identity"],
+          "properties": {"kind": {"const": "object"}, "identity": {"$ref": "#/$defs/object_identity"}}
+        }
+      ]
+    }
+  }
+}
