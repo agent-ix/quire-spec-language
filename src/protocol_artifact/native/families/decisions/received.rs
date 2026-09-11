@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-042: lexical/flow and model authority for received and own-attempt atoms.
-//! The private Received context covers both admitted observation kinds.
+//! FR-042: lexical/flow and model authority for role-owned observation atoms.
+//! Received covers receives, attempts and authored domain events.
 
 use std::collections::BTreeMap;
 
@@ -136,10 +136,13 @@ impl<'s, 'm> Received<'s, 'm> {
             return Err(Error::Invalid(Invalid::Binding));
         }
         let channel = match &event.kind {
-            c::EventKind::Attempt { role, .. } => {
+            c::EventKind::Attempt { role, .. } | c::EventKind::Event { role, .. } => {
                 // This is ownership of the observation, not evidence of an
-                // operation's success or effect. Existing operation/contract
-                // admission and necessarily-produced flow remain prerequisites.
+                // operation's success, effect or compensation activation.
+                // Qualified domain events retain their exact registration
+                // prerequisite in runtime::compensations; reading a Boolean
+                // field neither establishes nor removes that requirement.
+                // Existing family admission and causal flow remain required.
                 return Ok(structural(
                     self.context,
                     Some(id),
@@ -149,9 +152,7 @@ impl<'s, 'm> Received<'s, 'm> {
                 )? == self.owner);
             }
             c::EventKind::Receive { channel, .. } => channel,
-            c::EventKind::Send { .. }
-            | c::EventKind::Effect { .. }
-            | c::EventKind::Event { .. } => return Ok(false),
+            c::EventKind::Send { .. } | c::EventKind::Effect { .. } => return Ok(false),
         };
         let target = structural(
             self.context,
