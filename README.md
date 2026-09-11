@@ -15,6 +15,8 @@ unfinished work. Its `NamesResolved` result precedes expression/profile checking
 and complete runtime-role derivation. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
+Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
+
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
 The library links exact imports and scoped names against supplied Contract IR

@@ -13,7 +13,7 @@ pub struct Limits {
     pub definitions: usize,
     /// Supplied model entries, including duplicate and unselected entries.
     pub models: usize,
-    /// Created binder, role, export, or declaration result records.
+    /// Created binder, role, export, native type layer, cause or declaration records.
     pub bindings: usize,
     /// Inspected syntax nodes, selections and name resolution attempts.
     pub references: usize,

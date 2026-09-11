@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Bounded static control flow; only necessarily produced records escape a node.
+//! FR-036: bounded control flow; only necessarily produced records escape a node.
 use super::*;
 
-enum Task {
+enum Task<'a> {
     Control(c::ControlId, Environment),
-    Sequence(c::ControlId, usize, Environment),
-    SequenceAfter(c::ControlId, usize),
-    Parallel(c::ControlId, usize, Environment, Environment),
-    ParallelAfter(c::ControlId, usize, Environment, Environment),
+    Sequence(&'a [c::ControlId], usize, Environment),
+    SequenceAfter(&'a [c::ControlId], usize),
+    Parallel(&'a [c::Branch], usize, Environment, Environment, Span),
+    ParallelAfter(&'a [c::Branch], usize, Environment, Environment, Span),
     AwaitAfter(c::ControlId, c::ControlId, Environment),
     Restore(Environment),
 }
 
 impl Resolver<'_, '_> {
-    fn schedule(&mut self, tasks: &mut Vec<Task>, task: Task) -> Result<(), Exhaustion> {
+    fn schedule<'a>(
+        &mut self,
+        tasks: &mut Vec<Task<'a>>,
+        task: Task<'a>,
+    ) -> Result<(), Exhaustion> {
         self.work.charge(Dimension::Edges, 1)?;
         tasks.push(task);
         Ok(())
@@ -56,25 +60,6 @@ impl Resolver<'_, '_> {
         }
         Ok(())
     }
-    fn merge_branch(
-        &mut self,
-        result: Environment,
-        base: Environment,
-        mut joined: Environment,
-    ) -> Result<Environment, Exhaustion> {
-        let mut cursor = result.frame;
-        let mut binders = Vec::new();
-        while cursor != base.frame {
-            self.work.charge(Dimension::Edges, 1)?;
-            let frame = &self.frames[cursor.expect("branch scope extends entry scope")];
-            binders.push(frame.binder);
-            cursor = frame.parent;
-        }
-        for binder in binders.into_iter().rev() {
-            joined = self.extend(joined, binder)?;
-        }
-        Ok(joined)
-    }
     pub(super) fn flow(
         &mut self,
         root: c::ControlId,
@@ -87,41 +72,34 @@ impl Resolver<'_, '_> {
             self.work.charge(Dimension::References, 1)?;
             match task {
                 Task::Restore(env) => result = env,
-                Task::Sequence(id, index, env) => {
-                    let c::ControlKind::Sequence(children) =
-                        &self.unit.control(id).expect("sequence handle").kind
-                    else {
-                        unreachable!("scheduled sequence")
-                    };
+                Task::Sequence(children, index, env) => {
                     if let Some(child) = children.get(index) {
-                        self.schedule(&mut tasks, Task::SequenceAfter(id, index + 1))?;
+                        self.schedule(&mut tasks, Task::SequenceAfter(children, index + 1))?;
                         self.schedule(&mut tasks, Task::Control(*child, env))?;
                     } else {
                         result = env;
                     }
                 }
-                Task::SequenceAfter(id, next) => {
-                    self.schedule(&mut tasks, Task::Sequence(id, next, result))?
+                Task::SequenceAfter(children, next) => {
+                    self.schedule(&mut tasks, Task::Sequence(children, next, result))?
                 }
-                Task::Parallel(id, index, base, joined) => {
-                    let c::ControlKind::Parallel { branches, .. } =
-                        &self.unit.control(id).expect("parallel handle").kind
-                    else {
-                        unreachable!("scheduled parallel")
-                    };
+                Task::Parallel(branches, index, base, joined, span) => {
                     if let Some(branch) = branches.get(index) {
                         self.schedule(
                             &mut tasks,
-                            Task::ParallelAfter(id, index + 1, base, joined),
+                            Task::ParallelAfter(branches, index + 1, base, joined, span),
                         )?;
                         self.schedule(&mut tasks, Task::Control(branch.control, base))?;
                     } else {
                         result = joined;
                     }
                 }
-                Task::ParallelAfter(id, next, base, joined) => {
-                    let joined = self.merge_branch(result, base, joined)?;
-                    self.schedule(&mut tasks, Task::Parallel(id, next, base, joined))?;
+                Task::ParallelAfter(branches, next, base, joined, span) => {
+                    let joined = self.export_frames(result, base, joined, None, span)?;
+                    self.schedule(
+                        &mut tasks,
+                        Task::Parallel(branches, next, base, joined, span),
+                    )?;
                 }
                 Task::AwaitAfter(then, timeout, base) => {
                     self.schedule(&mut tasks, Task::Restore(base))?;
@@ -136,12 +114,13 @@ impl Resolver<'_, '_> {
                     self.preceding(id, env, names)?;
                     let node = self.unit.control(id).expect("parser control handle");
                     match &node.kind {
-                        c::ControlKind::Sequence(_) => {
-                            self.schedule(&mut tasks, Task::Sequence(id, 0, env))?
+                        c::ControlKind::Sequence(children) => {
+                            self.schedule(&mut tasks, Task::Sequence(children, 0, env))?
                         }
-                        c::ControlKind::Parallel { .. } => {
-                            self.schedule(&mut tasks, Task::Parallel(id, 0, env, env))?
-                        }
+                        c::ControlKind::Parallel { branches, .. } => self.schedule(
+                            &mut tasks,
+                            Task::Parallel(branches, 0, env, env, node.span),
+                        )?,
                         c::ControlKind::Choice { visible, cases, .. } => {
                             for value in visible {
                                 self.expression(*value, env)?;

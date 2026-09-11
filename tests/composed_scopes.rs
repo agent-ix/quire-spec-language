@@ -532,3 +532,223 @@ fn actual_model_operation_inputs_result_and_pre_self_seed_the_state_scope() {
                 == BinderKind::ResultValue));
     });
 }
+
+#[test]
+#[trace("TC-114", "FR-036-AC-2", "FR-036-AC-4")]
+fn an_undeclared_value_retains_its_missing_name_and_original_expression() {
+    inspect(
+        "predicate Missing using S (): Boolean { neverDeclared }\n\
+         predicate Independent using S (input: Boolean): Boolean { input }",
+        |namespace, report| {
+            let missing = scope(namespace, report, "Missing");
+            assert_eq!(missing.disposition(), ScopeDisposition::Refused);
+            let [ScopeIssue::MissingValue {
+                expression,
+                span,
+                name,
+            }] = missing.issues.as_slice()
+            else {
+                panic!("one missing value: {:?}", missing.issues)
+            };
+            assert_eq!(name, "neverDeclared");
+            let unit = namespace.unit(missing.unit).unwrap();
+            assert_eq!(unit.expression(*expression).unwrap().span, *span);
+            assert_eq!(unit.source().slice(*span), Some("neverDeclared"));
+            assert!(missing.values.is_empty());
+            resolved(namespace, report, "Independent");
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-2")]
+fn an_unavailable_model_operation_does_not_invent_missing_input_names() {
+    let model = native_rule_model::parts().model();
+    let source = format!(
+        "{HEADER}model M = \"{}\" version \"{}\" digest \"{}\";\n\
+         pre Missing using S on M::Node::absent {{ invocationInput }}\n\
+         post Available using S on M::Node::step {{ result }}",
+        model.environment().owner().package().as_str(),
+        model.environment().owner().revision().get(),
+        model.digest()
+    );
+    with_namespace(&[source], |namespace| {
+        let inputs = [ModelInput::Native(&model)];
+        let models = bind_models(namespace, &inputs, &mut Work::new(BindingLimits::default()));
+        let report = scopes::resolve(namespace, &models, &mut Work::new(BindingLimits::default()));
+        assert!(report.exhaustion.is_none());
+        let missing = scope(namespace, &report, "Missing");
+        assert_eq!(missing.disposition(), ScopeDisposition::Refused);
+        let [ScopeIssue::ModelOperationUnavailable { span }] = missing.issues.as_slice() else {
+            panic!("one unavailable operation: {:?}", missing.issues)
+        };
+        assert_eq!(
+            namespace.unit(missing.unit).unwrap().source().slice(*span),
+            Some("absent")
+        );
+        assert!(missing.values.is_empty());
+        resolved(namespace, &report, "Available");
+    });
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-2", "FR-036-AC-4")]
+fn structural_duplicates_are_local_and_missing_paths_preserve_the_authored_target() {
+    let nested = "sequence Left { send Shared via C as (leftValue: Boolean) { leftValue }; }\n\
+        sequence Right { send Shared via C as (rightValue: Boolean) { rightValue };\n\
+        receive Got via C of Main::Left::Shared as (received: Boolean) { received }; }";
+    inspect(
+        &protocol(nested, "done and leftValue and rightValue and received"),
+        |namespace, report| {
+            resolved(namespace, report, "Flow");
+            let flow = scope(namespace, report, "Flow");
+            let shared: Vec<_> = flow
+                .symbols
+                .iter()
+                .filter(|symbol| symbol.name.value == "Shared")
+                .collect();
+            assert_eq!(shared.len(), 2);
+            assert_ne!(shared[0].parent, shared[1].parent);
+            let receive = flow
+                .references
+                .iter()
+                .find(|reference| reference.required == StructuralKind::Send)
+                .unwrap();
+            let selected = &flow.symbols[receive.target.unwrap().index()];
+            assert_eq!(
+                flow.symbols[selected.parent.unwrap().index()].name.value,
+                "Left"
+            );
+        },
+    );
+    inspect(
+        &protocol(
+            &nested.replace("Main::Left::Shared", "Main::Absent::Shared"),
+            "done",
+        ),
+        |namespace, report| {
+            let flow = scope(namespace, report, "Flow");
+            assert_eq!(flow.disposition(), ScopeDisposition::Refused);
+            let [ScopeIssue::MissingTarget { reference }] = flow.issues.as_slice() else {
+                panic!("one missing structural target: {:?}", flow.issues)
+            };
+            let reference = &flow.references[*reference];
+            assert!(reference.target.is_none());
+            assert_eq!(
+                namespace
+                    .unit(flow.unit)
+                    .unwrap()
+                    .source()
+                    .slice(reference.span),
+                Some("Main::Absent::Shared")
+            );
+        },
+    );
+    let duplicate = "send Shared via C as (firstValue: Boolean) { firstValue };\n\
+        send Shared via C as (secondValue: Boolean) { secondValue };\n\
+        receive Got via C of Shared as (received: Boolean) { received };";
+    inspect(&protocol(duplicate, "done"), |namespace, report| {
+        let flow = scope(namespace, report, "Flow");
+        assert_eq!(flow.disposition(), ScopeDisposition::Refused);
+        assert_eq!(flow.issues.len(), 2);
+        let (symbol, previous) = flow
+            .issues
+            .iter()
+            .find_map(|issue| match issue {
+                ScopeIssue::DuplicateSymbol { symbol, previous } => Some((*symbol, *previous)),
+                _ => None,
+            })
+            .unwrap();
+        let (symbol, previous) = (
+            &flow.symbols[symbol.index()],
+            &flow.symbols[previous.index()],
+        );
+        assert_eq!(symbol.name.value, "Shared");
+        assert_eq!(symbol.name.value, previous.name.value);
+        assert_eq!(symbol.parent, previous.parent);
+        assert_ne!(symbol.name.span, previous.name.span);
+        let reference = flow
+            .issues
+            .iter()
+            .find_map(|issue| match issue {
+                ScopeIssue::AmbiguousTarget { reference } => Some(&flow.references[*reference]),
+                _ => None,
+            })
+            .unwrap();
+        assert!(reference.target.is_none());
+        assert_eq!(
+            namespace
+                .unit(flow.unit)
+                .unwrap()
+                .source()
+                .slice(reference.span),
+            Some("Shared")
+        );
+    });
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-2")]
+fn await_refuses_send_and_attempt_matches_at_the_original_control() {
+    for matched in [
+        "send Matched via C as (matchedValue: Boolean) { matchedValue };",
+        "attempt Matched by R on M::Service::act contracts [] as (matchedValue: Boolean) { matchedValue };",
+    ] {
+        let run = format!(
+            "event Start by R as (started: Boolean) {{ started }};\n\
+             await Wait after Start using S clock \"clock\" within [0,2]\n\
+             match {matched}\n\
+             then check Received using S {{ matchedValue }};\n\
+             timeout check TimedOut using S {{ view }};"
+        );
+        inspect(&protocol(&run, "done"), |namespace, report| {
+            let flow = scope(namespace, report, "Flow");
+            assert_eq!(flow.disposition(), ScopeDisposition::Refused);
+            let [ScopeIssue::InvalidAwaitEvent { control, span }] = flow.issues.as_slice() else {
+                panic!("one invalid await event: {:?}", flow.issues)
+            };
+            let unit = namespace.unit(flow.unit).unwrap();
+            let original = unit.control(*control).unwrap();
+            assert_eq!(original.name.value, "Matched");
+            assert_eq!(original.span, *span);
+            assert_eq!(unit.source().slice(*span), Some(matched));
+        });
+    }
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-2")]
+fn a_receive_cannot_substitute_another_declared_channel_for_its_send() {
+    let source = protocol(
+        "send Sent via C as (sent: Boolean) { sent };\n\
+         receive Got via C of Main::Sent as (received: Boolean) { received };",
+        "done",
+    ).replace("run sequence Main", "channel Other from R to R carries M::Payload ordering unordered delivery [0,1];\nrun sequence Main");
+    inspect(&source, |namespace, report| {
+        resolved(namespace, report, "Flow")
+    });
+    inspect(
+        &source.replace("receive Got via C", "receive Got via Other"),
+        |namespace, report| {
+            let flow = scope(namespace, report, "Flow");
+            assert_eq!(flow.disposition(), ScopeDisposition::Refused);
+            let [ScopeIssue::IncompatibleReference { reference }] = flow.issues.as_slice() else {
+                panic!("one incompatible send channel: {:?}", flow.issues)
+            };
+            let reference = &flow.references[*reference];
+            assert_eq!(reference.required, StructuralKind::Send);
+            assert_eq!(
+                flow.symbols[reference.target.unwrap().index()].name.value,
+                "Sent"
+            );
+            assert_eq!(
+                namespace
+                    .unit(flow.unit)
+                    .unwrap()
+                    .source()
+                    .slice(reference.span),
+                Some("Main::Sent")
+            );
+        },
+    );
+}

@@ -56,6 +56,8 @@ pub enum ModelConflictKind {
 pub enum ImportRefusal {
     /// Digest spelling is not the existing canonical raw SHA-256 spelling.
     InvalidDigest,
+    /// A native model revision is not the canonical unsigned decimal IR revision.
+    InvalidRevision,
     /// No supplied model has this package label.
     MissingPackage,
     /// No candidate has all selected revision/digest components.
@@ -174,7 +176,7 @@ pub struct ModelBindings<'a> {
     inputs: &'a [ModelInput<'a>],
     catalogs: Vec<Option<Exports<'a>>>,
     imports: Vec<ModelImportBinding>,
-    aliases: BTreeMap<(UnitId, String), Vec<usize>>,
+    aliases: BTreeMap<UnitId, BTreeMap<String, Vec<usize>>>,
     conflicts: Vec<ModelConflict>,
     exhaustion: Option<Exhaustion>,
     complete: bool,
@@ -205,7 +207,9 @@ impl<'a> ModelBindings<'a> {
 
 /// Charge supplied Models and artifact/selector Bytes first. Bindings count
 /// export-index entries, imports and returned resolution records; References
-/// count candidate inspections and lookup attempts. No dependency edge is added.
+/// count lookup attempts plus each inspected catalog, operation, parameter,
+/// member, owner/source comparison and conflict-input entry. Borrowed indexes
+/// retain their existing lookup charge. No dependency edge is added.
 pub fn bind_models<'a>(
     namespace: &SyntaxNamespace,
     inputs: &'a [ModelInput<'a>],
@@ -249,6 +253,24 @@ fn charge(
         .map_err(|error| failure(unit, span, ModelErrorKind::ResourceExhausted(error)))
 }
 
+// Catalog keys retain upstream SymbolName identities. Where a borrowed string
+// cannot address that key, charge each compared entry rather than one whole scan.
+fn find_charged<T>(
+    entries: impl IntoIterator<Item = T>,
+    work: &mut Work,
+    unit: UnitId,
+    span: Span,
+    mut matches: impl FnMut(&T) -> bool,
+) -> Result<Option<T>, ModelError> {
+    for entry in entries {
+        charge(work, Dimension::References, 1, unit, span)?;
+        if matches(&entry) {
+            return Ok(Some(entry));
+        }
+    }
+    Ok(None)
+}
+
 impl<'a> ModelBindings<'a> {
     fn collect(&mut self, namespace: &SyntaxNamespace, work: &mut Work) -> Result<(), Exhaustion> {
         let mut owners = BTreeMap::<&ir::RequirementRef, Vec<usize>>::new();
@@ -289,11 +311,20 @@ impl<'a> ModelBindings<'a> {
             }
         }
         for inputs in owners.into_values() {
-            if inputs
-                .iter()
-                .skip(1)
-                .any(|index| self.native(*index).digest() != self.native(inputs[0]).digest())
-            {
+            if inputs.len() < 2 {
+                continue;
+            }
+            work.charge(Dimension::References, 1)?;
+            let first = self.native(inputs[0]).digest();
+            let mut different = false;
+            for input in &inputs[1..] {
+                work.charge(Dimension::References, 1)?;
+                if self.native(*input).digest() != first {
+                    different = true;
+                    break;
+                }
+            }
+            if different {
                 work.charge(Dimension::Bindings, 1)?;
                 self.conflicts.push(ModelConflict {
                     kind: ModelConflictKind::Owner,
@@ -302,11 +333,21 @@ impl<'a> ModelBindings<'a> {
             }
         }
         for inputs in sources.into_values() {
+            if inputs.len() < 2 {
+                continue;
+            }
+            work.charge(Dimension::References, 1)?;
             let first = self.native(inputs[0]).source().source();
-            if inputs.iter().skip(1).any(|index| {
-                let source = self.native(*index).source().source();
-                source.identity() != first.identity() || source.digest() != first.digest()
-            }) {
+            let mut different = false;
+            for input in &inputs[1..] {
+                work.charge(Dimension::References, 1)?;
+                let source = self.native(*input).source().source();
+                if source.identity() != first.identity() || source.digest() != first.digest() {
+                    different = true;
+                    break;
+                }
+            }
+            if different {
                 work.charge(Dimension::Bindings, 1)?;
                 self.conflicts.push(ModelConflict {
                     kind: ModelConflictKind::Source,
@@ -337,7 +378,9 @@ impl<'a> ModelBindings<'a> {
                     )?,
                 };
                 self.aliases
-                    .entry((unit, selection.alias.value.clone()))
+                    .entry(unit)
+                    .or_default()
+                    .entry(selection.alias.value.clone())
                     .or_default()
                     .push(self.imports.len());
                 self.imports.push(ModelImportBinding {
@@ -365,6 +408,16 @@ impl<'a> ModelBindings<'a> {
         work: &mut Work,
     ) -> Result<Result<usize, ImportRefusal>, Exhaustion> {
         let mut same_package = false;
+        // Parse a native revision once. Unsupported producer labels remain opaque
+        // and can only select their explicit unsupported-correspondence refusal.
+        let native_revision = revision
+            .parse::<u64>()
+            .ok()
+            .filter(|_| {
+                revision.bytes().all(|byte| byte.is_ascii_digit()) && !revision.starts_with('0')
+            })
+            .and_then(|value| ir::RequirementRevision::new(value).ok());
+        let mut malformed_native_revision = false;
         let mut exact = Vec::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::References, 1)?;
@@ -372,8 +425,10 @@ impl<'a> ModelBindings<'a> {
                 ModelInput::Native(model) => {
                     let owner = model.environment().owner();
                     same_package |= owner.package().as_str() == package;
+                    malformed_native_revision |=
+                        owner.package().as_str() == package && native_revision.is_none();
                     owner.package().as_str() == package
-                        && owner.revision().get().to_string() == revision
+                        && native_revision.as_ref() == Some(&owner.revision())
                         && model.digest() == digest
                 }
                 ModelInput::UnsupportedProducer {
@@ -394,13 +449,18 @@ impl<'a> ModelBindings<'a> {
         }
         Ok(match exact.as_slice() {
             [] if !same_package => Err(ImportRefusal::MissingPackage),
+            [] if malformed_native_revision => Err(ImportRefusal::InvalidRevision),
             [] => Err(ImportRefusal::StaleSelection),
             [input] => {
                 let mut groups = Vec::new();
                 for (index, conflict) in self.conflicts.iter().enumerate() {
                     work.charge(Dimension::References, 1)?;
-                    if conflict.inputs.contains(input) {
-                        groups.push(index);
+                    for candidate in &conflict.inputs {
+                        work.charge(Dimension::References, 1)?;
+                        if candidate == input {
+                            groups.push(index);
+                            break;
+                        }
                     }
                 }
                 if !groups.is_empty() {
@@ -426,7 +486,11 @@ impl<'a> ModelBindings<'a> {
         if !self.complete {
             return Err(failure(unit, alias.span, ModelErrorKind::IncompleteCatalog));
         }
-        let Some(imports) = self.aliases.get(&(unit, alias.value.clone())) else {
+        let Some(imports) = self
+            .aliases
+            .get(&unit)
+            .and_then(|aliases| aliases.get(alias.value.as_str()))
+        else {
             return Err(failure(unit, alias.span, ModelErrorKind::MissingAlias));
         };
         if imports.len() != 1 {
@@ -467,16 +531,20 @@ impl<'a> ModelBindings<'a> {
             name.name.span,
         )?;
         let catalog = &exports.catalog;
-        let record = catalog
-            .records
-            .iter()
-            .find(|(key, _)| key.as_str() == name.name.value)
-            .map(|(_, value)| *value);
-        let enumeration = catalog
-            .enumerations
-            .iter()
-            .find(|(key, _)| key.as_str() == name.name.value)
-            .map(|(_, value)| *value);
+        let record = find_charged(
+            catalog.records.values().copied(),
+            work,
+            unit,
+            name.name.span,
+            |record| record.name().as_str() == name.name.value,
+        )?;
+        let enumeration = find_charged(
+            catalog.enumerations.values().copied(),
+            work,
+            unit,
+            name.name.span,
+            |enumeration| enumeration.name().as_str() == name.name.value,
+        )?;
         let scalar = exports.scalars.get(name.name.value.as_str()).copied();
         if scalar.is_some() && (record.is_some() || enumeration.is_some()) {
             return Err(failure(
@@ -559,15 +627,16 @@ impl<'a> ModelBindings<'a> {
             unit,
             operation.name.span,
         )?;
-        let role = context
-            .model
-            .roles()
-            .operations
-            .iter()
-            .find(|candidate| {
+        let role = find_charged(
+            &context.model.roles().operations,
+            work,
+            unit,
+            operation.name.span,
+            |candidate| {
                 candidate.context == role.record && candidate.name.as_str() == operation.name.value
-            })
-            .ok_or_else(|| failure(unit, operation.name.span, ModelErrorKind::MissingExport))?;
+            },
+        )?
+        .ok_or_else(|| failure(unit, operation.name.span, ModelErrorKind::MissingExport))?;
         charge(work, Dimension::Bindings, 1, unit, operation.name.span)?;
         Ok(BoundOperation {
             model: context.model,
@@ -599,12 +668,14 @@ impl<'a> ModelBindings<'a> {
                 continue;
             };
             if std::ptr::eq(exports.catalog.model, model) {
-                for ((owner, _), imports) in &self.aliases {
+                for imports in self
+                    .aliases
+                    .get(&unit)
+                    .into_iter()
+                    .flat_map(|aliases| aliases.values())
+                {
                     charge(work, Dimension::References, 1, unit, span)?;
-                    if *owner == unit
-                        && imports.len() == 1
-                        && self.imports[imports[0]].selection == Ok(input)
-                    {
+                    if imports.len() == 1 && self.imports[imports[0]].selection == Ok(input) {
                         return Ok(&exports.catalog);
                     }
                 }
@@ -626,25 +697,31 @@ impl<'a> ModelBindings<'a> {
         let catalog = self.catalog_for(operation.model, unit, name.span, work)?;
         charge(work, Dimension::Bytes, name.value.len(), unit, name.span)?;
         charge(work, Dimension::References, 1, unit, name.span)?;
-        if !operation
-            .role
-            .parameters
-            .iter()
-            .any(|value| value.as_str() == name.value)
-            && !operation
-                .role
-                .result
-                .as_ref()
-                .is_some_and(|value| value.as_str() == name.value)
-        {
+        let parameter = find_charged(&operation.role.parameters, work, unit, name.span, |value| {
+            value.as_str() == name.value
+        })?;
+        let result = if parameter.is_none() {
+            find_charged(
+                operation.role.result.iter(),
+                work,
+                unit,
+                name.span,
+                |value| value.as_str() == name.value,
+            )?
+        } else {
+            None
+        };
+        if parameter.is_none() && result.is_none() {
             return Err(failure(unit, name.span, ModelErrorKind::MissingExport));
         }
-        let value = catalog
-            .values
-            .iter()
-            .find(|(key, _)| key.as_str() == name.value)
-            .map(|(_, value)| *value)
-            .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
+        let value = find_charged(
+            catalog.values.values().copied(),
+            work,
+            unit,
+            name.span,
+            |value| value.name().as_str() == name.value,
+        )?
+        .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
         formal_type(
             catalog,
             value.value_type(),
@@ -681,14 +758,25 @@ impl<'a> ModelBindings<'a> {
         let record = match &receiver.native {
             NativeType::Object { role, .. } => &role.record,
             NativeType::Record { declaration, .. } => declaration.name(),
-            _ => return Err(failure(unit, name.span, ModelErrorKind::WrongExportKind)),
+            NativeType::Boolean
+            | NativeType::Scalar { .. }
+            | NativeType::Enumeration { .. }
+            | NativeType::Reference { .. }
+            | NativeType::Option(_)
+            | NativeType::Sequence { .. } => {
+                return Err(failure(unit, name.span, ModelErrorKind::WrongExportKind));
+            }
         };
-        let field = catalog
-            .fields
-            .iter()
-            .find(|((owner, field), _)| *owner == record && field.as_str() == name.value)
-            .map(|(_, value)| *value)
-            .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
+        // The receiver supplies the actual SymbolName, so use the existing
+        // borrowed record index before scanning only that record's fields.
+        let fields = catalog
+            .ordered_fields
+            .get(record)
+            .expect("admitted record fields");
+        let field = find_charged(fields.iter().copied(), work, unit, name.span, |field| {
+            field.name().as_str() == name.value
+        })?
+        .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
         let native = formal_type(
             catalog,
             field.value_type(),
@@ -734,11 +822,10 @@ impl<'a> ModelBindings<'a> {
         let NativeType::Enumeration { declaration, .. } = &bound.native else {
             return Err(failure(unit, variant.span, ModelErrorKind::WrongExportKind));
         };
-        let member = declaration
-            .variants()
-            .iter()
-            .find(|member| member.name().as_str() == variant.value)
-            .ok_or_else(|| failure(unit, variant.span, ModelErrorKind::MissingExport))?;
+        let member = find_charged(declaration.variants(), work, unit, variant.span, |member| {
+            member.name().as_str() == variant.value
+        })?
+        .ok_or_else(|| failure(unit, variant.span, ModelErrorKind::MissingExport))?;
         bound.location = location(
             bound.model.environment(),
             DeclarationKey::Variant {
@@ -788,18 +875,11 @@ fn scalar_type<'a>(
     work: &mut Work,
 ) -> Result<NativeType<'a>, ModelError> {
     let site = &role.sites[0];
-    let mut representation = match site {
+    let representation = match site {
         ScalarSite::Value { name } => catalog.values[name].value_type(),
         ScalarSite::Field { record, field } => catalog.fields[&(record, field)].value_type(),
     };
-    loop {
-        charge(work, Dimension::References, 1, unit, span)?;
-        representation = match representation {
-            ir::ValueType::Option { value } => value,
-            ir::ValueType::Collection { value } => value.element(),
-            _ => break,
-        };
-    }
+    let (representation, _) = primitive(representation, unit, span, work)?;
     Ok(NativeType::Scalar {
         model: catalog.model,
         role,
@@ -815,19 +895,37 @@ fn formal_type<'a>(
     span: Span,
     work: &mut Work,
 ) -> Result<NativeType<'a>, ModelError> {
-    let mut leaf = ty;
-    loop {
-        charge(work, Dimension::References, 1, unit, span)?;
-        charge(work, Dimension::Bindings, 1, unit, span)?;
-        leaf = match leaf {
-            ir::ValueType::Option { value } => value,
-            ir::ValueType::Collection { value } => value.element(),
-            _ => break,
-        };
-    }
+    let (_, layers) = primitive(ty, unit, span, work)?;
+    // Unlike a scalar-name lookup, a field/value export constructs each actual
+    // Option/Sequence wrapper as well as its leaf. Reserve those type records
+    // before Catalog::formal allocates them; traversal itself only costs reads.
+    charge(work, Dimension::Bindings, layers, unit, span)?;
     catalog
         .formal(ty, &site)
         .ok_or_else(|| failure(unit, span, ModelErrorKind::WrongExportKind))
+}
+
+fn primitive<'a>(
+    mut ty: &'a ir::ValueType,
+    unit: UnitId,
+    span: Span,
+    work: &mut Work,
+) -> Result<(&'a ir::ValueType, usize), ModelError> {
+    let mut layers = 0;
+    loop {
+        charge(work, Dimension::References, 1, unit, span)?;
+        layers += 1; // admitted NativeModel type depth is bounded by 64
+        ty = match ty {
+            ir::ValueType::Option { value } => value,
+            ir::ValueType::Collection { value } => value.element(),
+            ir::ValueType::Boolean
+            | ir::ValueType::Integer { .. }
+            | ir::ValueType::Rational { .. }
+            | ir::ValueType::Text
+            | ir::ValueType::Enum { .. }
+            | ir::ValueType::Record { .. } => return Ok((ty, layers)),
+        };
+    }
 }
 
 /// The concrete export selected by an authored qualified occurrence.
@@ -867,7 +965,15 @@ impl ModelDeclarationReport<'_> {
     pub fn exhaustion(&self) -> Option<&Exhaustion> {
         self.refusals.iter().find_map(|error| match &error.kind {
             ModelErrorKind::ResourceExhausted(exhaustion) => Some(exhaustion),
-            _ => None,
+            ModelErrorKind::IncompleteCatalog
+            | ModelErrorKind::MissingAlias
+            | ModelErrorKind::AmbiguousAlias { .. }
+            | ModelErrorKind::RefusedImport { .. }
+            | ModelErrorKind::MissingExport
+            | ModelErrorKind::AmbiguousExport
+            | ModelErrorKind::WrongExportKind
+            | ModelErrorKind::ForeignModel
+            | ModelErrorKind::UnsupportedRelationshipContract => None,
         })
     }
 }
@@ -876,8 +982,10 @@ impl<'a> ModelBindings<'a> {
     /// Bind every authored type/operation/variant qualification in one declaration.
     /// Each inspected parameter/control/value node costs one Reference; imports
     /// and actual lookups keep their separately documented charges. Value/control
-    /// arenas are scanned in source order; other declarations' nodes are also
-    /// charged when inspected. An out-of-range declaration handle returns None.
+    /// arenas are restricted to this declaration through charged binary boundary
+    /// lookups; unrelated nodes are not rescanned. Each retained cause also costs
+    /// one Binding, except the terminal exhaustion record. An out-of-range
+    /// declaration handle returns None.
     pub fn resolve_declaration(
         &self,
         namespace: &SyntaxNamespace,
@@ -936,12 +1044,16 @@ impl<'a> ModelBindings<'a> {
                         walk.ty(&role.model)?;
                     }
                     for relation in &protocol.relationships {
+                        walk.visit(relation.span)?;
                         walk.ty(&relation.model)?;
-                        walk.report.refusals.push(failure(
-                            walk.unit,
+                        walk.record(
+                            Err(failure(
+                                walk.unit,
+                                relation.span,
+                                ModelErrorKind::UnsupportedRelationshipContract,
+                            )),
                             relation.span,
-                            ModelErrorKind::UnsupportedRelationshipContract,
-                        ));
+                        )?;
                     }
                     for channel in &protocol.channels {
                         walk.ty(&channel.carries)?;
@@ -966,11 +1078,21 @@ impl<'a> ModelBindings<'a> {
                     walk.parameter(&protocol.finish.parameter)?;
                 }
             }
-            for control in unit.controls() {
+            let controls = super::arena::owned(
+                unit.controls(),
+                syntax.span,
+                |control| control.span,
+                walk.work,
+            )
+            .map_err(|error| {
+                failure(
+                    walk.unit,
+                    syntax.span,
+                    ModelErrorKind::ResourceExhausted(error),
+                )
+            })?;
+            for control in controls {
                 walk.visit(control.span)?;
-                if control.span.start < syntax.span.start || control.span.end > syntax.span.end {
-                    continue;
-                }
                 match &control.kind {
                     c::ControlKind::Event(event) => {
                         walk.parameter(&event.parameter)?;
@@ -987,13 +1109,21 @@ impl<'a> ModelBindings<'a> {
                     | c::ControlKind::Check { .. } => {}
                 }
             }
-            for expression in unit.expressions() {
+            let expressions = super::arena::owned(
+                unit.expressions(),
+                syntax.span,
+                |expression| expression.span,
+                walk.work,
+            )
+            .map_err(|error| {
+                failure(
+                    walk.unit,
+                    syntax.span,
+                    ModelErrorKind::ResourceExhausted(error),
+                )
+            })?;
+            for expression in expressions {
                 walk.visit(expression.span)?;
-                if expression.span.start < syntax.span.start
-                    || expression.span.end > syntax.span.end
-                {
-                    continue;
-                }
                 match &expression.kind {
                     c::ValueKind::Size { domain, .. } => walk.ty(domain)?,
                     c::ValueKind::Query {
@@ -1060,7 +1190,10 @@ impl<'a> ModelWalk<'_, 'a> {
             Err(error) if matches!(error.kind, ModelErrorKind::ResourceExhausted(_)) => {
                 return Err(error)
             }
-            Err(error) => self.report.refusals.push(error),
+            Err(error) => {
+                charge(self.work, Dimension::Bindings, 1, self.unit, span)?;
+                self.report.refusals.push(error);
+            }
         }
         Ok(())
     }

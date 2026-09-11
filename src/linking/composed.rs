@@ -3,6 +3,7 @@
 //! This stage precedes definition, model, lexical/type and family admission.
 //! Its output cannot construct a historical LinkedPackage or CheckedPackage.
 
+mod arena;
 pub mod binding;
 pub mod binding_work;
 pub mod definition_source;
