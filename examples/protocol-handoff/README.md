@@ -10,7 +10,13 @@ family-admission APIs. It emits through
 The output seal is selected by the producer after emission; this local reader
 check does not independently authenticate that seal or exercise tamper controls.
 The units retain cross-unit calls, bounded `sum`/`size` queries, exact rational types and
-object/reference population requirements. The actual `Workflow::apply` operation
+object/reference population requirements. Two `Notice` records received by
+`Service` on the `Decisions` channel become available after the explicit
+all-branch join. `Outcome` selects complementary Boolean guards over their
+distinct `ready` facts, retaining both authored event branches and original
+receive anchors. The producer proves the conservative Boolean partition; it
+does not supply concrete messages or choose a runtime branch.
+The actual `Workflow::apply` operation
 and its pre/post contracts retain their model and source owners. Both `Full` and
 `Partial` compensation obligations pair with `Main::Applied`: `Full` requires the
 receipt sum to equal its captured target and names `Main::Committed`; `Partial`
@@ -32,7 +38,7 @@ CARGO_PROFILE_RELEASE_STRIP=symbols cargo test --locked --offline --release --no
 ```
 
 This test uses a fresh temporary output directory and checks original source and
-declaration owners plus Full/Partial compensation records after the producer's
+declaration owners, joined receive/choice provenance and Full/Partial compensation records after the producer's
 independent reader succeeds. It is ignored in ordinary test runs because the
 executable must fit the producer's ELF binary limit. It does not exercise B's
 acceptance interface.
