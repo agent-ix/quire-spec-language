@@ -251,7 +251,45 @@ impl ValueBuilder<'_> {
                 ExprKind::Quantifier { .. } => {
                     return Err(Error::Unsupported(Unsupported::Feature))
                 }
-                ExprKind::Reaches { .. } => return Err(Error::Unsupported(Unsupported::Export)),
+                ExprKind::Reaches {
+                    start,
+                    target,
+                    field,
+                } => {
+                    if context.typed.node(*start).and_then(|node| node.origin)
+                        != context.typed.node(*target).and_then(|node| node.origin)
+                    {
+                        return Err(Error::Invalid(Invalid::Binding));
+                    }
+                    let (model, role) = match context.ty(*start)? {
+                        NativeType::Object { model, role }
+                        | NativeType::Reference { model, role } => (*model, *role),
+                        NativeType::Boolean
+                        | NativeType::Scalar { .. }
+                        | NativeType::Enumeration { .. }
+                        | NativeType::Record { .. }
+                        | NativeType::Option(_)
+                        | NativeType::Sequence { .. } => return Err(Error::Invalid(Invalid::Type)),
+                    };
+                    w::ValueOperation::Reaches {
+                        start: layout.value(*start)?,
+                        target: layout.value(*target)?,
+                        edge: self.export(
+                            model,
+                            w::ExportKind::Field,
+                            role.record.as_str(),
+                            Some(&field.value),
+                            work,
+                        )?,
+                        universe: self.export(
+                            model,
+                            w::ExportKind::Population,
+                            role.record.as_str(),
+                            Some(role.universe.as_str()),
+                            work,
+                        )?,
+                    }
+                }
             },
             c::ValueKind::Invoke { arguments, .. } => {
                 let mut handles = Vec::new();

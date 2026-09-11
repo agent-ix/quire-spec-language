@@ -3,7 +3,9 @@
 use super::layout::DeclLayout;
 use crate::checking::composed::DeclarationTypes;
 use crate::linking::composed::{
-    definitions::ProfileUse, models::ModelDeclarationReport, scopes::DeclarationScope,
+    definitions::ProfileUse,
+    models::{ModelBindings, ModelDeclarationReport},
+    scopes::DeclarationScope,
     DependencyReference,
 };
 use crate::syntax::composed as c;
@@ -14,6 +16,7 @@ pub(super) struct Declaration<'s, 'm> {
     pub syntax: &'s c::Declaration,
     pub scope: &'s DeclarationScope,
     pub exports: &'s ModelDeclarationReport<'m>,
+    pub models: &'s ModelBindings<'m>,
     pub references: &'s [DependencyReference],
     pub profile_uses: &'s [ProfileUse],
     pub profiles: &'s [u32],

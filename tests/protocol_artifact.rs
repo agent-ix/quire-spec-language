@@ -78,9 +78,16 @@ fn complete_wire_candidate_binds_real_model_and_independent_original_inventory()
         [
             w::BindingKind::WorkflowInstance,
             w::BindingKind::Snapshot,
-            w::BindingKind::Closure
+            w::BindingKind::Closure,
+            w::BindingKind::Population,
+            w::BindingKind::Closure,
+            w::BindingKind::Population,
+            w::BindingKind::Closure,
         ]
     );
+    assert_eq!(model.exports[1].kind, w::ExportKind::Population);
+    assert_eq!(model.exports[1].path, ["Node", "nodes"]);
+    assert_eq!(model.exports[1].locus, model.exports[0].locus);
     assert!(model.correspondence.0.is_none());
     // Candidate and reader admission carry no native-emitter/family authority.
     assert_eq!(
@@ -471,7 +478,6 @@ fn actual_export_authority_cannot_be_replaced_by_a_tag_path_or_foreign_locus() {
     for kind in [
         w::ExportKind::Component,
         w::ExportKind::Endpoint,
-        w::ExportKind::Population,
         w::ExportKind::Relationship,
     ] {
         let mut offered = fixture.package.clone();
@@ -502,6 +508,9 @@ fn actual_export_authority_cannot_be_replaced_by_a_tag_path_or_foreign_locus() {
     }
     let mut offered = fixture.package.clone();
     offered.models[0].exports[0].path[0] = "OtherNode".into();
+    failure(&fixture.offered(&offered), Error::Invalid(Invalid::Model));
+    let mut offered = fixture.package.clone();
+    offered.models[0].exports[1].path[1] = "other-population".into();
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Model));
     let mut offered = fixture.package.clone();
     offered.models[0].exports[0].locus.formal.document = "ForeignModelSource".into();
@@ -666,7 +675,9 @@ fn independently_counted_peak_limits_distinguish_exact_from_one_short() {
         ),
         (Dimension::Sources, 1),
         (Dimension::Dependencies, fixture.package.dependencies.len()),
-        (Dimension::Definitions, 7),
+        // Seven language/family/package definitions plus Range,
+        // ObservationBinding and Progress for the population/closure pairs.
+        (Dimension::Definitions, 10),
         (Dimension::Models, 1),
         (Dimension::Declarations, 1),
     ] {
@@ -1277,7 +1288,14 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Control));
     let await_mutants: [fn(&mut Vec<w::BindingRequirement>); 3] = [
         |bindings| {
-            bindings.pop();
+            bindings.remove(10);
+            for binding in bindings {
+                for required in &mut binding.requires {
+                    if *required > 10 {
+                        *required -= 1;
+                    }
+                }
+            }
         },
         |bindings| bindings[10].subject = w::Subject::Control { control: handle(6) },
         |bindings| bindings[10].requires.clear(),
