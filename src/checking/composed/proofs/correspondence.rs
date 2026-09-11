@@ -36,13 +36,11 @@ impl Mappings {
                     SourceWork::Bytes => D::Bytes,
                     SourceWork::Constraints => D::Types,
                     SourceWork::Records => D::Records,
-                    SourceWork::Declarations
-                    | SourceWork::Expressions
-                    | SourceWork::Edges
-                    | SourceWork::Normalization
-                    | SourceWork::Depth => unreachable!(
-                        "source correspondence charges only bytes, lookups and records"
-                    ),
+                    SourceWork::Declarations => D::Declarations,
+                    SourceWork::Expressions => D::Expressions,
+                    SourceWork::Edges => D::Edges,
+                    SourceWork::Normalization => D::Normalization,
+                    SourceWork::Depth => D::Depth,
                 };
                 work.charge(dimension, amount, site)
             })?;
