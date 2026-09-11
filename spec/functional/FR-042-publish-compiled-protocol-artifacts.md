@@ -54,6 +54,14 @@ reference, that accepted inventory, exact local dependency bytes/admitted
 producer views and caller-lowered artifact limits. It consumes no concrete
 workflow instances, observations, clocks, assessment requests or backend results.
 
+For the cross-repository positive handoff, the quire-protocol integration caller
+SHALL construct the accepted inventory as Rust values from independently selected
+original sources, admitted models, registered definitions, artifact contract and
+producer bytes. The compiler supplies those original inputs with its emitted
+bytes and reference; the offered payload cannot appoint its own accepted inventory.
+The producer example's `expected.json` is an inspection aid for the fixture, not
+an accepted-inventory interchange format or an authority B may accept by default.
+
 ## Outputs
 
 An immutable `quire.compiled-protocol/1` package and its external exact-byte
