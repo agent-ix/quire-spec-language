@@ -1,5 +1,13 @@
 # quire-spec-language
 
+The `protocol_artifact` library module supplies the exact numeric component of
+[compiler #40](https://github.com/agent-ix/quire-spec-language/issues/40):
+tagged canonical decimal strings for signed-64 integers and reduced rationals,
+with typed validation errors. The [numeric contract](spec/functional/FR-038-encode-exact-protocol-numbers.md)
+defines its closed shapes. `NumberWire` retains unvalidated strings for typed
+conversion; `ProtocolNumber` contains only admitted numeric components. This
+does not yet provide a complete compiled-protocol reader or native producer.
+
 `parse_native` and `parse_native_source` select the authored edition and return
 either a historical unit or a typed, source-located `1-draft` syntax unit.
 The composed path extends the existing Logos recognizer and Pratt parser across
