@@ -2,7 +2,7 @@
 //! FR-042: source/proof correspondence and exact selected semantic resources.
 use super::{
     layout,
-    types::{text, ValueBuilder},
+    types::{index as checked_index, text, ValueBuilder},
     Selections,
 };
 use crate::checking::composed::proofs::ProofReport;
@@ -24,7 +24,7 @@ impl Metadata<'_> {
         for (index, selected) in self.registered.iter().enumerate() {
             work.visit()?;
             if *selected == registered {
-                return layout::index(index);
+                return checked_index(index);
             }
         }
         Err(Error::Unsupported(Unsupported::Definition))
@@ -61,7 +61,7 @@ fn dependency(
         work.visit()?;
         if artifact::intake::key(d.artifact) == artifact::intake::key(reference) {
             artifact::intake::same_reference(d.artifact, reference, work)?;
-            return layout::index(i);
+            return checked_index(i);
         }
     }
     Err(Error::Invalid(Invalid::Dependency))
@@ -82,7 +82,7 @@ fn matching_bytes(
             if result.is_some() {
                 return Err(Error::Invalid(Invalid::Duplicate));
             }
-            result = Some(layout::index(i)?);
+            result = Some(checked_index(i)?);
         }
     }
     result.ok_or(Error::Unsupported(Unsupported::Definition))
@@ -115,7 +115,7 @@ fn definitions(
                 .position(|(r, _)| r == required)
                 .ok_or(Error::Unsupported(Unsupported::Definition))?;
             work.charge(Dimension::Entries, 1)?;
-            requires.push(layout::index(index)?);
+            requires.push(checked_index(index)?);
         }
         requires.sort_unstable();
         let mut rules = Vec::new();
@@ -252,7 +252,7 @@ pub(super) fn lower(
                 if unit.source().text() != source.text() || unit.source().path() != source.path() {
                     return Err(Error::Invalid(Invalid::Selection));
                 }
-                if found.is_some() || source_indices[u].replace(layout::index(i)?).is_some() {
+                if found.is_some() || source_indices[u].replace(checked_index(i)?).is_some() {
                     return Err(Error::Invalid(Invalid::Duplicate));
                 }
                 found = Some(u);
@@ -290,8 +290,17 @@ pub(super) fn lower(
         let authored = proof
             .authored_binding()
             .ok_or(Error::Invalid(Invalid::Owner))?;
-        let source = &sources[checked_sources[proof.unit().index()] as usize];
-        if proofs.bindings()[authored.source].source.identity() != source.source.identity() {
+        let source_index = checked_sources
+            .get(proof.unit().index())
+            .ok_or(Error::Invalid(Invalid::Owner))?;
+        let source = sources
+            .get(*source_index as usize)
+            .ok_or(Error::Invalid(Invalid::Owner))?;
+        let binding = proofs
+            .bindings()
+            .get(authored.source)
+            .ok_or(Error::Invalid(Invalid::Owner))?;
+        if binding.source.identity() != source.source.identity() {
             return Err(Error::Invalid(Invalid::Owner));
         }
     }
@@ -322,7 +331,7 @@ pub(super) fn lower(
     keyed.sort_by_key(|(key, _)| *key);
     let order = keyed.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
     for (i, &d) in order.iter().enumerate() {
-        meta.declaration_indices.insert(d, layout::index(i)?);
+        meta.declaration_indices.insert(d, checked_index(i)?);
     }
     let model_binding = binding.models().ok_or(Error::Invalid(Invalid::Model))?;
     work.charge(Dimension::Models, selections.models.len())?;
