@@ -110,7 +110,7 @@ impl<'model, F: FnMut() -> bool> Validator<'_, 'model, F> {
         match catalog.formal(field.value_type(), &site)? {
             NativeType::Scalar { role, .. } => match role.kind {
                 ScalarKind::Text { max_scalars } => Some(max_scalars),
-                ScalarKind::Integer { .. } => None,
+                ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => None,
             },
             _ => None,
         }
