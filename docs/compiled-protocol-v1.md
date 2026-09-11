@@ -398,8 +398,12 @@ Alias/capture tracing uses the existing source-owned initializer and observation
 provenance, with the same availability checks; it cannot manufacture a prior
 observation. All original operands are checked, including unused initializers
 and conditional branches.
-Numeric comparisons, queries, arbitrary input atoms, callee-body expansion and
-dynamic repeat guards remain outside this proof fragment.
+Numeric comparisons, queries, arbitrary input atoms and callee-body expansion
+remain outside this proof fragment. A bounded repeat's guard may use this same
+fragment over observed Booleans; its atoms carry the repeat's own anchor, must be
+owned by the role named by `by`, and must appear in that repeat's visible set. A
+guard atom established only inside the repeat body has no availability at the
+decision instant and stays outside the fragment.
 
 Family admission proves that exactly one case guard holds for every valuation
 of a conservative abstraction in which distinct observation atoms are independent.
