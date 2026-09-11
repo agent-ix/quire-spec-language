@@ -2,7 +2,7 @@
 //! FR-036/040/042: exact future population inputs over admitted native object roles.
 //! Reuses the binding catalog; no observation or membership is supplied here.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use quire_contract_ir as ir;
 
@@ -145,17 +145,14 @@ impl<'s, 'm> Collector<'s, 'm> {
             let record = match native {
                 NativeType::Object { role, .. } | NativeType::Reference { role, .. } => {
                     let key = (model.environment().owner(), &role.record, anchor_index);
-                    if !self.needed.contains_key(&key) {
+                    if let Entry::Vacant(entry) = self.needed.entry(key) {
                         work.charge(Dimension::Entries, 1)?;
-                        self.needed.insert(
-                            key,
-                            Need {
-                                model,
-                                role,
-                                anchor,
-                                span,
-                            },
-                        );
+                        entry.insert(Need {
+                            model,
+                            role,
+                            anchor,
+                            span,
+                        });
                     }
                     &role.record
                 }
