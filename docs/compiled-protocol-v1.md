@@ -611,13 +611,18 @@ starts a new invocation. Retained diagnostic-list entries are charged before
 allocation. The reader's single inline terminal refusal needs no entry allocation
 and cannot be replaced by exhaustion of a diagnostic budget.
 
-Native Boolean choice proof uses these same counters: retained atom, formula and
+Native Boolean choice proof uses these same counters: created atom, formula and
 work records charge `Entries`; each provenance/reference/operand and case or
 valuation inspection charges `References`; byte traversal and explicit traversal
 depth retain their existing dimensions. Reservations and visits charge before
 work. Exhaustion remains `Incomplete` with the original decision/expression locus,
 never a proved partition or an abstract counterexample. No public proof platform
 or separate unbounded truth-table allocation is introduced.
+Private read indexes and lowering records are rebuilt per dynamic choice and
+charged each time, including transient records discarded after that choice.
+`Entries` is cumulative creation work, not peak live memory. A sequence of
+individually admissible choices may exhaust the shared invocation budget and
+returns `Incomplete` without partially admitted output.
 
 Production emission consumes the actual fully admitted family graph, original
 source/formal correspondence and exact definitions/models/runtime requirements.
