@@ -8,6 +8,8 @@ use crate::syntax::{composed as c, ExprId, ExprKind, UnaryOp};
 use crate::Span;
 use std::collections::BTreeMap;
 
+use super::types::index;
+
 pub(super) struct DeclLayout {
     pub declaration: u32,
     pub source: u32,
@@ -65,9 +67,6 @@ impl DeclLayout {
                 .ok_or(Error::Invalid(Invalid::Reference))?,
         )
     }
-    pub fn value_scope(&self, id: ExprId) -> Result<w::Handle, Error> {
-        self.scope(id)
-    }
     pub fn binder_scope(&self, id: usize) -> Result<w::Handle, Error> {
         self.lookup(&self.binder_scopes, id)
     }
@@ -78,11 +77,12 @@ impl DeclLayout {
             .ok_or(Error::Invalid(Invalid::Call))
     }
     pub fn anchor(&self, anchor: Anchor) -> Result<w::Handle, Error> {
-        self.anchors
+        let position = self
+            .anchors
             .iter()
             .position(|(value, _)| *value == anchor)
-            .map(|i| self.handle(i as u32))
-            .ok_or(Error::Invalid(Invalid::Reference))
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        Ok(self.handle(index(position)?))
     }
     pub fn binder_at(
         &self,
@@ -109,14 +109,6 @@ impl DeclLayout {
             .ok_or(Error::Invalid(Invalid::Reference))
     }
 }
-pub(super) fn index(value: usize) -> Result<u32, Error> {
-    if value > 1_048_576 {
-        Err(Error::Invalid(Invalid::StructuralInteger))
-    } else {
-        Ok(value as u32)
-    }
-}
-
 pub(super) fn build(
     namespace: &SyntaxNamespace,
     typed: &DeclarationTypes<'_>,
@@ -466,11 +458,21 @@ pub(super) fn build(
         let mut size = usize::MAX;
         for (p, other) in result.scopes.iter().enumerate() {
             work.visit()?;
-            let width = (other.locus.span.end - other.locus.span.start) as usize;
+            let width = other
+                .locus
+                .span
+                .end
+                .checked_sub(other.locus.span.start)
+                .ok_or(Error::Invalid(Invalid::Locus))? as usize;
             if other.locus.span.start as usize <= region.start
                 && region.end <= other.locus.span.end as usize
                 && width < size
-                && width < syntax.span.end - syntax.span.start
+                && width
+                    < syntax
+                        .span
+                        .end
+                        .checked_sub(syntax.span.start)
+                        .ok_or(Error::Invalid(Invalid::Locus))?
             {
                 parent = index(p)?;
                 size = width;
@@ -510,6 +512,9 @@ pub(super) fn build(
         }
         if !visible {
             let region = &result.scopes[target as usize].locus.span;
+            // Capture/event regions are built from these admitted reads; their
+            // visibility authority is the ScopeReport cross-check above. For
+            // authored phase/let regions, this also checks lexical containment.
             if region.start as usize > read.span.start || read.span.end > region.end as usize {
                 return Err(Error::Invalid(Invalid::Scope));
             }

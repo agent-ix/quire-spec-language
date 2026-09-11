@@ -89,7 +89,7 @@ impl ValueBuilder<'_> {
                 ),
                 value_type,
                 profile,
-                scope: layout.value_scope(at)?,
+                scope: layout.scope(at)?,
                 anchor,
                 origin,
                 operation,
