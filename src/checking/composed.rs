@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-040: composed profile/type admission before definedness and family checking.
 
+pub mod proofs;
 mod solver;
 mod sources;
 pub mod work;

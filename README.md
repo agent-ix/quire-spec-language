@@ -25,8 +25,11 @@ shared values across predicates, state, temporal and protocol declarations. It
 retains exact nominal types, profiles, query shapes, capture provenance and
 dependency-local refusals, with pending proof/runtime obligations. Its `Typed`
 disposition establishes type admission only; exact authored formal sources supply
-the existing IR rational normalizer. Guarded definedness and complete family
-admission remain subsequent work. Existing `parse`, format, CLI and checked-package APIs retain their
+the existing IR rational normalizer. `checking::composed::proofs::discharge`
+then checks supported guarded values through the existing IR prover and exact
+authored `CheckBindings`, preserving actual goals and dependent refusals.
+Ordered-query proof representation, complete family admission and runtime
+validation remain open. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
 Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
@@ -59,8 +62,8 @@ rational domains through `native-state-model/2`, retaining the actual IR bounds,
 units and source locations. Composed model exports consume these types; historical
 linking refuses a selected `/2` model. This supplies the model prerequisite for
 [composed value checking](spec/functional/FR-040-check-composed-values.md), whose
-type admission is available through `checking::composed::admit_types`; guarded
-definedness and complete runtime obligations remain open.
+type admission and supported guarded proofs are available through the composed
+checker. Complete runtime obligations remain open.
 
 `checking::check` consumes a native linked package, exact `CheckBindings` and
 caller-lowered `CheckLimits`. It returns the original source/AST with native
