@@ -4,7 +4,17 @@
 #[path = "protocol-handoff/producer.rs"]
 mod producer;
 
-fn main() -> Result<(), producer::Error> {
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<(), producer::Error> {
     let mut arguments = std::env::args_os().skip(1);
     let directory = arguments.next().ok_or(producer::Error::Arguments)?;
     if arguments.next().is_some() {

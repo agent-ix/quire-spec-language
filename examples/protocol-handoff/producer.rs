@@ -59,10 +59,14 @@ pub enum Error {
     Source(#[from] Box<quire_spec_language::Diagnostic>),
     #[error("{0}")]
     Model(#[from] Box<model_source::ModelSourceError>),
-    #[error("{stage} did not complete: {details}")]
+    #[error("{stage} did not complete: {completed}/{expected} records, {issues} issues, incomplete={incomplete}; first issue: {first:?}")]
     Stage {
         stage: &'static str,
-        details: String,
+        completed: usize,
+        expected: usize,
+        issues: usize,
+        incomplete: bool,
+        first: Option<Box<StageIssue>>,
     },
     #[error("{stage}: {cause}; source locus: {locus:?}")]
     Artifact {
@@ -75,8 +79,47 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
-    #[error("an authored declaration or supplied dependency is missing or ambiguous")]
-    Inventory,
+    #[error("authored declaration {name}: {problem}")]
+    Declaration { name: String, problem: &'static str },
+    #[error("dependency {identity}: expected one selection, found {matches}")]
+    Dependency { identity: String, matches: usize },
+    #[error("source span {span:?} exceeds the wire offset range")]
+    Span { span: quire_spec_language::Span },
+}
+
+/// Fixed-size summaries never retain a report, source body or diagnostic list.
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+pub enum StageIssue {
+    #[error("{kind}, supplied={supplied:?}, span={span:?}, code={code:?}")]
+    Namespace {
+        kind: &'static str,
+        supplied: Option<usize>,
+        span: Option<quire_spec_language::Span>,
+        code: Option<quire_spec_language::Code>,
+    },
+    #[error("declaration {declaration}: {disposition:?}, site={site:?}, cause={cause:?}")]
+    Proof {
+        declaration: usize,
+        disposition: proofs::ProofDisposition,
+        site: Option<composed::Site>,
+        cause: Option<ProofCause>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+pub enum ProofCause {
+    #[error("upstream type refusal")]
+    UpstreamType,
+    #[error("authored correspondence: {0:?}")]
+    Correspondence(proofs::CorrespondenceError),
+    #[error("unproved obligation: {diagnostics} diagnostics")]
+    Unproved { diagnostics: usize },
+    #[error("unsupported proof prerequisite: {0:?}")]
+    Unsupported(proofs::Unsupported),
+    #[error("dependency declaration {declaration}")]
+    Dependency { declaration: usize },
+    #[error("unrecognized proof cause")]
+    Unrecognized,
 }
 
 fn io_at(path: &Path, source: io::Error) -> Error {
@@ -221,6 +264,7 @@ struct Dependency {
     artifact: w::ArtifactRef,
     bytes: Cow<'static, [u8]>,
     requires: Vec<w::ArtifactRef>,
+    file: String,
 }
 
 #[derive(Serialize)]
@@ -245,7 +289,7 @@ struct SelectedSource {
     declarations: Vec<SelectedDeclaration>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct SelectedModel {
     artifact: w::ArtifactRef,
     source: w::Source,
@@ -274,14 +318,26 @@ fn declaration_selection(
         .iter()
         .map(|clause| {
             let [id] = namespace.lookup(&clause.name) else {
-                return Err(Error::Inventory);
+                return Err(Error::Declaration {
+                    name: clause.name.clone(),
+                    problem: if namespace.lookup(&clause.name).is_empty() {
+                        "not present in the original namespace"
+                    } else {
+                        "ambiguous in the original namespace"
+                    },
+                });
             };
-            let syntax = namespace.syntax(*id).ok_or(Error::Inventory)?;
+            let syntax = namespace.syntax(*id).ok_or_else(|| Error::Declaration {
+                name: clause.name.clone(),
+                problem: "original syntax is unavailable",
+            })?;
             Ok(SelectedDeclaration {
                 name: clause.name.clone(),
                 span: w::Span {
-                    start: u32::try_from(syntax.span.start).map_err(|_| Error::Inventory)?,
-                    end: u32::try_from(syntax.span.end).map_err(|_| Error::Inventory)?,
+                    start: u32::try_from(syntax.span.start)
+                        .map_err(|_| Error::Span { span: syntax.span })?,
+                    end: u32::try_from(syntax.span.end)
+                        .map_err(|_| Error::Span { span: syntax.span })?,
                 },
                 requirement: w::Requirement {
                     package: clause.requirement.package().as_str().into(),
@@ -298,7 +354,12 @@ fn declaration_selection(
                     },
                     ir::ExecutionPoint::Initialization { .. }
                     | ir::ExecutionPoint::Pre { .. }
-                    | ir::ExecutionPoint::Post { .. } => return Err(Error::Inventory),
+                    | ir::ExecutionPoint::Post { .. } => {
+                        return Err(Error::Declaration {
+                            name: clause.name.clone(),
+                            problem: "example requires an authored handler execution point",
+                        })
+                    }
                 },
             })
         })
@@ -316,152 +377,215 @@ fn dependency_inputs(dependencies: &[Dependency]) -> Vec<artifact::SuppliedDepen
         .collect()
 }
 
-pub fn write(directory: &Path) -> Result<(), Error> {
-    let binary = current_binary()?;
-    let model = model()?;
-    let sources = [source(&model)?];
-    let formal_sources = [formal(sources[0].clone(), "ProtocolHandoff")?];
-    let owner = ir::RequirementRef::new(
-        ir::PackageId::new("agent-ix/quire-spec-language").map_err(Error::Identifier)?,
-        ir::RequirementId::new("ProtocolHandoff").map_err(Error::Identifier)?,
-        ir::RequirementRevision::new(1).map_err(Error::Identifier)?,
-    );
-    let clauses = NAMES
-        .iter()
-        .map(|name| {
-            Ok(ClauseBinding {
-                name: (*name).into(),
-                requirement: owner.clone(),
-                clause: ir::ClauseId::new(name.to_lowercase()).map_err(Error::Identifier)?,
-                execution_point: ir::ExecutionPoint::Handler {
-                    name: ir::AnchorName::new("validate").map_err(Error::Identifier)?,
-                },
-            })
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
-    let mappings = [CheckBindings {
-        source: formal_sources[0].clone(),
-        clauses,
-    }];
-    let selected = selected_definitions();
-    let definitions = selected
-        .iter()
-        .map(|definition| definitions::Artifact {
-            selection: definition.selection(),
-            bytes: definition.bytes(),
-        })
-        .collect::<Vec<_>>();
-    let rules = selected
-        .iter()
-        .flat_map(|definition| definition.rules())
-        .map(|rule| (rule.path, *rule))
-        .collect::<BTreeMap<_, _>>();
-    let rule_inputs = rules
-        .values()
-        .map(|rule| definitions::RuleInput {
-            path: rule.path,
-            digest: ByteDigest::of(rule.bytes),
-            bytes: rule.bytes,
-        })
-        .collect::<Vec<_>>();
-    let inventory = linking::SourceInventory {
-        language: "ix:native".into(),
-        edition: "1-draft".into(),
-        units: vec![linking::ExpectedSource {
-            authority: NATIVE_ID.into(),
-            identity: sources[0].identity().clone(),
-            digest: sources[0].digest(),
-        }],
-    };
-    let namespace = linking::admit_namespace(
-        &inventory,
-        &sources,
-        linking::WorkLimits::default(),
-        quire_spec_language::Limits::default(),
-    );
-    let namespace = namespace.namespace().ok_or_else(|| Error::Stage {
-        stage: "namespace",
-        details: format!("{namespace:?}"),
-    })?;
-    let definition_inputs = definitions::Inventory {
-        edition: R::Edition.selection(),
-        definitions: &definitions,
-        rules: &rule_inputs,
-    };
-    let model_inputs = [ModelInput::Native(&model)];
-    let binding = binding::bind(
-        namespace,
-        &definition_inputs,
-        &model_inputs,
-        linking::binding_work::Limits::default(),
-    );
-    let typed = composed::admit_types(&binding, &formal_sources, composed::TypeLimits::default());
-    let proofs = proofs::discharge(&typed, &mappings, proofs::ProofLimits::default());
-    if proofs.declarations().len() != NAMES.len()
-        || proofs
-            .declarations()
+struct Inputs {
+    model: NativeModel,
+    sources: [Source; 1],
+    formal_sources: [FormalSource; 1],
+    mappings: [CheckBindings; 1],
+    definitions: DefinitionInputs,
+}
+
+impl Inputs {
+    fn new() -> Result<Self, Error> {
+        let model = model()?;
+        let sources = [source(&model)?];
+        let formal_sources = [formal(sources[0].clone(), "ProtocolHandoff")?];
+        let owner = ir::RequirementRef::new(
+            ir::PackageId::new("agent-ix/quire-spec-language").map_err(Error::Identifier)?,
+            ir::RequirementId::new("ProtocolHandoff").map_err(Error::Identifier)?,
+            ir::RequirementRevision::new(1).map_err(Error::Identifier)?,
+        );
+        let clauses = NAMES
             .iter()
-            .any(|declaration| declaration.disposition() != proofs::ProofDisposition::Discharged)
-    {
-        return Err(Error::Stage {
-            stage: "type/definedness",
-            details: format!("{proofs:?}"),
-        });
+            .map(|name| {
+                Ok(ClauseBinding {
+                    name: (*name).into(),
+                    requirement: owner.clone(),
+                    clause: ir::ClauseId::new(name.to_lowercase()).map_err(Error::Identifier)?,
+                    execution_point: ir::ExecutionPoint::Handler {
+                        name: ir::AnchorName::new("validate").map_err(Error::Identifier)?,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let mappings = [CheckBindings {
+            source: formal_sources[0].clone(),
+            clauses,
+        }];
+
+        Ok(Self {
+            model,
+            sources,
+            formal_sources,
+            mappings,
+            definitions: DefinitionInputs::new(),
+        })
     }
-    let source_reference = reference(
-        AUTHORITY,
-        w::ArtifactKind::Source,
-        NATIVE_ID,
-        revision("native-source-revision", "1"),
-        "ix:native",
-        "1-draft",
-        sources[0].text().as_bytes(),
-    );
-    let contract = reference(
-        AUTHORITY,
-        w::ArtifactKind::Source,
-        "quire.compiled-protocol/1",
-        revision("compiled-protocol-contract", "1"),
-        "text/markdown",
-        "1",
-        CONTRACT,
-    );
-    let binary_ref = reference(
-        AUTHORITY,
-        w::ArtifactKind::GeneratedArtifact,
-        "native_protocol_handoff",
-        revision("crate-version", env!("CARGO_PKG_VERSION")),
-        "ELF",
-        "1",
-        &binary,
-    );
-    let producer = w::Producer {
-        implementation: "quire-spec-language/native_protocol_handoff".into(),
-        revision: revision("crate-version", env!("CARGO_PKG_VERSION")),
-        binary: binary_ref.clone(),
-    };
-    let model_ref = reference(
-        AUTHORITY,
-        w::ArtifactKind::ModelPackage,
-        model.environment().owner().package().as_str(),
-        revision(REQUIREMENT_NAMESPACE, "1"),
-        "native-state-model",
-        "2",
-        model.artifact_bytes(),
-    );
-    let foreign_ref = reference(
-        AUTHORITY,
-        w::ArtifactKind::Source,
-        &model.source().source().identity().identity,
-        revision("native-source-revision", "1"),
-        "native-rule-model",
-        "2",
-        model.source().source().text().as_bytes(),
-    );
-    let foreign_formal = w::Formal {
-        document: "ProtocolHandoffModel".into(),
-        revision: revision(FORMAL_NAMESPACE, "1"),
-    };
+}
+
+struct DefinitionInputs {
+    selected: Vec<R>,
+    artifacts: Vec<definitions::Artifact<'static>>,
+    rules: Vec<definitions::RuleInput<'static>>,
+}
+
+impl DefinitionInputs {
+    fn new() -> Self {
+        let selected = selected_definitions();
+        let definitions = selected
+            .iter()
+            .map(|definition| definitions::Artifact {
+                selection: definition.selection(),
+                bytes: definition.bytes(),
+            })
+            .collect::<Vec<_>>();
+        let rules = selected
+            .iter()
+            .flat_map(|definition| definition.rules())
+            .map(|rule| (rule.path, *rule))
+            .collect::<BTreeMap<_, _>>();
+        let rule_inputs = rules
+            .values()
+            .map(|rule| definitions::RuleInput {
+                path: rule.path,
+                digest: ByteDigest::of(rule.bytes),
+                bytes: rule.bytes,
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            selected,
+            artifacts: definitions,
+            rules: rule_inputs,
+        }
+    }
+}
+
+struct SelectedInputs {
+    contract: w::ArtifactRef,
+    baseline: w::ArtifactRef,
+    producer: w::Producer,
+    language: w::Language,
+    source: w::Source,
+    model: SelectedModel,
+    dependencies: Vec<Dependency>,
+}
+
+impl SelectedInputs {
+    fn new(inputs: &Inputs, binary: Vec<u8>) -> Result<Self, Error> {
+        let model = &inputs.model;
+        let sources = &inputs.sources;
+        let source_reference = reference(
+            AUTHORITY,
+            w::ArtifactKind::Source,
+            NATIVE_ID,
+            revision("native-source-revision", &sources[0].identity().revision),
+            "ix:native",
+            "1-draft",
+            sources[0].text().as_bytes(),
+        );
+        let contract = reference(
+            AUTHORITY,
+            w::ArtifactKind::Source,
+            "quire.compiled-protocol/1",
+            revision("compiled-protocol-contract", "1"),
+            "text/markdown",
+            "1",
+            CONTRACT,
+        );
+        let binary_ref = reference(
+            AUTHORITY,
+            w::ArtifactKind::GeneratedArtifact,
+            "native_protocol_handoff",
+            revision("crate-version", env!("CARGO_PKG_VERSION")),
+            "ELF",
+            "1",
+            &binary,
+        );
+        let producer = w::Producer {
+            implementation: "quire-spec-language/native_protocol_handoff".into(),
+            revision: revision("crate-version", env!("CARGO_PKG_VERSION")),
+            binary: binary_ref.clone(),
+        };
+        let model_ref = reference(
+            AUTHORITY,
+            w::ArtifactKind::ModelPackage,
+            model.environment().owner().package().as_str(),
+            revision(
+                REQUIREMENT_NAMESPACE,
+                &model.environment().owner().revision().get().to_string(),
+            ),
+            "native-state-model",
+            "2",
+            model.artifact_bytes(),
+        );
+        let foreign_ref = reference(
+            AUTHORITY,
+            w::ArtifactKind::Source,
+            &model.source().source().identity().identity,
+            revision(
+                "native-source-revision",
+                &model.source().source().identity().revision,
+            ),
+            "native-rule-model",
+            "2",
+            model.source().source().text().as_bytes(),
+        );
+
+        let dependencies =
+            selected_dependencies(inputs, binary, &contract, binary_ref, &model_ref)?;
+        let baseline = dependency_reference(&dependencies, R::Edition.identity())?;
+        Ok(Self {
+            contract,
+            baseline,
+            producer,
+            language: w::Language {
+                identity: "ix:native".into(),
+                edition: "1-draft".into(),
+            },
+            source: wire_source(source_reference, &inputs.formal_sources[0]),
+            model: SelectedModel {
+                artifact: model_ref,
+                source: wire_source(foreign_ref, model.source()),
+                source_file: "model-source.json",
+                source_format: model_source::FORMAT_V2,
+            },
+            dependencies,
+        })
+    }
+
+    fn output_selection(&self, artifact: w::ArtifactRef, source: SelectedSource) -> Selection {
+        Selection {
+            artifact,
+            contract: self.contract.clone(),
+            baseline: self.baseline.clone(),
+            producer: self.producer.clone(),
+            language: self.language.clone(),
+            sources: vec![source],
+            dependencies: self
+                .dependencies
+                .iter()
+                .map(|dependency| SelectedDependency {
+                    artifact: dependency.artifact.clone(),
+                    file: dependency.file.clone(),
+                    requires: dependency.requires.clone(),
+                })
+                .collect(),
+            model: self.model.clone(),
+        }
+    }
+}
+
+fn selected_dependencies(
+    inputs: &Inputs,
+    binary: Vec<u8>,
+    contract: &w::ArtifactRef,
+    binary_ref: w::ArtifactRef,
+    model_ref: &w::ArtifactRef,
+) -> Result<Vec<Dependency>, Error> {
+    let selected = &inputs.definitions.selected;
+    let rules = &inputs.definitions.rules;
+    let model = &inputs.model;
     let mut dependencies = selected
         .iter()
         .map(|definition| Dependency {
@@ -476,15 +600,10 @@ pub fn write(directory: &Path) -> Result<(), Error> {
             ),
             bytes: Cow::Borrowed(definition.bytes()),
             requires: Vec::new(),
+            file: String::new(),
         })
         .collect::<Vec<_>>();
-    let baseline = dependencies
-        .iter()
-        .find(|dependency| dependency.artifact.identity == R::Edition.identity())
-        .ok_or(Error::Inventory)?
-        .artifact
-        .clone();
-    for rule in rules.values() {
+    for rule in rules {
         dependencies.push(Dependency {
             artifact: reference(
                 STANDARD,
@@ -497,6 +616,7 @@ pub fn write(directory: &Path) -> Result<(), Error> {
             ),
             bytes: Cow::Borrowed(rule.bytes),
             requires: Vec::new(),
+            file: String::new(),
         });
     }
     dependencies.extend([
@@ -504,21 +624,24 @@ pub fn write(directory: &Path) -> Result<(), Error> {
             artifact: contract.clone(),
             bytes: Cow::Borrowed(CONTRACT),
             requires: Vec::new(),
+            file: String::new(),
         },
         Dependency {
             artifact: binary_ref,
             bytes: Cow::Owned(binary),
             requires: Vec::new(),
+            file: String::new(),
         },
         Dependency {
             artifact: model_ref.clone(),
             bytes: Cow::Owned(model.artifact_bytes().to_vec()),
             requires: Vec::new(),
+            file: String::new(),
         },
     ]);
     // The registry owns definition/rule prerequisites. This fixture supplies
     // those exact direct edges instead of discovering dependencies from output.
-    for definition in &selected {
+    for definition in selected {
         let mut requires = Vec::new();
         for required in definition.requirements() {
             requires.push(dependency_reference(&dependencies, required.identity())?);
@@ -529,56 +652,238 @@ pub fn write(directory: &Path) -> Result<(), Error> {
         let dependency = dependencies
             .iter_mut()
             .find(|dependency| dependency.artifact.identity == definition.identity())
-            .ok_or(Error::Inventory)?;
+            .ok_or_else(|| Error::Dependency {
+                identity: definition.identity().into(),
+                matches: 0,
+            })?;
         dependency.requires = requires;
     }
     dependencies.sort_by(|a, b| dependency_key(&a.artifact).cmp(&dependency_key(&b.artifact)));
 
-    // All source/declaration expectations come from the original input and
-    // authored mappings before native admission or any offered package exists.
-    let selected_source = SelectedSource {
-        source: w::Source {
-            artifact: source_reference.clone(),
-            native: w::NativeSource {
-                identity: sources[0].identity().identity.clone(),
-                revision: sources[0].identity().revision.clone(),
-            },
-            path: sources[0].path().into(),
-            formal: w::Formal {
-                document: formal_sources[0].identity().document().as_str().into(),
-                revision: revision(
-                    FORMAL_NAMESPACE,
-                    &formal_sources[0].identity().revision().get().to_string(),
-                ),
-            },
-            text: sources[0].text().into(),
+    // Assign the output path once; sidecar and publication use this same value.
+    for (index, dependency) in dependencies.iter_mut().enumerate() {
+        dependency.file = format!("dependencies/{index}.bin");
+    }
+    Ok(dependencies)
+}
+
+fn wire_source(artifact: w::ArtifactRef, source: &FormalSource) -> w::Source {
+    w::Source {
+        artifact,
+        native: w::NativeSource {
+            identity: source.source().identity().identity.clone(),
+            revision: source.source().identity().revision.clone(),
         },
-        declarations: declaration_selection(namespace, &mappings[0].clauses)?,
+        path: source.source().path().into(),
+        formal: w::Formal {
+            document: source.identity().document().as_str().into(),
+            revision: revision(
+                FORMAL_NAMESPACE,
+                &source.identity().revision().get().to_string(),
+            ),
+        },
+        text: source.source().text().into(),
+    }
+}
+
+struct Output {
+    selection: Selection,
+    emitted: native::EmittedPackage,
+}
+
+fn compile(inputs: &Inputs, selected: &SelectedInputs) -> Result<Output, Error> {
+    let inventory = linking::SourceInventory {
+        language: "ix:native".into(),
+        edition: "1-draft".into(),
+        units: vec![linking::ExpectedSource {
+            authority: NATIVE_ID.into(),
+            identity: inputs.sources[0].identity().clone(),
+            digest: inputs.sources[0].digest(),
+        }],
     };
-    let language = w::Language {
-        identity: inventory.language.clone(),
-        edition: inventory.edition.clone(),
+    let namespace = linking::admit_namespace(
+        &inventory,
+        &inputs.sources,
+        linking::WorkLimits::default(),
+        quire_spec_language::Limits::default(),
+    );
+    let namespace = namespace
+        .namespace()
+        .ok_or_else(|| namespace_failure(&namespace))?;
+    let definition_inputs = definitions::Inventory {
+        edition: R::Edition.selection(),
+        definitions: &inputs.definitions.artifacts,
+        rules: &inputs.definitions.rules,
     };
-    let supplied = dependency_inputs(&dependencies);
+    let model_inputs = [ModelInput::Native(&inputs.model)];
+    let binding = binding::bind(
+        namespace,
+        &definition_inputs,
+        &model_inputs,
+        linking::binding_work::Limits::default(),
+    );
+    let typed = composed::admit_types(
+        &binding,
+        &inputs.formal_sources,
+        composed::TypeLimits::default(),
+    );
+    let proofs = proofs::discharge(&typed, &inputs.mappings, proofs::ProofLimits::default());
+    require_proofs(&proofs)?;
+    let original = SelectedSource {
+        source: selected.source.clone(),
+        declarations: declaration_selection(namespace, &inputs.mappings[0].clauses)?,
+    };
+    emit_and_read(inputs, selected, &proofs, original)
+}
+
+fn namespace_failure(report: &linking::NamespaceReport<'_>) -> Error {
+    Error::Stage {
+        stage: "namespace",
+        completed: report.parsed_sources().len(),
+        expected: report.inventory().units.len(),
+        issues: report.issues().len(),
+        incomplete: report.is_incomplete(),
+        first: report.issues().first().map(namespace_issue).map(Box::new),
+    }
+}
+
+fn namespace_issue(issue: &linking::InventoryIssue) -> StageIssue {
+    use linking::InventoryIssue as I;
+    let (kind, supplied, span, code) = match issue {
+        I::EmptyInventory => ("empty inventory", None, None, None),
+        I::UnsupportedSelection => ("unsupported selection", None, None, None),
+        I::InvalidExpectedSource { .. } => ("invalid expected source", None, None, None),
+        I::DuplicateExpectedSource { .. } => ("duplicate expected source", None, None, None),
+        I::DuplicateSuppliedSource { supplied } => (
+            "duplicate supplied source",
+            supplied.first().copied(),
+            None,
+            None,
+        ),
+        I::MissingSource { .. } => ("missing source", None, None, None),
+        I::UnexpectedSource { supplied } => ("unexpected source", Some(*supplied), None, None),
+        I::DigestMismatch { supplied, .. } => {
+            ("source digest mismatch", Some(*supplied), None, None)
+        }
+        I::HeaderConflict {
+            supplied,
+            language,
+            edition,
+        } => (
+            "source header conflict",
+            Some(*supplied),
+            Some(quire_spec_language::Span {
+                start: language.span.start,
+                end: edition.span.end,
+            }),
+            None,
+        ),
+        I::ParseFailure {
+            supplied,
+            diagnostic,
+        } => (
+            "source parse failure",
+            Some(*supplied),
+            Some(quire_spec_language::Span {
+                start: diagnostic.span.start.byte,
+                end: diagnostic.span.end.byte,
+            }),
+            Some(diagnostic.code),
+        ),
+    };
+    StageIssue::Namespace {
+        kind,
+        supplied,
+        span,
+        code,
+    }
+}
+
+fn require_proofs(report: &proofs::ProofReport<'_, '_, '_>) -> Result<(), Error> {
+    let completed = report
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.disposition() == proofs::ProofDisposition::Discharged)
+        .count();
+    if completed == NAMES.len()
+        && report.declarations().len() == NAMES.len()
+        && report.exhaustion().is_none()
+    {
+        return Ok(());
+    }
+    let first = report
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.disposition() != proofs::ProofDisposition::Discharged)
+        .map(|declaration| {
+            let cause = declaration.causes().first();
+            Box::new(StageIssue::Proof {
+                declaration: declaration.declaration().index(),
+                disposition: declaration.disposition(),
+                site: cause
+                    .map(|cause| cause.site)
+                    .or_else(|| report.exhaustion().map(|exhaustion| exhaustion.site)),
+                cause: cause.map(|cause| proof_cause(&cause.kind)),
+            })
+        });
+    Err(Error::Stage {
+        stage: "type/definedness",
+        completed,
+        expected: NAMES.len(),
+        issues: report
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.causes().len())
+            .sum(),
+        incomplete: report.exhaustion().is_some()
+            || report.declarations().iter().any(|declaration| {
+                declaration.disposition() == proofs::ProofDisposition::Unfinished
+            }),
+        first,
+    })
+}
+
+fn proof_cause(cause: &proofs::CauseKind) -> ProofCause {
+    match cause {
+        proofs::CauseKind::UpstreamType => ProofCause::UpstreamType,
+        proofs::CauseKind::Correspondence(cause) => ProofCause::Correspondence(*cause),
+        proofs::CauseKind::Unproved { diagnostics } => ProofCause::Unproved {
+            diagnostics: diagnostics.len(),
+        },
+        proofs::CauseKind::Unsupported(cause) => ProofCause::Unsupported(*cause),
+        proofs::CauseKind::Dependency { target } => ProofCause::Dependency {
+            declaration: target.index(),
+        },
+        _ => ProofCause::Unrecognized,
+    }
+}
+
+fn emit_and_read(
+    inputs: &Inputs,
+    selected: &SelectedInputs,
+    proofs: &proofs::ProofReport<'_, '_, '_>,
+    selected_source: SelectedSource,
+) -> Result<Output, Error> {
+    let supplied = dependency_inputs(&selected.dependencies);
     let foreign = artifact::ExpectedForeignSource {
-        artifact: &foreign_ref,
-        formal: &foreign_formal,
-        bytes: model.source().source().text().as_bytes(),
+        artifact: &selected.model.source.artifact,
+        formal: &selected.model.source.formal,
+        bytes: inputs.model.source().source().text().as_bytes(),
     };
     let models = [artifact::AdmittedModel {
-        artifact: &model_ref,
-        model: &model,
+        artifact: &selected.model.artifact,
+        model: &inputs.model,
         source: &foreign,
     }];
     let native_sources = [native::SourceSelection {
-        artifact: &source_reference,
-        source: &formal_sources[0],
+        artifact: &selected.source.artifact,
+        source: &inputs.formal_sources[0],
         revision_namespace: FORMAL_NAMESPACE,
     }];
     let selections = native::Selections {
-        contract: &contract,
-        baseline: &baseline,
-        producer: &producer,
+        contract: &selected.contract,
+        baseline: &selected.baseline,
+        producer: &selected.producer,
         sources: &native_sources,
         dependencies: &supplied,
         models: &models,
@@ -587,7 +892,7 @@ pub fn write(directory: &Path) -> Result<(), Error> {
     };
     let admitted = artifact_result(
         "native family admission",
-        native::admit(&proofs, &selections, artifact::Limits::default()),
+        native::admit(proofs, &selections, artifact::Limits::default()),
     )?;
     let emitted = artifact_result(
         "native encoding",
@@ -630,10 +935,10 @@ pub fn write(directory: &Path) -> Result<(), Error> {
             emitted.bytes(),
             &artifact::Expected {
                 artifact: &output,
-                contract: &contract,
-                baseline: &baseline,
-                producer: &producer,
-                language: &language,
+                contract: &selected.contract,
+                baseline: &selected.baseline,
+                producer: &selected.producer,
+                language: &selected.language,
                 sources: &expected_sources,
                 dependencies: &supplied,
                 models: &models,
@@ -641,42 +946,28 @@ pub fn write(directory: &Path) -> Result<(), Error> {
             artifact::Limits::default(),
         ),
     )?;
-    if read.package() != admitted.package() || read.digest() != emitted.digest() {
+    if read.package() != admitted.package() {
         return Err(Error::RoundTrip);
     }
-    let selection = Selection {
-        artifact: output,
-        contract,
-        baseline,
-        producer,
-        language,
-        sources: vec![selected_source],
-        dependencies: dependencies
-            .iter()
-            .enumerate()
-            .map(|(index, dependency)| SelectedDependency {
-                artifact: dependency.artifact.clone(),
-                file: format!("dependencies/{index}.bin"),
-                requires: dependency.requires.clone(),
-            })
-            .collect(),
-        model: SelectedModel {
-            artifact: model_ref,
-            source: w::Source {
-                artifact: foreign_ref,
-                formal: foreign_formal,
-                native: w::NativeSource {
-                    identity: model.source().source().identity().identity.clone(),
-                    revision: model.source().source().identity().revision.clone(),
-                },
-                path: model.source().source().path().into(),
-                text: model.source().source().text().into(),
-            },
-            source_file: "model-source.json",
-            source_format: model_source::FORMAT_V2,
-        },
-    };
-    write_files(directory, &selection, &dependencies, emitted.bytes())
+
+    Ok(Output {
+        selection: selected.output_selection(output, selected_source),
+        emitted,
+    })
+}
+
+/// Compile the authored recipe and publish its exact selections in a fresh directory.
+pub fn write(directory: &Path) -> Result<(), Error> {
+    let binary = current_binary()?;
+    let inputs = Inputs::new()?;
+    let selected = SelectedInputs::new(&inputs, binary)?;
+    let output = compile(&inputs, &selected)?;
+    write_files(
+        directory,
+        &output.selection,
+        &selected.dependencies,
+        output.emitted.bytes(),
+    )
 }
 
 fn dependency_reference(
@@ -688,7 +979,14 @@ fn dependency_reference(
         .filter(|dependency| dependency.artifact.identity == identity);
     match (found.next(), found.next()) {
         (Some(dependency), None) => Ok(dependency.artifact.clone()),
-        _ => Err(Error::Inventory),
+        (None, _) => Err(Error::Dependency {
+            identity: identity.into(),
+            matches: 0,
+        }),
+        (Some(_), Some(_)) => Err(Error::Dependency {
+            identity: identity.into(),
+            matches: 2 + found.count(),
+        }),
     }
 }
 
@@ -725,11 +1023,8 @@ fn write_files(
     fs::create_dir(directory).map_err(|error| io_at(directory, error))?;
     let dependency_directory = directory.join("dependencies");
     fs::create_dir(&dependency_directory).map_err(|error| io_at(&dependency_directory, error))?;
-    for (index, dependency) in dependencies.iter().enumerate() {
-        write_file(
-            &dependency_directory.join(format!("{index}.bin")),
-            &dependency.bytes,
-        )?;
+    for dependency in dependencies {
+        write_file(&directory.join(&dependency.file), &dependency.bytes)?;
     }
     write_file(
         &directory.join("workflow.native"),

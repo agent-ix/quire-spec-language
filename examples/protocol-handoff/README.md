@@ -5,6 +5,8 @@ and [located rule model](model.json) through the public model frontend, namespac
 binding, type, definedness and family-admission APIs. It emits through
 `protocol_artifact::native::emit` and checks the unchanged bytes with
 `protocol_artifact::read` against selections derived from the original inputs.
+The output seal is selected by the producer after emission; this local reader
+check does not independently authenticate that seal or exercise tamper controls.
 The example includes an exact rational domain, object/reference population
 requirements, and predicate, state, temporal and protocol declarations. It
 supplies no runtime observations or population-completeness claims.
@@ -15,12 +17,15 @@ Build and run the Rust example with a new output directory:
 CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_handoff -- /tmp/quire-native-handoff
 ```
 
+This recipe supports Linux ELF executables; Mach-O and PE executables are refused.
 The producer reads its actual `current_exe()` bytes, identifies an ELF version-1
 binary, and selects their raw digest. This example lowers binary input to 16 MiB
 within the artifact byte-work ceiling; larger binaries fail before output.
 An unstripped debug executable will commonly exceed that bound. All compiler
 stages retain their own default limits; no limit is disabled to accommodate a
-build. Existing output directories are refused. No source file or synthetic
+build. Existing output directories are refused. Publication is not atomic: an
+I/O failure may leave a partial directory. Retry with a new path, or inspect and
+remove the incomplete output before reusing its path. No source file or synthetic
 producer string stands in for the executable bytes.
 
 The output directory contains:
