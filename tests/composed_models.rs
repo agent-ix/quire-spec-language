@@ -606,3 +606,474 @@ fn declaration_walker_binds_context_and_input_types_with_located_partial_failure
         assert_eq!(refused.exhaustion().unwrap().dimension, Dimension::References);
     });
 }
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3")]
+fn missing_alias_and_unfinished_catalog_retain_distinct_original_causes() {
+    let model = model("test/native", "NativeModel", "native-model");
+    let inputs = [ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            "predicate Rule using S (foreign: X::Node, local: M::Node): Boolean { true }",
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            let (unit, absent) = parameter(namespace, "Rule", 0);
+            let error = bindings
+                .resolve_type(unit, absent, &mut work())
+                .unwrap_err();
+            assert_eq!(error.kind, ModelErrorKind::MissingAlias);
+            assert_eq!(error.unit, unit);
+            assert_eq!(error.span, absent.model.span);
+            let (_, present) = parameter(namespace, "Rule", 1);
+            assert!(bindings.resolve_type(unit, present, &mut work()).is_ok());
+
+            let incomplete = bind_models(
+                namespace,
+                &inputs,
+                &mut Work::new(BindingLimits {
+                    models: 0,
+                    ..BindingLimits::default()
+                }),
+            );
+            assert!(!incomplete.complete());
+            assert_eq!(
+                incomplete.exhaustion().unwrap().dimension,
+                Dimension::Models
+            );
+            let error = incomplete
+                .resolve_type(unit, present, &mut work())
+                .unwrap_err();
+            assert_eq!(error.kind, ModelErrorKind::IncompleteCatalog);
+            assert_eq!(error.span, present.model.span);
+            assert_eq!(error.unit, unit);
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3")]
+fn scalar_and_record_name_collision_refuses_the_ambiguous_export() {
+    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    document["records"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name": "Version", "fields": [{"name": "valid", "type": {"kind": "boolean"}}]
+        }));
+    let model = document_model(document, "CollisionModel", "collision-model");
+    let inputs = [ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            "predicate Rule using S (ambiguous: M::Version, valid: M::Node): Boolean { true }",
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            assert!(bindings.complete());
+            let (unit, name) = parameter(namespace, "Rule", 0);
+            let error = bindings.resolve_type(unit, name, &mut work()).unwrap_err();
+            assert_eq!(error.kind, ModelErrorKind::AmbiguousExport);
+            assert_eq!(error.span, name.name.span);
+            let (_, valid) = parameter(namespace, "Rule", 1);
+            assert!(bindings.resolve_type(unit, valid, &mut work()).is_ok());
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3", "FR-036-AC-7")]
+fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
+    let model = model("test/native", "NativeModel", "native-model");
+    let inputs = [ModelInput::Native(&model), ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            "predicate Rule using S (item: M::Node): Boolean { true }",
+        )],
+        |namespace| {
+            // Two inputs in each owner/source comparison, then two import candidates.
+            let exact = BindingLimits {
+                references: 2 + 2 + 2,
+                ..BindingLimits::default()
+            };
+            let mut meter = Work::new(exact);
+            let bindings = bind_models(namespace, &inputs, &mut meter);
+            assert!(bindings.complete());
+            assert!(bindings.conflicts().is_empty());
+            assert_eq!(meter.usage().references, 6);
+            assert_eq!(
+                bindings.imports()[0].selection,
+                Err(ImportRefusal::AmbiguousSelection { inputs: vec![0, 1] })
+            );
+            let (unit, name) = parameter(namespace, "Rule", 0);
+            assert_eq!(
+                bindings
+                    .resolve_type(unit, name, &mut work())
+                    .unwrap_err()
+                    .kind,
+                ModelErrorKind::RefusedImport { import: 0 }
+            );
+            let partial = bind_models(
+                namespace,
+                &inputs,
+                &mut Work::new(BindingLimits {
+                    references: 5,
+                    ..exact
+                }),
+            );
+            assert!(!partial.complete());
+            assert!(partial.imports().is_empty());
+            assert_eq!(partial.exhaustion().unwrap().used, 5);
+            assert_eq!(partial.exhaustion().unwrap().requested, 1);
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3")]
+fn native_revision_spelling_refuses_without_reclassifying_a_stale_revision() {
+    let model = model("test/native", "NativeModel", "native-model");
+    let inputs = [ModelInput::Native(&model)];
+    let original = program(
+        &model,
+        "predicate Rule using S (item: M::Node): Boolean { true }",
+    );
+    for (revision, expected) in [
+        ("1", Ok(0)),
+        ("2", Err(ImportRefusal::StaleSelection)),
+        ("01", Err(ImportRefusal::InvalidRevision)),
+        ("+1", Err(ImportRefusal::InvalidRevision)),
+        (" 1", Err(ImportRefusal::InvalidRevision)),
+        ("1 ", Err(ImportRefusal::InvalidRevision)),
+        ("0", Err(ImportRefusal::InvalidRevision)),
+        ("-1", Err(ImportRefusal::InvalidRevision)),
+        ("1.0", Err(ImportRefusal::InvalidRevision)),
+        ("1e0", Err(ImportRefusal::InvalidRevision)),
+        ("18446744073709551616", Err(ImportRefusal::InvalidRevision)),
+        ("", Err(ImportRefusal::InvalidRevision)),
+    ] {
+        let text = original.replace(
+            "model M = \"test/native\" version \"1\"",
+            &format!("model M = \"test/native\" version \"{revision}\""),
+        );
+        with_namespace(&[text], |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            assert!(bindings.complete());
+            assert_eq!(bindings.imports().len(), 1);
+            assert_eq!(bindings.imports()[0].selection, expected, "{revision:?}");
+            assert_eq!(namespace.units()[0].models()[0].version.value, revision);
+        });
+    }
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-7")]
+fn parameter_types_preserve_boolean_and_nominal_types_with_exact_scan_costs() {
+    let model = model("test/native", "NativeModel", "native-model");
+    let inputs = [ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            "predicate Rule using S (flag: Boolean, amount: M::Version): Boolean { true }",
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            let id = namespace.lookup("Rule")[0];
+            let unit = namespace.declaration(id).unwrap().unit();
+            let DeclarationKind::Predicate { parameters, .. } = &namespace.syntax(id).unwrap().kind
+            else {
+                panic!("predicate fixture")
+            };
+            let mut boolean = Work::new(BindingLimits {
+                references: 1,
+                ..BindingLimits::default()
+            });
+            assert_eq!(
+                bindings
+                    .parameter_type(unit, &parameters[0].ty, &mut boolean)
+                    .unwrap(),
+                NativeType::Boolean
+            );
+            assert_eq!(boolean.usage().references, 1);
+            let error = bindings
+                .parameter_type(
+                    unit,
+                    &parameters[0].ty,
+                    &mut Work::new(BindingLimits {
+                        references: 0,
+                        ..BindingLimits::default()
+                    }),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
+                if exhaustion.dimension == Dimension::References && exhaustion.used == 0)
+            );
+            // Alias/type lookups + both record candidates + Sequence + scalar
+            // leaf: Version's first normalized site is Node.items, before Node.n.
+            let exact = BindingLimits {
+                references: 6,
+                ..BindingLimits::default()
+            };
+            let mut nominal = Work::new(exact);
+            let ty = bindings
+                .parameter_type(unit, &parameters[1].ty, &mut nominal)
+                .unwrap();
+            assert!(matches!(ty, NativeType::Scalar { model: owner, role, .. }
+                if std::ptr::eq(owner, &model) && role.name.as_str() == "Version"));
+            assert_eq!(nominal.usage().references, 6);
+            let error = bindings
+                .parameter_type(
+                    unit,
+                    &parameters[1].ty,
+                    &mut Work::new(BindingLimits {
+                        references: 5,
+                        ..exact
+                    }),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
+                if exhaustion.dimension == Dimension::References && exhaustion.used == 5)
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3", "FR-036-AC-7")]
+fn missing_field_scan_exhausts_before_its_last_candidate() {
+    let model = model("test/native", "NativeModel", "native-model");
+    let inputs = [ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            "predicate Rule using S (item: M::Node): Boolean { true }",
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            let (unit, name) = parameter(namespace, "Rule", 0);
+            let node = bindings.resolve_type(unit, name, &mut work()).unwrap();
+            let missing = Spanned {
+                value: "missing".into(),
+                span: name.name.span,
+            };
+            // One catalog entry, one import alias, one lookup, ten Node fields.
+            let exact = BindingLimits {
+                references: 13,
+                ..BindingLimits::default()
+            };
+            let mut meter = Work::new(exact);
+            let error = bindings
+                .field(unit, &node, &missing, &mut meter)
+                .unwrap_err();
+            assert_eq!(error.kind, ModelErrorKind::MissingExport);
+            assert_eq!(meter.usage().references, 13);
+            let error = bindings
+                .field(
+                    unit,
+                    &node,
+                    &missing,
+                    &mut Work::new(BindingLimits {
+                        references: 12,
+                        ..exact
+                    }),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 12
+                && exhaustion.requested == 1)
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-7")]
+fn operation_parameters_values_and_enum_members_charge_each_candidate() {
+    let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
+    document["enums"] = serde_json::json!([{ "name": "Color", "variants": ["Red", "Blue"] }]);
+    document["values"].as_array_mut().unwrap().extend([
+        serde_json::json!({"name": "alpha", "kind": "input", "type": {"kind": "boolean"}}),
+        serde_json::json!({"name": "beta", "kind": "input", "type": {"kind": "boolean"}}),
+    ]);
+    document["operations"][0]["parameters"] = serde_json::json!(["alpha", "beta"]);
+    let model = document_model(document, "ScanModel", "scan-model");
+    let inputs = [ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            "predicate Rule using S (color: M::Color): Boolean { true }\n\
+         post After using S on M::Node::step { result }",
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            let (unit, color) = parameter(namespace, "Rule", 0);
+            let missing = Spanned {
+                value: "Missing".into(),
+                span: color.name.span,
+            };
+            // Two lookup attempts + two records + one enum + member lookup + two variants.
+            let mut variants = Work::new(BindingLimits {
+                references: 8,
+                ..BindingLimits::default()
+            });
+            let error = bindings
+                .variant(unit, color, &missing, &mut variants)
+                .unwrap_err();
+            assert_eq!(error.kind, ModelErrorKind::MissingExport);
+            assert_eq!(variants.usage().references, 8);
+            let error = bindings
+                .variant(
+                    unit,
+                    color,
+                    &missing,
+                    &mut Work::new(BindingLimits {
+                        references: 7,
+                        ..BindingLimits::default()
+                    }),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 7)
+            );
+
+            let id = namespace.lookup("After")[0];
+            let DeclarationKind::State {
+                context,
+                operation: Some(name),
+                ..
+            } = &namespace.syntax(id).unwrap().kind
+            else {
+                panic!("postcondition fixture")
+            };
+            let operation = Operation {
+                context: context.clone(),
+                name: name.clone(),
+            };
+            // Alias/type lookup, Node record, Color enum, operation lookup and one role.
+            let mut operations = Work::new(BindingLimits {
+                references: 6,
+                ..BindingLimits::default()
+            });
+            let bound = bindings
+                .resolve_operation(unit, &operation, &mut operations)
+                .unwrap();
+            assert_eq!(operations.usage().references, 6);
+            let error = bindings
+                .resolve_operation(
+                    unit,
+                    &operation,
+                    &mut Work::new(BindingLimits {
+                        references: 5,
+                        ..BindingLimits::default()
+                    }),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 5)
+            );
+            let result = Spanned {
+                value: "step_result".into(),
+                span: name.span,
+            };
+            // Catalog + alias + lookup, two parameters, result, five values, Boolean leaf.
+            let mut values = Work::new(BindingLimits {
+                references: 12,
+                ..BindingLimits::default()
+            });
+            assert_eq!(
+                bindings
+                    .value(unit, &bound, &result, &mut values)
+                    .unwrap()
+                    .native(),
+                &NativeType::Boolean
+            );
+            assert_eq!(values.usage().references, 12);
+            let error = bindings
+                .value(
+                    unit,
+                    &bound,
+                    &result,
+                    &mut Work::new(BindingLimits {
+                        references: 11,
+                        ..BindingLimits::default()
+                    }),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 11)
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3", "FR-036-AC-7")]
+fn direct_declaration_refusals_reserve_their_own_binding_records() {
+    let model = model("test/native", "NativeModel", "native-model");
+    let inputs = [ModelInput::Native(&model)];
+    with_namespace(
+        &[program(
+            &model,
+            r#"
+        predicate Missing using S (item: M::Absent): Boolean { true }
+        protocol Workflow using S over (view: M::Node) on origin {
+            role Actor on M::Node;
+            relationship Relation = M::Node;
+            run sequence Main { check Valid using S { true }; }
+            finish Closed as (closed: M::Node) { true };
+        }"#,
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &inputs, &mut work());
+            for (name, exact, before_cause, expected) in [
+                // Declaration report + missing-export cause.
+                ("Missing", 2, 1, ModelErrorKind::MissingExport),
+                // Declaration + input/role/relation/finish types + relationship cause.
+                (
+                    "Workflow",
+                    6,
+                    4,
+                    ModelErrorKind::UnsupportedRelationshipContract,
+                ),
+            ] {
+                let id = namespace.lookup(name)[0];
+                let mut meter = Work::new(BindingLimits {
+                    bindings: exact,
+                    ..BindingLimits::default()
+                });
+                let report = bindings
+                    .resolve_declaration(namespace, id, &mut meter)
+                    .unwrap();
+                assert!(report.complete);
+                assert_eq!(report.refusals.len(), 1);
+                assert_eq!(report.refusals[0].kind, expected);
+                assert_eq!(meter.usage().bindings, exact);
+                let stopped = bindings
+                    .resolve_declaration(
+                        namespace,
+                        id,
+                        &mut Work::new(BindingLimits {
+                            bindings: before_cause,
+                            ..BindingLimits::default()
+                        }),
+                    )
+                    .unwrap();
+                assert!(!stopped.complete);
+                assert_eq!(stopped.refusals.len(), 1);
+                let exhaustion = stopped.exhaustion().unwrap();
+                assert_eq!(exhaustion.dimension, Dimension::Bindings);
+                assert_eq!(exhaustion.used, before_cause);
+                assert_eq!(exhaustion.requested, 1);
+                assert_eq!(exhaustion.limit, before_cause);
+            }
+        },
+    );
+}
