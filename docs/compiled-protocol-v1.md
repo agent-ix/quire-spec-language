@@ -103,8 +103,14 @@ artifacts select model-package-kind dependencies. An export kind is exactly
 `scalar|enum|variant|record|field|object|reference|operation|relationship|population|component|endpoint`.
 Paths and source loci must identify that kind in the admitted producer view;
 unsupported authoritative exports prevent emission/admission of their dependents.
-The current native model adapter's absent relationship/population exports are
-not supplied by declaring these tags. A producer correspondence, when required
+The native adapter derives a `population` export from an admitted `ObjectRole`,
+using path `[record, universe]` and that role's original source locus. Its
+`object` export retains path `[record]`; its `reference` export retains path
+`[reference]`. These paths are relative to the exact selected model. Two object
+roles sharing a universe label still have distinct population exports. This
+binds a nominal population requirement; it supplies no population members or
+completeness evidence. Absent relationship/component/endpoint exports are not
+supplied by declaring their tags. A producer correspondence, when required
 by its interface, is mandatory and verified against its selected relation
 artifact; `null` is allowed only for a directly admitted native model without
 such a producer-domain mapping.
@@ -209,6 +215,20 @@ selected export's actual IR/native representation; equal bounds never merge
 nominal types. Integer bounds are signed-64 and ordered; rational denominator
 maximum is 1..i64::MAX; sequence maximum retains its admitted producer bound.
 Each number also satisfies its node/field-specific type domain.
+
+The wire `parent` alternative has no adopted composed source operator or
+distinct result contract; the current native adapter refuses it as
+`Unsupported::Feature`. Authored field access/dereference and positive-length
+`reaches` retain their existing selected graph meanings.
+
+A `Type.reference` triple must select the reference, object and population
+exports of one actual admitted object role in one model. Matching carrier types,
+equal names or equal universe labels in another role/model cannot join that
+triple. Native emission retains separate population and closure requirements for
+the exact object/universe and original reference evaluation anchor, including
+pre-state and captured origins. The closure requirement depends on that
+population requirement. These are required consumer inputs; static compilation
+neither reads future observations nor establishes membership, closure or truth.
 
 Each declaration has one root lexical scope; every other scope reaches that
 root through an acyclic parent chain. Binder initializers, value children and
@@ -406,10 +426,11 @@ admission failures; missing required static binding contracts are.
 The current native adapter admits `ix:native` edition `1-draft` and registered
 definitions with actual `NativeModel` views. A different edition cannot satisfy
 that definition selection (`Invalid::Definition`). Producer/native
-correspondence and relationship, population, component, endpoint and reference
-population exports remain explicit `Unsupported` prerequisites until their
-authoritative producer adapters exist; raw dependency bytes or object-universe
-names cannot substitute for those adapters. These refusals keep full FR-042
+correspondence and relationship, component and endpoint exports remain explicit
+`Unsupported` prerequisites until their authoritative producer adapters exist;
+raw dependency bytes or object-universe names cannot substitute for those
+adapters. Reference/population exports use the actual admitted native object
+role as specified above. These remaining refusals keep full FR-042
 emission and handoff acceptance open.
 
 The Rust reader accepts bytes plus an explicit expected selection. It hashes

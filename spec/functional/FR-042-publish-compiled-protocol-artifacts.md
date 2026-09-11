@@ -112,6 +112,14 @@ instances enter B/D/F's later binding interfaces. Shared providers, repeated
 deliveries, missing future observations and unactivated recovery do not collapse
 those identities or cause fabricated static observations.
 
+When a native reference requires a population, the compiler SHALL derive its
+population export and runtime input requirements from the exact admitted object
+role, selected model, universe and original evaluation anchor. The reader SHALL
+refuse a reference/object/population triple assembled from different roles or
+models, even when carrier types or universe labels agree. Pre-state and capture
+origins retain their original population/closure requirements; future membership
+and completeness remain consumer inputs rather than compilation prerequisites.
+
 The artifact SHALL preserve effect-before-registration, separate registration
 and activation captures, bounded retries, commit restrictions and the exact
 full/partial recovery predicates with their declared population/relationship
