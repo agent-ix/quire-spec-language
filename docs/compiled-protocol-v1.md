@@ -359,13 +359,14 @@ its independently selected producer, not the source proof.
 Choice guards are also collectively exhaustive over admitted decision inputs.
 
 The native observed-Boolean choice fragment uses atoms from actual Boolean fields
-of received or own-attempt record/object binders. An atom retains the exact
-event binder, selected model field/export and original observation anchor;
+of received or same-owner attempt/domain-event record/object binders. An atom
+retains the exact event binder, selected model field/export and original
+observation anchor;
 repeated reads or immutable aliases reuse that identity, while distinct
-observations remain distinct. The receive's actual channel `to` role or attempt's
-resolved role must equal the choice owner, and the existing admitted source
-scopes must establish guaranteed causal availability
-at the decision. A preceding sequence receive, or a guaranteed receive after an
+observations remain distinct. The receive's actual channel `to` role, attempt's
+role or domain event's role must resolve to the choice owner, and the existing
+admitted source scopes must establish guaranteed causal availability at the
+decision. A preceding sequence receive, or a guaranteed receive after an
 all-branch join, can qualify. A sibling receive before that join, a branch-only
 receive after its choice, or an await-success receive outside its success
 path cannot acquire availability from textual order or timestamps.
@@ -374,12 +375,17 @@ attempts and unavailable parallel siblings. Equal role model types cannot replac
 exact role identity. Admitting an attempt-result Boolean field establishes no
 operation success or business effect; operation/contract admission remains
 required.
+A compensation-qualified domain event keeps its exact registration association
+as an independent binding prerequisite. Its Boolean atom establishes no
+registration, activation, operation success, effect, send or commit observation.
+Ordinary and qualified domain events share the same exact-role and causal
+availability rule; all existing family/binding checks remain required.
 
 `visible(...)` declares the information obligation. Each entry in this fragment
-is a direct eligible received or own-attempt Boolean field, transparent
-grouping/immutable alias to that exact atom, or a closed Boolean constant;
-every guard atom must occur in
-that validated atom set. A composite visible expression such as `a and b` does
+is a direct eligible received or same-owner attempt/domain-event Boolean field,
+transparent grouping/immutable alias to that exact atom, or a closed Boolean
+constant; every guard atom must occur in that validated atom set. A composite
+visible expression such as `a and b` does
 not disclose its individual atoms and remains `Unsupported::FamilyProof`.
 Listing an arbitrary input or another role's observed value grants no visibility.
 Supported guard formulas are Boolean literals and fields, grouping, `not`, `and`,

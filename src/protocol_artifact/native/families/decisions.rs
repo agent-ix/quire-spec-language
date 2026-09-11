@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-042: Boolean decisions over causally available received/own-attempt fields.
+//! FR-042: Boolean decisions over causally available role-owned observations.
 
 mod formula;
 mod received;
