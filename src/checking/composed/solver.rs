@@ -98,10 +98,6 @@ pub(super) fn admit<'r, 'a>(
                 }
                 Some(binding::Disposition::Unfinished) | None => {}
                 Some(binding::Disposition::NamesResolved) => {
-                    let scope = binding
-                        .scopes()
-                        .and_then(|scopes| scopes.declaration(id))
-                        .expect("completed lexical binding");
                     let unit = binding
                         .namespace()
                         .unit(entry.unit())
@@ -115,8 +111,6 @@ pub(super) fn admit<'r, 'a>(
                     )?;
                     let mut solver = Solver::new(
                         binding,
-                        unit,
-                        scope,
                         output,
                         range,
                         formal.get(entry.unit()),
@@ -210,14 +204,20 @@ struct Solver<'b, 'a, 's, 'w> {
 impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
     fn new(
         binding: &'b binding::Report<'a>,
-        unit: &'b c::ComposedUnit,
-        scope: &'b DeclarationScope,
         output: &'w mut DeclarationTypes<'a>,
         range: std::ops::Range<usize>,
         formal: Option<&'s FormalSource>,
         model_bounds: &'b models::ModelBounds,
         work: &'w mut Work,
     ) -> Result<Self> {
+        let unit = binding
+            .namespace()
+            .unit(output.unit)
+            .expect("original unit");
+        let scope = binding
+            .scopes()
+            .and_then(|scopes| scopes.declaration(output.declaration))
+            .expect("completed lexical binding");
         let site = Site {
             declaration: output.declaration,
             unit: output.unit,
