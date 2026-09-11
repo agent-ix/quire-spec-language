@@ -293,5 +293,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Namespace, definition/model and lexical binding implemented; expression typing/runtime-role completion open under #35 |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR | Planned composed type and definedness checking; compiler #35/#36 |
-| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission; implementation verification pending |
+| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; local tests pass, PR review corrections underway |
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |

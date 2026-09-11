@@ -290,7 +290,7 @@ impl<'a> ModelBindings<'a> {
                         .push(index);
                     charge_exports(model, work)?;
                     self.catalogs.push(Some(Exports {
-                        catalog: Catalog::new(model),
+                        catalog: Catalog::composed(model),
                         scalars: model
                             .roles()
                             .scalars

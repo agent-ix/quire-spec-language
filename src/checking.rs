@@ -323,7 +323,7 @@ pub fn check<'a>(
         .map(|selected| {
             selected
                 .native_model()
-                .map(types::Catalog::new)
+                .map(types::Catalog::historical)
                 .ok_or_else(|| {
                     failure(
                         linked.unit().source(),
