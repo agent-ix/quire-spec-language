@@ -107,7 +107,7 @@ pub enum BinderKind {
 }
 
 /// Retained type input for the existing model/type stage, not a parallel type system.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BinderType {
     /// Exact authored parameter type, before model resolution attaches its owner.
     Declared(ParameterType),

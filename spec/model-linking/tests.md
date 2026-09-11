@@ -109,7 +109,7 @@ invented for that criterion.
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
 | TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Planned |
-| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 Planned |
+| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | ✅ Passed |
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | 🚧 Planned |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | 🚧 Planned |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
@@ -123,11 +123,15 @@ source namespace and native dependency portions have public tests in
 `tests/composed_namespace.rs` and `tests/composed_linking.rs`. The combined path in
 `tests/composed_binding.rs` adds exact definition/rule and NativeModel export
 selection, lexical/capture scope and protocol references, with dedicated adverse
-tests in the corresponding modules. Full typing/runtime-role criteria, TC-115
-and [IT-009](../integration/IT-009-composed-package-boundary.md) remain open under
-compiler #35; the broad rows below therefore remain Planned. Names resolved at
-this stage grant no checked or executable package. Status records local runs,
-not engine-verified coverage.
+tests in the corresponding modules. TC-115 has eleven public Rust controls in
+`tests/composed_admission_stages.rs` covering the declared static components, the
+requested clause/capability report and the historical package/runner boundary.
+Full typing/runtime-role criteria and
+[IT-009](../integration/IT-009-composed-package-boundary.md)'s real D producer
+integration remain open under compiler #35; the broad TC-114 rows therefore remain
+Planned. Names resolved at this stage grant no checked or executable package, and
+an admitted request is not a checked clause. Status records local runs, not
+engine-verified coverage.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports. Its Planned matrix rows retain
@@ -151,10 +155,10 @@ complete compiler #35/#40.
 | FR-036 | FR-036-AC-2 | TC-114 | 🚧 Planned |
 | FR-036 | FR-036-AC-3 | TC-114 | 🚧 Planned |
 | FR-036 | FR-036-AC-4 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-5 | TC-115 | 🚧 Planned |
-| FR-036 | FR-036-AC-6 | TC-115 | 🚧 Planned |
+| FR-036 | FR-036-AC-5 | TC-115 | ✅ Passed |
+| FR-036 | FR-036-AC-6 | TC-115 | ✅ Passed |
 | FR-036 | FR-036-AC-7 | TC-114 | 🚧 Planned |
-| FR-036 | FR-036-AC-8 | TC-115 | 🚧 Planned |
+| FR-036 | FR-036-AC-8 | TC-115 | ✅ Passed |
 | FR-040 | FR-040-AC-1 | TC-119 | 🚧 Planned |
 | FR-040 | FR-040-AC-2 | TC-119 | 🚧 Planned |
 | FR-040 | FR-040-AC-3 | TC-119 | 🚧 Planned |
