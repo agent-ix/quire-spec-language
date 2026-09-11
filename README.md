@@ -40,6 +40,13 @@ The [example model](tests/fixtures/native-rule-model.json) shows the admitted so
 shape. Run `cargo test --test model_source` for fixed-artifact, failure and runtime
 cases. Test helpers now call this production frontend.
 
+Explicit `model_source::FORMAT_V2` selects `native-rule-model/2` and admits exact
+rational domains through `native-state-model/2`, retaining the actual IR bounds,
+units and source locations. Composed model exports consume these types; historical
+linking refuses a selected `/2` model. This supplies the model prerequisite for
+[composed value checking](spec/functional/FR-040-check-composed-values.md), whose
+expression and definedness work remains open.
+
 `checking::check` consumes a native linked package, exact `CheckBindings` and
 caller-lowered `CheckLimits`. It returns the original source/AST with native
 types, authored clause identities, discharged proof goals and required input
