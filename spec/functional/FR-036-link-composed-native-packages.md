@@ -148,6 +148,21 @@ Under [compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35),
 declaration dependency resolution, including forward references, target kinds,
 cycles, dependent refusals and versioned work limits. Its constructor-private
 syntax namespace retains original units and unfinished dispositions on exhaustion.
-Definition closure, model/type and lexical binding, derived runtime roles and
-downstream request handling remain outstanding. This stage produces no fully
-linked, checked or executable package; IT-009 remains planned producer integration.
+`linking::composed::binding::bind` composes exact definition/rule closure,
+NativeModel imports and nominal exports, lexical/capture environments, protocol
+structural references and dependency-local refusal propagation. Declaration-owned
+binders retain original types and anchors. It accepts no runtime observations.
+
+The compiler recognizes a closed registry of the reviewed baseline's exact
+definition and rule bytes; callers explicitly supply those artifacts. The
+registry is implementation support, not a Markdown reader or an implicit source
+of omitted dependencies. Its normative resources preserve the selected standard
+bytes and original licensing. The existing native-state-model/1 producer binds
+through NativeModel. D's canonical/native correspondence and relationship export
+authority remain explicit unsupported boundaries; a same-shaped record grants
+neither authority.
+
+`NamesResolved` precedes expression/type/profile checking, complete typed runtime
+requirements and downstream request handling. These remain open, as does IT-009's
+actual D producer integration. No result from this stage is a checked or executable
+package. The historical package path remains separate.
