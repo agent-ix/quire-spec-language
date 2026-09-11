@@ -47,9 +47,10 @@ selection is the actual [compiled protocol contract](../../docs/compiled-protoco
 embedded in this executable. These are product inputs, not C-owned evidence
 acceptance or proof of an authenticated/reproducible binary build.
 
-For consumption, B must independently accept the expected sidecar and referenced
-bytes before examining an offered payload. It must never derive accepted
-selectors from that payload. The sidecar is confined to this example recipe;
+For consumption, B constructs its accepted inventory as Rust values from
+independently selected original inputs and referenced bytes before examining an
+offered payload. Neither that payload nor `expected.json` authorizes its own
+selectors. The sidecar is an inspection aid confined to this example recipe;
 it introduces no production request or manifest format. Its model source record
 retains original native identity/path, formal document/revision and bytes so a
 Rust caller can reconstruct the model with `Source::read`, `FormalSource::new`,
