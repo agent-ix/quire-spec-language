@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-025: source-aware rule-model intake and native admission.
+//! FR-025/041: source-aware rule-model intake with explicit native profile selection.
 
 mod decode;
 mod lower;
 mod wire;
 
 use crate::formal_source::FormalSource;
-use crate::native_model::{ModelLimits, NativeModel, NativeRoles};
+use crate::native_model::{ModelLimits, NativeModel, NativeModelProfile, NativeRoles};
 use crate::{located_json, Code, Diagnostic};
 use decode::decode_model;
 use lower::lower_model;
@@ -33,6 +33,9 @@ pub enum EntryKind {
 
 /// Explicit authoring profile for the existing rule-model JSON syntax.
 pub const FORMAT: &str = crate::wire_format::WireFormat::RuleModel.as_str();
+
+/// Explicit source profile adding exact rational scalar declarations.
+pub const FORMAT_V2: &str = crate::wire_format::WireFormat::RuleModelV2.as_str();
 
 /// Inclusive frontend limits, independently clamped to their defaults.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -199,6 +202,7 @@ type Result<T> = std::result::Result<T, ModelSourceCause>;
 /// Source-derived inputs to native admission, not an already admitted model.
 #[derive(Debug)]
 pub struct ModelDraft {
+    profile: NativeModelProfile,
     /// Immutable original document and explicitly supplied formal identity.
     pub source: FormalSource,
     /// Existing IR declarations constructed from this source.
@@ -212,13 +216,25 @@ pub struct ModelDraft {
 }
 
 impl ModelDraft {
+    /// Profile selected by source intake and retained by admission.
+    pub fn profile(&self) -> NativeModelProfile {
+        self.profile
+    }
+
     /// Apply the existing native admission checks under independent limits.
     pub fn admit(
         self,
         limits: ModelLimits,
     ) -> std::result::Result<NativeModel, Box<ModelSourceError>> {
         let binding = self.source.clone();
-        NativeModel::new(self.source, self.environment, self.roles, limits).map_err(|cause| {
+        NativeModel::new_with_profile(
+            self.profile,
+            self.source,
+            self.environment,
+            self.roles,
+            limits,
+        )
+        .map_err(|cause| {
             Box::new(ModelSourceError {
                 binding,
                 source_limits: self.source_limits,
@@ -236,19 +252,24 @@ pub fn read(
 ) -> std::result::Result<ModelDraft, Box<ModelSourceError>> {
     let limits = limits.bounded();
     let lower = || {
-        if format != FORMAT {
-            return Err(ModelSourceCause::UnknownFormat);
-        }
+        let profile = match format {
+            FORMAT => NativeModelProfile::V1,
+            FORMAT_V2 => NativeModelProfile::V2,
+            _ => return Err(ModelSourceCause::UnknownFormat),
+        };
         if source.source().text().len() > limits.source_bytes {
             return Err(ModelSourceCause::SourceBytes {
                 actual: source.source().text().len(),
                 maximum: limits.source_bytes,
             });
         }
-        lower_model(decode_model(&source, limits)?, limits.type_depth)
+        let (environment, roles, license) =
+            lower_model(decode_model(&source, limits, profile)?, limits.type_depth)?;
+        Ok((profile, environment, roles, license))
     };
     match lower() {
-        Ok((environment, roles, declared_license)) => Ok(ModelDraft {
+        Ok((profile, environment, roles, declared_license)) => Ok(ModelDraft {
+            profile,
             source,
             environment,
             roles,
