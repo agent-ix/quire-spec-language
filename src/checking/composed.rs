@@ -109,8 +109,9 @@ pub struct TypeCause {
     pub site: Site,
     /// Structured reason; no diagnostic message parsing determines its kind.
     pub kind: CauseKind,
-    /// Index in the owning binding declaration's definition uses.
-    pub profile: usize,
+    /// Index in the owning declaration's definition uses for an expression cause.
+    /// Absent when the cause precedes typing or is independent of a profile use.
+    pub profile: Option<usize>,
 }
 
 /// Future proof/runtime admission must satisfy these; typing does not discharge them.
