@@ -1,0 +1,25 @@
+{
+  "license": "AGPL-3.0-only",
+  "package": "agent-ix/protocol-handoff",
+  "requirement": "WorkflowModel",
+  "revision": 1,
+  "scalars": [
+    {"name": "ObjectId", "kind": "text", "max_scalars": 128},
+    {"name": "Ratio", "kind": "rational", "numerator_minimum": -1, "numerator_maximum": 1, "maximum_denominator": 2}
+  ],
+  "records": [
+    {"name": "Workflow", "fields": [
+      {"name": "ready", "type": {"kind": "boolean"}},
+      {"name": "ratio", "type": {"kind": "scalar", "name": "Ratio"}},
+      {"name": "peer", "type": {"kind": "record", "name": "WorkflowRef"}}
+    ]},
+    {"name": "WorkflowRef", "fields": [
+      {"name": "id", "type": {"kind": "scalar", "name": "ObjectId"}}
+    ]}
+  ],
+  "values": [],
+  "objects": [
+    {"record": "Workflow", "reference": "WorkflowRef", "identity_field": "id", "universe": "workflows"}
+  ],
+  "operations": []
+}
