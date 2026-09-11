@@ -25,11 +25,12 @@ fn run() -> Result<(), producer::Error> {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
     use quire_spec_language::protocol_artifact::wire as w;
 
     #[test]
     #[ignore = "requires a stripped release ELF test executable within the producer's 16 MiB binary limit"]
-    #[ix_trace_rs::trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
+    #[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
     fn stripped_release_producer_keeps_original_owners_and_compensations() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("handoff");
