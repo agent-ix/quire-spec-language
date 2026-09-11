@@ -41,8 +41,8 @@ pub(super) fn lower(
     // Controls may name templates declared before or after their own source
     // occurrences. Bind their already-resolved references after both tables exist.
     for control in controls {
-        work.visit()?;
         work.locus = Some(control.locus.clone());
+        work.visit()?;
         match &control.operation {
             w::ControlOperation::Event {
                 event:
@@ -75,6 +75,7 @@ pub(super) fn lower(
             _ => {}
         }
     }
+    work.locus = Some(context.layout.locus(context.syntax.span)?);
     Ok(result)
 }
 
