@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Shared contextual native-type variables; callers own syntax and work limits.
+//! FR-016/040: contextual type variables; callers own syntax and work limits.
 
 use super::NativeType;
 
+/// Two established nominal types cannot belong to the same constraint class.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TypeConflict;
+
 /// Union-find variables local to one checker invocation.
 pub(super) struct Variables<'a> {
-    pub(super) parents: Vec<usize>,
+    parents: Vec<usize>,
     ranks: Vec<u8>,
     known: Vec<Option<NativeType<'a>>>,
 }
@@ -17,6 +21,9 @@ impl<'a> Variables<'a> {
             ranks: vec![0; count],
             known: vec![None; count],
         }
+    }
+    pub(super) fn len(&self) -> usize {
+        self.parents.len()
     }
     pub(super) fn fresh(&mut self) -> usize {
         let id = self.parents.len();
@@ -40,10 +47,10 @@ impl<'a> Variables<'a> {
         &mut self,
         var: usize,
         ty: NativeType<'a>,
-    ) -> std::result::Result<bool, ()> {
+    ) -> std::result::Result<bool, TypeConflict> {
         let root = self.root(var);
         match &self.known[root] {
-            Some(prior) if prior != &ty => Err(()),
+            Some(prior) if prior != &ty => Err(TypeConflict),
             Some(_) => Ok(false),
             None => {
                 self.known[root] = Some(ty);
@@ -51,14 +58,18 @@ impl<'a> Variables<'a> {
             }
         }
     }
-    pub(super) fn unify(&mut self, left: usize, right: usize) -> std::result::Result<(), ()> {
+    pub(super) fn unify(
+        &mut self,
+        left: usize,
+        right: usize,
+    ) -> std::result::Result<(), TypeConflict> {
         let mut a = self.root(left);
         let mut b = self.root(right);
         if a == b {
             return Ok(());
         }
         if matches!((&self.known[a], &self.known[b]), (Some(a), Some(b)) if a != b) {
-            return Err(());
+            return Err(TypeConflict);
         }
         if self.ranks[a] < self.ranks[b] {
             std::mem::swap(&mut a, &mut b);
