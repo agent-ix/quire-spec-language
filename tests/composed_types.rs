@@ -523,22 +523,39 @@ fn aggregate_domain_checks_are_distinct_from_pending_prefix_proofs() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, ir::DiagnosticCode::UnboundedCollection);
 
-    for maximum in [1, 6, 10_000, 10_001] {
+    // The native admission ceiling precedes this type-only stage.
+    let excess = setup::try_model_with_maximum("ExcessTypeMaximum", 10_001).unwrap_err();
+    assert_eq!(
+        excess.code(),
+        quire_spec_language::Code::UnsupportedConstruct
+    );
+    assert!(!excess.is_incomplete());
+    let quire_spec_language::model_source::ModelSourceCause::Admission(cause) = &excess.cause
+    else {
+        panic!("native admission must own the sequence refusal: {excess}")
+    };
+    assert_eq!(cause.code, quire_spec_language::Code::UnsupportedConstruct);
+    assert_eq!(cause.phase, quire_spec_language::Phase::Link);
+    assert_eq!(cause.source.identity, "model:ExcessTypeMaximum");
+    assert_eq!(cause.source.revision, "authored");
+    assert_eq!(cause.path, "ExcessTypeMaximum.json");
+    assert_eq!(&cause.source, excess.source().source().identity());
+    assert_eq!(
+        cause.span,
+        excess
+            .source()
+            .source()
+            .locate(quire_spec_language::Span { start: 0, end: 0 })
+            .unwrap()
+    );
+
+    for maximum in [1, 6, 10_000] {
         let model = setup::model_with_maximum("Bounded", maximum);
         let sources = [setup::source("bounded", &model, "predicate Fold using S (input: M::Node): Boolean { size<M::Wide>(input.amounts) >= 0 and sum<M::Total>(item in input.amounts: item) >= 0 }")];
         let formal = setup::formal_sources(&sources);
         setup::with_binding(&sources, &[&model], BindingLimits::default(), |binding| {
             let report = composed::admit_types(binding, &formal, TypeLimits::default());
             let declaration = id(binding, "Fold");
-            if maximum == 10_001 {
-                refused(&report, "Fold", CauseKind::ModelDomain { input: 0 });
-                assert_eq!(
-                    binding.disposition(declaration),
-                    Some(BindingDisposition::NamesResolved)
-                );
-                assert!(report.exhaustion().is_none());
-                return;
-            }
             assert_eq!(
                 report.disposition(declaration),
                 Some(TypeDisposition::Typed)
