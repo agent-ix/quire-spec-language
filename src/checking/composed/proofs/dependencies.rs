@@ -80,7 +80,10 @@ pub(super) fn finish(
                 }
                 ProofDisposition::Discharged => {
                     states[caller].remaining -= 1;
-                    if states[caller].remaining == 0 && report.declarations[caller].local_complete {
+                    if states[caller].remaining == 0
+                        && report.declarations[caller].local_complete
+                        && report.declarations[caller].causes.is_empty()
+                    {
                         report.declarations[caller].complete = true;
                     }
                 }
