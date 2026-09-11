@@ -190,7 +190,7 @@ Runtime inputs are immutable typed finite populations with explicit closure assu
 
 ### 8.2 Transition Semantics
 
-Operation observations belong to one invocation with an authored frame and exact object delta. This first profile does not define a protocol state machine or temporal clock semantics.
+Operation observations belong to one invocation with an authored frame and exact object delta. The historical finite-state profile does not define a protocol state machine or temporal clock semantics. Composed parsing/linking retains the selected family's typed forms and dependencies; the shared standard and downstream family requirements own their evaluation.
 
 ### 8.3 Determinism Guarantees
 
@@ -222,7 +222,7 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 ## 12. Verification Strategy
 
-Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The end-state acceptance remains a supported healthy, violating and refused/incomplete native state workflow. Existing syntax tests and authored semantic examples are partial evidence only.
+Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. These are planned controls; syntax acceptance cannot qualify later temporal or choreography evaluation.
 
 ## 13. Change Management
 
@@ -240,7 +240,7 @@ specification does not close LC02/FS03 acceptance or replace IT-002.
 
 ## 15. Governance Notes
 
-Use private owning issues and isolated worktrees. A owns the native producer and these requirements; B owns portable verification contracts; C owns coordinated existing-repository consumers. Do not spawn additional agents under the current assignment. Preserve original dependency/template grants. Standard-wide publication terms remain unresolved.
+Use private owning issues and isolated worktrees. Under the approved initial specification cycle, A owns the compiler and shared language foundation; B owns protocol/results, D model/configuration, E temporal meaning and F observations/consumers. C continues engineering-assurance independently. Preserve original dependency/template grants. Standard-wide publication terms remain unresolved.
 
 ## 16. References
 
@@ -286,3 +286,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
+| [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Proposed composed syntax; compiler #35 |
+| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Proposed composed package linking; compiler #35 |
+| [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |

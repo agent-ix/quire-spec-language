@@ -32,6 +32,19 @@ dependency edges; these are processing controls rather than semantic selections.
 No filesystem discovery, network retrieval or installed backend supplies an
 omitted dependency.
 
+The public package boundary declares its work-accounting version, supported
+dimensions, default and hard capacities, and effective caller-lowered limits
+before accepting work. Its versioned charging rules identify the bytes and
+inventory entries counted, the resolution attempts and dependency-edge visits
+charged, and how shared dependencies, cache hits and revisits are charged.
+Counters belong to one invocation; a retry starts a new accounting run without
+mutating the prior report or inputs. A zero limit permits no charged work in
+that dimension. Check a charge before performing its work; counter overflow
+also exhausts the budget. The selected accounting contract makes exact-limit
+expectations derivable from a controlled input and traversal, not from elapsed
+time or available memory. Historical per-unit limits remain separate; they do
+not silently define new whole-package capacities.
+
 The [standard package contract](https://github.com/agent-ix/quire-specification/blob/agent-a/v1-shared-spec-cycle/proposals/quire-v1/package-contract.md)
 owns the static/assessment split and producer/native digest domains. Its accepted
 selection is a prerequisite for implementation, together with the affected model
@@ -49,6 +62,8 @@ backend package; subsequent type/definedness and family checks remain explicit.
 ## Behavior
 
 The linker SHALL close the native declaration namespace from the explicit source inventory before resolving cross-unit references.
+
+If source headers do not all agree with the inventory's single selected language and edition, then the linker SHALL refuse package namespace admission with the conflicting selections and source header locations retained.
 
 If a required source unit is unavailable or malformed, then the linker SHALL refuse package namespace admission.
 
@@ -107,13 +122,13 @@ a new wire format as an incidental implementation choice.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-036-AC-1 | A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. | Test (TC-114, IT-009) |
+| FR-036-AC-1 | A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. All headers agree with the inventory's single language/edition; mixed editions or a header/inventory conflict refuse package namespace admission with the conflicting selections located. | Test (TC-114, IT-009) |
 | FR-036-AC-2 | Omitted inventory units, duplicate native names/authorities, wrong-kind targets, illegal binder/capture scope and self or mutual semantic dependencies produce located typed refusals; bounded protocol repetition is not falsely diagnosed as a dependency cycle. | Test (TC-114) |
 | FR-036-AC-3 | Missing or conflicting definition closure, foreign model exports and canonical-versus-byte digest substitutions refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114, IT-009) |
 | FR-036-AC-4 | Binding roles with equal local spelling in two declarations retain different declaration-owned identities; nominally different types and current/activation/invocation anchors remain distinct across families. | Test (TC-114, IT-009) |
 | FR-036-AC-5 | Changing runtime population/window/trace or backend leaves static meaning unchanged; changing a required semantic selection changes it. Resource-only configuration changes remain visible without becoming semantic changes. | Test (TC-115) |
 | FR-036-AC-6 | A supported state request and an unsupported independent temporal projection both remain in the request report; complete aggregate success is unavailable, and unsupported family bodies are never represented as checked. | Test (TC-115, IT-009) |
-| FR-036-AC-7 | A dependency chain, diamond and cycle terminate under lowered traversal budgets; exhaustion retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs. | Test (TC-114) |
+| FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
 | FR-036-AC-8 | Historical linked/package artifacts retain their identities and atomic refusals; a composed partial report cannot enter an old reader or runner by changing a profile label. | Test (TC-115) |
 
 ## Dependencies
