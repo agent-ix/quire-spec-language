@@ -16,60 +16,78 @@ relationships:
 
 ## Summary
 
-Base checklist review of the new FR-042/TC-121/US-004 additions and their
-normative wire contract at 51506ed. IDs, cross-references and the six coverage
-rules hold: every FR-042 AC has TC-121, TC-121's ten procedure groups map one to
-one onto them, US-004 and spec.md gain matching `exercises`/`contains` edges, and
-TM-003 keeps all ten FR-042 rows at 🚧 Planned. The contract is unusually precise
-about identity domains, ordering and limits. Three interoperability gaps remain:
-no typed refusal vocabulary, an underdetermined type-table indexing order and an
-ambiguous `U` bound.
+Base checklist review of FR-042/TC-121/US-004 and their normative wire contract,
+rechecked at 23a5892 against the corrections made after the original review at
+51506ed. IDs, cross-references and the six coverage rules still hold. All three
+medium interoperability findings are resolved: the contract now publishes the
+typed refusal vocabulary, states the inclusive `U` bound, and gives the exact
+first-use type indexing order. What remains is two low bookkeeping items and one
+narrowed successor to the vocabulary finding.
 
 ## Verdict
 
-**CONDITIONAL** — no high finding; three medium items block a second
-implementation reproducing the encoding from the documents alone.
+**CONDITIONAL** — no high or medium finding; three low items, none blocking.
 
 ## Findings
 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
-| FND-001 | medium | FR-042 and the wire contract require "typed discriminating causes" but publish no refusal vocabulary; `Invalid`/`Unsupported`/`Dimension` exist only in Rust | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:125; src/protocol_artifact/mod.rs:135 | missing-requirement |
-| FND-002 | medium | Type first-occurrence indexing is specified only as "during this declaration/value order"; the reader also indexes binder and binding-requirement types before value types | docs/compiled-protocol-v1.md:135; src/protocol_artifact/validate.rs:231 | wrong-requirement |
-| FND-003 | medium | `U` is specified as "a bare JSON integer in 0..1,048,576"; reader, writer and span checks all admit 1,048,576 inclusive | docs/compiled-protocol-v1.md:55; src/protocol_artifact/decode.rs:59 | wrong-requirement |
-| FND-004 | low | TC-117/TC-121 rows are appended after TC-119/TC-120 in TM-003's L2 table, breaking the checklist's sequential-ID expectation | spec/model-linking/tests.md:110-111 | missing-requirement |
-| FND-005 | low | FR-042 carries no `FR-042-OPT-*`/`FR-042-CON-*` sections and TC-121 states no Type/Priority in the document; both follow existing FR-040/FR-041 and TC-120 precedent and live in TM-003 instead | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:34 | missing-requirement |
+| FND-001 | low | The published refusal vocabulary is explicitly the Rust variant surface, "not a serialized error protocol"; a second implementation can reproduce the classification but has no stable interchange codes for it | docs/compiled-protocol-v1.md:424; src/protocol_artifact/mod.rs:135 | missing-requirement |
+| FND-002 | low | TC-117/TC-121 rows are still appended after TC-119/TC-120 in TM-003's L2 table, breaking the checklist's sequential-ID expectation | spec/model-linking/tests.md:110-111 | missing-requirement |
+| FND-003 | low | FR-042 still carries no `FR-042-OPT-*`/`FR-042-CON-*` sections and TC-121 states no Type/Priority in the document; both follow existing FR-040/FR-041 and TC-120 precedent and live in TM-003 instead | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:34 | missing-requirement |
+
+## Resolved since the original review
+
+**Typed refusal vocabulary (was medium).** The contract now carries a result-class
+table plus the full discriminant lists. They match the code exactly: six `Error`
+classes, twenty-six `Invalid` discriminants, six `Unsupported`, thirteen
+`Dimension`, and the four `NumberError` forms with their `Decimal`/`Numerator`/
+`Denominator` components. Pass precedence is stated normatively — after the seal
+and closed-shape checks an unknown wire version refuses as `Unsupported::Wire`
+before dependency inventory — and `intake::read` now calls `headers` before
+`selected`, with `unknown_wire_is_classified_before_its_foreign_dependency_inventory`
+asserting it. FR-042 gained the matching sentence.
+
+**Type indexing order (was medium).** The contract now specifies binder types,
+non-null binding-requirement types, then value types in table order, then the
+predicate result or the protocol's channel message and compensation attempt
+types, assigning an index on first visit before recursing into option/sequence
+element types, with unreferenced types refusing. That is exactly the driver order
+`locals` → `values` → `temporal` → `body` and `first_type`'s pre-order index
+assignment, with the final `type_seen` sweep refusing unreferenced entries.
+
+**Inclusive `U` bound (was medium).** The contract now reads "from zero through
+1,048,576 **inclusive**", matching the `> 1_048_576` refusal in reader, writer and
+span checks.
 
 ## Checklist results
 
-ID format and uniqueness: `US-004`, `FR-038`, `FR-042`, `TC-117`, `TC-121` and
-`FR-042-AC-1..10` all conform; no duplicates. Cross-referencing: FR-042
-`implements` US-004, depends on FR-036/038/040/041 plus the accepted standard
-FRs, and references `quire-protocol` FR-001/IT-001; US-004 gained reciprocal
-`exercises` edges; TC-121 `verifies` FR-042; all relative links resolve.
+ID format and uniqueness, cross-referencing and link integrity are unchanged and
+conform. FR quality is unchanged and specific: Inputs still separate source
+inventory, producer, baseline, contract, dependency bytes and admitted producer
+views, and still state that source/profile acceptance never comes from a payload
+flag. Performance targets remain thirteen named dimensions with defaults, hard
+maxima, charge-before-work, clamping and fresh-retry semantics. Security is
+unchanged: the seal is external, digest integrity is not authenticity, a resealed
+mutant refuses. Error conditions now carry the published discriminant vocabulary
+(FND-001 is only about serialized codes).
 
-FR quality: Description, Inputs, Outputs, Behavior, Acceptance Criteria and
-Dependencies are present and specific. Inputs separate source inventory,
-producer, baseline, contract, dependency bytes and admitted producer views, and
-state explicitly that source/profile acceptance never comes from a payload flag.
-Performance targets are concrete — thirteen named dimensions with defaults and
-hard maxima, charge-before-work, clamping and fresh-retry semantics. Security is
-addressed directly: the seal is external, digest integrity is not authenticity,
-and a resealed mutant is refused. Error conditions are described in prose but
-carry no stable codes (FND-001).
-
-Coverage (six rules): every AC has TC-121; constraint boundaries are named per
-limit at zero/exact/one-short in step 9; error paths carry typed causes in steps
-3–8; state transitions appear as the repeat/await/choice edge expansion; edge
-cases include equal-time observations, N=0 repeats and supplementary Unicode.
-Option permutation does not apply — this version declares `optional: []`.
+Coverage (six rules) still holds. TC-121 step 5 gained the negative await cases —
+remove the static progress/closure requirement, change its await subject, or
+remove its clock-binding dependency, each requiring `Invalid::Binding` — which
+matches the reader's new `timeout_authority` check and its three tests.
 
 ## Contract fidelity spot checks
 
-The single `ix.artifact-ref/3-draft` `linked-package` seal over complete
-canonical bytes, the absent self-digest, `canonicalIdentity:null`, the closed
-`Number`/`Integer` tagged objects, CompactFormatter-only spelling with no
-normalization, the member-order table and the structural-edge expansion table are
-all internally consistent and match the delivered reader. FND-002 and FND-003 are
-the only two places where a second producer could diverge while still satisfying
-the prose.
+The `ix.artifact-ref/3-draft` `linked-package` seal over complete canonical bytes,
+absent self-digest, `canonicalIdentity:null`, closed `Number`/`Integer` tagged
+objects, CompactFormatter-only spelling, the member-order table and the structural
+edge-expansion table remain internally consistent and match the reader. The two
+new normative paragraphs also check out against source: the `Origin.Selected`
+self-marker paragraph matches `checking/composed/solver/origins.rs:133`, which
+emits `Selected { expression: at }` at the expression itself for mixed immutable
+provenance; and the await paragraph matches the `Progress`/`Closure` +
+`Subject::Control` + `requires`-contains-clock rule the reader enforces.
+
+`quire spec` gate: 398/398 docs grammar-clean, 0 grammar findings; 83/258 criteria
+property-extractable (`/tmp/quire-artifact-corrections-spec.log`).
