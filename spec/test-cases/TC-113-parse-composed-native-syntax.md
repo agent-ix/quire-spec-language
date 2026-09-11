@@ -11,8 +11,8 @@ relationships:
 ## Description
 
 Exercise the public parser against the composed grammar and the frozen historical
-corpus. This is a planned Rust parser test; a matching text fragment or balanced
-token stream is insufficient evidence.
+corpus. The public Rust tests are in `tests/composed_syntax.rs`, including the
+authored choreography fixture and balanced-but-incomplete refusal controls.
 
 ## Test Procedure
 

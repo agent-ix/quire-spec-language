@@ -2,10 +2,12 @@
 //! FR-006/016: native constraints and guarded IR proofs over exact authored input.
 
 mod bindings;
+pub mod composed;
 mod constraints;
 mod inputs;
 mod proof;
 mod types;
+mod variables;
 
 use quire_contract_ir as ir;
 
@@ -322,7 +324,7 @@ pub fn check<'a>(
         .map(|selected| {
             selected
                 .native_model()
-                .map(types::Catalog::new)
+                .map(types::Catalog::historical)
                 .ok_or_else(|| {
                     failure(
                         linked.unit().source(),

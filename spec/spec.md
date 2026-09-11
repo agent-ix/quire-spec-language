@@ -14,6 +14,10 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-036
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-040
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-041
+    type: contains
   - target: ix://agent-ix/quire-spec-language/IT-009
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-033
@@ -224,7 +228,7 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 ## 12. Verification Strategy
 
-Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. These are planned controls; syntax acceptance cannot qualify later temporal or choreography evaluation.
+Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. TC-113 exercises the composed parser; TC-114 exercises source inventory, native references and the combined definition/model/scope binding path. Its remaining type/runtime-role portions, TC-115 and IT-009 remain planned. Name resolution cannot qualify later temporal or choreography evaluation.
 
 ## 13. Change Management
 
@@ -289,6 +293,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
-| [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Proposed composed syntax; compiler #35 |
-| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Proposed composed package linking; compiler #35 |
+| [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
+| [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
+| [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared type/profile admission implemented; definedness and runtime acceptance open under #35/#36 |
+| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; delivered producer reviews pass |
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
