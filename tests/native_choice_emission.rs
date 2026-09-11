@@ -24,19 +24,13 @@ const OWN_ATTEMPT: &str = "attempt Tried by Receiver on M::Node::step contracts 
 
 #[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
-fn send_event_and_effect_records_never_become_choice_observations() {
+fn send_and_effect_records_never_become_choice_observations() {
     for (kind, owner, record, run) in [
         (
             "send",
             "Sender",
             "sent",
             "send Sent via Messages as (sent: M::Plain) { true };",
-        ),
-        (
-            "event",
-            "Receiver",
-            "observed",
-            "event Observed by Receiver as (observed: M::Plain) { true };",
         ),
         (
             "effect",

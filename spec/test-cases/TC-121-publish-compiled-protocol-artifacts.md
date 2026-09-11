@@ -108,6 +108,16 @@ observations belong only to the later consumer fixture.
    the choice role to another role on the same model and require FamilyProof.
    An attempt in a parallel sibling remains unavailable before the join. None
    of these cases treats the attempt result as proof that an effect occurred.
+   Repeat the positive with an authored domain event, including one qualified
+   by an existing compensation. Check exact event/choice role identity,
+   binder/field/anchor identity and retained registration prerequisite through
+   emission and reading. Compare an admitted qualified-event baseline without
+   the choice to the same source with the choice; the original compensation
+   association remains independently required. Refuse another same-model role,
+   omitted visibility and nonpartitions over distinct joined event/receive
+   records. Send, effect and commit records remain ineligible atom sources.
+   Check domain-event resource exhaustion and fresh retry without implying
+   registration, activation or business-effect success.
    Retain definedness success while giving symbolic guards an abstract overlap
    or hole, including correlated facts whose model constraints are not imported
    into this abstraction; require `Unsupported::FamilyProof`, not a claimed
