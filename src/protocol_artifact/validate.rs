@@ -174,6 +174,9 @@ pub(super) struct Graph<'a, 'w> {
     type_seen: Vec<bool>,
     next_type: usize,
     dependencies: Vec<Vec<usize>>,
+    // The current declaration's already validated operand/initializer/origin
+    // graph is also the authority for recovery provenance. No graph is copied.
+    value_edges: Vec<Vec<usize>>,
 }
 
 impl<'a> Graph<'a, '_> {
@@ -617,7 +620,9 @@ impl Graph<'_, '_> {
             if let Some(model) = &binding.model.0 {
                 self.export(model, &[])?;
             }
-            if (binding.value_type.0.is_none() || binding.model.0.is_none())
+            if binding.kind == BindingKind::CompensationEffect {
+                self.compensation_effect_identity(owner, index, binding)?;
+            } else if (binding.value_type.0.is_none() || binding.model.0.is_none())
                 && !matches!(
                     binding.kind,
                     BindingKind::Clock
@@ -1118,7 +1123,9 @@ impl Graph<'_, '_> {
                 }
             }
         }
-        acyclic(&graph, self.work)
+        acyclic(&graph, self.work)?;
+        self.value_edges = graph;
+        Ok(())
     }
 
     fn sum_type(&mut self, projection: u32, total: u32) -> Result {
@@ -1511,6 +1518,7 @@ pub(super) fn package(package: &Package, work: &mut Work) -> Result {
         type_seen: vec![false; package.types.len()],
         next_type: 0,
         dependencies,
+        value_edges: Vec::new(),
     };
     for owner in 0..package.declarations.len() {
         graph.locals(owner)?;
