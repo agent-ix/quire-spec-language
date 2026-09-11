@@ -35,6 +35,14 @@ finding is resolved or dispositioned. Three residual findings remain, all
 medium or low. The original FAIL above records the state at 92313b7 and is
 retained as evidence, not as the current gate.
 
+**Current verdict (correction re-review of 5381672, 2026-09-10): CONDITIONAL.**
+The three residual findings are dispositioned below: FND-016 and FND-017
+resolved, FND-015 resolved for the model-wide scans and open for the
+record-field scan. Three findings arise from this correction and its remainder
+— FND-018 and FND-020 medium, FND-019 low. No high finding stands, so the gate
+stays CONDITIONAL. The FAIL above remains the record of 92313b7 and the
+9aa788a paragraph the record of that commit.
+
 ## Gates
 
 All run in this session from the worktree, one heavy command at a time under
@@ -77,6 +85,9 @@ agree with these outcomes; its `quire-binding-fmt.log` and
 | FND-015 | medium | Catalog name lookups are now honestly charged but remain linear in model size, so a large-model package that bound at 92313b7 now exhausts References | src/linking/composed/models.rs:534, src/linking/composed/models.rs:541, src/linking/composed/models.rs:717, src/linking/composed/models.rs:169 |
 | FND-016 | low | The new binary boundary lookup's arena precondition is neither asserted nor unit-tested; a violation silently returns a partial region instead of refusing | src/linking/composed/arena.rs:7, src/linking/composed/arena.rs:25, src/linking/composed/arena.rs:35, src/linking/composed/dependencies.rs:195 |
 | FND-017 | low | `ScopeIssue::InvalidEnvironment` is structurally unreachable and untested, without the "defensive, retained for future change" label its analogue got | src/linking/composed/scopes.rs:295, src/linking/composed/scopes.rs:571, src/linking/composed/definitions.rs:496 |
+| FND-018 | medium | Eager per-model name indexes double `charge_exports` Bindings, so 59 supplied models exhaust the unraisable 262 144 ceiling that 9aa788a cleared | src/linking/composed/models.rs:870, src/linking/composed/models.rs:178, src/linking/composed/models.rs:333 |
+| FND-019 | low | The new accounting doc charges References for borrowed-index entries, but the scalars index is still built free and the Catalog Bindings reservation stays approximate | src/linking/composed/models.rs:251, src/linking/composed/models.rs:886, src/linking/composed/models.rs:890 |
+| FND-020 | medium | FND-015's record-field path is untouched: `field()` still scans an already name-sorted field vector linearly, charged per candidate | src/linking/composed/models.rs:799, src/linking/composed/models.rs:803, src/checking/types.rs:203 |
 
 ## Detail
 
@@ -381,3 +392,117 @@ labelling them defensive; the same label belongs here.
   changed charging contract. Both `92313b7` and `9aa788a` are unmerged commits
   on the same branch, so `/1` has never been published and no bump is owed;
   a comparable change after this ships would owe one.
+
+## Correction re-review (5381672, 2026-09-10)
+
+Targeted re-review of the second remediation commit against this review's three
+residual findings (FND-015..017) and the diff `9aa788a..5381672` only. The
+fourteen original findings stay as dispositioned above and were not re-opened.
+Read-only over source, tests, spec and Git; the only writes are this section,
+the current-verdict paragraph and rows FND-018..020. Every gate was executed in
+this session from the worktree — not read from the implementation agent's logs
+— one heavy command at a time, the whole batch under a single
+`flock /tmp/quire-heavy-check.lock`, with `CARGO_BUILD_JOBS=1`,
+`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10` and
+`--locked`. `src/lib.rs` was touched (mtime only, no content change) under that
+lock immediately before the first gate so the shared target could not reuse
+another worktree's same-package library.
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | pass (exit 0) |
+| `cargo clippy --locked --all-targets --no-default-features -- -D warnings` | pass (exit 0) |
+| `cargo clippy --locked --all-targets --all-features -- -D warnings` | pass (exit 0) |
+| `cargo test --locked --no-default-features -- --test-threads=1` | pass (exit 0) — 422 passed, 0 failed, 4 ignored |
+| `cargo test --locked --all-features -- --test-threads=1` | pass (exit 0) — 438 passed, 0 failed, 4 ignored |
+| `cargo deny check` | not applicable — no `deny.toml` in the repo |
+
+Counts rose 419 → 422 and 435 → 438; the three added tests are the two
+`arena::tests` unit tests and `large_admitted_model_...`, and all three ran in
+both feature configurations. The four `#[ignore]`d tests are the same
+pre-existing named lanes. Logs are `/tmp/quire-binding-final-review-*.log`.
+
+### Disposition of the residual findings
+
+| ID | Disposition | Evidence |
+| --- | --- | --- |
+| FND-015 | resolved for the model-wide scans; open for record fields (FND-020) | `Exports` gains four borrowed name indexes over the **one** existing `Catalog` — `records`, `enumerations`, `values` derived from `catalog.*` and `operations` from `model.roles()` (`models.rs:167-210`), with no second catalog and no change under `src/checking/`. `resolve_type`/`export_type` (`models.rs:562-591`), `resolve_operation` (`models.rs:662-666`) and `value()` (`models.rs:745-749`) replace their `find_charged` scans with `BTreeMap::get` on a borrowed `&str`/`(&str, &str)` key, charged as one attempt. Lookup semantics are preserved exactly: `Catalog::records`/`enumerations`/`values` are keyed by `ir::SymbolName`, a `String` newtype, so keying by `name().as_str()` is a bijection, and `check_operations` (`src/native_model/admission.rs:445-452`) makes `(context, name)` unique, so no index entry can silently overwrite another. `charge_exports` (`models.rs:870-900`) reserves the added entries **before** `Exports::new` allocates them, and `tests/composed_models.rs:524-570` pins the exact new per-dimension totals plus the References off-by-one boundary. The scale control is real, not synthetic: `tests/composed_binding.rs:143-245` builds a 1 500-record model through `model_source::read` + `admit(ModelLimits::default())`, binds 400 declarations of four typed parameters each through `binding::bind`, asserts `NamesResolved` and the exact resolved record per occurrence, and caps References below 200 000 where the old scan needed 2 397 600 against a 2 000 000 ceiling. Verified green in the runs above. |
+| FND-016 | resolved | `arena.rs:41-192` adds the missing `#[cfg(test)] mod tests` beside the `pub(super)` function that `tests/` cannot reach. `real_parser_arenas_partition_by_declaration_despite_postorder_nodes` (`arena.rs:91`) parses a real five-declaration unit and checks the actual precondition the module states — every node of all three arenas is contained in exactly one declaration span, the owned regions are contiguous in index order, and `owned`'s result is pointer-identical to an independently computed region — while asserting the arena really is internally non-source-ordered, so the test is not vacuous. `empty_regions_and_exact_boundary_cost_refuse_before_an_unpaid_read` (`arena.rs:143`) covers the empty arena, an empty owned region before and after the arena, the exact four-comparison boundary cost, and a References limit one below it, asserting `(used, requested, limit) = (3, 1, 3)` — charge-before-read at the exact boundary. Residual, not re-raised as a row: `owned` itself still carries no `debug_assert!` on containment, unlike the `dependencies.rs:194-196` precedent it cites, so a future parser shape outside this fixture's constructs would still be caught at test time rather than at the call. |
+| FND-017 | resolved by documentation | `scopes.rs:295-297` now labels `InvalidEnvironment` "Defensive: a future scheduler invariant violation ... current constructor-private scheduling prevents it", matching FND-013's accepted disposition for the analogous branches. The single construction site (`scopes.rs:572`) remains unreachable, and the surrounding comment at `scopes.rs:552-554` still states the invariant. |
+
+### New findings
+
+**FND-018.** Every supplied `ModelInput::Native` is indexed eagerly in
+`collect()` — `charge_exports` then `Exports::new` for input after input
+(`models.rs:322-335`) — whether or not any unit imports it. The correction
+raises that per-model Bindings reservation from one entry per type/value/
+operation to two (`models.rs:873`, `:883-885`, `:893`). `HARD_LIMITS.bindings`
+is 262 144 and `Limits::effective()` clamps *down* only (`binding_work.rs:29`,
+`:42-51`), so no caller can raise it. Scenario, using the very model the new
+test admits (1 500 records, one Boolean field each → 3 Bindings per record,
+4 500 per model, ~257 KB of source): a package supplying 59 such models charges
+265 500 Bindings and exhausts during `collect()`, so `bind_models` leaves
+`complete = false`, every later qualified lookup returns `IncompleteCatalog`
+and every declaration reports `Unfinished`. At 9aa788a the same input charged
+3 000 per model — 177 000 — and completed; it would have taken 88 models to
+exhaust. Nothing else refuses first: 59 models is inside `models: 128`, the
+~15 MB of artifact bytes is inside `bytes: 33 554 432`, and References are
+~88 500. This is the same failure mode FND-015 named, recurring on the Bindings
+dimension: an honest-charging fix converting a previously-bound legal input
+into a refusal. The remedy is the one the lazy side of the design already
+suggests — build (and charge) the four name indexes only for inputs an import
+actually selects, which also stops indexing up to 127 unimported models.
+
+**FND-019.** The rewritten contract at `models.rs:249-254` states that
+References count "entries used to build borrowed name indexes". Three of the
+five indexes obey it (types `:872`, values `:884`, operations `:892`); the
+`scalars` index, built one entry per scalar role in `Exports::new`
+(`models.rs:196-201`), charges none — `models.rs:886-889` still charges only
+Bindings. `tests/composed_models.rs:527-530` pins that asymmetry as intended:
+its `bindings_count` includes the 7 scalar roles while `references = 2 + 3 + 1 + 1`
+excludes them. Separately, the new comment at `models.rs:868-869` claims to
+reserve "the shared Catalog and each additional borrowed-name entry", but the
+Catalog half stays approximate — a record costs `records` + `ordered_fields` +
+its `Vec<&Field>` + `fields` = 2 + 2F entries against 2 + F charged, and an
+object role costs both `objects` and `references` entries against
+`models.rs:890`'s one. The under-reservation is inherited from 9aa788a, not
+introduced here; the claim of exactness is new. Correct one or the other: charge
+the scalars index like its siblings, and soften the comment to "reserve before
+allocating" rather than implying entry-for-entry parity.
+
+**FND-020.** `field()` was left out of the indexing pass. It resolves the
+receiver's record through the borrowed index, then scans that record's fields
+linearly with `find_charged`, one Reference per compared field
+(`models.rs:799-806`) — even though `Catalog::ordered_fields` is already sorted
+by field name (`src/checking/types.rs:200-206`), so a charged binary search of
+the kind `arena::owned` demonstrates in this same change would be logarithmic
+with no new allocation. Admission caps a record at ~4 999 fields (`nodes` is
+10 000 and each field spends one node plus at least one for its type,
+`src/native_model/admission.rs:80-102`). Scenario: one such record and an
+ordinary unit with 500 member accesses costs 500 × 4 999 ≈ 2 499 500 References
+against the unraisable 2 000 000 ceiling, and the package reports `Unfinished`.
+At 92313b7 the same scan was billed as one Reference, so this is the unfixed
+remainder of the FND-015 regression rather than a new cost.
+`tests/composed_models.rs:856-903` currently pins the per-candidate field
+charge, so the fix owes that test an update.
+
+### Verified safe at 5381672, not findings
+
+- Removing the `find_charged` scans changes cost, not outcome. Both the old
+  first-match scan and the new `BTreeMap::get` see exactly one candidate per
+  name, and the `AmbiguousExport` guard at `models.rs:580-585` still fires on a
+  scalar colliding with a record or enumeration.
+- `resolve_operation` (`models.rs:645-646`) inlines what `resolve_type` did —
+  `alias` then `export_type` over the same `Exports` — so the charge sequence
+  and the resolved `model` identity are unchanged.
+- `owned`'s binary search remains correct over an internally unordered arena:
+  the predicate `node.start < at` only has to be monotone at the two
+  *declaration* boundaries, which the partition invariant guarantees and
+  `assert_regions` now checks against real parser output.
+- No `unsafe`, no new `#[allow(...)]`, no `todo!`/`dbg!`/`TODO`, no suppressed
+  warning, no new dependency, and no change under `resources/` — the selected
+  historical resource bytes are untouched by this commit.
+- `ACCOUNTING_VERSION` still reads `composed-binding-work/1` after a second
+  charging-contract change. Both commits remain unpublished on this branch, so
+  the FND-009/9aa788a disposition carries; a comparable change after this ships
+  would owe a bump.
