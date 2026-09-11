@@ -40,6 +40,16 @@ timing instructions. Keep necessary specification and plan changes scoped; do no
 create a review or detailed log for every increment. Avoid premature optimization.
 Use the requested QUOIN workflows and actual code/Rust review for the PR gate.
 
+Owner update: keep prototype bookkeeping minimal. Use ordinary Git history, PR
+links and brief test results. Do not maintain manual SHA inventories or
+per-document checksum catalogs, refresh hashes for routine draft edits, create
+successor draft files for working history, or record every intermediate step in
+status/review logs. Update existing artifacts and tickets for material decisions
+and remaining work. Preserve digests required by actual runtime identities,
+dependency selections and interchange contracts; those are product semantics.
+Remove this prototype-only bookkeeping restriction when the repository reaches
+a stable release.
+
 Owner update (2026-09-09): prioritize engineering toward the first proof of
 concept. Track incomplete assurance separately from implementation dependencies;
 it need not block engineering delivery. Keep routine local checks and PR reviews,
