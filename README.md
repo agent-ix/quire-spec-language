@@ -1,13 +1,5 @@
 # quire-spec-language
 
-The `protocol_artifact` library module supplies the exact numeric component of
-[compiler #40](https://github.com/agent-ix/quire-spec-language/issues/40):
-tagged canonical decimal strings for signed-64 integers and reduced rationals,
-with typed validation errors. The [numeric contract](spec/functional/FR-038-encode-exact-protocol-numbers.md)
-defines its closed shapes. `NumberWire` retains unvalidated strings for typed
-conversion; `ProtocolNumber` contains only admitted numeric components. This
-does not yet provide a complete compiled-protocol reader or native producer.
-
 `parse_native` and `parse_native_source` select the authored edition and return
 either a historical unit or a typed, source-located `1-draft` syntax unit.
 The composed path extends the existing Logos recognizer and Pratt parser across
@@ -33,6 +25,20 @@ validation remain open. Existing `parse`, format, CLI and checked-package APIs r
 historical profile; parsing alone grants no semantic admission or execution.
 
 Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
+
+The `protocol_artifact` library module supplies typed wire records, a bounded
+canonical encoder and a parser-free reader under
+[compiler #40](https://github.com/agent-ix/quire-spec-language/issues/40).
+`read` checks independently selected artifact/source/dependency references,
+actual admitted model exports, typed local handles and structural control edges.
+`encode_candidate` returns transport bytes; its result and reader admission
+remain separate from native compilation authority. See the
+[wire contract](docs/compiled-protocol-v1.md) for the exact encoding, identity
+domains and limits. The [numeric component](spec/functional/FR-038-encode-exact-protocol-numbers.md)
+uses tagged canonical decimal strings for signed-64 integers and reduced
+rationals, with typed validation errors. Complete family admission, native
+emission and the real producer-to-B handoff remain open; manually authored wire
+fixtures do not establish those capabilities.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
