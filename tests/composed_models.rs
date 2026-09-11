@@ -522,12 +522,11 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
                 .iter()
                 .map(|value| value.len())
                 .sum::<usize>();
-            // Independent fixture inventory: 2 types + 11 fields + 3 values + 7
-            // scalar roles + 9 scalar sites + 1 object + 1 operation + 1 frame field
-            // + 1 import, plus borrowed name indexes for 2 types, 3 values and
-            // 1 operation. Each new name-index entry is also inspected once.
-            let bindings_count = 2 + 11 + 3 + 7 + 9 + 1 + 1 + 1 + 1 + 2 + 3 + 1;
-            let references = 2 + 3 + 1 + 1; // name indexes + import candidate
+            // Stored indexes: 3 per record, 2 per field/value/object/operation,
+            // one per scalar role/site/frame field, then one import record.
+            let bindings_count = 3 * 2 + 2 * 11 + 2 * 3 + 7 + 9 + 2 + 2 + 1 + 1;
+            // Borrowed type/value/scalar/operation names + selection + cache lookup.
+            let references = 2 + 3 + 7 + 1 + 1 + 1;
             let exact = BindingLimits {
                 bytes,
                 models: 1,
@@ -592,6 +591,187 @@ fn exact_model_bytes_entries_and_lookup_limits_preserve_partial_report_and_retry
                 matches!(bound.resolve_type(unit, name, &mut low).unwrap_err().kind, ModelErrorKind::ResourceExhausted(error) if error.dimension == Dimension::References)
             );
             assert!(bound.resolve_type(unit, name, &mut work()).is_ok());
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-3", "FR-036-AC-7")]
+fn multi_model_indexes_reserve_only_selected_inputs_and_share_repeated_imports() {
+    let records = (0..400)
+        .map(|index| {
+            serde_json::json!({
+                "name": format!("R{index:04}"),
+                "fields": [{"name":"ready", "type":{"kind":"boolean"}}]
+            })
+        })
+        .collect::<Vec<_>>();
+    let models = (0..16)
+        .map(|index| {
+            document_model(
+                serde_json::json!({
+                    "license":"AGPL-3.0-only", "package":format!("test/supply{index}"),
+                    "requirement":"Supply", "revision":1, "scalars":[],
+                    "records":records, "values":[], "objects":[], "operations":[]
+                }),
+                &format!("Supply{index}"),
+                &format!("supply-{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let inputs = models.iter().map(ModelInput::Native).collect::<Vec<_>>();
+    // Eight different models selected by nine imports; the second reuses input 0.
+    let selections = [0, 0, 2, 4, 6, 8, 10, 12, 14];
+    let sources = selections
+        .iter()
+        .enumerate()
+        .map(|(index, selected)| {
+            program(
+                &models[*selected],
+                &format!("predicate Rule{index} using S (item: M::R0399): Boolean {{ true }}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    with_namespace(&sources, |namespace| {
+        // Each selected model stores 3 maps per record plus two field entries.
+        // The 8 unimported models allocate no export index. Import records cost 9.
+        let exact_bindings = 8 * 400 * (3 + 2) + 9;
+        // 400 type-name entries per selected model; 16 candidates and one cache
+        // lookup per import. The 16 distinct inventory owners/sources do not conflict.
+        let exact_references = 8 * 400 + 9 * (16 + 1);
+        let exact_bytes = models
+            .iter()
+            .map(|model| model.artifact_bytes().len())
+            .sum::<usize>()
+            + namespace
+                .units()
+                .iter()
+                .flat_map(|unit| unit.models())
+                .map(|import| {
+                    import.alias.value.len()
+                        + import.package.value.len()
+                        + import.version.value.len()
+                        + import.digest.value.len()
+                })
+                .sum::<usize>();
+        let exact = BindingLimits {
+            models: 16,
+            bindings: exact_bindings,
+            references: exact_references,
+            bytes: exact_bytes,
+            ..BindingLimits::default()
+        };
+        let mut meter = Work::new(exact);
+        let report = bind_models(namespace, &inputs, &mut meter);
+        assert!(report.complete(), "{:?}", report.exhaustion());
+        assert!(report.conflicts().is_empty());
+        assert_eq!(meter.usage().models, 16);
+        assert_eq!(meter.usage().bytes, exact_bytes);
+        assert_eq!(meter.usage().bindings, exact_bindings);
+        assert_eq!(meter.usage().references, exact_references);
+        assert_eq!(report.imports().len(), 9);
+        for (index, selected) in selections.into_iter().enumerate() {
+            assert_eq!(report.imports()[index].selection, Ok(selected));
+            let (unit, name) = parameter(namespace, &format!("Rule{index}"), 0);
+            let bound = report.resolve_type(unit, name, &mut work()).unwrap();
+            assert!(std::ptr::eq(bound.model(), &models[selected]));
+            assert_eq!(
+                bound.location().identity.key,
+                DeclarationKey::Type(native_rule_model::symbol("R0399"))
+            );
+        }
+        let mut low = Work::new(BindingLimits {
+            bindings: exact_bindings - 1,
+            ..exact
+        });
+        let partial = bind_models(namespace, &inputs, &mut low);
+        assert!(!partial.complete());
+        let exhausted = partial.exhaustion().unwrap();
+        assert_eq!(exhausted.dimension, Dimension::Bindings);
+        assert_eq!(
+            (exhausted.used, exhausted.requested),
+            (exact_bindings - 1, 1)
+        );
+        // Selection is retained, but its unfinished catalog cannot supply a type.
+        assert_eq!(partial.imports().len(), 9);
+        assert_eq!(partial.imports()[8].selection, Ok(14));
+        let (unit, name) = parameter(namespace, "Rule8", 0);
+        assert_eq!(
+            partial
+                .resolve_type(unit, name, &mut work())
+                .unwrap_err()
+                .kind,
+            ModelErrorKind::IncompleteCatalog
+        );
+        let before = low.usage();
+        assert!(bind_models(namespace, &inputs, &mut Work::new(exact)).complete());
+        assert_eq!(low.usage(), before);
+        assert!(!partial.complete());
+        let zero = bind_models(
+            namespace,
+            &inputs,
+            &mut Work::new(BindingLimits {
+                bindings: 0,
+                ..exact
+            }),
+        );
+        assert!(!zero.complete());
+        assert_eq!(zero.exhaustion().unwrap().dimension, Dimension::Bindings);
+        assert_eq!(zero.exhaustion().unwrap().used, 0);
+    });
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-3", "FR-036-AC-7")]
+fn unselected_model_conflicts_remain_visible_without_allocating_their_indexes() {
+    let first = model("test/conflict", "Shared", "first");
+    let second = model("test/conflict", "Shared", "second");
+    let spare = model("test/spare", "Spare", "spare");
+    let inputs = [
+        ModelInput::Native(&first),
+        ModelInput::Native(&second),
+        ModelInput::Native(&spare),
+    ];
+    with_namespace(
+        &[program(
+            &spare,
+            "predicate Rule using S (item: M::Node): Boolean { true }",
+        )],
+        |namespace| {
+            // One selected fixture's 55 index entries, one import, two shared conflicts.
+            let mut meter = Work::new(BindingLimits {
+                bindings: 58,
+                ..BindingLimits::default()
+            });
+            let report = bind_models(namespace, &inputs, &mut meter);
+            assert!(report.complete(), "{:?}", report.exhaustion());
+            assert_eq!(meter.usage().models, 3);
+            assert_eq!(meter.usage().bindings, 58);
+            assert_eq!(report.conflicts().len(), 2);
+            assert_eq!(report.conflicts()[0].kind, ModelConflictKind::Owner);
+            assert_eq!(report.conflicts()[1].kind, ModelConflictKind::Source);
+            assert_eq!(report.conflicts()[0].inputs, [0, 1]);
+            assert_eq!(report.conflicts()[1].inputs, [0, 1]);
+            assert_eq!(report.imports()[0].selection, Ok(2));
+            let (unit, name) = parameter(namespace, "Rule", 0);
+            assert!(std::ptr::eq(
+                report
+                    .resolve_type(unit, name, &mut work())
+                    .unwrap()
+                    .model(),
+                &spare
+            ));
+            let partial = bind_models(
+                namespace,
+                &inputs,
+                &mut Work::new(BindingLimits {
+                    bytes: first.artifact_bytes().len() + second.artifact_bytes().len() - 1,
+                    ..BindingLimits::default()
+                }),
+            );
+            assert!(!partial.complete());
+            assert_eq!(partial.exhaustion().unwrap().dimension, Dimension::Bytes);
+            assert!(partial.imports().is_empty());
         },
     );
 }
@@ -703,17 +883,19 @@ fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
             "predicate Rule using S (item: M::Node): Boolean { true }",
         )],
         |namespace| {
-            // Each input indexes two types, three values and one operation;
-            // then two inputs in each owner/source comparison and import selection.
+            // Two owner comparisons, two source comparisons, two candidates.
+            // Ambiguous selections construct no export indexes.
             let exact = BindingLimits {
-                references: 2 * (2 + 3 + 1) + 2 + 2 + 2,
+                references: 2 + 2 + 2,
+                bindings: 1,
                 ..BindingLimits::default()
             };
             let mut meter = Work::new(exact);
             let bindings = bind_models(namespace, &inputs, &mut meter);
             assert!(bindings.complete());
             assert!(bindings.conflicts().is_empty());
-            assert_eq!(meter.usage().references, 18);
+            assert_eq!(meter.usage().references, 6);
+            assert_eq!(meter.usage().bindings, 1);
             assert_eq!(
                 bindings.imports()[0].selection,
                 Err(ImportRefusal::AmbiguousSelection { inputs: vec![0, 1] })
@@ -730,13 +912,13 @@ fn duplicate_exact_models_are_ambiguous_and_conflict_comparisons_are_charged() {
                 namespace,
                 &inputs,
                 &mut Work::new(BindingLimits {
-                    references: 17,
+                    references: 5,
                     ..exact
                 }),
             );
             assert!(!partial.complete());
             assert!(partial.imports().is_empty());
-            assert_eq!(partial.exhaustion().unwrap().used, 17);
+            assert_eq!(partial.exhaustion().unwrap().used, 5);
             assert_eq!(partial.exhaustion().unwrap().requested, 1);
         },
     );
@@ -855,7 +1037,7 @@ fn parameter_types_preserve_boolean_and_nominal_types_with_exact_scan_costs() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3", "FR-036-AC-7")]
-fn missing_field_scan_exhausts_before_its_last_candidate() {
+fn missing_field_binary_search_exhausts_before_its_last_comparison() {
     let model = model("test/native", "NativeModel", "native-model");
     let inputs = [ModelInput::Native(&model)];
     with_namespace(
@@ -871,9 +1053,9 @@ fn missing_field_scan_exhausts_before_its_last_candidate() {
                 value: "missing".into(),
                 span: name.name.span,
             };
-            // One catalog entry, one import alias, one lookup, ten Node fields.
+            // Catalog + alias + lookup; sorted candidates n, distance, items.
             let exact = BindingLimits {
-                references: 13,
+                references: 6,
                 ..BindingLimits::default()
             };
             let mut meter = Work::new(exact);
@@ -881,23 +1063,112 @@ fn missing_field_scan_exhausts_before_its_last_candidate() {
                 .field(unit, &node, &missing, &mut meter)
                 .unwrap_err();
             assert_eq!(error.kind, ModelErrorKind::MissingExport);
-            assert_eq!(meter.usage().references, 13);
+            assert_eq!(meter.usage().references, 6);
             let error = bindings
                 .field(
                     unit,
                     &node,
                     &missing,
                     &mut Work::new(BindingLimits {
-                        references: 12,
+                        references: 5,
                         ..exact
                     }),
                 )
                 .unwrap_err();
             assert!(
                 matches!(error.kind, ModelErrorKind::ResourceExhausted(exhaustion)
-            if exhaustion.dimension == Dimension::References && exhaustion.used == 12
+            if exhaustion.dimension == Dimension::References && exhaustion.used == 5
                 && exhaustion.requested == 1)
             );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-114", "FR-036-AC-1", "FR-036-AC-3", "FR-036-AC-7")]
+fn wide_record_fields_resolve_at_defaults_without_repeated_linear_scans() {
+    let fields = (0..1_500)
+        .map(|index| {
+            serde_json::json!({
+                "name":format!("f{index:04}"), "type":{"kind":"boolean"}
+            })
+        })
+        .collect::<Vec<_>>();
+    let model = document_model(
+        serde_json::json!({
+            "license":"AGPL-3.0-only", "package":"test/wide", "requirement":"WideModel",
+            "revision":1, "scalars":[], "values":[], "objects":[], "operations":[],
+            "records":[{"name":"Wide","fields":fields}, {"name":"Empty","fields":[]}]
+        }),
+        "WideModel",
+        "wide-model",
+    );
+    let input = [ModelInput::Native(&model)];
+    let body = (0..1_400)
+        .map(|index| match index {
+            0 => "item.f0000",
+            1 => "item.f0749",
+            _ => "item.f1499",
+        })
+        .collect::<Vec<_>>()
+        .join(" and ");
+    with_namespace(
+        &[program(
+            &model,
+            &format!(
+                "predicate Rule using S (item: M::Wide, empty: M::Empty): Boolean {{ {body} }}"
+            ),
+        )],
+        |namespace| {
+            let bindings = bind_models(namespace, &input, &mut work());
+            assert!(bindings.complete(), "{:?}", bindings.exhaustion());
+            let (unit, wide) = parameter(namespace, "Rule", 0);
+            let receiver = bindings.resolve_type(unit, wide, &mut work()).unwrap();
+            let fields = namespace
+                .unit(unit)
+                .unwrap()
+                .expressions()
+                .iter()
+                .filter_map(|node| match &node.kind {
+                    quire_spec_language::syntax::composed::ValueKind::Shared(
+                        quire_spec_language::syntax::ExprKind::Field { name, .. },
+                    ) => Some(name),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(fields.len(), 1_400);
+            assert_eq!(fields[0].value, "f0000");
+            assert_eq!(fields[1].value, "f0749");
+            assert_eq!(fields[1_399].value, "f1499");
+            let mut meter = work();
+            for field in &fields {
+                let bound = bindings.field(unit, &receiver, field, &mut meter).unwrap();
+                assert_eq!(bound.native(), &NativeType::Boolean);
+                assert!(std::ptr::eq(bound.model(), &model));
+                assert_eq!(
+                    bound.location().identity.key,
+                    DeclarationKey::Field {
+                        record: native_rule_model::symbol("Wide"),
+                        field: native_rule_model::symbol(&field.value),
+                    }
+                );
+            }
+            // The old scans need 1 + 750 + 1398*1500 = 2,097,751 comparisons,
+            // exceeding the hard 2M References cap before all offered fields resolve.
+            assert!(meter.usage().references < 30_000, "{:?}", meter.usage());
+
+            let (_, empty) = parameter(namespace, "Rule", 1);
+            let empty = bindings.resolve_type(unit, empty, &mut work()).unwrap();
+            let mut empty_work = Work::new(BindingLimits {
+                references: 3,
+                ..BindingLimits::default()
+            });
+            let error = bindings
+                .field(unit, &empty, fields[0], &mut empty_work)
+                .unwrap_err();
+            assert_eq!(error.kind, ModelErrorKind::MissingExport);
+            assert_eq!(empty_work.usage().references, 3); // catalog, alias, lookup; no fields
+            assert_eq!(error.span, fields[0].span);
         },
     );
 }
@@ -921,7 +1192,12 @@ fn indexed_operations_and_values_charge_only_selected_parameters_and_members() {
          post After using S on M::Node::step { result }",
         )],
         |namespace| {
-            let bindings = bind_models(namespace, &inputs, &mut work());
+            let mut catalog_work = work();
+            let bindings = bind_models(namespace, &inputs, &mut catalog_work);
+            // Baseline indexes 55 + enum maps/members 5 + two value-map pairs 4
+            // + import 1. The operation's two borrowed parameters add no index.
+            assert_eq!(catalog_work.usage().bindings, 65);
+            assert_eq!(catalog_work.usage().references, 3 + 5 + 7 + 1 + 1 + 1);
             let (unit, color) = parameter(namespace, "Rule", 0);
             let missing = Spanned {
                 value: "Missing".into(),
