@@ -40,6 +40,12 @@ Compiler #35/#40 remains open by the owner's explicit decision to deliver this
 binding slice while TC-115, type/profile/runtime/family checking and D's IT-009
 correspondence continue; nothing here claims those ACs.
 
+**Current verdict (re-verified at 5381672, 2026-09-10): FAIL, unchanged.**
+The full-ticket gap is exactly where it was: TC-115 has no backing tagged test,
+IT-009 is untouched, and `spec/` is unchanged by this commit, so FND-001 stands
+and the skill's verdict rule mandates FAIL. The SR-319 code corrections being
+complete does not move this gate. One new gap is recorded as FND-011.
+
 ## Target selection
 
 The `gap-analysis` skill's Step 1 (plan completion) **could not be executed**:
@@ -71,6 +77,7 @@ in SR-319.
 | FND-008 | low | Three new submodules carry no `FR-` owning-requirement header, unlike their six siblings | src/linking/composed/scopes/values.rs:2, src/linking/composed/scopes/protocol.rs:2, src/linking/composed/scopes/protocol/flow.rs:2 |
 | FND-009 | low | The coverage engine flags a copied `id` oracle helper shared by a new and an existing test module | tests/composed_scopes.rs:65, tests/composed_linking.rs:252 |
 | FND-010 | low | Issue #40 artifact delivery has no surface anywhere in the tree and is neither started nor claimed here | - |
+| FND-011 | medium | FR-036-AC-7 now has scale controls on References but none on Bindings, the dimension SR-319 FND-018 exhausts | tests/composed_binding.rs:143, tests/composed_models.rs:524, src/linking/composed/models.rs:870 |
 
 ## Detail
 
@@ -225,3 +232,65 @@ today), TC-115 in full, and IT-009's real producer integration. Issue #40
 artifact delivery is untouched. Local gates are green and the historical package
 path is unaffected; no result of this stage is a checked or executable package.
 The optional semantic review (Step 4) remains declined and was not run here.
+
+## Correction re-review (5381672, 2026-09-10)
+
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-binding-fixes
+--json`, engine 0.46.0 (quire 0.31.0), re-run in this session against the second
+remediation commit. The rollup is unchanged from both earlier runs.
+
+| Measure | 92313b7 | 9aa788a | 5381672 |
+| --- | --- | --- | --- |
+| Matrix rows backed | 332 / 340 | 332 / 340 | 332 / 340 |
+| Unbacked rows | 6 | 6 | 6 — TC-115, FR-036-AC-5/6/8, plus pre-existing TC-010 and FR-017-AC-2 |
+| Status lies | 0 | 0 | 0 |
+| Untracked test symbols | 20 | 20 | 20 — all pre-existing, in `src/package/encoding/tests.rs` and `tests/package_construction_cases/limits.rs` |
+| Unmatched tags | 3 | 3 | 3 — IT-004 in `tests/fixture_audit.rs`, pre-existing |
+| Suspicions | 1 | 1 | 1 — the same `id` oracle helper (FND-009) |
+
+The commit adds three tests (419 → 422 with `--no-default-features`,
+435 → 438 with `--all-features`; both suites pass with 0 failed and the same
+four pre-existing `#[ignore]` lanes, all gates executed in this session). Two
+are `#[cfg(test)]` unit tests inside `src/linking/composed/arena.rs` and one is
+an integration test; all three carry resolving `#[trace]` tags, so neither the
+untracked-symbol nor the unmatched-tag count moved.
+
+### Disposition at 5381672
+
+| ID | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | open, unchanged | `quire coverage` still reports `spec/model-linking/tests.md:107` (TC-115 → FR-036-AC-5/6/8) and the three `verification` rows at `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` as unbacked. No test carries a `TC-115` tag; `spec/integration/IT-009-composed-package-boundary.md` is untouched and no producer integration exists. `spec/` is unchanged by 5381672. The completed SR-319 corrections do not touch this gap, and it is not softened here. |
+| FND-002 | closed as an analysis limitation | The owner has dispositioned the absent #35 plan bundle; creating one is not a task. Step 1 stays unexecutable and FR-036 plus TC-114 remain the target of record. |
+| FND-003 | open, unchanged | The engine still counts FR-036-AC-1/2/3/4/7 backed through `#[trace]` tags while `spec/model-linking/tests.md:124-131` keeps all eight rows Planned, with zero status lies. `backed` measures tag binding, not AC discharge. |
+| FND-004 | resolved, and strengthened | Beyond the two arena-scale tests at 9aa788a, `tests/composed_binding.rs:143-245` now exercises the combined path against a **real admitted** model — 1 500 records through `model_source::read` + `admit(ModelLimits::default())` — with 400 declarations of four typed parameters each, asserting per-occurrence resolution as well as the reference cap. FR-036-AC-7's "exact-limit expectations derivable from a controlled input" is exercised at scale on References. |
+| FND-005 | resolved, unchanged | The eleven producible typed causes retain their tagged tests from 9aa788a. |
+| FND-006, FND-007, FND-008 | resolved, unchanged | `resources/` and the module headers are untouched by this commit. |
+| FND-009 | open, unchanged | The engine still flags the `id` helper shared by `tests/composed_scopes.rs` and `tests/composed_linking.rs:252` at token similarity 1.00. Unremediated and still low. |
+| FND-010 | open, unchanged | Nothing in the tree references issue #40; artifact delivery is neither started nor claimed here. |
+
+### New finding
+
+**FND-011.** The FND-004 remedy covers one dimension. Three tests now pin
+References at scale (`tests/composed_binding.rs:97`, `:143`, `:249`), and
+`tests/composed_models.rs:524-570` pins exact Bindings for a **tiny** fixture,
+but nothing exercises Bindings against a realistically sized supply. That is
+exactly the hole SR-319 FND-018 falls through: the per-model index reservation
+at `src/linking/composed/models.rs:870-900` scales with the supplied model set,
+and 59 models of the size the new test itself admits exhaust the unraisable
+262 144 Bindings ceiling with no test to notice. FR-036-AC-7 does not privilege
+one dimension — "zero never disables a limit" and exact-limit expectations apply
+across the accounting contract. The missing control is again a scale test, not
+a new stage: bind a multi-model inventory and assert the Bindings budget the way
+`large_admitted_model_resolves_repeated_nominal_parameters_at_defaults` asserts
+the References budget.
+
+### Remaining work for compiler #35 at 5381672
+
+Unchanged, and explicitly permitted to remain open by the owner: expression and
+type checking, profile/family admission, complete typed runtime-role derivation,
+downstream request handling, D's canonical/native correspondence, relationship
+export authority (an explicit unsupported boundary today), TC-115 in full, and
+IT-009's real producer integration. Issue #40 artifact delivery is untouched.
+Local gates are green and the historical package path is unaffected; no result
+of this stage is a checked or executable package. The optional semantic review
+(Step 4) remains declined and was not run here.
