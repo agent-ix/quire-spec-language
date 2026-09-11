@@ -119,7 +119,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                             self.obligation(at, ObligationKind::Presence)?;
                         }
                         Builtin::Deref => {
-                            self.require(at, false, true)?;
+                            self.require(at, Capability::Graph)?;
                             self.relation(
                                 Relation::Deref {
                                     input: self.var(*argument),
@@ -156,14 +156,14 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                 }
                 ExprKind::Reaches { start, target, .. } => {
                     children.extend([*start, *target]);
-                    self.require(at, false, true)?;
+                    self.require(at, Capability::Graph)?;
                     self.boolean(at)?;
                     self.unify(self.var(*start), self.var(*target), at)?;
                     self.obligation(at, ObligationKind::GraphClosure)?;
                 }
             },
             c::ValueKind::Invoke { arguments, .. } => {
-                self.require(at, true, false)?;
+                self.require(at, Capability::Queries)?;
                 self.boolean(at)?;
                 children.extend(arguments.iter().copied());
                 let entry = self
@@ -189,7 +189,8 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                         .expect("bound callee")
                         .kind
                     else {
-                        unreachable!("namespace resolved predicate kind")
+                        self.cause(at, CauseKind::UpstreamBinding)?;
+                        return Ok(());
                     };
                     if parameters.len() != arguments.len() {
                         self.cause(
@@ -277,7 +278,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                 ..
             } => {
                 children.extend([*domain, *body]);
-                self.require(at, true, false)?;
+                self.require(at, Capability::Queries)?;
                 if let Some(name) = result {
                     if let Some(ty) = self.qualified(name, at)? {
                         self.assign(out, ty, at)?;
@@ -318,10 +319,10 @@ impl<'a> Solver<'_, 'a, '_, '_> {
     pub(super) fn solve_relations(&mut self) -> Result<()> {
         // Every revisit is charged. Only new type information requests another pass.
         let mut changed = true;
-        let mut failed = vec![false; self.relations.len()];
+        let mut settled = vec![false; self.relations.len()];
         while changed {
             changed = false;
-            for (index, done) in failed.iter_mut().enumerate() {
+            for (index, done) in settled.iter_mut().enumerate() {
                 if *done {
                     continue;
                 }
@@ -430,13 +431,14 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                 return Ok(None);
             }
         };
-        let catalog = self.catalog(model, at)?;
-        let fields = &catalog
-            .records
-            .get(record)
-            .expect("admitted record")
-            .fields();
-        for field in *fields {
+        let Some(catalog) = self.catalog(model, at)? else {
+            return Ok(None);
+        };
+        let Some(record_declaration) = catalog.records.get(record) else {
+            self.cause(at, CauseKind::UpstreamBinding)?;
+            return Ok(None);
+        };
+        for field in record_declaration.fields() {
             self.work.charge(D::Constraints, 1, self.site(at))?;
             self.work.charge(
                 D::Bytes,
