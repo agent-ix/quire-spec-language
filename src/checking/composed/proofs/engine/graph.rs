@@ -32,7 +32,7 @@ impl<'a> proof::graph::Context<'a> for Builder<'_, 'a> {
                 // intervals after a nonzero guard. Products of child widths
                 // conservatively bound its Cartesian interval computations.
                 let width = self.widths[id.0];
-                if self.ty(at).rational().is_some() {
+                if self.ty(at)?.rational().is_some() {
                     self.work.charge(
                         D::Normalization,
                         width.saturating_mul(1024),
@@ -43,7 +43,11 @@ impl<'a> proof::graph::Context<'a> for Builder<'_, 'a> {
                 }
             }
             Kind::Input(key) => {
-                let symbol = self.key_info[key.0].symbol.as_ref().expect("proof symbol");
+                let symbol = self
+                    .key_info
+                    .get(key.0)
+                    .and_then(|info| info.symbol.as_ref())
+                    .ok_or_else(|| self.unsupported(at, Unsupported::ValueRepresentation))?;
                 self.work
                     .charge(D::Bytes, symbol.as_str().len(), self.site(at))?;
             }
