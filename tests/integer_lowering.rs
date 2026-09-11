@@ -454,6 +454,7 @@ fn target_names_round_trip_and_command_usage_precedes_input_reads() {
     let published = [
         (ProjectionTarget::BooleanOracleV1, "boolean-oracle/v1"),
         (ProjectionTarget::IntegerIrV1, "integer-ir/v1"),
+        (ProjectionTarget::StateScalarIrV1, "state-scalar-ir/v1"),
     ];
     assert_eq!(ProjectionTarget::ALL.len(), published.len());
     for (target, name) in published {
