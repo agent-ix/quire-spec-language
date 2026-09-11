@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-042: bounded Boolean partition proof over source-authorized receive atoms.
-
-use std::collections::BTreeSet;
+//! FR-042: bounded Boolean partition proof over source-authorized observations.
 
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid, Unsupported};
 
@@ -114,18 +112,10 @@ impl Arena {
         Ok(index)
     }
 
-    pub(super) fn basis(&self, root: usize, work: &mut Work) -> Result<Basis, Error> {
-        work.visit()?;
-        self.nodes
-            .get(root)
-            .map(|node| node.basis)
-            .ok_or(Error::Invalid(Invalid::Reference))
-    }
-
     pub(super) fn partition(
         &self,
         guards: &[usize],
-        visible: &BTreeSet<usize>,
+        visible: &[usize],
         atom_count: usize,
         work: &mut Work,
     ) -> Result<Vec<bool>, Error> {
@@ -134,7 +124,7 @@ impl Arena {
             return Err(unproved());
         }
         let mut horizon = 0;
-        for &root in guards {
+        for &root in guards.iter().chain(visible) {
             work.visit()?;
             self.nodes
                 .get(root)
@@ -143,37 +133,55 @@ impl Arena {
             horizon = horizon.max(root + 1);
         }
 
-        let mut allowed = bits(atom_count, work)?;
-        let mut assignment = bits(atom_count, work)?;
-        let mut slots = Vec::new();
-        work.charge(Dimension::Entries, visible.len())?;
-        slots
-            .try_reserve_exact(visible.len())
-            .map_err(|_| Error::Allocation)?;
-        for &atom in visible {
+        // First close each advertised expression and collect exactly the
+        // observation atoms on which its result is authorized to depend.
+        let mut visible_atoms = bits(atom_count, work)?;
+        let mut visible_reached = bits(horizon, work)?;
+        for &root in visible {
             work.visit()?;
-            *allowed
-                .get_mut(atom)
-                .ok_or(Error::Invalid(Invalid::Reference))? = true;
-            slots.push(atom);
+            visible_reached[root] = true;
+        }
+        self.close(&mut visible_reached, work)?;
+        for (index, &included) in visible_reached.iter().enumerate() {
+            work.visit()?;
+            if !included {
+                continue;
+            }
+            if let Op::Atom(atom) = self
+                .nodes
+                .get(index)
+                .ok_or(Error::Invalid(Invalid::Reference))?
+                .op
+            {
+                work.visit()?;
+                *visible_atoms
+                    .get_mut(atom)
+                    .ok_or(Error::Invalid(Invalid::Reference))? = true;
+            }
         }
 
+        // A guard may only depend on atoms that occur in that original visible
+        // closure. This is distinct from proving that its selected case is
+        // determined by the advertised Boolean results below.
         let mut reached = bits(horizon, work)?;
         for &root in guards {
             work.visit()?;
             reached[root] = true;
         }
-        // push admits only prior child handles. Reverse order therefore closes
-        // every original dependency without recursion or an expanding stack.
-        for index in (0..horizon).rev() {
+        self.close(&mut reached, work)?;
+        for (index, &included) in reached.iter().enumerate() {
             work.visit()?;
-            if !reached[index] {
+            if !included {
                 continue;
             }
-            let op = self.nodes[index].op;
-            if let Op::Atom(atom) = op {
+            if let Op::Atom(atom) = self
+                .nodes
+                .get(index)
+                .ok_or(Error::Invalid(Invalid::Reference))?
+                .op
+            {
                 work.visit()?;
-                if !allowed
+                if !visible_atoms
                     .get(atom)
                     .copied()
                     .ok_or(Error::Invalid(Invalid::Reference))?
@@ -181,9 +189,33 @@ impl Arena {
                     return Err(unproved());
                 }
             }
-            for child in op.inputs().into_iter().flatten() {
-                work.visit()?;
-                reached[child] = true;
+        }
+
+        // Formula roots themselves are evaluated with their guards, preserving
+        // every original child (including a syntactically unused let initializer).
+        for &root in visible {
+            work.visit()?;
+            reached[root] = true;
+        }
+        self.close(&mut reached, work)?;
+
+        let mut assignment = bits(atom_count, work)?;
+        let mut slots = Vec::new();
+        let mut visible_atom_count = 0;
+        for &included in &visible_atoms {
+            work.visit()?;
+            if included {
+                visible_atom_count += 1;
+            }
+        }
+        work.charge(Dimension::Entries, visible_atom_count)?;
+        slots
+            .try_reserve_exact(visible_atom_count)
+            .map_err(|_| Error::Allocation)?;
+        for (atom, &included) in visible_atoms.iter().enumerate() {
+            work.visit()?;
+            if included {
+                slots.push(atom);
             }
         }
         let mut ordered = Vec::new();
@@ -197,6 +229,18 @@ impl Arena {
         }
         let mut values = bits(horizon, work)?;
         let mut feasible = bits(guards.len(), work)?;
+        let mut direct = true;
+        for &root in visible {
+            work.visit()?;
+            direct &= matches!(
+                self.nodes
+                    .get(root)
+                    .ok_or(Error::Invalid(Invalid::Reference))?
+                    .basis,
+                Basis::Constant | Basis::Atom(_)
+            );
+        }
+        let mut signatures: Vec<(Vec<bool>, usize)> = Vec::new();
         loop {
             work.visit()?;
             for &index in &ordered {
@@ -210,7 +254,48 @@ impl Arena {
                     return Err(unproved());
                 }
             }
-            feasible[selected.ok_or_else(unproved)?] = true;
+            let selected = selected.ok_or_else(unproved)?;
+            feasible[selected] = true;
+
+            if !direct {
+                let mut signature = Vec::new();
+                work.charge(Dimension::Entries, visible.len())?;
+                signature
+                    .try_reserve_exact(visible.len())
+                    .map_err(|_| Error::Allocation)?;
+                for &root in visible {
+                    work.visit()?;
+                    signature.push(value(&values, root, work)?);
+                }
+                let mut prior = None;
+                for (known, case) in &signatures {
+                    work.visit()?;
+                    if known.len() != signature.len() {
+                        return Err(Error::Invalid(Invalid::Reference));
+                    }
+                    let mut equal = true;
+                    for (left, right) in known.iter().zip(&signature) {
+                        work.visit()?;
+                        if left != right {
+                            equal = false;
+                            break;
+                        }
+                    }
+                    if equal {
+                        prior = Some(*case);
+                        break;
+                    }
+                }
+                if let Some(case) = prior {
+                    if case != selected {
+                        return Err(unproved());
+                    }
+                } else {
+                    work.charge(Dimension::Entries, 1)?;
+                    signatures.try_reserve(1).map_err(|_| Error::Allocation)?;
+                    signatures.push((signature, selected));
+                }
+            }
 
             // Enumerate the entire selected visible basis, even atoms unused by
             // guards. A charged carry has no fixed-width mask or atom ceiling.
@@ -227,6 +312,29 @@ impl Arena {
                 return Ok(feasible);
             }
         }
+    }
+
+    fn close(&self, reached: &mut [bool], work: &mut Work) -> Result<(), Error> {
+        // push admits only prior child handles. Reverse order therefore closes
+        // every original dependency without recursion or an expanding stack.
+        for index in (0..reached.len()).rev() {
+            work.visit()?;
+            if !reached[index] {
+                continue;
+            }
+            let op = self
+                .nodes
+                .get(index)
+                .ok_or(Error::Invalid(Invalid::Reference))?
+                .op;
+            for child in op.inputs().into_iter().flatten() {
+                work.visit()?;
+                *reached
+                    .get_mut(child)
+                    .ok_or(Error::Invalid(Invalid::Reference))? = true;
+            }
+        }
+        Ok(())
     }
 }
 

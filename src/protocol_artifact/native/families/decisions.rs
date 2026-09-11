@@ -4,14 +4,14 @@
 mod formula;
 mod received;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::checking::{composed::DeclarationTypes, NativeType};
 use crate::linking::composed::scopes::{BinderId, BinderKind, BinderType, DeclarationScope};
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::{composed as c, BinaryOp, ExprId, ExprKind, UnaryOp};
 
-use formula::{Arena, Basis, Op};
+use formula::{Arena, Op};
 use received::Received;
 
 pub(super) struct Context<'s, 'm> {
@@ -70,7 +70,11 @@ pub(super) fn partition(
             meanings.insert(node.expression.0, meaning);
         }
     }
-    let mut basis = BTreeSet::new();
+    let mut visible_roots = Vec::new();
+    work.charge(Dimension::Entries, visible.len())?;
+    visible_roots
+        .try_reserve_exact(visible.len())
+        .map_err(|_| Error::Allocation)?;
     for expression in visible {
         work.visit()?;
         let original = context
@@ -79,16 +83,9 @@ pub(super) fn partition(
             .ok_or(Error::Invalid(Invalid::Reference))?;
         super::locate(context.source, original.span, work)?;
         let root = boolean(&meanings, *expression, work)?.ok_or_else(unsupported)?;
-        match arena.basis(root, work)? {
-            Basis::Constant => {}
-            Basis::Atom(atom) => {
-                if !basis.contains(&atom) {
-                    work.charge(Dimension::Entries, 1)?;
-                    basis.insert(atom);
-                }
-            }
-            Basis::Composite => return Err(unsupported()),
-        }
+        // The arena retains every original operand. It proves whether this
+        // advertised result, rather than its individual atoms, determines a case.
+        visible_roots.push(root);
     }
     let mut guards = Vec::new();
     for case in cases {
@@ -102,7 +99,7 @@ pub(super) fn partition(
         guards.push(root);
     }
     super::locate(context.source, control.span, work)?;
-    arena.partition(&guards, &basis, received.atom_count(), work)
+    arena.partition(&guards, &visible_roots, received.atom_count(), work)
 }
 
 fn meaning(

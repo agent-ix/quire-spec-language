@@ -382,11 +382,15 @@ Ordinary and qualified domain events share the same exact-role and causal
 availability rule; all existing family/binding checks remain required.
 
 `visible(...)` declares the information obligation. Each entry in this fragment
-is a direct eligible received or same-owner attempt/domain-event Boolean field,
-transparent grouping/immutable alias to that exact atom, or a closed Boolean
-constant; every guard atom must occur in that validated atom set. A composite
-visible expression such as `a and b` does
-not disclose its individual atoms and remains `Unsupported::FamilyProof`.
+is a supported Boolean formula over eligible received or same-owner
+attempt/domain-event fields, transparent immutable aliases and closed constants.
+Every original operand must be authorized; every guard atom must occur in the
+advertised formulas' original operand closure. A composite expression discloses
+only its Boolean result: any two abstract assignments with the same ordered
+advertised-result vector must select the same case. Thus `visible(a and b)` with
+guards `a and b` and its complement admits; guards `a` and `not a` refuse with
+`Unsupported::FamilyProof`, even though they form a partition. Retained disclosure
+signatures charge Entries; evaluation and comparison charge References before work.
 Listing an arbitrary input or another role's observed value grants no visibility.
 Supported guard formulas are Boolean literals and fields, grouping, `not`, `and`,
 `or`, `implies`, Boolean `=`/`!=`, Boolean conditionals and immutable `let` aliases.
