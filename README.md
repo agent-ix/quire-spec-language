@@ -149,6 +149,13 @@ Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
 the existing codegen still refuses numeric expressions. The `standalone_fixtures`
 example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
 Their native runs return true and false; both export the same integer projection.
+`ProjectionTarget::StateScalarIrV1` additionally projects primitive self fields
+and `pre` expressions. `NativeProjection::inputs` supplies their actual values
+from a context validated against that exact checked package, retaining snapshot,
+invocation and object provenance. For the concrete update example, run
+`quire-spec lower <unchanged-version/compile.json> --target state-scalar-ir/v1`.
+This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
+inputs; native population and frame validation still precedes materialization.
 The LC04 backend qualification uses pinned existing codegen and actual generated
 Rust; activation acceptance is pending the codegen reader's Rust 1.98.1 / LLVM
 3.1.0 migration. [Plan-008](plan/Plan-008-native-lowering/plan.md) retains that gate.
