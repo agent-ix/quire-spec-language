@@ -36,6 +36,11 @@ impl<'a> Variables<'a> {
         let root = self.root(var);
         self.known[root].clone()
     }
+    /// Borrow before a caller charges the wrapper/string work of copying a type.
+    pub(super) fn peek(&mut self, var: usize) -> Option<&NativeType<'a>> {
+        let root = self.root(var);
+        self.known[root].as_ref()
+    }
     pub(super) fn assign(
         &mut self,
         var: usize,

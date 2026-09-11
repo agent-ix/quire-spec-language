@@ -183,6 +183,14 @@ pub struct ModelBindings<'a> {
 }
 
 impl<'a> ModelBindings<'a> {
+    /// Borrow an already constructed catalog; callers must still enforce the
+    /// owning declaration's completed binding disposition before using it.
+    pub(crate) fn catalog_at(&self, input: usize) -> Option<&crate::checking::Catalog<'a>> {
+        self.catalogs
+            .get(input)
+            .and_then(Option::as_ref)
+            .map(|exports| &exports.catalog)
+    }
     /// Original supplied artifacts and explicit unsupported interface selections.
     pub fn inputs(&self) -> &'a [ModelInput<'a>] {
         self.inputs
