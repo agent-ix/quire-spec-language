@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-016: shared symbolic proof graph and actual bounded IR discharge.
 
-mod facts;
-mod graph;
+pub(super) mod facts;
+pub(super) mod graph;
 mod walk;
 
 use std::collections::BTreeMap;
@@ -23,9 +23,9 @@ use crate::{Code, Source, Span};
 use facts::{Facts, Outcomes};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ValueKey(usize);
+pub(super) struct ValueKey(pub(super) usize);
 #[derive(Clone, Copy, Debug)]
-struct GraphId(usize);
+pub(super) struct GraphId(pub(super) usize);
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 enum Step<'a> {
@@ -53,9 +53,11 @@ struct KeyInfo {
     symbol: Option<ir::SymbolName>,
 }
 
-enum Kind<'a> {
+#[derive(Clone)]
+pub(super) enum Kind<'a> {
     Boolean(bool),
     Integer(i64, &'a ir::IntegerType),
+    Rational(i64, i64, &'a ir::RationalType),
     Input(ValueKey),
     Present(GraphId),
     Unwrap(GraphId),
@@ -67,9 +69,9 @@ enum Kind<'a> {
     Witness(GraphId, ir::ValueType),
 }
 
-struct Node<'a> {
-    kind: Kind<'a>,
-    native: ExprId,
+pub(super) struct Node<'a> {
+    pub(super) kind: Kind<'a>,
+    pub(super) native: ExprId,
 }
 
 #[derive(Clone)]
@@ -171,14 +173,27 @@ impl Meter<'_> {
 }
 
 fn proof_type(ty: &NativeType<'_>) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
+    representation(ty, false)
+}
+
+// Historical conversion remains unchanged; composed scalar admission explicitly
+// selects the rational representation supplied by the existing model/IR path.
+pub(super) fn representation(
+    ty: &NativeType<'_>,
+    rational: bool,
+) -> std::result::Result<ir::ValueType, ir::Diagnostic> {
     Ok(match ty {
         NativeType::Scalar {
             representation: ir::ValueType::Integer { value },
             ..
         } => ir::ValueType::integer(value.clone()),
-        NativeType::Option(value) => ir::ValueType::option(proof_type(value)?),
+        NativeType::Scalar {
+            representation: ir::ValueType::Rational { value },
+            ..
+        } if rational => ir::ValueType::rational(value.clone()),
+        NativeType::Option(value) => ir::ValueType::option(representation(value, rational)?),
         NativeType::Sequence { element, maximum } => ir::ValueType::Collection {
-            value: ir::CollectionType::new(proof_type(element)?, *maximum)?,
+            value: ir::CollectionType::new(representation(element, rational)?, *maximum)?,
         },
         NativeType::Boolean
         | NativeType::Scalar { .. }
