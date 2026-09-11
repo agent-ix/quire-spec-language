@@ -162,7 +162,27 @@ through NativeModel. D's canonical/native correspondence and relationship export
 authority remain explicit unsupported boundaries; a same-shaped record grants
 neither authority.
 
-`NamesResolved` precedes expression/type/profile checking, complete typed runtime
-requirements and downstream request handling. These remain open, as does IT-009's
-actual D producer integration. No result from this stage is a checked or executable
-package. The historical package path remains separate.
+`linking::composed::subject::StaticSubject` retains the package contract's six
+declared static components — Sources, Language, Profiles, Models, Native
+dependencies and Binding requirements — and compares two subjects component by
+component. No canonical digest, structural hash or JSON fingerprint is derived;
+canonical identity remains unavailable until its exact domain, version and
+algorithm are selected and qualified. `subject::BuildProvenance` retains the full
+compile configuration separately, so a resource-only change is visible there and
+in no static component.
+
+`linking::composed::requests` records a typed disposition for every requested
+clause/capability pair against a caller-declared backend and the supplied
+assessment inputs. Unsupported capability, unsupported family, inapplicable
+capability, refused subject, unfinished subject and unknown subject are distinct
+outcomes; none is dropped or merged, and a required non-admitted request makes
+complete aggregate success unavailable. `admitted_bodies` exposes only admitted
+family-check subjects, so an unsupported family body is never represented as
+checked. Assessment selections and backend support are retained as provenance and
+are never written back into the static subject.
+
+`NamesResolved` precedes expression/type/profile checking and complete typed
+runtime requirements. These remain open, as does IT-009's actual D producer
+integration. An admitted request is a handoff record, not a checked or executable
+clause; no result from this stage is a checked or executable package. The
+historical package path remains separate.
