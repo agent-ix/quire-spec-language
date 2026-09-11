@@ -45,10 +45,14 @@ See the
 domains and limits. The [numeric component](spec/functional/FR-038-encode-exact-protocol-numbers.md)
 uses tagged canonical decimal strings for signed-64 integers and reduced
 rationals, with typed validation errors. Real source-to-reader tests exercise
-native predicate, state, temporal and protocol emission. General decision
-proofs, recovery admission, unavailable producer exports and the actual
-producer-to-B handoff remain open; the supported boundary is stated in the
-wire contract.
+native predicate, state, temporal and protocol emission, including static
+compensation registration, activation, retries and full/partial recovery
+requirements. The [Rust producer recipe](examples/protocol-handoff/README.md)
+combines four source units, queries, population/reference roles and actual model
+operations, retaining the executable bytes and independently derived selectors.
+General dynamic choice/progress proofs, first-class relationship exports,
+runtime recovery and B's public consumer acceptance remain open; the supported
+boundary is stated in the wire contract.
 
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
