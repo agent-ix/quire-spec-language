@@ -5,6 +5,7 @@ mod control;
 
 use std::collections::BTreeSet;
 
+use super::value_graph::ValueGraph;
 use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, ProtocolNumber, Unsupported};
 
 type Result<T = ()> = std::result::Result<T, Error>;
@@ -174,9 +175,6 @@ pub(super) struct Graph<'a, 'w> {
     type_seen: Vec<bool>,
     next_type: usize,
     dependencies: Vec<Vec<usize>>,
-    // The current declaration's already validated operand/initializer/origin
-    // graph is also the authority for recovery provenance. No graph is copied.
-    value_edges: Vec<Vec<usize>>,
 }
 
 impl<'a> Graph<'a, '_> {
@@ -439,7 +437,7 @@ fn edge(graph: &mut [Vec<usize>], from: usize, to: usize, work: &mut Work) -> Re
 }
 
 /// Iterative tri-color traversal, charging each inspected edge and stack entry.
-fn acyclic(graph: &[Vec<usize>], work: &mut Work) -> Result {
+pub(super) fn acyclic(graph: &[Vec<usize>], work: &mut Work) -> Result {
     work.charge(Dimension::Entries, graph.len())?;
     let mut color = vec![0u8; graph.len()];
     for root in 0..graph.len() {
@@ -477,7 +475,7 @@ fn acyclic(graph: &[Vec<usize>], work: &mut Work) -> Result {
     Ok(())
 }
 
-impl Graph<'_, '_> {
+impl<'a> Graph<'a, '_> {
     fn locals(&mut self, owner: usize) -> Result {
         let declaration = &self.package.declarations[owner];
         for text in [
@@ -745,13 +743,12 @@ impl Graph<'_, '_> {
         }
     }
 
-    fn values(&mut self, owner: usize) -> Result {
+    fn values(&mut self, owner: usize) -> Result<ValueGraph<'a>> {
         let declaration = &self.package.declarations[owner];
-        let mut graph = edges(declaration.values.len(), self.work)?;
         self.work
             .charge(Dimension::Entries, declaration.values.len())?;
         let mut original = BTreeSet::new();
-        for (index, value) in declaration.values.iter().enumerate() {
+        for value in &declaration.values {
             self.locus(owner, &value.locus)?;
             if value.original_expression > 1_048_576 {
                 return Err(Error::Invalid(Invalid::StructuralInteger));
@@ -778,18 +775,9 @@ impl Graph<'_, '_> {
                     self.local(owner, anchor, Local::Anchor)?;
                 }
                 Origin::Selected { value } => {
-                    let target = self.local(owner, value, Local::Value)?;
-                    // A mixed-origin expression names itself as the selection
-                    // that produced its provenance; it does not evaluate itself.
-                    if target != index {
-                        edge(&mut graph, index, target, self.work)?;
-                    }
+                    self.local(owner, value, Local::Value)?;
                 }
             }
-            let mut child = |this: &mut Self, handle: &Handle| -> Result {
-                let target = this.local(owner, handle, Local::Value)?;
-                edge(&mut graph, index, target, this.work)
-            };
             match &value.operation {
                 ValueOperation::Boolean { .. } => {
                     if !matches!(self.ty(value.value_type)?, Type::Boolean {}) {
@@ -873,22 +861,18 @@ impl Graph<'_, '_> {
                         if initialized.locus.span.end > value.locus.span.start {
                             return Err(Error::Invalid(Invalid::Scope));
                         }
-                        child(self, initializer)?;
                     }
                 }
                 ValueOperation::Group { value: inner } => {
-                    child(self, inner)?;
                     self.value_type(owner, inner, value.value_type)?;
                 }
-                ValueOperation::Field { base, field } => {
-                    child(self, base)?;
+                ValueOperation::Field { field, .. } => {
                     self.export(field, &[ExportKind::Field])?;
                 }
                 ValueOperation::Unary {
                     operator,
                     value: inner,
                 } => {
-                    child(self, inner)?;
                     let operand = self.value(owner, inner)?.value_type;
                     match operator {
                         Unary::Not => {
@@ -930,8 +914,6 @@ impl Graph<'_, '_> {
                     left,
                     right,
                 } => {
-                    child(self, left)?;
-                    child(self, right)?;
                     let ty = self.value(owner, left)?.value_type;
                     self.value_type(owner, right, ty)?;
                     match operator {
@@ -976,9 +958,6 @@ impl Graph<'_, '_> {
                     then_value,
                     else_value,
                 } => {
-                    child(self, condition)?;
-                    child(self, then_value)?;
-                    child(self, else_value)?;
                     self.boolean(owner, condition)?;
                     self.value_type(owner, then_value, value.value_type)?;
                     self.value_type(owner, else_value, value.value_type)?;
@@ -988,8 +967,6 @@ impl Graph<'_, '_> {
                     initializer,
                     body,
                 } => {
-                    child(self, initializer)?;
-                    child(self, body)?;
                     let binder = self.binder(owner, binder, &[BinderKind::Let])?;
                     if binder.initializer.0.as_ref() != Some(initializer) {
                         return Err(Error::Invalid(Invalid::Binding));
@@ -1001,7 +978,6 @@ impl Graph<'_, '_> {
                     value: inner,
                     anchor,
                 } => {
-                    child(self, inner)?;
                     let anchor = self.local(owner, anchor, Local::Anchor)?;
                     if declaration.anchors[anchor].kind != AnchorKind::InvocationPre {
                         return Err(Error::Invalid(Invalid::Binding));
@@ -1024,7 +1000,6 @@ impl Graph<'_, '_> {
                         return Err(Error::Invalid(Invalid::Call));
                     }
                     for (argument, parameter) in arguments.iter().zip(parameters) {
-                        child(self, argument)?;
                         let expected = self
                             .binder(*predicate as usize, parameter, &[BinderKind::Parameter])?
                             .value_type;
@@ -1032,7 +1007,6 @@ impl Graph<'_, '_> {
                     }
                 }
                 ValueOperation::Size { collection, result } => {
-                    child(self, collection)?;
                     let collection = self.value(owner, collection)?.value_type;
                     let (_, maximum) = self.sequence(collection)?;
                     if *result != value.value_type {
@@ -1041,8 +1015,6 @@ impl Graph<'_, '_> {
                     self.count_type(*result, maximum)?;
                 }
                 ValueOperation::Contains { collection, member } => {
-                    child(self, collection)?;
-                    child(self, member)?;
                     let collection = self.value(owner, collection)?.value_type;
                     let (element, _) = self.sequence(collection)?;
                     self.value_type(owner, member, element)?;
@@ -1058,8 +1030,6 @@ impl Graph<'_, '_> {
                     body,
                     result,
                 } => {
-                    child(self, collection)?;
-                    child(self, body)?;
                     let collection_type = self.value(owner, collection)?.value_type;
                     let (element, maximum) = self.sequence(collection_type)?;
                     let binder = self.binder(owner, binder, &[BinderKind::Query])?;
@@ -1096,12 +1066,7 @@ impl Graph<'_, '_> {
                         }
                     }
                 }
-                ValueOperation::Parent {
-                    reference,
-                    edge,
-                    universe,
-                } => {
-                    child(self, reference)?;
+                ValueOperation::Parent { edge, universe, .. } => {
                     self.export(edge, &[ExportKind::Field, ExportKind::Relationship])?;
                     self.export(universe, &[ExportKind::Population])?;
                 }
@@ -1111,8 +1076,6 @@ impl Graph<'_, '_> {
                     edge,
                     universe,
                 } => {
-                    child(self, start)?;
-                    child(self, target)?;
                     let ty = self.value(owner, start)?.value_type;
                     self.value_type(owner, target, ty)?;
                     self.export(edge, &[ExportKind::Field, ExportKind::Relationship])?;
@@ -1123,9 +1086,7 @@ impl Graph<'_, '_> {
                 }
             }
         }
-        acyclic(&graph, self.work)?;
-        self.value_edges = graph;
-        Ok(())
+        ValueGraph::new(owner, declaration, self.work)
     }
 
     fn sum_type(&mut self, projection: u32, total: u32) -> Result {
@@ -1250,7 +1211,7 @@ impl Graph<'_, '_> {
         acyclic(&graph, self.work)
     }
 
-    fn body(&mut self, owner: usize) -> Result {
+    fn body(&mut self, owner: usize, values: &ValueGraph<'_>) -> Result {
         let declaration = &self.package.declarations[owner];
         match &declaration.body {
             Body::Predicate {
@@ -1319,7 +1280,7 @@ impl Graph<'_, '_> {
             }
             Body::Protocol { .. } => {
                 self.profile(declaration.profile, Family::Protocol)?;
-                self.protocol(owner)?;
+                self.protocol(owner, values)?;
             }
         }
         Ok(())
@@ -1518,13 +1479,12 @@ pub(super) fn package(package: &Package, work: &mut Work) -> Result {
         type_seen: vec![false; package.types.len()],
         next_type: 0,
         dependencies,
-        value_edges: Vec::new(),
     };
     for owner in 0..package.declarations.len() {
         graph.locals(owner)?;
-        graph.values(owner)?;
+        let values = graph.values(owner)?;
         graph.temporal(owner)?;
-        graph.body(owner)?;
+        graph.body(owner, &values)?;
         let offered = &package.declarations[owner].requires;
         intake::sorted_indices(offered, graph.work)?;
         // Traversal retains duplicate call occurrences; the explicit dependency
