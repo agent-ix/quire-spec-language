@@ -11,7 +11,9 @@ pub mod definitions;
 mod dependencies;
 mod inventory;
 pub mod models;
+pub mod requests;
 pub mod scopes;
+pub mod subject;
 mod work;
 
 use std::collections::BTreeMap;

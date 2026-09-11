@@ -12,7 +12,9 @@ pub const EDITION: &str = "0-draft";
 pub const PROFILE: &str = "state-finite/0-draft";
 
 /// Caller limits may lower the implementation ceilings, never disable them.
-#[derive(Clone, Copy, Debug)]
+/// Equality compares the requested capacities, so a resource-only configuration
+/// change remains visible in retained build provenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
     /// Inclusive input-content ceiling, clamped to 1 MiB.
     pub source_bytes: usize,
