@@ -35,7 +35,7 @@ impl<'a> proof::graph::Context<'a> for Builder<'_, 'a> {
                 if self.ty(at).rational().is_some() {
                     self.work.charge(
                         D::Normalization,
-                        width.checked_mul(1024).unwrap_or(usize::MAX),
+                        width.saturating_mul(1024),
                         self.site(at),
                     )?;
                 } else {
