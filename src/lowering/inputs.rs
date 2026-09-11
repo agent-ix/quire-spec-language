@@ -23,27 +23,83 @@ impl Default for InputProjectionLimits {
 }
 
 /// Materialization stop reason; none of these represents predicate truth.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum InputProjectionCode {
     /// The context was validated against a different checked package.
+    #[error("context belongs to another checked package")]
     ContextMismatch,
     /// A per-call work ceiling was reached.
+    #[error("input projection work limit")]
     ResourceExhausted,
     /// The caller's poll requested cancellation.
+    #[error("input projection cancelled")]
     Cancelled,
     /// Immutable checked/validated correspondence was unexpectedly unavailable.
-    InvalidCorrespondence,
+    #[error("validated input correspondence invariant: {0}")]
+    Invariant(InputProjectionInvariant),
+}
+
+/// A defensive failure of constructor-private checked or validated authority.
+///
+/// Missing observations, invocation parameters and model mismatches are refused
+/// by native validation before it can produce a `ValidatedContext`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum InputProjectionInvariant {
+    /// The read's checked observation has no selected snapshot.
+    #[error("selected snapshot unavailable")]
+    MissingSnapshot,
+    /// The checked operation read has no selected invocation.
+    #[error("selected invocation unavailable")]
+    MissingInvocation,
+    /// The selected self differs from the linked field's owner or record.
+    #[error("selected self has a different model or record")]
+    SelfIdentityMismatch,
+    /// The validated complete population lacks the selected self.
+    #[error("selected self object unavailable")]
+    MissingSelfObject,
+    /// The validated self record lacks the linked field.
+    #[error("validated self field unavailable")]
+    MissingSelfField,
+    /// The validated invocation lacks the linked parameter.
+    #[error("captured parameter unavailable")]
+    MissingParameter,
+    /// The validated snapshot lacks the required State root.
+    #[error("validated state value unavailable")]
+    MissingState,
+    /// The projection's read origin and linked declaration kind disagree.
+    #[error("projected read origin disagrees with linked declaration")]
+    ReadOriginMismatch,
+    /// An already validated arena address cannot be indexed on this host.
+    #[error("validated arena address {value:?} exceeds host width")]
+    ArenaIndexWidth {
+        /// Original address within the selected artifact.
+        value: ValueId,
+    },
+    /// An already validated address is absent from its selected arena.
+    #[error("validated arena address {value:?} is unavailable")]
+    MissingArenaValue {
+        /// Original address within the selected artifact.
+        value: ValueId,
+    },
+    /// An admitted primitive read selects a nonprimitive arena value.
+    #[error("validated arena address {value:?} is not primitive")]
+    NonPrimitiveValue {
+        /// Original address within the selected artifact.
+        value: ValueId,
+    },
 }
 
 /// Classified atomic failure with no partial backend inputs.
 #[derive(Debug, thiserror::Error)]
-#[error("{code:?}: {message}")]
+#[error("{code}")]
+#[non_exhaustive]
 pub struct InputProjectionError {
     /// Stable stop classification.
     pub code: InputProjectionCode,
-    /// Detail within the input projection boundary.
-    pub message: &'static str,
+    /// Exact original declaration and observations for an invariant failure.
+    pub read: Option<Box<ProjectedRead>>,
     /// Work completed before stopping.
     pub work: usize,
 }
@@ -136,29 +192,34 @@ struct Budget<P> {
 }
 
 impl<P: FnMut() -> bool> Budget<P> {
-    fn error(&self, code: InputProjectionCode, message: &'static str) -> InputProjectionError {
+    fn error(&self, code: InputProjectionCode) -> InputProjectionError {
         InputProjectionError {
             code,
-            message,
+            read: None,
             work: self.work,
         }
     }
-    fn missing(&self, message: &'static str) -> InputProjectionError {
-        self.error(InputProjectionCode::InvalidCorrespondence, message)
+    fn invariant(
+        &self,
+        read: &ProjectedRead,
+        cause: InputProjectionInvariant,
+    ) -> InputProjectionError {
+        InputProjectionError {
+            code: InputProjectionCode::Invariant(cause),
+            read: Some(Box::new(read.clone())),
+            work: self.work,
+        }
     }
     fn check_cancelled(&mut self) -> Result<(), InputProjectionError> {
         if (self.poll)() {
-            return Err(self.error(InputProjectionCode::Cancelled, "input projection cancelled"));
+            return Err(self.error(InputProjectionCode::Cancelled));
         }
         Ok(())
     }
     fn step(&mut self) -> Result<(), InputProjectionError> {
         self.check_cancelled()?;
         if self.work >= self.maximum {
-            return Err(self.error(
-                InputProjectionCode::ResourceExhausted,
-                "input projection work limit",
-            ));
+            return Err(self.error(InputProjectionCode::ResourceExhausted));
         }
         self.work += 1;
         Ok(())
@@ -184,10 +245,7 @@ impl<'model> NativeProjection<'_, 'model> {
             poll,
         };
         if !std::ptr::eq(context.checked(), self.native().checked()) {
-            return Err(budget.error(
-                InputProjectionCode::ContextMismatch,
-                "context belongs to another checked package",
-            ));
+            return Err(budget.error(InputProjectionCode::ContextMismatch));
         }
         budget.check_cancelled()?;
         let selection = context.selection();
@@ -220,7 +278,7 @@ fn materialize<'a>(
     let snapshot = || {
         context
             .snapshot(read.native_observation)
-            .ok_or_else(|| budget.missing("selected snapshot unavailable"))
+            .ok_or_else(|| budget.invariant(read, InputProjectionInvariant::MissingSnapshot))
     };
     let (arena, arena_value, artifact, object) = match (read.origin, &read.declaration.identity.key)
     {
@@ -230,18 +288,22 @@ fn materialize<'a>(
                 ObservationSelection::Invocation { .. } => {
                     &context
                         .invocation()
-                        .ok_or_else(|| budget.missing("selected invocation unavailable"))?
+                        .ok_or_else(|| {
+                            budget.invariant(read, InputProjectionInvariant::MissingInvocation)
+                        })?
                         .draft()
                         .self_object
                 }
             };
             if &identity.model != owner || &identity.record != record {
-                return Err(budget.missing("selected self has a different model or record"));
+                return Err(budget.invariant(read, InputProjectionInvariant::SelfIdentityMismatch));
             }
             let snapshot = snapshot()?;
             let object = context
                 .object(read.native_observation, identity)
-                .ok_or_else(|| budget.missing("selected self object unavailable"))?;
+                .ok_or_else(|| {
+                    budget.invariant(read, InputProjectionInvariant::MissingSelfObject)
+                })?;
             let mut value = None;
             for binding in &object.fields {
                 budget.step()?;
@@ -252,16 +314,18 @@ fn materialize<'a>(
             }
             (
                 &snapshot.draft().arena,
-                value.ok_or_else(|| budget.missing("validated self field unavailable"))?,
+                value.ok_or_else(|| {
+                    budget.invariant(read, InputProjectionInvariant::MissingSelfField)
+                })?,
                 InputArtifact::Snapshot(snapshot),
                 Some(identity),
             )
         }
         (ProjectedReadOrigin::Value(kind), DeclarationKey::Value(name)) => match kind {
             ir::ValueDeclarationKind::Input => {
-                let invocation = context
-                    .invocation()
-                    .ok_or_else(|| budget.missing("captured invocation unavailable"))?;
+                let invocation = context.invocation().ok_or_else(|| {
+                    budget.invariant(read, InputProjectionInvariant::MissingInvocation)
+                })?;
                 let mut value = None;
                 for binding in &invocation.draft().parameters {
                     budget.step()?;
@@ -272,7 +336,9 @@ fn materialize<'a>(
                 }
                 (
                     &invocation.draft().arena,
-                    value.ok_or_else(|| budget.missing("captured parameter unavailable"))?,
+                    value.ok_or_else(|| {
+                        budget.invariant(read, InputProjectionInvariant::MissingParameter)
+                    })?,
                     InputArtifact::Invocation(invocation),
                     None,
                 )
@@ -287,7 +353,9 @@ fn materialize<'a>(
                             name: name.clone(),
                         },
                     )
-                    .ok_or_else(|| budget.missing("validated state value unavailable"))?;
+                    .ok_or_else(|| {
+                        budget.invariant(read, InputProjectionInvariant::MissingState)
+                    })?;
                 (
                     &snapshot.draft().arena,
                     value,
@@ -296,15 +364,30 @@ fn materialize<'a>(
                 )
             }
         },
-        _ => return Err(budget.missing("projected read origin disagrees with linked declaration")),
+        _ => return Err(budget.invariant(read, InputProjectionInvariant::ReadOriginMismatch)),
     };
     budget.step()?;
-    let index = usize::try_from(arena_value.index())
-        .map_err(|_| budget.missing("arena index exceeds host width"))?;
+    let index = usize::try_from(arena_value.index()).map_err(|_| {
+        budget.invariant(
+            read,
+            InputProjectionInvariant::ArenaIndexWidth { value: arena_value },
+        )
+    })?;
     let value = match arena.get(index) {
         Some(ValueNode::Boolean { value }) => PrimitiveValue::Boolean(*value),
         Some(ValueNode::Integer { value }) => PrimitiveValue::Integer(*value),
-        _ => return Err(budget.missing("validated projected value is not primitive")),
+        Some(_) => {
+            return Err(budget.invariant(
+                read,
+                InputProjectionInvariant::NonPrimitiveValue { value: arena_value },
+            ))
+        }
+        None => {
+            return Err(budget.invariant(
+                read,
+                InputProjectionInvariant::MissingArenaValue { value: arena_value },
+            ))
+        }
     };
     Ok(PrimitiveInput {
         read,
