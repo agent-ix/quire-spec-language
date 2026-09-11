@@ -472,7 +472,7 @@ pub(super) fn lower(
             requires.insert(*target);
         }
         work.charge(Dimension::Entries, 1)?;
-        declarations.push(w::Declaration {
+        let mut declaration = w::Declaration {
             name: text(&syntax.name.value, work)?,
             locus: layout.locus(syntax.span)?,
             requirement: w::Requirement {
@@ -494,7 +494,9 @@ pub(super) fn lower(
             temporal,
             bindings,
             body,
-        });
+        };
+        artifact::recovery::attach(declarations.len(), &mut declaration, work)?;
+        declarations.push(declaration);
     }
     let (types, models) = builder.finish();
     let first = namespace

@@ -450,7 +450,7 @@ pub(super) fn body(
             runtime.bind_anchor(anchor, at)?;
         }
     }
-    let mut body = match &syntax.kind {
+    let body = match &syntax.kind {
         c::DeclarationKind::Predicate {
             parameters, body, ..
         } => {
@@ -701,7 +701,6 @@ pub(super) fn body(
             work,
         )?;
     }
-    compensations::populations(context, &mut body, &runtime, work)?;
     Ok((runtime.anchors, runtime.bindings, body))
 }
 

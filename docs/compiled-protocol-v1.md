@@ -462,6 +462,19 @@ and the declaration-owned population/closure pairs for the recovery view and
 its contributing captured origins. Other obligations' clocks or recovery
 records, missing prerequisite edges and unrelated population pairs refuse.
 
+Recovery origins follow one shared dependency rule in native emission and reading.
+Start with the owning recovery anchor and traverse from `recover` through every
+original value-operand edge, read-binder initializer edge and non-self
+`Origin.Selected` edge. Each reachable `Origin.Anchor` adds its original anchor;
+a self-selected origin is only a provenance marker and adds no edge. Reachability
+uses these handles, never source-span containment or proof simplification of
+original operands. Calls contribute their argument values, without traversing
+callee-owned graphs or inventing captures. Select exactly the declaration-owned
+population/closure pairs at the resulting anchors; an origin naming another
+compensation's phase anchor refuses. Existing model validation
+still checks their nominal object/universe identities and pair integrity. This
+rule derives static requirements without future observations or closure claims.
+
 At runtime each authored compensation obligation registers only after its paired
 successful effect, once for that obligation and effect identity. Distinct
 compensation definitions may name the same forward control: the standard's
