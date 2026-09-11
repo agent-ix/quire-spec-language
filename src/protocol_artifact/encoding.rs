@@ -107,6 +107,9 @@ impl Formatter for Compact<'_, '_> {
 }
 
 pub(super) fn bytes(package: &wire::Package, work: &mut Work) -> Result<Vec<u8>, Error> {
+    // Canonical output is package-wide; a prior semantic pass's last value is
+    // not the source owner of an output allocation or byte-budget refusal.
+    work.locus = None;
     let meter = RefCell::new(Meter {
         work,
         error: None,

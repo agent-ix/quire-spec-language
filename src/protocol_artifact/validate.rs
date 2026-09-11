@@ -183,35 +183,20 @@ impl<'a> Graph<'a, '_> {
             return Err(Error::Invalid(Invalid::Owner));
         }
         let declaration = &self.package.declarations[owner];
-        let count = match kind {
-            Local::Value => declaration.values.len(),
-            Local::Binder => declaration.binders.len(),
-            Local::Anchor => declaration.anchors.len(),
-            Local::Scope => declaration.scopes.len(),
-            Local::Temporal => declaration.temporal.len(),
-            Local::Control | Local::Role | Local::Channel | Local::Compensation => {
-                let Body::Protocol {
-                    controls,
-                    roles,
-                    channels,
-                    compensations,
-                    ..
-                } = &declaration.body
-                else {
-                    return Err(Error::Invalid(Invalid::Owner));
-                };
-                match kind {
-                    Local::Control => controls.len(),
-                    Local::Role => roles.len(),
-                    Local::Channel => channels.len(),
-                    Local::Compensation => compensations.len(),
-                    Local::Value
-                    | Local::Binder
-                    | Local::Anchor
-                    | Local::Scope
-                    | Local::Temporal => unreachable!(),
-                }
-            }
+        let count = match (kind, &declaration.body) {
+            (Local::Value, _) => declaration.values.len(),
+            (Local::Binder, _) => declaration.binders.len(),
+            (Local::Anchor, _) => declaration.anchors.len(),
+            (Local::Scope, _) => declaration.scopes.len(),
+            (Local::Temporal, _) => declaration.temporal.len(),
+            (Local::Control, Body::Protocol { controls, .. }) => controls.len(),
+            (Local::Role, Body::Protocol { roles, .. }) => roles.len(),
+            (Local::Channel, Body::Protocol { channels, .. }) => channels.len(),
+            (Local::Compensation, Body::Protocol { compensations, .. }) => compensations.len(),
+            (
+                Local::Control | Local::Role | Local::Channel | Local::Compensation,
+                Body::Predicate { .. } | Body::State { .. } | Body::Temporal { .. },
+            ) => return Err(Error::Invalid(Invalid::Owner)),
         };
         if handle.index as usize >= count {
             return Err(Error::Invalid(Invalid::Reference));
