@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ix:shared-reference:2-draft",
+  "title": "Shared artifact and semantic reference amendment; structural validation only",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["wireVersion", "kind", "value"],
+      "properties": {
+        "wireVersion": {"const": "ix.shared-reference/2-draft"},
+        "kind": {"const": "artifact"},
+        "value": {"$ref": "#/$defs/ArtifactRef"}
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["wireVersion", "kind", "value"],
+      "properties": {
+        "wireVersion": {"const": "ix.shared-reference/2-draft"},
+        "kind": {"const": "semantic"},
+        "value": {"$ref": "#/$defs/SemanticRef"}
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "Nonempty": {"type": "string", "minLength": 1},
+    "ByteDigest": {"type": "string", "minLength": 71, "maxLength": 71, "pattern": "^sha256:[0-9a-f]{64}$"},
+    "Revision": {
+      "type": "object", "required": ["namespace", "value"],
+      "properties": {"namespace": {"$ref": "#/$defs/Nonempty"}, "value": {"$ref": "#/$defs/Nonempty"}},
+      "additionalProperties": false
+    },
+    "Wire": {
+      "type": "object", "required": ["identity", "version"],
+      "properties": {"identity": {"$ref": "#/$defs/Nonempty"}, "version": {"$ref": "#/$defs/Nonempty"}},
+      "additionalProperties": false
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "required": ["refVersion", "kind", "authority", "identity", "revision", "digest", "wire"],
+      "properties": {
+        "refVersion": {"const": "ix.artifact-ref/3-draft"},
+        "kind": {"enum": ["source", "model-package", "linked-package", "executable-projection", "property", "binding", "snapshot", "invocation", "generated-artifact", "run-artifact", "environment", "model-manifest", "model-lock", "dependency-closure", "trace", "fault-model", "review-procedure", "oracle", "observation", "review-disposition"]},
+        "authority": {"$ref": "#/$defs/Nonempty"},
+        "identity": {"$ref": "#/$defs/Nonempty"},
+        "revision": {"$ref": "#/$defs/Revision"},
+        "digest": {"$ref": "#/$defs/ByteDigest"},
+        "wire": {"$ref": "#/$defs/Wire"}
+      },
+      "additionalProperties": false
+    },
+    "Language": {
+      "type": "object", "required": ["identity", "edition"],
+      "properties": {"identity": {"$ref": "#/$defs/Nonempty"}, "edition": {"$ref": "#/$defs/Nonempty"}},
+      "additionalProperties": false
+    },
+    "SemanticProfile": {
+      "type": "object", "required": ["identity", "version", "definitionDigest"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/Nonempty"},
+        "version": {"$ref": "#/$defs/Nonempty"},
+        "definitionDigest": {"$ref": "#/$defs/ByteDigest"}
+      },
+      "additionalProperties": false
+    },
+    "CanonicalIdentity": {
+      "oneOf": [
+        {
+          "type": "object", "required": ["domain", "version", "algorithm", "digest"],
+          "properties": {
+            "domain": {"enum": ["quire.contract.canonical-json", "quire.contract.bound-identity"]},
+            "version": {"const": "v1"}, "algorithm": {"const": "sha256"},
+            "digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": ["domain", "version", "algorithm", "digest"],
+          "properties": {
+            "domain": {"const": "quire.verification.jcs"},
+            "version": {"const": "rfc8785-v1"}, "algorithm": {"const": "sha256"},
+            "digest": {"type": "string", "minLength": 75, "maxLength": 75, "pattern": "^sha256-jcs:[0-9a-f]{64}$"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SemanticRef": {
+      "type": "object",
+      "required": ["artifact", "language", "semanticProfile", "requiredFeatures", "canonicalIdentity"],
+      "properties": {
+        "artifact": {"$ref": "#/$defs/ArtifactRef"},
+        "language": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/Language"}]},
+        "semanticProfile": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/SemanticProfile"}]},
+        "requiredFeatures": {"type": "array", "items": {"$ref": "#/$defs/Nonempty"}, "uniqueItems": true},
+        "canonicalIdentity": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/CanonicalIdentity"}]}
+      },
+      "additionalProperties": false,
+      "allOf": [{
+        "if": {"properties": {"semanticProfile": {"type": "null"}}, "required": ["semanticProfile"]},
+        "then": {"properties": {"language": {"type": "null"}, "requiredFeatures": {"maxItems": 0}, "canonicalIdentity": {"type": "null"}}}
+      }]
+    }
+  }
+}
