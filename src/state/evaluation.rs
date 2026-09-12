@@ -43,6 +43,7 @@ pub fn evaluate(
         view,
         work: Work::new(limits),
         binders: Vec::new(),
+        populations: Vec::new(),
         locals: Vec::new(),
         call_depth: 0,
     };
@@ -65,8 +66,65 @@ struct Evaluator<'a> {
     view: &'a StateView,
     work: Work,
     binders: Vec<((u32, u32), &'a InputSlot)>,
+    populations: Vec<PopulationIndex<'a>>,
     locals: Vec<((u32, u32), Value)>,
     call_depth: usize,
+}
+
+struct PopulationIndex<'a> {
+    requirement: w::Handle,
+    population: &'a PopulationInput,
+    anchor: w::Handle,
+    object_type: w::ExportRef,
+    universe: w::ExportRef,
+    offset: usize,
+    objects: Vec<&'a ObjectInput>,
+}
+
+impl<'a> PopulationIndex<'a> {
+    fn nominal_domain_matches(&self, key: &ObjectKey) -> bool {
+        key.model == self.object_type.model
+            && key.object_type == self.object_type
+            && key.universe == self.universe
+    }
+
+    fn domain_matches(&self, key: &ObjectKey) -> bool {
+        self.nominal_domain_matches(key)
+            && key.observation.anchor == self.anchor
+            && key.observation.snapshot.0
+                == self
+                    .population
+                    .authority
+                    .assessment_selection
+                    .snapshot_identity
+            && key.observation.window.as_ref().map(|value| &value.0)
+                == self
+                    .population
+                    .authority
+                    .assessment_selection
+                    .window_identity
+                    .as_ref()
+    }
+
+    fn is_complete(&self) -> bool {
+        self.population
+            .authority
+            .assessment_selection
+            .membership_complete
+            && self.population.membership.is_ok()
+            && self.population.closure.is_ok()
+    }
+
+    fn object(&self, key: &ObjectKey) -> Option<&'a ObjectInput> {
+        self.object_index(key)
+            .ok()
+            .and_then(|index| self.objects.get(index).copied())
+    }
+
+    fn object_index(&self, key: &ObjectKey) -> std::result::Result<usize, usize> {
+        self.objects
+            .binary_search_by(|candidate| object_key_cmp(&candidate.key, key))
+    }
 }
 
 impl<'a> Evaluator<'a> {
@@ -102,7 +160,23 @@ impl<'a> Evaluator<'a> {
 
     fn validate_inputs(&mut self) -> Result<()> {
         let required =
-            required_binders(&mut self.work, self.package.package(), &self.request.value)?;
+            required_inputs(&mut self.work, self.package.package(), &self.request.value)?;
+        let mut offered_binders = boolean_table(
+            &self.work,
+            self.package
+                .package()
+                .declarations
+                .iter()
+                .map(|declaration| declaration.binders.len()),
+        )?;
+        let mut offered_populations = boolean_table(
+            &self.work,
+            self.package
+                .package()
+                .declarations
+                .iter()
+                .map(|declaration| declaration.bindings.len()),
+        )?;
         for offered in &self.view.binders {
             self.work
                 .charge(Dimension::InputAggregateEntries, 1)
@@ -119,12 +193,16 @@ impl<'a> Evaluator<'a> {
                 .get(offered.binder.index as usize)
                 .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(offered.binder.clone())))?;
             let key = (offered.binder.declaration, offered.binder.index);
-            if !required.iter().any(|binder| binder == &offered.binder) {
+            if !selected_handle(&required.binders, &offered.binder) {
                 return Err(Stop::Refused(Refusal::SurplusBinding(
                     offered.binder.clone(),
                 )));
             }
-            if self.binders.iter().any(|(candidate, _)| *candidate == key) {
+            let seen = offered_binders
+                .get_mut(offered.binder.declaration as usize)
+                .and_then(|declaration| declaration.get_mut(offered.binder.index as usize))
+                .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(offered.binder.clone())))?;
+            if std::mem::replace(seen, true) {
                 return Err(Stop::Refused(Refusal::DuplicateBinding(
                     offered.binder.clone(),
                 )));
@@ -143,24 +221,39 @@ impl<'a> Evaluator<'a> {
             }
             self.slot(&offered.value, binder.value_type, 1)?;
         }
-        for binder in required {
-            if !self
-                .binders
-                .iter()
-                .any(|(candidate, _)| *candidate == (binder.declaration, binder.index))
+        for binder in &required.binders {
+            if !offered_binders
+                .get(binder.declaration as usize)
+                .and_then(|declaration| declaration.get(binder.index as usize))
+                .copied()
+                .unwrap_or(false)
             {
-                return Err(Stop::Refused(Refusal::MissingBinding(binder)));
+                return Err(Stop::Refused(Refusal::MissingBinding(binder.clone())));
             }
         }
-        let mut keys: Vec<&ObjectKey> = Vec::new();
+        self.binders.sort_unstable_by_key(|(key, _)| *key);
         for population in &self.view.populations {
             self.work
                 .charge(Dimension::InputAggregateEntries, 1)
                 .map_err(Stop::Exhausted)?;
-            if population.requirement.declaration != self.request.declaration
-                || population.closure_requirement.declaration != self.request.declaration
-            {
+            if population.requirement.declaration != population.closure_requirement.declaration {
                 return Err(Stop::Refused(Refusal::SurplusBinding(
+                    population.requirement.clone(),
+                )));
+            }
+            if !selected_handle(&required.populations, &population.requirement) {
+                return Err(Stop::Refused(Refusal::SurplusBinding(
+                    population.requirement.clone(),
+                )));
+            }
+            let seen = offered_populations
+                .get_mut(population.requirement.declaration as usize)
+                .and_then(|declaration| declaration.get_mut(population.requirement.index as usize))
+                .ok_or_else(|| {
+                    Stop::Refused(Refusal::SurplusBinding(population.requirement.clone()))
+                })?;
+            if std::mem::replace(seen, true) {
+                return Err(Stop::Refused(Refusal::DuplicateBinding(
                     population.requirement.clone(),
                 )));
             }
@@ -169,8 +262,14 @@ impl<'a> Evaluator<'a> {
                 population.requirement.index,
                 &population.authority,
             )?;
-            let declaration =
-                &self.package.package().declarations[self.request.declaration as usize];
+            let declaration = self
+                .package
+                .package()
+                .declarations
+                .get(population.requirement.declaration as usize)
+                .ok_or_else(|| {
+                    Stop::Refused(Refusal::SurplusBinding(population.requirement.clone()))
+                })?;
             let requirement = declaration
                 .bindings
                 .get(population.requirement.index as usize)
@@ -199,17 +298,36 @@ impl<'a> Evaluator<'a> {
             let expected = requirement.value_type.0.ok_or_else(|| {
                 Stop::Refused(Refusal::AdmittedInvariant(population.requirement.clone()))
             })?;
+            let w::Type::Object {
+                export: object_type,
+            } = self
+                .package
+                .package()
+                .types
+                .get(expected as usize)
+                .ok_or_else(|| {
+                    Stop::Refused(Refusal::AdmittedInvariant(population.requirement.clone()))
+                })?
+                .clone()
+            else {
+                return Err(Stop::Refused(Refusal::AdmittedInvariant(
+                    population.requirement.clone(),
+                )));
+            };
+            let universe = requirement.model.0.clone().ok_or_else(|| {
+                Stop::Refused(Refusal::AdmittedInvariant(population.requirement.clone()))
+            })?;
+            let mut objects = Vec::new();
+            objects.try_reserve(population.objects.len()).map_err(|_| {
+                Stop::Exhausted(
+                    self.work
+                        .allocation(Dimension::InputAggregateEntries, population.objects.len()),
+                )
+            })?;
             for object in &population.objects {
                 self.work
                     .charge(Dimension::InputAggregateEntries, 1)
                     .map_err(Stop::Exhausted)?;
-                if keys.contains(&&object.key) {
-                    return Err(Stop::Refused(Refusal::DuplicateObject(object.key.clone())));
-                }
-                keys.try_reserve(1).map_err(|_| {
-                    Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
-                })?;
-                keys.push(&object.key);
                 if object.key.observation.anchor != requirement.anchor
                     || object.key.observation.snapshot.0
                         != population.authority.assessment_selection.snapshot_identity
@@ -226,7 +344,169 @@ impl<'a> Evaluator<'a> {
                     )));
                 }
                 self.object(object, expected)?;
+                objects.push(object);
             }
+            objects.sort_unstable_by(|left, right| object_key_cmp(&left.key, &right.key));
+            if let Some(duplicate) = objects
+                .windows(2)
+                .find(|pair| pair[0].key == pair[1].key)
+                .map(|pair| &pair[0].key)
+            {
+                return Err(Stop::Refused(Refusal::DuplicateObject(duplicate.clone())));
+            }
+            self.entry()?;
+            self.populations.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
+            let offset = self.populations.last().map_or(Ok(0), |prior| {
+                prior
+                    .offset
+                    .checked_add(prior.objects.len())
+                    .ok_or_else(|| {
+                        Stop::Exhausted(counter_overflow(
+                            &self.work,
+                            Dimension::InputAggregateEntries,
+                        ))
+                    })
+            })?;
+            self.populations.push(PopulationIndex {
+                requirement: population.requirement.clone(),
+                population,
+                anchor: requirement.anchor.clone(),
+                object_type,
+                universe,
+                offset,
+                objects,
+            });
+        }
+        for required in &required.populations {
+            if !offered_populations
+                .get(required.declaration as usize)
+                .and_then(|declaration| declaration.get(required.index as usize))
+                .copied()
+                .unwrap_or(false)
+            {
+                return Err(Stop::Refused(Refusal::MissingBinding(required.clone())));
+            }
+        }
+        self.validate_population_references()?;
+        for population in &self.populations {
+            if !population
+                .population
+                .authority
+                .assessment_selection
+                .membership_complete
+            {
+                return Err(Stop::Incomplete(MissingInput::Membership(
+                    population.requirement.clone(),
+                )));
+            }
+            if let Err(missing) = &population.population.membership {
+                return Err(Stop::Incomplete(missing.clone()));
+            }
+            if let Err(missing) = &population.population.closure {
+                return Err(Stop::Incomplete(missing.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_population_references(&self) -> Result<()> {
+        for (_, slot) in &self.binders {
+            self.validate_slot_references(slot)?;
+        }
+        for population in &self.populations {
+            for object in &population.objects {
+                for field in &object.fields {
+                    self.validate_field_references(field)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_field_references(&self, field: &FieldInput) -> Result<()> {
+        match &field.value {
+            FieldValue::Compiled(slot) => self.validate_slot_references(slot),
+            FieldValue::Contextual(slot) => self.validate_contextual_slot_references(slot),
+        }
+    }
+
+    fn validate_slot_references(&self, slot: &InputSlot) -> Result<()> {
+        let InputSlot::Available(value) = slot else {
+            return Ok(());
+        };
+        match value.kind() {
+            ValueKind::Record(fields) => {
+                for field in fields {
+                    self.validate_field_references(field)?;
+                }
+                Ok(())
+            }
+            ValueKind::Option(Some(child)) => self.validate_slot_references(child),
+            ValueKind::Sequence(children) => {
+                for child in children {
+                    self.validate_slot_references(child)?;
+                }
+                Ok(())
+            }
+            ValueKind::Reference(key) | ValueKind::Object(key) => self.validate_graph_key(key),
+            ValueKind::Boolean(_)
+            | ValueKind::Number(_)
+            | ValueKind::Text(_)
+            | ValueKind::Enum(_)
+            | ValueKind::Option(None) => Ok(()),
+        }
+    }
+
+    fn validate_contextual_slot_references(&self, slot: &ContextualSlot) -> Result<()> {
+        let ContextualSlot::Available(value) = slot else {
+            return Ok(());
+        };
+        match value.kind() {
+            ContextualValueKind::Record(fields) => {
+                for field in fields {
+                    self.validate_field_references(field)?;
+                }
+                Ok(())
+            }
+            ContextualValueKind::Option(Some(child)) => {
+                self.validate_contextual_slot_references(child)
+            }
+            ContextualValueKind::Sequence(children) => {
+                for child in children {
+                    self.validate_contextual_slot_references(child)?;
+                }
+                Ok(())
+            }
+            ContextualValueKind::Reference(key) | ContextualValueKind::Object(key) => {
+                self.validate_graph_key(key)
+            }
+            ContextualValueKind::Boolean(_)
+            | ContextualValueKind::Number(_)
+            | ContextualValueKind::Text(_)
+            | ContextualValueKind::Enum(_)
+            | ContextualValueKind::Option(None) => Ok(()),
+        }
+    }
+
+    fn validate_graph_key(&self, key: &ObjectKey) -> Result<()> {
+        let selected = self
+            .populations
+            .iter()
+            .find(|population| population.domain_matches(key));
+        let Some(population) = selected else {
+            if self
+                .populations
+                .iter()
+                .any(|population| population.nominal_domain_matches(key))
+            {
+                return Err(Stop::Refused(Refusal::PopulationDomain(key.clone())));
+            }
+            return Ok(());
+        };
+        if population.is_complete() && population.object(key).is_none() {
+            return Err(Stop::Refused(Refusal::Dangling(key.clone())));
         }
         Ok(())
     }
@@ -515,19 +795,48 @@ impl<'a> Evaluator<'a> {
         if fields.len() != declaration.fields().len() {
             return Err(Stop::Refused(Refusal::ValueShape(model_index)));
         }
+        let mut offered = Vec::new();
+        offered.try_reserve(fields.len()).map_err(|_| {
+            Stop::Exhausted(
+                self.work
+                    .allocation(Dimension::InputAggregateEntries, fields.len()),
+            )
+        })?;
+        for field in fields {
+            let path = self.export_path(&field.field, w::ExportKind::Field)?;
+            if field.field.model != model_index
+                || path.first().map(String::as_str) != Some(name)
+                || path.len() != 2
+            {
+                return Err(Stop::Refused(Refusal::Field(field.field.clone())));
+            }
+            offered.push((field.field.export, field));
+        }
+        offered.sort_unstable_by_key(|(index, _)| *index);
+        if let Some(duplicate) = offered
+            .windows(2)
+            .find(|pair| pair[0].0 == pair[1].0)
+            .map(|pair| pair[0].1)
+        {
+            return Err(Stop::Refused(Refusal::Field(duplicate.field.clone())));
+        }
         for expected_field in declaration.fields() {
-            let mut matches = fields.iter().filter(|field| {
-                self.field_matches(&field.field, name, expected_field.name().as_str())
-            });
-            let Some(offered) = matches.next() else {
+            let expected_export = self.model_export(
+                model_index,
+                w::ExportKind::Field,
+                name,
+                Some(expected_field.name().as_str()),
+            )?;
+            let Some((_, offered)) = offered
+                .binary_search_by_key(&expected_export.export, |(index, _)| *index)
+                .ok()
+                .and_then(|index| offered.get(index))
+            else {
                 return Err(Stop::Refused(Refusal::Field(w::ExportRef {
                     model: model_index,
                     export: u32::MAX,
                 })));
             };
-            if matches.next().is_some() {
-                return Err(Stop::Refused(Refusal::Field(offered.field.clone())));
-            }
             let site = ScalarSite::Field {
                 record: declaration.name().clone(),
                 field: expected_field.name().clone(),
@@ -812,17 +1121,6 @@ impl<'a> Evaluator<'a> {
         Ok(&value.path)
     }
 
-    fn field_matches(&self, export: &w::ExportRef, record: &str, field: &str) -> bool {
-        self.package
-            .package()
-            .models
-            .get(export.model as usize)
-            .and_then(|model| model.exports.get(export.export as usize))
-            .is_some_and(|value| {
-                value.kind == w::ExportKind::Field && value.path == [record, field]
-            })
-    }
-
     fn find_wire_type(&self, native: &NativeType<'_>) -> Result<u32> {
         self.package
             .package()
@@ -1052,8 +1350,11 @@ impl<'a> Evaluator<'a> {
         }
         let slot = self
             .binders
-            .iter()
-            .find(|(candidate, _)| *candidate == (binder.declaration, binder.index))
+            .binary_search_by_key(&(binder.declaration, binder.index), |(candidate, _)| {
+                *candidate
+            })
+            .ok()
+            .and_then(|index| self.binders.get(index))
             .map(|(_, slot)| *slot)
             .ok_or_else(|| Stop::Refused(Refusal::MissingBinding(binder.clone())))?;
         available(slot.clone())
@@ -1363,48 +1664,29 @@ impl<'a> Evaluator<'a> {
     }
 
     fn find_object(&self, key: &ObjectKey) -> Result<&'a ObjectInput> {
-        for population in &self.view.populations {
-            if population.objects.iter().any(|object| object.key == *key) {
-                if !population
-                    .authority
-                    .assessment_selection
-                    .membership_complete
-                {
-                    return Err(Stop::Incomplete(MissingInput::Membership(
-                        population.requirement.clone(),
-                    )));
-                }
-                if let Err(missing) = &population.membership {
-                    return Err(Stop::Incomplete(missing.clone()));
-                }
-                if let Err(missing) = &population.closure {
-                    return Err(Stop::Incomplete(missing.clone()));
-                }
-                return population
-                    .objects
-                    .iter()
-                    .find(|object| object.key == *key)
-                    .ok_or_else(|| Stop::Refused(Refusal::Dangling(key.clone())));
-            }
-        }
-        for population in &self.view.populations {
-            if !population
-                .authority
-                .assessment_selection
-                .membership_complete
-            {
-                return Err(Stop::Incomplete(MissingInput::Membership(
-                    population.requirement.clone(),
-                )));
-            }
-            if let Err(missing) = &population.membership {
-                return Err(Stop::Incomplete(missing.clone()));
-            }
-            if let Err(missing) = &population.closure {
-                return Err(Stop::Incomplete(missing.clone()));
-            }
-        }
-        Err(Stop::Refused(Refusal::Dangling(key.clone())))
+        let population = self
+            .populations
+            .iter()
+            .find(|population| population.domain_matches(key))
+            .ok_or_else(|| Stop::Refused(Refusal::PopulationDomain(key.clone())))?;
+        population
+            .object(key)
+            .ok_or_else(|| Stop::Refused(Refusal::Dangling(key.clone())))
+    }
+
+    fn object_position(&self, key: &ObjectKey) -> Result<usize> {
+        let population = self
+            .populations
+            .iter()
+            .find(|population| population.domain_matches(key))
+            .ok_or_else(|| Stop::Refused(Refusal::PopulationDomain(key.clone())))?;
+        let local = population
+            .object_index(key)
+            .map_err(|_| Stop::Refused(Refusal::Dangling(key.clone())))?;
+        population
+            .offset
+            .checked_add(local)
+            .ok_or_else(|| Stop::Exhausted(counter_overflow(&self.work, Dimension::GraphExpansion)))
     }
 
     fn reaches(
@@ -1417,7 +1699,22 @@ impl<'a> Evaluator<'a> {
             return Err(Stop::Refused(Refusal::ValueShape(self.request.value.index)));
         }
         let start = &self.find_object(start)?.key;
+        let object_count = self
+            .populations
+            .iter()
+            .try_fold(0_usize, |total, population| {
+                total.checked_add(population.objects.len()).ok_or_else(|| {
+                    Stop::Exhausted(counter_overflow(&self.work, Dimension::GraphExpansion))
+                })
+            })?;
         let mut expanded = Vec::new();
+        expanded.try_reserve(object_count).map_err(|_| {
+            Stop::Exhausted(
+                self.work
+                    .allocation(Dimension::GraphExpansion, object_count),
+            )
+        })?;
+        expanded.resize(object_count, false);
         self.dfs(start, target, edge, 1, &mut expanded)
     }
 
@@ -1427,21 +1724,22 @@ impl<'a> Evaluator<'a> {
         target: &ObjectKey,
         edge: &w::ExportRef,
         depth: usize,
-        expanded: &mut Vec<&'a ObjectKey>,
+        expanded: &mut [bool],
     ) -> Result<bool> {
-        self.work
-            .charge(Dimension::ActiveGraphDepth, depth)
-            .map_err(Stop::Exhausted)?;
-        if expanded.contains(&current) {
+        let position = self.object_position(current)?;
+        let expanded_entry = expanded.get_mut(position).ok_or_else(|| {
+            Stop::Exhausted(counter_overflow(&self.work, Dimension::GraphExpansion))
+        })?;
+        if *expanded_entry {
             return Ok(false);
         }
         self.work
+            .charge(Dimension::ActiveGraphDepth, depth)
+            .map_err(Stop::Exhausted)?;
+        self.work
             .charge(Dimension::GraphExpansion, 1)
             .map_err(Stop::Exhausted)?;
-        expanded
-            .try_reserve(1)
-            .map_err(|_| Stop::Exhausted(self.work.allocation(Dimension::GraphExpansion, 1)))?;
-        expanded.push(current);
+        *expanded_entry = true;
         let object = self.find_object(current)?;
         let field = object
             .fields
@@ -1462,7 +1760,7 @@ impl<'a> Evaluator<'a> {
         target: &ObjectKey,
         edge: &w::ExportRef,
         depth: usize,
-        expanded: &mut Vec<&'a ObjectKey>,
+        expanded: &mut [bool],
     ) -> Result<bool> {
         let value = available_ref(slot)?;
         match value.kind() {
@@ -1476,7 +1774,7 @@ impl<'a> Evaluator<'a> {
                 if next == target {
                     return Ok(true);
                 }
-                if !expanded.contains(&next) && self.dfs(next, target, edge, depth + 1, expanded)? {
+                if self.dfs(next, target, edge, depth + 1, expanded)? {
                     return Ok(true);
                 }
                 Ok(false)
@@ -1503,7 +1801,7 @@ impl<'a> Evaluator<'a> {
         target: &ObjectKey,
         edge: &w::ExportRef,
         depth: usize,
-        expanded: &mut Vec<&'a ObjectKey>,
+        expanded: &mut [bool],
     ) -> Result<bool> {
         let value = contextual_available_ref(slot)?;
         match value.kind() {
@@ -1517,7 +1815,7 @@ impl<'a> Evaluator<'a> {
                 if next == target {
                     return Ok(true);
                 }
-                if !expanded.contains(&next) && self.dfs(next, target, edge, depth + 1, expanded)? {
+                if self.dfs(next, target, edge, depth + 1, expanded)? {
                     return Ok(true);
                 }
                 Ok(false)
@@ -1560,31 +1858,55 @@ fn valid_identity(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096
 }
 
-fn required_binders(
+struct RequiredInputs {
+    binders: Vec<w::Handle>,
+    populations: Vec<w::Handle>,
+}
+
+fn required_inputs(
     work: &mut Work,
     package: &w::Package,
     root: &w::Handle,
-) -> Result<Vec<w::Handle>> {
+) -> Result<RequiredInputs> {
     let mut pending = Vec::new();
     discovery_push(work, &mut pending, root)?;
-    let mut visited = Vec::<w::Handle>::new();
-    let mut required = Vec::<w::Handle>::new();
+    let mut visited = boolean_table(
+        work,
+        package
+            .declarations
+            .iter()
+            .map(|declaration| declaration.values.len()),
+    )?;
+    let mut required_binders = boolean_table(
+        work,
+        package
+            .declarations
+            .iter()
+            .map(|declaration| declaration.binders.len()),
+    )?;
+    let mut required_populations = boolean_table(
+        work,
+        package
+            .declarations
+            .iter()
+            .map(|declaration| declaration.bindings.len()),
+    )?;
     while let Some(handle) = pending.pop() {
-        if visited.contains(&handle) {
+        let seen = visited
+            .get_mut(handle.declaration as usize)
+            .and_then(|declaration| declaration.get_mut(handle.index as usize))
+            .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?;
+        if *seen {
             continue;
         }
         work.charge(Dimension::InputAggregateEntries, 1)
             .map_err(Stop::Exhausted)?;
-        visited
-            .try_reserve(1)
-            .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
-        visited.push(handle.clone());
+        *seen = true;
         let node = package
             .declarations
             .get(handle.declaration as usize)
             .and_then(|declaration| declaration.values.get(handle.index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?;
-        let mut push = |child: &w::Handle| discovery_push(work, &mut pending, child);
         match &node.operation {
             w::ValueOperation::Read { binder } if binder.declaration == root.declaration => {
                 work.charge(Dimension::InputAggregateEntries, 1)
@@ -1596,45 +1918,56 @@ fn required_binders(
                     .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(binder.clone())))?;
                 if value.initializer.0.is_none()
                     && !matches!(value.kind, w::BinderKind::Let | w::BinderKind::Query)
-                    && !required.contains(binder)
                 {
-                    work.charge(Dimension::InputAggregateEntries, 1)
-                        .map_err(Stop::Exhausted)?;
-                    required.try_reserve(1).map_err(|_| {
-                        Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1))
-                    })?;
-                    required.push(binder.clone());
+                    let selected = required_binders
+                        .get_mut(binder.declaration as usize)
+                        .and_then(|declaration| declaration.get_mut(binder.index as usize))
+                        .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(binder.clone())))?;
+                    if !*selected {
+                        work.charge(Dimension::InputAggregateEntries, 1)
+                            .map_err(Stop::Exhausted)?;
+                        *selected = true;
+                    }
                 }
             }
-            w::ValueOperation::Group { value }
-            | w::ValueOperation::Unary { value, .. }
-            | w::ValueOperation::Pre { value, .. } => push(value)?,
-            w::ValueOperation::Field { base, .. } => push(base)?,
+            w::ValueOperation::Group { value } | w::ValueOperation::Pre { value, .. } => {
+                discovery_push(work, &mut pending, value)?
+            }
+            w::ValueOperation::Unary { operator, value } => {
+                if *operator == w::Unary::Deref {
+                    require_population_for_value(work, package, value, &mut required_populations)?;
+                }
+                discovery_push(work, &mut pending, value)?;
+            }
+            w::ValueOperation::Field { base, .. } => {
+                require_population_for_value(work, package, base, &mut required_populations)?;
+                discovery_push(work, &mut pending, base)?;
+            }
             w::ValueOperation::Binary { left, right, .. } => {
-                push(left)?;
-                push(right)?;
+                discovery_push(work, &mut pending, left)?;
+                discovery_push(work, &mut pending, right)?;
             }
             w::ValueOperation::If {
                 condition,
                 then_value,
                 else_value,
             } => {
-                push(condition)?;
-                push(then_value)?;
-                push(else_value)?;
+                discovery_push(work, &mut pending, condition)?;
+                discovery_push(work, &mut pending, then_value)?;
+                discovery_push(work, &mut pending, else_value)?;
             }
             w::ValueOperation::Let {
                 initializer, body, ..
             } => {
-                push(initializer)?;
-                push(body)?;
+                discovery_push(work, &mut pending, initializer)?;
+                discovery_push(work, &mut pending, body)?;
             }
             w::ValueOperation::Call {
                 predicate,
                 arguments,
             } => {
                 for argument in arguments {
-                    push(argument)?;
+                    discovery_push(work, &mut pending, argument)?;
                 }
                 let declaration = package
                     .declarations
@@ -1643,23 +1976,45 @@ fn required_binders(
                 let w::Body::Predicate { root, .. } = &declaration.body else {
                     return Err(Stop::Refused(Refusal::RequestDeclaration(*predicate)));
                 };
-                push(root)?;
+                discovery_push(work, &mut pending, root)?;
             }
-            w::ValueOperation::Size { collection, .. } => push(collection)?,
+            w::ValueOperation::Size { collection, .. } => {
+                discovery_push(work, &mut pending, collection)?
+            }
             w::ValueOperation::Contains { collection, member } => {
-                push(collection)?;
-                push(member)?;
+                discovery_push(work, &mut pending, collection)?;
+                discovery_push(work, &mut pending, member)?;
             }
             w::ValueOperation::Query {
                 collection, body, ..
             } => {
-                push(collection)?;
-                push(body)?;
+                discovery_push(work, &mut pending, collection)?;
+                discovery_push(work, &mut pending, body)?;
             }
-            w::ValueOperation::Parent { reference, .. } => push(reference)?,
-            w::ValueOperation::Reaches { start, target, .. } => {
-                push(start)?;
-                push(target)?;
+            w::ValueOperation::Parent { reference, .. } => {
+                discovery_push(work, &mut pending, reference)?
+            }
+            w::ValueOperation::Reaches {
+                start,
+                target,
+                universe,
+                ..
+            } => {
+                let start_value = package
+                    .declarations
+                    .get(start.declaration as usize)
+                    .and_then(|declaration| declaration.values.get(start.index as usize))
+                    .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(start.clone())))?;
+                require_population(
+                    work,
+                    package,
+                    start.declaration,
+                    universe,
+                    &start_value.anchor,
+                    &mut required_populations,
+                )?;
+                discovery_push(work, &mut pending, start)?;
+                discovery_push(work, &mut pending, target)?;
             }
             w::ValueOperation::Boolean { .. }
             | w::ValueOperation::Number { .. }
@@ -1668,7 +2023,149 @@ fn required_binders(
             | w::ValueOperation::Read { .. } => {}
         }
     }
-    Ok(required)
+    Ok(RequiredInputs {
+        binders: selected_handles(work, required_binders)?,
+        populations: selected_handles(work, required_populations)?,
+    })
+}
+
+fn boolean_table(work: &Work, lengths: impl Iterator<Item = usize>) -> Result<Vec<Vec<bool>>> {
+    let mut table = Vec::new();
+    for length in lengths {
+        table
+            .try_reserve(1)
+            .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
+        let mut row = Vec::new();
+        row.try_reserve(length).map_err(|_| {
+            Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, length))
+        })?;
+        row.resize(length, false);
+        table.push(row);
+    }
+    Ok(table)
+}
+
+fn selected_handles(work: &Work, selected: Vec<Vec<bool>>) -> Result<Vec<w::Handle>> {
+    let count = selected.iter().try_fold(0_usize, |total, values| {
+        total
+            .checked_add(values.iter().filter(|value| **value).count())
+            .ok_or_else(|| {
+                Stop::Exhausted(counter_overflow(work, Dimension::InputAggregateEntries))
+            })
+    })?;
+    let mut handles = Vec::new();
+    handles
+        .try_reserve(count)
+        .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, count)))?;
+    for (declaration, values) in selected.into_iter().enumerate() {
+        for (index, value) in values.into_iter().enumerate() {
+            if value {
+                handles.push(w::Handle {
+                    declaration: u32::try_from(declaration).map_err(|_| {
+                        Stop::Exhausted(counter_overflow(work, Dimension::InputAggregateEntries))
+                    })?,
+                    index: u32::try_from(index).map_err(|_| {
+                        Stop::Exhausted(counter_overflow(work, Dimension::InputAggregateEntries))
+                    })?,
+                });
+            }
+        }
+    }
+    Ok(handles)
+}
+
+fn selected_handle(selected: &[w::Handle], handle: &w::Handle) -> bool {
+    selected
+        .binary_search_by(|candidate| handle_cmp(candidate, handle))
+        .is_ok()
+}
+
+fn handle_cmp(left: &w::Handle, right: &w::Handle) -> Ordering {
+    (left.declaration, left.index).cmp(&(right.declaration, right.index))
+}
+
+fn require_population_for_value(
+    work: &mut Work,
+    package: &w::Package,
+    value: &w::Handle,
+    selected: &mut [Vec<bool>],
+) -> Result<()> {
+    let value_node = package
+        .declarations
+        .get(value.declaration as usize)
+        .and_then(|declaration| declaration.values.get(value.index as usize))
+        .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(value.clone())))?;
+    let ty = package
+        .types
+        .get(value_node.value_type as usize)
+        .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(value.clone())))?;
+    let universe = match ty {
+        w::Type::Reference { universe, .. } => Some(universe.clone()),
+        w::Type::Object { export } => population_export(package, export),
+        _ => None,
+    };
+    if let Some(universe) = universe {
+        require_population(
+            work,
+            package,
+            value.declaration,
+            &universe,
+            &value_node.anchor,
+            selected,
+        )?;
+    }
+    Ok(())
+}
+
+fn require_population(
+    work: &mut Work,
+    package: &w::Package,
+    declaration: u32,
+    universe: &w::ExportRef,
+    anchor: &w::Handle,
+    selected: &mut [Vec<bool>],
+) -> Result<()> {
+    let declaration_value = package
+        .declarations
+        .get(declaration as usize)
+        .ok_or_else(|| Stop::Refused(Refusal::RequestDeclaration(declaration)))?;
+    let mut matches = declaration_value
+        .bindings
+        .iter()
+        .enumerate()
+        .filter(|(_, binding)| {
+            binding.kind == w::BindingKind::Population
+                && binding.model.0.as_ref() == Some(universe)
+                && &binding.anchor == anchor
+        });
+    let Some((index, _)) = matches.next() else {
+        return Err(Stop::Refused(Refusal::AdmittedInvariant(anchor.clone())));
+    };
+    if matches.next().is_some() {
+        return Err(Stop::Refused(Refusal::AdmittedInvariant(anchor.clone())));
+    }
+    let selected = selected
+        .get_mut(declaration as usize)
+        .and_then(|bindings| bindings.get_mut(index))
+        .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(anchor.clone())))?;
+    if !*selected {
+        work.charge(Dimension::InputAggregateEntries, 1)
+            .map_err(Stop::Exhausted)?;
+        *selected = true;
+    }
+    Ok(())
+}
+
+fn population_export(package: &w::Package, object: &w::ExportRef) -> Option<w::ExportRef> {
+    let model = package.models.get(object.model as usize)?;
+    let object_path = model.exports.get(object.export as usize)?.path.first()?;
+    let export = model.exports.iter().position(|export| {
+        export.kind == w::ExportKind::Population && export.path.first() == Some(object_path)
+    })?;
+    Some(w::ExportRef {
+        model: object.model,
+        export: u32::try_from(export).ok()?,
+    })
 }
 
 fn discovery_push(work: &mut Work, pending: &mut Vec<w::Handle>, handle: &w::Handle) -> Result<()> {
@@ -1814,7 +2311,45 @@ fn same_graph(left: &ObjectKey, right: &ObjectKey) -> bool {
     left.model == right.model
         && left.universe == right.universe
         && left.object_type == right.object_type
-        && left.observation == right.observation
+        && left.observation.anchor == right.observation.anchor
+        && left.observation.snapshot == right.observation.snapshot
+        && left.observation.window == right.observation.window
+}
+
+fn object_key_cmp(left: &ObjectKey, right: &ObjectKey) -> Ordering {
+    (
+        left.observation.anchor.declaration,
+        left.observation.anchor.index,
+        left.observation.snapshot.0.as_str(),
+        left.observation
+            .window
+            .as_ref()
+            .map(|value| value.0.as_str()),
+        left.observation.record.0.as_str(),
+        left.model,
+        left.universe.model,
+        left.universe.export,
+        left.object_type.model,
+        left.object_type.export,
+        left.identifier.as_str(),
+    )
+        .cmp(&(
+            right.observation.anchor.declaration,
+            right.observation.anchor.index,
+            right.observation.snapshot.0.as_str(),
+            right
+                .observation
+                .window
+                .as_ref()
+                .map(|value| value.0.as_str()),
+            right.observation.record.0.as_str(),
+            right.model,
+            right.universe.model,
+            right.universe.export,
+            right.object_type.model,
+            right.object_type.export,
+            right.identifier.as_str(),
+        ))
 }
 
 fn available_ref(slot: &InputSlot) -> Result<&Value> {
