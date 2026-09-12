@@ -5,6 +5,16 @@ type: IT
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-036
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-046
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-047
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-048
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-049
+    type: references
+  - target: ix://agent-ix/quire-spec-language/NFR-009
+    type: references
   - target: ix://agent-ix/quire-specification/IT-010
     type: references
 ---
@@ -12,16 +22,25 @@ relationships:
 
 ## Objective
 
-Verify that the compiler binds the shared order/refund example through the actual
-model producer and its selected native correspondence, including relationships
-between distinct workflow instances and explicitly scoped population roles.
+Verify that the compiler binds the shared order/refund example through the
+selected real model producer and retains the static correspondence and role
+requirements owned by FR-036. This integration is an enablement gate for the
+referenced evaluation requirements; it does not execute or verify them.
 
 ## Target Integration
 
-The public Rust compiler intake/linking path consumes the model producer's
-admitted exports and the selected D/F binding contracts. This is a producer/API
-boundary, not a second model reader or a fabricated model-shaped JSON mock.
-Downstream capability selection uses the compiler's request inventory boundary.
+The public Rust compiler intake/linking path consumes D's Producer interface
+1.2.0 at
+[revision 6259d3a5b99088740df9bcc8e8d60f3720aaa603](https://github.com/agent-ix/filament-core-data/blob/6259d3a5b99088740df9bcc8e8d60f3720aaa603/docs/semantic-data-system/baseline-1-2.md)
+and its admitted exports and correspondence. This is a producer/API boundary,
+not a second model reader or a fabricated model-shaped JSON mock. Downstream
+capability selection uses the compiler's request inventory boundary.
+
+F is outside the exercised IT-009 boundary. F's selected observation contract
+supplies concrete records, occurrence correlation, membership, observation
+anchors, progress and completeness only at assessment time. IT-009 retains the
+static requirements for those later inputs without supplying F data or claiming
+observation admission, evaluation, protocol conformance or assessment results.
 
 ## Preconditions
 
@@ -61,7 +80,7 @@ observations are required to link the template.
 ## Expected Results
 
 Each success criterion is asserted unconditionally. Linking establishes exact
-static correspondence, not evaluated ecosystem truth. Assessment-time rejection
-of foreign concrete instances and observation completeness remains the standard's
-IT-010/D/F consumer contract; this integration checks that the compiler preserves
-the precise requirements that make those later checks possible.
+static correspondence, not evaluated ecosystem truth. Evaluation, graph
+traversal, protocol conformance and observation completeness remain assigned to
+FR-046 through FR-049, NFR-009 and the downstream B/F contracts; they are not
+verified by this integration.
