@@ -242,6 +242,8 @@ pub struct BoundRelationship<'a> {
     model: &'a NativeModel,
     export: &'a super::producer::ProducerExportSelection,
     declaration: Option<&'a agent_ix_baseline_producer::RelationshipDeclaration>,
+    source_type: Option<&'a super::producer::ProducerExportSelection>,
+    target_type: Option<&'a super::producer::ProducerExportSelection>,
 }
 
 impl<'a> BoundRelationship<'a> {
@@ -260,6 +262,16 @@ impl<'a> BoundRelationship<'a> {
     /// name the declaration but cannot authorize endpoint use.
     pub fn declaration(&self) -> Option<&'a agent_ix_baseline_producer::RelationshipDeclaration> {
         self.declaration
+    }
+
+    /// Exact native type export for the declaration's source endpoint.
+    pub fn source_type_export(&self) -> Option<&'a super::producer::ProducerExportSelection> {
+        self.source_type
+    }
+
+    /// Exact native type export for the declaration's target endpoint.
+    pub fn target_type_export(&self) -> Option<&'a super::producer::ProducerExportSelection> {
+        self.target_type
     }
 }
 
@@ -419,6 +431,86 @@ fn charge(
 ) -> Result<(), ModelError> {
     work.charge(dimension, amount)
         .map_err(|error| failure(unit, span, ModelErrorKind::ResourceExhausted(error)))
+}
+
+fn producer_endpoint_type<'a>(
+    producer: &'a AdmittedProducerModel<'a>,
+    expected: &agent_ix_baseline_producer::ExportRecord,
+    unit: UnitId,
+    span: Span,
+    work: &mut Work,
+) -> Result<&'a super::producer::ProducerExportSelection, ModelError> {
+    let mut found = None;
+    for export in &producer.selection().correspondence.exports {
+        charge(work, Dimension::References, 1, unit, span)?;
+        charge(work, Dimension::Bytes, export.identity.len(), unit, span)?;
+        charge(
+            work,
+            Dimension::Bytes,
+            export.producer_object_identity.len(),
+            unit,
+            span,
+        )?;
+        if export.identity.as_ref() != expected.export_identity
+            || export.producer_object_identity.as_ref() != expected.producer_object_identity
+            || export.kind.wire_kind().as_str() != expected.kind.as_str()
+            || export.path.len() != expected.export_path.len()
+            || !export
+                .path
+                .iter()
+                .zip(&expected.export_path)
+                .all(|(left, right)| left.as_ref() == right)
+        {
+            continue;
+        }
+        if !export.kind.is_type() {
+            return Err(failure(unit, span, ModelErrorKind::WrongExportKind));
+        }
+        if found.replace(export).is_some() {
+            return Err(failure(
+                unit,
+                span,
+                ModelErrorKind::UnsupportedRelationshipContract,
+            ));
+        }
+    }
+    found.ok_or_else(|| failure(unit, span, ModelErrorKind::MissingExport))
+}
+
+fn filament_endpoint_type<'a>(
+    bundle: &'a agent_ix_baseline_producer::AdmittedStaticBundle,
+    endpoint: &agent_ix_baseline_producer::RelationshipEndpoint,
+    unit: UnitId,
+    span: Span,
+    work: &mut Work,
+) -> Result<&'a agent_ix_baseline_producer::ExportRecord, ModelError> {
+    for declared in bundle.endpoints() {
+        charge(work, Dimension::References, 1, unit, span)?;
+        charge(
+            work,
+            Dimension::Bytes,
+            declared.endpoint_identity.len(),
+            unit,
+            span,
+        )?;
+    }
+    for correspondence in bundle.correspondences() {
+        charge(work, Dimension::References, 1, unit, span)?;
+        for export in &correspondence.exports {
+            charge(work, Dimension::References, 1, unit, span)?;
+            charge(
+                work,
+                Dimension::Bytes,
+                export.export_identity.len(),
+                unit,
+                span,
+            )?;
+        }
+    }
+    bundle
+        .endpoint_type_export(&endpoint.endpoint_identity)
+        .filter(|export| export.export_identity == endpoint.type_identity)
+        .ok_or_else(|| failure(unit, span, ModelErrorKind::MissingExport))
 }
 
 // Catalog keys retain upstream SymbolName identities. Where a borrowed string
@@ -845,11 +937,28 @@ impl<'a> ModelBindings<'a> {
                 continue;
             }
             if export.kind == super::producer::ProducerExportKind::Relationship {
-                let declaration = producer.filament_bundle().and_then(|bundle| {
-                    bundle.relationships().iter().find(|relationship| {
-                        relationship.relationship_identity.as_str() == export.identity.as_ref()
-                    })
-                });
+                let mut declaration = None;
+                if let Some(bundle) = producer.filament_bundle() {
+                    for candidate in bundle.relationships() {
+                        charge(work, Dimension::References, 1, unit, name.name.span)?;
+                        charge(
+                            work,
+                            Dimension::Bytes,
+                            candidate.relationship_identity.len(),
+                            unit,
+                            name.name.span,
+                        )?;
+                        if candidate.relationship_identity.as_str() == export.identity.as_ref()
+                            && declaration.replace(candidate).is_some()
+                        {
+                            return Err(failure(
+                                unit,
+                                name.name.span,
+                                ModelErrorKind::UnsupportedRelationshipContract,
+                            ));
+                        }
+                    }
+                }
                 if producer.filament_bundle().is_some() && declaration.is_none() {
                     return Err(failure(
                         unit,
@@ -872,11 +981,55 @@ impl<'a> ModelBindings<'a> {
                         return Err(failure(unit, name.name.span, ModelErrorKind::ForeignModel));
                     }
                 }
+                let (source_type, target_type) = match declaration {
+                    Some(declaration) => {
+                        let bundle = producer.filament_bundle().ok_or_else(|| {
+                            failure(
+                                unit,
+                                name.name.span,
+                                ModelErrorKind::UnsupportedRelationshipContract,
+                            )
+                        })?;
+                        let source = filament_endpoint_type(
+                            bundle,
+                            &declaration.source,
+                            unit,
+                            name.name.span,
+                            work,
+                        )?;
+                        let target = filament_endpoint_type(
+                            bundle,
+                            &declaration.target,
+                            unit,
+                            name.name.span,
+                            work,
+                        )?;
+                        (
+                            Some(producer_endpoint_type(
+                                producer,
+                                source,
+                                unit,
+                                name.name.span,
+                                work,
+                            )?),
+                            Some(producer_endpoint_type(
+                                producer,
+                                target,
+                                unit,
+                                name.name.span,
+                                work,
+                            )?),
+                        )
+                    }
+                    None => (None, None),
+                };
                 charge(work, Dimension::Bindings, 1, unit, name.name.span)?;
                 return Ok(BoundRelationship {
                     model: producer.model(),
                     export,
                     declaration,
+                    source_type,
+                    target_type,
                 });
             }
             wrong_kind = true;

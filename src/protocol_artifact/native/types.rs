@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use quire_contract_ir as ir;
 
 use crate::checking::NativeType;
-use crate::linking::composed::producer::{self as producer, ProducerExportKind};
+use crate::linking::composed::producer;
 use crate::native_model::{NativeModel, ScalarKind, Unit};
 use crate::protocol_artifact::{
     wire as w, work::Work, AdmittedModel, Dimension, Error, Invalid, NumberWire, Unsupported,
@@ -472,26 +472,10 @@ fn producer_export(
     }
     work.charge(Dimension::Entries, 1)?;
     Ok(w::Export {
-        kind: producer_export_kind(value.kind),
+        kind: value.kind.wire_kind(),
         path,
         locus: producer_locus(&value.locus, work)?,
     })
-}
-
-fn producer_export_kind(value: ProducerExportKind) -> w::ExportKind {
-    match value {
-        ProducerExportKind::Component => w::ExportKind::Component,
-        ProducerExportKind::Endpoint => w::ExportKind::Endpoint,
-        ProducerExportKind::Relationship => w::ExportKind::Relationship,
-        ProducerExportKind::Enum => w::ExportKind::Enum,
-        ProducerExportKind::Field => w::ExportKind::Field,
-        ProducerExportKind::Object => w::ExportKind::Object,
-        ProducerExportKind::Operation => w::ExportKind::Operation,
-        ProducerExportKind::Record => w::ExportKind::Record,
-        ProducerExportKind::Reference => w::ExportKind::Reference,
-        ProducerExportKind::Scalar => w::ExportKind::Scalar,
-        ProducerExportKind::Variant => w::ExportKind::Variant,
-    }
 }
 
 fn producer_locus(value: &w::ForeignLocus, work: &mut Work) -> Result<w::ForeignLocus, Error> {
