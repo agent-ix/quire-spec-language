@@ -259,7 +259,6 @@ impl Arena {
 
             if !direct {
                 let mut signature = Vec::new();
-                work.charge(Dimension::Entries, visible.len())?;
                 signature
                     .try_reserve_exact(visible.len())
                     .map_err(|_| Error::Allocation)?;
@@ -270,9 +269,8 @@ impl Arena {
                 let mut prior = None;
                 for (known, case) in &signatures {
                     work.visit()?;
-                    if known.len() != signature.len() {
-                        return Err(Error::Invalid(Invalid::Reference));
-                    }
+                    // Every signature is built from this same visible-root
+                    // slice, so the paired vectors have identical lengths.
                     let mut equal = true;
                     for (left, right) in known.iter().zip(&signature) {
                         work.visit()?;
@@ -291,6 +289,9 @@ impl Arena {
                         return Err(unproved());
                     }
                 } else {
+                    // Duplicate disclosure outputs are transient proof work,
+                    // not retained entries. Charge only a newly retained row.
+                    work.charge(Dimension::Entries, visible.len())?;
                     work.charge(Dimension::Entries, 1)?;
                     signatures.try_reserve(1).map_err(|_| Error::Allocation)?;
                     signatures.push((signature, selected));
@@ -389,4 +390,45 @@ fn evaluate(op: Op, values: &[bool], atoms: &[bool], work: &mut Work) -> Result<
 
 fn unproved() -> Error {
     Error::Unsupported(Unsupported::FamilyProof)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Arena, Op, Work};
+    use crate::protocol_artifact::Limits;
+    use ix_trace_rs::trace;
+
+    #[test]
+    #[trace("TC-121", "FR-042-AC-9")]
+    fn duplicate_disclosures_charge_only_retained_signature_cells() {
+        let mut arena = Arena::new();
+        let mut construction = Work::new(Limits::default());
+        let mut conjunction = arena.push(Op::Atom(0), &mut construction).unwrap();
+        for atom in 1..8 {
+            let next = arena.push(Op::Atom(atom), &mut construction).unwrap();
+            conjunction = arena
+                .push(Op::And(conjunction, next), &mut construction)
+                .unwrap();
+        }
+        let complement = arena.push(Op::Not(conjunction), &mut construction).unwrap();
+        let guards = [conjunction, complement];
+        let mut single = Work::new(Limits::default());
+        let mut repeated = Work::new(Limits::default());
+        assert_eq!(
+            arena
+                .partition(&guards, &[conjunction], 8, &mut single)
+                .unwrap(),
+            [true, true]
+        );
+        assert_eq!(
+            arena
+                .partition(&guards, &[conjunction; 8], 8, &mut repeated)
+                .unwrap(),
+            [true, true]
+        );
+        // The same 256 assignments have only two distinct disclosure outputs.
+        // Seven extra cells per retained signature cost 14 entries, not 1792.
+        assert_eq!(repeated.usage.entries - single.usage.entries, 2 * 7);
+        assert!(repeated.usage.references > single.usage.references);
+    }
 }

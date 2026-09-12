@@ -283,6 +283,86 @@ fn composite_disclosure_never_exposes_hidden_or_indistinguishable_leaf_values() 
 
 #[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-9")]
+fn repeated_composite_outputs_survive_exact_entry_budget_retry() {
+    let formula = (0..8)
+        .map(|index| format!("a{index}.ready"))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let visible = std::iter::repeat_n(formula.as_str(), 8)
+        .collect::<Vec<_>>()
+        .join(",");
+    let complement = format!("not ({formula})");
+    let inputs = inputs(&visible, &formula, &complement, 8);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            // The 256 assignments have only two distinct advertised vectors:
+            // eight false results or eight true results. The arena unit test
+            // pins the retained-signature charge; this public-path test pins
+            // exact/one-short retry and emitted structure for the same shape.
+            let report = native::admit(proofs, selected, Limits::default());
+            assert!(
+                report.result().is_ok(),
+                "{:?}; {:?}",
+                report.result().err(),
+                report.locus()
+            );
+            let repeated_entries = report.usage().entries;
+            let short = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    entries: repeated_entries - 1,
+                    ..Limits::default()
+                },
+            );
+            let Err(Error::Incomplete(exhaustion)) = short.result() else {
+                panic!("one-short Entries")
+            };
+            assert_eq!(exhaustion.dimension, Dimension::Entries);
+            assert_eq!(exhaustion.limit, repeated_entries - 1);
+            let exact = native::admit(
+                proofs,
+                selected,
+                Limits {
+                    entries: repeated_entries,
+                    ..Limits::default()
+                },
+            );
+            assert!(exact.result().is_ok(), "{:?}", exact.result().err());
+            assert_eq!(
+                exact.result().unwrap().package(),
+                report.result().unwrap().package()
+            );
+            let admission = report.into_result().unwrap();
+            let declaration = admission
+                .package()
+                .declarations
+                .iter()
+                .find(|declaration| declaration.name == "Decisions")
+                .unwrap();
+            let w::Body::Protocol { controls, .. } = &declaration.body else {
+                panic!("protocol")
+            };
+            let w::ControlOperation::Choice { visible, cases, .. } = &controls
+                .iter()
+                .find(|control| control.name == "Decide")
+                .unwrap()
+                .operation
+            else {
+                panic!("choice")
+            };
+            assert_eq!(visible.len(), 8);
+            assert_eq!(cases.len(), 2);
+            round_trip(&inputs, proofs, &admission);
+        },
+    );
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-9")]
 fn composite_disclosure_budget_exhaustion_keeps_choice_locus_and_fresh_retry() {
     let formula = (0..12)
         .map(|i| format!("a{i}.ready"))
