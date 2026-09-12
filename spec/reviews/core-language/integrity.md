@@ -27,9 +27,12 @@ the latest #40 temporal request its own strict `/2` wire, producer, reader and
 v2-specific L5 interface while preserving `/1` compatibility.
 
 All four original findings are preserved below and resolved with exact evidence.
-No new integrity ambiguity remains in the reviewed requirement content. This is
-a specification-integrity verdict only: Planned matrix rows, external producer/
-campaign gates and unimplemented interfaces remain delivery work.
+A post-tasking recheck found seven additional ambiguities in the evaluator and
+temporal interfaces; commit `72eb30f` resolves each and the dispositions are
+recorded below. No integrity ambiguity remains in the reviewed requirement
+content. This is a specification-integrity verdict only: Planned matrix rows,
+external producer/campaign gates and unimplemented interfaces remain delivery
+work.
 
 ## Findings
 
@@ -39,6 +42,13 @@ campaign gates and unimplemented interfaces remain delivery work.
 | FND-002 | high | FR-048 alternates between a static protocol template and concrete O1/O2 workflow instances: future instances are excluded from compiler input, yet AC-1 requires those instances to survive emission/reading and TC-132 says to compile them. Its static-subject invariance also says “resource limits” without excluding compiler admission/emission limits, whose exhaustion necessarily changes artifact availability. Define static declaration/role requirements separately from downstream runtime occurrence identities and restrict the invariance to assessment-time bindings/limits. | FR-048 inputs lines 39–47; behavior lines 60–62 and 122–124; FR-048-AC-1; TC-132 | wrong-requirement |
 | FND-003 | medium | FR-047 requires retry to return the same “path evidence” while declaring shortest-path and canonical-witness guarantees out of scope. Ordered expansion makes Boolean truth deterministic but does not state whether support is absent, all support, or the first discovered path, so a diamond graph has multiple valid reports. | FR-047 outputs lines 42–47; behavior lines 77–81 and 97–100; FR-047-AC-7; TC-130 diamond case; TC-131 expected results; baseline FR-043 | missing-requirement |
 | FND-004 | high | FR-046 requires compiler, reference-evaluation and “lowered-execution” evidence to agree, but neither the requirement nor TC-127 selects the lowering target, executable representation, entry point, result envelope, supported fragment or failure boundary. This is not testable as one oracle and lets an implementer invent a backend contract outside #36. | FR-046-AC-3/8 and dependencies; TC-127 description/procedure; issue #36 delivery boundary | missing-requirement |
+| FND-005 | high | FR-049 made `Available` recursively exclude every unavailable child, contradicting FR-046's required propagation and discard behavior for a reached unavailable aggregate slot. Record, option and sequence inputs therefore lacked a legal state for one required runtime outcome. | FR-049 Behavior and AC-3/4 before `72eb30f`; FR-046 Behavior and AC-4; TC-136 | wrong-requirement |
+| FND-006 | high | NFR-009 specified recursive record/option/sequence comparison and comparison depth outside FR-040's admitted equality domain. Besides widening semantics in an NFR, that made TC-137's fourteenth counter unimplementable against the selected profile. | NFR-009 metrics/counter definitions/verification before `72eb30f`; TC-137 procedure; FR-040 | wrong-requirement |
+| FND-007 | medium | Allocation refusal was neither a member of a closed exhaustion-cause vocabulary nor assigned to an affected charged dimension, so two implementations could report it incompatibly while satisfying the prose. | NFR-009 counter definitions before `72eb30f`; FR-049 output envelope; TC-137 | missing-requirement |
+| FND-008 | medium | `AdmissionV2` and its enclosing `Report` both owned limits and usage, leaving two valid placements and no consistency rule. | FR-050 Interface and wire model before `72eb30f`; docs/compiled-protocol-v2.md Rust boundary; FR-042 report pattern | wrong-requirement |
+| FND-009 | high | Returning an external `ArtifactRef` from compiler admission implicitly authorized its authority, identity and revision even though those selectors belong to an independent caller. The output contract therefore crossed its stated trust boundary. | FR-050 Outputs before `72eb30f`; docs/compiled-protocol-v2.md Version selection; FR-042 | wrong-requirement |
+| FND-010 | high | `mapping_support_v2` was specified only with ellipses, then included in a rule requiring trace profile/revision/parameter comparison despite taking no defined trace input. Its behavior admitted no single testable interpretation. | FR-050 Interface and Behavior before `72eb30f`; docs/compiled-protocol-v2.md Rust boundary; TC-138 | missing-requirement |
+| FND-011 | high | The v2 progress ledger lacked an identity tying retained progress to the admitted package digest and exact clock configuration, permitting unauthenticated progress lending across versions or artifacts. | FR-050 Behavior before `72eb30f`; docs/compiled-protocol-v2.md Rust boundary; TC-138 | missing-requirement |
 
 ## Resolution recheck
 
@@ -46,8 +56,8 @@ campaign gates and unimplemented interfaces remain delivery work.
   declaration-local `EvaluationRequest` + borrowed `StateView` boundary and the
   closed completed/incomplete/refused/exhausted report. NFR-009 selects
   `quire.state.evaluation-work/1`, hard/effective ceilings, charge-before-work,
-  fresh retries and fourteen independent counters. Input, expression, predicate,
-  comparison and graph depth each define their root, increment, decrement and
+  fresh retries and thirteen independent counters. Input, expression, predicate
+  and graph depth each define their root, increment, decrement and
   maximum-usage rules. TC-137 gives each dimension an independent exact,
   one-short, zero/no-work, above-hard and missing-charge oracle.
 - **FND-002 — resolved.** FR-048 emits authored static role/relationship records
@@ -67,6 +77,32 @@ campaign gates and unimplemented interfaces remain delivery work.
   admitted-artifact state evaluator; AC-8 distinguishes static compiler and
   evaluator evidence. TC-127 names the independent expected-value oracle and
   public evaluator rather than a fabricated execution target.
+- **FND-005 — resolved in `72eb30f`.** FR-049 models every recursively typed
+  value position as an explicit `Available` payload or typed `Unavailable`
+  cause. Aggregate slots remain in authored order, enabling FR-046 to propagate
+  only a reached unavailable child and discard partial materialization.
+- **FND-006 — resolved in `72eb30f`.** NFR-009 confines equality to FR-040's
+  supported scalar, enum, reference and object-identity types. Recursive
+  container comparison and comparison depth are removed; TC-137 now verifies
+  thirteen independent dimensions with supported comparison fixtures.
+- **FND-007 — resolved in `72eb30f`.** NFR-009 closes exhaustion over `Limit`,
+  `CounterOverflow` and `Allocation`, always naming the affected dimension. A
+  bounded allocation follows its retained-entry charge, while allocation
+  refusal remains distinct from numeric-limit exhaustion.
+- **FND-008 — resolved in `72eb30f`.** `AdmissionV2` owns only canonical bytes,
+  their digest and the admitted view; `Report<AdmissionV2>` exclusively exposes
+  effective limits and usage in the existing FR-042 pattern.
+- **FND-009 — resolved in `72eb30f`.** FR-050 returns raw canonical bytes and
+  their digest, not a self-authorizing reference. Only the independent caller
+  supplies external artifact authority, identity and revision.
+- **FND-010 — resolved in `72eb30f`.** `mapping_support_v2` now has the exact
+  `(package, declaration, closure)` signature. It authenticates the admitted
+  definition/profile before existing formula-closure classification and makes
+  no trace parameter-map claim; TC-138 checks that distinction.
+- **FND-011 — resolved in `72eb30f`.** `evaluate_with_progress_v2` keys progress
+  by package digest, declaration, definition identity/revision and exact clock
+  configuration. TC-138 explicitly rejects reuse from `/1`, another artifact or
+  a changed clock selection.
 
 ## Expanded-packet integrity recheck
 
