@@ -15,6 +15,7 @@ mod intake;
 mod models;
 pub mod native;
 mod number;
+mod occurrence;
 mod recovery;
 pub mod v2;
 mod validate;
@@ -29,6 +30,11 @@ pub use number::{
 
 pub use encoding::encode_candidate;
 pub use intake::read;
+pub use occurrence::{
+    occurrence_key_schema, AdmittedProtocolView, NodeOccurrenceSchema, NodeRole, OccurrenceKey,
+    OccurrenceKeyError, OccurrenceKeySchema, RepeatOrdinalSchema, RoleSlotSchema,
+    WorkflowInstanceIdentity,
+};
 pub use work::{Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::{native_model::NativeModel, ByteDigest};
