@@ -533,8 +533,8 @@ fn find_charged<T>(
 
 impl<'a> ModelBindings<'a> {
     fn collect(&mut self, namespace: &SyntaxNamespace, work: &mut Work) -> Result<(), Exhaustion> {
-        let mut owners = BTreeMap::<&ir::RequirementRef, Vec<usize>>::new();
-        let mut sources = BTreeMap::<&ir::SourceIdentity, Vec<usize>>::new();
+        let mut owners = BTreeMap::<&ir::RequirementRef, Vec<(usize, &NativeModel)>>::new();
+        let mut sources = BTreeMap::<&ir::SourceIdentity, Vec<(usize, &NativeModel)>>::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::Models, 1)?;
             match (*input).native_model() {
@@ -543,11 +543,11 @@ impl<'a> ModelBindings<'a> {
                     owners
                         .entry(model.environment().owner())
                         .or_default()
-                        .push(index);
+                        .push((index, model));
                     sources
                         .entry(model.source().identity())
                         .or_default()
-                        .push(index);
+                        .push((index, model));
                     self.catalogs.push(None);
                 }
                 None => {
@@ -570,11 +570,11 @@ impl<'a> ModelBindings<'a> {
                 continue;
             }
             work.charge(Dimension::References, 1)?;
-            let first = self.native(inputs[0]).digest();
+            let first = inputs[0].1.digest();
             let mut different = false;
-            for input in &inputs[1..] {
+            for (_, model) in &inputs[1..] {
                 work.charge(Dimension::References, 1)?;
-                if self.native(*input).digest() != first {
+                if model.digest() != first {
                     different = true;
                     break;
                 }
@@ -583,7 +583,7 @@ impl<'a> ModelBindings<'a> {
                 work.charge(Dimension::Bindings, 1)?;
                 self.conflicts.push(ModelConflict {
                     kind: ModelConflictKind::Owner,
-                    inputs,
+                    inputs: inputs.into_iter().map(|(input, _)| input).collect(),
                 });
             }
         }
@@ -592,11 +592,11 @@ impl<'a> ModelBindings<'a> {
                 continue;
             }
             work.charge(Dimension::References, 1)?;
-            let first = self.native(inputs[0]).source().source();
+            let first = inputs[0].1.source().source();
             let mut different = false;
-            for input in &inputs[1..] {
+            for (_, model) in &inputs[1..] {
                 work.charge(Dimension::References, 1)?;
-                let source = self.native(*input).source().source();
+                let source = model.source().source();
                 if source.identity() != first.identity() || source.digest() != first.digest() {
                     different = true;
                     break;
@@ -606,7 +606,7 @@ impl<'a> ModelBindings<'a> {
                 work.charge(Dimension::Bindings, 1)?;
                 self.conflicts.push(ModelConflict {
                     kind: ModelConflictKind::Source,
-                    inputs,
+                    inputs: inputs.into_iter().map(|(input, _)| input).collect(),
                 });
             }
         }
@@ -632,7 +632,11 @@ impl<'a> ModelBindings<'a> {
                         work,
                     )?,
                 };
-                let native_input = selected.as_ref().ok().copied();
+                let native_input = selected.as_ref().ok().and_then(|input| {
+                    self.inputs[*input]
+                        .native_model()
+                        .map(|model| (*input, model))
+                });
                 self.aliases
                     .entry(unit)
                     .or_default()
@@ -644,10 +648,9 @@ impl<'a> ModelBindings<'a> {
                     import,
                     selection: selected,
                 });
-                if let Some(input) = native_input {
+                if let Some((input, model)) = native_input {
                     work.charge(Dimension::References, 1)?;
                     if self.catalogs[input].is_none() {
-                        let model = self.native(input);
                         charge_exports(model, work)?;
                         self.catalogs[input] =
                             Some(Exports::new(model, self.inputs[input].producer_model()));
@@ -656,12 +659,6 @@ impl<'a> ModelBindings<'a> {
             }
         }
         Ok(())
-    }
-
-    fn native(&self, input: usize) -> &'a NativeModel {
-        self.inputs[input]
-            .native_model()
-            .expect("native index only")
     }
 
     fn select(
