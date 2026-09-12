@@ -36,6 +36,14 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-043
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-044
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-045
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-008
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-033
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
@@ -344,6 +352,10 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
 | [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Typed wire reader implemented; complete family admission and real source-to-consumer emission remain open under #40 |
+| [FR-043](functional/FR-043-evaluate-bounded-native-temporal.md) | FR | Planned bounded temporal evaluation; compiler #38 |
+| [FR-044](functional/FR-044-activate-temporal-obligations.md) | FR | Planned temporal activation and immutable captures; compiler #38 |
+| [FR-045](functional/FR-045-classify-temporal-mapping-support.md) | FR | Planned native-to-TL mapping support classification; bridge emission blocked on quire-contract-ir #63/#64 |
+| [NFR-008](non-functional/NFR-008-bound-temporal-evaluation.md) | NFR | Planned temporal work, instance and retention limits; compiler #38 |
 | [FR-046](functional/FR-046-execute-predicates-and-ordered-queries.md) | FR | Retrospective L3 draft under #66; review, matrix binding and full query runtime acceptance remain pending |
 | [FR-047](functional/FR-047-evaluate-finite-object-reference-graphs.md) | FR | Retrospective L4 finite graph contract under #66; implementation/evidence reconciliation pending |
 | [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
