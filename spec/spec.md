@@ -24,6 +24,18 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-042
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-046
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-047
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-048
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-049
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-050
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-009
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-033
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
@@ -136,10 +148,11 @@ relationships:
 ## 1. Purpose
 
 This root indexes the native compiler requirements, including the historical
-finite-state implementation and the proposed composed-language admission under
-[compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35).
-Discrete requirements distinguish planned composed behavior from existing
-implementation and its recorded qualification.
+finite-state implementation and composed-language parsing, static checking,
+bounded state evaluation, temporal evaluation, choreography preservation and
+versioned producer artifacts under compiler #35–#40. Discrete requirements
+distinguish implemented, planned and externally gated behavior from recorded
+qualification.
 
 ## 2. Scope
 
@@ -150,27 +163,39 @@ LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03
 L2 adds edition-selected syntax and exact package linking across state, temporal
 and choreography declarations through
 [FR-035](functional/FR-035-parse-composed-native-units.md) and
-[FR-036](functional/FR-036-link-composed-native-packages.md). It consumes the shared
-language/model/binding contracts without claiming the downstream family engines.
+[FR-036](functional/FR-036-link-composed-native-packages.md). L3/L4 add reusable
+predicates, ordered queries and finite graph evaluation through FR-046/047/049
+and NFR-009. L5 retains the merged bounded temporal evaluator under FR-043–045
+and NFR-008. L6 preserves choreography for downstream assessment under FR-048.
+FR-042 and FR-050 own the strict `/1` and `/2` compiled-artifact producer/
+consumer boundaries. Each stage consumes shared model and observation contracts
+without taking over their producer authority.
 
 ### 2.2 Out of Scope
 
-The standard owns temporal/protocol/message meaning; the existing family tickets
-own its downstream execution and projections. This L2 slice does not implement
-those engines, B's portable result schemas, D's model producer or C's assurance
-campaign. Duplicate model/type authorities, a second executable binder, public
-publication and standard-wide license selection remain outside this scope.
+The standard and E own temporal/protocol/message meaning; B owns PT02 protocol
+conformance and results; D owns model/configuration and the version-locked
+ecosystem integration; F owns concrete observation admission, replay and
+completeness; C owns engineering assurance. This compiler does not execute
+business operations or compensation, create an observation store, issue model
+authority, project portable results, or claim the externally owned composed
+campaign complete. Duplicate model/type authorities, a second editable formal
+language, public publication and standard-wide license selection remain outside
+this scope.
 
 ## 3. System Overview
 
 ### 3.1 System Description
 
-The existing implementation selects an explicit finite-state profile. The proposed
-composed path preserves source identity through edition recognition and typed
-package dependencies before downstream checking, assessment binding or execution.
-Archetype schemas, explicit formal declarations and runtime populations remain
-distinct. Contract IR owns formal types and its executable binder; the native
-language standard owns the meaning of the clauses being compiled.
+The implementation preserves the historical finite-state profile and adds an
+explicit composed path from source identity through edition recognition,
+dependency binding, exact value/control graphs and versioned immutable artifacts.
+Public evaluators consume only admitted artifacts plus caller-supplied typed
+state/trace inputs and return closed completed/incomplete/refused/exhausted
+outcomes under versioned work accounting. Archetype schemas, formal
+declarations, producer models and runtime populations remain distinct. Contract
+IR owns formal types and proof machinery; the native language standard owns the
+meaning of clauses being compiled.
 
 ### 3.2 Intended Users
 
@@ -200,7 +225,13 @@ Runtime inputs are immutable typed finite populations with explicit closure assu
 
 ### 8.2 Transition Semantics
 
-Operation observations belong to one invocation with an authored frame and exact object delta. The historical finite-state profile does not define a protocol state machine or temporal clock semantics. Composed parsing/linking retains the selected family's typed forms and dependencies; the shared standard and downstream family requirements own their evaluation.
+Operation observations belong to one invocation with an authored frame and exact
+object delta. The historical finite-state profile does not define a protocol
+state machine or temporal clock semantics. Composed state evaluation executes
+only admitted pure value graphs over explicit immutable inputs. L5 evaluates
+temporal requirements without owning observation transport, and L6 preserves
+protocol/recovery structure without executing it. The shared standard and
+downstream owners retain family meaning and assessment authority.
 
 ### 8.3 Determinism Guarantees
 
@@ -232,7 +263,17 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 ## 12. Verification Strategy
 
-Run Quire over this exact repository scope. Use real existing producers/consumers for integration evidence. The historical finite-state acceptance covers healthy, violating and refused/incomplete native state workflows. L2 additionally requires composed syntax, exact multi-unit dependencies, independent stage dispositions and historical compatibility under TC-113–115 and the real producer boundary IT-009. TC-113 exercises the composed parser; TC-114 exercises source inventory, native references and the combined definition/model/scope binding path. TC-115 exercises the declared static components against varied assessment, backend and resource selections, the requested clause/capability report, and the historical package/runner boundary. TC-114's remaining type/runtime-role portions and IT-009 remain planned. Name resolution cannot qualify later temporal or choreography evaluation.
+Run Quire over this exact repository scope and execute the serial Rust gates in
+both feature configurations. Use independently authored expected values and real
+existing producers/consumers at integration boundaries. Historical finite-state
+acceptance covers healthy, violating and refused/incomplete workflows. TC-113–
+121 cover composed parsing, linkage, checking and the `/1` producer; TC-122–125
+cover L5; TC-126–137 cover the consolidated L3/L4/L6 and state-input contracts;
+TC-138 covers the strict `/2` temporal selection extension. IT-009 remains the
+narrow static D producer boundary. TC-135 proves only A's byte-exact compiler-to-
+B intake contribution; D's research #39/#49 owns the later version-locked
+aggregate campaign with accepted B/F revisions. A passed earlier stage cannot
+qualify an unexecuted later one.
 
 ## 13. Change Management
 
@@ -303,3 +344,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Planned real producer/composed compiler boundary |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
 | [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Typed wire reader implemented; complete family admission and real source-to-consumer emission remain open under #40 |
+| [FR-046](functional/FR-046-execute-predicates-and-ordered-queries.md) | FR | Retrospective L3 draft under #66; review, matrix binding and full query runtime acceptance remain pending |
+| [FR-047](functional/FR-047-evaluate-finite-object-reference-graphs.md) | FR | Retrospective L4 finite graph contract under #66; implementation/evidence reconciliation pending |
+| [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
+| [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Draft immutable composed-evaluation input and typed-outcome boundary under #66 |
+| [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
+| [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Draft composed-evaluation work and retained-value bounds under #66 |
