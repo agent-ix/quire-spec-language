@@ -137,6 +137,40 @@ fn admitted_graph(test: impl FnOnce(&quire_spec_language::protocol_artifact::Adm
     );
 }
 
+fn admitted_optional_graph(
+    test: impl FnOnce(&quire_spec_language::protocol_artifact::AdmittedPackage),
+) {
+    let inputs = Inputs::with_optional_graph_input(&[Unit {
+        name: "state-optional-graph",
+        body: "invariant Graph using G on M::GraphNode at current {
+                reaches(self,self,links)
+            }
+            protocol Flow using P over (view: M::Node) on origin {
+                role Service on M::Node;
+                run check Ready using S { true };
+                finish Closed as (closed: M::Node) { true };
+            }",
+        declarations: &["Graph", "Flow"],
+    }]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selections| {
+            let admitted = native::admit(proofs, selections, ArtifactLimits::default())
+                .into_result()
+                .expect("discharged optional graph fixture");
+            let emitted = native::emit(&admitted, ArtifactLimits::default())
+                .into_result()
+                .expect("authenticated optional graph emission");
+            let reread = inputs
+                .read(proofs, &emitted)
+                .into_result()
+                .expect("independently read optional graph artifact");
+            test(&reread);
+        },
+    );
+}
+
 fn admitted_text(test: impl FnOnce(&quire_spec_language::protocol_artifact::AdmittedPackage)) {
     let inputs = Inputs::new(&[
         Unit {
@@ -907,7 +941,14 @@ fn tc_136_pre_reads_the_exact_invocation_pre_observation_and_binding() {
 }
 
 /// Tracing: TC-137.
-#[trace("TC-137", "FR-049-AC-6", "FR-049-AC-7", "FR-049-AC-8", "NFR-009")]
+#[trace(
+    "TC-137",
+    "FR-049-AC-6",
+    "FR-049-AC-7",
+    "FR-049-AC-8",
+    "NFR-009",
+    "NFR-009-AC-4"
+)]
 #[test]
 fn tc_137_expression_and_output_limits_are_charge_before_work_and_fresh() {
     admitted(|package| {
@@ -1225,6 +1266,8 @@ fn tc_136_137_utf8_input_content_has_a_byte_exact_boundary() {
             &view,
             Limits {
                 input_text_bytes: 2,
+                // One pair plus the two equal-length UTF-8 bytes inspected.
+                value_comparison: 3,
                 ..Limits::default()
             },
         );
@@ -1234,6 +1277,25 @@ fn tc_136_137_utf8_input_content_has_a_byte_exact_boundary() {
                 if matches!(value.kind(), ValueKind::Boolean(true))
         ));
         assert_eq!(exact.usage().input_text_bytes, 2);
+        assert_eq!(exact.usage().value_comparison, 3);
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request.clone(),
+                &view,
+                Limits {
+                    input_text_bytes: 2,
+                    value_comparison: 2,
+                    ..Limits::default()
+                }
+            )
+            .outcome(),
+            EvaluationOutcome::Exhausted(exhaustion)
+                if exhaustion.dimension == Dimension::ValueComparison
+                    && exhaustion.cause == ExhaustionCause::Limit
+                    && exhaustion.used == 1
+                    && exhaustion.requested == 2
+        ));
         assert!(matches!(
             state::evaluate(
                 package,
@@ -1966,6 +2028,37 @@ fn tc_130_multi_record_cycle_uses_full_keys_and_positive_length_paths() {
 }
 
 /// Tracing: TC-130.
+#[trace("TC-130", "FR-047-AC-6")]
+#[test]
+fn tc_130_absent_optional_reference_has_no_outgoing_edge() {
+    admitted_optional_graph(|package| {
+        let (owner, root, mut view) = graph_view(package);
+        for object in &mut view.populations[0].objects {
+            object.fields[0].value = FieldValue::Contextual(ContextualSlot::Available(
+                ContextualValue::new(ContextualValueKind::Option(None)),
+            ));
+        }
+        let report = state::evaluate(
+            package,
+            EvaluationRequest {
+                declaration: owner,
+                value: root,
+            },
+            &view,
+            Limits::default(),
+        );
+        assert!(matches!(
+            report.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(false))
+        ));
+        assert_eq!(report.usage().graph_expansion, 1);
+        assert_eq!(report.usage().graph_edges, 0);
+        assert_eq!(report.usage().value_comparison, 0);
+    });
+}
+
+/// Tracing: TC-130.
 #[trace("TC-130", "FR-047-AC-4", "FR-047-AC-5")]
 #[test]
 fn tc_130_authored_sibling_order_selects_depth_first_work_before_the_target() {
@@ -2050,7 +2143,7 @@ fn tc_130_authored_sibling_order_selects_depth_first_work_before_the_target() {
 }
 
 /// Tracing: TC-131.
-#[trace("TC-131", "FR-047-AC-7")]
+#[trace("TC-131", "FR-047-AC-7", "NFR-009-AC-4")]
 #[test]
 fn tc_131_multi_record_graph_limits_are_exact_and_retry_is_fresh() {
     admitted_graph(|package| {

@@ -161,8 +161,7 @@ prerequisite, not permission to fabricate it locally.
 
 This specification cycle is retrospective under
 [#66](https://github.com/agent-ix/quire-spec-language/issues/66). Existing
-compiler/query-emission work predates this scoped artifact. Broader rational
-sum transfer, actual query runtime execution and observed population completeness
-remain separate delivery obligations; neither this draft nor existing ticket
-checkboxes establish their implementation or qualification. Review and matrix
-binding for this new scope remain pending.
+compiler/query-emission work predates this scoped artifact. The subsequently
+implemented public evaluator, rational prefix proofs, explicit population
+completeness inputs and matrix bindings supply this scoped requirement's local
+acceptance; ecosystem acceptance remains separately owned by TC-135.
