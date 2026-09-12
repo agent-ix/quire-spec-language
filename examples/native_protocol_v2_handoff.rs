@@ -121,7 +121,7 @@ mod tests {
                 .unwrap();
         assert_eq!(manifest["format"], "quire.protocol.v2-mutations/1");
         let cases = manifest["cases"].as_array().unwrap();
-        assert!(cases.len() >= 13);
+        assert_eq!(cases.len(), 28);
         for case in cases {
             let input = &case["input"];
             let file = input["file"].as_str().unwrap();

@@ -7,8 +7,8 @@ pub mod wire;
 
 pub use intake::{encode_candidate, read};
 pub use refusal::{
-    ArtifactField, BindingCause, ClockField, DeclarationField, DefinitionField, HeaderField,
-    InventorySide, Refusal,
+    ArtifactField, BindingCause, BindingIndex, ClockField, DeclarationField, DefinitionField,
+    HeaderField, InventorySide, Refusal, SelectionSide,
 };
 
 use super::ExpectedDeclaration;
