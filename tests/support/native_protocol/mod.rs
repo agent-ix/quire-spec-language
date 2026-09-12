@@ -96,6 +96,28 @@ impl Inputs {
         )
     }
 
+    #[allow(
+        dead_code,
+        reason = "Only admitted state-evaluation fixtures need this compact query record"
+    )]
+    pub fn with_query_input(units: &[Unit<'_>], maximum: u32) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_query_input("NativeEmission", maximum),
+        )
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only admitted state-evaluation fixtures need this compact graph role"
+    )]
+    pub fn with_graph_input(units: &[Unit<'_>]) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_graph_input("NativeEmission"),
+        )
+    }
+
     pub fn with_model(units: &[Unit<'_>], model: NativeModel) -> Self {
         let sources: Vec<_> = units
             .iter()

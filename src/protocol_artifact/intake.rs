@@ -66,6 +66,33 @@ fn reference_bytes(value: &ArtifactRef) -> usize {
         + 71
 }
 
+fn retained_text(value: &str) -> Result<String, Error> {
+    let mut retained = String::new();
+    retained
+        .try_reserve_exact(value.len())
+        .map_err(|_| Error::Allocation)?;
+    retained.push_str(value);
+    Ok(retained)
+}
+
+fn retained_reference(value: &ArtifactRef) -> Result<ArtifactRef, Error> {
+    Ok(ArtifactRef {
+        ref_version: retained_text(&value.ref_version)?,
+        kind: value.kind,
+        authority: retained_text(&value.authority)?,
+        identity: retained_text(&value.identity)?,
+        revision: Revision {
+            namespace: retained_text(&value.revision.namespace)?,
+            value: retained_text(&value.revision.value)?,
+        },
+        digest: value.digest,
+        wire: Wire {
+            identity: retained_text(&value.wire.identity)?,
+            version: retained_text(&value.wire.version)?,
+        },
+    })
+}
+
 pub(super) fn same_reference(
     a: &ArtifactRef,
     b: &ArtifactRef,
@@ -505,13 +532,19 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         sources(&package, expected, &mut work)?;
         definitions(&package, &supplied, &mut work)?;
         super::validate::package(&package, &mut work)?;
-        super::models::validate(&package, expected.models, expected.dependencies, &mut work)?;
+        let model_schema =
+            super::models::validate(&package, expected.models, expected.dependencies, &mut work)?;
         let canonical = super::encoding::bytes(&package, &mut work)?;
         work.bytes(bytes.len().saturating_add(canonical.len()))?;
         if canonical != bytes {
             return Err(Error::Invalid(Invalid::Canonical));
         }
-        Ok(AdmittedPackage { package, digest })
+        Ok(AdmittedPackage {
+            package,
+            digest,
+            artifact: retained_reference(expected.artifact)?,
+            model_schema,
+        })
     })();
     report(work, result)
 }
