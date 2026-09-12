@@ -173,9 +173,20 @@ pub fn admit_v2(
     temporal: &[TemporalSelection<'_>],
     limits: Limits,
 ) -> Report<AdmissionV2> {
+    admit_v2_with_producers(proofs, selections, &[], temporal, limits)
+}
+
+/// Compile and emit version 2 with producer correspondences in the existing model records.
+pub fn admit_v2_with_producers(
+    proofs: &ProofReport<'_, '_, '_>,
+    selections: &Selections<'_>,
+    producers: &[super::ProducerSelection<'_>],
+    temporal: &[TemporalSelection<'_>],
+    limits: Limits,
+) -> Report<AdmissionV2> {
     let mut work = artifact::work::Work::new(limits);
     let result = (|| {
-        let mut inherited = super::metadata::lower(proofs, selections, &mut work)?;
+        let mut inherited = super::metadata::lower(proofs, selections, producers, &mut work)?;
         inherited.wire = v2::WIRE.into();
         inherited.media = v2::MEDIA.into();
         inherited.schema = v2::SCHEMA.into();

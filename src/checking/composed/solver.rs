@@ -13,7 +13,7 @@ use super::sources::Correspondence;
 use super::work::{Dimension as D, Work};
 use super::*;
 use crate::checking::{variables::Variables, Catalog};
-use crate::linking::composed::models::{ModelInput, ModelTarget};
+use crate::linking::composed::models::ModelTarget;
 use crate::linking::composed::scopes::{self, DeclarationScope};
 use crate::linking::composed::{DependencyKind, DependencySite};
 use crate::native_model::{NativeModel, ScalarKind, ScalarSite, Unit};
@@ -352,8 +352,8 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
         let models = self.binding.models().expect("resolved models");
         for (index, input) in models.inputs().iter().enumerate() {
             self.work.charge(D::Constraints, 1, self.site(at))?;
-            if let ModelInput::Native(candidate) = input {
-                if std::ptr::eq(*candidate, model) {
+            if let Some(candidate) = (*input).native_model() {
+                if std::ptr::eq(candidate, model) {
                     if let Some(catalog) = models.catalog_at(index) {
                         return Ok(Some(catalog));
                     }
@@ -410,7 +410,7 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
                 let models = self.binding.models().expect("bound models");
                 for (input_index, input) in models.inputs().iter().enumerate() {
                     self.work.charge(D::Constraints, 1, self.site(at))?;
-                    if let ModelInput::Native(model) = input {
+                    if let Some(model) = (*input).native_model() {
                         if model.environment().owner() == &location.identity.owner {
                             let Some(catalog) = models.catalog_at(input_index) else {
                                 continue;

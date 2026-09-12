@@ -40,7 +40,7 @@ impl ModelBounds {
             let Ok(input) = import.selection else {
                 continue;
             };
-            let ModelInput::Native(model) = models.inputs()[input] else {
+            let Some(model) = models.inputs()[input].native_model() else {
                 continue;
             };
             let span = binding

@@ -29,7 +29,7 @@ pub use number::{
 };
 
 pub use encoding::encode_candidate;
-pub use intake::read;
+pub use intake::{read, read_with_producers};
 pub use occurrence::{
     occurrence_key_schema, AdmittedProtocolView, NodeOccurrenceSchema, NodeRole, OccurrenceKey,
     OccurrenceKeyError, OccurrenceKeySchema, RepeatOrdinalSchema, RoleSlotSchema,
@@ -81,6 +81,17 @@ pub struct AdmittedModel<'a> {
     pub model: &'a NativeModel,
     /// Independent source/formal correspondence for original model loci.
     pub source: &'a ExpectedForeignSource<'a>,
+}
+
+/// Independently admitted producer view for one selected native model.
+#[derive(Clone, Copy, Debug)]
+pub struct ExpectedProducerModel<'a> {
+    /// Constructor-admitted producer/native correspondence.
+    pub model: &'a crate::linking::composed::models::AdmittedProducerModel<'a>,
+    /// Exact producer interface dependency selected by the caller.
+    pub interface: &'a wire::ArtifactRef,
+    /// Exact producer-declared relation dependency selected by the caller.
+    pub relation: &'a wire::ArtifactRef,
 }
 
 /// Independently selected authored declaration correspondence.
@@ -195,6 +206,8 @@ pub enum Error {
     Json { line: usize, column: usize },
     #[error(transparent)]
     Numeric(NumberError),
+    #[error(transparent)]
+    Producer(crate::linking::composed::producer::ProducerModelRefusal),
     #[error("invalid compiled protocol data: {0:?}")]
     Invalid(Invalid),
     /// Strict version-2 refusal with a stable, axis-specific public code.

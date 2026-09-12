@@ -19,6 +19,8 @@ use crate::{ByteDigest, Span, Spanned};
 pub enum ModelInput<'a> {
     /// Constructor-admitted native model, preserving its actual profile and declarations.
     Native(&'a NativeModel),
+    /// A producer/native pair admitted through the typed Producer 1.2 adapter.
+    Producer(&'a AdmittedProducerModel<'a>),
     /// An explicit external selection whose correspondence is not implemented.
     /// These labels select a refusal, never assert producer validity.
     UnsupportedProducer {
@@ -31,6 +33,98 @@ pub enum ModelInput<'a> {
         /// Required producer interface retained for the caller's disposition.
         interface: &'a str,
     },
+}
+
+/// Constructor-private evidence that one Producer 1.2 selection names this native model.
+#[derive(Debug)]
+pub struct AdmittedProducerModel<'a> {
+    model: &'a NativeModel,
+    selection: &'a super::producer::ProducerCompatibilitySelection,
+    bundle_identity: Box<str>,
+    model_identity: Box<str>,
+    profile_identity: Box<str>,
+    configuration_identity: Box<str>,
+    relation_identity: Box<str>,
+}
+
+impl<'a> AdmittedProducerModel<'a> {
+    pub(crate) fn new(
+        model: &'a NativeModel,
+        selection: &'a super::producer::ProducerCompatibilitySelection,
+        bundle_identity: Box<str>,
+        model_identity: Box<str>,
+        profile_identity: Box<str>,
+        configuration_identity: Box<str>,
+        relation_identity: Box<str>,
+    ) -> Self {
+        Self {
+            model,
+            selection,
+            bundle_identity,
+            model_identity,
+            profile_identity,
+            configuration_identity,
+            relation_identity,
+        }
+    }
+
+    /// The exact native model whose raw bytes were selected by the correspondence.
+    pub fn model(&self) -> &'a NativeModel {
+        self.model
+    }
+
+    /// Complete caller-adapted producer selection retained by admission.
+    pub fn selection(&self) -> &super::producer::ProducerCompatibilitySelection {
+        self.selection
+    }
+
+    /// Producer bundle identity retained by admission.
+    pub fn bundle_identity(&self) -> &str {
+        &self.bundle_identity
+    }
+
+    /// Producer model identity retained by admission.
+    pub fn model_identity(&self) -> &str {
+        &self.model_identity
+    }
+
+    /// Producer profile identity retained by admission.
+    pub fn profile_identity(&self) -> &str {
+        &self.profile_identity
+    }
+
+    /// Producer configuration identity retained by admission.
+    pub fn configuration_identity(&self) -> &str {
+        &self.configuration_identity
+    }
+
+    /// Producer/native relation identity retained by admission.
+    pub fn relation_identity(&self) -> &str {
+        &self.relation_identity
+    }
+}
+
+impl<'a> ModelInput<'a> {
+    /// The admitted native model, absent only for an explicitly unsupported offer.
+    pub fn native_model(self) -> Option<&'a NativeModel> {
+        match self {
+            Self::Native(model) => Some(model),
+            Self::Producer(admitted) => Some(admitted.model()),
+            Self::UnsupportedProducer { .. } => None,
+        }
+    }
+
+    /// Producer correspondence authority, when this input used that admission path.
+    pub fn producer_model(self) -> Option<&'a AdmittedProducerModel<'a>> {
+        match self {
+            Self::Producer(admitted) => Some(admitted),
+            Self::Native(_) | Self::UnsupportedProducer { .. } => None,
+        }
+    }
+
+    fn unsupported(self) -> bool {
+        matches!(self, Self::UnsupportedProducer { .. })
+    }
 }
 
 /// Shared conflict, retaining all supplied candidates through input indices.
@@ -148,6 +242,25 @@ pub struct BoundOperation<'a> {
     location: DeclarationLocation,
 }
 
+/// Producer-authoritative relationship export selected by an authored declaration.
+#[derive(Clone, Debug)]
+pub struct BoundRelationship<'a> {
+    model: &'a NativeModel,
+    export: &'a super::producer::ProducerExportSelection,
+}
+
+impl<'a> BoundRelationship<'a> {
+    /// Native model selected by the admitted producer correspondence.
+    pub fn model(&self) -> &'a NativeModel {
+        self.model
+    }
+
+    /// Exact producer export, including its identity, path and foreign locus.
+    pub fn export(&self) -> &'a super::producer::ProducerExportSelection {
+        self.export
+    }
+}
+
 impl<'a> BoundOperation<'a> {
     /// Model owning the operation and all its input/result declarations.
     pub fn model(&self) -> &'a NativeModel {
@@ -166,6 +279,7 @@ impl<'a> BoundOperation<'a> {
 #[derive(Debug)]
 struct Exports<'a> {
     catalog: Catalog<'a>,
+    producer: Option<&'a AdmittedProducerModel<'a>>,
     scalars: BTreeMap<&'a str, &'a ScalarRole>,
     records: BTreeMap<&'a str, &'a ir::RecordDeclaration>,
     enumerations: BTreeMap<&'a str, &'a ir::EnumDeclaration>,
@@ -175,7 +289,7 @@ struct Exports<'a> {
 
 impl<'a> Exports<'a> {
     // charge_exports reserves these borrowed indexes before their allocation.
-    fn new(model: &'a NativeModel) -> Self {
+    fn new(model: &'a NativeModel, producer: Option<&'a AdmittedProducerModel<'a>>) -> Self {
         let catalog = Catalog::composed(model);
         Self {
             records: catalog
@@ -205,6 +319,7 @@ impl<'a> Exports<'a> {
                 .iter()
                 .map(|role| ((role.context.as_str(), role.name.as_str()), role))
                 .collect(),
+            producer,
             catalog,
         }
     }
@@ -328,8 +443,8 @@ impl<'a> ModelBindings<'a> {
         let mut sources = BTreeMap::<&ir::SourceIdentity, Vec<usize>>::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::Models, 1)?;
-            match input {
-                ModelInput::Native(model) => {
+            match (*input).native_model() {
+                Some(model) => {
                     work.charge(Dimension::Bytes, model.artifact_bytes().len())?;
                     owners
                         .entry(model.environment().owner())
@@ -341,12 +456,16 @@ impl<'a> ModelBindings<'a> {
                         .push(index);
                     self.catalogs.push(None);
                 }
-                ModelInput::UnsupportedProducer {
-                    package,
-                    revision,
-                    interface,
-                    ..
-                } => {
+                None => {
+                    let ModelInput::UnsupportedProducer {
+                        package,
+                        revision,
+                        interface,
+                        ..
+                    } = input
+                    else {
+                        unreachable!("only unsupported inputs lack a native model")
+                    };
                     text(work, &[package, revision, interface])?;
                     self.catalogs.push(None);
                 }
@@ -436,7 +555,8 @@ impl<'a> ModelBindings<'a> {
                     if self.catalogs[input].is_none() {
                         let model = self.native(input);
                         charge_exports(model, work)?;
-                        self.catalogs[input] = Some(Exports::new(model));
+                        self.catalogs[input] =
+                            Some(Exports::new(model, self.inputs[input].producer_model()));
                     }
                 }
             }
@@ -445,10 +565,9 @@ impl<'a> ModelBindings<'a> {
     }
 
     fn native(&self, input: usize) -> &'a NativeModel {
-        match self.inputs[input] {
-            ModelInput::Native(model) => model,
-            ModelInput::UnsupportedProducer { .. } => unreachable!("native index only"),
-        }
+        self.inputs[input]
+            .native_model()
+            .expect("native index only")
     }
 
     fn select(
@@ -472,27 +591,25 @@ impl<'a> ModelBindings<'a> {
         let mut exact = Vec::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::References, 1)?;
-            let matches = match input {
-                ModelInput::Native(model) => {
-                    let owner = model.environment().owner();
-                    same_package |= owner.package().as_str() == package;
-                    malformed_native_revision |=
-                        owner.package().as_str() == package && native_revision.is_none();
-                    owner.package().as_str() == package
-                        && native_revision.as_ref() == Some(&owner.revision())
-                        && model.digest() == digest
-                }
-                ModelInput::UnsupportedProducer {
-                    package: selected,
-                    revision: selected_revision,
-                    digest: selected_digest,
-                    ..
-                } => {
-                    same_package |= *selected == package;
-                    *selected == package
-                        && *selected_revision == revision
-                        && *selected_digest == digest
-                }
+            let matches = if let Some(model) = (*input).native_model() {
+                let owner = model.environment().owner();
+                same_package |= owner.package().as_str() == package;
+                malformed_native_revision |=
+                    owner.package().as_str() == package && native_revision.is_none();
+                owner.package().as_str() == package
+                    && native_revision.as_ref() == Some(&owner.revision())
+                    && model.digest() == digest
+            } else if let ModelInput::UnsupportedProducer {
+                package: selected,
+                revision: selected_revision,
+                digest: selected_digest,
+                ..
+            } = input
+            {
+                same_package |= *selected == package;
+                *selected == package && *selected_revision == revision && *selected_digest == digest
+            } else {
+                unreachable!("only unsupported inputs lack a native model")
             };
             if matches {
                 exact.push(index);
@@ -516,7 +633,7 @@ impl<'a> ModelBindings<'a> {
                 }
                 if !groups.is_empty() {
                     Err(ImportRefusal::ConflictingModel { groups })
-                } else if matches!(self.inputs[*input], ModelInput::UnsupportedProducer { .. }) {
+                } else if self.inputs[*input].unsupported() {
                     Err(ImportRefusal::UnsupportedCorrespondence { input: *input })
                 } else {
                     Ok(*input)
@@ -694,6 +811,55 @@ impl<'a> ModelBindings<'a> {
                 &role.source,
             ),
         })
+    }
+
+    /// Resolve only an exact producer-authoritative relationship export.
+    pub fn resolve_relationship(
+        &self,
+        unit: UnitId,
+        name: &QualifiedName,
+        work: &mut Work,
+    ) -> Result<BoundRelationship<'a>, ModelError> {
+        let exports = self.alias(unit, &name.model, work)?;
+        charge(work, Dimension::References, 1, unit, name.name.span)?;
+        charge(
+            work,
+            Dimension::Bytes,
+            name.name.value.len(),
+            unit,
+            name.name.span,
+        )?;
+        let Some(producer) = exports.producer else {
+            return Err(failure(
+                unit,
+                name.name.span,
+                ModelErrorKind::UnsupportedRelationshipContract,
+            ));
+        };
+        let mut wrong_kind = false;
+        for export in &producer.selection().correspondence.exports {
+            charge(work, Dimension::References, 1, unit, name.name.span)?;
+            if export.path.len() != 1 || export.path[0].as_ref() != name.name.value {
+                continue;
+            }
+            if export.kind == super::producer::ProducerExportKind::Relationship {
+                charge(work, Dimension::Bindings, 1, unit, name.name.span)?;
+                return Ok(BoundRelationship {
+                    model: producer.model(),
+                    export,
+                });
+            }
+            wrong_kind = true;
+        }
+        Err(failure(
+            unit,
+            name.name.span,
+            if wrong_kind {
+                ModelErrorKind::WrongExportKind
+            } else {
+                ModelErrorKind::MissingExport
+            },
+        ))
     }
 
     fn exports_for(
@@ -1002,6 +1168,8 @@ pub enum ModelTarget<'a> {
     Type(BoundType<'a>),
     /// Explicit operation role and invocation contract.
     Operation(BoundOperation<'a>),
+    /// Producer-authoritative relationship and its exact correspondence export.
+    Relationship(BoundRelationship<'a>),
 }
 
 /// An occurrence belongs to the report's declaration and declaring source unit.
@@ -1112,15 +1280,7 @@ impl<'a> ModelBindings<'a> {
                     }
                     for relation in &protocol.relationships {
                         walk.visit(relation.span)?;
-                        walk.ty(&relation.model)?;
-                        walk.record(
-                            Err(failure(
-                                walk.unit,
-                                relation.span,
-                                ModelErrorKind::UnsupportedRelationshipContract,
-                            )),
-                            relation.span,
-                        )?;
+                        walk.relationship(relation)?;
                     }
                     for channel in &protocol.channels {
                         walk.ty(&channel.carries)?;
@@ -1287,6 +1447,31 @@ impl<'a> ModelWalk<'_, 'a> {
             Span {
                 start: operation.context.model.span.start,
                 end: operation.name.span.end,
+            },
+        )
+    }
+    fn relationship(&mut self, relationship: &c::Relationship) -> Result<(), ModelError> {
+        let name = &relationship.model;
+        let result = self.models.resolve_relationship(self.unit, name, self.work);
+        if matches!(
+            result.as_ref().map_err(|error| &error.kind),
+            Err(ModelErrorKind::UnsupportedRelationshipContract)
+        ) {
+            self.ty(name)?;
+            return self.record(
+                Err(failure(
+                    self.unit,
+                    relationship.span,
+                    ModelErrorKind::UnsupportedRelationshipContract,
+                )),
+                relationship.span,
+            );
+        }
+        self.record(
+            result.map(ModelTarget::Relationship),
+            Span {
+                start: name.model.span.start,
+                end: name.name.span.end,
             },
         )
     }
