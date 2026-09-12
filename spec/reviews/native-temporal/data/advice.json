@@ -1,0 +1,1291 @@
+{
+  "advice": [
+    {
+      "obligation": "FR-043-AC-1",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-2",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-3",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-4",
+      "recommended": [
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-5",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-6",
+      "recommended": [
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "liveness"
+            },
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "liveness"
+            },
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-7",
+      "recommended": [
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-8",
+      "recommended": [
+        {
+          "method": "dast",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "network-exposed"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-9",
+      "recommended": [
+        {
+          "method": "compile-time-check",
+          "class": "Analysis",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "demonstration",
+          "class": "Demonstration",
+          "evidenceKind": "Manual",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "user-visible"
+            }
+          ]
+        },
+        {
+          "method": "design-by-contract",
+          "class": "Test",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "e2e-testing",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "user-visible"
+            }
+          ]
+        },
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-10",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-11",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-12",
+      "recommended": [
+        {
+          "method": "formal-analysis-smt",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "consistency"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-043-AC-13",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-1",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-2",
+      "recommended": [
+        {
+          "method": "formal-analysis-smt",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "consistency"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        },
+        {
+          "method": "sca-sbom",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "supply-chain"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-3",
+      "recommended": [
+        {
+          "method": "golden-approval-testing",
+          "class": "Test",
+          "evidenceKind": "Snapshot",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "stable-output"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Analysis, Test",
+      "mismatch": false,
+      "uncatalogued": true,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-4",
+      "recommended": [
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-5",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-6",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Demonstration, Test",
+      "mismatch": false,
+      "uncatalogued": true,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-7",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-8",
+      "recommended": [
+        {
+          "method": "compile-time-check",
+          "class": "Analysis",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "design-by-contract",
+          "class": "Test",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-044-AC-9",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-045-AC-1",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-045-AC-2",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-045-AC-3",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-045-AC-4",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "FR-045-AC-5",
+      "recommended": [
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "universal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-AC-1",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "negative-abuse-testing",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "input-validation"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-AC-2",
+      "recommended": [
+        {
+          "method": "compile-time-check",
+          "class": "Analysis",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "design-by-contract",
+          "class": "Test",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-AC-3",
+      "recommended": [
+        {
+          "method": "compile-time-check",
+          "class": "Analysis",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "design-by-contract",
+          "class": "Test",
+          "evidenceKind": "Compile",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "model-checking",
+          "class": "Analysis",
+          "evidenceKind": "Static",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        },
+        {
+          "method": "property-based-testing",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "invariant"
+            }
+          ]
+        },
+        {
+          "method": "runtime-monitoring",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "temporal"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-AC-4",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "combinatorial-tway",
+          "class": "Test",
+          "evidenceKind": "Property",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "configuration-matrix"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-AC-5",
+      "recommended": [
+        {
+          "method": "bdd-spec-by-example",
+          "class": "Test",
+          "evidenceKind": "E2E",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        },
+        {
+          "method": "fault-injection",
+          "class": "Test",
+          "evidenceKind": "Integration",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "reliability"
+            }
+          ]
+        },
+        {
+          "method": "unit-testing",
+          "class": "Test",
+          "evidenceKind": "Unit",
+          "reasons": [
+            {
+              "rule": "property_shapes",
+              "value": "example"
+            }
+          ]
+        }
+      ],
+      "authored": "Test",
+      "mismatch": false,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-M-1",
+      "recommended": [
+        {
+          "method": "performance-benchmarking",
+          "class": "Test",
+          "evidenceKind": "Benchmark",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "quantified-threshold"
+            }
+          ]
+        }
+      ],
+      "authored": "property-based-testing",
+      "mismatch": true,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-M-2",
+      "recommended": [
+        {
+          "method": "performance-benchmarking",
+          "class": "Test",
+          "evidenceKind": "Benchmark",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "quantified-threshold"
+            }
+          ]
+        }
+      ],
+      "authored": "fault-injection",
+      "mismatch": true,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-M-3",
+      "recommended": [
+        {
+          "method": "performance-benchmarking",
+          "class": "Test",
+          "evidenceKind": "Benchmark",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "quantified-threshold"
+            }
+          ]
+        }
+      ],
+      "authored": "model-based-test-generation",
+      "mismatch": true,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-M-4",
+      "recommended": [
+        {
+          "method": "performance-benchmarking",
+          "class": "Test",
+          "evidenceKind": "Benchmark",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "quantified-threshold"
+            }
+          ]
+        }
+      ],
+      "authored": "integration-testing",
+      "mismatch": true,
+      "uncatalogued": false,
+      "inconclusive": false
+    },
+    {
+      "obligation": "NFR-008-M-5",
+      "recommended": [
+        {
+          "method": "performance-benchmarking",
+          "class": "Test",
+          "evidenceKind": "Benchmark",
+          "reasons": [
+            {
+              "rule": "characteristics",
+              "value": "quantified-threshold"
+            }
+          ]
+        }
+      ],
+      "authored": "negative-abuse-testing",
+      "mismatch": true,
+      "uncatalogued": false,
+      "inconclusive": false
+    }
+  ]
+}
