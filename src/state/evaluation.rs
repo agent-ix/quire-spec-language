@@ -10,7 +10,8 @@
 )]
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+
+use quire_contract_ir as ir;
 
 use super::input::*;
 use super::work::{Dimension, Exhaustion, Work};
@@ -41,8 +42,8 @@ pub fn evaluate(
         request,
         view,
         work: Work::new(limits),
-        binders: BTreeMap::new(),
-        locals: BTreeMap::new(),
+        binders: Vec::new(),
+        locals: Vec::new(),
         call_depth: 0,
     };
     let outcome = match evaluator.run() {
@@ -63,8 +64,8 @@ struct Evaluator<'a> {
     request: EvaluationRequest,
     view: &'a StateView,
     work: Work,
-    binders: BTreeMap<(u32, u32), &'a InputSlot>,
-    locals: BTreeMap<(u32, u32), Value>,
+    binders: Vec<((u32, u32), &'a InputSlot)>,
+    locals: Vec<((u32, u32), Value)>,
     call_depth: usize,
 }
 
@@ -100,7 +101,8 @@ impl<'a> Evaluator<'a> {
     }
 
     fn validate_inputs(&mut self) -> Result<()> {
-        let required = required_binders(self.package.package(), &self.request.value)?;
+        let required =
+            required_binders(&mut self.work, self.package.package(), &self.request.value)?;
         for offered in &self.view.binders {
             self.work
                 .charge(Dimension::InputAggregateEntries, 1)
@@ -122,11 +124,16 @@ impl<'a> Evaluator<'a> {
                     offered.binder.clone(),
                 )));
             }
-            if self.binders.insert(key, &offered.value).is_some() {
+            if self.binders.iter().any(|(candidate, _)| *candidate == key) {
                 return Err(Stop::Refused(Refusal::DuplicateBinding(
                     offered.binder.clone(),
                 )));
             }
+            self.entry()?;
+            self.binders.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
+            self.binders.push((key, &offered.value));
             match (offered.requirement, &offered.authority) {
                 (Some(requirement), Some(authority)) => {
                     self.authority(self.request.declaration, requirement, authority)?;
@@ -139,7 +146,8 @@ impl<'a> Evaluator<'a> {
         for binder in required {
             if !self
                 .binders
-                .contains_key(&(binder.declaration, binder.index))
+                .iter()
+                .any(|(candidate, _)| *candidate == (binder.declaration, binder.index))
             {
                 return Err(Stop::Refused(Refusal::MissingBinding(binder)));
             }
@@ -454,12 +462,7 @@ impl<'a> Evaluator<'a> {
         let name = path
             .first()
             .ok_or_else(|| Stop::Refused(Refusal::Field(export.clone())))?;
-        let plans = self.record_plan(export.model, name, fields)?;
-        for (offered, child) in plans {
-            self.entry()?;
-            self.slot(&offered, child, depth + 1)?;
-        }
-        Ok(())
+        self.record_fields_by_name(export.model, name, fields, depth)
     }
 
     fn object(&mut self, object: &ObjectInput, expected: u32) -> Result<()> {
@@ -497,25 +500,12 @@ impl<'a> Evaluator<'a> {
         fields: &[FieldInput],
         depth: usize,
     ) -> Result<()> {
-        let plans = self.record_plan(model_index, name, fields)?;
-        for (offered, expected) in plans {
-            self.entry()?;
-            self.slot(&offered, expected, depth + 1)?;
-        }
-        Ok(())
-    }
-
-    fn record_plan(
-        &self,
-        model_index: u32,
-        name: &str,
-        fields: &[FieldInput],
-    ) -> Result<Vec<(InputSlot, u32)>> {
         let model = self
             .package
             .schema_model(model_index)
+            .cloned()
             .ok_or_else(|| Stop::Refused(Refusal::ValueShape(model_index)))?;
-        let catalog = Catalog::composed(model);
+        let catalog = Catalog::composed(&model);
         let declaration = catalog
             .records
             .iter()
@@ -525,27 +515,19 @@ impl<'a> Evaluator<'a> {
         if fields.len() != declaration.fields().len() {
             return Err(Stop::Refused(Refusal::ValueShape(model_index)));
         }
-        let mut plans = Vec::new();
-        plans
-            .try_reserve(fields.len())
-            .map_err(|_| Stop::Refused(Refusal::ValueShape(model_index)))?;
         for expected_field in declaration.fields() {
-            let matches: Vec<_> = fields
-                .iter()
-                .filter(|field| {
-                    self.field_matches(&field.field, name, expected_field.name().as_str())
-                })
-                .collect();
-            if matches.len() != 1 {
-                return Err(Stop::Refused(Refusal::Field(matches.first().map_or_else(
-                    || w::ExportRef {
-                        model: model_index,
-                        export: u32::MAX,
-                    },
-                    |field| field.field.clone(),
-                ))));
+            let mut matches = fields.iter().filter(|field| {
+                self.field_matches(&field.field, name, expected_field.name().as_str())
+            });
+            let Some(offered) = matches.next() else {
+                return Err(Stop::Refused(Refusal::Field(w::ExportRef {
+                    model: model_index,
+                    export: u32::MAX,
+                })));
+            };
+            if matches.next().is_some() {
+                return Err(Stop::Refused(Refusal::Field(offered.field.clone())));
             }
-            let offered = matches[0];
             let site = ScalarSite::Field {
                 record: declaration.name().clone(),
                 field: expected_field.name().clone(),
@@ -553,10 +535,171 @@ impl<'a> Evaluator<'a> {
             let native = catalog
                 .formal(expected_field.value_type(), &site)
                 .ok_or_else(|| Stop::Refused(Refusal::Field(offered.field.clone())))?;
-            let expected = self.find_wire_type(&native)?;
-            plans.push((offered.value.clone(), expected));
+            self.entry()?;
+            match &offered.value {
+                FieldValue::Compiled(slot) => {
+                    let expected = self.find_wire_type(&native)?;
+                    self.slot(slot, expected, depth + 1)?;
+                }
+                FieldValue::Contextual(slot) => {
+                    self.contextual_slot(slot, &native, model_index, &offered.field, depth + 1)?;
+                }
+            }
         }
-        Ok(plans)
+        Ok(())
+    }
+
+    fn contextual_slot(
+        &mut self,
+        slot: &ContextualSlot,
+        expected: &NativeType<'_>,
+        model_index: u32,
+        field: &w::ExportRef,
+        depth: usize,
+    ) -> Result<()> {
+        self.work
+            .charge(Dimension::InputValueNodes, 1)
+            .map_err(Stop::Exhausted)?;
+        self.work
+            .charge(Dimension::InputStructuralDepth, depth)
+            .map_err(Stop::Exhausted)?;
+        match slot {
+            ContextualSlot::Unavailable(_) => Ok(()),
+            ContextualSlot::Available(value) => {
+                self.contextual_value(value, expected, model_index, field, depth)
+            }
+        }
+    }
+
+    fn contextual_value(
+        &mut self,
+        value: &ContextualValue,
+        expected: &NativeType<'_>,
+        model_index: u32,
+        field: &w::ExportRef,
+        depth: usize,
+    ) -> Result<()> {
+        let invalid = || Stop::Refused(Refusal::ContextualValue(field.clone()));
+        match (expected, value.kind()) {
+            (NativeType::Boolean, ContextualValueKind::Boolean(_)) => Ok(()),
+            (
+                NativeType::Scalar {
+                    role,
+                    representation,
+                    ..
+                },
+                ContextualValueKind::Number(number),
+            ) => {
+                let valid = match (representation, &role.kind, number) {
+                    (
+                        ir::ValueType::Integer { value: domain },
+                        ScalarKind::Integer { .. },
+                        ProtocolNumber::Integer(actual),
+                    ) => actual.value() >= domain.minimum() && actual.value() <= domain.maximum(),
+                    (
+                        ir::ValueType::Rational { value: domain },
+                        ScalarKind::Rational { .. },
+                        ProtocolNumber::Rational(actual),
+                    ) => {
+                        actual.numerator() >= domain.numerator_minimum()
+                            && actual.numerator() <= domain.numerator_maximum()
+                            && u64::try_from(actual.denominator())
+                                .ok()
+                                .is_some_and(|denominator| {
+                                    denominator <= domain.maximum_denominator()
+                                })
+                    }
+                    _ => false,
+                };
+                if valid {
+                    Ok(())
+                } else {
+                    Err(invalid())
+                }
+            }
+            (NativeType::Scalar { role, .. }, ContextualValueKind::Text(text))
+                if matches!(role.kind, ScalarKind::Text { .. }) =>
+            {
+                self.work
+                    .charge(Dimension::InputTextBytes, text.len())
+                    .map_err(Stop::Exhausted)?;
+                let ScalarKind::Text { max_scalars } = role.kind else {
+                    return Err(invalid());
+                };
+                if u32::try_from(text.chars().count())
+                    .ok()
+                    .is_some_and(|count| count <= max_scalars)
+                {
+                    Ok(())
+                } else {
+                    Err(invalid())
+                }
+            }
+            (NativeType::Enumeration { declaration, .. }, ContextualValueKind::Enum(variant)) => {
+                let path = self.export_path(variant, w::ExportKind::Variant)?;
+                if variant.model == model_index
+                    && path.first().map(String::as_str) == Some(declaration.name().as_str())
+                    && declaration.variants().iter().any(|candidate| {
+                        path.get(1).map(String::as_str) == Some(candidate.name().as_str())
+                    })
+                {
+                    Ok(())
+                } else {
+                    Err(invalid())
+                }
+            }
+            (NativeType::Record { declaration, .. }, ContextualValueKind::Record(fields)) => {
+                self.record_fields_by_name(model_index, declaration.name().as_str(), fields, depth)
+            }
+            (NativeType::Option(child), ContextualValueKind::Option(option)) => {
+                if let Some(child_slot) = option {
+                    self.entry()?;
+                    self.contextual_slot(child_slot, child, model_index, field, depth + 1)?;
+                }
+                Ok(())
+            }
+            (NativeType::Sequence { element, maximum }, ContextualValueKind::Sequence(values)) => {
+                if values.len() > *maximum as usize {
+                    return Err(invalid());
+                }
+                for child in values {
+                    self.entry()?;
+                    self.contextual_slot(child, element, model_index, field, depth + 1)?;
+                }
+                Ok(())
+            }
+            (NativeType::Object { role, .. }, ContextualValueKind::Object(key)) => {
+                let object = self.model_export(
+                    model_index,
+                    w::ExportKind::Object,
+                    role.record.as_str(),
+                    None,
+                )?;
+                let universe = self.model_export(
+                    model_index,
+                    w::ExportKind::Population,
+                    role.record.as_str(),
+                    Some(role.universe.as_str()),
+                )?;
+                self.key(key, model_index, &object, &universe)
+            }
+            (NativeType::Reference { role, .. }, ContextualValueKind::Reference(key)) => {
+                let object = self.model_export(
+                    model_index,
+                    w::ExportKind::Object,
+                    role.record.as_str(),
+                    None,
+                )?;
+                let universe = self.model_export(
+                    model_index,
+                    w::ExportKind::Population,
+                    role.record.as_str(),
+                    Some(role.universe.as_str()),
+                )?;
+                self.key(key, model_index, &object, &universe)
+            }
+            _ => Err(invalid()),
+        }
     }
 
     fn entry(&mut self) -> Result<()> {
@@ -610,6 +753,48 @@ impl<'a> Evaluator<'a> {
         Ok(w::ExportRef {
             model: object.model,
             export: u32::try_from(at).map_err(|_| Stop::Refused(Refusal::Field(object.clone())))?,
+        })
+    }
+
+    fn model_export(
+        &self,
+        model_index: u32,
+        kind: w::ExportKind,
+        owner: &str,
+        member: Option<&str>,
+    ) -> Result<w::ExportRef> {
+        let model = self
+            .package
+            .package()
+            .models
+            .get(model_index as usize)
+            .ok_or_else(|| {
+                Stop::Refused(Refusal::Field(w::ExportRef {
+                    model: model_index,
+                    export: u32::MAX,
+                }))
+            })?;
+        let export = model
+            .exports
+            .iter()
+            .position(|export| {
+                export.kind == kind
+                    && export.path.first().map(String::as_str) == Some(owner)
+                    && match member {
+                        Some(member) => export.path.get(1).map(String::as_str) == Some(member),
+                        None => export.path.len() == 1,
+                    }
+            })
+            .and_then(|index| u32::try_from(index).ok())
+            .ok_or_else(|| {
+                Stop::Refused(Refusal::Field(w::ExportRef {
+                    model: model_index,
+                    export: u32::MAX,
+                }))
+            })?;
+        Ok(w::ExportRef {
+            model: model_index,
+            export,
         })
     }
 
@@ -785,10 +970,10 @@ impl<'a> Evaluator<'a> {
                 body,
             } => {
                 let value = self.expression(&initializer, depth + 1)?;
-                self.locals
-                    .insert((binder.declaration, binder.index), value);
+                let base = self.locals.len();
+                self.bind_local((binder.declaration, binder.index), value)?;
                 let result = self.expression(&body, depth + 1);
-                self.locals.remove(&(binder.declaration, binder.index));
+                self.locals.truncate(base);
                 return result;
             }
             w::ValueOperation::Pre { value, .. } => return self.expression(&value, depth + 1),
@@ -857,14 +1042,21 @@ impl<'a> Evaluator<'a> {
     }
 
     fn read(&self, binder: &w::Handle) -> Result<Value> {
-        if let Some(value) = self.locals.get(&(binder.declaration, binder.index)) {
+        if let Some((_, value)) = self
+            .locals
+            .iter()
+            .rev()
+            .find(|(candidate, _)| *candidate == (binder.declaration, binder.index))
+        {
             return Ok(value.clone());
         }
         let slot = self
             .binders
-            .get(&(binder.declaration, binder.index))
+            .iter()
+            .find(|(candidate, _)| *candidate == (binder.declaration, binder.index))
+            .map(|(_, slot)| *slot)
             .ok_or_else(|| Stop::Refused(Refusal::MissingBinding(binder.clone())))?;
-        available((*slot).clone())
+        available(slot.clone())
     }
 
     fn field(&mut self, base: Value, field: &w::ExportRef) -> Result<Value> {
@@ -872,7 +1064,7 @@ impl<'a> Evaluator<'a> {
             ValueKind::Record(fields) => fields
                 .iter()
                 .find(|candidate| candidate.field == *field)
-                .map(|field| available(field.value.clone()))
+                .map(compiled_field)
                 .transpose()?
                 .ok_or_else(|| Stop::Refused(Refusal::Field(field.clone()))),
             ValueKind::Object(key) => {
@@ -881,7 +1073,7 @@ impl<'a> Evaluator<'a> {
                     .fields
                     .iter()
                     .find(|candidate| candidate.field == *field)
-                    .map(|field| available(field.value.clone()))
+                    .map(compiled_field)
                     .transpose()?
                     .ok_or_else(|| Stop::Refused(Refusal::Field(field.clone())))
             }
@@ -1038,26 +1230,15 @@ impl<'a> Evaluator<'a> {
             .charge(Dimension::PredicateCallDepth, next)
             .map_err(Stop::Exhausted)?;
         self.call_depth = next;
-        let mut prior = Vec::new();
-        for (argument, parameter) in arguments.iter().zip(&parameters) {
-            let value = self.expression(argument, depth + 1)?;
-            prior.push((
-                (parameter.declaration, parameter.index),
-                self.locals
-                    .insert((parameter.declaration, parameter.index), value),
-            ));
-        }
-        let result = self.expression(&root, depth + 1);
-        for (key, value) in prior {
-            match value {
-                Some(value) => {
-                    self.locals.insert(key, value);
-                }
-                None => {
-                    self.locals.remove(&key);
-                }
+        let base = self.locals.len();
+        let result = (|| {
+            for (argument, parameter) in arguments.iter().zip(&parameters) {
+                let value = self.expression(argument, depth + 1)?;
+                self.bind_local((parameter.declaration, parameter.index), value)?;
             }
-        }
+            self.expression(&root, depth + 1)
+        })();
+        self.locals.truncate(base);
         self.call_depth -= 1;
         result
     }
@@ -1089,19 +1270,10 @@ impl<'a> Evaluator<'a> {
         for slot in values {
             self.sequence_charge()?;
             let item = available(slot.clone())?;
-            let old = self
-                .locals
-                .insert((binder.declaration, binder.index), item.clone());
+            let base = self.locals.len();
+            self.bind_local((binder.declaration, binder.index), item.clone())?;
             let projected = self.expression(body, depth + 1);
-            match old {
-                Some(value) => {
-                    self.locals
-                        .insert((binder.declaration, binder.index), value);
-                }
-                None => {
-                    self.locals.remove(&(binder.declaration, binder.index));
-                }
-            }
+            self.locals.truncate(base);
             let projected = projected?;
             match operator {
                 w::Query::ForAll => {
@@ -1165,6 +1337,16 @@ impl<'a> Evaluator<'a> {
             .try_reserve(1)
             .map_err(|_| Stop::Exhausted(self.work.allocation(Dimension::RetainedOutput, 1)))?;
         output.push(value);
+        Ok(())
+    }
+    fn bind_local(&mut self, key: (u32, u32), value: Value) -> Result<()> {
+        self.work
+            .charge(Dimension::RetainedOutput, 1)
+            .map_err(Stop::Exhausted)?;
+        self.locals
+            .try_reserve(1)
+            .map_err(|_| Stop::Exhausted(self.work.allocation(Dimension::RetainedOutput, 1)))?;
+        self.locals.push((key, value));
         Ok(())
     }
     fn number_for_type(&self, ty: u32, number: &ProtocolNumber) -> Result<()> {
@@ -1266,7 +1448,12 @@ impl<'a> Evaluator<'a> {
             .iter()
             .find(|field| field.field == *edge)
             .ok_or_else(|| Stop::Refused(Refusal::Field(edge.clone())))?;
-        self.scan_references(&field.value, target, edge, depth, expanded)
+        match &field.value {
+            FieldValue::Compiled(slot) => self.scan_references(slot, target, edge, depth, expanded),
+            FieldValue::Contextual(slot) => {
+                self.scan_contextual_references(slot, target, edge, depth, expanded)
+            }
+        }
     }
 
     fn scan_references(
@@ -1309,6 +1496,47 @@ impl<'a> Evaluator<'a> {
             _ => Err(Stop::Refused(Refusal::ValueShape(value.value_type))),
         }
     }
+
+    fn scan_contextual_references(
+        &mut self,
+        slot: &'a ContextualSlot,
+        target: &ObjectKey,
+        edge: &w::ExportRef,
+        depth: usize,
+        expanded: &mut Vec<&'a ObjectKey>,
+    ) -> Result<bool> {
+        let value = contextual_available_ref(slot)?;
+        match value.kind() {
+            ContextualValueKind::Reference(next) => {
+                self.work
+                    .charge(Dimension::GraphEdges, 1)
+                    .map_err(Stop::Exhausted)?;
+                self.work
+                    .charge(Dimension::ValueComparison, 1)
+                    .map_err(Stop::Exhausted)?;
+                if next == target {
+                    return Ok(true);
+                }
+                if !expanded.contains(&next) && self.dfs(next, target, edge, depth + 1, expanded)? {
+                    return Ok(true);
+                }
+                Ok(false)
+            }
+            ContextualValueKind::Option(None) => Ok(false),
+            ContextualValueKind::Option(Some(child)) => {
+                self.scan_contextual_references(child, target, edge, depth, expanded)
+            }
+            ContextualValueKind::Sequence(children) => {
+                for child in children {
+                    if self.scan_contextual_references(child, target, edge, depth, expanded)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            _ => Err(Stop::Refused(Refusal::ContextualValue(edge.clone()))),
+        }
+    }
 }
 
 fn valid_digest(value: &CanonicalDigest) -> bool {
@@ -1332,23 +1560,35 @@ fn valid_identity(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096
 }
 
-fn required_binders(package: &w::Package, root: &w::Handle) -> Result<Vec<w::Handle>> {
-    let mut pending = vec![root.clone()];
+fn required_binders(
+    work: &mut Work,
+    package: &w::Package,
+    root: &w::Handle,
+) -> Result<Vec<w::Handle>> {
+    let mut pending = Vec::new();
+    discovery_push(work, &mut pending, root)?;
     let mut visited = Vec::<w::Handle>::new();
     let mut required = Vec::<w::Handle>::new();
     while let Some(handle) = pending.pop() {
         if visited.contains(&handle) {
             continue;
         }
+        work.charge(Dimension::InputAggregateEntries, 1)
+            .map_err(Stop::Exhausted)?;
+        visited
+            .try_reserve(1)
+            .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
         visited.push(handle.clone());
         let node = package
             .declarations
             .get(handle.declaration as usize)
             .and_then(|declaration| declaration.values.get(handle.index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?;
-        let mut push = |child: &w::Handle| pending.push(child.clone());
+        let mut push = |child: &w::Handle| discovery_push(work, &mut pending, child);
         match &node.operation {
             w::ValueOperation::Read { binder } if binder.declaration == root.declaration => {
+                work.charge(Dimension::InputAggregateEntries, 1)
+                    .map_err(Stop::Exhausted)?;
                 let declaration = &package.declarations[binder.declaration as usize];
                 let value = declaration
                     .binders
@@ -1358,38 +1598,43 @@ fn required_binders(package: &w::Package, root: &w::Handle) -> Result<Vec<w::Han
                     && !matches!(value.kind, w::BinderKind::Let | w::BinderKind::Query)
                     && !required.contains(binder)
                 {
+                    work.charge(Dimension::InputAggregateEntries, 1)
+                        .map_err(Stop::Exhausted)?;
+                    required.try_reserve(1).map_err(|_| {
+                        Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1))
+                    })?;
                     required.push(binder.clone());
                 }
             }
             w::ValueOperation::Group { value }
             | w::ValueOperation::Unary { value, .. }
-            | w::ValueOperation::Pre { value, .. } => push(value),
-            w::ValueOperation::Field { base, .. } => push(base),
+            | w::ValueOperation::Pre { value, .. } => push(value)?,
+            w::ValueOperation::Field { base, .. } => push(base)?,
             w::ValueOperation::Binary { left, right, .. } => {
-                push(left);
-                push(right);
+                push(left)?;
+                push(right)?;
             }
             w::ValueOperation::If {
                 condition,
                 then_value,
                 else_value,
             } => {
-                push(condition);
-                push(then_value);
-                push(else_value);
+                push(condition)?;
+                push(then_value)?;
+                push(else_value)?;
             }
             w::ValueOperation::Let {
                 initializer, body, ..
             } => {
-                push(initializer);
-                push(body);
+                push(initializer)?;
+                push(body)?;
             }
             w::ValueOperation::Call {
                 predicate,
                 arguments,
             } => {
                 for argument in arguments {
-                    push(argument);
+                    push(argument)?;
                 }
                 let declaration = package
                     .declarations
@@ -1398,23 +1643,23 @@ fn required_binders(package: &w::Package, root: &w::Handle) -> Result<Vec<w::Han
                 let w::Body::Predicate { root, .. } = &declaration.body else {
                     return Err(Stop::Refused(Refusal::RequestDeclaration(*predicate)));
                 };
-                push(root);
+                push(root)?;
             }
-            w::ValueOperation::Size { collection, .. } => push(collection),
+            w::ValueOperation::Size { collection, .. } => push(collection)?,
             w::ValueOperation::Contains { collection, member } => {
-                push(collection);
-                push(member);
+                push(collection)?;
+                push(member)?;
             }
             w::ValueOperation::Query {
                 collection, body, ..
             } => {
-                push(collection);
-                push(body);
+                push(collection)?;
+                push(body)?;
             }
-            w::ValueOperation::Parent { reference, .. } => push(reference),
+            w::ValueOperation::Parent { reference, .. } => push(reference)?,
             w::ValueOperation::Reaches { start, target, .. } => {
-                push(start);
-                push(target);
+                push(start)?;
+                push(target)?;
             }
             w::ValueOperation::Boolean { .. }
             | w::ValueOperation::Number { .. }
@@ -1424,6 +1669,16 @@ fn required_binders(package: &w::Package, root: &w::Handle) -> Result<Vec<w::Han
         }
     }
     Ok(required)
+}
+
+fn discovery_push(work: &mut Work, pending: &mut Vec<w::Handle>, handle: &w::Handle) -> Result<()> {
+    work.charge(Dimension::InputAggregateEntries, 1)
+        .map_err(Stop::Exhausted)?;
+    pending
+        .try_reserve(1)
+        .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
+    pending.push(handle.clone());
+    Ok(())
 }
 
 fn valid_adapter(value: &w::ArtifactRef) -> bool {
@@ -1455,12 +1710,26 @@ fn available(slot: InputSlot) -> Result<Value> {
     }
 }
 
+fn compiled_field(field: &FieldInput) -> Result<Value> {
+    match &field.value {
+        FieldValue::Compiled(slot) => available(slot.clone()),
+        FieldValue::Contextual(_) => {
+            Err(Stop::Refused(Refusal::ContextualValue(field.field.clone())))
+        }
+    }
+}
+
 fn ensure_available(value: &Value) -> Result<()> {
     match value.kind() {
         ValueKind::Record(fields) => {
             for field in fields {
-                let child = available_ref(&field.value)?;
-                ensure_available(child)?;
+                match &field.value {
+                    FieldValue::Compiled(slot) => {
+                        let child = available_ref(slot)?;
+                        ensure_available(child)?;
+                    }
+                    FieldValue::Contextual(slot) => ensure_contextual_available(slot)?,
+                }
             }
         }
         ValueKind::Option(Some(slot)) => {
@@ -1471,6 +1740,28 @@ fn ensure_available(value: &Value) -> Result<()> {
             for slot in values {
                 let child = available_ref(slot)?;
                 ensure_available(child)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn ensure_contextual_available(slot: &ContextualSlot) -> Result<()> {
+    let value = contextual_available_ref(slot)?;
+    match value.kind() {
+        ContextualValueKind::Record(fields) => {
+            for field in fields {
+                match &field.value {
+                    FieldValue::Compiled(slot) => ensure_available(available_ref(slot)?)?,
+                    FieldValue::Contextual(slot) => ensure_contextual_available(slot)?,
+                }
+            }
+        }
+        ContextualValueKind::Option(Some(child)) => ensure_contextual_available(child)?,
+        ContextualValueKind::Sequence(children) => {
+            for child in children {
+                ensure_contextual_available(child)?;
             }
         }
         _ => {}
@@ -1530,6 +1821,13 @@ fn available_ref(slot: &InputSlot) -> Result<&Value> {
     match slot {
         InputSlot::Available(value) => Ok(value),
         InputSlot::Unavailable(missing) => Err(Stop::Incomplete(missing.clone())),
+    }
+}
+
+fn contextual_available_ref(slot: &ContextualSlot) -> Result<&ContextualValue> {
+    match slot {
+        ContextualSlot::Available(value) => Ok(value),
+        ContextualSlot::Unavailable(missing) => Err(Stop::Incomplete(missing.clone())),
     }
 }
 

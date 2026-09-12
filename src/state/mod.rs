@@ -8,9 +8,9 @@ mod work;
 pub use evaluation::evaluate;
 pub use input::{
     AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    EvaluationOutcome, EvaluationReport, EvaluationRequest, FieldInput, InputSlot, MissingInput,
-    ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
-    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind,
-    OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
+    ContextualSlot, ContextualValue, ContextualValueKind, EvaluationOutcome, EvaluationReport,
+    EvaluationRequest, FieldInput, FieldValue, InputSlot, MissingInput, ObjectInput, ObjectKey,
+    ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView,
+    StaticAuthority, Value, ValueKind, OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
 };
 pub use work::{Dimension, Exhaustion, ExhaustionCause, Limits, Usage, ACCOUNTING_VERSION};

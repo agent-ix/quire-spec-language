@@ -11,10 +11,11 @@ use quire_spec_language::protocol_artifact::{
 };
 use quire_spec_language::state::{
     self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    Dimension, EvaluationOutcome, EvaluationRequest, ExhaustionCause, FieldInput, InputSlot,
-    Limits, ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
-    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind,
-    OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
+    ContextualSlot, ContextualValue, ContextualValueKind, Dimension, EvaluationOutcome,
+    EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, ObjectInput,
+    ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput, Refusal,
+    StateView, StaticAuthority, Value, ValueKind, OBSERVATION_CONTRACT_REVISION,
+    PRODUCER_CONTRACT_REVISION,
 };
 use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
@@ -108,7 +109,7 @@ fn admitted_graph(test: impl FnOnce(&quire_spec_language::protocol_artifact::Adm
     let inputs = Inputs::with_graph_input(&[Unit {
         name: "state-graph",
         body: "invariant Graph using G on M::GraphNode at current {
-                size<M::Tally>(self.links) >= 0 and reaches(self,self,links)
+                reaches(self,self,links)
             }
             protocol Flow using P over (view: M::Node) on origin {
                 role Service on M::Node;
@@ -292,20 +293,6 @@ fn graph_view(
     let w::ValueOperation::Reaches { edge, .. } = &reaches.operation else {
         unreachable!("selected reachability")
     };
-    let field_type = declaration
-        .values
-        .iter()
-        .find(|value| matches!(&value.operation, w::ValueOperation::Field { field, .. } if field == edge))
-        .expect("graph edge field")
-        .value_type;
-    let w::Type::Sequence { element, .. } = package
-        .package()
-        .types
-        .get(field_type as usize)
-        .expect("edge sequence type")
-    else {
-        unreachable!("edge sequence")
-    };
     let object_type = match &package.package().types[binder.value_type as usize] {
         w::Type::Object { export } => export.clone(),
         _ => unreachable!("self object type"),
@@ -328,13 +315,11 @@ fn graph_view(
     let second = key("record:second");
     let links = |target: ObjectKey| FieldInput {
         field: edge.clone(),
-        value: InputSlot::Available(Value::new(
-            field_type,
-            ValueKind::Sequence(vec![InputSlot::Available(Value::new(
-                *element,
-                ValueKind::Reference(target),
+        value: FieldValue::Contextual(ContextualSlot::Available(ContextualValue::new(
+            ContextualValueKind::Sequence(vec![ContextualSlot::Available(ContextualValue::new(
+                ContextualValueKind::Reference(target),
             ))]),
-        )),
+        ))),
     };
     let evidence = authority(package, owner, requirement_index as u32);
     let objects = vec![
@@ -430,7 +415,7 @@ fn query_view(
         binder.value_type,
         ValueKind::Record(vec![FieldInput {
             field: field.clone(),
-            value: InputSlot::Available(amounts),
+            value: FieldValue::Compiled(InputSlot::Available(amounts)),
         }]),
     );
     (
@@ -639,12 +624,15 @@ fn tc_137_query_input_sequence_and_retention_dimensions_have_exact_boundaries() 
         };
         let exact = Limits {
             input_value_nodes: 5,
-            input_aggregate_entries: 5,
+            // Eleven required-input discovery visits plus six supplied-input
+            // entries (binder/table, field and three sequence members).
+            input_aggregate_entries: 17,
             input_structural_depth: 3,
             expression_work: 6,
             active_expression_depth: 3,
             sequence_work: 3,
-            retained_output: 4,
+            // Three active query bindings, three map values and the root.
+            retained_output: 7,
             ..Limits::default()
         };
         let complete = state::evaluate(package, request.clone(), &view, exact);
@@ -655,12 +643,12 @@ fn tc_137_query_input_sequence_and_retention_dimensions_have_exact_boundaries() 
                     if sequence_is(values, &[2, 2, 3]))
         ));
         assert_eq!(complete.usage().input_value_nodes, 5);
-        assert_eq!(complete.usage().input_aggregate_entries, 5);
+        assert_eq!(complete.usage().input_aggregate_entries, 17);
         assert_eq!(complete.usage().input_structural_depth, 3);
         assert_eq!(complete.usage().expression_work, 6);
         assert_eq!(complete.usage().active_expression_depth, 3);
         assert_eq!(complete.usage().sequence_work, 3);
-        assert_eq!(complete.usage().retained_output, 4);
+        assert_eq!(complete.usage().retained_output, 7);
 
         for (limits, dimension) in [
             (
@@ -672,7 +660,7 @@ fn tc_137_query_input_sequence_and_retention_dimensions_have_exact_boundaries() 
             ),
             (
                 Limits {
-                    input_aggregate_entries: 4,
+                    input_aggregate_entries: 16,
                     ..exact
                 },
                 Dimension::InputAggregateEntries,
@@ -707,7 +695,7 @@ fn tc_137_query_input_sequence_and_retention_dimensions_have_exact_boundaries() 
             ),
             (
                 Limits {
-                    retained_output: 3,
+                    retained_output: 6,
                     ..exact
                 },
                 Dimension::RetainedOutput,
