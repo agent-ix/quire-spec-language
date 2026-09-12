@@ -6,6 +6,13 @@ use crate::checking::composed::proofs::ProofReport;
 use crate::protocol_artifact::{self as artifact, v2, wire as w};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
 
+fn binding_refusal(cause: v2::BindingCause) -> Error {
+    Error::V2(v2::Refusal::Binding {
+        side: v2::InventorySide::Producer,
+        cause,
+    })
+}
+
 /// One independently selected temporal definition and clock configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct TemporalSelection<'a> {
@@ -59,8 +66,11 @@ fn bindings(
         .count();
     work.charge(Dimension::Entries, temporal_len)?;
     work.charge(Dimension::Entries, selections.len())?;
-    if temporal_len != selections.len() {
-        return Err(Error::Invalid(Invalid::Inventory));
+    if selections.len() < temporal_len {
+        return Err(binding_refusal(v2::BindingCause::Missing));
+    }
+    if selections.len() > temporal_len {
+        return Err(binding_refusal(v2::BindingCause::Surplus));
     }
     let mut result = Vec::new();
     result
@@ -84,18 +94,20 @@ fn bindings(
             if candidate.span == &declaration.locus.span {
                 if candidate.source == &emitted_source.artifact {
                     if selected.replace(candidate).is_some() {
-                        return Err(Error::Invalid(Invalid::Duplicate));
+                        return Err(binding_refusal(v2::BindingCause::Duplicate));
                     }
                 } else {
                     foreign_owner = true;
                 }
             }
         }
-        let selected = selected.ok_or(Error::Invalid(if foreign_owner {
-            Invalid::Owner
-        } else {
-            Invalid::Inventory
-        }))?;
+        let selected = selected.ok_or_else(|| {
+            binding_refusal(if foreign_owner {
+                v2::BindingCause::ForeignOwner
+            } else {
+                v2::BindingCause::Missing
+            })
+        })?;
         let definition = package
             .definitions
             .get(usize::try_from(declaration.profile).unwrap_or(usize::MAX))
@@ -106,11 +118,22 @@ fn bindings(
             .ok_or(Error::Invalid(Invalid::Reference))?;
         work.bytes(definition.identity.len())?;
         work.bytes(selected.definition_identity.len())?;
-        if definition.identity != selected.definition_identity
-            || definition.revision != *selected.definition_revision
-            || dependency.artifact != *selected.definition_artifact
+        if definition.identity != selected.definition_identity {
+            return Err(Error::V2(v2::Refusal::Definition(
+                v2::DefinitionField::Identity,
+            )));
+        }
+        if definition.revision != *selected.definition_revision {
+            return Err(Error::V2(v2::Refusal::Definition(
+                v2::DefinitionField::Revision,
+            )));
+        }
+        if let Some(field) =
+            v2::refusal::artifact_field(&dependency.artifact, selected.definition_artifact)
         {
-            return Err(Error::Invalid(Invalid::Selection));
+            return Err(Error::V2(v2::Refusal::Definition(
+                v2::DefinitionField::Artifact(field),
+            )));
         }
         v2::intake::clock(&definition.identity, selected.clock, work)?;
         work.charge(Dimension::Entries, 1)?;

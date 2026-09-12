@@ -2,9 +2,14 @@
 //! FR-050: strict compiled-protocol version-2 production and admission.
 
 pub(super) mod intake;
+pub(crate) mod refusal;
 pub mod wire;
 
 pub use intake::{encode_candidate, read};
+pub use refusal::{
+    ArtifactField, BindingCause, ClockField, DeclarationField, DefinitionField, HeaderField,
+    InventorySide, Refusal,
+};
 
 use super::ExpectedDeclaration;
 use crate::ByteDigest;

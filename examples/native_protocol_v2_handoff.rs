@@ -30,9 +30,9 @@ mod tests {
     use quire_spec_language::protocol_artifact::{v2, wire as w};
     use quire_spec_language::ByteDigest;
 
+    #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
     #[test]
     #[ignore = "requires a stripped release ELF test executable within the producer's 16 MiB binary limit"]
-    #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
     fn stripped_release_v2_producer_writes_the_independently_read_handoff() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("handoff-v2");
@@ -41,14 +41,23 @@ mod tests {
         let bytes = std::fs::read(output.join("compiled-protocol-v2.json")).unwrap();
         let package: v2::wire::Package = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(package.inherited.wire, v2::WIRE);
-        let [binding] = package.temporal_bindings.as_slice() else {
-            panic!("one exact temporal binding")
-        };
-        let declaration = &package.inherited.declarations[binding.declaration as usize];
-        assert_eq!(declaration.name, "Due");
-        assert_eq!(binding.definition, declaration.profile);
+        assert_eq!(package.temporal_bindings.len(), 3);
+        assert!(package
+            .temporal_bindings
+            .windows(2)
+            .all(|pair| pair[0].declaration < pair[1].declaration));
+        for (binding, name) in
+            package
+                .temporal_bindings
+                .iter()
+                .zip(["Due", "DueSample", "DueTimestamp"])
+        {
+            let declaration = &package.inherited.declarations[binding.declaration as usize];
+            assert_eq!(declaration.name, name);
+            assert_eq!(binding.definition, declaration.profile);
+        }
         assert_eq!(
-            binding.clock,
+            package.temporal_bindings[0].clock,
             v2::wire::ClockConfiguration::EventPosition {
                 sequence_authority: "workflow-events".into()
             }
@@ -62,20 +71,22 @@ mod tests {
         assert_eq!(reference.wire.version, "2");
         assert_eq!(reference.digest, ByteDigest::of(&bytes));
 
-        let clock = std::fs::read(output.join("event-clock.json")).unwrap();
         let sidecar: serde_json::Value =
             serde_json::from_slice(&std::fs::read(output.join("expected-v2.json")).unwrap())
                 .unwrap();
-        assert_eq!(
-            ByteDigest::of(&clock).to_string(),
-            sidecar["temporal"][0]["clock_input"]["digest"]
-                .as_str()
-                .unwrap()
-        );
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&clock).unwrap(),
-            sidecar["temporal"][0]["clock_input"]["configuration"]
-        );
+        assert_eq!(sidecar["temporal"].as_array().unwrap().len(), 3);
+        for temporal in sidecar["temporal"].as_array().unwrap() {
+            let file = temporal["clock_input"]["file"].as_str().unwrap();
+            let clock = std::fs::read(output.join(file)).unwrap();
+            assert_eq!(
+                ByteDigest::of(&clock).to_string(),
+                temporal["clock_input"]["digest"].as_str().unwrap()
+            );
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&clock).unwrap(),
+                temporal["clock_input"]["configuration"]
+            );
+        }
         let dependencies = sidecar["inherited"]["dependencies"].as_array().unwrap();
         assert!(!dependencies.is_empty());
         for dependency in dependencies {
@@ -104,5 +115,18 @@ mod tests {
             ByteDigest::of(&std::fs::read(output.join(model_source_file)).unwrap()).to_string(),
             model_source["artifact"]["digest"].as_str().unwrap()
         );
+
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output.join("mutations/manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["format"], "quire.protocol.v2-mutations/1");
+        let cases = manifest["cases"].as_array().unwrap();
+        assert!(cases.len() >= 13);
+        for case in cases {
+            let input = &case["input"];
+            let file = input["file"].as_str().unwrap();
+            assert!(output.join(file).is_file(), "missing mutation {file}");
+            assert!(!case["expected_refusal_code"].as_str().unwrap().is_empty());
+        }
     }
 }
