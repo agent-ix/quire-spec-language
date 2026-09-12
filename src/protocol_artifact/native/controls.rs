@@ -4,8 +4,8 @@ use super::{
     context::Declaration,
     layout::DeclLayout,
     runtime::{
-        binder_type, nominal, operation_export, parameter_handle, selected_profile, structural,
-        structural_symbol, Requirement, Runtime,
+        binder_type, nominal, operation_export, parameter_handle, relationship_binding,
+        selected_profile, structural, structural_symbol, Requirement, Runtime,
     },
     types::{index, integer, text, ValueBuilder},
 };
@@ -226,11 +226,6 @@ pub(super) fn controls(
                 }
             }
             c::ControlKind::Event(event) => {
-                // Exact endpoint/direction checks require the admitted producer
-                // relationship object, not only its export identity and path.
-                if !event.related.is_empty() {
-                    return Err(Error::Unsupported(Unsupported::Export));
-                }
                 let binder = parameter_handle(
                     layout,
                     scope,
@@ -250,6 +245,7 @@ pub(super) fn controls(
                     control: layout.control(original)?,
                 };
                 let constraint = layout.value(event.constraint)?;
+                let related = related_occurrences(context, protocol, event, builder, work)?;
                 let (kind, requires, lowered) = match &event.kind {
                     c::EventKind::Event {
                         role: owner,
@@ -496,7 +492,7 @@ pub(super) fn controls(
                 w::ControlOperation::Event {
                     event: lowered_event,
                     binder,
-                    related: Vec::new(),
+                    related,
                     constraint,
                 }
             }
@@ -556,6 +552,91 @@ pub(super) fn controls(
     }
     Ok(controls)
 }
+
+fn related_occurrences(
+    context: &Declaration<'_, '_>,
+    protocol: &c::Protocol,
+    event: &c::Event,
+    builder: &ValueBuilder<'_>,
+    work: &mut Work,
+) -> Result<Vec<w::Related>, Error> {
+    let mut lowered = Vec::new();
+    lowered
+        .try_reserve_exact(event.related.len())
+        .map_err(|_| Error::Allocation)?;
+    for related in &event.related {
+        work.visit()?;
+        let symbol = structural_symbol(
+            context.scope,
+            related.relationship.span,
+            scopes::StructuralKind::Relationship,
+            work,
+        )?;
+        let (relationship, syntax) = protocol
+            .relationships
+            .iter()
+            .enumerate()
+            .find(|(_, relationship)| relationship.name.span == symbol.name.span)
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        let bound = relationship_binding(context, syntax, work)?;
+        let declaration = bound
+            .declaration()
+            .ok_or(Error::Unsupported(Unsupported::Export))?;
+
+        // Every closed direction keeps the declaration's source as the first
+        // operand and target as the second. Target-to-source changes admitted
+        // traversal, not the authored operand order.
+        let (source, target) =
+            crate::linking::composed::producer::relationship_operands(declaration);
+        let source_type = bound
+            .source_type_export()
+            .filter(|export| export.identity.as_ref() == source.type_identity)
+            .ok_or(Error::Invalid(Invalid::Model))?;
+        let target_type = bound
+            .target_type_export()
+            .filter(|export| export.identity.as_ref() == target.type_identity)
+            .ok_or(Error::Invalid(Invalid::Model))?;
+        require_endpoint_type(context, related.from, bound, source_type, builder, work)?;
+        require_endpoint_type(context, related.to, bound, target_type, builder, work)?;
+
+        work.charge(Dimension::Entries, 1)?;
+        lowered.push(w::Related {
+            relationship: index(relationship)?,
+            from: context.layout.value(related.from)?,
+            to: context.layout.value(related.to)?,
+            locus: context.layout.locus(related.span)?,
+        });
+    }
+    Ok(lowered)
+}
+
+fn require_endpoint_type(
+    context: &Declaration<'_, '_>,
+    expression: crate::syntax::ExprId,
+    relationship: &crate::linking::composed::models::BoundRelationship<'_>,
+    expected: &crate::linking::composed::producer::ProducerExportSelection,
+    builder: &ValueBuilder<'_>,
+    work: &mut Work,
+) -> Result<(), Error> {
+    let [owner] = expected.path.as_slice() else {
+        return Err(Error::Invalid(Invalid::Model));
+    };
+    if expected.kind == crate::linking::composed::producer::ProducerExportKind::Variant {
+        return Err(Error::Unsupported(Unsupported::Export));
+    }
+    let kind = expected.kind.wire_kind();
+    let expected = builder.export(relationship.model(), kind, owner, None, work)?;
+    let actual = context
+        .typed
+        .node(expression)
+        .and_then(|node| node.ty.as_ref())
+        .ok_or(Error::Invalid(Invalid::Type))?;
+    if nominal(actual, builder, work)? != expected {
+        return Err(Error::Invalid(Invalid::Type));
+    }
+    Ok(())
+}
+
 pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {
     match ty {
         crate::checking::NativeType::Record { .. } | crate::checking::NativeType::Object { .. } => {

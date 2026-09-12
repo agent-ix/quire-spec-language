@@ -147,7 +147,11 @@ pub(super) fn validate_with_producers(
         }
     }
     let mut views = Vec::new();
+    let mut model_producers = Vec::new();
     let mut retained = Vec::new();
+    model_producers
+        .try_reserve_exact(expected_models.len())
+        .map_err(|_| Error::Allocation)?;
     retained
         .try_reserve(expected_models.len())
         .map_err(|_| Error::Allocation)?;
@@ -258,12 +262,14 @@ pub(super) fn validate_with_producers(
         }
         work.charge(Dimension::Entries, 1)?;
         views.push(View { catalog, targets });
+        model_producers.push(expected_producer);
         retained.push(selected.model.clone());
     }
     for ty in &package.types {
         work.visit()?;
         validate_type(ty, &views, work)?;
     }
+    validate_related(package, &model_producers, work)?;
     for declaration in &package.declarations {
         work.visit()?;
         work.locus = Some(declaration.locus.clone());
@@ -353,6 +359,202 @@ pub(super) fn validate_with_producers(
         }
     }
     Ok(retained)
+}
+
+fn validate_related(
+    package: &w::Package,
+    producers: &[Option<&ExpectedProducerModel<'_>>],
+    work: &mut Work,
+) -> Result<(), Error> {
+    for (owner, declaration) in package.declarations.iter().enumerate() {
+        let w::Body::Protocol {
+            relationships,
+            controls,
+            ..
+        } = &declaration.body
+        else {
+            continue;
+        };
+        for control in controls {
+            let w::ControlOperation::Event { related, .. } = &control.operation else {
+                continue;
+            };
+            for occurrence in related {
+                work.visit()?;
+                let relationship = relationships
+                    .get(wire_index(occurrence.relationship)?)
+                    .ok_or(Error::Invalid(Invalid::Reference))?;
+                let (producer, producer_declaration) =
+                    producer_relationship(package, producers, &relationship.model, work)?;
+                let (source, target) = producer::relationship_operands(producer_declaration);
+                let related = RelatedContext {
+                    package,
+                    declaration,
+                    producer,
+                    model: relationship.model.model,
+                    owner: u32::try_from(owner)
+                        .map_err(|_| Error::Invalid(Invalid::StructuralInteger))?,
+                };
+                related.endpoint(&occurrence.from, source, work)?;
+                related.endpoint(&occurrence.to, target, work)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn producer_relationship<'a>(
+    package: &w::Package,
+    producers: &'a [Option<&ExpectedProducerModel<'a>>],
+    relationship: &w::ExportRef,
+    work: &mut Work,
+) -> Result<
+    (
+        &'a ExpectedProducerModel<'a>,
+        &'a agent_ix_baseline_producer::RelationshipDeclaration,
+    ),
+    Error,
+> {
+    let producer = producers
+        .get(wire_index(relationship.model)?)
+        .copied()
+        .flatten()
+        .ok_or(Error::Unsupported(Unsupported::Export))?;
+    let bundle = producer
+        .model
+        .filament_bundle()
+        .ok_or(Error::Unsupported(Unsupported::Export))?;
+    let model = package
+        .models
+        .get(wire_index(relationship.model)?)
+        .ok_or(Error::Invalid(Invalid::Reference))?;
+    let export = model
+        .exports
+        .get(wire_index(relationship.export)?)
+        .ok_or(Error::Invalid(Invalid::Reference))?;
+    if export.kind != w::ExportKind::Relationship {
+        return Err(Error::Invalid(Invalid::Type));
+    }
+    let mut selected = None;
+    for candidate in &producer.model.selection().correspondence.exports {
+        work.visit()?;
+        if candidate.kind == ProducerExportKind::Relationship
+            && producer_path_matches(&candidate.path, &export.path)
+            && selected.replace(candidate).is_some()
+        {
+            return Err(Error::Invalid(Invalid::Duplicate));
+        }
+    }
+    let selected = selected.ok_or(Error::Invalid(Invalid::Model))?;
+    work.bytes(selected.identity.len())?;
+    let mut declaration = None;
+    for candidate in bundle.relationships() {
+        work.visit()?;
+        if candidate.relationship_identity.as_str() == selected.identity.as_ref()
+            && declaration.replace(candidate).is_some()
+        {
+            return Err(Error::Invalid(Invalid::Duplicate));
+        }
+    }
+    let declaration = declaration.ok_or(Error::Invalid(Invalid::Model))?;
+    Ok((producer, declaration))
+}
+
+fn producer_path_matches(left: &[Box<str>], right: &[String]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| left.as_ref() == right)
+}
+
+struct RelatedContext<'p, 'e> {
+    package: &'p w::Package,
+    declaration: &'p w::Declaration,
+    producer: &'e ExpectedProducerModel<'e>,
+    model: u32,
+    owner: u32,
+}
+
+impl RelatedContext<'_, '_> {
+    fn endpoint(
+        &self,
+        value: &w::Handle,
+        endpoint: &agent_ix_baseline_producer::RelationshipEndpoint,
+        work: &mut Work,
+    ) -> Result<(), Error> {
+        let mut expected = None;
+        for export in &self.producer.model.selection().correspondence.exports {
+            work.visit()?;
+            work.bytes(export.identity.len())?;
+            if export.identity.as_ref() != endpoint.type_identity {
+                continue;
+            }
+            if !export.kind.is_type() {
+                return Err(Error::Invalid(Invalid::Model));
+            }
+            if expected.replace(export).is_some() {
+                return Err(Error::Invalid(Invalid::Duplicate));
+            }
+        }
+        let expected = expected.ok_or(Error::Invalid(Invalid::Model))?;
+        if expected.kind == ProducerExportKind::Variant {
+            return Err(Error::Unsupported(Unsupported::Export));
+        }
+        let kind = expected.kind.wire_kind();
+        let model = self
+            .package
+            .models
+            .get(wire_index(self.model)?)
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        let mut export_index = None;
+        for (index, export) in model.exports.iter().enumerate() {
+            work.visit()?;
+            if export.kind == kind
+                && producer_path_matches(&expected.path, &export.path)
+                && export_index.replace(index).is_some()
+            {
+                return Err(Error::Invalid(Invalid::Duplicate));
+            }
+        }
+        let export_index = export_index.ok_or(Error::Invalid(Invalid::Model))?;
+        let expected = w::ExportRef {
+            model: self.model,
+            export: u32::try_from(export_index)
+                .map_err(|_| Error::Invalid(Invalid::StructuralInteger))?,
+        };
+        let value = self
+            .declaration
+            .values
+            .get(wire_index(value.index)?)
+            .filter(|_| value.declaration == self.owner)
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        let actual = self
+            .package
+            .types
+            .get(wire_index(value.value_type)?)
+            .and_then(type_export)
+            .ok_or(Error::Invalid(Invalid::Type))?;
+        if *actual != expected {
+            return Err(Error::Invalid(Invalid::Type));
+        }
+        Ok(())
+    }
+}
+
+fn type_export(value: &w::Type) -> Option<&w::ExportRef> {
+    match value {
+        w::Type::Scalar { export, .. }
+        | w::Type::Enum { export }
+        | w::Type::Record { export }
+        | w::Type::Object { export }
+        | w::Type::Reference { export, .. } => Some(export),
+        w::Type::Boolean {} | w::Type::Option { .. } | w::Type::Sequence { .. } => None,
+    }
+}
+
+fn wire_index(value: u32) -> Result<usize, Error> {
+    usize::try_from(value).map_err(|_| Error::Invalid(Invalid::StructuralInteger))
 }
 
 fn validate_correspondence<'a>(
@@ -528,23 +730,7 @@ fn producer_export_key(
         work.bytes(part.len())?;
         path.push(part.to_string());
     }
-    Ok((producer_export_kind(export.kind).as_str().to_owned(), path))
-}
-
-fn producer_export_kind(value: ProducerExportKind) -> w::ExportKind {
-    match value {
-        ProducerExportKind::Component => w::ExportKind::Component,
-        ProducerExportKind::Endpoint => w::ExportKind::Endpoint,
-        ProducerExportKind::Relationship => w::ExportKind::Relationship,
-        ProducerExportKind::Enum => w::ExportKind::Enum,
-        ProducerExportKind::Field => w::ExportKind::Field,
-        ProducerExportKind::Object => w::ExportKind::Object,
-        ProducerExportKind::Operation => w::ExportKind::Operation,
-        ProducerExportKind::Record => w::ExportKind::Record,
-        ProducerExportKind::Reference => w::ExportKind::Reference,
-        ProducerExportKind::Scalar => w::ExportKind::Scalar,
-        ProducerExportKind::Variant => w::ExportKind::Variant,
-    }
+    Ok((export.kind.wire_kind().as_str().to_owned(), path))
 }
 
 fn validate_producer_locus(

@@ -175,7 +175,10 @@ fn selection(inputs: &Inputs) -> ProducerCompatibilitySelection {
     }
 }
 
-fn admitted_filament_bundle(inputs: &Inputs) -> filament::AdmittedStaticBundle {
+fn admitted_filament_bundle(
+    inputs: &Inputs,
+    direction: filament::RelationshipDirection,
+) -> filament::AdmittedStaticBundle {
     const BUNDLE: &str = "producer:bundle";
     const MODEL: &str = "producer:model";
     const PROFILE: &str = "producer:profile";
@@ -211,7 +214,7 @@ fn admitted_filament_bundle(inputs: &Inputs) -> filament::AdmittedStaticBundle {
         .expect("the producer configuration is canonical");
 
     let source_artifact = filament::ArtifactReference {
-        ref_version: "3".into(),
+        ref_version: "ix.artifact-ref/3-draft".into(),
         kind: filament::ArtifactKind::Source,
         authority: "test:producer".into(),
         identity: "producer:model-source".into(),
@@ -295,7 +298,7 @@ fn admitted_filament_bundle(inputs: &Inputs) -> filament::AdmittedStaticBundle {
         },
         semantics: filament::RelationshipSemantics {
             category: "association".into(),
-            direction: "source-to-target".into(),
+            direction,
             composite: false,
             lifecycle: "independent".into(),
             ownership: "none".into(),
@@ -357,6 +360,8 @@ fn admitted_filament_bundle(inputs: &Inputs) -> filament::AdmittedStaticBundle {
         required_native_definition_identities: BTreeSet::new(),
         configuration_identity: Some(CONFIGURATION.into()),
         exports: vec![
+            export(filament::ExportKind::Object, "producer:type-node", "Node"),
+            export(filament::ExportKind::Record, "producer:type-plain", "Plain"),
             export(
                 filament::ExportKind::Component,
                 COMPONENT,
@@ -434,7 +439,7 @@ fn expected_filament_selection(inputs: &Inputs) -> ProducerCompatibilitySelectio
     };
     let locus = w::ForeignLocus {
         source: w::ArtifactRef {
-            ref_version: "3".into(),
+            ref_version: "ix.artifact-ref/3-draft".into(),
             kind: w::ArtifactKind::Source,
             authority: "test:producer".into(),
             identity: "producer:model-source".into(),
@@ -466,7 +471,7 @@ fn expected_filament_selection(inputs: &Inputs) -> ProducerCompatibilitySelectio
             identity: "producer:bundle".into(),
             revision: producer_revision("1"),
             digest: canonical_digest(
-                "sha256:dfd1c63dcd2d000342c52a833cdd418159c1c895bed4c17412309c7949375c79",
+                "sha256:f9fa2a3c67316f82116df084455453a0b32e4c09488ca10dd2b9f73b55b50230",
             ),
         },
         model: model.clone(),
@@ -498,6 +503,8 @@ fn expected_filament_selection(inputs: &Inputs) -> ProducerCompatibilitySelectio
                 required_definitions: BTreeSet::new(),
                 configuration_identity: "producer:configuration".into(),
                 exports: vec![
+                    export(ProducerExportKind::Object, "producer:type-node", "Node"),
+                    export(ProducerExportKind::Record, "producer:type-plain", "Plain"),
                     export(
                         ProducerExportKind::Component,
                         "producer:campaign-component",
@@ -523,22 +530,50 @@ fn expected_filament_selection(inputs: &Inputs) -> ProducerCompatibilitySelectio
     }
 }
 
-#[test]
-#[trace("TC-132", "FR-048-AC-1")]
-fn admitted_filament_bundle_drives_the_compiler_producer_seam_directly() {
-    let mut inputs = inputs();
+fn direct_producer_inputs(related: &str) -> (Inputs, w::ArtifactRef, w::ArtifactRef) {
+    let mut inputs = inputs_with_related(related);
     inputs.model_reference.revision = w::Revision {
         namespace: filament::NATIVE_REVISION_NAMESPACE.into(),
         value: "1".into(),
     };
-    let dependency = inputs
+    let model_dependency = inputs
         .dependencies
         .iter_mut()
         .find(|(artifact, _)| artifact.identity == inputs.model_reference.identity)
         .expect("the selected model artifact is a supplied dependency");
-    dependency.0 = inputs.model_reference.clone();
+    model_dependency.0 = inputs.model_reference.clone();
+    let interface_bytes = b"producer-interface-1.2.0";
+    let relation_bytes = b"producer:model-native-relation";
+    let interface = dependency(
+        w::ArtifactKind::Source,
+        "producer-interface",
+        interface_bytes,
+    );
+    let relation = dependency(
+        w::ArtifactKind::Binding,
+        "producer:model-native-relation",
+        relation_bytes,
+    );
+    inputs.dependencies.extend([
+        (interface.clone(), interface_bytes.to_vec()),
+        (relation.clone(), relation_bytes.to_vec()),
+    ]);
+    inputs.dependencies.sort_by(|left, right| {
+        (left.0.kind.as_str(), &left.0.identity).cmp(&(right.0.kind.as_str(), &right.0.identity))
+    });
+    let mut operation = inputs.step_contracts("Before", "After");
+    operation.export += 3;
+    inputs.remap_operation_contracts("Before", "After", operation);
+    (inputs, interface, relation)
+}
 
-    let bundle = admitted_filament_bundle(&inputs);
+#[test]
+#[trace("TC-132", "FR-048-AC-1")]
+fn admitted_filament_bundle_drives_the_compiler_producer_seam_directly() {
+    let (inputs, interface, relation) =
+        direct_producer_inputs("related by OrderPayment(view, notice)");
+
+    let bundle = admitted_filament_bundle(&inputs, filament::RelationshipDirection::SourceToTarget);
     let expected = expected_filament_selection(&inputs);
     assert_eq!(
         adapt_filament_producer(&bundle, &inputs.model_reference.identity)
@@ -581,7 +616,7 @@ fn admitted_filament_bundle_drives_the_compiler_producer_seam_directly() {
         &admitted,
         TypeLimits::default(),
         proofs::ProofLimits::default(),
-        |proofs, _| {
+        |proofs, selections| {
             let binding = proofs.types().binding();
             let [campaign] = binding.namespace().lookup("Campaign") else {
                 panic!("campaign declaration")
@@ -606,6 +641,234 @@ fn admitted_filament_bundle_drives_the_compiler_producer_seam_directly() {
                 declaration.map(|value| value.relationship_identity.as_str()),
                 Some("producer:order-payment")
             );
+
+            let producer = native::ProducerSelection {
+                model: &admitted,
+                interface: &interface,
+                relation: &relation,
+            };
+            let admission =
+                native::admit_with_producers(proofs, selections, &[producer], Limits::default())
+                    .into_result()
+                    .expect("typed related occurrence admits");
+            let campaign = admission
+                .package()
+                .declarations
+                .iter()
+                .find(|declaration| declaration.name == "Campaign")
+                .expect("campaign declaration");
+            let w::Body::Protocol { controls, .. } = &campaign.body else {
+                panic!("campaign protocol")
+            };
+            let notice = controls
+                .iter()
+                .find(|control| control.name == "Notice")
+                .expect("notice control");
+            let w::ControlOperation::Event { related, .. } = &notice.operation else {
+                panic!("notice event")
+            };
+            let [occurrence] = related.as_slice() else {
+                panic!("one related occurrence")
+            };
+            assert_eq!(occurrence.relationship, 0);
+
+            let emitted = native::emit(&admission, Limits::default())
+                .into_result()
+                .expect("canonical producer bytes");
+            let expected_producer = artifact::ExpectedProducerModel {
+                model: &admitted,
+                interface: &interface,
+                relation: &relation,
+            };
+            let read = inputs.read_with_producers(proofs, &emitted, &[expected_producer]);
+            assert!(
+                read.result().is_ok(),
+                "strict related reader: {:?}, locus: {:?}, usage: {:?}",
+                read.result(),
+                read.locus(),
+                read.usage(),
+            );
+
+            let [deadline] = proofs.types().binding().namespace().lookup("Deadline") else {
+                panic!("one temporal declaration")
+            };
+            let deadline_span = proofs
+                .types()
+                .binding()
+                .namespace()
+                .syntax(*deadline)
+                .expect("deadline syntax")
+                .span;
+            let deadline_span = w::Span {
+                start: u32::try_from(deadline_span.start).expect("bounded source span"),
+                end: u32::try_from(deadline_span.end).expect("bounded source span"),
+            };
+            let definition = R::EventPosition;
+            let definition_artifact = selections
+                .dependencies
+                .iter()
+                .find(|dependency| {
+                    dependency.artifact.identity == definition.identity()
+                        && dependency.bytes == definition.bytes()
+                })
+                .expect("event-position definition dependency")
+                .artifact;
+            let definition_revision = w::Revision {
+                namespace: selections.definition_revision_namespace.into(),
+                value: definition.revision().into(),
+            };
+            let clock = v2::wire::ClockConfiguration::EventPosition {
+                sequence_authority: "campaign-events".into(),
+            };
+            let temporal = native::TemporalSelection {
+                source: &inputs.source_references[1],
+                span: &deadline_span,
+                definition_identity: definition.identity(),
+                definition_revision: &definition_revision,
+                definition_artifact,
+                clock: &clock,
+            };
+            let expected_temporal = inputs.temporal_expectation(
+                proofs,
+                1,
+                "Deadline",
+                TemporalDefinitionExpectation {
+                    identity: definition.identity().into(),
+                    revision: definition_revision.clone(),
+                    artifact: definition_artifact.clone(),
+                    clock: clock.clone(),
+                },
+            );
+            let v2_emitted = native::admit_v2_with_producers(
+                proofs,
+                selections,
+                &[producer],
+                &[temporal],
+                Limits::default(),
+            )
+            .into_result()
+            .expect("related campaign version-2 admission");
+            let v2_read = inputs.read_v2_with_producers(
+                proofs,
+                &v2_emitted,
+                &[expected_temporal],
+                &[expected_producer],
+            );
+            assert!(
+                v2_read.result().is_ok(),
+                "strict related version-2 reader: {:?}",
+                v2_read.result()
+            );
+
+            let mut reversed = admission.package().clone();
+            let declaration = reversed
+                .declarations
+                .iter_mut()
+                .find(|declaration| declaration.name == "Campaign")
+                .expect("campaign declaration");
+            let w::Body::Protocol { controls, .. } = &mut declaration.body else {
+                panic!("campaign protocol")
+            };
+            let notice = controls
+                .iter_mut()
+                .find(|control| control.name == "Notice")
+                .expect("notice control");
+            let w::ControlOperation::Event { related, .. } = &mut notice.operation else {
+                panic!("notice event")
+            };
+            let [occurrence] = related.as_mut_slice() else {
+                panic!("one related occurrence")
+            };
+            std::mem::swap(&mut occurrence.from, &mut occurrence.to);
+            let candidate = artifact::encode_candidate(&reversed, Limits::default())
+                .into_result()
+                .expect("structurally valid reversed endpoint candidate");
+            let read = inputs.read_producer_bytes(
+                proofs,
+                candidate.bytes(),
+                candidate.digest(),
+                &[expected_producer],
+            );
+            assert_eq!(
+                read.result().err(),
+                Some(&artifact::Error::Invalid(artifact::Invalid::Type))
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-132", "FR-048-AC-8")]
+fn compiler_refuses_reversed_relationship_endpoint_types() {
+    let (inputs, interface, relation) =
+        direct_producer_inputs("related by OrderPayment(notice, view)");
+    let bundle = admitted_filament_bundle(&inputs, filament::RelationshipDirection::SourceToTarget);
+    let expected = expected_filament_selection(&inputs);
+    let admitted = admit_filament_producer_model(
+        &bundle,
+        &inputs.model_reference.identity,
+        &inputs.model,
+        &expected,
+    )
+    .expect("the relationship contract itself is admitted");
+
+    inputs.with_producer_proofs(
+        &admitted,
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selections| {
+            let producer = native::ProducerSelection {
+                model: &admitted,
+                interface: &interface,
+                relation: &relation,
+            };
+            let report =
+                native::admit_with_producers(proofs, selections, &[producer], Limits::default());
+            assert_eq!(
+                report.result().err(),
+                Some(&artifact::Error::Invalid(artifact::Invalid::Type))
+            );
+        },
+    );
+}
+
+#[test]
+#[trace("TC-132", "FR-048-AC-8")]
+fn target_to_source_direction_keeps_declared_source_as_first_operand() {
+    let (inputs, interface, relation) =
+        direct_producer_inputs("related by OrderPayment(view, notice)");
+    let bundle = admitted_filament_bundle(&inputs, filament::RelationshipDirection::TargetToSource);
+    let mut expected = expected_filament_selection(&inputs);
+    expected.bundle.digest.value =
+        "sha256:c80fe081e3481d9d3d52f39907bae53797f20a67cb5cbd2b6f905c086a121917".into();
+    let adapted = adapt_filament_producer(&bundle, &inputs.model_reference.identity)
+        .expect("one target-to-source producer mapping");
+    assert_eq!(adapted, expected);
+    let admitted = admit_filament_producer_model(
+        &bundle,
+        &inputs.model_reference.identity,
+        &inputs.model,
+        &expected,
+    )
+    .expect("target-to-source keeps source and target operand positions");
+    inputs.with_producer_proofs(
+        &admitted,
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selections| {
+            let producer = native::ProducerSelection {
+                model: &admitted,
+                interface: &interface,
+                relation: &relation,
+            };
+            assert!(native::admit_with_producers(
+                proofs,
+                selections,
+                &[producer],
+                Limits::default(),
+            )
+            .result()
+            .is_ok());
         },
     );
 }

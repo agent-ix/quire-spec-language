@@ -99,6 +99,55 @@ pub enum ProducerExportKind {
     Variant,
 }
 
+impl ProducerExportKind {
+    /// Whether this export names a native type rather than a producer record or member.
+    pub const fn is_type(self) -> bool {
+        matches!(
+            self,
+            Self::Enum
+                | Self::Object
+                | Self::Record
+                | Self::Reference
+                | Self::Scalar
+                | Self::Variant
+        )
+    }
+
+    /// The existing compiled-protocol export kind for this producer mapping.
+    pub(crate) const fn wire_kind(self) -> wire::ExportKind {
+        match self {
+            Self::Component => wire::ExportKind::Component,
+            Self::Endpoint => wire::ExportKind::Endpoint,
+            Self::Relationship => wire::ExportKind::Relationship,
+            Self::Enum => wire::ExportKind::Enum,
+            Self::Field => wire::ExportKind::Field,
+            Self::Object => wire::ExportKind::Object,
+            Self::Operation => wire::ExportKind::Operation,
+            Self::Record => wire::ExportKind::Record,
+            Self::Reference => wire::ExportKind::Reference,
+            Self::Scalar => wire::ExportKind::Scalar,
+            Self::Variant => wire::ExportKind::Variant,
+        }
+    }
+}
+
+/// The declaration members supplying the first and second `related by` operands.
+/// Every admitted direction retains source first and target second; direction
+/// changes traversal authority only.
+pub(crate) fn relationship_operands(
+    declaration: &filament::RelationshipDeclaration,
+) -> (
+    &filament::RelationshipEndpoint,
+    &filament::RelationshipEndpoint,
+) {
+    match declaration.semantics.direction {
+        filament::RelationshipDirection::SourceToTarget
+        | filament::RelationshipDirection::TargetToSource
+        | filament::RelationshipDirection::Bidirectional
+        | filament::RelationshipDirection::Undirected => (&declaration.source, &declaration.target),
+    }
+}
+
 /// One exported producer identity and its exact native path.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProducerExportSelection {
