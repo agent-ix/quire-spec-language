@@ -21,15 +21,16 @@ bridge remains outside the matrix: it depends on `quire-contract-ir#63`,
 classification, which is decidable from the admitted declaration plus the
 requested surrounding-execution closure, with no bridge and no backend report.
 
-Three obligations are explicitly outstanding rather than covered. Mutation testing
+Two obligations are explicitly outstanding rather than covered. Mutation testing
 of NFR-008's exhaustion paths is not performed by this revision. Independent
 artifact-side checking of a declared sample period, epoch, timestamp unit or
 sequence authority is impossible while the emitted body carries none of them; the
-evaluator retains them as trace premises instead. Two semantic questions are referred for a ruling rather than settled here: the
-pointwise reading of the temporal Boolean connectives, which no owned rule pins,
-and the precedence between a reached ceiling and an already-settled sibling
-obligation. FR-043 records the reading this scope selects for each so the choice
-is visible in results. All three are recorded on compiler
+evaluator retains them as trace premises instead. The FR-042 `/2` wire change is
+compiler-owned work to agree with A; until it lands, this matrix makes no claim
+that those trace premises are authenticated. Pointwise Boolean composition,
+guard/redelivery dispositions and settled-sibling behavior are ratified shared
+semantics from `quire-specification` PR #23. Both outstanding obligations are
+recorded on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38).
 
 Status values are set from local runs only; hosted workflows remain
@@ -61,7 +62,7 @@ status-lie list is indistinguishable between a clean run and a skipped check. `C
 | FR-043 | FR-043-AC-7 | TC-122 | ✅ Tested |
 | FR-043 | FR-043-AC-8 | TC-122 | ✅ Tested |
 | FR-043 | FR-043-AC-9 | TC-122 | ✅ Tested |
-| FR-043 | FR-043-AC-10 | TC-122 | ✅ Tested; basis substitution not expressible, recorded on #38 |
+| FR-043 | FR-043-AC-10 | TC-122 | ✅ Tested and inspected; basis substitution is not an input surface |
 | FR-043 | FR-043-AC-11 | TC-122 | ✅ Tested |
 | FR-043 | FR-043-AC-12 | TC-122 | ✅ Tested |
 | FR-043 | FR-043-AC-13 | TC-122 | ✅ Tested |
