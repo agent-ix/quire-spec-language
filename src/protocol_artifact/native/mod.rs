@@ -105,7 +105,8 @@ pub fn admit_with_producers(
 ) -> Report<FamilyAdmission> {
     let mut work = Work::new(limits);
     let result = (|| {
-        let package = metadata::lower(proofs, selections, producers, &mut work)?;
+        let metadata::Lowered { package, .. } =
+            metadata::lower(proofs, selections, producers, &mut work)?;
         super::validate::package(&package, &mut work)?;
         Ok(FamilyAdmission { package })
     })();

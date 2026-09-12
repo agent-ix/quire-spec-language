@@ -37,7 +37,7 @@ pub use mapping::{
     OUTSTANDING_PREMISES, SUPPORT_TABLE,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
-pub use progress::{Binding, Ledger, Progress};
+pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
 pub use result::{
     Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
     Incomplete, Obligation, Premises, Refusal, Report, Subject, Support as DecisionSupport, Truth,
@@ -73,6 +73,7 @@ pub fn evaluate(
         result,
         limits: work.limits,
         usage: work.usage,
+        authenticated: None,
     }
 }
 
@@ -109,6 +110,7 @@ pub fn evaluate_with_progress(
         result,
         limits: work.limits,
         usage: work.usage,
+        authenticated: None,
     }
 }
 
@@ -123,6 +125,13 @@ pub fn mapping_support(
 }
 
 /// Evaluate one strict version-2 declaration after authenticating its exact clock.
+///
+/// Authentication gates the run: a trace whose clock identity does not match the
+/// admitted binding is refused before any evaluation work. The authenticated
+/// binding is retained on the report, so a version-2 result is distinguishable
+/// from an unauthenticated version-1 result without re-deriving it. A report
+/// refused by authentication itself retains none, because nothing was
+/// authenticated.
 pub fn evaluate_v2(
     package: &v2::AdmittedPackage,
     declaration: usize,
@@ -130,7 +139,9 @@ pub fn evaluate_v2(
     limits: Limits,
 ) -> Report {
     let mut work = budget::Work::new(limits);
-    let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|_| {
+    let mut authenticated = None;
+    let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|binding| {
+        authenticated = Some(binding);
         run(
             package.inherited(),
             declaration,
@@ -143,6 +154,7 @@ pub fn evaluate_v2(
         result,
         limits: work.limits,
         usage: work.usage,
+        authenticated,
     }
 }
 
@@ -155,7 +167,9 @@ pub fn evaluate_with_progress_v2(
     ledger: &mut Ledger,
 ) -> Report {
     let mut work = budget::Work::new(limits);
+    let mut authenticated = None;
     let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|binding| {
+        authenticated = Some(binding.clone());
         ledger
             .record_authenticated(binding, Progress::of(trace))
             .map_err(Error::from)
@@ -173,6 +187,7 @@ pub fn evaluate_with_progress_v2(
         result,
         limits: work.limits,
         usage: work.usage,
+        authenticated,
     }
 }
 

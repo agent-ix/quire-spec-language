@@ -186,20 +186,24 @@ pub fn admit_v2_with_producers(
 ) -> Report<AdmissionV2> {
     let mut work = artifact::work::Work::new(limits);
     let result = (|| {
-        let mut inherited = super::metadata::lower(proofs, selections, producers, &mut work)?;
-        inherited.wire = v2::WIRE.into();
-        inherited.media = v2::MEDIA.into();
-        inherited.schema = v2::SCHEMA.into();
-        artifact::validate::package(&inherited, &mut work)?;
-        let temporal_bindings = bindings(&inherited, temporal, &mut work)?;
+        let mut lowered = super::metadata::lower(proofs, selections, producers, &mut work)?;
+        lowered.package.wire = v2::WIRE.into();
+        lowered.package.media = v2::MEDIA.into();
+        lowered.package.schema = v2::SCHEMA.into();
+        artifact::validate::package(&lowered.package, &mut work)?;
+        let temporal_bindings = bindings(&lowered.package, temporal, &mut work)?;
         let package = v2::wire::Package {
-            inherited,
+            inherited: lowered.package,
             temporal_bindings,
         };
         let candidate = artifact::encoding::candidate(&package, &mut work)?;
         let admitted = v2::AdmittedPackage {
             digest: candidate.digest(),
             package,
+            // Emission produces bytes and their raw-byte digest; the caller
+            // publishes the artifact identity, so none is invented here.
+            artifact: None,
+            model_schema: lowered.model_schema,
         };
         Ok(AdmissionV2 {
             candidate,

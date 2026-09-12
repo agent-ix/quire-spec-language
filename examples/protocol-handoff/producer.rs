@@ -23,10 +23,17 @@ use quire_spec_language::{
     },
     model_source::{self, ModelSourceLimits},
     native_model::{ModelLimits, NativeModel},
-    protocol_artifact::{self as artifact, native, v2, wire as w},
+    protocol_artifact::{
+        self as artifact,
+        handoff::{
+            MutationCase, MutationInput, MutationManifest, SelectedArtifactLimits,
+            SelectedClockInput, SelectedDeclaration, SelectedDependency, SelectedModel,
+            SelectedSource, SelectedTemporal, Selection, SelectionV2,
+        },
+        native, v2, wire as w,
+    },
     ByteDigest, Source, SourceIdentity,
 };
-use serde::Serialize;
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
 const STANDARD: &str = "ix://agent-ix/quire-specification";
@@ -338,6 +345,8 @@ pub enum Error {
     },
     #[error("cannot serialize an example selection: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("cannot serialize the selected reader limits: {0}")]
+    HandoffLimits(#[from] artifact::handoff::LimitWidthError),
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
     #[error("authored declaration {name}: {cause}")]
@@ -379,8 +388,8 @@ pub enum Error {
     MutationFixture(&'static str),
     #[error("v2 mutation {identity} expected refusal {expected}, got {actual}")]
     MutationReplay {
-        identity: &'static str,
-        expected: &'static str,
+        identity: String,
+        expected: String,
         actual: String,
     },
 }
@@ -575,146 +584,6 @@ struct Dependency {
     bytes: Cow<'static, [u8]>,
     requires: Vec<w::ArtifactRef>,
     file: String,
-}
-
-#[derive(Serialize)]
-struct SelectedDependency {
-    artifact: w::ArtifactRef,
-    file: String,
-    requires: Vec<w::ArtifactRef>,
-}
-
-#[derive(Clone, Serialize)]
-struct SelectedDeclaration {
-    name: String,
-    span: w::Span,
-    requirement: w::Requirement,
-    clause: String,
-    execution: w::Execution,
-}
-
-#[derive(Clone, Serialize)]
-struct SelectedSource {
-    file: &'static str,
-    source: w::Source,
-    declarations: Vec<SelectedDeclaration>,
-}
-
-#[derive(Clone, Serialize)]
-struct SelectedModel {
-    artifact: w::ArtifactRef,
-    source: w::Source,
-    source_file: &'static str,
-    source_format: &'static str,
-}
-
-/// Serialized fields from the existing Expected input, confined to this example.
-#[derive(Serialize)]
-struct Selection {
-    artifact: w::ArtifactRef,
-    contract: w::ArtifactRef,
-    baseline: w::ArtifactRef,
-    producer: w::Producer,
-    language: w::Language,
-    sources: Vec<SelectedSource>,
-    dependencies: Vec<SelectedDependency>,
-    model: SelectedModel,
-}
-
-#[derive(Serialize)]
-struct SelectedArtifactLimits {
-    accounting_version: &'static str,
-    payload_bytes: usize,
-    output_bytes: usize,
-    source_bytes: usize,
-    content_bytes: usize,
-    sources: usize,
-    dependencies: usize,
-    definitions: usize,
-    models: usize,
-    declarations: usize,
-    entries: usize,
-    references: usize,
-    byte_work: usize,
-    depth: usize,
-}
-
-impl SelectedArtifactLimits {
-    fn new(limits: artifact::Limits) -> Self {
-        Self {
-            accounting_version: artifact::ACCOUNTING_VERSION,
-            payload_bytes: limits.payload_bytes,
-            output_bytes: limits.output_bytes,
-            source_bytes: limits.source_bytes,
-            content_bytes: limits.content_bytes,
-            sources: limits.sources,
-            dependencies: limits.dependencies,
-            definitions: limits.definitions,
-            models: limits.models,
-            declarations: limits.declarations,
-            entries: limits.entries,
-            references: limits.references,
-            byte_work: limits.byte_work,
-            depth: limits.depth,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct SelectedClockInput {
-    identity: String,
-    digest: String,
-    file: &'static str,
-    configuration: v2::wire::ClockConfiguration,
-}
-
-#[derive(Serialize)]
-struct SelectedTemporal {
-    source: w::ArtifactRef,
-    declaration: SelectedDeclaration,
-    definition_identity: String,
-    definition_revision: w::Revision,
-    definition_artifact: w::ArtifactRef,
-    clock_input: SelectedClockInput,
-}
-
-/// Serialized independent v2 reader inputs, confined to this example.
-#[derive(Serialize)]
-struct SelectionV2 {
-    inherited: Selection,
-    temporal: Vec<SelectedTemporal>,
-    limits: SelectedArtifactLimits,
-}
-
-/// Machine-consumable adverse corpus for the independent consumer.
-#[derive(Serialize)]
-struct MutationManifest {
-    format: &'static str,
-    base_offer: &'static str,
-    base_artifact: &'static str,
-    independent_selection: &'static str,
-    cases: Vec<MutationCase>,
-}
-
-#[derive(Serialize)]
-struct MutationCase {
-    identity: &'static str,
-    axis: &'static str,
-    input: MutationInput,
-    expected_refusal_code: &'static str,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
-enum MutationInput {
-    Offer {
-        file: String,
-        artifact: w::ArtifactRef,
-    },
-    ReplaceOriginal {
-        target: String,
-        file: String,
-    },
 }
 
 type MutationFiles = Vec<(String, Vec<u8>)>;
@@ -1081,8 +950,8 @@ impl SelectedInputs {
             model: SelectedModel {
                 artifact: model_ref,
                 source: wire_source(foreign_ref, model.source()),
-                source_file: "model-source.json",
-                source_format: model_source::FORMAT_V2,
+                source_file: "model-source.json".into(),
+                source_format: model_source::FORMAT_V2.into(),
             },
             dependencies,
         })
@@ -1354,7 +1223,7 @@ fn compile_with<T>(
         .iter()
         .map(|unit| {
             Ok(SelectedSource {
-                file: unit.file,
+                file: unit.file.into(),
                 source: wire_source(unit.artifact.clone(), &unit.mapping.source),
                 declarations: declaration_selection(namespace, unit, &inputs.operation)?,
             })
@@ -1764,7 +1633,7 @@ fn emit_and_read_v2(
                         recipe.clock_identity
                     ),
                     digest: ByteDigest::of(recipe.clock_bytes).to_string(),
-                    file: recipe.clock_file,
+                    file: recipe.clock_file.into(),
                     configuration: clocks[index].clone(),
                 },
             }
@@ -1773,7 +1642,7 @@ fn emit_and_read_v2(
     let selection = SelectionV2 {
         inherited: selected.output_selection(output.clone(), selected_sources.clone()),
         temporal,
-        limits: SelectedArtifactLimits::new(limits),
+        limits: SelectedArtifactLimits::try_new(limits)?,
     };
     let package = emitted.admitted().package().clone();
     let (mutation_manifest, mutation_files) =
@@ -1929,12 +1798,12 @@ fn write_files(
     }
     for selected in &selection.sources {
         write_file(
-            &directory.join(selected.file),
+            &directory.join(&selected.file),
             selected.source.text.as_bytes(),
         )?;
     }
     write_file(
-        &directory.join(selection.model.source_file),
+        &directory.join(&selection.model.source_file),
         selection.model.source.text.as_bytes(),
     )?;
     write_file(&directory.join("expected.json"), &selected_bytes)?;
@@ -1966,12 +1835,12 @@ fn write_files_v2(
     }
     for selected in &selection.inherited.sources {
         write_file(
-            &directory.join(selected.file),
+            &directory.join(&selected.file),
             selected.source.text.as_bytes(),
         )?;
     }
     write_file(
-        &directory.join(selection.inherited.model.source_file),
+        &directory.join(&selection.inherited.model.source_file),
         selection.inherited.model.source.text.as_bytes(),
     )?;
     for recipe in TEMPORAL_V2 {
@@ -2017,10 +1886,10 @@ fn mutation_fixtures(
         );
         files.push((file.clone(), bytes));
         cases.push(MutationCase {
-            identity,
-            axis,
+            identity: identity.into(),
+            axis: axis.into(),
             input: MutationInput::Offer { file, artifact },
-            expected_refusal_code,
+            expected_refusal_code: expected_refusal_code.into(),
         });
         Ok(())
     };
@@ -2419,10 +2288,10 @@ fn mutation_fixtures(
         );
         files.push((file.clone(), bytes));
         cases.push(MutationCase {
-            identity,
-            axis,
+            identity: identity.into(),
+            axis: axis.into(),
             input: MutationInput::Offer { file, artifact },
-            expected_refusal_code: "json",
+            expected_refusal_code: "json".into(),
         });
     }
 
@@ -2434,21 +2303,21 @@ fn mutation_fixtures(
     let changed_file = "mutations/definition-original-bytes.bin".to_owned();
     files.push((changed_file.clone(), changed_definition_bytes));
     cases.push(MutationCase {
-        identity: "definition-original-bytes",
-        axis: "definition.original_bytes",
+        identity: "definition-original-bytes".into(),
+        axis: "definition.original_bytes".into(),
         input: MutationInput::ReplaceOriginal {
             target: selected_dependency.file.clone(),
             file: changed_file,
         },
-        expected_refusal_code: "invalid.seal",
+        expected_refusal_code: "invalid.seal".into(),
     });
 
     Ok((
         MutationManifest {
-            format: "quire.protocol.v2-mutations/1",
-            base_offer: "compiled-protocol-v2.json",
-            base_artifact: "compiled-protocol-v2.ref.json",
-            independent_selection: "expected-v2.json",
+            format: "quire.protocol.v2-mutations/1".into(),
+            base_offer: "compiled-protocol-v2.json".into(),
+            base_artifact: "compiled-protocol-v2.ref.json".into(),
+            independent_selection: "expected-v2.json".into(),
             cases,
         },
         files,
@@ -2461,15 +2330,6 @@ fn mutation_file<'a>(files: &'a MutationFiles, name: &str) -> Result<&'a [u8], E
         .find(|(file, _)| file == name)
         .map(|(_, bytes)| bytes.as_slice())
         .ok_or(Error::MutationFixture("manifest-file"))
-}
-
-fn replay_code(error: &artifact::Error) -> Option<&'static str> {
-    match error {
-        artifact::Error::V2(refusal) => Some(refusal.code()),
-        artifact::Error::Json { .. } => Some("json"),
-        artifact::Error::Invalid(artifact::Invalid::Seal) => Some("invalid.seal"),
-        _ => None,
-    }
 }
 
 #[allow(
@@ -2523,11 +2383,11 @@ fn verify_mutation_fixtures(
                 )
             }
         };
-        let actual = report.result().err().and_then(replay_code);
-        if actual != Some(case.expected_refusal_code) {
+        let actual = report.result().err().map(artifact::Error::code);
+        if actual != Some(case.expected_refusal_code.as_str()) {
             return Err(Error::MutationReplay {
-                identity: case.identity,
-                expected: case.expected_refusal_code,
+                identity: case.identity.clone(),
+                expected: case.expected_refusal_code.clone(),
                 actual: report
                     .result()
                     .err()

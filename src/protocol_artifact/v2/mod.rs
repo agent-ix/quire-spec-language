@@ -11,6 +11,7 @@ pub use refusal::{
     HeaderField, InventorySide, Refusal, SelectionSide,
 };
 
+use super::wire::ArtifactRef;
 use super::ExpectedDeclaration;
 use crate::ByteDigest;
 
@@ -59,6 +60,10 @@ pub struct Expected<'a> {
 pub struct AdmittedPackage {
     pub(super) package: wire::Package,
     pub(super) digest: ByteDigest,
+    // Present only on the reader path, which admits an independently selected
+    // artifact identity. Compiler emission has no published identity yet.
+    pub(super) artifact: Option<ArtifactRef>,
+    pub(super) model_schema: Vec<crate::native_model::NativeModel>,
 }
 
 impl AdmittedPackage {
@@ -75,5 +80,19 @@ impl AdmittedPackage {
     /// Digest of the exact admitted version-2 bytes.
     pub fn digest(&self) -> ByteDigest {
         self.digest
+    }
+
+    /// Independently admitted model schema retained for this model-table entry.
+    pub fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel> {
+        self.model_schema.get(usize::try_from(index).ok()?)
+    }
+
+    /// Independently selected compiled artifact identity admitted by the reader.
+    ///
+    /// This is `None` for a compiler emission, which produces bytes and their
+    /// raw-byte digest before any caller publishes an artifact identity for
+    /// them. It is never synthesized from the payload.
+    pub fn artifact(&self) -> Option<&ArtifactRef> {
+        self.artifact.as_ref()
     }
 }

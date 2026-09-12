@@ -19,13 +19,26 @@ use std::collections::BTreeMap;
 use super::result::{Closure, Completeness, Dimension, Refusal, Subject};
 use super::trace::Trace;
 
+/// The exact clock identity a strict version-2 evaluation authenticated before
+/// it ran any evaluation work.
+///
+/// This is retained evidence, not an assertion: it records which admitted
+/// package, declaration, registered definition and clock configuration the
+/// trace was checked against. A version-1 evaluation authenticates nothing and
+/// retains none of this.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) struct AuthenticatedBinding {
+pub struct AuthenticatedBinding {
+    /// Raw-byte digest of the admitted version-2 package.
     pub package_digest: String,
+    /// Declaration index in that package.
     pub declaration: usize,
+    /// Registered temporal definition identity.
     pub definition_identity: String,
+    /// Registered semantic revision of that definition.
     pub definition_revision: String,
+    /// Emitted clock binding name, without the `clock:` requirement prefix.
     pub clock: String,
+    /// Exact authenticated clock parameters, by member name.
     pub parameters: BTreeMap<String, String>,
 }
 
