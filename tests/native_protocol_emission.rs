@@ -627,7 +627,15 @@ fn native_operation_contracts_events_effects_and_commit_keep_distinct_authority(
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-2"
+)]
 fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
     let inputs = Inputs::new(&[Unit {
         name: "record-channels",
@@ -882,7 +890,14 @@ fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-6")]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-1",
+    "FR-042-AC-4",
+    "FR-042-AC-6",
+    "FR-048-AC-2"
+)]
 fn native_scalar_channel_declares_exact_fifo_type_without_invented_event_projection() {
     let inputs = Inputs::new(&[Unit {
         name: "scalar-channel",
@@ -964,7 +979,14 @@ fn native_scalar_channel_declares_exact_fifo_type_without_invented_event_project
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-8",
+    "FR-048-AC-2"
+)]
 fn native_channels_refuse_missing_correspondence_bad_keys_and_reversed_cardinality() {
     for (channel, run, expected) in [
         (
@@ -1117,7 +1139,14 @@ fn nonprogressing_native_repeat_is_refused_after_real_value_discharge() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-048-AC-3"
+)]
 fn native_owned_choice_proves_nonliteral_constant_guards_and_preserves_both_branches() {
     let guard = "((not false) and (false or true)) and ((false implies false) = (true != false))
         and (if true then true else false) and (if false then false else true)";
@@ -1219,7 +1248,15 @@ fn native_choice_refuses_overlap_uncovered_and_unproved_dynamic_decisions() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-048-AC-3",
+    "FR-048-AC-5"
+)]
 fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
     for (maximum, guard, body, observable) in [
         (
@@ -1315,11 +1352,13 @@ fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
 #[test]
 #[trace(
     "TC-121",
+    "TC-133",
     "FR-042-AC-1",
     "FR-042-AC-5",
     "FR-042-AC-6",
     "FR-042-AC-7",
-    "FR-042-AC-8"
+    "FR-042-AC-8",
+    "FR-048-AC-3"
 )]
 fn native_await_emits_clock_authority_but_a_deadline_alone_cannot_prove_repeat_progress() {
     let await_node = "await Response after Main::Started using T clock \"reply-clock\" within [0,2]

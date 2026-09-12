@@ -270,7 +270,14 @@ fn requirements(declaration: &w::Declaration, kind: w::BindingKind) -> Vec<u32> 
 /// authored attempt bound, commit boundary and full versus partial recovery
 /// relation belong to one refund each and are never shared or swapped.
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-042-AC-1",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-6"
+)]
 fn two_refunds_of_one_payment_effect_keep_separate_retry_commit_and_recovery_authorities() {
     let inputs = inputs(&source());
     admitted(&inputs, |package| {

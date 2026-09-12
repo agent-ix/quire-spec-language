@@ -31,7 +31,7 @@ declaration and one declaration-local value handle. The state view contains
 explicit binder values and finite population/object views selected by their
 declaration-local binding requirements.
 
-D's Producer interface 1.2.0 at filament-core-data revision
+D's draft Producer interface 1.2.0 contract at filament-core-data revision
 `6259d3a5b99088740df9bcc8e8d60f3720aaa603` supplies model, object-type,
 relationship, population-declaration, configuration and
 producer/native-correspondence identity. F's selected observation binding and
@@ -40,7 +40,9 @@ assessment-input contract at the accepted native-v1 baseline
 occurrence correlation, membership, observation anchors, progress and
 completeness. The caller translates those authorities into this typed Rust
 view; field spelling, JSON shape or the offered protocol artifact cannot appoint
-them.
+them. That pinned D revision defines a normative contract but no Rust producer
+or wire schema. Positive local fixtures therefore exercise an explicitly
+caller-selected compatibility adapter and do not claim real D production.
 
 ## Outputs
 
@@ -80,16 +82,20 @@ The input validator SHALL permit an unavailable value at a position whose
 compiled expected type and authority are known, so evaluation can preserve
 short-circuit behavior without inventing its payload.
 
-The population validator SHALL use the complete storage key `(anchor, model,
-universe, object type, object identifier)` and reject two entries with the same
-key.
+The population validator SHALL use the complete storage key `(observation
+occurrence, model, universe, object type, object identifier)` and reject two
+entries with the same key. The observation occurrence contains the exact
+semantic anchor, snapshot identity, optional window identity and record
+identity. D/F identities and Filament canonical digests remain typed separately
+from compiled-protocol artifact references and raw-byte digests.
 
 The population validator SHALL permit the same model/universe/type/object
-identity under distinct pre, post or current anchors as distinct storage entries.
+identity under distinct pre, post or current anchors, snapshots, windows or
+record occurrences as distinct storage entries.
 
-The identity comparator SHALL project away only the observation anchor when the
-language explicitly compares pre/post object identity; field reads and graph
-traversal SHALL retain the full storage key.
+The identity comparator SHALL project away only the complete observation
+occurrence when the language explicitly compares cross-observation object
+identity; field reads and graph traversal SHALL retain the full storage key.
 
 If a population is declared complete, then the population validator SHALL
 reject a reference target absent from its exact full storage-key domain.
@@ -120,7 +126,7 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | FR-049-AC-2 | Binder and population inputs retain exact declaration, compiled requirement, model, type, unit, anchor and authority; duplicate, surplus, foreign and wrong-type entries refuse independently. | Test (TC-136) |
 | FR-049-AC-3 | Every available payload and recursively typed aggregate slot satisfies the exact compiled Boolean/numeric/text/enum/record/option/sequence/reference/object domain without implicit conversion, normalization or duplicate coalescing. | Test (TC-136) |
 | FR-049-AC-4 | Unavailable values preserve typed missing identities and participate only if evaluation reaches them; they never become null, false, zero, empty or a completed output member. | Test (TC-136) |
-| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct anchors, compares permitted pre/post identity without retagging reads, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
+| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct observation occurrences, compares permitted cross-observation identity without retagging reads, keeps D/F identity and digest domains separate from compiled artifacts, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
 | FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
 | FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
 | FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |

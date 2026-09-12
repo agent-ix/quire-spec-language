@@ -202,7 +202,15 @@ fn own_attempt_reference_budget_exhaustion_preserves_original_locus_and_retries(
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-5", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-1",
+    "FR-042-AC-4",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-048-AC-4"
+)]
 fn own_attempt_choice_preserves_cross_unit_contract_and_observation_owners() {
     let mut inputs = Inputs::new(&[
         Unit { name: "attempt-contracts", body: "pre Ready using S on M::Node::step { delta >= 0 }\npost Done using S on M::Node::step { result }", declarations: &["Ready", "Done"] },
@@ -391,7 +399,7 @@ fn own_attempt_choice_preserves_cross_unit_contract_and_observation_owners() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+#[trace("TC-121", "TC-133", "FR-042-AC-5", "FR-042-AC-8", "FR-048-AC-4")]
 fn foreign_role_cannot_use_an_attempt_even_with_the_same_model_type() {
     let decision = choice(
         "Sender",
@@ -1601,7 +1609,14 @@ fn sibling_optional_branch_and_await_records_refuse_at_the_original_lexical_use(
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-042-AC-8",
+    "FR-048-AC-5"
+)]
 fn repeat_progress_covers_every_feasible_dynamic_case_and_keeps_dead_cases() {
     for (case, no_body, after, guard, succeeds) in [
         (
@@ -1740,7 +1755,7 @@ fn an_observed_repeat_guard_requires_owned_listed_and_individual_atoms() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+#[trace("TC-121", "TC-133", "FR-042-AC-5", "FR-042-AC-8", "FR-048-AC-4")]
 fn a_repeat_guard_atom_established_inside_the_body_has_no_decision_availability() {
     let loop_ = repeat(
         "Receiver",
@@ -1878,7 +1893,14 @@ fn a_zero_maximum_observed_repeat_keeps_its_authored_bound_without_a_body_obliga
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-042-AC-8",
+    "FR-048-AC-5"
+)]
 fn an_observed_repeat_supplies_enclosing_progress_only_when_it_cannot_exit_early() {
     // An infeasible true valuation carries no body obligation, even though its
     // authored body contains only a check. It still contributes no progress.
@@ -1989,7 +2011,14 @@ fn an_observed_repeat_supplies_enclosing_progress_only_when_it_cannot_exit_early
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-042-AC-8",
+    "FR-048-AC-4"
+)]
 fn an_unused_boolean_let_initializer_still_requires_its_received_atom() {
     for (visible, succeeds) in [("gotB.ready", true), ("true", false)] {
         let decision = choice(

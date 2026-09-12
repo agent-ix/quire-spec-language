@@ -56,12 +56,20 @@ configuration and producer/native correspondence exports; the selected L5
 temporal declarations; F-owned observation-role definitions; and finite compiler
 admission/emission limits.
 
-D's selected authority is **Producer interface 1.2.0** at immutable
+D's selected normative input is the draft **Producer interface 1.2.0** contract at immutable
 `filament-core-data` revision
 `6259d3a5b99088740df9bcc8e8d60f3720aaa603`. Static compilation consumes its
 model/profile/configuration meaning, exports and correspondence. Population,
 snapshot, window, member, relationship-instance and closure identities are also
 D-owned; their concrete assessment selection is not a static compiler input.
+
+That pinned D revision defines no Rust producer or wire schema. Until D ships a
+reviewed producer, A accepts only an explicit typed caller-supplied compatibility
+adapter that preserves D's bare revision and three-field canonical digest
+separately from A's namespaced revision and native raw-byte digest. The adapter
+must carry an explicit configuration and producer/native correspondence
+relation; A does not infer either mapping. Local positive fixtures for that seam
+are synthetic contract fixtures and are not evidence of real D production.
 
 F owns concrete record admission, mapping a record to its exact workflow/node/
 role/delivery/attempt/effect occurrence, and the availability, membership,
@@ -93,12 +101,13 @@ are consumed only through the version-exact parser-free Rust readers owned by
 
 The compiler SHALL retain the static protocol declaration, authored role slots,
 participant/component/endpoint selections, relationship declarations and every
-authored node handle. It SHALL also retain the runtime occurrence-key schema:
-protocol declaration, assessed workflow-instance identity, role slot, authored
-node and every enclosing repeat ordinal. It SHALL NOT emit future O1/O2 workflow
-instances. Those concrete identities are supplied later, and the retained key
-schema prevents two instances from collapsing when they share a provider, model,
-local name or transport value.
+authored node handle. Its admitted-package occurrence-schema projection SHALL
+return the protocol declaration, workflow-instance binding requirement, each
+authored node, the node's role slot when that node is role-owned, and every
+outer-to-inner enclosing repeat ordinal domain. It SHALL NOT emit future O1/O2
+workflow instances or concrete ordinals. Those concrete identities and ordinal
+values are supplied later, and the retained schema prevents two instances from
+collapsing when they share a provider, model, local name or transport value.
 
 The compiler SHALL retain channel sender/receiver roles, payload type,
 delivery bounds, ordering rule and each authored send/receive occurrence without
@@ -138,14 +147,15 @@ node or explicit `never`.
 The compiler SHALL preserve one compensation obligation across distinct retry
 attempt identities without treating operation success as recovery success.
 
-For `activate first`, the compiler SHALL preserve the exact trigger identity and
-the requirement for an admitted causal/sequence order between distinct eligible
-triggers. It SHALL NOT select concurrent eligible triggers by ingestion order or
-timestamp. Repeated delivery of one semantic trigger retains separate receipt
-provenance but cannot create another activation or registration; a later distinct
-eligible trigger cannot create a second activation for the same registered
-forward effect. Missing order/correlation remains incomplete and an inconsistent
-binding remains refused under the selected F/B contract.
+For `activate first`, the compiler SHALL preserve the exact trigger identity,
+registration identity and requirement for an admitted causal/sequence order
+between distinct eligible triggers. It SHALL NOT encode ingestion order or
+timestamp as the selection rule. It SHALL retain the downstream requirements
+that repeated delivery of one semantic trigger keeps separate receipt provenance
+without another activation/registration and that a later distinct trigger does
+not reactivate the same registered forward effect. The compiler does not execute
+those rules; missing order/correlation and inconsistent runtime bindings remain
+typed F/B assessment outcomes.
 
 The compiler SHALL derive recovery population, relationship, snapshot,
 progress, closure, clock and captured-origin requirements from original recovery
@@ -186,25 +196,30 @@ resource incompleteness and emits no static subject.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-048-AC-1 | One reusable template retains its static role/relationship requirements and full runtime occurrence-key schema through emission and reading. Later O1/O2 bindings sharing one external payment provider therefore require distinct workflow and node-occurrence identities, without the compiler fabricating either instance. | Test (TC-132) |
+| FR-048-AC-1 | One reusable template retains its static role/relationship requirements and exposes the full runtime occurrence-key schema from an admitted `/1` or `/2` package without changing wire bytes. Later O1/O2 bindings sharing one external payment provider therefore require distinct workflow and node-occurrence identities plus one concrete ordinal for every returned repeat domain, without the compiler fabricating any instance or ordinal. | Test (TC-132) |
 | FR-048-AC-2 | Channels preserve exact endpoint roles, payloads, order/delivery bounds and separate send, receive, delivery, attempt and effect identities; concrete fan-out remains a consumer binding. | Test (TC-132) |
 | FR-048-AC-3 | Sequence, choice, parallel, join, await, repeat, exhaustion, check, event and commit nodes retain their authored topology and exact typed control edges. | Test (TC-133) |
 | FR-048-AC-4 | Observed choice/repeat guards admit only causally visible eligible atoms; same spelling, wrong owner, branch-local or success-only values refuse without disappearing in unused operands. | Test (TC-133) |
 | FR-048-AC-5 | A repeat with a feasible false guard contributes no guaranteed enclosing progress; an infeasible false valuation permits the entered body's proven progress; zero/exact/one-short proof budgets retain charge order and typed outcomes. | Test (TC-133) |
-| FR-048-AC-6 | Split shipments, payment retry and refund paths preserve separate occurrences and their required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation. | Test (TC-134) |
-| FR-048-AC-7 | Registration, activation, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. Concurrent eligible triggers require admitted order; duplicate delivery of one trigger and later distinct triggers preserve provenance without reactivation. | Test (TC-134) |
-| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. Missing authority is unsupported or incomplete, never recovery success. | Test (TC-134) |
+| FR-048-AC-6 | Split shipments, one authored payment attempt under distinct supplied repeat ordinals, and refund paths preserve separate static subjects and required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation or minting another static attempt. | Test (TC-134) |
+| FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
+| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. Missing static producer authority is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
 | FR-048-AC-9 | The release producer emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/model/producer/artifact/result digest substitution or recanonicalization refuses. | Test (TC-135) |
 | FR-048-AC-10 | A's release producer contributes the exact source-derived artifact, selection and static binding requirements to the separately owned pinned campaign run. The contribution is byte-identical at B's intake and retains every required D, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
 
 ## Dependencies
 
 [FR-042](FR-042-publish-compiled-protocol-artifacts.md) owns the artifact and
-producer handoff. D's Producer interface 1.2.0 at
+producer handoff. D's draft Producer interface 1.2.0 contract at
 `6259d3a5b99088740df9bcc8e8d60f3720aaa603` owns the model, relationship,
 population and configuration identities and correspondence that A consumes.
 F's observation contract owns concrete record/correlation, availability,
 membership, completeness, progress and closure assertions.
+
+The pinned D revision explicitly implements no producer or wire schema. A's
+typed compatibility-adapter fixtures verify the compiler boundary only; real D
+producer acceptance remains a campaign dependency and cannot be inferred from
+those fixtures.
 
 The pinned external L5 requirement and Rust-interface baseline is merged PR #70,
 compiler revision `72507f8`, comprising FR-043/044/045 and
