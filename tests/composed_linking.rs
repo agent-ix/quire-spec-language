@@ -304,7 +304,7 @@ fn a_missing_target_retains_the_original_cause_through_dependents() {
 }
 
 #[test]
-#[trace("TC-114", "FR-036-AC-2")]
+#[trace("TC-114", "TC-126", "FR-036-AC-2", "FR-046-AC-2")]
 fn ambiguous_native_names_never_pick_the_first_candidate() {
     let sources = [
         source("first", &predicates("predicate Same using S (): Boolean { true }")),
@@ -336,7 +336,7 @@ const CYCLE: &str = "predicate SelfCall using S (): Boolean { SelfCall() }\n\
     predicate Spare using S (): Boolean { true }";
 
 #[test]
-#[trace("TC-114", "FR-036-AC-2", "FR-036-AC-7")]
+#[trace("TC-114", "TC-126", "FR-036-AC-2", "FR-036-AC-7", "FR-046-AC-2")]
 fn self_and_mutual_cycles_refuse_their_dependents_with_exact_edge_loci() {
     let sources = [source("cycles", &predicates(CYCLE))];
     let inventory = inventory(&sources);
