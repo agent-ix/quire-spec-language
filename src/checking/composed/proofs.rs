@@ -64,6 +64,8 @@ pub enum CauseKind {
     Correspondence(CorrespondenceError),
     /// A supported obligation was not proved; this is not a counterexample.
     Unproved { diagnostics: Vec<ir::Diagnostic> },
+    /// The finite aggregate domain does not prove every admitted prefix representable.
+    UnprovedAggregateDomain,
     /// The selected interface cannot supply this required meaning.
     Unsupported(Unsupported),
     /// An actual native dependency did not discharge.
