@@ -177,7 +177,14 @@ fn nominal(package: &w::Package, at: u32, expected: &str) {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-042-AC-4",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-8"
+)]
 fn recovery_population_origins_follow_used_capture_operands_not_neighboring_source() {
     for reads_capture in [true, false] {
         let mut body = source();
@@ -518,7 +525,16 @@ fn recovery_population_origins_follow_used_capture_operands_not_neighboring_sour
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-042-AC-4",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-6",
+    "FR-048-AC-7",
+    "FR-048-AC-8"
+)]
 fn native_compensation_keeps_registration_activation_retry_and_authored_recovery_relations() {
     let (inputs, expected_operation) = inputs(&source());
     inputs.with_proofs(TypeLimits::default(), proofs::ProofLimits::default(), |proofs, selected| {
@@ -698,7 +714,14 @@ fn native_compensation_keeps_registration_activation_retry_and_authored_recovery
 }
 
 #[test]
-#[trace("TC-121", "FR-036-AC-4", "FR-042-AC-6", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-036-AC-4",
+    "FR-042-AC-6",
+    "FR-042-AC-8",
+    "FR-048-AC-7"
+)]
 fn compensation_capture_stages_cannot_read_later_or_expired_bindings() {
     for (from, to, name) in [
         (
@@ -777,7 +800,7 @@ fn compensation_capture_stages_cannot_read_later_or_expired_bindings() {
 }
 
 #[test]
-#[trace("TC-121", "FR-036-AC-4", "FR-042-AC-6")]
+#[trace("TC-121", "TC-134", "FR-036-AC-4", "FR-042-AC-6", "FR-048-AC-7")]
 fn compensation_requires_the_exact_effect_and_commit_control_kinds() {
     for (from, to, kind, selected_name) in [
         (
@@ -1400,7 +1423,14 @@ fn adding_a_payload_type_cannot_bypass_compensation_effect_authority() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-7",
+    "FR-048-AC-8"
+)]
 fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_edges() {
     let (inputs, _) = inputs(&source());
     inputs.with_proofs(
@@ -1650,8 +1680,41 @@ fn compensation_clocks_and_recovery_premises_cannot_cross_obligations_or_lose_ed
     );
 }
 #[test]
-#[trace("TC-121", "FR-042-AC-3", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-042-AC-3",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-6"
+)]
 fn compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond() {
+    let minimum = changed(
+        "within [0,30]; attempts 3 of M::Node;\n          retry (earlierFull",
+        "within [0,30]; attempts 1 of M::Node;\n          retry (earlierFull",
+    );
+    let (minimum_inputs, _) = inputs(&minimum);
+    minimum_inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("one is the smallest admitted compensation-attempt bound");
+            let declaration = admitted
+                .package()
+                .declarations
+                .iter()
+                .find(|declaration| declaration.name == "RecoveryFlow")
+                .unwrap();
+            let w::Body::Protocol { compensations, .. } = &declaration.body else {
+                panic!("protocol")
+            };
+            assert_eq!(integer(&compensations[0].maximum_attempts), 1);
+        },
+    );
+
     let body = changed(
         "within [0,30]; attempts 3 of M::Node;\n          retry (earlierFull",
         "within [0,30]; attempts 9223372036854775807 of M::Node;\n          retry (earlierFull",

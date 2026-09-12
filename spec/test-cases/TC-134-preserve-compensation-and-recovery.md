@@ -15,7 +15,8 @@ native admission, emission and independent artifact reading.
 
 ## Test Procedure
 
-Compile parallel shipments S1/S2, payment attempts A1/A2, forward effect E1,
+Compile parallel shipments S1/S2, one authored payment attempt A1 inside a
+bounded repeat, forward effect E1,
 refund registration/activation, distinct refund attempts/effects R1/R2, a
 forbidding commit and full/partial recovery predicates. Inspect exact operation,
 subject, target/capture, anchor, temporal, relationship, population, progress
@@ -28,12 +29,14 @@ independently and include an unactivated compensation control. Exercise attempt
 maxima one and the largest representable positive value, and refuse zero plus
 one beyond that representation.
 
-For one registered forward effect, supply two distinct concurrently eligible
-triggers without an admitted causal/sequence order, then the same triggers with
-an admitted order. Redeliver the selected semantic trigger under a distinct
-receipt identity and then supply a later distinct eligible trigger. Mutate only
-the F-owned occurrence correlation or D-owned relationship identity in paired
-controls; neither may be reconstructed from the other or from ingestion time.
+For one registered forward effect, inspect the retained requirement that two
+distinct concurrently eligible triggers need admitted causal/sequence order,
+that redelivery of the selected semantic trigger retains a distinct receipt
+without reactivation, and that a later distinct eligible trigger does not
+reactivate the same registration. Mutate the static trigger, order, registration
+or D-owned relationship selection independently and verify the exact compiler
+refusal. Keep concrete F-owned occurrence correlation and the resulting
+incomplete/refused assessment outside this compiler test.
 
 ## Expected Results
 
@@ -41,12 +44,11 @@ The positive artifact retains one compensation obligation with distinct retry
 attempt/effect requirements and exact recovery dependencies. Operation success
 cannot replace effect or recovery. Foreign or reordered prerequisites refuse;
 missing authoritative exports remain unsupported. Unactivated recovery requires
-no fabricated future record. An unordered concurrent trigger set remains
-incomplete or refused according to the selected F/B input contract and is never
-ordered by timestamp or ingestion. The admitted-order case selects one exact
-trigger; its redelivery retains receipt provenance without another activation,
-and the later distinct trigger does not register or activate a second
-compensation. Attempt-bound boundary outcomes preserve the same registration,
-operation and subject identities. The timed positive retains the authenticated
+no fabricated future record. The artifact retains the downstream order,
+semantic-trigger, receipt-provenance and no-reactivation requirements but makes
+no claim about a concrete trigger set or F/B outcome. Distinct runtime ordinals
+for A1 remain assessment inputs and do not mint A2 in the static artifact.
+Attempt-bound boundary outcomes preserve the same registration, operation and
+subject identities. The timed positive retains the authenticated
 `/2` temporal/clock selections without performing L5 settlement; no `/1` artifact
 or inferred clock parameter substitutes for them.

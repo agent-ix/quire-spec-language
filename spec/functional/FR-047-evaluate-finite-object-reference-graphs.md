@@ -34,10 +34,16 @@ the historical ConfigVersion profile or inventing finite bounds for that model.
 An admitted compiled value graph; exact model, universe, object-type, reference
 field and observation selections; immutable current, invocation-pre or
 invocation-post anchors; a finite object arena keyed by the complete storage
-identity `(anchor, model, universe, object type, object identifier)` and
-preserving reference occurrence order; explicit membership and closure
-authority; and caller-lowered finite evaluation limits admitted by
+identity `(observation occurrence, model, universe, object type, object
+identifier)` and preserving reference occurrence order; explicit membership
+and closure authority; and caller-lowered finite evaluation limits admitted by
 [FR-049](FR-049-admit-composed-evaluation-inputs.md).
+
+The observation occurrence is the exact semantic anchor, snapshot identity,
+optional window identity and record identity supplied by F under the selected D
+assessment authority. Those identities remain opaque producer/observation
+identities; they are not compiled-protocol `ArtifactRef` values and do not reuse
+the compiled artifact's raw-byte digest domain.
 
 An object identifier string, payload field, trace identifier, same-shaped model
 or successful static type check is not a graph environment. D/F remain the
@@ -59,7 +65,8 @@ anchor.
 
 The graph input validator SHALL reject duplicate complete storage identities.
 It SHALL permit the same model/universe/object-type/object-identifier tuple
-under distinct pre, post or current anchors as separate storage entries.
+under distinct pre, post or current anchors, snapshots, windows or record
+occurrences as separate storage entries.
 
 If the selected membership and closure authorities declare the snapshot domain
 complete, then the graph input validator SHALL refuse a reference whose exact
@@ -72,12 +79,13 @@ foreign model, universe, object type, reference field or observation remains a
 typed refusal even when completeness is unavailable.
 
 The evaluator SHALL resolve `deref` only through the reference's exact selected
-model, universe, object type, identity and observation.
+model, universe, object type, identity and complete observation occurrence.
 
 The evaluator SHALL compare object/reference identity by exact model, universe,
 stable object type and object identifier. It SHALL project away only the
-observation anchor for an explicitly admitted pre/post identity comparison;
-field reads, dereference and traversal retain the complete storage identity.
+complete observation occurrence for an explicitly admitted cross-observation
+identity comparison; field reads, dereference and traversal retain the complete
+storage identity.
 
 The evaluator SHALL require both endpoints of `reaches(a,b,edge)` to share the
 selected model, universe, object type and snapshot.
@@ -124,7 +132,7 @@ producer-owned bindings; they do not become fields merely to reuse `reaches`.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-047-AC-1 | Exact anchor, model, universe, object type, object identifier and edge type survive parse, binding, checking, admission, emission and independent reading as the complete storage identity; equal strings or shapes cannot substitute. | Test (TC-129) |
+| FR-047-AC-1 | Exact anchor, snapshot, optional window, record occurrence, model, universe, object type, object identifier and edge type survive parse, binding, checking, admission, emission and independent reading as the complete storage identity; equal strings or shapes cannot substitute and producer/observation identities do not become compiled-artifact references. | Test (TC-129) |
 | FR-047-AC-2 | A duplicate full storage key and a dangling target in a declared-complete domain refuse, while the same logical object at distinct pre/post anchors is admitted. Foreign models/universes, wrong object/reference types, wrong edge owners and incompatible endpoint observations refuse; missing membership or closure is incomplete and cannot turn an absent offered target into a dangling or empty-graph judgment. | Test (TC-129, TC-131) |
 | FR-047-AC-3 | Dereference reads only the exact qualified environment and retains pre/post observation identity across the returned object. | Test (TC-129) |
 | FR-047-AC-4 | Reachability is positive-length: an isolated `a` does not reach itself, while `a→a` and `a→b→a` do; a direct or longer path to another target succeeds. | Test (TC-130) |
