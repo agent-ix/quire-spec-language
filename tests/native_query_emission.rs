@@ -300,7 +300,18 @@ fn original_queries(report: &proofs::ProofReport<'_, '_, '_>, package: &w::Packa
 }
 
 #[test]
-#[trace("TC-119", "TC-121", "FR-040-AC-5", "FR-042-AC-4", "FR-042-AC-7")]
+#[trace(
+    "TC-119",
+    "TC-121",
+    "TC-126",
+    "TC-127",
+    "FR-040-AC-5",
+    "FR-042-AC-4",
+    "FR-042-AC-7",
+    "FR-046-AC-1",
+    "FR-046-AC-3",
+    "FR-046-AC-8"
+)]
 fn all_eight_queries_emit_original_ordered_graphs_after_actual_discharge() {
     let inputs = Inputs::new(&[
         Unit {
@@ -371,7 +382,16 @@ fn all_eight_queries_emit_original_ordered_graphs_after_actual_discharge() {
 }
 
 #[test]
-#[trace("TC-119", "TC-121", "FR-040-AC-5", "FR-042-AC-4", "FR-042-AC-7")]
+#[trace(
+    "TC-119",
+    "TC-121",
+    "TC-127",
+    "FR-040-AC-5",
+    "FR-042-AC-4",
+    "FR-042-AC-7",
+    "FR-046-AC-4",
+    "FR-046-AC-8"
+)]
 fn statically_empty_filter_emits_its_original_collection_binder_and_body() {
     let inputs = Inputs::new(&[
         Unit {

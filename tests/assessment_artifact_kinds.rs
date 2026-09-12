@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use quire_spec_language::protocol_artifact::wire::{ArtifactKind, BindingKind};
 use ix_trace_rs::trace;
+use quire_spec_language::protocol_artifact::wire::{ArtifactKind, BindingKind};
 
 #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-5")]
 #[test]
@@ -15,8 +15,7 @@ fn population_and_window_documents_remain_distinct_from_clock_and_model_exports(
         r#""window""#
     );
     assert_eq!(
-        serde_json::from_str::<ArtifactKind>(r#""population""#)
-            .expect("read population kind"),
+        serde_json::from_str::<ArtifactKind>(r#""population""#).expect("read population kind"),
         ArtifactKind::Population
     );
     assert_eq!(
