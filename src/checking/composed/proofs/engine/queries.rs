@@ -285,8 +285,11 @@ impl Builder<'_, '_> {
             } else if let (Some(projection), Some(total)) =
                 (self.ty(body)?.rational(), self.ty(at)?.rational())
             {
-                if projection.maximum_denominator() != 1 || total.maximum_denominator() != 1 {
-                    return Err(self.unsupported(at, Unsupported::SumDomainTransfer));
+                if !rational_sum_domain_contains_all_prefixes(projection, total, maximum) {
+                    return Err(Error::Cause(Cause {
+                        site: self.site(at),
+                        kind: CauseKind::UnprovedAggregateDomain,
+                    }));
                 }
                 (
                     projection.numerator_minimum(),
@@ -341,4 +344,74 @@ impl Builder<'_, '_> {
         }
         Ok(())
     }
+}
+
+/// Conservatively proves every normalized rational prefix against the selected
+/// total domain. Every admitted denominator divides `lcm(1..=D)`, so every
+/// prefix can be represented over that common denominator. Reduction can only
+/// decrease the absolute numerator and denominator checked below.
+fn rational_sum_domain_contains_all_prefixes(
+    projection: &ir::RationalType,
+    total: &ir::RationalType,
+    maximum: u32,
+) -> bool {
+    if maximum == 0
+        || total.numerator_minimum() > 0
+        || total.numerator_maximum() < 0
+        || total.numerator_minimum() > projection.numerator_minimum()
+        || total.numerator_maximum() < projection.numerator_maximum()
+        || total.maximum_denominator() < projection.maximum_denominator()
+    {
+        return false;
+    }
+    // A one-element prefix is either zero or one already-normalized projection
+    // value. The domain checks above are then complete; scaling it to the LCM
+    // would compare an unreduced numerator against normalized total bounds.
+    if maximum == 1 {
+        return true;
+    }
+
+    let mut common_denominator = 1_u128;
+    let total_denominator = u128::from(total.maximum_denominator());
+    for denominator in 2..=projection.maximum_denominator() {
+        let denominator = u128::from(denominator);
+        common_denominator = match common_denominator
+            .checked_div(gcd(common_denominator, denominator))
+            .and_then(|reduced| reduced.checked_mul(denominator))
+        {
+            Some(value) if value <= total_denominator => value,
+            Some(_) | None => return false,
+        };
+    }
+
+    let Some(scale) = i128::try_from(common_denominator).ok() else {
+        return false;
+    };
+    let count = i128::from(maximum);
+    let minimum = i128::from(projection.numerator_minimum()).min(0);
+    let maximum_value = i128::from(projection.numerator_maximum()).max(0);
+    let Some(minimum) = minimum
+        .checked_mul(scale)
+        .and_then(|value| value.checked_mul(count))
+    else {
+        return false;
+    };
+    let Some(maximum_value) = maximum_value
+        .checked_mul(scale)
+        .and_then(|value| value.checked_mul(count))
+    else {
+        return false;
+    };
+
+    minimum >= i128::from(total.numerator_minimum())
+        && maximum_value <= i128::from(total.numerator_maximum())
+}
+
+fn gcd(mut left: u128, mut right: u128) -> u128 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left.max(1)
 }
