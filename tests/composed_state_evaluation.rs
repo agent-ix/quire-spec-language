@@ -526,7 +526,6 @@ fn request(package: &quire_spec_language::protocol_artifact::AdmittedPackage) ->
 }
 
 /// Tracing: TC-126, TC-136.
-#[test]
 #[trace(
     "TC-126",
     "TC-136",
@@ -535,6 +534,7 @@ fn request(package: &quire_spec_language::protocol_artifact::AdmittedPackage) ->
     "FR-049-AC-1",
     "FR-049-AC-6"
 )]
+#[test]
 fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
     admitted(|package| {
         let report = state::evaluate(
@@ -560,8 +560,8 @@ fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
 }
 
 /// Tracing: TC-137.
-#[test]
 #[trace("TC-137", "FR-049-AC-6", "FR-049-AC-7", "FR-049-AC-8", "NFR-009")]
+#[test]
 fn tc_137_expression_and_output_limits_are_charge_before_work_and_fresh() {
     admitted(|package| {
         let complete = state::evaluate(
@@ -619,8 +619,8 @@ fn tc_137_expression_and_output_limits_are_charge_before_work_and_fresh() {
 }
 
 /// Tracing: TC-137.
-#[test]
 #[trace("TC-137", "NFR-009", "FR-046-AC-7", "FR-049-AC-7")]
+#[test]
 fn tc_137_query_input_sequence_and_retention_dimensions_have_exact_boundaries() {
     admitted_queries(|package| {
         let (owner, view) = query_view(package);
@@ -724,8 +724,8 @@ fn tc_137_query_input_sequence_and_retention_dimensions_have_exact_boundaries() 
 }
 
 /// Tracing: TC-128, TC-137.
-#[test]
 #[trace("TC-128", "TC-137", "NFR-009", "FR-046-AC-7")]
+#[test]
 fn tc_128_137_predicate_call_depth_has_an_independent_exact_boundary() {
     admitted(|package| {
         let owner = package
@@ -775,8 +775,8 @@ fn tc_128_137_predicate_call_depth_has_an_independent_exact_boundary() {
 }
 
 /// Tracing: TC-136, TC-137.
-#[test]
 #[trace("TC-136", "TC-137", "NFR-009", "FR-049-AC-3", "FR-049-AC-7")]
+#[test]
 fn tc_136_137_utf8_input_content_has_a_byte_exact_boundary() {
     admitted_text(|package| {
         let owner = package
@@ -849,8 +849,8 @@ fn tc_136_137_utf8_input_content_has_a_byte_exact_boundary() {
 }
 
 /// Tracing: TC-127.
-#[test]
 #[trace("TC-127", "FR-046-AC-3", "FR-046-AC-4", "FR-046-AC-8")]
+#[test]
 fn tc_127_all_eight_queries_preserve_order_duplicates_and_independent_results() {
     admitted_queries(|package| {
         let (owner, view) = query_view(package);
@@ -955,7 +955,6 @@ fn tc_127_all_eight_queries_preserve_order_duplicates_and_independent_results() 
 }
 
 /// Tracing: TC-129, TC-130, TC-131, TC-136.
-#[test]
 #[trace(
     "TC-129",
     "TC-130",
@@ -967,6 +966,7 @@ fn tc_127_all_eight_queries_preserve_order_duplicates_and_independent_results() 
     "FR-047-AC-5",
     "FR-049-AC-5"
 )]
+#[test]
 fn tc_129_130_131_full_occurrences_authority_and_graph_limits_are_exact() {
     admitted_graph(|package| {
         let (owner, root, view) = graph_view(package);
