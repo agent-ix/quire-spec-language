@@ -108,7 +108,7 @@ fn assert_occurrence(source: &FormalSource, span: &ir::SourceSpan, original: &st
 }
 
 #[test]
-#[trace("TC-120", "FR-041-AC-1", "FR-041-AC-6")]
+#[trace("TC-120", "TC-131", "FR-041-AC-1", "FR-041-AC-6", "FR-047-AC-8")]
 fn explicit_profiles_preserve_the_frozen_historical_artifact() {
     let text = include_str!("fixtures/native-package/model-source.json");
     let old = read(source(text), FORMAT, ModelSourceLimits::default()).unwrap();
@@ -248,7 +248,7 @@ fn replacing_public_draft_payloads_cannot_retag_the_selected_profile() {
 }
 
 #[test]
-#[trace("TC-120", "FR-041-AC-1")]
+#[trace("TC-120", "TC-131", "FR-041-AC-1", "FR-047-AC-8")]
 fn historical_entrypoints_refuse_rational_declarations_and_roles() {
     let text = document(RATIONAL, "", AMOUNT);
     let error = read(source(&text), FORMAT, ModelSourceLimits::default()).unwrap_err();
@@ -409,7 +409,7 @@ fn rational_wire_variant_is_closed_and_never_rounds_numbers() {
 }
 
 #[test]
-#[trace("TC-120", "FR-041-AC-3", "FR-041-AC-4")]
+#[trace("TC-120", "TC-131", "FR-041-AC-3", "FR-041-AC-4", "FR-047-AC-8")]
 fn invalid_ir_bounds_keep_the_original_scalar_occurrence() {
     for scalar in [
         RATIONAL.replace("\"maximum_denominator\":2", "\"maximum_denominator\":0"),
@@ -720,7 +720,7 @@ fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
 }
 
 #[test]
-#[trace("TC-120", "FR-041-AC-5")]
+#[trace("TC-120", "TC-131", "FR-041-AC-5", "FR-047-AC-8")]
 fn historical_linking_refuses_only_selected_v2_artifacts() {
     let legacy = include_str!("fixtures/native-package/model-source.json");
     let v1 = read(source(legacy), FORMAT, ModelSourceLimits::default())
