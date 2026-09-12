@@ -45,6 +45,7 @@ pub fn evaluate(
         work: Work::new(limits),
         binders: Vec::new(),
         populations: Vec::new(),
+        graph_keys: Vec::new(),
         catalogs: Vec::new(),
         locals: Vec::new(),
         call_depth: 0,
@@ -70,6 +71,7 @@ struct Evaluator<'a> {
     work: Work,
     binders: Vec<((u32, u32), &'a InputSlot)>,
     populations: Vec<PopulationIndex<'a>>,
+    graph_keys: Vec<&'a ObjectKey>,
     catalogs: Vec<(u32, Catalog<'a>)>,
     locals: Vec<((u32, u32), Value)>,
     call_depth: usize,
@@ -487,6 +489,8 @@ impl<'a> Evaluator<'a> {
                         Stop::Exhausted(counter_overflow(
                             &self.work,
                             Dimension::InputAggregateEntries,
+                            prior.offset,
+                            prior.objects.len(),
                         ))
                     })
             })?;
@@ -528,82 +532,12 @@ impl<'a> Evaluator<'a> {
     }
 
     fn validate_population_references(&self) -> Result<()> {
-        for (_, slot) in &self.binders {
-            self.validate_slot_references(slot)?;
-        }
-        for population in &self.populations {
-            for object in &population.objects {
-                for field in &object.fields {
-                    self.validate_field_references(field)?;
-                }
-            }
+        // The charged shape walk retained each borrowed key, so population
+        // completeness can be checked without recursively scanning input twice.
+        for key in &self.graph_keys {
+            self.validate_graph_key(key)?;
         }
         Ok(())
-    }
-
-    fn validate_field_references(&self, field: &FieldInput) -> Result<()> {
-        match &field.value {
-            FieldValue::Compiled(slot) => self.validate_slot_references(slot),
-            FieldValue::Contextual(slot) => self.validate_contextual_slot_references(slot),
-        }
-    }
-
-    fn validate_slot_references(&self, slot: &InputSlot) -> Result<()> {
-        let InputSlot::Available(value) = slot else {
-            return Ok(());
-        };
-        match value.kind() {
-            ValueKind::Record(fields) => {
-                for field in fields {
-                    self.validate_field_references(field)?;
-                }
-                Ok(())
-            }
-            ValueKind::Option(Some(child)) => self.validate_slot_references(child),
-            ValueKind::Sequence(children) => {
-                for child in children {
-                    self.validate_slot_references(child)?;
-                }
-                Ok(())
-            }
-            ValueKind::Reference(key) | ValueKind::Object(key) => self.validate_graph_key(key),
-            ValueKind::Boolean(_)
-            | ValueKind::Number(_)
-            | ValueKind::Text(_)
-            | ValueKind::Enum(_)
-            | ValueKind::Option(None) => Ok(()),
-        }
-    }
-
-    fn validate_contextual_slot_references(&self, slot: &ContextualSlot) -> Result<()> {
-        let ContextualSlot::Available(value) = slot else {
-            return Ok(());
-        };
-        match value.kind() {
-            ContextualValueKind::Record(fields) => {
-                for field in fields {
-                    self.validate_field_references(field)?;
-                }
-                Ok(())
-            }
-            ContextualValueKind::Option(Some(child)) => {
-                self.validate_contextual_slot_references(child)
-            }
-            ContextualValueKind::Sequence(children) => {
-                for child in children {
-                    self.validate_contextual_slot_references(child)?;
-                }
-                Ok(())
-            }
-            ContextualValueKind::Reference(key) | ContextualValueKind::Object(key) => {
-                self.validate_graph_key(key)
-            }
-            ContextualValueKind::Boolean(_)
-            | ContextualValueKind::Number(_)
-            | ContextualValueKind::Text(_)
-            | ContextualValueKind::Enum(_)
-            | ContextualValueKind::Option(None) => Ok(()),
-        }
     }
 
     fn validate_graph_key(&self, key: &ObjectKey) -> Result<()> {
@@ -966,7 +900,7 @@ impl<'a> Evaluator<'a> {
 
     fn slot(
         &mut self,
-        slot: &InputSlot,
+        slot: &'a InputSlot,
         expected: u32,
         depth: usize,
         position: SlotPosition<'_>,
@@ -985,7 +919,7 @@ impl<'a> Evaluator<'a> {
 
     fn input_value(
         &mut self,
-        value: &Value,
+        value: &'a Value,
         expected: u32,
         depth: usize,
         position: SlotPosition<'_>,
@@ -1076,12 +1010,14 @@ impl<'a> Evaluator<'a> {
                 ValueKind::Reference(key),
             ) => {
                 self.key(key, export_model(object), object, universe)?;
-                self.observation(&key.observation, position)
+                self.observation(&key.observation, position)?;
+                self.retain_graph_key(key)
             }
             (w::Type::Object { export }, ValueKind::Object(key)) => {
                 let universe = self.population_export(export)?;
                 self.key(key, export.model, export, &universe)?;
-                self.observation(&key.observation, position)
+                self.observation(&key.observation, position)?;
+                self.retain_graph_key(key)
             }
             _ => Err(Stop::Refused(Refusal::ValueShape(expected))),
         }
@@ -1124,7 +1060,7 @@ impl<'a> Evaluator<'a> {
     fn record(
         &mut self,
         export: &w::ExportRef,
-        fields: &[FieldInput],
+        fields: &'a [FieldInput],
         depth: usize,
         position: SlotPosition<'_>,
     ) -> Result<()> {
@@ -1137,7 +1073,7 @@ impl<'a> Evaluator<'a> {
 
     fn object(
         &mut self,
-        object: &ObjectInput,
+        object: &'a ObjectInput,
         expected: u32,
         position: SlotPosition<'_>,
     ) -> Result<()> {
@@ -1164,7 +1100,7 @@ impl<'a> Evaluator<'a> {
     fn record_object(
         &mut self,
         export: &w::ExportRef,
-        fields: &[FieldInput],
+        fields: &'a [FieldInput],
         depth: usize,
         position: SlotPosition<'_>,
     ) -> Result<()> {
@@ -1178,7 +1114,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         model_index: u32,
         name: &str,
-        fields: &[FieldInput],
+        fields: &'a [FieldInput],
         depth: usize,
         position: SlotPosition<'_>,
     ) -> Result<()> {
@@ -1287,7 +1223,7 @@ impl<'a> Evaluator<'a> {
 
     fn contextual_slot(
         &mut self,
-        slot: &ContextualSlot,
+        slot: &'a ContextualSlot,
         expected: &NativeType<'_>,
         model_index: u32,
         field: &w::ExportRef,
@@ -1310,7 +1246,7 @@ impl<'a> Evaluator<'a> {
 
     fn contextual_value(
         &mut self,
-        value: &ContextualValue,
+        value: &'a ContextualValue,
         expected: &NativeType<'_>,
         model_index: u32,
         field: &w::ExportRef,
@@ -1438,7 +1374,8 @@ impl<'a> Evaluator<'a> {
                     role.record.as_str(),
                     Some(role.universe.as_str()),
                 )?;
-                self.key(key, model_index, &object, &universe)
+                self.key(key, model_index, &object, &universe)?;
+                self.retain_graph_key(key)
             }
             (NativeType::Reference { role, .. }, ContextualValueKind::Reference(key)) => {
                 let object = self.model_export(
@@ -1453,7 +1390,8 @@ impl<'a> Evaluator<'a> {
                     role.record.as_str(),
                     Some(role.universe.as_str()),
                 )?;
-                self.key(key, model_index, &object, &universe)
+                self.key(key, model_index, &object, &universe)?;
+                self.retain_graph_key(key)
             }
             _ => Err(invalid()),
         }
@@ -1463,6 +1401,14 @@ impl<'a> Evaluator<'a> {
         self.work
             .charge(Dimension::InputAggregateEntries, 1)
             .map_err(Stop::Exhausted)
+    }
+
+    fn retain_graph_key(&mut self, key: &'a ObjectKey) -> Result<()> {
+        self.graph_keys.try_reserve(1).map_err(|_| {
+            Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+        })?;
+        self.graph_keys.push(key);
+        Ok(())
     }
 
     fn key(
@@ -2040,7 +1986,12 @@ impl<'a> Evaluator<'a> {
             return Err(Stop::Refused(Refusal::RequestDeclaration(predicate)));
         };
         let next = self.call_depth.checked_add(1).ok_or_else(|| {
-            Stop::Exhausted(counter_overflow(&self.work, Dimension::PredicateCallDepth))
+            Stop::Exhausted(counter_overflow(
+                &self.work,
+                Dimension::PredicateCallDepth,
+                self.call_depth,
+                1,
+            ))
         })?;
         self.work
             .charge(Dimension::PredicateCallDepth, next)
@@ -2211,10 +2162,14 @@ impl<'a> Evaluator<'a> {
         let local = population
             .object_index(key)
             .map_err(|_| Stop::Refused(Refusal::Dangling(key.clone())))?;
-        population
-            .offset
-            .checked_add(local)
-            .ok_or_else(|| Stop::Exhausted(counter_overflow(&self.work, Dimension::GraphExpansion)))
+        population.offset.checked_add(local).ok_or_else(|| {
+            Stop::Exhausted(counter_overflow(
+                &self.work,
+                Dimension::GraphExpansion,
+                population.offset,
+                local,
+            ))
+        })
     }
 
     fn reaches(
@@ -2943,13 +2898,33 @@ fn gcd(mut left: u128, mut right: u128) -> u128 {
     left
 }
 
-fn counter_overflow(work: &Work, dimension: Dimension) -> Exhaustion {
+fn counter_overflow(
+    work: &Work,
+    dimension: Dimension,
+    used: usize,
+    requested: usize,
+) -> Exhaustion {
+    let limit = match dimension {
+        Dimension::InputValueNodes => work.limits.input_value_nodes,
+        Dimension::InputAggregateEntries => work.limits.input_aggregate_entries,
+        Dimension::InputTextBytes => work.limits.input_text_bytes,
+        Dimension::InputStructuralDepth => work.limits.input_structural_depth,
+        Dimension::ExpressionWork => work.limits.expression_work,
+        Dimension::ActiveExpressionDepth => work.limits.active_expression_depth,
+        Dimension::PredicateCallDepth => work.limits.predicate_call_depth,
+        Dimension::SequenceWork => work.limits.sequence_work,
+        Dimension::RetainedOutput => work.limits.retained_output,
+        Dimension::GraphExpansion => work.limits.graph_expansion,
+        Dimension::GraphEdges => work.limits.graph_edges,
+        Dimension::ActiveGraphDepth => work.limits.active_graph_depth,
+        Dimension::ValueComparison => work.limits.value_comparison,
+    };
     Exhaustion {
         dimension,
         cause: super::ExhaustionCause::CounterOverflow,
-        used: work.usage.predicate_call_depth,
-        requested: 1,
-        limit: work.limits.predicate_call_depth,
+        used,
+        requested,
+        limit,
         locus: work.locus.clone(),
     }
 }
