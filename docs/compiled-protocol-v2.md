@@ -159,3 +159,47 @@ selection/configuration substitutions, raw digest-domain crossings,
 same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
 These fixtures demonstrate A's producer and reader boundary only; they do not
 claim that B admitted the artifact or completed an ecosystem acceptance run.
+
+### Concrete release producer
+
+The release-capable handoff uses the same four authored source units and actual
+model as the established `/1` recipe, while selecting `Due` under the exact
+EventPosition definition and the original configuration bytes
+`{"kind":"event_position","sequence_authority":"workflow-events"}`. Build and
+run it into a new directory:
+
+```console
+CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_v2_handoff -- /tmp/quire-native-v2-handoff
+```
+
+The producer calls `native::admit_v2` with the real parser/linker/type/proof
+report and exact `native::Selections`, constructs the external version-2
+`ArtifactRef` only after emission, and calls `v2::read` with an independently
+constructed `v2::Expected` before creating the output directory. The default
+`protocol_artifact::Limits` and `quire.protocol.artifact-work/1` accounting
+identity are recorded in the sidecar. Any `Report` error remains the public
+typed `Allocation`, `Json`, `Numeric`, `Invalid`, `Unsupported` or `Incomplete`
+refusal with its report limits, usage and source locus; no partial admission is
+written.
+
+The directory contains:
+
+- `compiled-protocol-v2.json` and `compiled-protocol-v2.ref.json`: the raw
+  canonical bytes and separately authorized external seal;
+- `expected-v2.json`: inherited independent reader selectors, exact temporal
+  source/declaration/definition/configuration selectors and selected limits;
+- `event-clock.json`: the original configuration bytes and the sidecar identity
+  and raw-byte digest that select them;
+- the four original `.native` files and `model-source.json`; and
+- `dependencies/*.bin`: every exact original definition, rule, model package,
+  contract and producer executable selected by the invocation, with paths,
+  identities, direct prerequisites and raw-byte digests in `expected-v2.json`.
+
+The focused stripped-release control is the ignored test
+`stripped_release_v2_producer_writes_the_independently_read_handoff` in
+[`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
+The non-release mutation controls remain in
+[`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), including
+cross-version, every temporal selection family, artifact/digest-domain and
+same-meaning recanonicalized-input substitutions. These controls qualify A's
+handoff only and do not assert B or campaign acceptance.
