@@ -29,14 +29,14 @@ value. The borrowed package and state view remain reusable with fresh limits.
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
 | Input value nodes | At most 100000 inspected nodes per call | 100000 nodes | negative-abuse-testing |
-| Input aggregate entries | At most 100000 inspected bindings, fields, members and objects per call | 100000 entries | negative-abuse-testing |
+| Input aggregate entries | At most 100000 inspected input/static-binding entries per call | 100000 entries | negative-abuse-testing |
 | Input text content | At most 8388608 inspected UTF-8 bytes per call | 8388608 bytes | negative-abuse-testing |
 | Input structural depth | At most 64 active recursively validated value nodes per call | 64 levels | negative-abuse-testing |
 | Expression work | At most 1000000 entered value operations per call | 1000000 operations | negative-abuse-testing |
 | Active expression depth | At most 64 active value-operation frames per call | 64 levels | negative-abuse-testing |
 | Predicate call depth | At most 64 active predicate calls | 64 calls | negative-abuse-testing |
 | Sequence work | At most 1000000 inspected query occurrences per call | 1000000 occurrences | negative-abuse-testing |
-| Retained output | At most 100000 materialized output values per call | 100000 values | negative-abuse-testing |
+| Retained output | At most 100000 materialized result or active-local values per call | 100000 values | negative-abuse-testing |
 | Graph expansion | At most 10000 expanded object storage keys per call | 10000 objects | negative-abuse-testing |
 | Graph edges | At most 100000 inspected reference occurrences per call | 100000 edges | negative-abuse-testing |
 | Active graph depth | At most 64 active recursive graph-expansion frames per call | 64 levels | negative-abuse-testing |
@@ -54,9 +54,12 @@ charges one retained value when copied into the report.
 
 Input validation charges one node before inspecting a supplied value and one
 entry before inspecting each binder, population, object, field or sequence
-member. It charges a string's UTF-8 byte length before inspection. Shared input
-values are charged at each supplied occurrence because the public view is a
-tree, while object storage is indexed once per full key.
+member. Required-input discovery also charges one input-aggregate entry before
+visiting each admitted value, binder or dependency edge and before retaining a
+binder-table entry; the same charge precedes any corresponding fallible scratch
+allocation. It charges a string's UTF-8 byte length before inspection. Shared
+input values are charged at each supplied occurrence because the public view is
+a tree, while object storage is indexed once per full key.
 
 Input structural depth starts at one for each supplied binder or object-field
 value root and increases by one before entering each record field, option
@@ -71,6 +74,12 @@ body or predicate callee root. Every operation, including `group` and `read`, is
 a frame; a skipped branch or sequence occurrence creates no frame. Predicate
 call depth independently starts at one on entry to the first callee, increases
 only across an active nested call and decrements when that call returns.
+
+Retained-output work includes each query/map/filter result member, the completed
+root copied into the report and each active local/query binding materialized by
+evaluation. A local binding is removed when its scope exits, but its successful
+retention remains a cumulative charge; its fallible table allocation follows
+that charge.
 
 Value comparison charges one pair before inspecting its type-specific content.
 The selected composed profile admits equality only for its scalar, enum,
@@ -111,6 +120,15 @@ queries and cyclic/diamond graphs.
 Mutation controls remove individual charge sites and require the exact-boundary
 case to fail. A sufficient retry after exhaustion returns the same value with
 fresh counters and unchanged inputs.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| NFR-009-AC-1 | All thirteen counters use the exact units and inclusive hard ceilings in this requirement; a caller may lower each independently, zero remains effective and a request above a hard ceiling is clamped. | Test (TC-137) |
+| NFR-009-AC-2 | Each charged dimension admits its independently counted exact case and stops its one-short case before the next operation, retaining only successful usage and no partial completed value. | Test (TC-137) |
+| NFR-009-AC-3 | Any checked-counter overflow or allocator refusal reached by the implementation produces its closed typed exhaustion cause assigned to the affected charged dimension and cannot be reclassified from diagnostic text. | Analysis |
+| NFR-009-AC-4 | Re-evaluation starts with fresh counters, leaves the borrowed artifact and input view unchanged, and returns the same result and usage when the immutable inputs and sufficient effective limits are equal. | Test (TC-137) |
 
 ## Dependencies
 
