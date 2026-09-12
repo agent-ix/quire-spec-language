@@ -2,7 +2,7 @@
 //! FR-036: exact unit-local imports over the existing admitted NativeModel.
 //! No model schema, runtime population or producer canonical correspondence is inferred.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use quire_contract_ir as ir;
 
@@ -39,32 +39,20 @@ pub enum ModelInput<'a> {
 #[derive(Debug)]
 pub struct AdmittedProducerModel<'a> {
     model: &'a NativeModel,
-    selection: &'a super::producer::ProducerCompatibilitySelection,
-    bundle_identity: Box<str>,
-    model_identity: Box<str>,
-    profile_identity: Box<str>,
-    configuration_identity: Box<str>,
-    relation_identity: Box<str>,
+    selection: Cow<'a, super::producer::ProducerCompatibilitySelection>,
+    filament: Option<&'a agent_ix_baseline_producer::AdmittedStaticBundle>,
 }
 
 impl<'a> AdmittedProducerModel<'a> {
     pub(crate) fn new(
         model: &'a NativeModel,
-        selection: &'a super::producer::ProducerCompatibilitySelection,
-        bundle_identity: Box<str>,
-        model_identity: Box<str>,
-        profile_identity: Box<str>,
-        configuration_identity: Box<str>,
-        relation_identity: Box<str>,
+        selection: Cow<'a, super::producer::ProducerCompatibilitySelection>,
+        filament: Option<&'a agent_ix_baseline_producer::AdmittedStaticBundle>,
     ) -> Self {
         Self {
             model,
             selection,
-            bundle_identity,
-            model_identity,
-            profile_identity,
-            configuration_identity,
-            relation_identity,
+            filament,
         }
     }
 
@@ -75,32 +63,38 @@ impl<'a> AdmittedProducerModel<'a> {
 
     /// Complete caller-adapted producer selection retained by admission.
     pub fn selection(&self) -> &super::producer::ProducerCompatibilitySelection {
-        self.selection
+        &self.selection
     }
 
     /// Producer bundle identity retained by admission.
     pub fn bundle_identity(&self) -> &str {
-        &self.bundle_identity
+        &self.selection.bundle.identity
     }
 
     /// Producer model identity retained by admission.
     pub fn model_identity(&self) -> &str {
-        &self.model_identity
+        &self.selection.model.identity
     }
 
     /// Producer profile identity retained by admission.
     pub fn profile_identity(&self) -> &str {
-        &self.profile_identity
+        &self.selection.profile.identity
     }
 
     /// Producer configuration identity retained by admission.
     pub fn configuration_identity(&self) -> &str {
-        &self.configuration_identity
+        &self.selection.configuration.identity
     }
 
     /// Producer/native relation identity retained by admission.
     pub fn relation_identity(&self) -> &str {
-        &self.relation_identity
+        &self.selection.correspondence.relation_identity
+    }
+
+    /// The indivisibly admitted Filament bundle, when this value came through
+    /// the direct producer entry point rather than the compatibility adapter.
+    pub fn filament_bundle(&self) -> Option<&'a agent_ix_baseline_producer::AdmittedStaticBundle> {
+        self.filament
     }
 }
 
@@ -247,6 +241,7 @@ pub struct BoundOperation<'a> {
 pub struct BoundRelationship<'a> {
     model: &'a NativeModel,
     export: &'a super::producer::ProducerExportSelection,
+    declaration: Option<&'a agent_ix_baseline_producer::RelationshipDeclaration>,
 }
 
 impl<'a> BoundRelationship<'a> {
@@ -258,6 +253,13 @@ impl<'a> BoundRelationship<'a> {
     /// Exact producer export, including its identity, path and foreign locus.
     pub fn export(&self) -> &'a super::producer::ProducerExportSelection {
         self.export
+    }
+
+    /// The producer-admitted endpoint and relationship semantics, present only
+    /// for the direct Filament entry point. Compatibility-only selections can
+    /// name the declaration but cannot authorize endpoint use.
+    pub fn declaration(&self) -> Option<&'a agent_ix_baseline_producer::RelationshipDeclaration> {
+        self.declaration
     }
 }
 
@@ -843,10 +845,38 @@ impl<'a> ModelBindings<'a> {
                 continue;
             }
             if export.kind == super::producer::ProducerExportKind::Relationship {
+                let declaration = producer.filament_bundle().and_then(|bundle| {
+                    bundle.relationships().iter().find(|relationship| {
+                        relationship.relationship_identity.as_str() == export.identity.as_ref()
+                    })
+                });
+                if producer.filament_bundle().is_some() && declaration.is_none() {
+                    return Err(failure(
+                        unit,
+                        name.name.span,
+                        ModelErrorKind::UnsupportedRelationshipContract,
+                    ));
+                }
+                if let Some(declaration) = declaration {
+                    let ownership = declaration.ownership.as_ref().ok_or_else(|| {
+                        failure(
+                            unit,
+                            name.name.span,
+                            ModelErrorKind::UnsupportedRelationshipContract,
+                        )
+                    })?;
+                    if ownership.model_identity != producer.model_identity()
+                        || ownership.profile_identity != producer.profile_identity()
+                        || ownership.configuration_identity != producer.configuration_identity()
+                    {
+                        return Err(failure(unit, name.name.span, ModelErrorKind::ForeignModel));
+                    }
+                }
                 charge(work, Dimension::Bindings, 1, unit, name.name.span)?;
                 return Ok(BoundRelationship {
                     model: producer.model(),
                     export,
+                    declaration,
                 });
             }
             wrong_kind = true;
