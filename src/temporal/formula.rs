@@ -113,9 +113,11 @@ impl<'a> Evaluator<'a> {
         depth: usize,
         work: &mut Work,
     ) -> Result<Tri, Error> {
+        // Every refused charge must retain the operation that requested it,
+        // including the first visit of a nonzero declaration.
+        work.subject = self.locate(node, offset);
         work.visit()?;
         work.charge(Charge::Depth, depth)?;
-        work.subject = self.locate(node, offset);
         let operation =
             self.nodes
                 .get(node)
@@ -575,5 +577,61 @@ fn integer(value: &w::Integer, work: &mut Work) -> Result<i64, Error> {
             }
             .into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::temporal::{ClockBinding, Evidence, Execution, Limits};
+
+    /// TC-124 / NFR-008-AC-2: the first unaffordable visit identifies the
+    /// declaration and node that requested it, rather than a prior subject.
+    #[test]
+    fn tc_124_visit_exhaustion_names_the_current_subject() {
+        let trace = Trace {
+            clock: ClockBinding {
+                name: "orders".into(),
+                profile_identity: Profile::EventPosition.identity().into(),
+                profile_revision: "test".into(),
+                parameters: BTreeMap::new(),
+            },
+            positions: Vec::new(),
+            anchor: "origin".into(),
+            triggers: Vec::new(),
+            trigger_evidence: Evidence::Admitted,
+            trigger_scope: Closure::Closed,
+            decision_scope: Closure::Closed,
+            surrounding_execution: Closure::Open,
+            execution: Execution::Completed,
+            completeness: Completeness::Complete,
+            authoritative_origin: true,
+            watermark: 0,
+            evicted: Vec::new(),
+        };
+        let mut evaluator = Evaluator {
+            profile: Profile::EventPosition,
+            trace: &trace,
+            ordered: Vec::new(),
+            nodes: &[],
+            declaration: 37,
+            instance: 11,
+            watermark: 0,
+            support: Support::default(),
+        };
+        let mut work = Work::new(Limits {
+            visits: 0,
+            ..Limits::default()
+        });
+
+        let Err(Error::Exhausted(exhaustion)) = evaluator.root(0, &mut work) else {
+            panic!("zero visit budget must stop before inspecting the node");
+        };
+        assert_eq!(exhaustion.dimension, Charge::Visits);
+        assert_eq!(exhaustion.subject.declaration, 37);
+        assert_eq!(exhaustion.subject.instance, 11);
+        assert_eq!(exhaustion.subject.node, Some(0));
     }
 }
