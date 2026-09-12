@@ -10,12 +10,15 @@ mod layout;
 mod metadata;
 mod populations;
 mod runtime;
+mod temporal_v2;
 mod types;
 mod values;
 
 use super::{wire, work::Work, AdmittedModel, Candidate, Limits, Report, SuppliedDependency};
 use crate::checking::composed::proofs::ProofReport;
 use crate::formal_source::FormalSource;
+
+pub use temporal_v2::{admit_v2, AdmissionV2, TemporalSelection};
 
 /// Explicit external namespace selection for an actual authored formal source.
 #[derive(Clone, Copy, Debug)]

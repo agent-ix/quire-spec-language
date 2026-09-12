@@ -24,7 +24,9 @@ mod progress;
 mod result;
 mod trace;
 
-use crate::protocol_artifact::{wire as w, AdmittedPackage};
+use std::collections::BTreeMap;
+
+use crate::protocol_artifact::{v2, wire as w, AdmittedPackage};
 
 use activation::{Outcome, Shape};
 use formula::{Evaluator, Tri};
@@ -60,7 +62,13 @@ pub fn evaluate(
     limits: Limits,
 ) -> Report {
     let mut work = budget::Work::new(limits);
-    let result = run(package, declaration, trace, trace.watermark, &mut work);
+    let result = run(
+        package.package(),
+        declaration,
+        trace,
+        trace.watermark,
+        &mut work,
+    );
     Report {
         result,
         limits: work.limits,
@@ -88,7 +96,13 @@ pub fn evaluate_with_progress(
 ) -> Report {
     let mut work = budget::Work::new(limits);
     let result = match ledger.record(Binding::of(declaration, trace), Progress::of(trace)) {
-        Ok(retained) => run(package, declaration, trace, retained.watermark, &mut work),
+        Ok(retained) => run(
+            package.package(),
+            declaration,
+            trace,
+            retained.watermark,
+            &mut work,
+        ),
         Err(refusal) => Err(refusal.into()),
     };
     Report {
@@ -102,6 +116,77 @@ pub fn evaluate_with_progress(
 /// declaration. This emits no TL artifact and establishes no correspondence.
 pub fn mapping_support(
     package: &AdmittedPackage,
+    declaration: usize,
+    surrounding_execution: Closure,
+) -> Result<Classification, Error> {
+    mapping_support_package(package.package(), declaration, surrounding_execution)
+}
+
+/// Evaluate one strict version-2 declaration after authenticating its exact clock.
+pub fn evaluate_v2(
+    package: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|_| {
+        run(
+            package.inherited(),
+            declaration,
+            trace,
+            trace.watermark,
+            &mut work,
+        )
+    });
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+    }
+}
+
+/// Evaluate version-2 input while retaining progress under its authenticated identity.
+pub fn evaluate_with_progress_v2(
+    package: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    limits: Limits,
+    ledger: &mut Ledger,
+) -> Report {
+    let mut work = budget::Work::new(limits);
+    let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|binding| {
+        ledger
+            .record_authenticated(binding, Progress::of(trace))
+            .map_err(Error::from)
+            .and_then(|retained| {
+                run(
+                    package.inherited(),
+                    declaration,
+                    trace,
+                    retained.watermark,
+                    &mut work,
+                )
+            })
+    });
+    Report {
+        result,
+        limits: work.limits,
+        usage: work.usage,
+    }
+}
+
+/// Classify mapping support from an authenticated version-2 definition/profile.
+pub fn mapping_support_v2(
+    package: &v2::AdmittedPackage,
+    declaration: usize,
+    surrounding_execution: Closure,
+) -> Result<Classification, Error> {
+    mapping_support_package(package.inherited(), declaration, surrounding_execution)
+}
+
+fn mapping_support_package(
+    package: &w::Package,
     declaration: usize,
     surrounding_execution: Closure,
 ) -> Result<Classification, Error> {
@@ -144,11 +229,10 @@ struct Selected<'a> {
 }
 
 fn select<'a>(
-    package: &'a AdmittedPackage,
+    package: &'a w::Package,
     declaration: usize,
     work: &mut budget::Work,
 ) -> Result<Selected<'a>, Error> {
-    let package = package.package();
     let entry = package
         .declarations
         .get(declaration)
@@ -181,7 +265,7 @@ fn select<'a>(
 }
 
 fn run(
-    package: &AdmittedPackage,
+    package: &w::Package,
     declaration: usize,
     trace: &Trace,
     watermark: i64,
@@ -329,6 +413,137 @@ fn run(
             Ok(assessed)
         }
     }
+}
+
+fn canonical_number(value: &w::Number, subject: Subject) -> Result<String, Error> {
+    let value = value
+        .checked()
+        .map_err(|_| Refusal::Reference { subject })?;
+    serde_json::to_string(&value).map_err(|_| Refusal::Reference { subject }.into())
+}
+
+fn expected_parameters(
+    configuration: &v2::wire::ClockConfiguration,
+    subject: Subject,
+) -> Result<BTreeMap<String, String>, Error> {
+    let mut parameters = BTreeMap::new();
+    match configuration {
+        v2::wire::ClockConfiguration::EventPosition { sequence_authority } => {
+            parameters.insert("sequence_authority".into(), sequence_authority.clone());
+        }
+        v2::wire::ClockConfiguration::FixedSample {
+            epoch,
+            period,
+            unit,
+        } => {
+            parameters.insert("epoch".into(), canonical_number(epoch, subject)?);
+            parameters.insert("period".into(), canonical_number(period, subject)?);
+            parameters.insert("unit".into(), unit.clone());
+        }
+        v2::wire::ClockConfiguration::TimestampedEvent { timestamp_unit } => {
+            parameters.insert("timestamp_unit".into(), timestamp_unit.clone());
+        }
+    }
+    Ok(parameters)
+}
+
+fn parameter_dimension(
+    configuration: &v2::wire::ClockConfiguration,
+    trace: &Trace,
+    expected: &BTreeMap<String, String>,
+) -> Dimension {
+    if trace.clock.parameters.len() != expected.len()
+        || !trace.clock.parameters.keys().eq(expected.keys())
+    {
+        return Dimension::ClockParameters;
+    }
+    match configuration {
+        v2::wire::ClockConfiguration::EventPosition { .. } => Dimension::SequenceAuthority,
+        v2::wire::ClockConfiguration::FixedSample { .. }
+            if trace.clock.parameters.get("epoch") != expected.get("epoch") =>
+        {
+            Dimension::Epoch
+        }
+        v2::wire::ClockConfiguration::FixedSample { .. }
+            if trace.clock.parameters.get("period") != expected.get("period") =>
+        {
+            Dimension::SamplePeriod
+        }
+        v2::wire::ClockConfiguration::FixedSample { .. } => Dimension::ClockUnit,
+        v2::wire::ClockConfiguration::TimestampedEvent { .. } => Dimension::TimestampUnit,
+    }
+}
+
+fn authenticate_v2(
+    package: &v2::AdmittedPackage,
+    declaration: usize,
+    trace: &Trace,
+    work: &mut budget::Work,
+) -> Result<progress::AuthenticatedBinding, Error> {
+    let subject = Subject {
+        declaration,
+        ..Subject::default()
+    };
+    work.subject = subject;
+    let selected = select(package.inherited(), declaration, work)?;
+    if trace.clock.profile_identity != selected.profile.identity() {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Profile,
+            subject,
+        }
+        .into());
+    }
+    if trace.clock.profile_revision != selected.revision {
+        return Err(Refusal::Binding {
+            dimension: Dimension::ProfileRevision,
+            subject,
+        }
+        .into());
+    }
+    let w::Body::Temporal { clock, .. } = selected.body else {
+        return Err(Refusal::Reference { subject }.into());
+    };
+    let clock_binding = selected
+        .declaration
+        .bindings
+        .get(usize::try_from(*clock).unwrap_or(usize::MAX))
+        .ok_or(Refusal::Reference { subject })?;
+    let clock_name = clock_binding
+        .name
+        .strip_prefix(CLOCK_PREFIX)
+        .ok_or(Refusal::Reference { subject })?;
+    if trace.clock.name != clock_name {
+        return Err(Refusal::Binding {
+            dimension: Dimension::Clock,
+            subject,
+        }
+        .into());
+    }
+    let binding = package
+        .package()
+        .temporal_bindings
+        .binary_search_by_key(&u32::try_from(declaration).unwrap_or(u32::MAX), |binding| {
+            binding.declaration
+        })
+        .ok()
+        .and_then(|index| package.package().temporal_bindings.get(index))
+        .ok_or(Refusal::Reference { subject })?;
+    let expected = expected_parameters(&binding.clock, subject)?;
+    if trace.clock.parameters != expected {
+        return Err(Refusal::Binding {
+            dimension: parameter_dimension(&binding.clock, trace, &expected),
+            subject,
+        }
+        .into());
+    }
+    Ok(progress::AuthenticatedBinding {
+        package_digest: package.digest().to_string(),
+        declaration,
+        definition_identity: selected.profile.identity().into(),
+        definition_revision: selected.revision,
+        clock: clock_name.into(),
+        parameters: expected,
+    })
 }
 
 /// Map a three-valued evaluation onto its truth and settlement basis. An open

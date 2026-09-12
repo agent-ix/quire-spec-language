@@ -16,6 +16,7 @@ mod models;
 pub mod native;
 mod number;
 mod recovery;
+pub mod v2;
 mod validate;
 mod value_graph;
 pub mod wire;
