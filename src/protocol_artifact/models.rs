@@ -64,7 +64,7 @@ pub(super) fn validate(
     expected_models: &[AdmittedModel<'_>],
     expected_dependencies: &[SuppliedDependency<'_>],
     work: &mut Work,
-) -> Result<(), Error> {
+) -> Result<Vec<NativeModel>, Error> {
     if package.models.len() != expected_models.len() {
         return Err(Error::Invalid(Invalid::Inventory));
     }
@@ -119,6 +119,10 @@ pub(super) fn validate(
         }
     }
     let mut views = Vec::new();
+    let mut retained = Vec::new();
+    retained
+        .try_reserve(expected_models.len())
+        .map_err(|_| Error::Allocation)?;
     let mut previous_model = None;
     for model in &package.models {
         work.visit()?;
@@ -186,6 +190,7 @@ pub(super) fn validate(
         }
         work.charge(Dimension::Entries, 1)?;
         views.push(View { catalog, targets });
+        retained.push(selected.model.clone());
     }
     for ty in &package.types {
         work.visit()?;
@@ -279,7 +284,7 @@ pub(super) fn validate(
             }
         }
     }
-    Ok(())
+    Ok(retained)
 }
 
 fn ref_key(value: &w::ArtifactRef) -> RefKey<'_> {

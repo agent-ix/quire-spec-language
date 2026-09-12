@@ -286,6 +286,10 @@ impl Candidate {
 pub struct AdmittedPackage {
     package: wire::Package,
     digest: ByteDigest,
+    artifact: wire::ArtifactRef,
+    // Owned copies of the independently admitted models retain the field/type
+    // schema needed by state evaluation after the reader's borrowed inputs end.
+    model_schema: Vec<NativeModel>,
 }
 
 impl AdmittedPackage {
@@ -296,5 +300,14 @@ impl AdmittedPackage {
     /// Raw-byte digest that matched the independently expected external seal.
     pub fn digest(&self) -> ByteDigest {
         self.digest
+    }
+
+    pub(crate) fn schema_model(&self, index: u32) -> Option<&NativeModel> {
+        self.model_schema.get(usize::try_from(index).ok()?)
+    }
+
+    /// Independently selected compiled artifact identity admitted by the reader.
+    pub fn artifact(&self) -> &wire::ArtifactRef {
+        &self.artifact
     }
 }

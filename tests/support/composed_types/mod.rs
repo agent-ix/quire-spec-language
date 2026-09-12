@@ -66,6 +66,63 @@ pub fn model_with_signed64_domains(name: &str) -> NativeModel {
     .expect("admitted signed-64 domain model fixture")
 }
 
+#[allow(
+    dead_code,
+    reason = "Only admitted state-evaluation fixtures need this compact query record"
+)]
+pub fn model_with_query_input(name: &str, maximum: u32) -> NativeModel {
+    try_model_with(name, maximum, |document| {
+        document["records"].as_array_mut().unwrap().push(json!({
+            "name":"QueryInput",
+            "fields":[{
+                "name":"amounts",
+                "type":{
+                    "kind":"sequence",
+                    "maximum":maximum,
+                    "value":{"kind":"scalar", "name":"Amount"}
+                }
+            }]
+        }));
+    })
+    .expect("admitted compact query-input model fixture")
+}
+
+#[allow(
+    dead_code,
+    reason = "Only admitted state-evaluation fixtures need this compact graph role"
+)]
+pub fn model_with_graph_input(name: &str) -> NativeModel {
+    try_model_with(name, 5, |document| {
+        document["records"].as_array_mut().unwrap().extend([
+            json!({
+                "name":"GraphNode",
+                "fields":[{
+                    "name":"links",
+                    "type":{
+                        "kind":"sequence",
+                        "maximum":5,
+                        "value":{"kind":"record", "name":"GraphNodeRef"}
+                    }
+                }]
+            }),
+            json!({
+                "name":"GraphNodeRef",
+                "fields":[{
+                    "name":"id",
+                    "type":{"kind":"scalar", "name":"ObjectId"}
+                }]
+            }),
+        ]);
+        document["objects"].as_array_mut().unwrap().push(json!({
+            "record":"GraphNode",
+            "reference":"GraphNodeRef",
+            "identity_field":"id",
+            "universe":"graph_nodes"
+        }));
+    })
+    .expect("admitted compact graph model fixture")
+}
+
 fn try_model_with(
     name: &str,
     maximum: u32,
