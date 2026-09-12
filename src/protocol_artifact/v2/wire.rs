@@ -11,17 +11,26 @@ use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializ
 pub enum ClockConfiguration {
     /// One admitted semantic-event sequence authority.
     #[serde(rename = "event_position")]
-    EventPosition { sequence_authority: String },
+    EventPosition {
+        /// Exact sequence-authority name.
+        sequence_authority: String,
+    },
     /// Exact epoch, positive period and unit for a fixed sample sequence.
     #[serde(rename = "fixed_sample")]
     FixedSample {
+        /// Exact origin in the selected unit domain.
         epoch: v1::Number,
+        /// Positive reduced sampling period.
         period: v1::Number,
+        /// Exact clock-unit name shared by epoch and period.
         unit: String,
     },
     /// Unit of admitted timestamps in one finite window.
     #[serde(rename = "timestamped_event")]
-    TimestampedEvent { timestamp_unit: String },
+    TimestampedEvent {
+        /// Exact timestamp-unit name.
+        timestamp_unit: String,
+    },
 }
 
 impl<'de> Deserialize<'de> for ClockConfiguration {
@@ -63,8 +72,11 @@ impl<'de> Deserialize<'de> for ClockConfiguration {
 /// One temporal declaration's exact definition and clock selection.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TemporalBinding {
+    /// Index of the selected temporal declaration.
     pub declaration: u32,
+    /// Definition index, equal to the declaration's profile index.
     pub definition: u32,
+    /// Exact configuration alternative required by that definition.
     pub clock: ClockConfiguration,
 }
 
@@ -93,7 +105,9 @@ impl<'de> Deserialize<'de> for TemporalBinding {
 /// Version-2 package. `inherited` is serialized flat before the required delta.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Package {
+    /// Complete version-1-shaped package graph with version-2 headers.
     pub inherited: v1::Package,
+    /// Complete declaration-indexed temporal selection table.
     pub temporal_bindings: Vec<TemporalBinding>,
 }
 

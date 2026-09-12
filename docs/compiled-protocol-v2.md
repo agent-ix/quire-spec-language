@@ -118,3 +118,44 @@ the existing formula-closure classifier and makes no parameter-map claim.
 digest, declaration, definition identity/revision and exact clock configuration,
 so another artifact, `/1` evaluation or changed clock selection cannot lend it
 progress.
+
+## Reproducible producer-to-consumer handoff
+
+A consumer handoff pins the final published compiler implementation revision
+that retains this contract and names the exact public surface it consumes:
+
+- `protocol_artifact::v2::{Expected, ExpectedDefinition, ExpectedTemporal,
+  AdmittedPackage, read, encode_candidate}` and
+  `protocol_artifact::v2::wire::{Package, TemporalBinding,
+  ClockConfiguration}`;
+- `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`; and
+- `temporal::{evaluate_v2, evaluate_with_progress_v2, mapping_support_v2}`.
+
+The producing caller supplies the actual parser/linker/proof report plus the
+complete `native::Selections`: original native source and model artifacts,
+unreconstructed dependency bytes, their exact artifact identities and raw-byte
+digests, and a complete temporal selection table. `admit_v2` returns a
+`Report<AdmissionV2>`. The report, not `AdmissionV2`, owns the effective limits,
+usage and typed refusal. On success `AdmissionV2::bytes()` and `digest()` expose
+the raw canonical `/2` payload and its SHA-256 digest, while `admitted()` exposes
+only the constructor-private local view.
+
+The external linked-package `ArtifactRef` is a separate consumer-authorized
+selection. Its version is `2` and its digest is computed from the returned raw
+bytes; A does not mint consumer authority by returning that reference. Before
+reading, the caller independently constructs `v2::Expected` from its selected
+artifact, contract, baseline, producer, source, dependency and model inventories
+plus its own complete `ExpectedTemporal` table. It then calls `v2::read` with
+caller-selected limits and retains the resulting typed `Report`, including a
+resource-incomplete or invalid/unsupported refusal without a partial admitted
+package.
+
+The executable recipe is
+[`tests/compiled_protocol_v2.rs`](../tests/compiled_protocol_v2.rs), supported by
+[`tests/support/native_protocol/mod.rs`](../tests/support/native_protocol/mod.rs).
+It starts with real native compilation, reconstructs reader expectations from
+the original inputs rather than emitted wire, and covers cross-version offers,
+selection/configuration substitutions, raw digest-domain crossings,
+same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
+These fixtures demonstrate A's producer and reader boundary only; they do not
+claim that B admitted the artifact or completed an ecosystem acceptance run.
