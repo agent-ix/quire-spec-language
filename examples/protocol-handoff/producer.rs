@@ -2026,9 +2026,9 @@ fn mutation_fixtures(
     };
 
     let mut header = package.clone();
-    header.inherited.wire = artifact::WIRE.into();
+    header.inherited.wire = "invalid-version-substitution".into();
     offer(
-        "header-wire-v1",
+        "header-wire-version-substitution",
         "header.version",
         v2::Refusal::Header(v2::HeaderField::Wire).code(),
         header,
