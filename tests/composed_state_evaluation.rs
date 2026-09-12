@@ -12,10 +12,10 @@ use quire_spec_language::protocol_artifact::{
 use quire_spec_language::state::{
     self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
     ContextualSlot, ContextualValue, ContextualValueKind, Dimension, EvaluationOutcome,
-    EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, ObjectInput,
-    ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput, Refusal,
-    StateView, StaticAuthority, Value, ValueKind, OBSERVATION_CONTRACT_REVISION,
-    PRODUCER_CONTRACT_REVISION,
+    EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
+    ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
+    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind,
+    OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
 };
 use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
@@ -367,6 +367,29 @@ fn graph_view(
             }],
         },
     )
+}
+
+fn graph_link(targets: impl IntoIterator<Item = ObjectKey>, field: w::ExportRef) -> FieldInput {
+    FieldInput {
+        field,
+        value: FieldValue::Contextual(ContextualSlot::Available(ContextualValue::new(
+            ContextualValueKind::Sequence(
+                targets
+                    .into_iter()
+                    .map(|target| {
+                        ContextualSlot::Available(ContextualValue::new(
+                            ContextualValueKind::Reference(target),
+                        ))
+                    })
+                    .collect(),
+            ),
+        ))),
+    }
+}
+
+fn replace_graph_links(object: &mut ObjectInput, targets: impl IntoIterator<Item = ObjectKey>) {
+    let field = object.fields[0].field.clone();
+    object.fields = vec![graph_link(targets, field)];
 }
 
 fn query_view(
@@ -1082,5 +1105,280 @@ fn tc_129_130_131_full_occurrences_authority_and_graph_limits_are_exact() {
                         && exhaustion.cause == ExhaustionCause::Limit
             ));
         }
+    });
+}
+
+/// Tracing: TC-129.
+#[trace("TC-129", "FR-047-AC-1", "FR-047-AC-2", "FR-047-AC-3")]
+#[test]
+fn tc_129_complete_domain_validation_precedes_decisive_graph_execution() {
+    admitted_graph(|package| {
+        let (owner, root, view) = graph_view(package);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        let first = view.populations[0].objects[0].key.clone();
+        let mut dangling = first.clone();
+        dangling.identifier = "absent-target".into();
+
+        let mut hidden_after_target = view.clone();
+        replace_graph_links(
+            &mut hidden_after_target.populations[0].objects[0],
+            [first.clone(), dangling.clone()],
+        );
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request.clone(),
+                &hidden_after_target,
+                Limits::default()
+            )
+            .outcome(),
+            EvaluationOutcome::Refused(Refusal::Dangling(key)) if key == &dangling
+        ));
+
+        let mut incomplete = hidden_after_target.clone();
+        incomplete.populations[0].closure = Err(MissingInput::Closure(
+            incomplete.populations[0].closure_requirement.clone(),
+        ));
+        assert!(matches!(
+            state::evaluate(package, request.clone(), &incomplete, Limits::default()).outcome(),
+            EvaluationOutcome::Incomplete(MissingInput::Closure(_))
+        ));
+
+        let mut foreign_observation = incomplete;
+        let mut foreign = dangling;
+        foreign.observation.snapshot = ObservationIdentity("snapshot:foreign".into());
+        replace_graph_links(
+            &mut foreign_observation.populations[0].objects[0],
+            [first, foreign.clone()],
+        );
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request,
+                &foreign_observation,
+                Limits::default()
+            )
+            .outcome(),
+            EvaluationOutcome::Refused(Refusal::PopulationDomain(key)) if key == &foreign
+        ));
+    });
+}
+
+/// Tracing: TC-130.
+#[trace("TC-130", "FR-047-AC-4", "FR-047-AC-5")]
+#[test]
+fn tc_130_multi_record_cycle_uses_full_keys_and_positive_length_paths() {
+    admitted_graph(|package| {
+        let (owner, root, mut view) = graph_view(package);
+        let first = view.populations[0].objects[0].key.clone();
+        let second = view.populations[0].objects[1].key.clone();
+        assert_ne!(first.observation.record, second.observation.record);
+        replace_graph_links(&mut view.populations[0].objects[0], [second.clone()]);
+        replace_graph_links(&mut view.populations[0].objects[1], [first]);
+        let report = state::evaluate(
+            package,
+            EvaluationRequest {
+                declaration: owner,
+                value: root.clone(),
+            },
+            &view,
+            Limits::default(),
+        );
+        assert!(matches!(
+            report.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(true))
+        ));
+        assert_eq!(report.usage().graph_expansion, 2);
+        assert_eq!(report.usage().graph_edges, 2);
+        assert_eq!(report.usage().active_graph_depth, 2);
+        assert_eq!(report.usage().value_comparison, 2);
+
+        replace_graph_links(&mut view.populations[0].objects[0], []);
+        replace_graph_links(&mut view.populations[0].objects[1], []);
+        let isolated = state::evaluate(
+            package,
+            EvaluationRequest {
+                declaration: owner,
+                value: root.clone(),
+            },
+            &view,
+            Limits::default(),
+        );
+        assert!(matches!(
+            isolated.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(false))
+        ));
+        assert_eq!(isolated.usage().graph_expansion, 1);
+        assert_eq!(isolated.usage().graph_edges, 0);
+
+        let second = view.populations[0].objects[1].key.clone();
+        replace_graph_links(
+            &mut view.populations[0].objects[0],
+            [second.clone(), second],
+        );
+        let duplicate_edge = state::evaluate(
+            package,
+            EvaluationRequest {
+                declaration: owner,
+                value: root,
+            },
+            &view,
+            Limits::default(),
+        );
+        assert!(matches!(
+            duplicate_edge.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(false))
+        ));
+        assert_eq!(duplicate_edge.usage().graph_expansion, 2);
+        assert_eq!(duplicate_edge.usage().graph_edges, 2);
+        assert_eq!(duplicate_edge.usage().value_comparison, 2);
+    });
+}
+
+/// Tracing: TC-131.
+#[trace("TC-131", "FR-047-AC-7")]
+#[test]
+fn tc_131_multi_record_graph_limits_are_exact_and_retry_is_fresh() {
+    admitted_graph(|package| {
+        let (owner, root, mut view) = graph_view(package);
+        let first = view.populations[0].objects[0].key.clone();
+        let second = view.populations[0].objects[1].key.clone();
+        replace_graph_links(&mut view.populations[0].objects[0], [second]);
+        replace_graph_links(&mut view.populations[0].objects[1], [first]);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        let exact = Limits {
+            graph_expansion: 2,
+            graph_edges: 2,
+            active_graph_depth: 2,
+            value_comparison: 2,
+            ..Limits::default()
+        };
+        let complete = state::evaluate(package, request.clone(), &view, exact);
+        assert!(matches!(
+            complete.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(true))
+        ));
+        for (limits, dimension) in [
+            (
+                Limits {
+                    graph_expansion: 1,
+                    ..exact
+                },
+                Dimension::GraphExpansion,
+            ),
+            (
+                Limits {
+                    graph_edges: 1,
+                    ..exact
+                },
+                Dimension::GraphEdges,
+            ),
+            (
+                Limits {
+                    active_graph_depth: 1,
+                    ..exact
+                },
+                Dimension::ActiveGraphDepth,
+            ),
+            (
+                Limits {
+                    value_comparison: 1,
+                    ..exact
+                },
+                Dimension::ValueComparison,
+            ),
+        ] {
+            assert!(matches!(
+                state::evaluate(package, request.clone(), &view, limits).outcome(),
+                EvaluationOutcome::Exhausted(exhaustion)
+                    if exhaustion.dimension == dimension
+                        && exhaustion.cause == ExhaustionCause::Limit
+            ));
+        }
+        let retry = state::evaluate(package, request, &view, exact);
+        assert_eq!(retry.outcome(), complete.outcome());
+        assert_eq!(retry.usage(), complete.usage());
+    });
+}
+
+/// Tracing: TC-136.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-5")]
+#[test]
+fn tc_136_population_inputs_are_exact_not_best_effort_search_domains() {
+    admitted_graph(|package| {
+        let (owner, root, view) = graph_view(package);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        let mut missing = view.clone();
+        let population = missing.populations.remove(0);
+        assert!(matches!(
+            state::evaluate(package, request.clone(), &missing, Limits::default()).outcome(),
+            EvaluationOutcome::Refused(Refusal::MissingBinding(handle))
+                if handle == &population.requirement
+        ));
+
+        let mut duplicate = view.clone();
+        duplicate.populations.push(population);
+        assert!(matches!(
+            state::evaluate(package, request.clone(), &duplicate, Limits::default()).outcome(),
+            EvaluationOutcome::Refused(Refusal::DuplicateBinding(_))
+        ));
+
+        let flow = package
+            .package()
+            .declarations
+            .iter()
+            .position(|declaration| declaration.name == "Flow")
+            .expect("unrelated protocol declaration") as u32;
+        let declaration = &package.package().declarations[flow as usize];
+        let population_index = declaration
+            .bindings
+            .iter()
+            .position(|binding| binding.kind == w::BindingKind::Population)
+            .expect("unrelated population requirement");
+        let closure_index = declaration
+            .bindings
+            .iter()
+            .position(|binding| {
+                binding.kind == w::BindingKind::Closure
+                    && binding.requires == [population_index as u32]
+            })
+            .expect("unrelated closure requirement");
+        let unrelated = PopulationInput {
+            requirement: w::Handle {
+                declaration: flow,
+                index: population_index as u32,
+            },
+            closure_requirement: w::Handle {
+                declaration: flow,
+                index: closure_index as u32,
+            },
+            authority: authority(package, flow, population_index as u32),
+            membership: Err(MissingInput::Membership(w::Handle {
+                declaration: flow,
+                index: population_index as u32,
+            })),
+            closure: Ok(()),
+            objects: Vec::new(),
+        };
+        let mut surplus = view;
+        surplus.populations.insert(0, unrelated);
+        assert!(matches!(
+            state::evaluate(package, request, &surplus, Limits::default()).outcome(),
+            EvaluationOutcome::Refused(Refusal::SurplusBinding(handle))
+                if handle.declaration == flow
+        ));
     });
 }
