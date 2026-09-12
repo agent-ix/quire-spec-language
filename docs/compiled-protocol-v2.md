@@ -24,6 +24,11 @@ All encoding, number, name, canonical ordering, selection, model, producer,
 source, dependency, declaration and limit rules from
 [version 1](compiled-protocol-v1.md) apply unchanged. The two versions have
 separate strict Rust readers. Neither reader adds, removes or translates fields.
+The inherited shared-reference vocabulary keeps concrete `population` and
+`window` assessment documents distinct from one another and from the compiled
+artifact. A temporal binding's authenticated clock configuration selects how a
+window is interpreted; it is not itself the window identity, coverage or
+membership document.
 
 ## Closed version-2 delta
 
