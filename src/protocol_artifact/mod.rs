@@ -197,6 +197,9 @@ pub enum Error {
     Numeric(NumberError),
     #[error("invalid compiled protocol data: {0:?}")]
     Invalid(Invalid),
+    /// Strict version-2 refusal with a stable, axis-specific public code.
+    #[error("invalid version-2 compiled protocol data: {0}")]
+    V2(v2::Refusal),
     #[error("unsupported compiled protocol interpretation: {0:?}")]
     Unsupported(Unsupported),
     #[error(transparent)]
