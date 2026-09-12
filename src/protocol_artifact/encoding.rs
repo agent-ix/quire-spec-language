@@ -106,7 +106,7 @@ impl Formatter for Compact<'_, '_> {
     }
 }
 
-pub(super) fn bytes(package: &wire::Package, work: &mut Work) -> Result<Vec<u8>, Error> {
+pub(super) fn bytes(package: &impl Serialize, work: &mut Work) -> Result<Vec<u8>, Error> {
     // Canonical output is package-wide; a prior semantic pass's last value is
     // not the source owner of an output allocation or byte-budget refusal.
     work.locus = None;
@@ -130,6 +130,14 @@ pub(super) fn bytes(package: &wire::Package, work: &mut Work) -> Result<Vec<u8>,
     Ok(output.bytes)
 }
 
+pub(super) fn candidate(package: &impl Serialize, work: &mut Work) -> Result<Candidate, Error> {
+    census::reserve(package, work)?;
+    let bytes = bytes(package, work)?;
+    work.bytes(bytes.len())?;
+    let digest = ByteDigest::of(&bytes);
+    Ok(Candidate { bytes, digest })
+}
+
 /// Encode an untrusted transport candidate using the contract's exact spelling.
 /// This utility returns no accepted external reference or compilation authority.
 pub fn encode_candidate(package: &wire::Package, limits: Limits) -> Report<Candidate> {
@@ -137,11 +145,7 @@ pub fn encode_candidate(package: &wire::Package, limits: Limits) -> Report<Candi
     let result = (|| {
         super::validate::numbers(package, &mut work)?;
         work.locus = None;
-        census::reserve(package, &mut work)?;
-        let bytes = bytes(package, &mut work)?;
-        work.bytes(bytes.len())?;
-        let digest = ByteDigest::of(&bytes);
-        Ok(Candidate { bytes, digest })
+        candidate(package, &mut work)
     })();
     report(work, result)
 }
