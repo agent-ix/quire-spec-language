@@ -1644,49 +1644,54 @@ impl<'a> Evaluator<'a> {
         self.work
             .charge(Dimension::ActiveExpressionDepth, depth)
             .map_err(Stop::Exhausted)?;
-        let declaration = &self.package.package().declarations[handle.declaration as usize];
+        // Copy the immutable package reference out of `self` so recursive
+        // evaluation can mutate only evaluator state while borrowing the
+        // admitted graph in place.  Cloning a complete wire value here would
+        // otherwise copy authored text and call-argument vectors on every
+        // visit, outside the semantic work being evaluated.
+        let package = self.package;
+        let declaration = &package.package().declarations[handle.declaration as usize];
         let node = declaration
             .values
             .get(handle.index as usize)
-            .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?
-            .clone();
+            .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?;
         if self.anchor.as_ref() != Some(&node.anchor) {
             return Err(Stop::Refused(Refusal::AdmittedInvariant(handle.clone())));
         }
         self.work.locus = Some(node.locus.clone());
-        let kind = match node.operation {
-            w::ValueOperation::Boolean { value } => ValueKind::Boolean(value),
+        let kind = match &node.operation {
+            w::ValueOperation::Boolean { value } => ValueKind::Boolean(*value),
             w::ValueOperation::Number { value } => ValueKind::Number(
                 value
                     .checked()
                     .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?,
             ),
-            w::ValueOperation::Text { value } => ValueKind::Text(value),
-            w::ValueOperation::Enum { variant } => ValueKind::Enum(variant),
-            w::ValueOperation::Read { binder } => return self.read(handle, &binder),
-            w::ValueOperation::Group { value } => return self.expression(&value, depth + 1),
+            w::ValueOperation::Text { value } => ValueKind::Text(value.clone()),
+            w::ValueOperation::Enum { variant } => ValueKind::Enum(variant.clone()),
+            w::ValueOperation::Read { binder } => return self.read(handle, binder),
+            w::ValueOperation::Group { value } => return self.expression(value, depth + 1),
             w::ValueOperation::Field { base, field } => {
-                let base = self.expression(&base, depth + 1)?;
-                return self.field(base, &field);
+                let base = self.expression(base, depth + 1)?;
+                return self.field(base, field);
             }
             w::ValueOperation::Unary { operator, value } => {
-                return self.unary(node.value_type, operator, &value, depth)
+                return self.unary(node.value_type, *operator, value, depth)
             }
             w::ValueOperation::Binary {
                 operator,
                 left,
                 right,
-            } => return self.binary(node.value_type, operator, &left, &right, depth),
+            } => return self.binary(node.value_type, *operator, left, right, depth),
             w::ValueOperation::If {
                 condition,
                 then_value,
                 else_value,
             } => {
-                let condition = self.expression(&condition, depth + 1)?;
+                let condition = self.expression(condition, depth + 1)?;
                 if boolean(&condition)? {
-                    return self.expression(&then_value, depth + 1);
+                    return self.expression(then_value, depth + 1);
                 } else {
-                    return self.expression(&else_value, depth + 1);
+                    return self.expression(else_value, depth + 1);
                 }
             }
             w::ValueOperation::Let {
@@ -1694,10 +1699,10 @@ impl<'a> Evaluator<'a> {
                 initializer,
                 body,
             } => {
-                let value = self.expression(&initializer, depth + 1)?;
+                let value = self.expression(initializer, depth + 1)?;
                 let base = self.locals.len();
                 self.bind_local((binder.declaration, binder.index), value)?;
-                let result = self.expression(&body, depth + 1);
+                let result = self.expression(body, depth + 1);
                 self.locals.truncate(base);
                 return result;
             }
@@ -1712,14 +1717,14 @@ impl<'a> Evaluator<'a> {
                 {
                     return Err(Stop::Refused(Refusal::AdmittedInvariant(handle.clone())));
                 }
-                return self.expression_at(&value, depth + 1, anchor);
+                return self.expression_at(value, depth + 1, anchor.clone());
             }
             w::ValueOperation::Call {
                 predicate,
                 arguments,
-            } => return self.call(predicate, &arguments, depth),
+            } => return self.call(*predicate, arguments, depth),
             w::ValueOperation::Size { collection, .. } => {
-                let collection = self.expression(&collection, depth + 1)?;
+                let collection = self.expression(collection, depth + 1)?;
                 let values = sequence(&collection)?;
                 ValueKind::Number(ProtocolNumber::Integer(ExactInteger::new(
                     i64::try_from(values.len())
@@ -1727,9 +1732,9 @@ impl<'a> Evaluator<'a> {
                 )))
             }
             w::ValueOperation::Contains { collection, member } => {
-                let collection = self.expression(&collection, depth + 1)?;
+                let collection = self.expression(collection, depth + 1)?;
                 let values = sequence(&collection)?;
-                let member = self.expression(&member, depth + 1)?;
+                let member = self.expression(member, depth + 1)?;
                 let mut found = false;
                 for slot in values {
                     self.sequence_charge()?;
@@ -1747,16 +1752,7 @@ impl<'a> Evaluator<'a> {
                 collection,
                 body,
                 ..
-            } => {
-                return self.query(
-                    node.value_type,
-                    operator,
-                    &binder,
-                    &collection,
-                    &body,
-                    depth,
-                )
-            }
+            } => return self.query(node.value_type, *operator, binder, collection, body, depth),
             w::ValueOperation::Parent { .. } => {
                 return Err(Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))
             }
@@ -1766,13 +1762,9 @@ impl<'a> Evaluator<'a> {
                 edge,
                 ..
             } => {
-                let start = self.expression(&start, depth + 1)?;
-                let target = self.expression(&target, depth + 1)?;
-                ValueKind::Boolean(self.reaches(
-                    object_key(&start)?,
-                    object_key(&target)?,
-                    &edge,
-                )?)
+                let start = self.expression(start, depth + 1)?;
+                let target = self.expression(target, depth + 1)?;
+                ValueKind::Boolean(self.reaches(object_key(&start)?, object_key(&target)?, edge)?)
             }
         };
         Ok(Value::new(node.value_type, kind))
@@ -1979,16 +1971,18 @@ impl<'a> Evaluator<'a> {
     }
 
     fn call(&mut self, predicate: u32, arguments: &[w::Handle], depth: usize) -> Result<Value> {
-        let declaration = self
-            .package
+        // As in `expression`, borrow the immutable admitted package through a
+        // copied reference instead of cloning the complete declaration and all
+        // of its owned tables for each predicate invocation.
+        let package = self.package;
+        let declaration = package
             .package()
             .declarations
             .get(
                 usize::try_from(predicate)
                     .map_err(|_| Stop::Refused(Refusal::RequestDeclaration(predicate)))?,
             )
-            .ok_or_else(|| Stop::Refused(Refusal::RequestDeclaration(predicate)))?
-            .clone();
+            .ok_or_else(|| Stop::Refused(Refusal::RequestDeclaration(predicate)))?;
         let w::Body::Predicate {
             parameters, root, ..
         } = &declaration.body

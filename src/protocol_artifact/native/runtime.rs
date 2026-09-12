@@ -574,6 +574,11 @@ pub(super) fn body(
             let mut roles = Vec::new();
             for (i, role) in p.roles.iter().enumerate() {
                 work.visit()?;
+                // Model/type admission below may refuse before the retained
+                // role record is built. Establish the complete owning locus
+                // first so a multi-unit package cannot combine this span with
+                // a stale source index from the preceding declaration.
+                work.locus = Some(layout.locus(role.span)?);
                 let ty = model_type(context, qualified_span(&role.model), work)?;
                 let model = nominal(ty, builder, work)?;
                 let value_type = builder.ty(ty, work)?;

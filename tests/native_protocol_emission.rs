@@ -329,6 +329,46 @@ fn multi_unit_native_families_keep_callee_source_ids_and_lexical_provenance() {
 }
 
 #[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn multi_unit_invalid_role_type_reports_the_role_in_its_own_source() {
+    let inputs = Inputs::new(&[
+        Unit {
+            name: "a-temporal",
+            body: "temporal Due using T over (view: M::Node) clock \"temporal_instant\" on origin { always[0,1] holds(true) }",
+            declarations: &["Due"],
+        },
+        Unit {
+            name: "z-protocol",
+            body: "protocol InvalidRole using P over (view: M::Node) on origin { role Service on M::Plain; run sequence Main {} finish Closed as (closed: M::Node) { true }; }",
+            declarations: &["InvalidRole"],
+        },
+    ]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let report = native::admit(proofs, selected, Limits::default());
+            assert_eq!(
+                report.result().expect_err("invalid role type is refused"),
+                &Error::Invalid(Invalid::Type)
+            );
+            let locus = report.locus().expect("role refusal retains its locus");
+            assert_eq!(locus.source, 1);
+            let source = inputs
+                .sources
+                .get(usize::try_from(locus.source).expect("u32 source index fits usize"))
+                .expect("reported source exists");
+            let span = quire_spec_language::Span {
+                start: usize::try_from(locus.span.start).expect("u32 span start fits usize"),
+                end: usize::try_from(locus.span.end).expect("u32 span end fits usize"),
+            };
+            assert_eq!(source.slice(span), Some("role Service on M::Plain;"));
+        },
+    );
+}
+
+#[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-8")]
 fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision() {
     let mut inputs = Inputs::new(&[Unit {
