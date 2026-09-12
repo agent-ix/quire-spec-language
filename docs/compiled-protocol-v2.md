@@ -98,13 +98,23 @@ The selected `temporal` input is a complete `native::TemporalSelection` table
 keyed by exact source artifact and declaration byte span. Each record includes
 the expected definition identity/revision/artifact and one typed clock
 configuration. The producer matches those selections to the proof report rather
-than accepting a same-named declaration or shape. `AdmissionV2`
-exposes canonical bytes and a strict admitted view, never a freely constructible
-authority token. L5 adds `evaluate_v2`, `evaluate_with_progress_v2` and
-`mapping_support_v2` over the v2 admitted type; the existing `/1` signatures
-remain unchanged. The v2 entry points compare the trace's profile, revision,
+than accepting a same-named declaration or shape. `AdmissionV2` exposes
+canonical bytes, their digest and a strict admitted view, never a freely
+constructible external artifact authority token. Its enclosing `Report` owns
+usage and effective limits. L5 adds `evaluate_v2`,
+`evaluate_with_progress_v2` and `mapping_support_v2` over the v2 admitted type;
+the existing `/1` signatures remain unchanged. The v2 trace-evaluation entry
+points compare the trace's profile, revision,
 binding name and exact parameter map before visiting positions. Event-position
 uses only `sequence_authority`; fixed-sample uses exactly `epoch`, `period` and
 `unit`, with the numbers encoded as compact canonical FR-038 Number JSON;
 timestamped-event uses only `timestamp_unit`. L5 does not interpret clock
 progress during artifact admission.
+
+`mapping_support_v2(package, declaration, closure)` has no trace input; it
+checks the declaration's authenticated definition/profile binding before using
+the existing formula-closure classifier and makes no parameter-map claim.
+`evaluate_with_progress_v2` keys retained progress by the admitted package
+digest, declaration, definition identity/revision and exact clock configuration,
+so another artifact, `/1` evaluation or changed clock selection cannot lend it
+progress.

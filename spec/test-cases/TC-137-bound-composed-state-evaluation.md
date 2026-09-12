@@ -17,10 +17,11 @@ boundary through the public evaluator.
 
 Independently count fixed valid fixtures exercising input nodes/entries/text and
 structural depth; expression work/depth and predicate-call depth; sequence
-occurrences; retained outputs; comparison pairs/depth; and graph objects/edges/
-depth. Use nested record/option/sequence values, grouped/branched expressions,
-nested calls, recursive record comparison and a graph chain so each depth limit
-has a distinct oracle. Run each dimension at zero when no work is required,
+occurrences; retained outputs; comparison pairs; and graph objects/edges/depth.
+Use nested record/option/sequence inputs, grouped/branched expressions, nested
+calls, supported scalar/enum/reference/object-identity comparisons and a graph
+chain so each selected dimension has a distinct oracle. Run each dimension at
+zero when no work is required,
 exact, one-short and above-hard while other limits remain sufficient.
 After every exhausted run, repeat with sufficient limits over the same borrowed
 package and state view. Mutation controls remove one charge site at a time.

@@ -34,6 +34,11 @@ component-overflow periods plus a changed epoch or unit. Re-seal each mutated
 candidate so the test reaches the owning validation rather than passing on an
 earlier digest mismatch.
 
+Exercise `mapping_support_v2` without a trace and require its admitted
+definition/profile binding before formula classification. For progress, attempt
+to reuse ledger entries across `/1`, another `/2` artifact and a changed clock
+configuration before repeating with the exact authenticated package selection.
+
 Independently remove, duplicate and append a producer temporal selection and a
 reader `ExpectedTemporal`; substitute its source, declaration span, definition
 or one clock field without changing the compiled source.
@@ -60,4 +65,6 @@ selection.
 
 The existing `/1` L5 entry points retain their public signatures and prior
 unauthenticated-parameter results. The v2-specific entry points accept only the
-v2 admitted type and retain the artifact-authenticated parameter map.
+v2 admitted type; trace evaluation retains the artifact-authenticated parameter
+map, mapping classification claims none, and progress does not cross an artifact
+or clock-configuration identity.
