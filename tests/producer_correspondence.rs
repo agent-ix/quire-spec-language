@@ -834,43 +834,52 @@ fn compiler_refuses_reversed_relationship_endpoint_types() {
 
 #[test]
 #[trace("TC-132", "FR-048-AC-8")]
-fn target_to_source_direction_keeps_declared_source_as_first_operand() {
-    let (inputs, interface, relation) =
-        direct_producer_inputs("related by OrderPayment(view, notice)");
-    let bundle = admitted_filament_bundle(&inputs, filament::RelationshipDirection::TargetToSource);
-    let mut expected = expected_filament_selection(&inputs);
-    expected.bundle.digest.value =
-        "sha256:c80fe081e3481d9d3d52f39907bae53797f20a67cb5cbd2b6f905c086a121917".into();
-    let adapted = adapt_filament_producer(&bundle, &inputs.model_reference.identity)
-        .expect("one target-to-source producer mapping");
-    assert_eq!(adapted, expected);
-    let admitted = admit_filament_producer_model(
-        &bundle,
-        &inputs.model_reference.identity,
-        &inputs.model,
-        &expected,
-    )
-    .expect("target-to-source keeps source and target operand positions");
-    inputs.with_producer_proofs(
-        &admitted,
-        TypeLimits::default(),
-        proofs::ProofLimits::default(),
-        |proofs, selections| {
-            let producer = native::ProducerSelection {
-                model: &admitted,
-                interface: &interface,
-                relation: &relation,
-            };
-            assert!(native::admit_with_producers(
-                proofs,
-                selections,
-                &[producer],
-                Limits::default(),
-            )
-            .result()
-            .is_ok());
-        },
-    );
+fn every_relationship_direction_keeps_declared_source_as_first_operand() {
+    for direction in [
+        filament::RelationshipDirection::SourceToTarget,
+        filament::RelationshipDirection::TargetToSource,
+        filament::RelationshipDirection::Bidirectional,
+        filament::RelationshipDirection::Undirected,
+    ] {
+        let (inputs, interface, relation) =
+            direct_producer_inputs("related by OrderPayment(view, notice)");
+        let bundle = admitted_filament_bundle(&inputs, direction);
+        let mut expected = expected_filament_selection(&inputs);
+        expected.bundle.digest.value = bundle.digest().value.clone();
+        let adapted = adapt_filament_producer(&bundle, &inputs.model_reference.identity)
+            .expect("one producer relationship mapping");
+        assert_eq!(adapted, expected, "{direction:?}");
+        let admitted = admit_filament_producer_model(
+            &bundle,
+            &inputs.model_reference.identity,
+            &inputs.model,
+            &expected,
+        )
+        .unwrap_or_else(|error| panic!("{direction:?}: {error:?}"));
+        inputs.with_producer_proofs(
+            &admitted,
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selections| {
+                let producer = native::ProducerSelection {
+                    model: &admitted,
+                    interface: &interface,
+                    relation: &relation,
+                };
+                let report = native::admit_with_producers(
+                    proofs,
+                    selections,
+                    &[producer],
+                    Limits::default(),
+                );
+                assert!(
+                    report.result().is_ok(),
+                    "{direction:?}: {:?}",
+                    report.result()
+                );
+            },
+        );
+    }
 }
 
 fn compensation(name: &str, commit: &str, recovery: &str) -> String {
@@ -1290,6 +1299,18 @@ fn admitted_producer_model_emits_and_reads_exact_correspondence() {
                     export.kind == kind && export.path == [path]
                 }));
             }
+            let expected_object = expected
+                .correspondence
+                .exports
+                .iter()
+                .find(|export| export.kind == ProducerExportKind::Object)
+                .expect("producer object mapping");
+            let retained_object = package.models[0]
+                .exports
+                .iter()
+                .find(|export| export.kind == w::ExportKind::Object && export.path == ["Node"])
+                .expect("overlapping native object export");
+            assert_eq!(retained_object.locus, expected_object.locus);
 
             let emitted = native::emit(&admission, Limits::default())
                 .into_result()

@@ -416,6 +416,10 @@ fn producer_correspondence(
             if native_exports.peek().is_some_and(|native| {
                 export_owned_key(native) == (key.0.as_str(), key.1.as_slice())
             }) {
+                // A matching producer mapping deliberately replaces only the
+                // native source locus. Kind and ordered path are the equality
+                // key, and the independent reader later rechecks the retained
+                // producer locus against the admitted correspondence.
                 native_exports.next();
             }
             work.charge(Dimension::Entries, 1)?;
