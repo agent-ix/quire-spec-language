@@ -16,6 +16,7 @@ pub mod diagnostic;
 pub mod digest;
 pub mod formal_source;
 pub mod format;
+mod json_number;
 mod lexer;
 pub mod linking;
 pub mod located_json;
