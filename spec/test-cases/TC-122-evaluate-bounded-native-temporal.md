@@ -99,9 +99,10 @@ profiles compiles one declaration per profile from identical clause text.
     scope with open surrounding execution, open decision scope with closed
     surrounding execution, completed and failed assessment execution, and
     complete and incomplete input. Require each axis to be reported as supplied
-    and require closing one never to close or complete another. Then submit each
-    settlement basis paired with a truth and closure combination the contract does
-    not permit, one axis at a time, and require every substitution to refuse.
+   and require closing one never to close or complete another. Inspect the public
+   evaluator input and require that it accepts no caller-supplied settlement
+   basis or truth; inspect the closed result construction and require each
+   result to derive those fields from the evaluated trace.
 11. Under the fixed-sample and timestamped profiles, advance a watermark to an
     inclusive deadline with complete valuations and no business event, and require
     the applicable bounded obligation to settle. Place one admitted instant

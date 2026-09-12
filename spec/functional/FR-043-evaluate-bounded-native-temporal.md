@@ -52,27 +52,14 @@ The independence half of AC-10 is verified in full. This limit is recorded rathe
 than left as an unbacked claim, and becomes verifiable only if a caller-supplied
 basis ever enters the surface.
 
-### Open questions referred to agent E
+### Ratified semantic rulings
 
-The pointwise reading of `not`, `and`, `or` and `implies` is **not** a
-restatement. `temporal-common.md` admits "temporal Boolean connectives" without
-fixing whether they are evaluated at each offset the enclosing operator ranges
-over, and no owned acceptance criterion pins it. This requirement selects the
-pointwise reading, which makes `always[0,1] not holds(p)` false on a
-one-position closed-complete trace with `p` true; an untimed reading would make
-it true. An earlier revision of this requirement asserted the untimed reading, so
-the two are not interchangeable and the choice is visible in results. The
-selection is recorded on compiler
-[#38](https://github.com/agent-ix/quire-spec-language/issues/38) for E's ruling
-and SHALL be changed to match that ruling.
-
-Precedence between a reached ceiling and an already-settled sibling obligation is
-also unresolved between this requirement and
-[NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). This
-requirement selects: an obligation already settled over complete exact decision
-support retains its truth, basis and support when a ceiling is later reached
-while assessing a different obligation, and only the unassessed obligation
-carries the stop. That selection is likewise recorded on #38 for a ruling.
+The merged native-temporal architecture and semantic amendment in
+`quire-specification` PR #23 ratifies pointwise `not`, `and`, `or` and
+`implies` at every offset the enclosing operator ranges over. It also ratifies
+that a resource ceiling affects only the obligation whose required work could
+not be completed: an already-settled sibling retains its truth, basis and exact
+support. These are shared semantic rules, not local evaluator selections.
 
 Agent F owns observation transport, storage, replay and completeness authority.
 The trace is a caller-supplied input. Its completeness assertion, admitted order
@@ -131,8 +118,8 @@ order or backend capability report.
 
 Per activated obligation: a settlement basis of `closed-scope`,
 `decisive-witness`, `decisive-counterexample`, `unsettled` or `unavailable`; the
-exact decision-support position set; the retained premises; and a truth of
-`true`, `false` or `pending`.
+exact decision-support position set; and the retained premises. A settled or
+unsettled assessable obligation carries truth `true`, `false` or `pending`.
 
 Truth SHALL be absent where the basis is `unavailable`, and both truth and basis
 SHALL be absent where activation carried no obligation to assess. A `pending`
@@ -276,7 +263,7 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-7 | A closed-complete scope settles with basis `closed-scope`; an open scope settles only with `decisive-witness` or `decisive-counterexample` and otherwise returns pending with `unsettled`; a fact missing inside completed decision support returns basis `unavailable` with no truth, while a fact missing outside it leaves the settled truth intact. | Test (TC-122) |
 | FR-043-AC-8 | An incomplete input applies neither false extension nor finite-window empty truth even where the scope is labelled closed; an empty finite window emits empty-existential or empty-universal truth only under completeness through the inclusive upper endpoint. | Test (TC-122) |
 | FR-043-AC-9 | A past operator whose computed lower boundary is the authoritative execution origin yields a Boolean, while the identical visible suffix under a mere history cutoff yields missing-history incomplete; an omitted interior history interval is incomplete at its exact position and never false padding. | Test (TC-122) |
-| FR-043-AC-10 | Decision-scope closure, surrounding-execution closure, assessment execution and input completeness remain four independently represented dimensions; closing one cannot close or complete another, and every one-axis substitution of a settlement basis, truth or closure combination is refused. | Test (TC-122) |
+| FR-043-AC-10 | Decision-scope closure, surrounding-execution closure, assessment execution and input completeness remain four independently represented dimensions; changing one cannot close or complete another. The public API accepts no caller-supplied settlement-basis/truth pair, and each result is constructed only from the evaluated trace and closed result vocabulary. | Test (TC-122); Inspection |
 | FR-043-AC-11 | A fixed-sample or timestamped watermark reaching an inclusive deadline with complete valuations settles a silent obligation, an instant exactly at the deadline participates before settlement, an instant after it does not, and an event-position clock does not advance during silence. | Test (TC-122) |
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122); Analysis |
@@ -302,7 +289,7 @@ closure combination, and SHALL refuse any one-axis substitution.
   `ix://agent-ix/quire-specification/FR-090`-AC-2 is satisfied for identity and
   revision only. Checking the rest requires an FR-042 wire extension outside this
   scope.
-- **Open questions referred for ruling, recorded on compiler #38**: the pointwise
-  reading of the temporal Boolean connectives, and the precedence between a
-  reached ceiling and an already-settled sibling obligation. Both are stated in
-  Semantic authority and boundary above.
+- **Compiler-wire dependency, separately owned by A**: authenticated definition
+  digests and clock parameters require the FR-042 `/2` wire change. Until that
+  contract lands, this evaluator retains those trace values as unauthenticated
+  premises and no temporal-to-TL correspondence may claim them authenticated.

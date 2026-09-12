@@ -18,9 +18,11 @@ relationships:
 ## Statement
 
 If a temporal horizon computation overflows or a selected ceiling is reached,
-then the temporal evaluator shall stop with a typed incomplete or refused result
-that retains the affected obligation, position and limit identity, and shall not
-emit a Boolean truth for that obligation.
+then the temporal evaluator shall stop the affected obligation with a typed
+incomplete or refused result retaining its position and limit identity. The
+evaluator shall not emit a Boolean truth for that affected obligation. The
+evaluator shall retain a sibling obligation's existing settled truth, basis and
+support when the sibling did not require the unaffordable work.
 
 ## Scope
 
@@ -152,7 +154,7 @@ implementation delivery. No metric row above claims it.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | NFR-008-AC-1 | Future horizon, past-history need and nested interval composition use checked i64 arithmetic and reject overflow before any position is visited, with no wrap, saturation or silent narrowing. | Test (TC-124); Analysis |
-| NFR-008-AC-2 | A reached ceiling in any of the eight charged dimensions produces an incomplete or refused result naming that dimension and the affected obligation, and never `true` or `false`, including where the observed prefix would otherwise have settled. | Test (TC-124) |
+| NFR-008-AC-2 | A reached ceiling in any of the eight charged dimensions produces an incomplete or refused result naming that dimension and the affected obligation, never `true` or `false` for that affected obligation, and preserves any independently settled sibling's truth, basis and exact decisive-position set. | Test (TC-124) |
 | NFR-008-AC-3 | Valuations and captures an unsettled obligation still requires remain in the evaluator's retained-state table until it settles; forced eviction produces an explicit incomplete result naming the evicted subject and never narrows the evaluated interval. | Test (TC-124) |
 | NFR-008-AC-4 | Effective clamped ceilings and any admitted restoration state participate in result identity; an unchanged configuration reproduces one identity and a changed ceiling refuses reuse of the earlier result. | Test (TC-124); Analysis |
 | NFR-008-AC-5 | For every charged dimension, the first unaffordable operation remains unperformed, reported usage reflects only successful charges, and a retry under sufficient ceilings produces the full result from unmutated inputs. | Test (TC-124) |
