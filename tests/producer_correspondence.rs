@@ -5,16 +5,19 @@
 #[path = "support/native_protocol/mod.rs"]
 mod setup;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use agent_ix_baseline_producer as filament;
+use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::linking::composed::binding_work::{Limits as BindingLimits, Work};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::linking::composed::models::ModelErrorKind;
+use quire_spec_language::linking::composed::models::{ModelErrorKind, ModelTarget};
 use quire_spec_language::linking::composed::producer::{
-    admit_producer_model, admit_producer_model_with_limits, CorrespondenceProducer,
-    NativeArtifactSelection, ProducerBundleSelection, ProducerCompatibilityInput,
-    ProducerCompatibilitySelection, ProducerDigest, ProducerExportKind, ProducerExportSelection,
+    adapt_filament_producer, admit_filament_producer_model, admit_producer_model,
+    admit_producer_model_with_limits, CorrespondenceProducer, NativeArtifactSelection,
+    ProducerBundleSelection, ProducerCompatibilityInput, ProducerCompatibilitySelection,
+    ProducerConfigurationSelection, ProducerDigest, ProducerExportKind, ProducerExportSelection,
     ProducerModelRefusal, ProducerObjectSelection, ProducerRevision,
 };
 use quire_spec_language::linking::composed::subject::ComponentKind;
@@ -76,7 +79,10 @@ fn dependency(kind: w::ArtifactKind, identity: &str, bytes: &[u8]) -> w::Artifac
 fn selection(inputs: &Inputs) -> ProducerCompatibilitySelection {
     let model = object("producer:model", '1');
     let profile = object("producer:profile", '2');
-    let configuration = object("producer:configuration", '3');
+    let configuration = ProducerConfigurationSelection {
+        identity: "producer:configuration".into(),
+        digest: producer_digest('3'),
+    };
     let source = inputs.model.source().source();
     let locus = w::ForeignLocus {
         source: w::ArtifactRef {
@@ -167,6 +173,441 @@ fn selection(inputs: &Inputs) -> ProducerCompatibilitySelection {
                 .collect(),
             },
     }
+}
+
+fn admitted_filament_bundle(inputs: &Inputs) -> filament::AdmittedStaticBundle {
+    const BUNDLE: &str = "producer:bundle";
+    const MODEL: &str = "producer:model";
+    const PROFILE: &str = "producer:profile";
+    const CONFIGURATION: &str = "producer:configuration";
+    const INVENTORY: &str = "producer:inventory";
+    const COMPONENT: &str = "producer:campaign-component";
+    const SOURCE_ENDPOINT: &str = "producer:order-payment-source";
+    const TARGET_ENDPOINT: &str = "producer:order-payment-target";
+    const RELATIONSHIP: &str = "producer:order-payment";
+    const RELATION: &str = "producer:model-native-relation";
+
+    let mut configuration = filament::ConfigurationDocument {
+        configuration_identity: CONFIGURATION.into(),
+        baseline_version: filament::INTERFACE_VERSION.into(),
+        digest: filament::DigestSelection::canonical(format!("sha256:{}", "0".repeat(64))),
+        model_authority: "test:producer".into(),
+        profile_identities: BTreeSet::from([PROFILE.to_owned()]),
+        adapter_identities: BTreeSet::from(["test:quire-adapter".to_owned()]),
+        mapping_targets: BTreeSet::from([PROFILE.to_owned()]),
+        loss_policy: "test:refuse-loss".into(),
+        resource_limits: filament::ResourceLimits {
+            numeric_resource_limit: Some(filament::NumericResourceLimit::new(4096, 6144)),
+            declared_bounds: BTreeMap::new(),
+        },
+        digest_selections: filament::DigestDomainSelection::baseline(),
+        revision_namespaces: filament::ADMISSIBLE_REVISION_NAMESPACES
+            .iter()
+            .map(|namespace| (*namespace).to_owned())
+            .collect(),
+        trusted_references: BTreeSet::from(["test:producer-registry".to_owned()]),
+    };
+    configuration.digest = filament::configuration_digest(&configuration)
+        .expect("the producer configuration is canonical");
+
+    let source_artifact = filament::ArtifactReference {
+        ref_version: "3".into(),
+        kind: filament::ArtifactKind::Source,
+        authority: "test:producer".into(),
+        identity: "producer:model-source".into(),
+        revision: filament::Revision::producer("1"),
+        digest: filament::RawByteDigest::new(format!("sha256:{}", "d".repeat(64)))
+            .expect("raw source digest"),
+        wire: filament::WireReference {
+            identity: "filament-core-data/producer-bundle".into(),
+            version: filament::INTERFACE_VERSION.into(),
+        },
+    };
+    let formal = filament::FormalDocument {
+        document: "producer:formal-model".into(),
+        revision: filament::Revision::producer("1"),
+    };
+    let locus = filament::SourceLocus {
+        source: source_artifact.clone(),
+        formal: formal.clone(),
+        span: filament::Span { start: 0, end: 1 },
+    };
+    let membership =
+        filament::InventoryMembership::new(INVENTORY, filament::InventoryCompleteness::Complete);
+    let component = filament::ComponentDeclaration {
+        component_identity: COMPONENT.into(),
+        component_revision: filament::Revision::producer("1"),
+        digest: filament::DigestSelection::canonical(format!("sha256:{}", "1".repeat(64))),
+        repository_identity: "producer:repository".into(),
+        repository_revision: filament::Revision::producer("1"),
+        role_identities: BTreeSet::from(["producer:role".to_owned()]),
+        owning_type_identity: "producer:type-node".into(),
+        source_locus: Some(locus.clone()),
+        inventory_membership: membership.clone(),
+    };
+    let multiplicity = filament::Multiplicity {
+        lower: 0,
+        upper: Some(1),
+        ordered: false,
+        unique: true,
+    };
+    let endpoint =
+        |identity: &str, type_identity: &str, role: &str| filament::EndpointDeclaration {
+            endpoint_identity: identity.into(),
+            endpoint_revision: filament::Revision::producer("1"),
+            digest: filament::DigestSelection::canonical(format!(
+                "sha256:{}",
+                if identity == SOURCE_ENDPOINT {
+                    "2"
+                } else {
+                    "3"
+                }
+                .repeat(64)
+            )),
+            component_identity: COMPONENT.into(),
+            type_identity: type_identity.into(),
+            role: role.into(),
+            multiplicity: Some(multiplicity.clone()),
+            source_locus: Some(locus.clone()),
+            inventory_membership: membership.clone(),
+        };
+    let source_endpoint = endpoint(SOURCE_ENDPOINT, "producer:type-node", "order");
+    let target_endpoint = endpoint(TARGET_ENDPOINT, "producer:type-plain", "payment");
+    let relationship = filament::RelationshipDeclaration {
+        relationship_identity: RELATIONSHIP.into(),
+        relationship_name: "OrderPayment".into(),
+        relationship_revision: Some(filament::Revision::producer("1")),
+        digest: Some(filament::DigestSelection::canonical(format!(
+            "sha256:{}",
+            "4".repeat(64)
+        ))),
+        source: filament::RelationshipEndpoint {
+            endpoint_identity: SOURCE_ENDPOINT.into(),
+            type_identity: "producer:type-node".into(),
+            role: "order".into(),
+            multiplicity: Some(multiplicity.clone()),
+        },
+        target: filament::RelationshipEndpoint {
+            endpoint_identity: TARGET_ENDPOINT.into(),
+            type_identity: "producer:type-plain".into(),
+            role: "payment".into(),
+            multiplicity: Some(multiplicity),
+        },
+        semantics: filament::RelationshipSemantics {
+            category: "association".into(),
+            direction: "source-to-target".into(),
+            composite: false,
+            lifecycle: "independent".into(),
+            ownership: "none".into(),
+        },
+        ownership: Some(filament::RelationshipOwnership {
+            model_identity: MODEL.into(),
+            profile_identity: PROFILE.into(),
+            configuration_identity: CONFIGURATION.into(),
+        }),
+        inventory_membership: Some(membership),
+    };
+    let inventory = filament::InventoryDeclaration {
+        inventory_identity: INVENTORY.into(),
+        completeness: filament::InventoryCompleteness::Complete,
+        component_identities: BTreeSet::from([COMPONENT.to_owned()]),
+        endpoint_identities: BTreeSet::from([
+            SOURCE_ENDPOINT.to_owned(),
+            TARGET_ENDPOINT.to_owned(),
+        ]),
+        relationship_identities: BTreeSet::from([RELATIONSHIP.to_owned()]),
+    };
+    let model = filament::ModelSelection {
+        model_identity: MODEL.into(),
+        model_revision: filament::Revision::producer("1"),
+        digest: filament::DigestSelection::canonical(format!("sha256:{}", "5".repeat(64))),
+    };
+    let profile = filament::ProfileSelection {
+        profile_identity: PROFILE.into(),
+        profile_revision: filament::Revision::producer("1"),
+        digest: filament::DigestSelection::canonical(format!("sha256:{}", "6".repeat(64))),
+    };
+    let export = |kind: filament::ExportKind, identity: &str, path: &str| filament::ExportRecord {
+        kind,
+        producer_object_identity: MODEL.into(),
+        export_identity: identity.into(),
+        export_path: vec![path.into()],
+        locus: Some(locus.clone()),
+    };
+    let correspondence = filament::ProducerNativeCorrespondence {
+        binding_relation_identity: RELATION.into(),
+        producer: filament::ProducerObjectReference {
+            object_kind: "model".into(),
+            authority: "test:producer".into(),
+            identity: MODEL.into(),
+            revision: model.model_revision.clone(),
+            digest: model.digest.clone(),
+        },
+        native: filament::NativeArtifactReference {
+            identity: inputs.model_reference.identity.clone(),
+            revision: filament::Revision::new(
+                inputs.model_reference.revision.namespace.clone(),
+                inputs.model_reference.revision.value.clone(),
+            ),
+            raw_byte_digest: filament::DigestSelection::native_bytes(
+                inputs.model_reference.digest.to_string(),
+            ),
+        },
+        native_definition_closure: Vec::new(),
+        required_native_definition_identities: BTreeSet::new(),
+        configuration_identity: Some(CONFIGURATION.into()),
+        exports: vec![
+            export(
+                filament::ExportKind::Component,
+                COMPONENT,
+                "CampaignComponent",
+            ),
+            export(
+                filament::ExportKind::Endpoint,
+                SOURCE_ENDPOINT,
+                "OrderPaymentSource",
+            ),
+            export(
+                filament::ExportKind::Endpoint,
+                TARGET_ENDPOINT,
+                "OrderPaymentTarget",
+            ),
+            export(
+                filament::ExportKind::Relationship,
+                RELATIONSHIP,
+                "OrderPayment",
+            ),
+        ],
+    };
+    let closure = filament::StaticClosure {
+        configuration_identity: CONFIGURATION.into(),
+        configuration_digest: configuration.digest.clone(),
+        model_identity: MODEL.into(),
+        model_digest: model.digest.clone(),
+        profile_identity: PROFILE.into(),
+        profile_digest: profile.digest.clone(),
+        declaration_sources: vec![filament::DeclarationSource {
+            source: source_artifact,
+            native: filament::NativeSourceLabel::new("producer:native-source", "1"),
+            path: "models/producer.json".into(),
+            formal,
+        }],
+    };
+    let mut bundle = filament::StaticProducerBundle {
+        bundle_identity: Some(BUNDLE.into()),
+        bundle_revision: Some(filament::Revision::producer("1")),
+        digest: None,
+        interface_version: Some(filament::INTERFACE_VERSION.into()),
+        model: Some(model),
+        profile: Some(profile),
+        components: vec![component],
+        endpoints: vec![source_endpoint, target_endpoint],
+        relationships: vec![relationship],
+        inventory: Some(inventory),
+        configuration: Some(configuration),
+        static_closure: Some(closure),
+        correspondences: vec![correspondence],
+    };
+    bundle.digest = Some(
+        bundle
+            .canonical_digest_selection()
+            .expect("the producer bundle digest computes"),
+    );
+    bundle.admit().expect("the producer bundle is admitted")
+}
+
+fn expected_filament_selection(inputs: &Inputs) -> ProducerCompatibilitySelection {
+    let producer_revision = |value: &str| ProducerRevision {
+        namespace: "filament-core-data/producer-object-revision-1".into(),
+        value: value.into(),
+    };
+    let canonical_digest = |value: &str| ProducerDigest {
+        domain: "filament-canonical-json-1".into(),
+        version: "1".into(),
+        algorithm: "sha256".into(),
+        value: value.into(),
+    };
+    let model = ProducerObjectSelection {
+        identity: "producer:model".into(),
+        revision: producer_revision("1"),
+        digest: canonical_digest(&format!("sha256:{}", "5".repeat(64))),
+    };
+    let locus = w::ForeignLocus {
+        source: w::ArtifactRef {
+            ref_version: "3".into(),
+            kind: w::ArtifactKind::Source,
+            authority: "test:producer".into(),
+            identity: "producer:model-source".into(),
+            revision: producer_revision("1"),
+            digest: format!("sha256:{}", "d".repeat(64))
+                .parse()
+                .expect("independent source digest"),
+            wire: w::Wire {
+                identity: "filament-core-data/producer-bundle".into(),
+                version: "1.2.0".into(),
+            },
+        },
+        formal: w::Formal {
+            document: "producer:formal-model".into(),
+            revision: producer_revision("1"),
+        },
+        span: w::Span { start: 0, end: 1 },
+    };
+    let export = |kind, identity: &str, path: &str| ProducerExportSelection {
+        kind,
+        identity: identity.into(),
+        producer_object_identity: "producer:model".into(),
+        path: vec![path.into()],
+        locus: locus.clone(),
+    };
+    ProducerCompatibilitySelection {
+        interface_version: "1.2.0".into(),
+        bundle: ProducerBundleSelection {
+            identity: "producer:bundle".into(),
+            revision: producer_revision("1"),
+            digest: canonical_digest(
+                "sha256:dfd1c63dcd2d000342c52a833cdd418159c1c895bed4c17412309c7949375c79",
+            ),
+        },
+        model: model.clone(),
+        profile: ProducerObjectSelection {
+            identity: "producer:profile".into(),
+            revision: producer_revision("1"),
+            digest: canonical_digest(&format!("sha256:{}", "6".repeat(64))),
+        },
+        configuration: ProducerConfigurationSelection {
+            identity: "producer:configuration".into(),
+            digest: canonical_digest(
+                "sha256:1b8d1215755232ecdf7ae0ec6c7d33279a16a1639cdbd1746f98f8055ef0e7a1",
+            ),
+        },
+        correspondence:
+            quire_spec_language::linking::composed::producer::ProducerCorrespondenceSelection {
+                relation_identity: "producer:model-native-relation".into(),
+                producer: CorrespondenceProducer {
+                    kind: "model".into(),
+                    authority: "test:producer".into(),
+                    selection: model,
+                },
+                native: NativeArtifactSelection {
+                    identity: inputs.model_reference.identity.clone().into(),
+                    revision: inputs.model_reference.revision.clone(),
+                    digest: native_digest(inputs.model_reference.digest),
+                },
+                definitions: Vec::new(),
+                required_definitions: BTreeSet::new(),
+                configuration_identity: "producer:configuration".into(),
+                exports: vec![
+                    export(
+                        ProducerExportKind::Component,
+                        "producer:campaign-component",
+                        "CampaignComponent",
+                    ),
+                    export(
+                        ProducerExportKind::Endpoint,
+                        "producer:order-payment-source",
+                        "OrderPaymentSource",
+                    ),
+                    export(
+                        ProducerExportKind::Endpoint,
+                        "producer:order-payment-target",
+                        "OrderPaymentTarget",
+                    ),
+                    export(
+                        ProducerExportKind::Relationship,
+                        "producer:order-payment",
+                        "OrderPayment",
+                    ),
+                ],
+            },
+    }
+}
+
+#[test]
+#[trace("TC-132", "FR-048-AC-1")]
+fn admitted_filament_bundle_drives_the_compiler_producer_seam_directly() {
+    let mut inputs = inputs();
+    inputs.model_reference.revision = w::Revision {
+        namespace: filament::NATIVE_REVISION_NAMESPACE.into(),
+        value: "1".into(),
+    };
+    let dependency = inputs
+        .dependencies
+        .iter_mut()
+        .find(|(artifact, _)| artifact.identity == inputs.model_reference.identity)
+        .expect("the selected model artifact is a supplied dependency");
+    dependency.0 = inputs.model_reference.clone();
+
+    let bundle = admitted_filament_bundle(&inputs);
+    let expected = expected_filament_selection(&inputs);
+    assert_eq!(
+        adapt_filament_producer(&bundle, &inputs.model_reference.identity)
+            .expect("the admitted bundle has one selected model/native pair"),
+        expected
+    );
+    assert_eq!(
+        expected.interface_version.as_ref(),
+        filament::INTERFACE_VERSION
+    );
+    assert_eq!(
+        expected.configuration.identity.as_ref(),
+        "producer:configuration"
+    );
+    assert_eq!(
+        expected.configuration.digest.value,
+        bundle.configuration().digest.value
+    );
+    assert_eq!(
+        expected.correspondence.native.digest.value,
+        inputs.model.digest().to_string()
+    );
+
+    let admitted = admit_filament_producer_model(
+        &bundle,
+        &inputs.model_reference.identity,
+        &inputs.model,
+        &expected,
+    )
+    .expect("the real admitted producer type selects the exact native model bytes");
+    assert_eq!(admitted.bundle_identity(), "producer:bundle");
+    assert_eq!(admitted.model_identity(), "producer:model");
+    assert_eq!(admitted.profile_identity(), "producer:profile");
+    assert_eq!(admitted.configuration_identity(), "producer:configuration");
+    assert_eq!(
+        admitted.relation_identity(),
+        "producer:model-native-relation"
+    );
+    inputs.with_producer_proofs(
+        &admitted,
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, _| {
+            let binding = proofs.types().binding();
+            let [campaign] = binding.namespace().lookup("Campaign") else {
+                panic!("campaign declaration")
+            };
+            let report = binding
+                .models()
+                .expect("completed model inventory")
+                .resolve_declaration(
+                    binding.namespace(),
+                    *campaign,
+                    &mut Work::new(BindingLimits::default()),
+                )
+                .expect("model report");
+            assert!(report.refusals.is_empty());
+            let declaration = report.occurrences.iter().find_map(|occurrence| {
+                let ModelTarget::Relationship(relationship) = &occurrence.target else {
+                    return None;
+                };
+                relationship.declaration()
+            });
+            assert_eq!(
+                declaration.map(|value| value.relationship_identity.as_str()),
+                Some("producer:order-payment")
+            );
+        },
+    );
 }
 
 fn compensation(name: &str, commit: &str, recovery: &str) -> String {
@@ -270,6 +711,7 @@ fn inputs_with_related(related: &str) -> Inputs {
 }
 
 #[test]
+#[trace("TC-132", "FR-048-AC-8")]
 fn related_occurrences_remain_fail_closed_without_typed_producer_endpoints() {
     let mut inputs = inputs_with_related("related by OrderPayment(view, notice)");
     let interface_bytes = b"producer-interface-1.2.0";
@@ -483,6 +925,7 @@ fn assert_campaign(package: &w::Package) {
 }
 
 #[test]
+#[trace("TC-135", "FR-048-AC-9", "FR-048-AC-10")]
 fn admitted_producer_model_emits_and_reads_exact_correspondence() {
     let mut inputs = inputs();
     let interface_bytes = b"producer-interface-1.2.0";
@@ -947,6 +1390,7 @@ fn admitted_producer_model_emits_and_reads_exact_correspondence() {
 }
 
 #[test]
+#[trace("TC-135", "FR-048-AC-9")]
 fn producer_axes_refuse_independently_before_model_linking() {
     let inputs = inputs();
     let expected = selection(&inputs);
@@ -1025,6 +1469,7 @@ fn producer_axes_refuse_independently_before_model_linking() {
 }
 
 #[test]
+#[trace("TC-132", "FR-048-AC-1", "FR-048-AC-8")]
 fn relationship_declarations_require_the_exact_producer_export_kind() {
     for (mut selected, expected) in [
         {

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Typed Producer 1.2 correspondence admission for compiler model inputs.
 
-use std::collections::BTreeSet;
+use std::{borrow::Cow, collections::BTreeSet};
+
+use agent_ix_baseline_producer as filament;
 
 use super::binding_work::{Dimension, Exhaustion, Limits, Work};
 use super::models::AdmittedProducerModel;
@@ -21,6 +23,19 @@ pub struct ProducerObjectSelection {
     /// Namespaced immutable revision.
     pub revision: ProducerRevision,
     /// Canonical producer-object digest.
+    pub digest: ProducerDigest,
+}
+
+/// One immutable producer configuration selection.
+///
+/// Producer interface 1.2 gives the configuration an identity and canonical
+/// digest, but no revision member. Keeping a separate type prevents callers
+/// from fabricating a configuration revision to fit the model/profile shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProducerConfigurationSelection {
+    /// Configuration identity.
+    pub identity: Box<str>,
+    /// Canonical configuration-document digest.
     pub digest: ProducerDigest,
 }
 
@@ -130,7 +145,7 @@ pub struct ProducerCompatibilitySelection {
     /// Exact producer profile selection.
     pub profile: ProducerObjectSelection,
     /// Exact producer configuration selection.
-    pub configuration: ProducerObjectSelection,
+    pub configuration: ProducerConfigurationSelection,
     /// Exact producer/native correspondence.
     pub correspondence: ProducerCorrespondenceSelection,
 }
@@ -185,6 +200,120 @@ pub enum ProducerModelRefusal {
     NativeBytes,
 }
 
+/// Convert one admitted Filament producer bundle into A's existing typed
+/// compatibility selection for the exact native artifact identity requested by
+/// the caller.
+///
+/// The producer bundle has already passed Filament's indivisible admission.
+/// This adapter only selects one model/native pair and translates its members;
+/// it does not deserialize producer JSON or reconstruct omitted meaning.
+pub fn adapt_filament_producer(
+    bundle: &filament::AdmittedStaticBundle,
+    native_artifact_identity: &str,
+) -> Result<ProducerCompatibilitySelection, ProducerModelRefusal> {
+    let mut matching = bundle.correspondences().iter().filter(|correspondence| {
+        correspondence.producer.identity == bundle.model().model_identity
+            && correspondence.native.identity == native_artifact_identity
+    });
+    let correspondence = matching
+        .next()
+        .ok_or(ProducerModelRefusal::Correspondence)?;
+    if matching.next().is_some() {
+        return Err(ProducerModelRefusal::Correspondence);
+    }
+
+    Ok(ProducerCompatibilitySelection {
+        interface_version: bundle.interface_version().into(),
+        bundle: ProducerBundleSelection {
+            identity: bundle.bundle_identity().into(),
+            revision: revision(bundle.bundle_revision()),
+            digest: digest(bundle.digest()),
+        },
+        model: ProducerObjectSelection {
+            identity: bundle.model().model_identity.as_str().into(),
+            revision: revision(&bundle.model().model_revision),
+            digest: digest(&bundle.model().digest),
+        },
+        profile: ProducerObjectSelection {
+            identity: bundle.profile().profile_identity.as_str().into(),
+            revision: revision(&bundle.profile().profile_revision),
+            digest: digest(&bundle.profile().digest),
+        },
+        configuration: ProducerConfigurationSelection {
+            identity: bundle
+                .configuration()
+                .configuration_identity
+                .as_str()
+                .into(),
+            digest: digest(&bundle.configuration().digest),
+        },
+        correspondence: ProducerCorrespondenceSelection {
+            relation_identity: correspondence.binding_relation_identity.as_str().into(),
+            producer: CorrespondenceProducer {
+                kind: correspondence.producer.object_kind.as_str().into(),
+                authority: correspondence.producer.authority.as_str().into(),
+                selection: ProducerObjectSelection {
+                    identity: correspondence.producer.identity.as_str().into(),
+                    revision: revision(&correspondence.producer.revision),
+                    digest: digest(&correspondence.producer.digest),
+                },
+            },
+            native: native_artifact(&correspondence.native),
+            definitions: correspondence
+                .native_definition_closure
+                .iter()
+                .map(native_artifact)
+                .collect(),
+            required_definitions: correspondence
+                .required_native_definition_identities
+                .iter()
+                .map(|identity| identity.as_str().into())
+                .collect(),
+            configuration_identity: correspondence
+                .configuration_identity
+                .as_deref()
+                .ok_or(ProducerModelRefusal::Correspondence)?
+                .into(),
+            exports: correspondence
+                .exports
+                .iter()
+                .map(export)
+                .collect::<Result<_, _>>()?,
+        },
+    })
+}
+
+/// Admit one indivisibly admitted Filament bundle against an independently
+/// supplied expected selection and the actual constructor-admitted native
+/// model bytes.
+pub fn admit_filament_producer_model<'a>(
+    bundle: &'a filament::AdmittedStaticBundle,
+    native_artifact_identity: &str,
+    native: &'a NativeModel,
+    expected: &ProducerCompatibilitySelection,
+) -> Result<AdmittedProducerModel<'a>, ProducerModelRefusal> {
+    admit_filament_producer_model_with_limits(
+        bundle,
+        native_artifact_identity,
+        native,
+        expected,
+        Limits::default(),
+    )
+}
+
+/// Admit one Filament bundle under caller-lowered, hard-clamped compiler intake
+/// limits.
+pub fn admit_filament_producer_model_with_limits<'a>(
+    bundle: &'a filament::AdmittedStaticBundle,
+    native_artifact_identity: &str,
+    native: &'a NativeModel,
+    expected: &ProducerCompatibilitySelection,
+    limits: Limits,
+) -> Result<AdmittedProducerModel<'a>, ProducerModelRefusal> {
+    let actual = adapt_filament_producer(bundle, native_artifact_identity)?;
+    admit_producer_model_selection(Cow::Owned(actual), native, expected, limits, Some(bundle))
+}
+
 /// Admit one caller-adapted Producer 1.2 selection as authority for a native model.
 pub fn admit_producer_model<'a>(
     offered: ProducerCompatibilityInput<'a>,
@@ -199,12 +328,27 @@ pub fn admit_producer_model_with_limits<'a>(
     expected: &ProducerCompatibilitySelection,
     limits: Limits,
 ) -> Result<AdmittedProducerModel<'a>, ProducerModelRefusal> {
-    let actual = offered.selection;
+    admit_producer_model_selection(
+        Cow::Borrowed(offered.selection),
+        offered.native,
+        expected,
+        limits,
+        None,
+    )
+}
+
+fn admit_producer_model_selection<'a>(
+    actual: Cow<'a, ProducerCompatibilitySelection>,
+    native: &'a NativeModel,
+    expected: &ProducerCompatibilitySelection,
+    limits: Limits,
+    filament: Option<&'a filament::AdmittedStaticBundle>,
+) -> Result<AdmittedProducerModel<'a>, ProducerModelRefusal> {
     let mut work = Work::new(limits);
-    charge_selection(actual, &mut work)?;
+    charge_selection(actual.as_ref(), &mut work)?;
     charge_selection(expected, &mut work)?;
-    validate_selection(actual)?;
-    if let Some(refusal) = selection_difference(actual, expected) {
+    validate_selection(actual.as_ref())?;
+    if let Some(refusal) = selection_difference(actual.as_ref(), expected) {
         return Err(refusal);
     }
     if actual.correspondence.producer.kind.as_ref() != "model"
@@ -222,19 +366,123 @@ pub fn admit_producer_model_with_limits<'a>(
     {
         return Err(ProducerModelRefusal::Exports);
     }
-    if actual.correspondence.native.digest.value != offered.native.digest().to_string() {
+    if actual.correspondence.native.digest.value != native.digest().to_string() {
         return Err(ProducerModelRefusal::NativeBytes);
     }
 
-    Ok(AdmittedProducerModel::new(
-        offered.native,
-        actual,
-        actual.bundle.identity.clone(),
-        actual.model.identity.clone(),
-        actual.profile.identity.clone(),
-        actual.configuration.identity.clone(),
-        actual.correspondence.relation_identity.clone(),
-    ))
+    Ok(AdmittedProducerModel::new(native, actual, filament))
+}
+
+fn revision(value: &filament::Revision) -> ProducerRevision {
+    ProducerRevision {
+        namespace: value.namespace.clone(),
+        value: value.value.clone(),
+    }
+}
+
+fn digest(value: &filament::DigestSelection) -> ProducerDigest {
+    ProducerDigest {
+        domain: value.domain.clone(),
+        version: value.version.clone(),
+        algorithm: value.algorithm.clone(),
+        value: value.value.clone(),
+    }
+}
+
+fn native_artifact(value: &filament::NativeArtifactReference) -> NativeArtifactSelection {
+    NativeArtifactSelection {
+        identity: value.identity.as_str().into(),
+        revision: revision(&value.revision),
+        digest: digest(&value.raw_byte_digest),
+    }
+}
+
+fn export(value: &filament::ExportRecord) -> Result<ProducerExportSelection, ProducerModelRefusal> {
+    let locus = value.locus.as_ref().ok_or(ProducerModelRefusal::Exports)?;
+    Ok(ProducerExportSelection {
+        kind: export_kind(value.kind),
+        identity: value.export_identity.as_str().into(),
+        producer_object_identity: value.producer_object_identity.as_str().into(),
+        path: value
+            .export_path
+            .iter()
+            .map(|part| part.as_str().into())
+            .collect(),
+        locus: foreign_locus(locus)?,
+    })
+}
+
+fn export_kind(value: filament::ExportKind) -> ProducerExportKind {
+    match value {
+        filament::ExportKind::Component => ProducerExportKind::Component,
+        filament::ExportKind::Endpoint => ProducerExportKind::Endpoint,
+        filament::ExportKind::Relationship => ProducerExportKind::Relationship,
+        filament::ExportKind::Enum => ProducerExportKind::Enum,
+        filament::ExportKind::Field => ProducerExportKind::Field,
+        filament::ExportKind::Object => ProducerExportKind::Object,
+        filament::ExportKind::Operation => ProducerExportKind::Operation,
+        filament::ExportKind::Record => ProducerExportKind::Record,
+        filament::ExportKind::Reference => ProducerExportKind::Reference,
+        filament::ExportKind::Scalar => ProducerExportKind::Scalar,
+        filament::ExportKind::Variant => ProducerExportKind::Variant,
+    }
+}
+
+fn foreign_locus(
+    value: &filament::SourceLocus,
+) -> Result<wire::ForeignLocus, ProducerModelRefusal> {
+    Ok(wire::ForeignLocus {
+        source: wire::ArtifactRef {
+            ref_version: value.source.ref_version.clone(),
+            kind: artifact_kind(value.source.kind),
+            authority: value.source.authority.clone(),
+            identity: value.source.identity.clone(),
+            revision: revision(&value.source.revision),
+            digest: value
+                .source
+                .digest
+                .as_str()
+                .parse()
+                .map_err(|_| ProducerModelRefusal::Exports)?,
+            wire: wire::Wire {
+                identity: value.source.wire.identity.clone(),
+                version: value.source.wire.version.clone(),
+            },
+        },
+        formal: wire::Formal {
+            document: value.formal.document.clone(),
+            revision: revision(&value.formal.revision),
+        },
+        span: wire::Span {
+            start: value.span.start,
+            end: value.span.end,
+        },
+    })
+}
+
+fn artifact_kind(value: filament::ArtifactKind) -> wire::ArtifactKind {
+    match value {
+        filament::ArtifactKind::Binding => wire::ArtifactKind::Binding,
+        filament::ArtifactKind::DependencyClosure => wire::ArtifactKind::DependencyClosure,
+        filament::ArtifactKind::Environment => wire::ArtifactKind::Environment,
+        filament::ArtifactKind::ExecutableProjection => wire::ArtifactKind::ExecutableProjection,
+        filament::ArtifactKind::FaultModel => wire::ArtifactKind::FaultModel,
+        filament::ArtifactKind::GeneratedArtifact => wire::ArtifactKind::GeneratedArtifact,
+        filament::ArtifactKind::Invocation => wire::ArtifactKind::Invocation,
+        filament::ArtifactKind::LinkedPackage => wire::ArtifactKind::LinkedPackage,
+        filament::ArtifactKind::ModelLock => wire::ArtifactKind::ModelLock,
+        filament::ArtifactKind::ModelManifest => wire::ArtifactKind::ModelManifest,
+        filament::ArtifactKind::ModelPackage => wire::ArtifactKind::ModelPackage,
+        filament::ArtifactKind::Observation => wire::ArtifactKind::Observation,
+        filament::ArtifactKind::Oracle => wire::ArtifactKind::Oracle,
+        filament::ArtifactKind::Property => wire::ArtifactKind::Property,
+        filament::ArtifactKind::ReviewDisposition => wire::ArtifactKind::ReviewDisposition,
+        filament::ArtifactKind::ReviewProcedure => wire::ArtifactKind::ReviewProcedure,
+        filament::ArtifactKind::RunArtifact => wire::ArtifactKind::RunArtifact,
+        filament::ArtifactKind::Snapshot => wire::ArtifactKind::Snapshot,
+        filament::ArtifactKind::Source => wire::ArtifactKind::Source,
+        filament::ArtifactKind::Trace => wire::ArtifactKind::Trace,
+    }
 }
 
 fn charge_selection(
@@ -262,11 +510,6 @@ fn charge_selection(
             &selection.profile.revision,
             &selection.profile.digest,
         ),
-        (
-            &selection.configuration.identity,
-            &selection.configuration.revision,
-            &selection.configuration.digest,
-        ),
     ] {
         work.charge(Dimension::Bindings, 1)
             .map_err(ProducerModelRefusal::ResourceExhausted)?;
@@ -281,6 +524,17 @@ fn charge_selection(
         ] {
             text(work, value)?;
         }
+    }
+    work.charge(Dimension::Bindings, 1)
+        .map_err(ProducerModelRefusal::ResourceExhausted)?;
+    for value in [
+        selection.configuration.identity.as_ref(),
+        selection.configuration.digest.domain.as_str(),
+        selection.configuration.digest.version.as_str(),
+        selection.configuration.digest.algorithm.as_str(),
+        selection.configuration.digest.value.as_str(),
+    ] {
+        text(work, value)?;
     }
     let correspondence = &selection.correspondence;
     work.charge(Dimension::Bindings, 3)
@@ -416,8 +670,7 @@ pub(crate) fn validate_selection(
         return Err(ProducerModelRefusal::Profile);
     }
     validate_producer_digest(&actual.profile.digest)?;
-    if actual.configuration.identity.is_empty() || invalid_revision(&actual.configuration.revision)
-    {
+    if actual.configuration.identity.is_empty() {
         return Err(ProducerModelRefusal::Configuration);
     }
     validate_producer_digest(&actual.configuration.digest)?;
