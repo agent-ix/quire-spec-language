@@ -96,6 +96,7 @@ pub(super) fn partition(
         super::locate(context.source, original.span, work)?;
         let root = boolean(&meanings, case.guard, work)?.ok_or_else(unsupported)?;
         work.charge(Dimension::Entries, 1)?;
+        guards.try_reserve(1).map_err(|_| Error::Allocation)?;
         guards.push(root);
     }
     super::locate(context.source, control.span, work)?;
