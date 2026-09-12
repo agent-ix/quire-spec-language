@@ -92,17 +92,38 @@ pub fn model_with_query_input(name: &str, maximum: u32) -> NativeModel {
     reason = "Only admitted state-evaluation fixtures need this compact graph role"
 )]
 pub fn model_with_graph_input(name: &str) -> NativeModel {
+    model_with_graph_field(
+        name,
+        json!({
+            "kind":"sequence",
+            "maximum":5,
+            "value":{"kind":"record", "name":"GraphNodeRef"}
+        }),
+    )
+}
+
+#[allow(
+    dead_code,
+    reason = "Only admitted state-evaluation fixtures need this optional graph role"
+)]
+pub fn model_with_optional_graph_input(name: &str) -> NativeModel {
+    model_with_graph_field(
+        name,
+        json!({
+            "kind":"option",
+            "value":{"kind":"record", "name":"GraphNodeRef"}
+        }),
+    )
+}
+
+fn model_with_graph_field(name: &str, edge_type: Value) -> NativeModel {
     try_model_with(name, 5, |document| {
         document["records"].as_array_mut().unwrap().extend([
             json!({
                 "name":"GraphNode",
                 "fields":[{
                     "name":"links",
-                    "type":{
-                        "kind":"sequence",
-                        "maximum":5,
-                        "value":{"kind":"record", "name":"GraphNodeRef"}
-                    }
+                    "type":edge_type
                 }]
             }),
             json!({

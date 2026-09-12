@@ -217,6 +217,17 @@ impl Inputs {
         )
     }
 
+    #[allow(
+        dead_code,
+        reason = "Only admitted state-evaluation fixtures need this optional graph role"
+    )]
+    pub fn with_optional_graph_input(units: &[Unit<'_>]) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_optional_graph_input("NativeEmission"),
+        )
+    }
+
     pub fn with_model(units: &[Unit<'_>], model: NativeModel) -> Self {
         let sources: Vec<_> = units
             .iter()

@@ -56,5 +56,7 @@ no partial result. Invalid supplied data refuses before traversal and cannot be
 hidden by short-circuit order.
 
 Where proof transfer or execution is unsupported, record that typed outcome as
-an outstanding criterion, not as a passing positive case. This test case is
-planned; source/type/emission tests alone do not establish its execution gate.
+an explicitly unsupported representation, not as a passing positive case. The
+executed case uses both the public state evaluator and the independent emitted
+artifact reader; source/type/emission tests alone do not establish its runtime
+gate.

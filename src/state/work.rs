@@ -258,3 +258,35 @@ impl Work {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Dimension, ExhaustionCause, Limits, Work};
+    use ix_trace_rs::trace;
+
+    #[test]
+    #[trace("TC-137", "NFR-009-AC-3")]
+    fn counter_overflow_and_allocation_are_closed_typed_causes() {
+        let mut work = Work::new(Limits::default());
+        work.usage.value_comparison = usize::MAX;
+        let overflow = work
+            .charge(Dimension::ValueComparison, 1)
+            .expect_err("checked counter overflow");
+        assert_eq!(overflow.dimension, Dimension::ValueComparison);
+        assert_eq!(overflow.cause, ExhaustionCause::CounterOverflow);
+        assert_eq!(overflow.used, usize::MAX);
+        assert_eq!(overflow.requested, 1);
+        assert_eq!(overflow.limit, Limits::default().value_comparison);
+
+        for dimension in [
+            Dimension::InputAggregateEntries,
+            Dimension::RetainedOutput,
+            Dimension::GraphExpansion,
+        ] {
+            let allocation = work.allocation(dimension, 1);
+            assert_eq!(allocation.dimension, dimension);
+            assert_eq!(allocation.cause, ExhaustionCause::Allocation);
+            assert_eq!(allocation.requested, 1);
+        }
+    }
+}
