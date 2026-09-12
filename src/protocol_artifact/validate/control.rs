@@ -448,11 +448,17 @@ impl<'a> Graph<'a, '_> {
                 } => {
                     self.binder(owner, binder, &[BinderKind::Event])?;
                     self.boolean(owner, constraint)?;
-                    // A relationship index alone cannot establish endpoint types,
-                    // roles, direction or multiplicity. Admit no occurrence until
-                    // the selected producer relationship object is available.
-                    if !related.is_empty() {
-                        return Err(Error::Unsupported(Unsupported::Export));
+                    for occurrence in related {
+                        self.work.visit()?;
+                        relationships
+                            .get(
+                                usize::try_from(occurrence.relationship)
+                                    .map_err(|_| Error::Invalid(Invalid::StructuralInteger))?,
+                            )
+                            .ok_or(Error::Invalid(Invalid::Reference))?;
+                        self.value(owner, &occurrence.from)?;
+                        self.value(owner, &occurrence.to)?;
+                        self.locus(owner, &occurrence.locus)?;
                     }
                     match event {
                         Event::Send { channel } => {

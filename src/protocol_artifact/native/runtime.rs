@@ -750,6 +750,27 @@ fn relationship_authority(
     builder: &ValueBuilder<'_>,
     work: &mut Work,
 ) -> Result<(w::ExportRef, u32), Error> {
+    let bound = relationship_binding(context, relationship, work)?;
+    let export = bound.export();
+    if export.path.len() != 1 {
+        return Err(Error::Invalid(Invalid::Model));
+    }
+    let model = builder.export(
+        bound.model(),
+        w::ExportKind::Relationship,
+        &export.path[0],
+        None,
+        work,
+    )?;
+    let relation = builder.producer_relation(bound.model(), work)?;
+    Ok((model, relation))
+}
+
+pub(super) fn relationship_binding<'a, 'm>(
+    context: &'a Declaration<'_, 'm>,
+    relationship: &c::Relationship,
+    work: &mut Work,
+) -> Result<&'a crate::linking::composed::models::BoundRelationship<'m>, Error> {
     let span = Span {
         start: relationship.model.model.span.start,
         end: relationship.model.name.span.end,
@@ -760,19 +781,7 @@ fn relationship_authority(
             continue;
         }
         if let ModelTarget::Relationship(bound) = &occurrence.target {
-            let export = bound.export();
-            if export.path.len() != 1 {
-                return Err(Error::Invalid(Invalid::Model));
-            }
-            let model = builder.export(
-                bound.model(),
-                w::ExportKind::Relationship,
-                &export.path[0],
-                None,
-                work,
-            )?;
-            let relation = builder.producer_relation(bound.model(), work)?;
-            return Ok((model, relation));
+            return Ok(bound);
         }
         return Err(Error::Invalid(Invalid::Model));
     }
