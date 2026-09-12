@@ -312,6 +312,8 @@ pub struct Report {
     pub(super) result: Result<Vec<Obligation>, Error>,
     pub(super) limits: super::budget::Limits,
     pub(super) usage: Usage,
+    // Present only when a strict version-2 entry point authenticated the trace.
+    pub(super) authenticated: Option<super::progress::AuthenticatedBinding>,
 }
 
 impl Report {
@@ -330,5 +332,14 @@ impl Report {
     /// Successfully charged work; refused charges do not increase usage.
     pub fn usage(&self) -> Usage {
         self.usage
+    }
+    /// The clock identity a strict version-2 entry point authenticated before
+    /// running, retained so a caller can tell an authenticated result from an
+    /// unauthenticated version-1 one without re-deriving it.
+    ///
+    /// This is `None` for every version-1 entry point, and also for a version-2
+    /// evaluation refused by authentication itself: nothing was authenticated.
+    pub fn authenticated(&self) -> Option<&super::progress::AuthenticatedBinding> {
+        self.authenticated.as_ref()
     }
 }

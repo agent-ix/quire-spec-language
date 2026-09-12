@@ -101,6 +101,15 @@ not parse diagnostics to distinguish axes. Closed-JSON shape errors such as a
 missing or renamed required clock member remain `Error::Json`, while valid
 objects with a wrong alternative or value receive the exact v2 selection code.
 
+`Error::code()` extends that guarantee to every other axis, so a consumer never
+matches on a variant to tell two refusals apart. It returns `json` for a
+closed-JSON shape error and `invalid.seal` for a failed external seal — the two
+identities the version-2 refusal codes cannot express — and dotted codes under
+`allocation`, `numeric.`, `producer.`, `invalid.`, `unsupported.` and
+`incomplete.` for the remaining variants; a version-2 refusal delegates to
+`Refusal::code()` and keeps its established `v2.` spelling. Codes are
+append-only and are never message-derived.
+
 The constructor-private compiler entry point is:
 
 ```rust,ignore
@@ -221,6 +230,15 @@ The directory contains:
 - `dependencies/*.bin`: every exact original definition, rule, model package,
   contract and producer executable selected by the invocation, with paths,
   identities, direct prerequisites and raw-byte digests in `expected-v2.json`.
+
+`expected-v2.json` and `mutations/manifest.json` are the two interchange files a
+consumer decodes, so their record shapes are published as
+`protocol_artifact::handoff::{SelectionV2, MutationManifest}` and the records
+they contain. A consumer decodes those types instead of re-declaring its own
+copy, which is how the producer and the consumer stay in agreement about the
+files. The published records are inert data: decoding one admits nothing, and a
+consumer still constructs the borrowed `Expected`/`ExpectedV2` reader inputs
+itself. `MutationCase::expected_refusal_code` is an `Error::code()` spelling.
 
 The focused stripped-release control is the ignored test
 `stripped_release_v2_producer_writes_the_independently_read_handoff` in

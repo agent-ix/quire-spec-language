@@ -8,6 +8,7 @@ use super::{
 use crate::checking::composed::proofs::ProofReport;
 use crate::linking::composed::models::ModelTarget;
 use crate::linking::composed::{definition_source::RegisteredDefinition as R, DeclarationId};
+use crate::native_model::NativeModel;
 use crate::protocol_artifact::{
     self as artifact, wire as w, work::Work, ByteDigest, Dimension, Error, Invalid, Unsupported,
 };
@@ -139,12 +140,18 @@ fn definitions(
     work.charge(Dimension::Entries, selected.len())?;
     Ok((selected.into_iter().map(|(r, _)| r).collect(), definitions))
 }
+
+pub(super) struct Lowered {
+    pub package: w::Package,
+    pub model_schema: Vec<NativeModel>,
+}
+
 pub(super) fn lower(
     proofs: &ProofReport<'_, '_, '_>,
     selections: &Selections<'_>,
     producers: &[ProducerSelection<'_>],
     work: &mut Work,
-) -> Result<w::Package, Error> {
+) -> Result<Lowered, Error> {
     let binding = proofs.types().binding();
     let namespace = binding.namespace();
     artifact::intake::name(selections.requirement_revision_namespace)?;
@@ -600,14 +607,17 @@ pub(super) fn lower(
             relation: producer.relation,
         })
         .collect::<Vec<_>>();
-    artifact::models::validate_with_producers(
+    let model_schema = artifact::models::validate_with_producers(
         &package,
         selections.models,
         selections.dependencies,
         &expected_producers,
         work,
     )?;
-    Ok(package)
+    Ok(Lowered {
+        package,
+        model_schema,
+    })
 }
 fn decimal(value: u64, work: &mut Work) -> Result<String, Error> {
     work.bytes(20)?;

@@ -500,7 +500,7 @@ pub fn read_with_producers(
         artifact::intake::sources(&package.inherited, &expected.inherited, &mut work)?;
         artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
         artifact::validate::package(&package.inherited, &mut work)?;
-        artifact::models::validate_with_producers(
+        let model_schema = artifact::models::validate_with_producers(
             &package.inherited,
             expected.inherited.models,
             expected.inherited.dependencies,
@@ -513,7 +513,14 @@ pub fn read_with_producers(
         if canonical != bytes {
             return Err(Error::Invalid(Invalid::Canonical));
         }
-        Ok(AdmittedPackage { package, digest })
+        Ok(AdmittedPackage {
+            package,
+            digest,
+            artifact: Some(artifact::intake::retained_reference(
+                expected.inherited.artifact,
+            )?),
+            model_schema,
+        })
     })();
     artifact::report(work, result)
 }

@@ -91,6 +91,19 @@ pub struct Usage {
     pub depth: usize,
 }
 
+/// How one dimension retains successful work.
+///
+/// This is the accounting contract an independent consumer needs before it can
+/// precheck a budget: a peak dimension admits repeated requests up to its
+/// ceiling, a cumulative dimension does not.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Accumulation {
+    /// Usage retains the largest single candidate; repeated equal requests are free.
+    Peak,
+    /// Usage retains the checked sum of every successful request.
+    Cumulative,
+}
+
 /// The exact exhausted resource, never inferred from a diagnostic string.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dimension {
@@ -107,6 +120,44 @@ pub enum Dimension {
     References,
     ByteWork,
     Depth,
+}
+
+impl Dimension {
+    /// Every accounted dimension, in declaration order.
+    pub const ALL: [Self; 13] = [
+        Self::PayloadBytes,
+        Self::OutputBytes,
+        Self::SourceBytes,
+        Self::ContentBytes,
+        Self::Sources,
+        Self::Dependencies,
+        Self::Definitions,
+        Self::Models,
+        Self::Declarations,
+        Self::Entries,
+        Self::References,
+        Self::ByteWork,
+        Self::Depth,
+    ];
+
+    /// How this dimension retains successful work. `Work` charges from this
+    /// answer, so a consumer's precheck cannot disagree with the accounting.
+    pub const fn accumulation(self) -> Accumulation {
+        match self {
+            Self::PayloadBytes
+            | Self::OutputBytes
+            | Self::SourceBytes
+            | Self::Sources
+            | Self::Dependencies
+            | Self::Definitions
+            | Self::Models
+            | Self::Declarations
+            | Self::Depth => Accumulation::Peak,
+            Self::ContentBytes | Self::Entries | Self::References | Self::ByteWork => {
+                Accumulation::Cumulative
+            }
+        }
+    }
 }
 
 /// A refused next step; successful prior usage is retained unchanged.
@@ -166,39 +217,33 @@ impl Work {
         }
     }
 
-    fn fields(&mut self, dimension: Dimension) -> (&mut usize, usize, bool) {
+    /// The counter and ceiling for one dimension. How the counter advances is
+    /// not decided here; `Dimension::accumulation` is the single authority.
+    fn fields(&mut self, dimension: Dimension) -> (&mut usize, usize) {
         use Dimension as D;
         match dimension {
-            D::PayloadBytes => (
-                &mut self.usage.payload_bytes,
-                self.limits.payload_bytes,
-                true,
-            ),
-            D::OutputBytes => (&mut self.usage.output_bytes, self.limits.output_bytes, true),
-            D::SourceBytes => (&mut self.usage.source_bytes, self.limits.source_bytes, true),
-            D::ContentBytes => (
-                &mut self.usage.content_bytes,
-                self.limits.content_bytes,
-                false,
-            ),
-            D::Sources => (&mut self.usage.sources, self.limits.sources, true),
-            D::Dependencies => (&mut self.usage.dependencies, self.limits.dependencies, true),
-            D::Definitions => (&mut self.usage.definitions, self.limits.definitions, true),
-            D::Models => (&mut self.usage.models, self.limits.models, true),
-            D::Declarations => (&mut self.usage.declarations, self.limits.declarations, true),
-            D::Entries => (&mut self.usage.entries, self.limits.entries, false),
-            D::References => (&mut self.usage.references, self.limits.references, false),
-            D::ByteWork => (&mut self.usage.byte_work, self.limits.byte_work, false),
-            D::Depth => (&mut self.usage.depth, self.limits.depth, true),
+            D::PayloadBytes => (&mut self.usage.payload_bytes, self.limits.payload_bytes),
+            D::OutputBytes => (&mut self.usage.output_bytes, self.limits.output_bytes),
+            D::SourceBytes => (&mut self.usage.source_bytes, self.limits.source_bytes),
+            D::ContentBytes => (&mut self.usage.content_bytes, self.limits.content_bytes),
+            D::Sources => (&mut self.usage.sources, self.limits.sources),
+            D::Dependencies => (&mut self.usage.dependencies, self.limits.dependencies),
+            D::Definitions => (&mut self.usage.definitions, self.limits.definitions),
+            D::Models => (&mut self.usage.models, self.limits.models),
+            D::Declarations => (&mut self.usage.declarations, self.limits.declarations),
+            D::Entries => (&mut self.usage.entries, self.limits.entries),
+            D::References => (&mut self.usage.references, self.limits.references),
+            D::ByteWork => (&mut self.usage.byte_work, self.limits.byte_work),
+            D::Depth => (&mut self.usage.depth, self.limits.depth),
         }
     }
 
     pub fn charge(&mut self, dimension: Dimension, requested: usize) -> Result<(), Exhaustion> {
-        let (used, limit, peak) = self.fields(dimension);
-        let next = if peak {
-            Some((*used).max(requested))
-        } else {
-            used.checked_add(requested)
+        let accumulation = dimension.accumulation();
+        let (used, limit) = self.fields(dimension);
+        let next = match accumulation {
+            Accumulation::Peak => Some((*used).max(requested)),
+            Accumulation::Cumulative => used.checked_add(requested),
         };
         if let Some(next) = next.filter(|next| *next <= limit) {
             *used = next;
@@ -223,5 +268,57 @@ impl Work {
     pub fn bytes(&mut self, count: usize) -> Result<(), super::Error> {
         self.charge(Dimension::ByteWork, count)
             .map_err(super::Error::Incomplete)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::{Accumulation, Dimension, Limits, Work};
+
+    /// `Dimension::accumulation` is published so an independent consumer can
+    /// precheck a budget. It is the same answer `charge` acts on, so a copied
+    /// peak/cumulative table cannot silently disagree with the accounting.
+    #[test]
+    #[trace("TC-121", "FR-042-AC-9")]
+    fn published_accumulation_matches_every_charged_dimension() {
+        for dimension in Dimension::ALL {
+            let mut work = Work::new(Limits::default());
+            work.charge(dimension, 2).expect("first charge");
+            work.charge(dimension, 2).expect("second equal charge");
+            let (used, _) = work.fields(dimension);
+            let expected = match dimension.accumulation() {
+                Accumulation::Peak => 2,
+                Accumulation::Cumulative => 4,
+            };
+            assert_eq!(*used, expected, "{dimension:?}");
+        }
+    }
+
+    #[test]
+    #[trace("TC-121", "FR-042-AC-9")]
+    fn every_dimension_is_listed_once() {
+        let mut seen = [false; 13];
+        for dimension in Dimension::ALL {
+            let slot = match dimension {
+                Dimension::PayloadBytes => 0,
+                Dimension::OutputBytes => 1,
+                Dimension::SourceBytes => 2,
+                Dimension::ContentBytes => 3,
+                Dimension::Sources => 4,
+                Dimension::Dependencies => 5,
+                Dimension::Definitions => 6,
+                Dimension::Models => 7,
+                Dimension::Declarations => 8,
+                Dimension::Entries => 9,
+                Dimension::References => 10,
+                Dimension::ByteWork => 11,
+                Dimension::Depth => 12,
+            };
+            assert!(!seen[slot], "{dimension:?} is listed more than once");
+            seen[slot] = true;
+        }
+        assert!(seen.into_iter().all(|present| present));
     }
 }

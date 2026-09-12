@@ -75,7 +75,7 @@ fn retained_text(value: &str) -> Result<String, Error> {
     Ok(retained)
 }
 
-fn retained_reference(value: &ArtifactRef) -> Result<ArtifactRef, Error> {
+pub(super) fn retained_reference(value: &ArtifactRef) -> Result<ArtifactRef, Error> {
     Ok(ArtifactRef {
         ref_version: retained_text(&value.ref_version)?,
         kind: value.kind,

@@ -8,10 +8,14 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
+use quire_spec_language::linking::composed::binding_work::{
+    Dimension as BindingDimension, Exhaustion as BindingExhaustion,
+};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::composed::producer::ProducerModelRefusal;
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, v2, wire as w, Dimension as WorkDimension, Error, Invalid, Limits,
-    NumberComponent, NumberError, NumberWire,
+    NumberComponent, NumberError, NumberWire, Unsupported,
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
@@ -362,11 +366,131 @@ fn public_v2_refusal_codes_are_injective_across_every_declared_axis() {
     assert_eq!(codes.len(), refusals.len());
 }
 
+/// Tracing: TC-121, TC-138.
+#[trace("TC-121", "TC-138", "FR-042-AC-7", "FR-050-AC-2")]
+#[test]
+fn public_error_codes_are_injective_across_every_declared_axis() {
+    let mut errors = vec![Error::Allocation, Error::Json { line: 1, column: 1 }];
+    errors.extend(
+        [
+            NumberError::NonCanonicalDecimal {
+                component: NumberComponent::Decimal,
+            },
+            NumberError::ComponentOutOfRange {
+                component: NumberComponent::Decimal,
+            },
+            NumberError::NonPositiveDenominator,
+            NumberError::UnreducedRational,
+        ]
+        .map(Error::Numeric),
+    );
+    errors.push(Error::Producer(ProducerModelRefusal::ResourceExhausted(
+        BindingExhaustion {
+            dimension: BindingDimension::Bindings,
+            used: 0,
+            requested: 1,
+            limit: 0,
+        },
+    )));
+    errors.extend(
+        [
+            ProducerModelRefusal::Interface,
+            ProducerModelRefusal::Bundle,
+            ProducerModelRefusal::Model,
+            ProducerModelRefusal::Profile,
+            ProducerModelRefusal::Configuration,
+            ProducerModelRefusal::Correspondence,
+            ProducerModelRefusal::DefinitionClosure,
+            ProducerModelRefusal::Exports,
+            ProducerModelRefusal::ProducerDigest,
+            ProducerModelRefusal::NativeDigest,
+            ProducerModelRefusal::NativeBytes,
+        ]
+        .map(Error::Producer),
+    );
+    errors.extend(
+        [
+            Invalid::Selection,
+            Invalid::Seal,
+            Invalid::Name,
+            Invalid::StructuralInteger,
+            Invalid::WrongNumericKind,
+            Invalid::NumericDomain,
+            Invalid::Inventory,
+            Invalid::Order,
+            Invalid::Duplicate,
+            Invalid::Dependency,
+            Invalid::Definition,
+            Invalid::Model,
+            Invalid::ForeignLocus,
+            Invalid::Locus,
+            Invalid::Reference,
+            Invalid::Owner,
+            Invalid::Scope,
+            Invalid::Type,
+            Invalid::Profile,
+            Invalid::Call,
+            Invalid::Binding,
+            Invalid::Control,
+            Invalid::Cycle,
+            Invalid::Feature,
+            Invalid::Canonical,
+            Invalid::Encoding,
+        ]
+        .map(Error::Invalid),
+    );
+    errors.extend(
+        [
+            Unsupported::Wire,
+            Unsupported::Feature,
+            Unsupported::Definition,
+            Unsupported::Profile,
+            Unsupported::ProducerCorrespondence,
+            Unsupported::FamilyProof,
+            Unsupported::Export,
+        ]
+        .map(Error::Unsupported),
+    );
+    errors.extend(WorkDimension::ALL.map(|dimension| {
+        Error::Incomplete(artifact::Exhaustion {
+            dimension,
+            used: 0,
+            requested: 1,
+            limit: 0,
+            locus: None,
+        })
+    }));
+    errors.push(Error::V2(v2::Refusal::Header(v2::HeaderField::Wire)));
+
+    let codes = errors
+        .iter()
+        .map(Error::code)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(codes.len(), errors.len());
+
+    // The two identities the downstream mutation corpus cannot express through
+    // `v2::Refusal::code` alone.
+    assert_eq!(Error::Json { line: 3, column: 9 }.code(), "json");
+    assert_eq!(Error::Invalid(Invalid::Seal).code(), "invalid.seal");
+    // A version-2 refusal keeps its own established spelling.
+    assert_eq!(
+        Error::V2(v2::Refusal::Header(v2::HeaderField::Wire)).code(),
+        v2::Refusal::Header(v2::HeaderField::Wire).code()
+    );
+}
+
 #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-6")]
 #[test]
 fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
     with_v2(|inputs, proofs, selected, temporal, emitted| {
         let package = emitted.admitted().package();
+        assert_eq!(
+            emitted
+                .admitted()
+                .schema_model(0)
+                .map(|model| model.digest()),
+            Some(selected.models[0].model.digest())
+        );
         assert_eq!(package.temporal_bindings.len(), 3);
         assert!(package
             .temporal_bindings
@@ -383,6 +507,17 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         let admitted = read.result().expect("strict v2 reader");
         assert_eq!(admitted.digest(), emitted.digest());
         assert_eq!(admitted.package(), emitted.admitted().package());
+        assert_eq!(
+            admitted.schema_model(0).map(|model| model.digest()),
+            Some(selected.models[0].model.digest())
+        );
+        // Emission produces bytes before any caller publishes an identity for
+        // them; the reader retains the identity it independently admitted.
+        assert!(emitted.admitted().artifact().is_none());
+        assert_eq!(
+            admitted.artifact().map(|artifact| artifact.digest),
+            Some(emitted.digest())
+        );
 
         for (name, clock, profile, parameters) in [
             (
@@ -413,11 +548,24 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         ] {
             let at = declaration(admitted, name);
             let supplied = trace_input(clock, profile, &parameters);
-            assert!(
-                temporal::evaluate_v2(admitted, at, &supplied, temporal::Limits::default())
-                    .result()
-                    .is_ok(),
-                "{name} reaches evaluation"
+            let report =
+                temporal::evaluate_v2(admitted, at, &supplied, temporal::Limits::default());
+            assert!(report.result().is_ok(), "{name} reaches evaluation");
+            // FR-050-AC-6: the authenticated clock identity is retained in the
+            // result, so a version-2 report is not mistakable for a version-1 one.
+            let authenticated = report
+                .authenticated()
+                .unwrap_or_else(|| panic!("{name} retains its authenticated binding"));
+            assert_eq!(authenticated.declaration, at);
+            assert_eq!(authenticated.clock, clock);
+            assert_eq!(authenticated.definition_identity, profile);
+            assert_eq!(authenticated.package_digest, admitted.digest().to_string());
+            assert_eq!(
+                authenticated.parameters,
+                parameters
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                    .collect::<BTreeMap<_, _>>()
             );
             assert!(temporal::mapping_support_v2(admitted, at, temporal::Closure::Open).is_ok());
         }
@@ -1132,6 +1280,8 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
                     })) if *actual == dimension
                 ));
                 assert_eq!(report.usage().positions, 0);
+                // Authentication itself refused, so nothing was authenticated.
+                assert!(report.authenticated().is_none());
             };
         let at = declaration(&admitted, "BySample");
         let matching = [
