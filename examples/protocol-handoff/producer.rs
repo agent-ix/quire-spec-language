@@ -23,7 +23,7 @@ use quire_spec_language::{
     },
     model_source::{self, ModelSourceLimits},
     native_model::{ModelLimits, NativeModel},
-    protocol_artifact::{self as artifact, native, wire as w},
+    protocol_artifact::{self as artifact, native, v2, wire as w},
     ByteDigest, Source, SourceIdentity,
 };
 use serde::Serialize;
@@ -35,6 +35,8 @@ const REQUIREMENT_NAMESPACE: &str = "quire-contract-ir/requirement-revision";
 const DEFINITION_NAMESPACE: &str = "quire/native-definition-revision";
 const BINARY_BYTES: usize = 16 * 1_048_576;
 const CONTRACT: &[u8] = include_bytes!("../../docs/compiled-protocol-v1.md");
+const CONTRACT_V2: &[u8] = include_bytes!("../../docs/compiled-protocol-v2.md");
+const EVENT_CLOCK: &[u8] = br#"{"kind":"event_position","sequence_authority":"workflow-events"}"#;
 
 /// The recipe author selects clause owners and execution points before parsing.
 struct UnitRecipe {
@@ -133,6 +135,8 @@ const UNITS: &[UnitRecipe] = &[
 pub enum Error {
     #[error("usage: native_protocol_handoff <new-output-directory>")]
     Arguments,
+    #[error("usage: native_protocol_v2_handoff <new-output-directory>")]
+    ArgumentsV2,
     #[error("cannot access {path}: {source}")]
     Io {
         path: PathBuf,
@@ -408,7 +412,7 @@ struct SelectedDependency {
     requires: Vec<w::ArtifactRef>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct SelectedDeclaration {
     name: String,
     span: w::Span,
@@ -417,7 +421,7 @@ struct SelectedDeclaration {
     execution: w::Execution,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct SelectedSource {
     file: &'static str,
     source: w::Source,
@@ -443,6 +447,71 @@ struct Selection {
     sources: Vec<SelectedSource>,
     dependencies: Vec<SelectedDependency>,
     model: SelectedModel,
+}
+
+#[derive(Serialize)]
+struct SelectedArtifactLimits {
+    accounting_version: &'static str,
+    payload_bytes: usize,
+    output_bytes: usize,
+    source_bytes: usize,
+    content_bytes: usize,
+    sources: usize,
+    dependencies: usize,
+    definitions: usize,
+    models: usize,
+    declarations: usize,
+    entries: usize,
+    references: usize,
+    byte_work: usize,
+    depth: usize,
+}
+
+impl SelectedArtifactLimits {
+    fn new(limits: artifact::Limits) -> Self {
+        Self {
+            accounting_version: artifact::ACCOUNTING_VERSION,
+            payload_bytes: limits.payload_bytes,
+            output_bytes: limits.output_bytes,
+            source_bytes: limits.source_bytes,
+            content_bytes: limits.content_bytes,
+            sources: limits.sources,
+            dependencies: limits.dependencies,
+            definitions: limits.definitions,
+            models: limits.models,
+            declarations: limits.declarations,
+            entries: limits.entries,
+            references: limits.references,
+            byte_work: limits.byte_work,
+            depth: limits.depth,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct SelectedClockInput {
+    identity: String,
+    digest: String,
+    file: &'static str,
+    configuration: v2::wire::ClockConfiguration,
+}
+
+#[derive(Serialize)]
+struct SelectedTemporal {
+    source: w::ArtifactRef,
+    declaration: SelectedDeclaration,
+    definition_identity: String,
+    definition_revision: w::Revision,
+    definition_artifact: w::ArtifactRef,
+    clock_input: SelectedClockInput,
+}
+
+/// Serialized independent v2 reader inputs, confined to this example.
+#[derive(Serialize)]
+struct SelectionV2 {
+    inherited: Selection,
+    temporal: Vec<SelectedTemporal>,
+    limits: SelectedArtifactLimits,
 }
 
 fn declaration_selection(
@@ -803,6 +872,50 @@ impl SelectedInputs {
         })
     }
 
+    fn new_v2(inputs: &Inputs, binary: Vec<u8>) -> Result<Self, Error> {
+        let mut selected = Self::new(inputs, binary)?;
+        let contract = reference(
+            AUTHORITY,
+            w::ArtifactKind::Source,
+            "quire.compiled-protocol/2",
+            revision("compiled-protocol-contract", "2"),
+            "text/markdown",
+            "1",
+            CONTRACT_V2,
+        );
+        let contract_dependency = selected
+            .dependencies
+            .iter_mut()
+            .find(|dependency| dependency.artifact == selected.contract)
+            .ok_or_else(|| Error::Dependency {
+                identity: selected.contract.identity.clone(),
+                matches: 0,
+            })?;
+        contract_dependency.artifact = contract.clone();
+        contract_dependency.bytes = Cow::Borrowed(CONTRACT_V2);
+        selected.contract = contract;
+
+        let binary_dependency = selected
+            .dependencies
+            .iter_mut()
+            .find(|dependency| dependency.artifact == selected.producer.binary)
+            .ok_or_else(|| Error::Dependency {
+                identity: selected.producer.binary.identity.clone(),
+                matches: 0,
+            })?;
+        binary_dependency.artifact.identity = "native_protocol_v2_handoff".into();
+        selected.producer.binary = binary_dependency.artifact.clone();
+        selected.producer.implementation = "quire-spec-language/native_protocol_v2_handoff".into();
+
+        selected
+            .dependencies
+            .sort_by(|a, b| dependency_key(&a.artifact).cmp(&dependency_key(&b.artifact)));
+        for (index, dependency) in selected.dependencies.iter_mut().enumerate() {
+            dependency.file = format!("dependencies/{index}.bin");
+        }
+        Ok(selected)
+    }
+
     fn output_selection(
         &self,
         artifact: w::ArtifactRef,
@@ -944,7 +1057,21 @@ struct Output {
     emitted: native::EmittedPackage,
 }
 
-fn compile(inputs: &Inputs, selected: &SelectedInputs) -> Result<Output, Error> {
+struct OutputV2 {
+    selection: SelectionV2,
+    emitted: native::AdmissionV2,
+}
+
+fn compile_with<T>(
+    inputs: &Inputs,
+    selected: &SelectedInputs,
+    finish: impl FnOnce(
+        &Inputs,
+        &SelectedInputs,
+        &proofs::ProofReport<'_, '_, '_>,
+        Vec<SelectedSource>,
+    ) -> Result<T, Error>,
+) -> Result<T, Error> {
     // These short-lived API views preserve the same authored unit order; the
     // owning records above keep source, correspondence and identity together.
     let sources = inputs
@@ -1015,7 +1142,15 @@ fn compile(inputs: &Inputs, selected: &SelectedInputs) -> Result<Output, Error> 
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;
-    emit_and_read(inputs, selected, &proofs, original)
+    finish(inputs, selected, &proofs, original)
+}
+
+fn compile(inputs: &Inputs, selected: &SelectedInputs) -> Result<Output, Error> {
+    compile_with(inputs, selected, emit_and_read)
+}
+
+fn compile_v2(inputs: &Inputs, selected: &SelectedInputs) -> Result<OutputV2, Error> {
+    compile_with(inputs, selected, emit_and_read_v2)
 }
 
 fn namespace_failure(report: &linking::NamespaceReport<'_>) -> Error {
@@ -1230,6 +1365,164 @@ fn emit_and_read(
     })
 }
 
+fn emit_and_read_v2(
+    inputs: &Inputs,
+    selected: &SelectedInputs,
+    proofs: &proofs::ProofReport<'_, '_, '_>,
+    selected_sources: Vec<SelectedSource>,
+) -> Result<OutputV2, Error> {
+    let supplied = dependency_inputs(&selected.dependencies);
+    let foreign = artifact::ExpectedForeignSource {
+        artifact: &selected.model.source.artifact,
+        formal: &selected.model.source.formal,
+        bytes: inputs.model.source().source().text().as_bytes(),
+    };
+    let models = [artifact::AdmittedModel {
+        artifact: &selected.model.artifact,
+        model: &inputs.model,
+        source: &foreign,
+    }];
+    let native_sources = inputs
+        .units
+        .iter()
+        .map(|unit| native::SourceSelection {
+            artifact: &unit.artifact,
+            source: &unit.mapping.source,
+            revision_namespace: FORMAL_NAMESPACE,
+        })
+        .collect::<Vec<_>>();
+    let selections = native::Selections {
+        contract: &selected.contract,
+        baseline: &selected.baseline,
+        producer: &selected.producer,
+        sources: &native_sources,
+        dependencies: &supplied,
+        models: &models,
+        definition_revision_namespace: DEFINITION_NAMESPACE,
+        requirement_revision_namespace: REQUIREMENT_NAMESPACE,
+    };
+
+    let mut matching = selected_sources
+        .iter()
+        .enumerate()
+        .flat_map(|(source, selected)| {
+            selected
+                .declarations
+                .iter()
+                .enumerate()
+                .filter(|(_, declaration)| declaration.name == "Due")
+                .map(move |(declaration, _)| (source, declaration))
+        });
+    let Some((source_index, declaration_index)) = matching.next() else {
+        return Err(Error::Declaration {
+            name: "Due".into(),
+            cause: DeclarationCause::Missing,
+        });
+    };
+    if matching.next().is_some() {
+        return Err(Error::Declaration {
+            name: "Due".into(),
+            cause: DeclarationCause::Ambiguous {
+                matches: 2 + matching.count(),
+            },
+        });
+    }
+    let source = &selected_sources[source_index];
+    let declaration = &source.declarations[declaration_index];
+    let definition = dependency_reference(&selected.dependencies, R::EventPosition.identity())?;
+    let definition_revision = revision(DEFINITION_NAMESPACE, R::EventPosition.revision());
+    let clock: v2::wire::ClockConfiguration = serde_json::from_slice(EVENT_CLOCK)?;
+    if serde_json::to_vec(&clock)? != EVENT_CLOCK {
+        return Err(Error::RoundTrip);
+    }
+    let temporal = [native::TemporalSelection {
+        source: &source.source.artifact,
+        span: &declaration.span,
+        definition_identity: R::EventPosition.identity(),
+        definition_revision: &definition_revision,
+        definition_artifact: &definition,
+        clock: &clock,
+    }];
+    let limits = artifact::Limits::default();
+    let emitted = artifact_result(
+        "native v2 admission and encoding",
+        native::admit_v2(proofs, &selections, &temporal, limits),
+    )?;
+    let output = reference(
+        AUTHORITY,
+        w::ArtifactKind::LinkedPackage,
+        "examples/protocol-handoff/workflow-v2",
+        revision("example-output", "2"),
+        "quire.compiled-protocol",
+        "2",
+        emitted.bytes(),
+    );
+
+    let expected_units = selected_sources
+        .iter()
+        .map(ExpectedUnit::new)
+        .collect::<Vec<_>>();
+    let expected_sources = expected_units
+        .iter()
+        .map(ExpectedUnit::source)
+        .collect::<Vec<_>>();
+    let expected_temporal = [v2::ExpectedTemporal {
+        source: expected_sources[source_index].artifact,
+        declaration: &expected_units[source_index].declarations[declaration_index],
+        definition: v2::ExpectedDefinition {
+            identity: R::EventPosition.identity(),
+            revision: &definition_revision,
+            artifact: &definition,
+        },
+        clock: &clock,
+    }];
+    let read = artifact_result(
+        "independent v2 selection reader",
+        v2::read(
+            emitted.bytes(),
+            &v2::Expected {
+                inherited: artifact::Expected {
+                    artifact: &output,
+                    contract: &selected.contract,
+                    baseline: &selected.baseline,
+                    producer: &selected.producer,
+                    language: &selected.language,
+                    sources: &expected_sources,
+                    dependencies: &supplied,
+                    models: &models,
+                },
+                temporal: &expected_temporal,
+            },
+            limits,
+        ),
+    )?;
+    if read.package() != emitted.admitted().package() {
+        return Err(Error::RoundTrip);
+    }
+
+    let temporal = SelectedTemporal {
+        source: source.source.artifact.clone(),
+        declaration: declaration.clone(),
+        definition_identity: R::EventPosition.identity().into(),
+        definition_revision,
+        definition_artifact: definition,
+        clock_input: SelectedClockInput {
+            identity: format!("{AUTHORITY}/examples/protocol-handoff/event-clock"),
+            digest: ByteDigest::of(EVENT_CLOCK).to_string(),
+            file: "event-clock.json",
+            configuration: clock,
+        },
+    };
+    Ok(OutputV2 {
+        selection: SelectionV2 {
+            inherited: selected.output_selection(output, selected_sources),
+            temporal: vec![temporal],
+            limits: SelectedArtifactLimits::new(limits),
+        },
+        emitted,
+    })
+}
+
 /// Borrowed public-reader inputs, still selected from the authored recipe.
 struct ExpectedUnit<'a> {
     original: &'a w::Source,
@@ -1273,6 +1566,20 @@ pub fn write(directory: &Path) -> Result<(), Error> {
     let selected = SelectedInputs::new(&inputs, binary)?;
     let output = compile(&inputs, &selected)?;
     write_files(
+        directory,
+        &output.selection,
+        &selected.dependencies,
+        output.emitted.bytes(),
+    )
+}
+
+/// Compile the authored temporal recipe as strict v2 and publish its complete handoff.
+pub fn write_v2(directory: &Path) -> Result<(), Error> {
+    let binary = current_binary()?;
+    let inputs = Inputs::new()?;
+    let selected = SelectedInputs::new_v2(&inputs, binary)?;
+    let output = compile_v2(&inputs, &selected)?;
+    write_files_v2(
         directory,
         &output.selection,
         &selected.dependencies,
@@ -1352,6 +1659,39 @@ fn write_files(
         &reference_bytes,
     )?;
     write_file(&directory.join("compiled-protocol.json"), bytes)
+}
+
+fn write_files_v2(
+    directory: &Path,
+    selection: &SelectionV2,
+    dependencies: &[Dependency],
+    bytes: &[u8],
+) -> Result<(), Error> {
+    let selected_bytes = serde_json::to_vec_pretty(selection)?;
+    let reference_bytes = serde_json::to_vec_pretty(&selection.inherited.artifact)?;
+    fs::create_dir(directory).map_err(|error| io_at(directory, error))?;
+    let dependency_directory = directory.join("dependencies");
+    fs::create_dir(&dependency_directory).map_err(|error| io_at(&dependency_directory, error))?;
+    for dependency in dependencies {
+        write_file(&directory.join(&dependency.file), &dependency.bytes)?;
+    }
+    for selected in &selection.inherited.sources {
+        write_file(
+            &directory.join(selected.file),
+            selected.source.text.as_bytes(),
+        )?;
+    }
+    write_file(
+        &directory.join(selection.inherited.model.source_file),
+        selection.inherited.model.source.text.as_bytes(),
+    )?;
+    write_file(&directory.join("event-clock.json"), EVENT_CLOCK)?;
+    write_file(&directory.join("expected-v2.json"), &selected_bytes)?;
+    write_file(
+        &directory.join("compiled-protocol-v2.ref.json"),
+        &reference_bytes,
+    )?;
+    write_file(&directory.join("compiled-protocol-v2.json"), bytes)
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), Error> {
