@@ -12,6 +12,8 @@ use quire_spec_language::checking::{CheckBindings, ClauseBinding};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::composed::models::{AdmittedProducerModel, ModelInput};
+use quire_spec_language::linking::composed::subject::StaticSubject;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::protocol_artifact::{self as artifact, native, v2, wire as w};
 use quire_spec_language::{ByteDigest, Source};
@@ -104,6 +106,23 @@ fn owner() -> ir::RequirementRef {
 }
 
 impl Inputs {
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests compare static subjects"
+    )]
+    pub fn producer_subject(&self, producer: &AdmittedProducerModel<'_>) -> StaticSubject {
+        let inputs = [ModelInput::Producer(producer)];
+        composed_inputs::with_binding_inputs_and_inventory(
+            &self.sources,
+            &inputs,
+            BindingLimits::default(),
+            |inventory, binding| {
+                assert!(binding.complete(), "{:?}", binding.exhaustion());
+                StaticSubject::of(inventory, binding).expect("complete producer static subject")
+            },
+        )
+    }
+
     /// Re-derive one strict-v2 expectation from the authored fixture inventory.
     #[allow(
         dead_code,
@@ -407,6 +426,34 @@ impl Inputs {
         export
     }
 
+    /// Apply an independently derived final export ordinal after producer-only
+    /// exports join the ordered model table.
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests need this remap"
+    )]
+    pub fn remap_operation_contracts(&mut self, pre: &str, post: &str, operation: w::ExportRef) {
+        for (name, expected) in [
+            (
+                pre,
+                w::Execution::Pre {
+                    operation: operation.clone(),
+                },
+            ),
+            (
+                post,
+                w::Execution::Post {
+                    operation: operation.clone(),
+                },
+            ),
+        ] {
+            *self
+                .executions
+                .get_mut(name)
+                .expect("existing operation expectation") = expected;
+        }
+    }
+
     pub fn with_proofs(
         &self,
         type_limits: TypeLimits,
@@ -416,6 +463,35 @@ impl Inputs {
         composed_inputs::with_binding(
             &self.sources,
             &[&self.model],
+            BindingLimits::default(),
+            |binding| {
+                assert!(
+                    binding.complete(),
+                    "binding exhaustion: {:?}",
+                    binding.exhaustion()
+                );
+                let typed = composed::admit_types(binding, &self.formal, type_limits);
+                let proved = proofs::discharge(&typed, &self.mappings, proof_limits);
+                self.with_selections(|selected| test(&proved, selected));
+            },
+        );
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests use this binding path"
+    )]
+    pub fn with_producer_proofs(
+        &self,
+        producer: &AdmittedProducerModel<'_>,
+        type_limits: TypeLimits,
+        proof_limits: proofs::ProofLimits,
+        test: impl FnOnce(&proofs::ProofReport<'_, '_, '_>, &native::Selections<'_>),
+    ) {
+        let inputs = [ModelInput::Producer(producer)];
+        composed_inputs::with_binding_inputs(
+            &self.sources,
+            &inputs,
             BindingLimits::default(),
             |binding| {
                 assert!(
@@ -480,6 +556,99 @@ impl Inputs {
         emitted: &native::EmittedPackage,
     ) -> artifact::Report<artifact::AdmittedPackage> {
         self.read_bytes(proofs, emitted.bytes(), emitted.digest())
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests use this reader"
+    )]
+    pub fn read_with_producers(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        emitted: &native::EmittedPackage,
+        producers: &[artifact::ExpectedProducerModel<'_>],
+    ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(
+            proofs,
+            emitted.bytes(),
+            emitted.digest(),
+            "1",
+            |expected, _| {
+                artifact::read_with_producers(
+                    emitted.bytes(),
+                    &expected,
+                    producers,
+                    artifact::Limits::default(),
+                )
+            },
+        )
+    }
+
+    #[allow(dead_code, reason = "Only producer mutation tests use this reader")]
+    pub fn read_producer_bytes(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        producers: &[artifact::ExpectedProducerModel<'_>],
+    ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "1", |expected, _| {
+            artifact::read_with_producers(bytes, &expected, producers, artifact::Limits::default())
+        })
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests use this reader"
+    )]
+    pub fn read_v2_with_producers(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        emitted: &native::AdmissionV2,
+        temporal: &[TemporalExpectation],
+        producers: &[artifact::ExpectedProducerModel<'_>],
+    ) -> artifact::Report<v2::AdmittedPackage> {
+        self.with_expected(
+            proofs,
+            emitted.bytes(),
+            emitted.digest(),
+            "2",
+            |inherited, _| {
+                let declarations: Vec<_> = temporal
+                    .iter()
+                    .map(|selection| artifact::ExpectedDeclaration {
+                        name: &selection.declaration.name,
+                        span: &selection.declaration.span,
+                        requirement: &selection.declaration.requirement,
+                        clause: &selection.declaration.clause,
+                        execution: &selection.declaration.execution,
+                    })
+                    .collect();
+                let expected_temporal: Vec<_> = temporal
+                    .iter()
+                    .zip(&declarations)
+                    .map(|(selection, declaration)| v2::ExpectedTemporal {
+                        source: &selection.source,
+                        declaration,
+                        definition: v2::ExpectedDefinition {
+                            identity: &selection.definition.identity,
+                            revision: &selection.definition.revision,
+                            artifact: &selection.definition.artifact,
+                        },
+                        clock: &selection.definition.clock,
+                    })
+                    .collect();
+                v2::read_with_producers(
+                    emitted.bytes(),
+                    &v2::Expected {
+                        inherited,
+                        temporal: &expected_temporal,
+                    },
+                    producers,
+                    artifact::Limits::default(),
+                )
+            },
+        )
     }
 
     /// Check transport against the original selections and an independently

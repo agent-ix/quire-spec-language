@@ -620,6 +620,13 @@ impl<'a> Graph<'a, '_> {
             }
             if binding.kind == BindingKind::CompensationEffect {
                 self.compensation_effect_identity(owner, index, binding)?;
+            } else if binding.kind == BindingKind::Relationship {
+                if binding.value_type.0.is_some()
+                    || binding.model.0.is_none()
+                    || binding.relation.0.is_none()
+                {
+                    return Err(Error::Invalid(Invalid::Binding));
+                }
             } else if (binding.value_type.0.is_none() || binding.model.0.is_none())
                 && !matches!(
                     binding.kind,

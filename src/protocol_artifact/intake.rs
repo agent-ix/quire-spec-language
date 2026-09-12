@@ -518,6 +518,16 @@ pub(super) fn definitions(
 /// Read exact bounded bytes without parsing any embedded native source text.
 /// The returned admission is scoped to the independently supplied selections.
 pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<AdmittedPackage> {
+    read_with_producers(bytes, expected, &[], limits)
+}
+
+/// Read exact bounded bytes with independently admitted producer views.
+pub fn read_with_producers(
+    bytes: &[u8],
+    expected: &Expected<'_>,
+    producers: &[super::ExpectedProducerModel<'_>],
+    limits: Limits,
+) -> Report<AdmittedPackage> {
     let mut work = Work::new(limits);
     let result = (|| {
         work.charge(Dimension::PayloadBytes, bytes.len())?;
@@ -532,8 +542,13 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         sources(&package, expected, &mut work)?;
         definitions(&package, &supplied, &mut work)?;
         super::validate::package(&package, &mut work)?;
-        let model_schema =
-            super::models::validate(&package, expected.models, expected.dependencies, &mut work)?;
+        let model_schema = super::models::validate_with_producers(
+            &package,
+            expected.models,
+            expected.dependencies,
+            producers,
+            &mut work,
+        )?;
         let canonical = super::encoding::bytes(&package, &mut work)?;
         work.bytes(bytes.len().saturating_add(canonical.len()))?;
         if canonical != bytes {
