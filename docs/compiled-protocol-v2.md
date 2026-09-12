@@ -93,8 +93,8 @@ identity/revision/artifact and typed clock configuration. Admission never builds
 that table from the offer.
 
 Version-2 selection failures use `Error::V2(v2::Refusal)`. `Refusal` carries
-public typed `HeaderField`, `BindingCause`/`InventorySide`,
-`DeclarationField`, `DefinitionField`/`ArtifactField`, and `ClockField`
+public typed `HeaderField`, `BindingCause`/`InventorySide`, `BindingIndex`,
+`SelectionSide`, `DeclarationField`, `DefinitionField`/`ArtifactField`, and `ClockField`
 discriminants. `Refusal::code()` returns the stable machine code (for example
 `v2.definition.artifact.digest` or `v2.clock.sequence-authority`); consumers do
 not parse diagnostics to distinguish axes. Closed-JSON shape errors such as a
@@ -210,10 +210,12 @@ The directory contains:
   artifact instead of becoming a vacuous byte comparison;
 - `mutations/manifest.json`: `quire.protocol.v2-mutations/1`, naming the base
   offer, external reference, independent selection and every emitted mutation's
-  input operation and expected stable refusal code;
+  input operation and expected stable refusal code. The release producer replays
+  every generated case through `v2::read` and refuses to publish the directory
+  if any actual code differs;
 - `mutations/*.json` and `mutations/*.bin`: independently re-sealed header,
-  binding-index/inventory, definition identity/revision/artifact/digest-domain,
-  clock-alternative/member, malformed-member and original-definition-byte
+  binding-index/inventory, declaration, definition identity/revision/artifact/digest-domain,
+  every clock-alternative/member, malformed-member and original-definition-byte
   substitutions;
 - the four original `.native` files and `model-source.json`; and
 - `dependencies/*.bin`: every exact original definition, rule, model package,

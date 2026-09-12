@@ -25,14 +25,24 @@ pub enum BindingCause {
     Surplus,
     /// Two records carry the same declaration key.
     Duplicate,
-    /// Records are not in ascending declaration-index order.
-    Order,
-    /// The selected source does not own the declaration span.
-    ForeignOwner,
-    /// The binding selects a different or out-of-range declaration index.
-    DeclarationIndex,
-    /// The binding selects a different or out-of-range definition index.
-    DefinitionIndex,
+}
+
+/// A caller selection whose exact source does not own the selected span.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectionSide {
+    /// The independent reader expectation.
+    Expected,
+    /// The native producer selection.
+    Producer,
+}
+
+/// One index member of an offered temporal binding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BindingIndex {
+    /// Declaration index.
+    Declaration,
+    /// Definition index.
+    Definition,
 }
 
 /// One exact version-2 header selection.
@@ -61,10 +71,6 @@ pub enum HeaderField {
 /// One independently selected declaration member.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeclarationField {
-    /// Original source artifact.
-    Source,
-    /// Original half-open byte span.
-    Span,
     /// Authored declaration name.
     Name,
     /// Formal requirement owner.
@@ -142,6 +148,12 @@ pub enum Refusal {
         /// Exact structural cause.
         cause: BindingCause,
     },
+    /// Offered bindings are not in ascending declaration-index order.
+    OfferOrder,
+    /// The selected source does not own the declaration span.
+    ForeignOwner(SelectionSide),
+    /// An offered binding selects a different or out-of-range index.
+    OfferIndex(BindingIndex),
     /// An independently selected declaration differs.
     Declaration(DeclarationField),
     /// An independently selected definition differs.
@@ -199,56 +211,11 @@ impl Refusal {
                 side: InventorySide::Producer,
                 cause: BindingCause::Duplicate,
             } => "v2.binding.producer-duplicate",
-            Self::Binding {
-                side: InventorySide::Offer,
-                cause: BindingCause::Order,
-            } => "v2.binding.offer-order",
-            Self::Binding {
-                side: InventorySide::Expected,
-                cause: BindingCause::Order,
-            } => "v2.binding.expected-order",
-            Self::Binding {
-                side: InventorySide::Producer,
-                cause: BindingCause::Order,
-            } => "v2.binding.producer-order",
-            Self::Binding {
-                side: InventorySide::Offer,
-                cause: BindingCause::ForeignOwner,
-            } => "v2.binding.offer-foreign-owner",
-            Self::Binding {
-                side: InventorySide::Expected,
-                cause: BindingCause::ForeignOwner,
-            } => "v2.binding.expected-foreign-owner",
-            Self::Binding {
-                side: InventorySide::Producer,
-                cause: BindingCause::ForeignOwner,
-            } => "v2.binding.producer-foreign-owner",
-            Self::Binding {
-                side: InventorySide::Offer,
-                cause: BindingCause::DeclarationIndex,
-            } => "v2.binding.offer-declaration-index",
-            Self::Binding {
-                side: InventorySide::Expected,
-                cause: BindingCause::DeclarationIndex,
-            } => "v2.binding.expected-declaration-index",
-            Self::Binding {
-                side: InventorySide::Producer,
-                cause: BindingCause::DeclarationIndex,
-            } => "v2.binding.producer-declaration-index",
-            Self::Binding {
-                side: InventorySide::Offer,
-                cause: BindingCause::DefinitionIndex,
-            } => "v2.binding.offer-definition-index",
-            Self::Binding {
-                side: InventorySide::Expected,
-                cause: BindingCause::DefinitionIndex,
-            } => "v2.binding.expected-definition-index",
-            Self::Binding {
-                side: InventorySide::Producer,
-                cause: BindingCause::DefinitionIndex,
-            } => "v2.binding.producer-definition-index",
-            Self::Declaration(DeclarationField::Source) => "v2.declaration.source",
-            Self::Declaration(DeclarationField::Span) => "v2.declaration.span",
+            Self::OfferOrder => "v2.binding.offer-order",
+            Self::ForeignOwner(SelectionSide::Expected) => "v2.binding.expected-foreign-owner",
+            Self::ForeignOwner(SelectionSide::Producer) => "v2.binding.producer-foreign-owner",
+            Self::OfferIndex(BindingIndex::Declaration) => "v2.binding.offer-declaration-index",
+            Self::OfferIndex(BindingIndex::Definition) => "v2.binding.offer-definition-index",
             Self::Declaration(DeclarationField::Name) => "v2.declaration.name",
             Self::Declaration(DeclarationField::Requirement) => "v2.declaration.requirement",
             Self::Declaration(DeclarationField::Clause) => "v2.declaration.clause",
