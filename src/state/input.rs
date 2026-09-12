@@ -117,12 +117,26 @@ pub enum MissingInput {
     },
     Member {
         requirement: wire::Handle,
-        index: usize,
+        path: Vec<ValuePathSegment>,
     },
     Membership(wire::Handle),
     Sequence(wire::Handle),
     Population(wire::Handle),
     Closure(wire::Handle),
+}
+
+/// One exact authored step from a supplied binder or population value root.
+///
+/// The complete path makes nested unavailable members injective: an inner
+/// member index cannot be detached from its enclosing field, option or member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValuePathSegment {
+    Field {
+        object: Option<ObjectKey>,
+        field: wire::ExportRef,
+    },
+    OptionValue,
+    Member(usize),
 }
 
 /// One available value node or an unavailable typed position.

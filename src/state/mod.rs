@@ -11,6 +11,7 @@ pub use input::{
     ContextualSlot, ContextualValue, ContextualValueKind, EvaluationOutcome, EvaluationReport,
     EvaluationRequest, FieldInput, FieldValue, InputSlot, MissingInput, ObjectInput, ObjectKey,
     ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView,
-    StaticAuthority, Value, ValueKind, OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
+    StaticAuthority, Value, ValueKind, ValuePathSegment, OBSERVATION_CONTRACT_REVISION,
+    PRODUCER_CONTRACT_REVISION,
 };
 pub use work::{Dimension, Exhaustion, ExhaustionCause, Limits, Usage, ACCOUNTING_VERSION};
