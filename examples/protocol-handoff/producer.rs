@@ -377,6 +377,12 @@ pub enum Error {
     InventoryLimit,
     #[error("cannot construct deterministic v2 mutation fixture {0}")]
     MutationFixture(&'static str),
+    #[error("v2 mutation {identity} expected refusal {expected}, got {actual}")]
+    MutationReplay {
+        identity: &'static str,
+        expected: &'static str,
+        actual: String,
+    },
 }
 
 /// Distinct failures of the recipe's authored declaration correspondence.
@@ -1270,6 +1276,8 @@ struct Output {
 struct OutputV2 {
     selection: SelectionV2,
     emitted: native::AdmissionV2,
+    mutation_manifest: MutationManifest,
+    mutation_files: MutationFiles,
 }
 
 fn compile_with<T>(
@@ -1762,13 +1770,38 @@ fn emit_and_read_v2(
             }
         })
         .collect();
-    Ok(OutputV2 {
-        selection: SelectionV2 {
-            inherited: selected.output_selection(output, selected_sources),
-            temporal,
-            limits: SelectedArtifactLimits::new(limits),
+    let selection = SelectionV2 {
+        inherited: selected.output_selection(output.clone(), selected_sources.clone()),
+        temporal,
+        limits: SelectedArtifactLimits::new(limits),
+    };
+    let package = emitted.admitted().package().clone();
+    let (mutation_manifest, mutation_files) =
+        mutation_fixtures(&package, &selection, &selected.dependencies)?;
+    verify_mutation_fixtures(
+        &mutation_manifest,
+        &mutation_files,
+        emitted.bytes(),
+        &output,
+        artifact::Expected {
+            artifact: &output,
+            contract: &selected.contract,
+            baseline: &selected.baseline,
+            producer: &selected.producer,
+            language: &selected.language,
+            sources: &expected_sources,
+            dependencies: &supplied,
+            models: &models,
         },
+        &expected_temporal,
+        &selected.dependencies,
+        limits,
+    )?;
+    Ok(OutputV2 {
+        selection,
         emitted,
+        mutation_manifest,
+        mutation_files,
     })
 }
 
@@ -1833,6 +1866,8 @@ pub fn write_v2(directory: &Path) -> Result<(), Error> {
         &output.selection,
         &selected.dependencies,
         output.emitted.bytes(),
+        &output.mutation_manifest,
+        &output.mutation_files,
     )
 }
 
@@ -1915,11 +1950,11 @@ fn write_files_v2(
     selection: &SelectionV2,
     dependencies: &[Dependency],
     bytes: &[u8],
+    mutation_manifest: &MutationManifest,
+    mutation_files: &MutationFiles,
 ) -> Result<(), Error> {
     let selected_bytes = serde_json::to_vec_pretty(selection)?;
     let reference_bytes = serde_json::to_vec_pretty(&selection.inherited.artifact)?;
-    let package: v2::wire::Package = serde_json::from_slice(bytes)?;
-    let (mutation_manifest, mutation_files) = mutation_fixtures(&package, selection, dependencies)?;
     let mutation_manifest = serde_json::to_vec_pretty(&mutation_manifest)?;
     fs::create_dir(directory).map_err(|error| io_at(directory, error))?;
     let dependency_directory = directory.join("dependencies");
@@ -1943,7 +1978,7 @@ fn write_files_v2(
         write_file(&directory.join(recipe.clock_file), recipe.clock_bytes)?;
     }
     for (file, content) in mutation_files {
-        write_file(&directory.join(file), &content)?;
+        write_file(&directory.join(file), content)?;
     }
     write_file(
         &directory.join("mutations/manifest.json"),
@@ -2059,28 +2094,20 @@ fn mutation_fixtures(
     offer(
         "binding-reordered",
         "temporal_bindings.order",
-        v2::Refusal::Binding {
-            side: v2::InventorySide::Offer,
-            cause: v2::BindingCause::Order,
-        }
-        .code(),
+        v2::Refusal::OfferOrder.code(),
         reordered,
     )?;
 
     let mut declaration_index = package.clone();
     declaration_index
         .temporal_bindings
-        .first_mut()
+        .last_mut()
         .ok_or(Error::MutationFixture("declaration-index"))?
         .declaration = 9_999;
     offer(
         "declaration-index",
         "temporal_binding.declaration",
-        v2::Refusal::Binding {
-            side: v2::InventorySide::Offer,
-            cause: v2::BindingCause::DeclarationIndex,
-        }
-        .code(),
+        v2::Refusal::OfferIndex(v2::BindingIndex::Declaration).code(),
         declaration_index,
     )?;
 
@@ -2093,12 +2120,75 @@ fn mutation_fixtures(
     offer(
         "definition-index",
         "temporal_binding.definition",
-        v2::Refusal::Binding {
-            side: v2::InventorySide::Offer,
-            cause: v2::BindingCause::DefinitionIndex,
-        }
-        .code(),
+        v2::Refusal::OfferIndex(v2::BindingIndex::Definition).code(),
         definition_index,
+    )?;
+
+    let declaration_at = usize::try_from(
+        package
+            .temporal_bindings
+            .first()
+            .ok_or(Error::MutationFixture("declaration-selection"))?
+            .declaration,
+    )
+    .map_err(|_| Error::MutationFixture("declaration-index-conversion"))?;
+    let mut declaration_name = package.clone();
+    declaration_name
+        .inherited
+        .declarations
+        .get_mut(declaration_at)
+        .ok_or(Error::MutationFixture("declaration-name"))?
+        .name
+        .push_str("Other");
+    offer(
+        "declaration-name",
+        "declaration.name",
+        v2::Refusal::Declaration(v2::DeclarationField::Name).code(),
+        declaration_name,
+    )?;
+    let mut declaration_requirement = package.clone();
+    declaration_requirement
+        .inherited
+        .declarations
+        .get_mut(declaration_at)
+        .ok_or(Error::MutationFixture("declaration-requirement"))?
+        .requirement
+        .identity
+        .push_str("Other");
+    offer(
+        "declaration-requirement",
+        "declaration.requirement",
+        v2::Refusal::Declaration(v2::DeclarationField::Requirement).code(),
+        declaration_requirement,
+    )?;
+    let mut declaration_clause = package.clone();
+    declaration_clause
+        .inherited
+        .declarations
+        .get_mut(declaration_at)
+        .ok_or(Error::MutationFixture("declaration-clause"))?
+        .clause
+        .push_str("-other");
+    offer(
+        "declaration-clause",
+        "declaration.clause",
+        v2::Refusal::Declaration(v2::DeclarationField::Clause).code(),
+        declaration_clause,
+    )?;
+    let mut declaration_execution = package.clone();
+    declaration_execution
+        .inherited
+        .declarations
+        .get_mut(declaration_at)
+        .ok_or(Error::MutationFixture("declaration-execution"))?
+        .execution = w::Execution::Handler {
+        name: "other".into(),
+    };
+    offer(
+        "declaration-execution",
+        "declaration.execution",
+        v2::Refusal::Declaration(v2::DeclarationField::Execution).code(),
+        declaration_execution,
     )?;
 
     let binding = package
@@ -2196,26 +2286,127 @@ fn mutation_fixtures(
         clock_field,
     )?;
 
-    let text = String::from_utf8(serde_json::to_vec(package)?)
-        .map_err(|_| Error::MutationFixture("utf8-package"))?;
-    for (identity, replacement) in [
+    let mut fixed_epoch = package.clone();
+    let v2::wire::ClockConfiguration::FixedSample { epoch, .. } = &mut fixed_epoch
+        .temporal_bindings
+        .get_mut(1)
+        .ok_or(Error::MutationFixture("clock-epoch"))?
+        .clock
+    else {
+        return Err(Error::MutationFixture("clock-epoch"));
+    };
+    *epoch = w::Number(artifact::NumberWire::Integer {
+        decimal: "1".into(),
+    });
+    offer(
+        "clock-epoch",
+        "clock.epoch",
+        v2::Refusal::Clock(v2::ClockField::Epoch).code(),
+        fixed_epoch,
+    )?;
+    let mut fixed_period = package.clone();
+    let v2::wire::ClockConfiguration::FixedSample { period, .. } = &mut fixed_period
+        .temporal_bindings
+        .get_mut(1)
+        .ok_or(Error::MutationFixture("clock-period"))?
+        .clock
+    else {
+        return Err(Error::MutationFixture("clock-period"));
+    };
+    *period = w::Number(artifact::NumberWire::Integer {
+        decimal: "1".into(),
+    });
+    offer(
+        "clock-period",
+        "clock.period",
+        v2::Refusal::Clock(v2::ClockField::Period).code(),
+        fixed_period,
+    )?;
+    let mut fixed_unit = package.clone();
+    let v2::wire::ClockConfiguration::FixedSample { unit, .. } = &mut fixed_unit
+        .temporal_bindings
+        .get_mut(1)
+        .ok_or(Error::MutationFixture("clock-unit"))?
+        .clock
+    else {
+        return Err(Error::MutationFixture("clock-unit"));
+    };
+    *unit = "minute".into();
+    offer(
+        "clock-unit",
+        "clock.unit",
+        v2::Refusal::Clock(v2::ClockField::Unit).code(),
+        fixed_unit,
+    )?;
+    let mut timestamp_unit = package.clone();
+    let v2::wire::ClockConfiguration::TimestampedEvent {
+        timestamp_unit: unit,
+    } = &mut timestamp_unit
+        .temporal_bindings
+        .get_mut(2)
+        .ok_or(Error::MutationFixture("clock-timestamp-unit"))?
+        .clock
+    else {
+        return Err(Error::MutationFixture("clock-timestamp-unit"));
+    };
+    *unit = "nanosecond".into();
+    offer(
+        "clock-timestamp-unit",
+        "clock.timestamp_unit",
+        v2::Refusal::Clock(v2::ClockField::TimestampUnit).code(),
+        timestamp_unit,
+    )?;
+
+    let raw: serde_json::Value = serde_json::to_value(package)?;
+    for (identity, binding, field, replacement, axis) in [
         (
             "clock-missing-sequence-authority",
-            "\"kind\":\"event_position\"",
+            0,
+            "sequence_authority",
+            None,
+            "clock.sequence_authority",
         ),
         (
             "clock-renamed-sequence-authority",
-            "\"kind\":\"event_position\",\"sequenceAuthority\":\"workflow-events\"",
+            0,
+            "sequence_authority",
+            Some("sequenceAuthority"),
+            "clock.sequence_authority",
+        ),
+        ("clock-missing-period", 1, "period", None, "clock.period"),
+        (
+            "clock-renamed-period",
+            1,
+            "period",
+            Some("sample_period"),
+            "clock.period",
+        ),
+        (
+            "clock-missing-timestamp-unit",
+            2,
+            "timestamp_unit",
+            None,
+            "clock.timestamp_unit",
+        ),
+        (
+            "clock-renamed-timestamp-unit",
+            2,
+            "timestamp_unit",
+            Some("timestampUnit"),
+            "clock.timestamp_unit",
         ),
     ] {
-        let mutated = text.replace(
-            "\"kind\":\"event_position\",\"sequence_authority\":\"workflow-events\"",
-            replacement,
-        );
-        if mutated == text {
-            return Err(Error::MutationFixture(identity));
+        let mut mutated = raw.clone();
+        let clock = mutated["temporal_bindings"][binding]["clock"]
+            .as_object_mut()
+            .ok_or(Error::MutationFixture(identity))?;
+        let value = clock
+            .remove(field)
+            .ok_or(Error::MutationFixture(identity))?;
+        if let Some(replacement) = replacement {
+            clock.insert(replacement.into(), value);
         }
-        let bytes = mutated.into_bytes();
+        let bytes = serde_json::to_vec(&mutated)?;
         let file = format!("mutations/{identity}.json");
         let artifact = reference(
             AUTHORITY,
@@ -2229,7 +2420,7 @@ fn mutation_fixtures(
         files.push((file.clone(), bytes));
         cases.push(MutationCase {
             identity,
-            axis: "clock.sequence_authority",
+            axis,
             input: MutationInput::Offer { file, artifact },
             expected_refusal_code: "json",
         });
@@ -2262,6 +2453,89 @@ fn mutation_fixtures(
         },
         files,
     ))
+}
+
+fn mutation_file<'a>(files: &'a MutationFiles, name: &str) -> Result<&'a [u8], Error> {
+    files
+        .iter()
+        .find(|(file, _)| file == name)
+        .map(|(_, bytes)| bytes.as_slice())
+        .ok_or(Error::MutationFixture("manifest-file"))
+}
+
+fn replay_code(error: &artifact::Error) -> Option<&'static str> {
+    match error {
+        artifact::Error::V2(refusal) => Some(refusal.code()),
+        artifact::Error::Json { .. } => Some("json"),
+        artifact::Error::Invalid(artifact::Invalid::Seal) => Some("invalid.seal"),
+        _ => None,
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the replay keeps every independent selection explicit"
+)]
+fn verify_mutation_fixtures(
+    manifest: &MutationManifest,
+    files: &MutationFiles,
+    base_bytes: &[u8],
+    base_artifact: &w::ArtifactRef,
+    inherited: artifact::Expected<'_>,
+    temporal: &[v2::ExpectedTemporal<'_>],
+    dependencies: &[Dependency],
+    limits: artifact::Limits,
+) -> Result<(), Error> {
+    for case in &manifest.cases {
+        let report = match &case.input {
+            MutationInput::Offer { file, artifact } => v2::read(
+                mutation_file(files, file)?,
+                &v2::Expected {
+                    inherited: artifact::Expected {
+                        artifact,
+                        ..inherited
+                    },
+                    temporal,
+                },
+                limits,
+            ),
+            MutationInput::ReplaceOriginal { target, file } => {
+                let at = dependencies
+                    .iter()
+                    .position(|dependency| dependency.file == *target)
+                    .ok_or(Error::MutationFixture("replacement-target"))?;
+                let mut changed = inherited.dependencies.to_vec();
+                let selected = changed
+                    .get_mut(at)
+                    .ok_or(Error::MutationFixture("replacement-index"))?;
+                selected.bytes = mutation_file(files, file)?;
+                v2::read(
+                    base_bytes,
+                    &v2::Expected {
+                        inherited: artifact::Expected {
+                            artifact: base_artifact,
+                            dependencies: &changed,
+                            ..inherited
+                        },
+                        temporal,
+                    },
+                    limits,
+                )
+            }
+        };
+        let actual = report.result().err().and_then(replay_code);
+        if actual != Some(case.expected_refusal_code) {
+            return Err(Error::MutationReplay {
+                identity: case.identity,
+                expected: case.expected_refusal_code,
+                actual: report
+                    .result()
+                    .err()
+                    .map_or_else(|| "success".into(), |error| format!("{error:?}")),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), Error> {

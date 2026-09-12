@@ -2,9 +2,9 @@
 //! FR-050: bounded independent admission of version-2 packages.
 
 use super::{
-    refusal::artifact_field, wire, AdmittedPackage, BindingCause, ClockField, DeclarationField,
-    DefinitionField, Expected, ExpectedTemporal, HeaderField, InventorySide, Refusal, MEDIA,
-    SCHEMA, WIRE,
+    refusal::artifact_field, wire, AdmittedPackage, BindingCause, BindingIndex, ClockField,
+    DeclarationField, DefinitionField, Expected, ExpectedTemporal, HeaderField, InventorySide,
+    Refusal, SelectionSide, MEDIA, SCHEMA, WIRE,
 };
 use crate::protocol_artifact::{self as artifact, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report, Unsupported};
@@ -97,6 +97,51 @@ fn numeric_bytes(number: &artifact::NumberWire, work: &mut Work) -> Result<(), E
     }
 }
 
+pub(crate) fn reference_bytes(reference: &artifact::wire::ArtifactRef) -> usize {
+    reference
+        .ref_version
+        .len()
+        .saturating_add(reference.kind.as_str().len())
+        .saturating_add(reference.authority.len())
+        .saturating_add(reference.identity.len())
+        .saturating_add(reference.revision.namespace.len())
+        .saturating_add(reference.revision.value.len())
+        .saturating_add(71)
+        .saturating_add(reference.wire.identity.len())
+        .saturating_add(reference.wire.version.len())
+}
+
+pub(crate) fn charge_reference_pair(
+    actual: &artifact::wire::ArtifactRef,
+    expected: &artifact::wire::ArtifactRef,
+    work: &mut Work,
+) -> Result<(), Error> {
+    work.bytes(reference_bytes(actual).saturating_add(reference_bytes(expected)))
+}
+
+fn revision_bytes(revision: &artifact::wire::Revision) -> usize {
+    revision
+        .namespace
+        .len()
+        .saturating_add(revision.value.len())
+}
+
+fn requirement_bytes(requirement: &artifact::wire::Requirement) -> usize {
+    requirement
+        .package
+        .len()
+        .saturating_add(requirement.identity.len())
+        .saturating_add(revision_bytes(&requirement.revision))
+}
+
+fn execution_bytes(execution: &artifact::wire::Execution) -> usize {
+    match execution {
+        artifact::wire::Execution::Initialization { name }
+        | artifact::wire::Execution::Handler { name } => name.len(),
+        artifact::wire::Execution::Pre { .. } | artifact::wire::Execution::Post { .. } => 0,
+    }
+}
+
 fn positive(number: &artifact::wire::Number, work: &mut Work) -> Result<(), Error> {
     numeric_bytes(&number.0, work)?;
     let positive = match number.checked()? {
@@ -119,8 +164,11 @@ pub(in crate::protocol_artifact) fn clock(
         (
             crate::temporal::EVENT_POSITION,
             wire::ClockConfiguration::EventPosition { sequence_authority },
-        ) => artifact::intake::name(sequence_authority)
-            .map_err(|_| Error::V2(Refusal::Clock(ClockField::SequenceAuthority))),
+        ) => {
+            work.bytes(sequence_authority.len())?;
+            artifact::intake::name(sequence_authority)
+                .map_err(|_| Error::V2(Refusal::Clock(ClockField::SequenceAuthority)))
+        }
         (
             crate::temporal::FIXED_SAMPLE,
             wire::ClockConfiguration::FixedSample {
@@ -132,13 +180,17 @@ pub(in crate::protocol_artifact) fn clock(
             numeric_bytes(&epoch.0, work)?;
             epoch.checked()?;
             positive(period, work)?;
+            work.bytes(unit.len())?;
             artifact::intake::name(unit).map_err(|_| Error::V2(Refusal::Clock(ClockField::Unit)))
         }
         (
             crate::temporal::TIMESTAMPED_WINDOW,
             wire::ClockConfiguration::TimestampedEvent { timestamp_unit },
-        ) => artifact::intake::name(timestamp_unit)
-            .map_err(|_| Error::V2(Refusal::Clock(ClockField::TimestampUnit))),
+        ) => {
+            work.bytes(timestamp_unit.len())?;
+            artifact::intake::name(timestamp_unit)
+                .map_err(|_| Error::V2(Refusal::Clock(ClockField::TimestampUnit)))
+        }
         (
             crate::temporal::EVENT_POSITION
             | crate::temporal::FIXED_SAMPLE
@@ -166,11 +218,16 @@ fn binding_refusal(side: InventorySide, cause: BindingCause) -> Error {
 fn compare_declaration(
     declaration: &artifact::wire::Declaration,
     selected: &ExpectedTemporal<'_>,
+    work: &mut Work,
 ) -> Result<(), Error> {
+    work.bytes(
+        requirement_bytes(&declaration.requirement)
+            .saturating_add(requirement_bytes(selected.declaration.requirement))
+            .saturating_add(execution_bytes(&declaration.execution))
+            .saturating_add(execution_bytes(selected.declaration.execution)),
+    )?;
     let field = if declaration.name != selected.declaration.name {
         Some(DeclarationField::Name)
-    } else if declaration.locus.span != *selected.declaration.span {
-        Some(DeclarationField::Span)
     } else if declaration.requirement != *selected.declaration.requirement {
         Some(DeclarationField::Requirement)
     } else if declaration.clause != selected.declaration.clause {
@@ -271,7 +328,7 @@ fn temporal(
             ));
         }
         if pair[0].declaration > pair[1].declaration {
-            return Err(binding_refusal(InventorySide::Offer, BindingCause::Order));
+            return Err(Error::V2(Refusal::OfferOrder));
         }
     }
     let mut seen = Vec::new();
@@ -291,16 +348,10 @@ fn temporal(
         let declaration_u32 = u32::try_from(declaration_index)
             .map_err(|_| Error::Invalid(Invalid::StructuralInteger))?;
         if binding.declaration != declaration_u32 {
-            return Err(binding_refusal(
-                InventorySide::Offer,
-                BindingCause::DeclarationIndex,
-            ));
+            return Err(Error::V2(Refusal::OfferIndex(BindingIndex::Declaration)));
         }
         if binding.definition != declaration.profile {
-            return Err(binding_refusal(
-                InventorySide::Offer,
-                BindingCause::DefinitionIndex,
-            ));
+            return Err(Error::V2(Refusal::OfferIndex(BindingIndex::Definition)));
         }
         let definition = inherited
             .definitions
@@ -315,6 +366,7 @@ fn temporal(
         for (index, candidate) in expected.iter().enumerate() {
             work.visit()?;
             if candidate.declaration.span == &declaration.locus.span {
+                charge_reference_pair(candidate.source, &source.artifact, work)?;
                 if declaration_key(candidate)
                     == (
                         &source.artifact,
@@ -334,14 +386,11 @@ fn temporal(
             }
         }
         let found = found.ok_or_else(|| {
-            binding_refusal(
-                InventorySide::Expected,
-                if foreign_owner {
-                    BindingCause::ForeignOwner
-                } else {
-                    BindingCause::Missing
-                },
-            )
+            if foreign_owner {
+                Error::V2(Refusal::ForeignOwner(SelectionSide::Expected))
+            } else {
+                binding_refusal(InventorySide::Expected, BindingCause::Missing)
+            }
         })?;
         if std::mem::replace(&mut seen[found], true) {
             return Err(binding_refusal(
@@ -354,7 +403,7 @@ fn temporal(
         work.bytes(selected.declaration.name.len())?;
         work.bytes(declaration.clause.len())?;
         work.bytes(selected.declaration.clause.len())?;
-        compare_declaration(declaration, selected)?;
+        compare_declaration(declaration, selected, work)?;
         let dependency = inherited
             .dependencies
             .get(usize::try_from(definition.artifact).unwrap_or(usize::MAX))
@@ -364,15 +413,21 @@ fn temporal(
         if definition.identity != selected.definition.identity {
             return Err(Error::V2(Refusal::Definition(DefinitionField::Identity)));
         }
+        work.bytes(
+            revision_bytes(&definition.revision)
+                .saturating_add(revision_bytes(selected.definition.revision)),
+        )?;
         if definition.revision != *selected.definition.revision {
             return Err(Error::V2(Refusal::Definition(DefinitionField::Revision)));
         }
+        charge_reference_pair(&dependency.artifact, selected.definition.artifact, work)?;
         if let Some(field) = artifact_field(&dependency.artifact, selected.definition.artifact) {
             return Err(Error::V2(Refusal::Definition(DefinitionField::Artifact(
                 field,
             ))));
         }
         clock(&definition.identity, &binding.clock, work)?;
+        clock(&definition.identity, selected.clock, work)?;
         compare_clock(&binding.clock, selected.clock)?;
     }
     if seen.contains(&false) {

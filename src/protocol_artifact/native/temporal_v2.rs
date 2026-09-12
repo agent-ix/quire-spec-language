@@ -92,6 +92,11 @@ fn bindings(
         for candidate in selections {
             work.visit()?;
             if candidate.span == &declaration.locus.span {
+                v2::intake::charge_reference_pair(
+                    candidate.source,
+                    &emitted_source.artifact,
+                    work,
+                )?;
                 if candidate.source == &emitted_source.artifact {
                     if selected.replace(candidate).is_some() {
                         return Err(binding_refusal(v2::BindingCause::Duplicate));
@@ -102,11 +107,11 @@ fn bindings(
             }
         }
         let selected = selected.ok_or_else(|| {
-            binding_refusal(if foreign_owner {
-                v2::BindingCause::ForeignOwner
+            if foreign_owner {
+                Error::V2(v2::Refusal::ForeignOwner(v2::SelectionSide::Producer))
             } else {
-                v2::BindingCause::Missing
-            })
+                binding_refusal(v2::BindingCause::Missing)
+            }
         })?;
         let definition = package
             .definitions
@@ -123,11 +128,25 @@ fn bindings(
                 v2::DefinitionField::Identity,
             )));
         }
+        work.bytes(
+            definition
+                .revision
+                .namespace
+                .len()
+                .saturating_add(definition.revision.value.len())
+                .saturating_add(selected.definition_revision.namespace.len())
+                .saturating_add(selected.definition_revision.value.len()),
+        )?;
         if definition.revision != *selected.definition_revision {
             return Err(Error::V2(v2::Refusal::Definition(
                 v2::DefinitionField::Revision,
             )));
         }
+        v2::intake::charge_reference_pair(
+            &dependency.artifact,
+            selected.definition_artifact,
+            work,
+        )?;
         if let Some(field) =
             v2::refusal::artifact_field(&dependency.artifact, selected.definition_artifact)
         {

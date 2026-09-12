@@ -254,18 +254,19 @@ fn public_v2_refusal_codes_are_injective_across_every_declared_axis() {
             v2::BindingCause::Missing,
             v2::BindingCause::Surplus,
             v2::BindingCause::Duplicate,
-            v2::BindingCause::Order,
-            v2::BindingCause::ForeignOwner,
-            v2::BindingCause::DeclarationIndex,
-            v2::BindingCause::DefinitionIndex,
         ] {
             refusals.push(v2::Refusal::Binding { side, cause });
         }
     }
+    refusals.extend([
+        v2::Refusal::OfferOrder,
+        v2::Refusal::ForeignOwner(v2::SelectionSide::Expected),
+        v2::Refusal::ForeignOwner(v2::SelectionSide::Producer),
+        v2::Refusal::OfferIndex(v2::BindingIndex::Declaration),
+        v2::Refusal::OfferIndex(v2::BindingIndex::Definition),
+    ]);
     refusals.extend(
         [
-            v2::DeclarationField::Source,
-            v2::DeclarationField::Span,
             v2::DeclarationField::Name,
             v2::DeclarationField::Requirement,
             v2::DeclarationField::Clause,
@@ -426,7 +427,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
         foreign[0].source = &inputs.source_references[1];
         assert_error(
             &native::admit_v2(proofs, selected, &foreign, Limits::default()),
-            binding(v2::InventorySide::Producer, v2::BindingCause::ForeignOwner),
+            v2_refusal(v2::Refusal::ForeignOwner(v2::SelectionSide::Producer)),
         );
         let wrong_clock = v2::wire::ClockConfiguration::TimestampedEvent {
             timestamp_unit: "millisecond".into(),
@@ -556,6 +557,25 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             changed_definition.inherited.definitions[index]
                 .identity
                 .push_str("-other");
+            let declaration = base.temporal_bindings[0].declaration as usize;
+            let mut changed_name = base.clone();
+            changed_name.inherited.declarations[declaration]
+                .name
+                .push_str("Other");
+            let mut changed_requirement = base.clone();
+            changed_requirement.inherited.declarations[declaration]
+                .requirement
+                .identity
+                .push_str("Other");
+            let mut changed_clause = base.clone();
+            changed_clause.inherited.declarations[declaration]
+                .clause
+                .push_str("-other");
+            let mut changed_execution = base.clone();
+            changed_execution.inherited.declarations[declaration].execution =
+                w::Execution::Handler {
+                    name: "other".into(),
+                };
             vec![
                 (
                     missing,
@@ -569,13 +589,10 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
                     duplicate,
                     binding(v2::InventorySide::Offer, v2::BindingCause::Duplicate),
                 ),
-                (
-                    reordered,
-                    binding(v2::InventorySide::Offer, v2::BindingCause::Order),
-                ),
+                (reordered, v2_refusal(v2::Refusal::OfferOrder)),
                 (
                     wrong_definition,
-                    binding(v2::InventorySide::Offer, v2::BindingCause::DefinitionIndex),
+                    v2_refusal(v2::Refusal::OfferIndex(v2::BindingIndex::Definition)),
                 ),
                 (
                     wrong_clock,
@@ -584,6 +601,22 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
                 (
                     changed_definition,
                     v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Identity)),
+                ),
+                (
+                    changed_name,
+                    v2_refusal(v2::Refusal::Declaration(v2::DeclarationField::Name)),
+                ),
+                (
+                    changed_requirement,
+                    v2_refusal(v2::Refusal::Declaration(v2::DeclarationField::Requirement)),
+                ),
+                (
+                    changed_clause,
+                    v2_refusal(v2::Refusal::Declaration(v2::DeclarationField::Clause)),
+                ),
+                (
+                    changed_execution,
+                    v2_refusal(v2::Refusal::Declaration(v2::DeclarationField::Execution)),
                 ),
             ]
         };
@@ -650,7 +683,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
                 &foreign_owner,
                 Limits::default(),
             ),
-            binding(v2::InventorySide::Expected, v2::BindingCause::ForeignOwner),
+            v2_refusal(v2::Refusal::ForeignOwner(v2::SelectionSide::Expected)),
         );
 
         for (field, artifact) in {
@@ -743,14 +776,14 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
             );
         }
 
-        for (cause, offered) in {
+        for (index, offered) in {
             let mut declaration = base.clone();
             declaration.temporal_bindings[2].declaration = 9_999;
             let mut definition = base.clone();
             definition.temporal_bindings[0].definition = 9_999;
             vec![
-                (v2::BindingCause::DeclarationIndex, declaration),
-                (v2::BindingCause::DefinitionIndex, definition),
+                (v2::BindingIndex::Declaration, declaration),
+                (v2::BindingIndex::Definition, definition),
             ]
         } {
             let bytes = serde_json::to_vec(&offered).unwrap();
@@ -762,7 +795,7 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
                     temporal,
                     Limits::default(),
                 ),
-                binding(v2::InventorySide::Offer, cause),
+                v2_refusal(v2::Refusal::OfferIndex(index)),
             );
         }
 
@@ -918,7 +951,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
                 usage.byte_work,
                 usage.output_bytes
             ),
-            (4_813, 2_584, 2_308_720, 85_188)
+            (4_813, 2_586, 2_311_843, 85_188)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),
