@@ -626,7 +626,6 @@ fn native_operation_contracts_events_effects_and_commit_keep_distinct_authority(
     );
 }
 
-#[test]
 #[trace(
     "TC-121",
     "TC-132",
@@ -636,6 +635,7 @@ fn native_operation_contracts_events_effects_and_commit_keep_distinct_authority(
     "FR-042-AC-7",
     "FR-048-AC-2"
 )]
+#[test]
 fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
     let inputs = Inputs::new(&[Unit {
         name: "record-channels",
@@ -889,7 +889,6 @@ fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
     );
 }
 
-#[test]
 #[trace(
     "TC-121",
     "TC-132",
@@ -898,6 +897,7 @@ fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
     "FR-042-AC-6",
     "FR-048-AC-2"
 )]
+#[test]
 fn native_scalar_channel_declares_exact_fifo_type_without_invented_event_projection() {
     let inputs = Inputs::new(&[Unit {
         name: "scalar-channel",
@@ -978,6 +978,64 @@ fn native_scalar_channel_declares_exact_fifo_type_without_invented_event_project
     );
 }
 
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-1",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-2"
+)]
+#[test]
+fn zero_delivery_cardinality_is_preserved_by_emission_and_reading() {
+    let inputs = Inputs::new(&[Unit {
+        name: "zero-delivery",
+        body: "protocol ZeroDelivery using P over (view: M::Node) on origin {
+            role Service on M::Node;
+            channel None from Service to Service carries M::Plain
+                ordering unordered delivery [0,0];
+            run check Ready using S { true };
+            finish Closed as (closed: M::Node) { true };
+        }",
+        declarations: &["ZeroDelivery"],
+    }]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("zero is an authored finite delivery cardinality");
+            let package = admitted.package();
+            let w::Body::Protocol { channels, .. } = &package.declarations[0].body else {
+                panic!("protocol")
+            };
+            let [channel] = channels.as_slice() else {
+                panic!("one channel")
+            };
+            assert_eq!(
+                (
+                    integer_value(&channel.delivery.lower),
+                    integer_value(&channel.delivery.upper)
+                ),
+                (0, 0)
+            );
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .expect("emit zero delivery cardinality");
+            assert_eq!(
+                inputs
+                    .read(proofs, &emitted)
+                    .into_result()
+                    .expect("independent reader preserves zero delivery cardinality")
+                    .package(),
+                package
+            );
+        },
+    );
+}
+
 #[test]
 #[trace(
     "TC-121",
@@ -1006,6 +1064,11 @@ fn native_channels_refuse_missing_correspondence_bad_keys_and_reversed_cardinali
         ),
         (
             "channel Samples from Service to Service carries M::Plain ordering unordered delivery [2,1];",
+            "check Ready using S { true };",
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            "channel Samples from Service to Service carries M::Plain ordering unordered delivery [0,9223372036854775808];",
             "check Ready using S { true };",
             Error::Invalid(Invalid::NumericDomain),
         ),
@@ -1260,7 +1323,19 @@ fn native_choice_refuses_overlap_uncovered_and_unproved_dynamic_decisions() {
 fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
     for (maximum, guard, body, observable) in [
         (
-            2,
+            2_i64,
+            "true = true",
+            "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
+            true,
+        ),
+        (
+            1_i64,
+            "true = true",
+            "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
+            true,
+        ),
+        (
+            i64::MAX,
             "true = true",
             "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
             true,
@@ -1347,6 +1422,26 @@ fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
             },
         );
     }
+}
+
+#[trace("TC-121", "TC-133", "FR-042-AC-5", "FR-042-AC-8", "FR-048-AC-3")]
+#[test]
+fn repeat_maximum_above_signed64_refuses_before_artifact_emission() {
+    let run = "repeat Loop by Service visible (not false) max 9223372036854775808 while { true }
+        event Advanced by Service as (advanced: M::Plain) { advanced.ready };
+        exhausted check Stopped using S { true };";
+    let inputs = control_inputs("repeat-maximum-overflow", run);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            failure(
+                &native::admit(proofs, selected, Limits::default()),
+                Error::Invalid(Invalid::NumericDomain),
+            );
+        },
+    );
 }
 
 #[test]
