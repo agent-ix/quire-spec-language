@@ -97,6 +97,8 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
         ("S", R::StateQueries),
         ("G", R::StateGraph),
         ("T", R::EventPosition),
+        ("F", R::FixedSample),
+        ("W", R::TimestampedWindow),
         ("P", R::Protocol),
     ] {
         let selection = profile.selection();

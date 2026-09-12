@@ -33,6 +33,7 @@ mod serde_object;
 pub mod source;
 pub mod source_map;
 pub mod syntax;
+pub mod temporal;
 mod token;
 pub mod wire_format;
 
