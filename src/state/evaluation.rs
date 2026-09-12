@@ -46,6 +46,7 @@ pub fn evaluate(
         populations: Vec::new(),
         locals: Vec::new(),
         call_depth: 0,
+        anchor: None,
     };
     let outcome = match evaluator.run() {
         Ok(value) => EvaluationOutcome::Completed(value),
@@ -69,6 +70,70 @@ struct Evaluator<'a> {
     populations: Vec<PopulationIndex<'a>>,
     locals: Vec<((u32, u32), Value)>,
     call_depth: usize,
+    anchor: Option<w::Handle>,
+}
+
+#[derive(Clone, Copy)]
+struct SlotPosition<'a> {
+    root: &'a w::Handle,
+    anchor: &'a w::Handle,
+    authority: Option<&'a AuthorityEvidence>,
+    object: Option<&'a ObjectKey>,
+    field: Option<&'a w::ExportRef>,
+    member: Option<usize>,
+    root_is_binding: bool,
+}
+
+impl<'a> SlotPosition<'a> {
+    fn binder(
+        root: &'a w::Handle,
+        anchor: &'a w::Handle,
+        authority: Option<&'a AuthorityEvidence>,
+    ) -> Self {
+        Self {
+            root,
+            anchor,
+            authority,
+            object: None,
+            field: None,
+            member: None,
+            root_is_binding: false,
+        }
+    }
+
+    fn binding(
+        root: &'a w::Handle,
+        anchor: &'a w::Handle,
+        authority: &'a AuthorityEvidence,
+    ) -> Self {
+        Self {
+            root,
+            anchor,
+            authority: Some(authority),
+            object: None,
+            field: None,
+            member: None,
+            root_is_binding: true,
+        }
+    }
+
+    fn field(self, field: &'a w::ExportRef, object: Option<&'a ObjectKey>) -> Self {
+        Self {
+            object,
+            field: Some(field),
+            member: None,
+            ..self
+        }
+    }
+
+    fn member(self, member: usize) -> Self {
+        Self {
+            object: None,
+            field: None,
+            member: Some(member),
+            ..self
+        }
+    }
 }
 
 struct PopulationIndex<'a> {
@@ -148,7 +213,13 @@ impl<'a> Evaluator<'a> {
             )));
         }
         self.validate_inputs()?;
-        let value = self.expression(&self.request.value.clone(), 1)?;
+        let root = self.request.value.clone();
+        let anchor = usize::try_from(root.index)
+            .ok()
+            .and_then(|index| declaration.values.get(index))
+            .map(|value| value.anchor.clone())
+            .ok_or_else(|| Stop::Refused(Refusal::RequestValue(root.clone())))?;
+        let value = self.expression_at(&root, 1, anchor)?;
         self.work
             .charge(Dimension::RetainedOutput, 1)
             .map_err(Stop::Exhausted)?;
@@ -207,19 +278,22 @@ impl<'a> Evaluator<'a> {
                     offered.binder.clone(),
                 )));
             }
+            let requirement = self.binder_requirement(&offered.binder, binder)?;
+            match (requirement, offered.requirement, &offered.authority) {
+                (Some(expected), Some(actual), Some(authority)) if expected == actual => {
+                    self.authority(self.request.declaration, expected, authority)?;
+                }
+                (None, None, None) if binder.kind == w::BinderKind::Parameter => {}
+                _ => return Err(Stop::Refused(Refusal::Authority(offered.binder.clone()))),
+            }
+            let position =
+                SlotPosition::binder(&offered.binder, &binder.anchor, offered.authority.as_ref());
+            self.slot(&offered.value, binder.value_type, 1, position)?;
             self.entry()?;
             self.binders.try_reserve(1).map_err(|_| {
                 Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
             })?;
             self.binders.push((key, &offered.value));
-            match (offered.requirement, &offered.authority) {
-                (Some(requirement), Some(authority)) => {
-                    self.authority(self.request.declaration, requirement, authority)?;
-                }
-                (None, None) if binder.kind == w::BinderKind::Parameter => {}
-                _ => return Err(Stop::Refused(Refusal::Authority(offered.binder.clone()))),
-            }
-            self.slot(&offered.value, binder.value_type, 1)?;
         }
         for binder in &required.binders {
             if !offered_binders
@@ -295,6 +369,22 @@ impl<'a> Evaluator<'a> {
                     population.closure_requirement.clone(),
                 )));
             }
+            if let Err(missing) = &population.membership {
+                if !matches!(missing, MissingInput::Membership(handle) if handle == &population.requirement)
+                {
+                    return Err(Stop::Refused(Refusal::Authority(
+                        population.requirement.clone(),
+                    )));
+                }
+            }
+            if let Err(missing) = &population.closure {
+                if !matches!(missing, MissingInput::Closure(handle) if handle == &population.closure_requirement)
+                {
+                    return Err(Stop::Refused(Refusal::Authority(
+                        population.closure_requirement.clone(),
+                    )));
+                }
+            }
             let expected = requirement.value_type.0.ok_or_else(|| {
                 Stop::Refused(Refusal::AdmittedInvariant(population.requirement.clone()))
             })?;
@@ -343,7 +433,12 @@ impl<'a> Evaluator<'a> {
                         population.requirement.clone(),
                     )));
                 }
-                self.object(object, expected)?;
+                let position = SlotPosition::binding(
+                    &population.requirement,
+                    &requirement.anchor,
+                    &population.authority,
+                );
+                self.object(object, expected, position)?;
                 objects.push(object);
             }
             objects.sort_unstable_by(|left, right| object_key_cmp(&left.key, &right.key));
@@ -511,6 +606,252 @@ impl<'a> Evaluator<'a> {
         Ok(())
     }
 
+    fn binder_requirement(&self, handle: &w::Handle, binder: &w::Binder) -> Result<Option<u32>> {
+        let declaration = self
+            .package
+            .package()
+            .declarations
+            .get(
+                usize::try_from(handle.declaration)
+                    .map_err(|_| Stop::Refused(Refusal::Owner(handle.clone())))?,
+            )
+            .ok_or_else(|| Stop::Refused(Refusal::Owner(handle.clone())))?;
+        if binder.anchor.declaration != handle.declaration {
+            return Err(Stop::Refused(Refusal::Authority(handle.clone())));
+        }
+        let anchor = declaration
+            .anchors
+            .get(
+                usize::try_from(binder.anchor.index)
+                    .map_err(|_| Stop::Refused(Refusal::Authority(handle.clone())))?,
+            )
+            .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))?;
+        let Some(index) = anchor.binding.0 else {
+            if binder.kind == w::BinderKind::Parameter && anchor.kind == w::AnchorKind::Predicate {
+                return Ok(None);
+            }
+            return Err(Stop::Refused(Refusal::Authority(handle.clone())));
+        };
+        let requirement = declaration
+            .bindings
+            .get(
+                usize::try_from(index)
+                    .map_err(|_| Stop::Refused(Refusal::Authority(handle.clone())))?,
+            )
+            .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))?;
+        let expected_kind = match anchor.kind {
+            w::AnchorKind::Current
+            | w::AnchorKind::TemporalInstant
+            | w::AnchorKind::ProtocolInstant => w::BindingKind::Snapshot,
+            w::AnchorKind::InvocationInput
+            | w::AnchorKind::InvocationPre
+            | w::AnchorKind::InvocationPost => w::BindingKind::Invocation,
+            w::AnchorKind::Activation => w::BindingKind::WorkflowInstance,
+            w::AnchorKind::Finish => w::BindingKind::Closure,
+            _ => return Err(Stop::Refused(Refusal::Authority(handle.clone()))),
+        };
+        let subject = w::Subject::Declaration {
+            declaration: handle.declaration,
+        };
+        let root = declaration
+            .binders
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.kind,
+                    w::BinderKind::Input | w::BinderKind::SelfValue
+                )
+            })
+            .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))?;
+        let root_model = self.type_model(root.value_type)?;
+        if requirement.kind != expected_kind
+            || requirement.anchor != binder.anchor
+            || requirement.subject != subject
+            || requirement.value_type.0 != Some(root.value_type)
+            || root_model.is_some_and(|model| {
+                requirement
+                    .model
+                    .0
+                    .as_ref()
+                    .is_none_or(|selection| selection.model != model)
+            })
+        {
+            return Err(Stop::Refused(Refusal::Authority(handle.clone())));
+        }
+        Ok(Some(index))
+    }
+
+    fn type_model(&self, mut value_type: u32) -> Result<Option<u32>> {
+        for _ in 0..self.package.package().types.len() {
+            let ty = self
+                .package
+                .package()
+                .types
+                .get(
+                    usize::try_from(value_type)
+                        .map_err(|_| Stop::Refused(Refusal::ValueShape(value_type)))?,
+                )
+                .ok_or_else(|| Stop::Refused(Refusal::ValueShape(value_type)))?;
+            return match ty {
+                w::Type::Boolean {} => Ok(None),
+                w::Type::Scalar { export, .. }
+                | w::Type::Enum { export }
+                | w::Type::Record { export }
+                | w::Type::Object { export }
+                | w::Type::Reference { export, .. } => Ok(Some(export.model)),
+                w::Type::Option { value } => {
+                    value_type = *value;
+                    continue;
+                }
+                w::Type::Sequence { element, .. } => {
+                    value_type = *element;
+                    continue;
+                }
+            };
+        }
+        Err(Stop::Refused(Refusal::ValueShape(value_type)))
+    }
+
+    fn missing(
+        &self,
+        missing: &MissingInput,
+        expected: u32,
+        position: SlotPosition<'_>,
+    ) -> Result<()> {
+        if let Some(index) = position.member {
+            return if matches!(missing, MissingInput::Member { requirement, index: actual }
+                if requirement == position.root && *actual == index)
+            {
+                Ok(())
+            } else {
+                Err(Stop::Refused(Refusal::Authority(position.root.clone())))
+            };
+        }
+        if let Some(field) = position.field {
+            return if let MissingInput::Field {
+                object,
+                field: actual,
+            } = missing
+            {
+                let exact_object = position.object == Some(object);
+                if actual == field
+                    && exact_object
+                    && object.model == field.model
+                    && object.object_type.model == field.model
+                {
+                    self.observation(&object.observation, position)
+                } else {
+                    Err(Stop::Refused(Refusal::Authority(position.root.clone())))
+                }
+            } else {
+                Err(Stop::Refused(Refusal::Authority(position.root.clone())))
+            };
+        }
+        match missing {
+            MissingInput::Observation(observation) => self.observation(observation, position),
+            MissingInput::Sequence(handle)
+                if handle == position.root
+                    && matches!(
+                        usize::try_from(expected).ok().and_then(|index| self
+                            .package
+                            .package()
+                            .types
+                            .get(index)),
+                        Some(w::Type::Sequence { .. })
+                    ) =>
+            {
+                Ok(())
+            }
+            MissingInput::Population(handle)
+                if handle == position.root
+                    && position.root_is_binding
+                    && self.binding_kind(handle) == Some(w::BindingKind::Population) =>
+            {
+                Ok(())
+            }
+            MissingInput::Closure(handle)
+                if handle == position.root
+                    && position.root_is_binding
+                    && self.binding_kind(handle) == Some(w::BindingKind::Closure) =>
+            {
+                Ok(())
+            }
+            MissingInput::Membership(handle)
+                if handle == position.root
+                    && position.root_is_binding
+                    && self.binding_kind(handle) == Some(w::BindingKind::Population) =>
+            {
+                Ok(())
+            }
+            MissingInput::Field { .. }
+            | MissingInput::Member { .. }
+            | MissingInput::Sequence(_)
+            | MissingInput::Population(_)
+            | MissingInput::Closure(_)
+            | MissingInput::Membership(_) => {
+                Err(Stop::Refused(Refusal::Authority(position.root.clone())))
+            }
+        }
+    }
+
+    fn missing_contextual(&self, missing: &MissingInput, position: SlotPosition<'_>) -> Result<()> {
+        if let Some(index) = position.member {
+            if matches!(missing, MissingInput::Member { requirement, index: actual }
+                if requirement == position.root && *actual == index)
+            {
+                return Ok(());
+            }
+        } else if let (
+            Some(field),
+            MissingInput::Field {
+                object,
+                field: actual,
+            },
+        ) = (position.field, missing)
+        {
+            if actual == field
+                && position.object == Some(object)
+                && object.model == field.model
+                && object.object_type.model == field.model
+            {
+                return self.observation(&object.observation, position);
+            }
+        }
+        Err(Stop::Refused(Refusal::Authority(position.root.clone())))
+    }
+
+    fn observation(&self, observation: &ObservationKey, position: SlotPosition<'_>) -> Result<()> {
+        let selected = position
+            .authority
+            .map(|authority| &authority.assessment_selection);
+        if observation.anchor != *position.anchor
+            || !valid_identity(&observation.snapshot.0)
+            || !valid_identity(&observation.record.0)
+            || observation
+                .window
+                .as_ref()
+                .is_some_and(|window| !valid_identity(&window.0))
+            || selected.is_some_and(|selection| {
+                observation.snapshot.0 != selection.snapshot_identity
+                    || observation.window.as_ref().map(|window| &window.0)
+                        != selection.window_identity.as_ref()
+            })
+        {
+            return Err(Stop::Refused(Refusal::Authority(position.root.clone())));
+        }
+        Ok(())
+    }
+
+    fn binding_kind(&self, handle: &w::Handle) -> Option<w::BindingKind> {
+        self.package
+            .package()
+            .declarations
+            .get(usize::try_from(handle.declaration).ok()?)?
+            .bindings
+            .get(usize::try_from(handle.index).ok()?)
+            .map(|binding| binding.kind)
+    }
+
     fn authority(&mut self, owner: u32, index: u32, offered: &AuthorityEvidence) -> Result<()> {
         let handle = w::Handle {
             declaration: owner,
@@ -596,7 +937,13 @@ impl<'a> Evaluator<'a> {
         Ok(())
     }
 
-    fn slot(&mut self, slot: &InputSlot, expected: u32, depth: usize) -> Result<()> {
+    fn slot(
+        &mut self,
+        slot: &InputSlot,
+        expected: u32,
+        depth: usize,
+        position: SlotPosition<'_>,
+    ) -> Result<()> {
         self.work
             .charge(Dimension::InputValueNodes, 1)
             .map_err(Stop::Exhausted)?;
@@ -604,12 +951,18 @@ impl<'a> Evaluator<'a> {
             .charge(Dimension::InputStructuralDepth, depth)
             .map_err(Stop::Exhausted)?;
         match slot {
-            InputSlot::Unavailable(_) => Ok(()),
-            InputSlot::Available(value) => self.input_value(value, expected, depth),
+            InputSlot::Unavailable(missing) => self.missing(missing, expected, position),
+            InputSlot::Available(value) => self.input_value(value, expected, depth, position),
         }
     }
 
-    fn input_value(&mut self, value: &Value, expected: u32, depth: usize) -> Result<()> {
+    fn input_value(
+        &mut self,
+        value: &Value,
+        expected: u32,
+        depth: usize,
+        position: SlotPosition<'_>,
+    ) -> Result<()> {
         if value.value_type != expected {
             return Err(Stop::Refused(Refusal::Type {
                 expected,
@@ -666,12 +1019,12 @@ impl<'a> Evaluator<'a> {
                 }
             }
             (w::Type::Record { export }, ValueKind::Record(fields)) => {
-                self.record(export, fields, depth)
+                self.record(export, fields, depth, position)
             }
             (w::Type::Option { value: child }, ValueKind::Option(option)) => {
                 if let Some(child_slot) = option {
                     self.entry()?;
-                    self.slot(child_slot, *child, depth + 1)?;
+                    self.slot(child_slot, *child, depth + 1, position)?;
                 }
                 Ok(())
             }
@@ -683,9 +1036,9 @@ impl<'a> Evaluator<'a> {
                 {
                     return Err(Stop::Refused(Refusal::Bounds(expected)));
                 }
-                for child in values {
+                for (index, child) in values.iter().enumerate() {
                     self.entry()?;
-                    self.slot(child, *element, depth + 1)?;
+                    self.slot(child, *element, depth + 1, position.member(index))?;
                 }
                 Ok(())
             }
@@ -694,10 +1047,14 @@ impl<'a> Evaluator<'a> {
                     object, universe, ..
                 },
                 ValueKind::Reference(key),
-            ) => self.key(key, export_model(object), object, universe),
+            ) => {
+                self.key(key, export_model(object), object, universe)?;
+                self.observation(&key.observation, position)
+            }
             (w::Type::Object { export }, ValueKind::Object(key)) => {
                 let universe = self.population_export(export)?;
-                self.key(key, export.model, export, &universe)
+                self.key(key, export.model, export, &universe)?;
+                self.observation(&key.observation, position)
             }
             _ => Err(Stop::Refused(Refusal::ValueShape(expected))),
         }
@@ -737,15 +1094,26 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn record(&mut self, export: &w::ExportRef, fields: &[FieldInput], depth: usize) -> Result<()> {
+    fn record(
+        &mut self,
+        export: &w::ExportRef,
+        fields: &[FieldInput],
+        depth: usize,
+        position: SlotPosition<'_>,
+    ) -> Result<()> {
         let path = self.export_path(export, w::ExportKind::Record)?.to_vec();
         let name = path
             .first()
             .ok_or_else(|| Stop::Refused(Refusal::Field(export.clone())))?;
-        self.record_fields_by_name(export.model, name, fields, depth)
+        self.record_fields_by_name(export.model, name, fields, depth, position)
     }
 
-    fn object(&mut self, object: &ObjectInput, expected: u32) -> Result<()> {
+    fn object(
+        &mut self,
+        object: &ObjectInput,
+        expected: u32,
+        position: SlotPosition<'_>,
+    ) -> Result<()> {
         let w::Type::Object { export } = self
             .package
             .package()
@@ -758,7 +1126,12 @@ impl<'a> Evaluator<'a> {
         };
         let universe = self.population_export(&export)?;
         self.key(&object.key, export.model, &export, &universe)?;
-        self.record_object(&export, &object.fields, 1)
+        self.observation(&object.key.observation, position)?;
+        let position = SlotPosition {
+            object: Some(&object.key),
+            ..position
+        };
+        self.record_object(&export, &object.fields, 1, position)
     }
 
     fn record_object(
@@ -766,11 +1139,12 @@ impl<'a> Evaluator<'a> {
         export: &w::ExportRef,
         fields: &[FieldInput],
         depth: usize,
+        position: SlotPosition<'_>,
     ) -> Result<()> {
         // Object and record share the original record name but are distinct export kinds.
         let path = self.export_path(export, w::ExportKind::Object)?.to_vec();
         // Resolve directly through the object record because there is no Record export for object payloads.
-        self.record_fields_by_name(export.model, &path[0], fields, depth)
+        self.record_fields_by_name(export.model, &path[0], fields, depth, position)
     }
 
     fn record_fields_by_name(
@@ -779,6 +1153,7 @@ impl<'a> Evaluator<'a> {
         name: &str,
         fields: &[FieldInput],
         depth: usize,
+        position: SlotPosition<'_>,
     ) -> Result<()> {
         let model = self
             .package
@@ -848,10 +1223,22 @@ impl<'a> Evaluator<'a> {
             match &offered.value {
                 FieldValue::Compiled(slot) => {
                     let expected = self.find_wire_type(&native)?;
-                    self.slot(slot, expected, depth + 1)?;
+                    self.slot(
+                        slot,
+                        expected,
+                        depth + 1,
+                        position.field(&offered.field, position.object),
+                    )?;
                 }
                 FieldValue::Contextual(slot) => {
-                    self.contextual_slot(slot, &native, model_index, &offered.field, depth + 1)?;
+                    self.contextual_slot(
+                        slot,
+                        &native,
+                        model_index,
+                        &offered.field,
+                        depth + 1,
+                        position.field(&offered.field, position.object),
+                    )?;
                 }
             }
         }
@@ -865,6 +1252,7 @@ impl<'a> Evaluator<'a> {
         model_index: u32,
         field: &w::ExportRef,
         depth: usize,
+        position: SlotPosition<'_>,
     ) -> Result<()> {
         self.work
             .charge(Dimension::InputValueNodes, 1)
@@ -873,9 +1261,9 @@ impl<'a> Evaluator<'a> {
             .charge(Dimension::InputStructuralDepth, depth)
             .map_err(Stop::Exhausted)?;
         match slot {
-            ContextualSlot::Unavailable(_) => Ok(()),
+            ContextualSlot::Unavailable(missing) => self.missing_contextual(missing, position),
             ContextualSlot::Available(value) => {
-                self.contextual_value(value, expected, model_index, field, depth)
+                self.contextual_value(value, expected, model_index, field, depth, position)
             }
         }
     }
@@ -887,6 +1275,7 @@ impl<'a> Evaluator<'a> {
         model_index: u32,
         field: &w::ExportRef,
         depth: usize,
+        position: SlotPosition<'_>,
     ) -> Result<()> {
         let invalid = || Stop::Refused(Refusal::ContextualValue(field.clone()));
         match (expected, value.kind()) {
@@ -957,13 +1346,25 @@ impl<'a> Evaluator<'a> {
                     Err(invalid())
                 }
             }
-            (NativeType::Record { declaration, .. }, ContextualValueKind::Record(fields)) => {
-                self.record_fields_by_name(model_index, declaration.name().as_str(), fields, depth)
-            }
+            (NativeType::Record { declaration, .. }, ContextualValueKind::Record(fields)) => self
+                .record_fields_by_name(
+                    model_index,
+                    declaration.name().as_str(),
+                    fields,
+                    depth,
+                    position,
+                ),
             (NativeType::Option(child), ContextualValueKind::Option(option)) => {
                 if let Some(child_slot) = option {
                     self.entry()?;
-                    self.contextual_slot(child_slot, child, model_index, field, depth + 1)?;
+                    self.contextual_slot(
+                        child_slot,
+                        child,
+                        model_index,
+                        field,
+                        depth + 1,
+                        position,
+                    )?;
                 }
                 Ok(())
             }
@@ -971,9 +1372,16 @@ impl<'a> Evaluator<'a> {
                 if values.len() > *maximum as usize {
                     return Err(invalid());
                 }
-                for child in values {
+                for (index, child) in values.iter().enumerate() {
                     self.entry()?;
-                    self.contextual_slot(child, element, model_index, field, depth + 1)?;
+                    self.contextual_slot(
+                        child,
+                        element,
+                        model_index,
+                        field,
+                        depth + 1,
+                        position.member(index),
+                    )?;
                 }
                 Ok(())
             }
@@ -1210,6 +1618,18 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    fn expression_at(
+        &mut self,
+        handle: &w::Handle,
+        depth: usize,
+        anchor: w::Handle,
+    ) -> Result<Value> {
+        let previous = self.anchor.replace(anchor);
+        let result = self.expression(handle, depth);
+        self.anchor = previous;
+        result
+    }
+
     fn expression(&mut self, handle: &w::Handle, depth: usize) -> Result<Value> {
         if handle.declaration as usize >= self.package.package().declarations.len() {
             return Err(Stop::Refused(Refusal::Owner(handle.clone())));
@@ -1226,6 +1646,9 @@ impl<'a> Evaluator<'a> {
             .get(handle.index as usize)
             .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?
             .clone();
+        if self.anchor.as_ref() != Some(&node.anchor) {
+            return Err(Stop::Refused(Refusal::AdmittedInvariant(handle.clone())));
+        }
         self.work.locus = Some(node.locus.clone());
         let kind = match node.operation {
             w::ValueOperation::Boolean { value } => ValueKind::Boolean(value),
@@ -1236,7 +1659,7 @@ impl<'a> Evaluator<'a> {
             ),
             w::ValueOperation::Text { value } => ValueKind::Text(value),
             w::ValueOperation::Enum { variant } => ValueKind::Enum(variant),
-            w::ValueOperation::Read { binder } => return self.read(&binder),
+            w::ValueOperation::Read { binder } => return self.read(handle, &binder),
             w::ValueOperation::Group { value } => return self.expression(&value, depth + 1),
             w::ValueOperation::Field { base, field } => {
                 let base = self.expression(&base, depth + 1)?;
@@ -1274,7 +1697,19 @@ impl<'a> Evaluator<'a> {
                 self.locals.truncate(base);
                 return result;
             }
-            w::ValueOperation::Pre { value, .. } => return self.expression(&value, depth + 1),
+            w::ValueOperation::Pre { value, anchor } => {
+                if anchor.declaration != handle.declaration
+                    || declaration
+                        .anchors
+                        .get(usize::try_from(anchor.index).map_err(|_| {
+                            Stop::Refused(Refusal::AdmittedInvariant(handle.clone()))
+                        })?)
+                        .is_none_or(|selected| selected.kind != w::AnchorKind::InvocationPre)
+                {
+                    return Err(Stop::Refused(Refusal::AdmittedInvariant(handle.clone())));
+                }
+                return self.expression_at(&value, depth + 1, anchor);
+            }
             w::ValueOperation::Call {
                 predicate,
                 arguments,
@@ -1339,7 +1774,26 @@ impl<'a> Evaluator<'a> {
         Ok(Value::new(node.value_type, kind))
     }
 
-    fn read(&self, binder: &w::Handle) -> Result<Value> {
+    fn read(&self, value: &w::Handle, binder: &w::Handle) -> Result<Value> {
+        let declared = self
+            .package
+            .package()
+            .declarations
+            .get(
+                usize::try_from(binder.declaration)
+                    .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(value.clone())))?,
+            )
+            .and_then(|declaration| {
+                usize::try_from(binder.index)
+                    .ok()
+                    .and_then(|index| declaration.binders.get(index))
+            })
+            .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(value.clone())))?;
+        if declared.kind == w::BinderKind::SelfValue
+            && self.anchor.as_ref() != Some(&declared.anchor)
+        {
+            return Err(Stop::Refused(Refusal::AdmittedInvariant(value.clone())));
+        }
         if let Some((_, value)) = self
             .locals
             .iter()
@@ -1515,12 +1969,15 @@ impl<'a> Evaluator<'a> {
             .package
             .package()
             .declarations
-            .get(predicate as usize)
+            .get(
+                usize::try_from(predicate)
+                    .map_err(|_| Stop::Refused(Refusal::RequestDeclaration(predicate)))?,
+            )
             .ok_or_else(|| Stop::Refused(Refusal::RequestDeclaration(predicate)))?
             .clone();
         let w::Body::Predicate {
             parameters, root, ..
-        } = declaration.body
+        } = &declaration.body
         else {
             return Err(Stop::Refused(Refusal::RequestDeclaration(predicate)));
         };
@@ -1533,11 +1990,20 @@ impl<'a> Evaluator<'a> {
         self.call_depth = next;
         let base = self.locals.len();
         let result = (|| {
-            for (argument, parameter) in arguments.iter().zip(&parameters) {
+            for (argument, parameter) in arguments.iter().zip(parameters) {
                 let value = self.expression(argument, depth + 1)?;
                 self.bind_local((parameter.declaration, parameter.index), value)?;
             }
-            self.expression(&root, depth + 1)
+            let anchor = declaration
+                .values
+                .get(
+                    usize::try_from(root.index)
+                        .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(root.clone())))?,
+                )
+                .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(root.clone())))?
+                .anchor
+                .clone();
+            self.expression_at(root, depth + 1, anchor)
         })();
         self.locals.truncate(base);
         self.call_depth -= 1;
