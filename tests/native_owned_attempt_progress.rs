@@ -476,6 +476,10 @@ fn discharged(report: &proofs::ProofReport<'_, '_, '_>) {
 /// `Unsupported::FamilyProof` covers multiple unmet family obligations. Pin the
 /// authored construct so a refusal for an unrelated reason cannot pass here.
 fn refused(inputs: &Inputs, case: &str, authored: &str) {
+    assert!(
+        !authored.is_empty(),
+        "{case} requires a nonempty refusal pin"
+    );
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),
