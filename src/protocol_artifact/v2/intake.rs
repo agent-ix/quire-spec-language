@@ -183,24 +183,31 @@ fn temporal(
             .sources
             .get(usize::try_from(declaration.locus.source).unwrap_or(usize::MAX))
             .ok_or(Error::Invalid(Invalid::Locus))?;
-        let found = expected.iter().position(|candidate| {
-            declaration_key(candidate)
-                == (
-                    &source.artifact,
-                    declaration.locus.span.start,
-                    declaration.locus.span.end,
-                )
-        });
-        let found = found.ok_or_else(|| {
-            if expected
-                .iter()
-                .any(|candidate| candidate.declaration.span == &declaration.locus.span)
-            {
-                Error::Invalid(Invalid::Owner)
-            } else {
-                Error::Invalid(Invalid::Inventory)
+        let mut found = None;
+        let mut foreign_owner = false;
+        for (index, candidate) in expected.iter().enumerate() {
+            work.visit()?;
+            if candidate.declaration.span == &declaration.locus.span {
+                if declaration_key(candidate)
+                    == (
+                        &source.artifact,
+                        declaration.locus.span.start,
+                        declaration.locus.span.end,
+                    )
+                {
+                    if found.replace(index).is_some() {
+                        return Err(Error::Invalid(Invalid::Duplicate));
+                    }
+                } else {
+                    foreign_owner = true;
+                }
             }
-        })?;
+        }
+        let found = found.ok_or(Error::Invalid(if foreign_owner {
+            Invalid::Owner
+        } else {
+            Invalid::Inventory
+        }))?;
         if std::mem::replace(&mut seen[found], true) {
             return Err(Error::Invalid(Invalid::Duplicate));
         }
