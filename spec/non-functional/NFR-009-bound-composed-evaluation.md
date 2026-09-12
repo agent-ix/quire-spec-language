@@ -40,7 +40,7 @@ value. The borrowed package and state view remain reusable with fresh limits.
 | Graph expansion | At most 10000 expanded object storage keys per call | 10000 objects | negative-abuse-testing |
 | Graph edges | At most 100000 inspected reference occurrences per call | 100000 edges | negative-abuse-testing |
 | Active graph depth | At most 64 active recursive graph-expansion frames per call | 64 levels | negative-abuse-testing |
-| Value comparison | At most 100000 compared value pairs per call | 100000 pairs | negative-abuse-testing |
+| Value comparison | At most 100000 comparison-work units per call | 100000 units | negative-abuse-testing |
 
 ## Counter definitions
 
@@ -81,7 +81,10 @@ evaluation. A local binding is removed when its scope exits, but its successful
 retention remains a cumulative charge; its fallible table allocation follows
 that charge.
 
-Value comparison charges one pair before inspecting its type-specific content.
+Value comparison charges one unit before inspecting a pair. An equal-length text
+pair additionally charges one unit per UTF-8 byte before inspecting its content;
+different-length text values require no content scan. Scalar, enum and complete
+object-key comparisons require only the pair unit.
 The selected composed profile admits equality only for its scalar, enum,
 reference and object-identity types; it does not widen FR-040 with recursive
 record, option or sequence equality. Text comparison additionally charges its
@@ -125,7 +128,7 @@ fresh counters and unchanged inputs.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| NFR-009-AC-1 | All thirteen counters use the exact units and inclusive hard ceilings in this requirement; a caller may lower each independently, zero remains effective and a request above a hard ceiling is clamped. | Test (TC-137) |
+| NFR-009-AC-1 | All thirteen counters use the exact units and inclusive hard ceilings in this requirement, including one pair unit plus equal-length UTF-8 byte units for text comparison; a caller may lower each independently, zero remains effective and a request above a hard ceiling is clamped. | Test (TC-137) |
 | NFR-009-AC-2 | Each charged dimension admits its independently counted exact case and stops its one-short case before the next operation, retaining only successful usage and no partial completed value. | Test (TC-137) |
 | NFR-009-AC-3 | Any checked-counter overflow or allocator refusal reached by the implementation produces its closed typed exhaustion cause assigned to the affected charged dimension and cannot be reclassified from diagnostic text. | Analysis |
 | NFR-009-AC-4 | Re-evaluation starts with fresh counters, leaves the borrowed artifact and input view unchanged, and returns the same result and usage when the immutable inputs and sufficient effective limits are equal. | Test (TC-137) |

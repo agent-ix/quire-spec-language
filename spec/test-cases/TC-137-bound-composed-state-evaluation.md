@@ -17,7 +17,8 @@ boundary through the public evaluator.
 
 Independently count fixed valid fixtures exercising input nodes/entries/text and
 structural depth; expression work/depth and predicate-call depth; sequence
-occurrences; retained outputs; comparison pairs; and graph objects/edges/depth.
+occurrences; retained outputs; scalar/key comparison pairs and equal-length text
+comparison bytes; and graph objects/edges/depth.
 Use nested record/option/sequence inputs, grouped/branched expressions, nested
 calls, supported scalar/enum/reference/object-identity comparisons and a graph
 chain so each selected dimension has a distinct oracle. Run each dimension at

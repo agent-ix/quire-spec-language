@@ -1960,7 +1960,17 @@ impl<'a> Evaluator<'a> {
         match (left.kind(), right.kind()) {
             (ValueKind::Boolean(a), ValueKind::Boolean(b)) => Ok(a == b),
             (ValueKind::Number(a), ValueKind::Number(b)) => Ok(a == b),
-            (ValueKind::Text(a), ValueKind::Text(b)) => Ok(a == b),
+            (ValueKind::Text(a), ValueKind::Text(b)) => {
+                // `str` equality inspects content only when byte lengths match.
+                // Charge those bytes before the comparison so one nominal pair
+                // cannot hide unbounded text work behind a single unit.
+                if a.len() == b.len() {
+                    self.work
+                        .charge(Dimension::ValueComparison, a.len())
+                        .map_err(Stop::Exhausted)?;
+                }
+                Ok(a == b)
+            }
             (ValueKind::Enum(a), ValueKind::Enum(b)) => Ok(a == b),
             (ValueKind::Reference(a), ValueKind::Reference(b))
             | (ValueKind::Object(a), ValueKind::Object(b)) => Ok(identity_equal(a, b)),
