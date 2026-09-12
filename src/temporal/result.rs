@@ -186,6 +186,10 @@ pub enum Dimension {
     Epoch,
     TimestampUnit,
     SequenceAuthority,
+    /// Fixed-sample unit selected by the authenticated artifact.
+    ClockUnit,
+    /// Exact parameter-key inventory selected by the authenticated artifact.
+    ClockParameters,
     AdmittedOrder,
     Interval,
     Capture,

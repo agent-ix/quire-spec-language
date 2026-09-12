@@ -79,7 +79,7 @@ pub(super) fn same_reference(
     }
 }
 
-fn find_reference<T>(
+pub(super) fn find_reference<T>(
     values: &[T],
     target: &ArtifactRef,
     get: impl Fn(&T) -> &ArtifactRef,
@@ -135,7 +135,7 @@ pub(super) fn sorted_indices(values: &[u32], work: &mut Work) -> Result<(), Erro
     Ok(())
 }
 
-fn selected<'a>(
+pub(super) fn selected<'a>(
     package: &Package,
     expected: &'a Expected<'a>,
     work: &mut Work,
@@ -248,7 +248,11 @@ fn headers(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Resul
     Ok(())
 }
 
-fn sources(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Result<(), Error> {
+pub(super) fn sources(
+    package: &Package,
+    expected: &Expected<'_>,
+    work: &mut Work,
+) -> Result<(), Error> {
     work.charge(Dimension::Sources, expected.sources.len())?;
     work.charge(Dimension::Sources, package.sources.len())?;
     work.charge(Dimension::Declarations, package.declarations.len())?;
@@ -380,7 +384,7 @@ fn definition_key(value: &Definition) -> (&str, &str, &str) {
     )
 }
 
-fn definitions(
+pub(super) fn definitions(
     package: &Package,
     supplied: &[&SuppliedDependency<'_>],
     work: &mut Work,

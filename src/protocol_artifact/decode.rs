@@ -8,8 +8,7 @@
 
 use std::fmt;
 
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
-use serde::Deserialize;
+use serde::de::{self, DeserializeOwned, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
 use super::{wire, work::Work, Dimension, Error, Invalid};
 
@@ -110,7 +109,7 @@ impl<'de> Visitor<'de> for Census<'_> {
     }
 }
 
-pub(super) fn package(bytes: &[u8], work: &mut Work) -> Result<wire::Package, Error> {
+pub(super) fn bounded<T: DeserializeOwned>(bytes: &[u8], work: &mut Work) -> Result<T, Error> {
     work.bytes(bytes.len())?;
     let mut decoder = serde_json::Deserializer::from_slice(bytes);
     // The census charges our lower, caller-selected depth before descending.
@@ -134,9 +133,13 @@ pub(super) fn package(bytes: &[u8], work: &mut Work) -> Result<wire::Package, Er
     work.bytes(bytes.len())?;
     let mut decoder = serde_json::Deserializer::from_slice(bytes);
     decoder.disable_recursion_limit();
-    let package = wire::Package::deserialize(&mut decoder).map_err(|error| json_error(&error))?;
+    let package = T::deserialize(&mut decoder).map_err(|error| json_error(&error))?;
     decoder.end().map_err(|error| json_error(&error))?;
     Ok(package)
+}
+
+pub(super) fn package(bytes: &[u8], work: &mut Work) -> Result<wire::Package, Error> {
+    bounded(bytes, work)
 }
 
 fn json_error(error: &serde_json::Error) -> Error {
