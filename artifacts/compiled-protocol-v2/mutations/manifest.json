@@ -1,0 +1,666 @@
+{
+  "format": "quire.protocol.v2-mutations/1",
+  "base_offer": "compiled-protocol-v2.json",
+  "base_artifact": "compiled-protocol-v2.ref.json",
+  "independent_selection": "expected-v2.json",
+  "cases": [
+    {
+      "identity": "header-wire-version-substitution",
+      "axis": "header.version",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/header-wire-version-substitution.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:6a9d89bc9b1288f44fa4ee0fc18bd98a8e718775a67ea434aa16156b5c39bf5a",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.header.wire"
+    },
+    {
+      "identity": "binding-missing",
+      "axis": "temporal_bindings.inventory",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/binding-missing.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:947e4d62826a2a85efb347d3f8fc455a50884f5c7c1da7696605fceb617ac88e",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-missing"
+    },
+    {
+      "identity": "binding-surplus",
+      "axis": "temporal_bindings.inventory",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/binding-surplus.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:1d2885478693f22c5a762a43247dbcf314418f6abd745e8103f856a167a6aae6",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-surplus"
+    },
+    {
+      "identity": "binding-duplicate",
+      "axis": "temporal_bindings.uniqueness",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/binding-duplicate.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:43db3bd430296288865e35b0b540b871c45e936ba46795213ed3b9e9731ca6e7",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-duplicate"
+    },
+    {
+      "identity": "binding-reordered",
+      "axis": "temporal_bindings.order",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/binding-reordered.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:b78a28c2ece01821325c5a7bb15b215957caa9ebcd0be41a463887cf92dd11b2",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-order"
+    },
+    {
+      "identity": "declaration-index",
+      "axis": "temporal_binding.declaration",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/declaration-index.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:ef1e205f7da11236547c1b3ac438c8a18d1e6d9a9267b1905465937cec0c628c",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-declaration-index"
+    },
+    {
+      "identity": "definition-index",
+      "axis": "temporal_binding.definition",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/definition-index.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:7d3cec96be7477977cc0b472bd39943d074124da3d41fb821c3ffca6b2a1829a",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-definition-index"
+    },
+    {
+      "identity": "declaration-name",
+      "axis": "declaration.name",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/declaration-name.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:db33339e4eb650d9492287900a21462f9bca2ffdd52f46b5f8777674e901724a",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.declaration.name"
+    },
+    {
+      "identity": "declaration-requirement",
+      "axis": "declaration.requirement",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/declaration-requirement.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:1dff993043ce88fdf8fb4d2e16bf6a5cf24b1149ae3fe87081605f1551d0517a",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.declaration.requirement"
+    },
+    {
+      "identity": "declaration-clause",
+      "axis": "declaration.clause",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/declaration-clause.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:be5efdab16be519a1c8a92a4edad3068bd86003df16870ab1e8834fc713e6cdf",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.declaration.clause"
+    },
+    {
+      "identity": "declaration-execution",
+      "axis": "declaration.execution",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/declaration-execution.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:1246e75bbf93cffc843acd9630c710a58c0e2b61b3eae66bbab580c15f327a0b",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.declaration.execution"
+    },
+    {
+      "identity": "definition-identity",
+      "axis": "definition.identity",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/definition-identity.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:f5d88bbff32a14c2018ea4c36e2d283fa328c6c374fc5e64ec6493e6ae24b0a6",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.definition.identity"
+    },
+    {
+      "identity": "definition-revision",
+      "axis": "definition.revision",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/definition-revision.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:2e41f93b30c5b661d63ad3ba6d8839b59cbab8ca2d465e9c69c4856bdd967d7e",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.definition.revision"
+    },
+    {
+      "identity": "definition-artifact-digest",
+      "axis": "definition.artifact.digest",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/definition-artifact-digest.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:d89db935ce43929b730071b354eec9830822363f71d1f5e2c89351f0c41e85e8",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.definition.artifact.digest"
+    },
+    {
+      "identity": "definition-artifact-digest-domain",
+      "axis": "definition.artifact.wire_identity",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/definition-artifact-digest-domain.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:0a3503563c2507317e912ce07b2b419793154aed9582ce1e9cf638d4119c0f1f",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.definition.artifact.wire-identity"
+    },
+    {
+      "identity": "clock-alternative",
+      "axis": "clock.kind",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-alternative.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:66e82385c9d1eae2cada3bb6a056ad618472214667887ec377c2b8b6e68eac53",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.clock.alternative"
+    },
+    {
+      "identity": "clock-sequence-authority",
+      "axis": "clock.sequence_authority",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-sequence-authority.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:7166d3eb573110422f27699ed4458b2c54a0788e3f16d07cc2b23ad37aae6230",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.clock.sequence-authority"
+    },
+    {
+      "identity": "clock-epoch",
+      "axis": "clock.epoch",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-epoch.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:1b2f53b6189a6d9844e387534c2ca3dcc7fb9093667d8794e0c59aa9771689a6",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.clock.epoch"
+    },
+    {
+      "identity": "clock-period",
+      "axis": "clock.period",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-period.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:a1808def5a657103d68d7c8034066989729ce2b4be0639fde04ce9454d2e21e4",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.clock.period"
+    },
+    {
+      "identity": "clock-unit",
+      "axis": "clock.unit",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-unit.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:0ba79d61e9b93765848c3ae48c0868b73af42a3d529280e2195f1e5a1f94f448",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.clock.unit"
+    },
+    {
+      "identity": "clock-timestamp-unit",
+      "axis": "clock.timestamp_unit",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-timestamp-unit.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:bd1f4b88194b1716b4994cb415ba35abe930344826018560e21d0d96aeab24b3",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.clock.timestamp-unit"
+    },
+    {
+      "identity": "clock-missing-sequence-authority",
+      "axis": "clock.sequence_authority",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-missing-sequence-authority.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:d0c579308c0a3d249e9bb58decaa0d758c72f3f7ae5c1a82dbacf780c7e29c7d",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "json"
+    },
+    {
+      "identity": "clock-renamed-sequence-authority",
+      "axis": "clock.sequence_authority",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-renamed-sequence-authority.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:675ff2ea8a32ba1d280472ad353729dc75b19263abe5ab2d83b0ae2672fd6799",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "json"
+    },
+    {
+      "identity": "clock-missing-period",
+      "axis": "clock.period",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-missing-period.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:b37433985fad47ba1e8cab790e173503180ca9e6f28f63a3ee14b5c5c7b58ca9",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "json"
+    },
+    {
+      "identity": "clock-renamed-period",
+      "axis": "clock.period",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-renamed-period.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:0364d009dd6b2d5b1ce0f1a94f90c00e8a5496f3502be3f4b34c8e4e3bbf26db",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "json"
+    },
+    {
+      "identity": "clock-missing-timestamp-unit",
+      "axis": "clock.timestamp_unit",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-missing-timestamp-unit.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:72cfbc779cb9a5f08126a2e1d1924625386f07c6f01500b967b3e033ff23a16e",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "json"
+    },
+    {
+      "identity": "clock-renamed-timestamp-unit",
+      "axis": "clock.timestamp_unit",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-renamed-timestamp-unit.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:b1f9f42b305db14ed130205ce2e73c9066fbbfc48a16f7bdea33d8dd46868d77",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "json"
+    },
+    {
+      "identity": "definition-original-bytes",
+      "axis": "definition.original_bytes",
+      "input": {
+        "operation": "replace_original",
+        "target": "dependencies/22.bin",
+        "file": "mutations/definition-original-bytes.bin"
+      },
+      "expected_refusal_code": "invalid.seal"
+    }
+  ]
+}
