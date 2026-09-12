@@ -16,11 +16,11 @@ use quire_spec_language::linking::composed::{
     DeclarationId,
 };
 use quire_spec_language::protocol_artifact::{
-    self as artifact, native, wire as w, Error, Invalid, Limits, ProtocolNumber, Unsupported,
+    self as artifact, native, v2, wire as w, Error, Invalid, Limits, ProtocolNumber, Unsupported,
 };
 use quire_spec_language::syntax::composed as c;
 use quire_spec_language::ByteDigest;
-use setup::{Inputs, Unit};
+use setup::{Inputs, TemporalDefinitionExpectation, Unit};
 
 fn obligation(name: &str, recovery: &str, commit: &str) -> String {
     format!(
@@ -711,6 +711,114 @@ fn native_compensation_keeps_registration_activation_retry_and_authored_recovery
         assert_eq!(read.package(), package);
         assert_eq!(read.digest(), emitted.digest());
     });
+}
+
+/// Tracing: TC-134; ACs: FR-048-AC-8, FR-050-AC-1.
+#[trace("TC-134", "FR-048-AC-8", "FR-050-AC-1")]
+#[test]
+fn timed_compensation_is_admitted_and_reread_only_as_authenticated_v2() {
+    let (inputs, _) = inputs(&source());
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let namespace = proofs.types().binding().namespace();
+            let [due] = namespace.lookup("Due") else {
+                panic!("one authored recovery temporal declaration")
+            };
+            let producer_span = namespace.syntax(*due).expect("Due syntax").span;
+            let producer_span = w::Span {
+                start: producer_span.start as u32,
+                end: producer_span.end as u32,
+            };
+            let definition = R::EventPosition;
+            let definition_artifact = selected
+                .dependencies
+                .iter()
+                .find(|dependency| {
+                    dependency.artifact.identity == definition.identity()
+                        && dependency.bytes == definition.bytes()
+                })
+                .expect("registered event-position definition")
+                .artifact;
+            let producer_revision = w::Revision {
+                namespace: selected.definition_revision_namespace.into(),
+                value: definition.revision().into(),
+            };
+            let producer_clock = v2::wire::ClockConfiguration::EventPosition {
+                sequence_authority: "recovery-events".into(),
+            };
+            let temporal = [native::TemporalSelection {
+                source: &inputs.source_references[1],
+                span: &producer_span,
+                definition_identity: definition.identity(),
+                definition_revision: &producer_revision,
+                definition_artifact,
+                clock: &producer_clock,
+            }];
+            let emitted = native::admit_v2(proofs, selected, &temporal, Limits::default())
+                .into_result()
+                .expect("timed recovery emits only through strict v2");
+
+            // Re-select from the authored source and definition catalog rather
+            // than projecting the producer's temporal selection record.
+            let expected = [inputs.temporal_expectation(
+                proofs,
+                1,
+                "Due",
+                TemporalDefinitionExpectation {
+                    identity: R::EventPosition.identity().into(),
+                    revision: w::Revision {
+                        namespace: selected.definition_revision_namespace.into(),
+                        value: R::EventPosition.revision().into(),
+                    },
+                    artifact: selected
+                        .dependencies
+                        .iter()
+                        .find(|dependency| {
+                            dependency.artifact.identity == R::EventPosition.identity()
+                                && dependency.bytes == R::EventPosition.bytes()
+                        })
+                        .expect("independently selected event-position definition")
+                        .artifact
+                        .clone(),
+                    clock: v2::wire::ClockConfiguration::EventPosition {
+                        sequence_authority: "recovery-events".into(),
+                    },
+                },
+            )];
+            let admitted = inputs
+                .read_v2(proofs, &emitted, &expected)
+                .into_result()
+                .expect("independent strict-v2 recovery read");
+            let recovery = admitted
+                .package()
+                .inherited
+                .declarations
+                .iter()
+                .find(|declaration| declaration.name == "RecoveryFlow")
+                .expect("recovery protocol");
+            let w::Body::Protocol {
+                compensations,
+                temporal_requirements,
+                ..
+            } = &recovery.body
+            else {
+                panic!("recovery protocol body")
+            };
+            assert_eq!(compensations.len(), 2);
+            assert_eq!(temporal_requirements.len(), 1);
+            assert_eq!(admitted.package().temporal_bindings.len(), 1);
+            let binding = &admitted.package().temporal_bindings[0];
+            assert_eq!(binding.declaration, temporal_requirements[0]);
+            assert_eq!(
+                binding.definition,
+                admitted.package().inherited.declarations[temporal_requirements[0] as usize]
+                    .profile
+            );
+        },
+    );
 }
 
 #[test]
