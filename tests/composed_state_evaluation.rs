@@ -14,7 +14,7 @@ use quire_spec_language::state::{
     ContextualSlot, ContextualValue, ContextualValueKind, Dimension, EvaluationOutcome,
     EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
     ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
-    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind,
+    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
     OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
 };
 use quire_spec_language::ByteDigest;
@@ -666,7 +666,13 @@ fn query_view_with_amounts(
         AmountInput::Missing { claimed_index } => {
             InputSlot::Unavailable(state::MissingInput::Member {
                 requirement: binder_handle.clone(),
-                index: claimed_index,
+                path: vec![
+                    ValuePathSegment::Field {
+                        object: None,
+                        field: field.clone(),
+                    },
+                    ValuePathSegment::Member(claimed_index),
+                ],
             })
         }
     };
@@ -733,6 +739,8 @@ fn completed<'a>(
             ValueKind::Number(ProtocolNumber::Integer(value)) if value.value() == 2 => "2",
             ValueKind::Number(ProtocolNumber::Integer(value)) if value.value() == 3 => "3",
             ValueKind::Number(ProtocolNumber::Integer(value)) if value.value() == 7 => "7",
+            ValueKind::Number(ProtocolNumber::Integer(value)) if value.value() == 0 => "0",
+            ValueKind::Sequence(values) if values.is_empty() => "[]",
             ValueKind::Sequence(values) if sequence_is(values, &[2, 2]) => "[2,2]",
             ValueKind::Sequence(values) if sequence_is(values, &[2, 2, 3]) => "[2,2,3]",
             _ => "unexpected-completed",
@@ -750,6 +758,25 @@ fn sequence_is(values: &[InputSlot], expected: &[i64]) -> bool {
                         ValueKind::Number(ProtocolNumber::Integer(actual))
                             if actual.value() == *expected))
         })
+}
+
+fn first_query_missing(view: &StateView) -> MissingInput {
+    let InputSlot::Available(record) = &view.binders[0].value else {
+        unreachable!("query input is available")
+    };
+    let ValueKind::Record(fields) = record.kind() else {
+        unreachable!("query input is a record")
+    };
+    let FieldValue::Compiled(InputSlot::Available(amounts)) = &fields[0].value else {
+        unreachable!("amounts is available")
+    };
+    let ValueKind::Sequence(values) = amounts.kind() else {
+        unreachable!("amounts is a sequence")
+    };
+    let InputSlot::Unavailable(missing) = &values[0] else {
+        unreachable!("first member is unavailable")
+    };
+    missing.clone()
 }
 
 fn request(package: &quire_spec_language::protocol_artifact::AdmittedPackage) -> EvaluationRequest {
@@ -935,6 +962,60 @@ fn tc_137_expression_and_output_limits_are_charge_before_work_and_fresh() {
         );
         assert_eq!(retry.outcome(), complete.outcome());
         assert_eq!(retry.usage(), complete.usage());
+    });
+}
+
+/// Tracing: TC-131, TC-137.
+#[trace("TC-131", "TC-137", "FR-047-AC-7", "FR-049-AC-7", "NFR-009-AC-1")]
+#[test]
+fn tc_137_all_dimensions_clamp_and_unused_zero_limits_remain_effective() {
+    admitted(|package| {
+        let above_hard = Limits {
+            input_value_nodes: usize::MAX,
+            input_aggregate_entries: usize::MAX,
+            input_text_bytes: usize::MAX,
+            input_structural_depth: usize::MAX,
+            expression_work: usize::MAX,
+            active_expression_depth: usize::MAX,
+            predicate_call_depth: usize::MAX,
+            sequence_work: usize::MAX,
+            retained_output: usize::MAX,
+            graph_expansion: usize::MAX,
+            graph_edges: usize::MAX,
+            active_graph_depth: usize::MAX,
+            value_comparison: usize::MAX,
+        };
+        let clamped = state::evaluate(package, request(package), &StateView::default(), above_hard);
+        assert_eq!(clamped.limits(), Limits::default());
+
+        let zero_unused = Limits {
+            input_value_nodes: 0,
+            input_text_bytes: 0,
+            input_structural_depth: 0,
+            predicate_call_depth: 0,
+            sequence_work: 0,
+            graph_expansion: 0,
+            graph_edges: 0,
+            active_graph_depth: 0,
+            value_comparison: 0,
+            ..Limits::default()
+        };
+        let report = state::evaluate(
+            package,
+            request(package),
+            &StateView::default(),
+            zero_unused,
+        );
+        assert!(matches!(report.outcome(), EvaluationOutcome::Completed(_)));
+        assert_eq!(report.usage().input_value_nodes, 0);
+        assert_eq!(report.usage().input_text_bytes, 0);
+        assert_eq!(report.usage().input_structural_depth, 0);
+        assert_eq!(report.usage().predicate_call_depth, 0);
+        assert_eq!(report.usage().sequence_work, 0);
+        assert_eq!(report.usage().graph_expansion, 0);
+        assert_eq!(report.usage().graph_edges, 0);
+        assert_eq!(report.usage().active_graph_depth, 0);
+        assert_eq!(report.usage().value_comparison, 0);
     });
 }
 
@@ -1277,6 +1358,199 @@ fn tc_127_all_eight_queries_preserve_order_duplicates_and_independent_results() 
     });
 }
 
+/// Tracing: TC-127.
+#[trace("TC-127", "FR-046-AC-4")]
+#[test]
+fn tc_127_all_eight_queries_have_their_exact_empty_runtime_results() {
+    admitted_queries(|package| {
+        let (owner, view) = query_view_with_amounts(package, &[]);
+        let selected = [
+            (
+                operation(
+                    package,
+                    owner,
+                    |op| matches!(op, w::ValueOperation::Size { collection, .. } if matches!(package.package().declarations[owner as usize].values[collection.index as usize].operation, w::ValueOperation::Field { .. })),
+                ),
+                "0",
+            ),
+            (
+                operation(
+                    package,
+                    owner,
+                    |op| matches!(op, w::ValueOperation::Contains { collection, .. } if matches!(package.package().declarations[owner as usize].values[collection.index as usize].operation, w::ValueOperation::Field { .. })),
+                ),
+                "false",
+            ),
+            (
+                operation(package, owner, |op| {
+                    matches!(
+                        op,
+                        w::ValueOperation::Query {
+                            operator: w::Query::ForAll,
+                            ..
+                        }
+                    )
+                }),
+                "true",
+            ),
+            (
+                operation(package, owner, |op| {
+                    matches!(
+                        op,
+                        w::ValueOperation::Query {
+                            operator: w::Query::Exists,
+                            ..
+                        }
+                    )
+                }),
+                "false",
+            ),
+            (
+                operation(package, owner, |op| {
+                    matches!(
+                        op,
+                        w::ValueOperation::Query {
+                            operator: w::Query::Filter,
+                            ..
+                        }
+                    )
+                }),
+                "[]",
+            ),
+            (
+                operation(package, owner, |op| {
+                    matches!(
+                        op,
+                        w::ValueOperation::Query {
+                            operator: w::Query::Map,
+                            ..
+                        }
+                    )
+                }),
+                "[]",
+            ),
+            (
+                operation(package, owner, |op| {
+                    matches!(
+                        op,
+                        w::ValueOperation::Query {
+                            operator: w::Query::Count,
+                            ..
+                        }
+                    )
+                }),
+                "0",
+            ),
+            (
+                operation(package, owner, |op| {
+                    matches!(
+                        op,
+                        w::ValueOperation::Query {
+                            operator: w::Query::Sum,
+                            ..
+                        }
+                    )
+                }),
+                "0",
+            ),
+        ];
+        for (case, (handle, expected)) in selected.into_iter().enumerate() {
+            assert_eq!(
+                completed(package, owner, handle, &view),
+                expected,
+                "empty query case {case}"
+            );
+        }
+    });
+}
+
+/// Tracing: TC-127, TC-128, TC-136.
+#[trace(
+    "TC-127",
+    "TC-128",
+    "TC-136",
+    "FR-046-AC-4",
+    "FR-046-AC-6",
+    "FR-049-AC-4"
+)]
+#[test]
+fn tc_127_128_full_traversal_discards_partial_results_and_validation_precedes_decision() {
+    admitted_queries(|package| {
+        let (owner, middle) = query_view_with_amounts(
+            package,
+            &[
+                AmountInput::Available(2),
+                AmountInput::Missing { claimed_index: 1 },
+                AmountInput::Available(3),
+            ],
+        );
+        let missing = match &middle.binders[0].value {
+            InputSlot::Available(record) => match record.kind() {
+                ValueKind::Record(fields) => match &fields[0].value {
+                    FieldValue::Compiled(InputSlot::Available(amounts)) => match amounts.kind() {
+                        ValueKind::Sequence(values) => match &values[1] {
+                            InputSlot::Unavailable(missing) => missing.clone(),
+                            _ => unreachable!("middle member is unavailable"),
+                        },
+                        _ => unreachable!("amounts is a sequence"),
+                    },
+                    _ => unreachable!("amounts is available"),
+                },
+                _ => unreachable!("query input is a record"),
+            },
+            _ => unreachable!("query input is available"),
+        };
+        for operator in [
+            w::Query::Filter,
+            w::Query::Map,
+            w::Query::Count,
+            w::Query::Sum,
+        ] {
+            let value = operation(
+                package,
+                owner,
+                |op| matches!(op, w::ValueOperation::Query { operator: actual, .. } if *actual == operator),
+            );
+            let report = state::evaluate(
+                package,
+                EvaluationRequest {
+                    declaration: owner,
+                    value,
+                },
+                &middle,
+                Limits::default(),
+            );
+            assert!(
+                matches!(report.outcome(), EvaluationOutcome::Incomplete(actual) if actual == &missing)
+            );
+        }
+
+        let (_, corrupt_after_decision) = query_view_with_amounts(
+            package,
+            &[AmountInput::Available(2), AmountInput::Available(21)],
+        );
+        let contains = operation(
+            package,
+            owner,
+            |op| matches!(op, w::ValueOperation::Contains { collection, .. } if matches!(package.package().declarations[owner as usize].values[collection.index as usize].operation, w::ValueOperation::Field { .. })),
+        );
+        let report = state::evaluate(
+            package,
+            EvaluationRequest {
+                declaration: owner,
+                value: contains,
+            },
+            &corrupt_after_decision,
+            Limits::default(),
+        );
+        assert!(matches!(
+            report.outcome(),
+            EvaluationOutcome::Refused(Refusal::Bounds(_))
+        ));
+        assert_eq!(report.usage().expression_work, 0);
+    });
+}
+
 /// Tracing: TC-127, TC-128, TC-136.
 #[trace(
     "TC-127",
@@ -1308,25 +1582,10 @@ fn tc_127_128_unavailable_members_obey_decisive_order_and_exact_position() {
                 if matches!(package.package().declarations[owner as usize].values[collection.index as usize].operation,
                     w::ValueOperation::Field { .. }))
         });
-        let missing = match &before.binders[0].value {
-            InputSlot::Available(value) => match value.kind() {
-                ValueKind::Record(fields) => match &fields[0].value {
-                    FieldValue::Compiled(InputSlot::Available(value)) => match value.kind() {
-                        ValueKind::Sequence(values) => match &values[0] {
-                            InputSlot::Unavailable(missing) => missing.clone(),
-                            _ => unreachable!("first member is unavailable"),
-                        },
-                        _ => unreachable!("amounts is a sequence"),
-                    },
-                    _ => unreachable!("amounts is available"),
-                },
-                _ => unreachable!("query input is a record"),
-            },
-            _ => unreachable!("query input is available"),
-        };
+        let missing = first_query_missing(&before);
         let selected = EvaluationRequest {
             declaration: owner,
-            value: contains,
+            value: contains.clone(),
         };
         assert!(matches!(
             state::evaluate(package, selected.clone(), &before, Limits::default()).outcome(),
@@ -1346,9 +1605,87 @@ fn tc_127_128_unavailable_members_obey_decisive_order_and_exact_position() {
             ],
         );
         assert!(matches!(
-            state::evaluate(package, selected, &wrong_position, Limits::default()).outcome(),
+            state::evaluate(
+                package,
+                selected.clone(),
+                &wrong_position,
+                Limits::default()
+            )
+            .outcome(),
             EvaluationOutcome::Refused(Refusal::Authority(_))
         ));
+
+        let mut detached_path = before.clone();
+        let InputSlot::Available(record) = &detached_path.binders[0].value else {
+            unreachable!("query input is available")
+        };
+        let ValueKind::Record(original_fields) = record.kind() else {
+            unreachable!("query input is a record")
+        };
+        let mut fields = original_fields.clone();
+        let FieldValue::Compiled(InputSlot::Available(amounts)) = &fields[0].value else {
+            unreachable!("amounts is available")
+        };
+        let ValueKind::Sequence(original_values) = amounts.kind() else {
+            unreachable!("amounts is a sequence")
+        };
+        let mut values = original_values.clone();
+        let InputSlot::Unavailable(MissingInput::Member { path, .. }) = &mut values[0] else {
+            unreachable!("first member is unavailable")
+        };
+        path.remove(0);
+        fields[0].value = FieldValue::Compiled(InputSlot::Available(Value::new(
+            amounts.value_type,
+            ValueKind::Sequence(values),
+        )));
+        detached_path.binders[0].value =
+            InputSlot::Available(Value::new(record.value_type, ValueKind::Record(fields)));
+        assert!(matches!(
+            state::evaluate(
+                package,
+                EvaluationRequest {
+                    declaration: owner,
+                    value: contains,
+                },
+                &detached_path,
+                Limits::default(),
+            )
+            .outcome(),
+            EvaluationOutcome::Refused(Refusal::Authority(_))
+        ));
+    });
+}
+
+/// Tracing: TC-136, TC-137.
+#[trace("TC-136", "TC-137", "FR-049-AC-4", "FR-049-AC-7", "NFR-009")]
+#[test]
+fn tc_136_nested_unavailable_precedes_root_retention_exhaustion() {
+    admitted_queries(|package| {
+        let (owner, view) =
+            query_view_with_amounts(package, &[AmountInput::Missing { claimed_index: 0 }]);
+        let missing = first_query_missing(&view);
+        let input = view.binders[0].binder.clone();
+        let read = operation(
+            package,
+            owner,
+            |op| matches!(op, w::ValueOperation::Read { binder } if binder == &input),
+        );
+        let report = state::evaluate(
+            package,
+            EvaluationRequest {
+                declaration: owner,
+                value: read,
+            },
+            &view,
+            Limits {
+                retained_output: 0,
+                ..Limits::default()
+            },
+        );
+        assert!(
+            matches!(report.outcome(), EvaluationOutcome::Incomplete(actual) if actual == &missing)
+        );
+        assert_eq!(report.usage().retained_output, 0);
     });
 }
 
@@ -1628,6 +1965,90 @@ fn tc_130_multi_record_cycle_uses_full_keys_and_positive_length_paths() {
     });
 }
 
+/// Tracing: TC-130.
+#[trace("TC-130", "FR-047-AC-4", "FR-047-AC-5")]
+#[test]
+fn tc_130_authored_sibling_order_selects_depth_first_work_before_the_target() {
+    admitted_graph(|package| {
+        let (owner, root, mut early) = graph_view(package);
+        let first = early.populations[0].objects[0].key.clone();
+        let second = early.populations[0].objects[1].key.clone();
+        replace_graph_links(
+            &mut early.populations[0].objects[0],
+            [first.clone(), second.clone()],
+        );
+        replace_graph_links(&mut early.populations[0].objects[1], []);
+
+        let mut late = early.clone();
+        replace_graph_links(&mut late.populations[0].objects[0], [second.clone(), first]);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        let early_report = state::evaluate(package, request.clone(), &early, Limits::default());
+        let late_report = state::evaluate(package, request.clone(), &late, Limits::default());
+        assert!(matches!(
+            early_report.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(true))
+        ));
+        assert!(matches!(
+            late_report.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(true))
+        ));
+        assert_eq!(
+            (
+                early_report.usage().graph_expansion,
+                early_report.usage().graph_edges,
+                early_report.usage().value_comparison,
+            ),
+            (1, 1, 1)
+        );
+        assert_eq!(
+            (
+                late_report.usage().graph_expansion,
+                late_report.usage().graph_edges,
+                late_report.usage().value_comparison,
+            ),
+            (2, 2, 2)
+        );
+
+        let mut diamond = early;
+        let mut third = diamond.populations[0].objects[1].clone();
+        third.key.identifier = "logical-c".into();
+        third.key.observation.record = ObservationIdentity("record:third".into());
+        let third_key = third.key.clone();
+        let mut fourth = third.clone();
+        fourth.key.identifier = "logical-d".into();
+        fourth.key.observation.record = ObservationIdentity("record:fourth".into());
+        let fourth_key = fourth.key.clone();
+        diamond.populations[0].objects.extend([third, fourth]);
+        replace_graph_links(
+            &mut diamond.populations[0].objects[0],
+            [second, third_key.clone()],
+        );
+        replace_graph_links(&mut diamond.populations[0].objects[1], [fourth_key.clone()]);
+        replace_graph_links(&mut diamond.populations[0].objects[2], [fourth_key]);
+        replace_graph_links(&mut diamond.populations[0].objects[3], []);
+        let diamond_report = state::evaluate(package, request, &diamond, Limits::default());
+        assert!(matches!(
+            diamond_report.outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(false))
+        ));
+        assert_eq!(
+            (
+                diamond_report.usage().graph_expansion,
+                diamond_report.usage().graph_edges,
+                diamond_report.usage().active_graph_depth,
+                diamond_report.usage().value_comparison,
+            ),
+            (4, 4, 3, 4)
+        );
+    });
+}
+
 /// Tracing: TC-131.
 #[trace("TC-131", "FR-047-AC-7")]
 #[test]
@@ -1695,6 +2116,45 @@ fn tc_131_multi_record_graph_limits_are_exact_and_retry_is_fresh() {
         let retry = state::evaluate(package, request, &view, exact);
         assert_eq!(retry.outcome(), complete.outcome());
         assert_eq!(retry.usage(), complete.usage());
+    });
+}
+
+/// Tracing: TC-137.
+#[trace("TC-137", "FR-049-AC-7", "NFR-009-AC-1", "NFR-009-AC-2")]
+#[test]
+fn tc_137_object_field_value_roots_start_at_structural_depth_one() {
+    admitted_graph(|package| {
+        let (owner, root, view) = graph_view(package);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        let exact = state::evaluate(
+            package,
+            request.clone(),
+            &view,
+            Limits {
+                input_structural_depth: 2,
+                ..Limits::default()
+            },
+        );
+        assert!(matches!(exact.outcome(), EvaluationOutcome::Completed(_)));
+        assert_eq!(exact.usage().input_structural_depth, 2);
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request,
+                &view,
+                Limits {
+                    input_structural_depth: 1,
+                    ..Limits::default()
+                },
+            )
+            .outcome(),
+            EvaluationOutcome::Exhausted(exhaustion)
+                if exhaustion.dimension == Dimension::InputStructuralDepth
+                    && exhaustion.used == 1
+        ));
     });
 }
 

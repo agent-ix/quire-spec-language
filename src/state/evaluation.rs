@@ -10,6 +10,7 @@
 )]
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use quire_contract_ir as ir;
 
@@ -44,6 +45,7 @@ pub fn evaluate(
         work: Work::new(limits),
         binders: Vec::new(),
         populations: Vec::new(),
+        catalogs: Vec::new(),
         locals: Vec::new(),
         call_depth: 0,
         anchor: None,
@@ -68,6 +70,7 @@ struct Evaluator<'a> {
     work: Work,
     binders: Vec<((u32, u32), &'a InputSlot)>,
     populations: Vec<PopulationIndex<'a>>,
+    catalogs: Vec<(u32, Catalog<'a>)>,
     locals: Vec<((u32, u32), Value)>,
     call_depth: usize,
     anchor: Option<w::Handle>,
@@ -79,9 +82,19 @@ struct SlotPosition<'a> {
     anchor: &'a w::Handle,
     authority: Option<&'a AuthorityEvidence>,
     object: Option<&'a ObjectKey>,
-    field: Option<&'a w::ExportRef>,
-    member: Option<usize>,
+    path: [Option<PositionSegment<'a>>; 64],
+    path_len: usize,
     root_is_binding: bool,
+}
+
+#[derive(Clone, Copy)]
+enum PositionSegment<'a> {
+    Field {
+        object: Option<&'a ObjectKey>,
+        field: &'a w::ExportRef,
+    },
+    OptionValue,
+    Member(usize),
 }
 
 impl<'a> SlotPosition<'a> {
@@ -95,8 +108,8 @@ impl<'a> SlotPosition<'a> {
             anchor,
             authority,
             object: None,
-            field: None,
-            member: None,
+            path: [None; 64],
+            path_len: 0,
             root_is_binding: false,
         }
     }
@@ -111,28 +124,63 @@ impl<'a> SlotPosition<'a> {
             anchor,
             authority: Some(authority),
             object: None,
-            field: None,
-            member: None,
+            path: [None; 64],
+            path_len: 0,
             root_is_binding: true,
         }
     }
 
     fn field(self, field: &'a w::ExportRef, object: Option<&'a ObjectKey>) -> Self {
-        Self {
-            object,
-            field: Some(field),
-            member: None,
-            ..self
-        }
+        self.push(PositionSegment::Field { object, field })
     }
 
     fn member(self, member: usize) -> Self {
-        Self {
-            object: None,
-            field: None,
-            member: Some(member),
-            ..self
+        self.push(PositionSegment::Member(member))
+    }
+
+    fn option_value(self) -> Self {
+        self.push(PositionSegment::OptionValue)
+    }
+
+    fn push(mut self, segment: PositionSegment<'a>) -> Self {
+        if let Some(slot) = self.path.get_mut(self.path_len) {
+            *slot = Some(segment);
+            self.path_len += 1;
         }
+        self
+    }
+
+    fn last_field(self) -> Option<(Option<&'a ObjectKey>, &'a w::ExportRef)> {
+        self.path[..self.path_len]
+            .iter()
+            .rev()
+            .flatten()
+            .find_map(|segment| match segment {
+                PositionSegment::Field { object, field } => Some((*object, *field)),
+                PositionSegment::OptionValue | PositionSegment::Member(_) => None,
+            })
+    }
+
+    fn member_path_matches(self, actual: &[ValuePathSegment]) -> bool {
+        actual.len() == self.path_len
+            && self.path[..self.path_len]
+                .iter()
+                .flatten()
+                .zip(actual)
+                .all(|(expected, actual)| match (expected, actual) {
+                    (
+                        PositionSegment::Field { object, field },
+                        ValuePathSegment::Field {
+                            object: actual_object,
+                            field: actual_field,
+                        },
+                    ) => *field == actual_field && *object == actual_object.as_ref(),
+                    (PositionSegment::OptionValue, ValuePathSegment::OptionValue) => true,
+                    (PositionSegment::Member(expected), ValuePathSegment::Member(actual)) => {
+                        expected == actual
+                    }
+                    _ => false,
+                })
     }
 }
 
@@ -220,34 +268,20 @@ impl<'a> Evaluator<'a> {
             .map(|value| value.anchor.clone())
             .ok_or_else(|| Stop::Refused(Refusal::RequestValue(root.clone())))?;
         let value = self.expression_at(&root, 1, anchor)?;
+        // A nested unavailable slot is the terminal runtime outcome, not a
+        // value that can be copied into a completed report.
+        ensure_available(&value)?;
         self.work
             .charge(Dimension::RetainedOutput, 1)
             .map_err(Stop::Exhausted)?;
-        // Completed values contain no unavailable slot. This also prevents a
-        // partially materialized query result from escaping through the report.
-        ensure_available(&value)?;
         Ok(value)
     }
 
     fn validate_inputs(&mut self) -> Result<()> {
         let required =
             required_inputs(&mut self.work, self.package.package(), &self.request.value)?;
-        let mut offered_binders = boolean_table(
-            &self.work,
-            self.package
-                .package()
-                .declarations
-                .iter()
-                .map(|declaration| declaration.binders.len()),
-        )?;
-        let mut offered_populations = boolean_table(
-            &self.work,
-            self.package
-                .package()
-                .declarations
-                .iter()
-                .map(|declaration| declaration.bindings.len()),
-        )?;
+        let mut offered_binders = HashSet::new();
+        let mut offered_populations = HashSet::new();
         for offered in &self.view.binders {
             self.work
                 .charge(Dimension::InputAggregateEntries, 1)
@@ -269,11 +303,10 @@ impl<'a> Evaluator<'a> {
                     offered.binder.clone(),
                 )));
             }
-            let seen = offered_binders
-                .get_mut(offered.binder.declaration as usize)
-                .and_then(|declaration| declaration.get_mut(offered.binder.index as usize))
-                .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(offered.binder.clone())))?;
-            if std::mem::replace(seen, true) {
+            offered_binders.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
+            if !offered_binders.insert(key) {
                 return Err(Stop::Refused(Refusal::DuplicateBinding(
                     offered.binder.clone(),
                 )));
@@ -296,12 +329,7 @@ impl<'a> Evaluator<'a> {
             self.binders.push((key, &offered.value));
         }
         for binder in &required.binders {
-            if !offered_binders
-                .get(binder.declaration as usize)
-                .and_then(|declaration| declaration.get(binder.index as usize))
-                .copied()
-                .unwrap_or(false)
-            {
+            if !offered_binders.contains(&(binder.declaration, binder.index)) {
                 return Err(Stop::Refused(Refusal::MissingBinding(binder.clone())));
             }
         }
@@ -320,13 +348,14 @@ impl<'a> Evaluator<'a> {
                     population.requirement.clone(),
                 )));
             }
-            let seen = offered_populations
-                .get_mut(population.requirement.declaration as usize)
-                .and_then(|declaration| declaration.get_mut(population.requirement.index as usize))
-                .ok_or_else(|| {
-                    Stop::Refused(Refusal::SurplusBinding(population.requirement.clone()))
-                })?;
-            if std::mem::replace(seen, true) {
+            let key = (
+                population.requirement.declaration,
+                population.requirement.index,
+            );
+            offered_populations.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
+            if !offered_populations.insert(key) {
                 return Err(Stop::Refused(Refusal::DuplicateBinding(
                     population.requirement.clone(),
                 )));
@@ -408,12 +437,6 @@ impl<'a> Evaluator<'a> {
                 Stop::Refused(Refusal::AdmittedInvariant(population.requirement.clone()))
             })?;
             let mut objects = Vec::new();
-            objects.try_reserve(population.objects.len()).map_err(|_| {
-                Stop::Exhausted(
-                    self.work
-                        .allocation(Dimension::InputAggregateEntries, population.objects.len()),
-                )
-            })?;
             for object in &population.objects {
                 self.work
                     .charge(Dimension::InputAggregateEntries, 1)
@@ -439,6 +462,9 @@ impl<'a> Evaluator<'a> {
                     &population.authority,
                 );
                 self.object(object, expected, position)?;
+                objects.try_reserve(1).map_err(|_| {
+                    Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+                })?;
                 objects.push(object);
             }
             objects.sort_unstable_by(|left, right| object_key_cmp(&left.key, &right.key));
@@ -475,12 +501,7 @@ impl<'a> Evaluator<'a> {
             });
         }
         for required in &required.populations {
-            if !offered_populations
-                .get(required.declaration as usize)
-                .and_then(|declaration| declaration.get(required.index as usize))
-                .copied()
-                .unwrap_or(false)
-            {
+            if !offered_populations.contains(&(required.declaration, required.index)) {
                 return Err(Stop::Refused(Refusal::MissingBinding(required.clone())));
             }
         }
@@ -718,22 +739,25 @@ impl<'a> Evaluator<'a> {
         expected: u32,
         position: SlotPosition<'_>,
     ) -> Result<()> {
-        if let Some(index) = position.member {
-            return if matches!(missing, MissingInput::Member { requirement, index: actual }
-                if requirement == position.root && *actual == index)
+        if matches!(
+            position.path.get(position.path_len.saturating_sub(1)),
+            Some(Some(PositionSegment::Member(_)))
+        ) {
+            return if matches!(missing, MissingInput::Member { requirement, path }
+                if requirement == position.root && position.member_path_matches(path))
             {
                 Ok(())
             } else {
                 Err(Stop::Refused(Refusal::Authority(position.root.clone())))
             };
         }
-        if let Some(field) = position.field {
+        if let Some((expected_object, field)) = position.last_field() {
             return if let MissingInput::Field {
                 object,
                 field: actual,
             } = missing
             {
-                let exact_object = position.object == Some(object);
+                let exact_object = expected_object == Some(object);
                 if actual == field
                     && exact_object
                     && object.model == field.model
@@ -795,22 +819,25 @@ impl<'a> Evaluator<'a> {
     }
 
     fn missing_contextual(&self, missing: &MissingInput, position: SlotPosition<'_>) -> Result<()> {
-        if let Some(index) = position.member {
-            if matches!(missing, MissingInput::Member { requirement, index: actual }
-                if requirement == position.root && *actual == index)
+        if matches!(
+            position.path.get(position.path_len.saturating_sub(1)),
+            Some(Some(PositionSegment::Member(_)))
+        ) {
+            if matches!(missing, MissingInput::Member { requirement, path }
+                if requirement == position.root && position.member_path_matches(path))
             {
                 return Ok(());
             }
         } else if let (
-            Some(field),
+            Some((expected_object, field)),
             MissingInput::Field {
                 object,
                 field: actual,
             },
-        ) = (position.field, missing)
+        ) = (position.last_field(), missing)
         {
             if actual == field
-                && position.object == Some(object)
+                && expected_object == Some(object)
                 && object.model == field.model
                 && object.object_type.model == field.model
             {
@@ -1024,7 +1051,7 @@ impl<'a> Evaluator<'a> {
             (w::Type::Option { value: child }, ValueKind::Option(option)) => {
                 if let Some(child_slot) = option {
                     self.entry()?;
-                    self.slot(child_slot, *child, depth + 1, position)?;
+                    self.slot(child_slot, *child, depth + 1, position.option_value())?;
                 }
                 Ok(())
             }
@@ -1131,7 +1158,7 @@ impl<'a> Evaluator<'a> {
             object: Some(&object.key),
             ..position
         };
-        self.record_object(&export, &object.fields, 1, position)
+        self.record_object(&export, &object.fields, 0, position)
     }
 
     fn record_object(
@@ -1155,13 +1182,8 @@ impl<'a> Evaluator<'a> {
         depth: usize,
         position: SlotPosition<'_>,
     ) -> Result<()> {
-        let model = self
-            .package
-            .schema_model(model_index)
-            .cloned()
-            .ok_or_else(|| Stop::Refused(Refusal::ValueShape(model_index)))?;
-        let catalog = Catalog::composed(&model);
-        let declaration = catalog
+        let declaration = self
+            .catalog(model_index)?
             .records
             .iter()
             .find(|(candidate, _)| candidate.as_str() == name)
@@ -1171,13 +1193,8 @@ impl<'a> Evaluator<'a> {
             return Err(Stop::Refused(Refusal::ValueShape(model_index)));
         }
         let mut offered = Vec::new();
-        offered.try_reserve(fields.len()).map_err(|_| {
-            Stop::Exhausted(
-                self.work
-                    .allocation(Dimension::InputAggregateEntries, fields.len()),
-            )
-        })?;
         for field in fields {
+            self.entry()?;
             let path = self.export_path(&field.field, w::ExportKind::Field)?;
             if field.field.model != model_index
                 || path.first().map(String::as_str) != Some(name)
@@ -1185,6 +1202,9 @@ impl<'a> Evaluator<'a> {
             {
                 return Err(Stop::Refused(Refusal::Field(field.field.clone())));
             }
+            offered.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
             offered.push((field.field.export, field));
         }
         offered.sort_unstable_by_key(|(index, _)| *index);
@@ -1216,13 +1236,13 @@ impl<'a> Evaluator<'a> {
                 record: declaration.name().clone(),
                 field: expected_field.name().clone(),
             };
-            let native = catalog
+            let native = self
+                .catalog(model_index)?
                 .formal(expected_field.value_type(), &site)
                 .ok_or_else(|| Stop::Refused(Refusal::Field(offered.field.clone())))?;
-            self.entry()?;
             match &offered.value {
                 FieldValue::Compiled(slot) => {
-                    let expected = self.find_wire_type(&native)?;
+                    let expected = self.find_wire_type(model_index, &native)?;
                     self.slot(
                         slot,
                         expected,
@@ -1243,6 +1263,26 @@ impl<'a> Evaluator<'a> {
             }
         }
         Ok(())
+    }
+
+    fn catalog(&mut self, model_index: u32) -> Result<&Catalog<'a>> {
+        if let Some(index) = self
+            .catalogs
+            .iter()
+            .position(|(candidate, _)| *candidate == model_index)
+        {
+            return Ok(&self.catalogs[index].1);
+        }
+        let model = self
+            .package
+            .schema_model(model_index)
+            .ok_or_else(|| Stop::Refused(Refusal::ValueShape(model_index)))?;
+        self.catalogs.try_reserve(1).map_err(|_| {
+            Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+        })?;
+        self.catalogs.push((model_index, Catalog::composed(model)));
+        let index = self.catalogs.len() - 1;
+        Ok(&self.catalogs[index].1)
     }
 
     fn contextual_slot(
@@ -1363,7 +1403,7 @@ impl<'a> Evaluator<'a> {
                         model_index,
                         field,
                         depth + 1,
-                        position,
+                        position.option_value(),
                     )?;
                 }
                 Ok(())
@@ -1529,20 +1569,24 @@ impl<'a> Evaluator<'a> {
         Ok(&value.path)
     }
 
-    fn find_wire_type(&self, native: &NativeType<'_>) -> Result<u32> {
+    fn find_wire_type(&self, model_index: u32, native: &NativeType<'_>) -> Result<u32> {
         self.package
             .package()
             .types
             .iter()
             .enumerate()
             .find(|(index, _)| {
-                self.wire_matches_native(u32::try_from(*index).unwrap_or(u32::MAX), native)
+                self.wire_matches_native(
+                    u32::try_from(*index).unwrap_or(u32::MAX),
+                    model_index,
+                    native,
+                )
             })
             .and_then(|(index, _)| u32::try_from(index).ok())
             .ok_or_else(|| Stop::Refused(Refusal::ValueShape(u32::MAX)))
     }
 
-    fn wire_matches_native(&self, index: u32, native: &NativeType<'_>) -> bool {
+    fn wire_matches_native(&self, index: u32, model_index: u32, native: &NativeType<'_>) -> bool {
         let Some(ty) = self.package.package().types.get(index as usize) else {
             return false;
         };
@@ -1556,10 +1600,12 @@ impl<'a> Evaluator<'a> {
                 },
                 NativeType::Scalar { role, .. },
             ) => {
-                self.export_path(export, w::ExportKind::Scalar)
-                    .ok()
-                    .and_then(|path| path.first())
-                    .is_some_and(|name| name == role.name.as_str())
+                export.model == model_index
+                    && self
+                        .export_path(export, w::ExportKind::Scalar)
+                        .ok()
+                        .and_then(|path| path.first())
+                        .is_some_and(|name| name == role.name.as_str())
                     && unit.0.as_deref()
                         == match &role.kind {
                             ScalarKind::Integer { unit } | ScalarKind::Rational { unit } => {
@@ -1581,28 +1627,40 @@ impl<'a> Evaluator<'a> {
                         ) | (w::Representation::Text { .. }, ScalarKind::Text { .. })
                     )
             }
-            (w::Type::Enum { export }, NativeType::Enumeration { declaration, .. }) => self
-                .export_path(export, w::ExportKind::Enum)
-                .ok()
-                .and_then(|path| path.first())
-                .is_some_and(|name| name == declaration.name().as_str()),
-            (w::Type::Record { export }, NativeType::Record { declaration, .. }) => self
-                .export_path(export, w::ExportKind::Record)
-                .ok()
-                .and_then(|path| path.first())
-                .is_some_and(|name| name == declaration.name().as_str()),
-            (w::Type::Object { export }, NativeType::Object { role, .. }) => self
-                .export_path(export, w::ExportKind::Object)
-                .ok()
-                .and_then(|path| path.first())
-                .is_some_and(|name| name == role.record.as_str()),
-            (w::Type::Reference { export, .. }, NativeType::Reference { role, .. }) => self
-                .export_path(export, w::ExportKind::Reference)
-                .ok()
-                .and_then(|path| path.first())
-                .is_some_and(|name| name == role.reference.as_str()),
+            (w::Type::Enum { export }, NativeType::Enumeration { declaration, .. }) => {
+                export.model == model_index
+                    && self
+                        .export_path(export, w::ExportKind::Enum)
+                        .ok()
+                        .and_then(|path| path.first())
+                        .is_some_and(|name| name == declaration.name().as_str())
+            }
+            (w::Type::Record { export }, NativeType::Record { declaration, .. }) => {
+                export.model == model_index
+                    && self
+                        .export_path(export, w::ExportKind::Record)
+                        .ok()
+                        .and_then(|path| path.first())
+                        .is_some_and(|name| name == declaration.name().as_str())
+            }
+            (w::Type::Object { export }, NativeType::Object { role, .. }) => {
+                export.model == model_index
+                    && self
+                        .export_path(export, w::ExportKind::Object)
+                        .ok()
+                        .and_then(|path| path.first())
+                        .is_some_and(|name| name == role.record.as_str())
+            }
+            (w::Type::Reference { export, .. }, NativeType::Reference { role, .. }) => {
+                export.model == model_index
+                    && self
+                        .export_path(export, w::ExportKind::Reference)
+                        .ok()
+                        .and_then(|path| path.first())
+                        .is_some_and(|name| name == role.reference.as_str())
+            }
             (w::Type::Option { value }, NativeType::Option(child)) => {
-                self.wire_matches_native(*value, child)
+                self.wire_matches_native(*value, model_index, child)
             }
             (
                 w::Type::Sequence { element, maximum },
@@ -1612,7 +1670,7 @@ impl<'a> Evaluator<'a> {
                 },
             ) => {
                 wire_integer(maximum) == Some(i64::from(*bound))
-                    && self.wire_matches_native(*element, child)
+                    && self.wire_matches_native(*element, model_index, child)
             }
             _ => false,
         }
@@ -2055,10 +2113,14 @@ impl<'a> Evaluator<'a> {
                 }
                 w::Query::Filter => {
                     if boolean(&projected)? {
+                        ensure_available(available_ref(slot)?)?;
                         self.retain(&mut output, slot.clone())?;
                     }
                 }
-                w::Query::Map => self.retain(&mut output, InputSlot::Available(projected))?,
+                w::Query::Map => {
+                    ensure_available(&projected)?;
+                    self.retain(&mut output, InputSlot::Available(projected))?;
+                }
                 w::Query::Count => {
                     if boolean(&projected)? {
                         count = count
@@ -2165,22 +2227,7 @@ impl<'a> Evaluator<'a> {
             return Err(Stop::Refused(Refusal::ValueShape(self.request.value.index)));
         }
         let start = &self.find_object(start)?.key;
-        let object_count = self
-            .populations
-            .iter()
-            .try_fold(0_usize, |total, population| {
-                total.checked_add(population.objects.len()).ok_or_else(|| {
-                    Stop::Exhausted(counter_overflow(&self.work, Dimension::GraphExpansion))
-                })
-            })?;
-        let mut expanded = Vec::new();
-        expanded.try_reserve(object_count).map_err(|_| {
-            Stop::Exhausted(
-                self.work
-                    .allocation(Dimension::GraphExpansion, object_count),
-            )
-        })?;
-        expanded.resize(object_count, false);
+        let mut expanded = HashSet::new();
         self.dfs(start, target, edge, 1, &mut expanded)
     }
 
@@ -2190,13 +2237,10 @@ impl<'a> Evaluator<'a> {
         target: &ObjectKey,
         edge: &w::ExportRef,
         depth: usize,
-        expanded: &mut [bool],
+        expanded: &mut HashSet<usize>,
     ) -> Result<bool> {
         let position = self.object_position(current)?;
-        let expanded_entry = expanded.get_mut(position).ok_or_else(|| {
-            Stop::Exhausted(counter_overflow(&self.work, Dimension::GraphExpansion))
-        })?;
-        if *expanded_entry {
+        if expanded.contains(&position) {
             return Ok(false);
         }
         self.work
@@ -2205,7 +2249,10 @@ impl<'a> Evaluator<'a> {
         self.work
             .charge(Dimension::GraphExpansion, 1)
             .map_err(Stop::Exhausted)?;
-        *expanded_entry = true;
+        expanded
+            .try_reserve(1)
+            .map_err(|_| Stop::Exhausted(self.work.allocation(Dimension::GraphExpansion, 1)))?;
+        expanded.insert(position);
         let object = self.find_object(current)?;
         let field = object
             .fields
@@ -2226,7 +2273,7 @@ impl<'a> Evaluator<'a> {
         target: &ObjectKey,
         edge: &w::ExportRef,
         depth: usize,
-        expanded: &mut [bool],
+        expanded: &mut HashSet<usize>,
     ) -> Result<bool> {
         let value = available_ref(slot)?;
         match value.kind() {
@@ -2267,7 +2314,7 @@ impl<'a> Evaluator<'a> {
         target: &ObjectKey,
         edge: &w::ExportRef,
         depth: usize,
-        expanded: &mut [bool],
+        expanded: &mut HashSet<usize>,
     ) -> Result<bool> {
         let value = contextual_available_ref(slot)?;
         match value.kind() {
@@ -2336,38 +2383,20 @@ fn required_inputs(
 ) -> Result<RequiredInputs> {
     let mut pending = Vec::new();
     discovery_push(work, &mut pending, root)?;
-    let mut visited = boolean_table(
-        work,
-        package
-            .declarations
-            .iter()
-            .map(|declaration| declaration.values.len()),
-    )?;
-    let mut required_binders = boolean_table(
-        work,
-        package
-            .declarations
-            .iter()
-            .map(|declaration| declaration.binders.len()),
-    )?;
-    let mut required_populations = boolean_table(
-        work,
-        package
-            .declarations
-            .iter()
-            .map(|declaration| declaration.bindings.len()),
-    )?;
+    let mut visited = HashSet::new();
+    let mut required_binders = HashSet::new();
+    let mut required_populations = HashSet::new();
     while let Some(handle) = pending.pop() {
-        let seen = visited
-            .get_mut(handle.declaration as usize)
-            .and_then(|declaration| declaration.get_mut(handle.index as usize))
-            .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(handle.clone())))?;
-        if *seen {
+        let key = (handle.declaration, handle.index);
+        if visited.contains(&key) {
             continue;
         }
         work.charge(Dimension::InputAggregateEntries, 1)
             .map_err(Stop::Exhausted)?;
-        *seen = true;
+        visited
+            .try_reserve(1)
+            .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
+        visited.insert(key);
         let node = package
             .declarations
             .get(handle.declaration as usize)
@@ -2385,14 +2414,14 @@ fn required_inputs(
                 if value.initializer.0.is_none()
                     && !matches!(value.kind, w::BinderKind::Let | w::BinderKind::Query)
                 {
-                    let selected = required_binders
-                        .get_mut(binder.declaration as usize)
-                        .and_then(|declaration| declaration.get_mut(binder.index as usize))
-                        .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(binder.clone())))?;
-                    if !*selected {
+                    let key = (binder.declaration, binder.index);
+                    if !required_binders.contains(&key) {
                         work.charge(Dimension::InputAggregateEntries, 1)
                             .map_err(Stop::Exhausted)?;
-                        *selected = true;
+                        required_binders.try_reserve(1).map_err(|_| {
+                            Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1))
+                        })?;
+                        required_binders.insert(key);
                     }
                 }
             }
@@ -2495,48 +2524,15 @@ fn required_inputs(
     })
 }
 
-fn boolean_table(work: &Work, lengths: impl Iterator<Item = usize>) -> Result<Vec<Vec<bool>>> {
-    let mut table = Vec::new();
-    for length in lengths {
-        table
-            .try_reserve(1)
-            .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
-        let mut row = Vec::new();
-        row.try_reserve(length).map_err(|_| {
-            Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, length))
-        })?;
-        row.resize(length, false);
-        table.push(row);
-    }
-    Ok(table)
-}
-
-fn selected_handles(work: &Work, selected: Vec<Vec<bool>>) -> Result<Vec<w::Handle>> {
-    let count = selected.iter().try_fold(0_usize, |total, values| {
-        total
-            .checked_add(values.iter().filter(|value| **value).count())
-            .ok_or_else(|| {
-                Stop::Exhausted(counter_overflow(work, Dimension::InputAggregateEntries))
-            })
-    })?;
+fn selected_handles(work: &Work, selected: HashSet<(u32, u32)>) -> Result<Vec<w::Handle>> {
     let mut handles = Vec::new();
-    handles
-        .try_reserve(count)
-        .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, count)))?;
-    for (declaration, values) in selected.into_iter().enumerate() {
-        for (index, value) in values.into_iter().enumerate() {
-            if value {
-                handles.push(w::Handle {
-                    declaration: u32::try_from(declaration).map_err(|_| {
-                        Stop::Exhausted(counter_overflow(work, Dimension::InputAggregateEntries))
-                    })?,
-                    index: u32::try_from(index).map_err(|_| {
-                        Stop::Exhausted(counter_overflow(work, Dimension::InputAggregateEntries))
-                    })?,
-                });
-            }
-        }
+    handles.try_reserve(selected.len()).map_err(|_| {
+        Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, selected.len()))
+    })?;
+    for (declaration, index) in selected {
+        handles.push(w::Handle { declaration, index });
     }
+    handles.sort_unstable_by(handle_cmp);
     Ok(handles)
 }
 
@@ -2554,7 +2550,7 @@ fn require_population_for_value(
     work: &mut Work,
     package: &w::Package,
     value: &w::Handle,
-    selected: &mut [Vec<bool>],
+    selected: &mut HashSet<(u32, u32)>,
 ) -> Result<()> {
     let value_node = package
         .declarations
@@ -2589,7 +2585,7 @@ fn require_population(
     declaration: u32,
     universe: &w::ExportRef,
     anchor: &w::Handle,
-    selected: &mut [Vec<bool>],
+    selected: &mut HashSet<(u32, u32)>,
 ) -> Result<()> {
     let declaration_value = package
         .declarations
@@ -2610,14 +2606,16 @@ fn require_population(
     if matches.next().is_some() {
         return Err(Stop::Refused(Refusal::AdmittedInvariant(anchor.clone())));
     }
-    let selected = selected
-        .get_mut(declaration as usize)
-        .and_then(|bindings| bindings.get_mut(index))
-        .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(anchor.clone())))?;
-    if !*selected {
+    let index = u32::try_from(index)
+        .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(anchor.clone())))?;
+    let key = (declaration, index);
+    if !selected.contains(&key) {
         work.charge(Dimension::InputAggregateEntries, 1)
             .map_err(Stop::Exhausted)?;
-        *selected = true;
+        selected
+            .try_reserve(1)
+            .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
+        selected.insert(key);
     }
     Ok(())
 }
