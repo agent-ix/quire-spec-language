@@ -48,8 +48,8 @@ score is claimed.
    obligation had evaluation continued. Separately, settle one obligation over
    complete exact decision support and then reach a ceiling while assessing a
    second obligation in the same evaluation; require the settled obligation to
-   retain its truth, basis and support and the second to carry the stop, per
-   FR-043's recorded selection on that open question.
+   retain its truth, basis and support and the second to carry the stop, per the
+   ratified shared temporal semantics.
 3. Generate obligation populations paired with eviction schedules over a declared
    finite model: for each unsettled obligation, the set of retained valuations and
    captures it still requires, and an eviction point inside that set. Inject each
