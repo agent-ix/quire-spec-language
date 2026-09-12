@@ -173,6 +173,49 @@ fn admitted_text(test: impl FnOnce(&quire_spec_language::protocol_artifact::Admi
     );
 }
 
+fn admitted_postcondition(
+    test: impl FnOnce(&quire_spec_language::protocol_artifact::AdmittedPackage),
+) {
+    let mut inputs = Inputs::new(&[
+        Unit {
+            name: "state-observations",
+            body: "pre Before using S on M::Node::step { self.n >= 0 }
+                post Changed using S on M::Node::step {
+                    pre(self.n) = 1 and self.n = 2 and result
+                }",
+            declarations: &["Before", "Changed"],
+        },
+        Unit {
+            name: "state-observation-protocol",
+            body: "protocol Flow using P over (view: M::Node) on origin {
+                role Service on M::Node;
+                run attempt Tried by Service on M::Node::step contracts [Before,Changed]
+                    as (attempted: M::Plain) { attempted.ready };
+                finish Closed as (closed: M::Node) { true };
+            }",
+            declarations: &["Flow"],
+        },
+    ]);
+    inputs.step_contracts("Before", "Changed");
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selections| {
+            let admitted = native::admit(proofs, selections, ArtifactLimits::default())
+                .into_result()
+                .expect("discharged pre/post fixture");
+            let emitted = native::emit(&admitted, ArtifactLimits::default())
+                .into_result()
+                .expect("authenticated pre/post emission");
+            let reread = inputs
+                .read(proofs, &emitted)
+                .into_result()
+                .expect("independently read pre/post artifact");
+            test(&reread);
+        },
+    );
+}
+
 fn canonical(value: char) -> CanonicalDigest {
     CanonicalDigest {
         algorithm: "sha256".into(),
@@ -284,6 +327,10 @@ fn graph_view(
         .enumerate()
         .find(|(_, binder)| binder.name == "self")
         .expect("self binder");
+    let binder_requirement_index = declaration.anchors[binder.anchor.index as usize]
+        .binding
+        .0
+        .expect("self anchor requirement");
     let (root_index, reaches) = declaration
         .values
         .iter()
@@ -322,6 +369,7 @@ fn graph_view(
         ))),
     };
     let evidence = authority(package, owner, requirement_index as u32);
+    let binder_evidence = authority(package, owner, binder_requirement_index);
     let objects = vec![
         ObjectInput {
             key: first.clone(),
@@ -344,8 +392,8 @@ fn graph_view(
                     declaration: owner,
                     index: binder_index as u32,
                 },
-                requirement: Some(requirement_index as u32),
-                authority: Some(evidence.clone()),
+                requirement: Some(binder_requirement_index),
+                authority: Some(binder_evidence),
                 value: InputSlot::Available(Value::new(
                     binder.value_type,
                     ValueKind::Object(first),
@@ -392,8 +440,190 @@ fn replace_graph_links(object: &mut ObjectInput, targets: impl IntoIterator<Item
     object.fields = vec![graph_link(targets, field)];
 }
 
+fn postcondition_view(
+    package: &quire_spec_language::protocol_artifact::AdmittedPackage,
+) -> (u32, w::Handle, StateView) {
+    let owner = package
+        .package()
+        .declarations
+        .iter()
+        .position(|declaration| declaration.name == "Changed")
+        .expect("postcondition declaration") as u32;
+    let declaration = &package.package().declarations[owner as usize];
+    let root = match &declaration.body {
+        w::Body::State { root, .. } => root.clone(),
+        _ => unreachable!("Changed is a state clause"),
+    };
+    let mut binders = Vec::new();
+    let mut populations = Vec::new();
+    for (binder_index, binder) in declaration.binders.iter().enumerate() {
+        if !matches!(
+            binder.kind,
+            w::BinderKind::SelfValue | w::BinderKind::Result
+        ) {
+            continue;
+        }
+        let binder_handle = w::Handle {
+            declaration: owner,
+            index: binder_index as u32,
+        };
+        let requirement_index = declaration.anchors[binder.anchor.index as usize]
+            .binding
+            .0
+            .expect("anchored state binder requirement");
+        let evidence = authority(package, owner, requirement_index);
+        if binder.kind == w::BinderKind::Result {
+            binders.push(BinderInput {
+                binder: binder_handle,
+                requirement: Some(requirement_index),
+                authority: Some(evidence),
+                value: InputSlot::Available(Value::new(
+                    binder.value_type,
+                    ValueKind::Boolean(true),
+                )),
+            });
+            continue;
+        }
+
+        let population_index = declaration
+            .bindings
+            .iter()
+            .position(|requirement| {
+                requirement.kind == w::BindingKind::Population
+                    && requirement.anchor == binder.anchor
+            })
+            .expect("anchor-local population requirement") as u32;
+        let population = &declaration.bindings[population_index as usize];
+        let closure_index = declaration
+            .bindings
+            .iter()
+            .position(|requirement| {
+                requirement.kind == w::BindingKind::Closure
+                    && requirement.requires == [population_index]
+            })
+            .expect("anchor-local closure requirement") as u32;
+        let object_type = match &package.package().types[binder.value_type as usize] {
+            w::Type::Object { export } => export.clone(),
+            _ => unreachable!("self has object type"),
+        };
+        let anchor_kind = declaration.anchors[binder.anchor.index as usize].kind;
+        let number = match anchor_kind {
+            w::AnchorKind::InvocationPre => 1,
+            w::AnchorKind::InvocationPost => 2,
+            _ => unreachable!("postcondition self anchor"),
+        };
+        let key = ObjectKey {
+            observation: ObservationKey {
+                anchor: binder.anchor.clone(),
+                snapshot: ObservationIdentity("snapshot:selected".into()),
+                window: None,
+                record: ObservationIdentity(format!("record:{}", anchor_kind.as_str())),
+            },
+            model: object_type.model,
+            universe: population.model.0.clone().expect("population export"),
+            object_type: object_type.clone(),
+            identifier: "logical-self".into(),
+        };
+        let fields = package.package().models[object_type.model as usize]
+            .exports
+            .iter()
+            .enumerate()
+            .filter(|(_, export)| {
+                export.kind == w::ExportKind::Field
+                    && export.path.len() == 2
+                    && export.path[0] == "Node"
+            })
+            .map(|(field_index, export)| {
+                let field = w::ExportRef {
+                    model: object_type.model,
+                    export: field_index as u32,
+                };
+                let value = if export.path[1] == "n" {
+                    let value_type = declaration
+                        .values
+                        .iter()
+                        .find_map(|value| match &value.operation {
+                            w::ValueOperation::Field {
+                                field: selected, ..
+                            } if selected == &field => Some(value.value_type),
+                            _ => None,
+                        })
+                        .expect("selected n field value type");
+                    return FieldInput {
+                        field,
+                        value: FieldValue::Compiled(InputSlot::Available(Value::new(
+                            value_type,
+                            ValueKind::Number(ProtocolNumber::Integer(ExactInteger::new(number))),
+                        ))),
+                    };
+                } else {
+                    ContextualSlot::Unavailable(state::MissingInput::Field {
+                        object: key.clone(),
+                        field: field.clone(),
+                    })
+                };
+                FieldInput {
+                    field,
+                    value: FieldValue::Contextual(value),
+                }
+            })
+            .collect();
+        binders.push(BinderInput {
+            binder: binder_handle,
+            requirement: Some(requirement_index),
+            authority: Some(evidence),
+            value: InputSlot::Available(Value::new(
+                binder.value_type,
+                ValueKind::Object(key.clone()),
+            )),
+        });
+        populations.push(PopulationInput {
+            requirement: w::Handle {
+                declaration: owner,
+                index: population_index,
+            },
+            closure_requirement: w::Handle {
+                declaration: owner,
+                index: closure_index,
+            },
+            authority: authority(package, owner, population_index),
+            membership: Ok(()),
+            closure: Ok(()),
+            objects: vec![ObjectInput { key, fields }],
+        });
+    }
+    (
+        owner,
+        root,
+        StateView {
+            binders,
+            populations,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+enum AmountInput {
+    Available(i64),
+    Missing { claimed_index: usize },
+}
+
 fn query_view(
     package: &quire_spec_language::protocol_artifact::AdmittedPackage,
+) -> (u32, StateView) {
+    query_view_with_amounts(
+        package,
+        &[
+            AmountInput::Available(2),
+            AmountInput::Available(2),
+            AmountInput::Available(3),
+        ],
+    )
+}
+
+fn query_view_with_amounts(
+    package: &quire_spec_language::protocol_artifact::AdmittedPackage,
+    inputs: &[AmountInput],
 ) -> (u32, StateView) {
     let owner = package
         .package()
@@ -424,15 +654,25 @@ fn query_view(
     else {
         unreachable!("amounts sequence type")
     };
-    let amount = |number| {
-        InputSlot::Available(Value::new(
+    let binder_handle = w::Handle {
+        declaration: owner,
+        index: binder_index as u32,
+    };
+    let amount = |input| match input {
+        AmountInput::Available(number) => InputSlot::Available(Value::new(
             *element,
             ValueKind::Number(ProtocolNumber::Integer(ExactInteger::new(number))),
-        ))
+        )),
+        AmountInput::Missing { claimed_index } => {
+            InputSlot::Unavailable(state::MissingInput::Member {
+                requirement: binder_handle.clone(),
+                index: claimed_index,
+            })
+        }
     };
     let amounts = Value::new(
         field_node.value_type,
-        ValueKind::Sequence(vec![amount(2), amount(2), amount(3)]),
+        ValueKind::Sequence(inputs.iter().copied().map(amount).collect()),
     );
     let record = Value::new(
         binder.value_type,
@@ -445,10 +685,7 @@ fn query_view(
         owner,
         StateView {
             binders: vec![BinderInput {
-                binder: w::Handle {
-                    declaration: owner,
-                    index: binder_index as u32,
-                },
+                binder: binder_handle,
                 requirement: None,
                 authority: None,
                 value: InputSlot::Available(record),
@@ -563,6 +800,81 @@ fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
         assert!(matches!(
             state::evaluate(package, crossed, &StateView::default(), Limits::default()).outcome(),
             EvaluationOutcome::Refused(_)
+        ));
+    });
+}
+
+/// Tracing: TC-136.
+#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-4", "FR-049-AC-5")]
+#[test]
+fn tc_136_pre_reads_the_exact_invocation_pre_observation_and_binding() {
+    admitted_postcondition(|package| {
+        let (owner, root, view) = postcondition_view(package);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        let report = state::evaluate(package, request.clone(), &view, Limits::default());
+        assert!(
+            matches!(
+                report.outcome(),
+                EvaluationOutcome::Completed(value)
+                    if matches!(value.kind(), ValueKind::Boolean(true))
+            ),
+            "{:?}",
+            report.outcome()
+        );
+
+        let declaration = &package.package().declarations[owner as usize];
+        let pre = view
+            .binders
+            .iter()
+            .position(|input| {
+                declaration.anchors[declaration.binders[input.binder.index as usize]
+                    .anchor
+                    .index as usize]
+                    .kind
+                    == w::AnchorKind::InvocationPre
+            })
+            .expect("pre self input");
+        let post = view
+            .binders
+            .iter()
+            .position(|input| {
+                let binder = &declaration.binders[input.binder.index as usize];
+                binder.kind == w::BinderKind::SelfValue
+                    && declaration.anchors[binder.anchor.index as usize].kind
+                        == w::AnchorKind::InvocationPost
+            })
+            .expect("post self input");
+
+        let mut crossed_observation = view.clone();
+        crossed_observation.binders[pre].value = view.binders[post].value.clone();
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request.clone(),
+                &crossed_observation,
+                Limits::default()
+            )
+            .outcome(),
+            EvaluationOutcome::Refused(Refusal::Authority(handle))
+                if handle == &view.binders[pre].binder
+        ));
+
+        let mut laundered_requirement = view.clone();
+        laundered_requirement.binders[pre].requirement = view.binders[post].requirement;
+        laundered_requirement.binders[pre].authority = view.binders[post].authority.clone();
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request,
+                &laundered_requirement,
+                Limits::default()
+            )
+            .outcome(),
+            EvaluationOutcome::Refused(Refusal::Authority(handle))
+                if handle == &view.binders[pre].binder
         ));
     });
 }
@@ -962,6 +1274,81 @@ fn tc_127_all_eight_queries_preserve_order_duplicates_and_independent_results() 
                 "query case {case}"
             );
         }
+    });
+}
+
+/// Tracing: TC-127, TC-128, TC-136.
+#[trace(
+    "TC-127",
+    "TC-128",
+    "TC-136",
+    "FR-046-AC-4",
+    "FR-046-AC-6",
+    "FR-049-AC-4"
+)]
+#[test]
+fn tc_127_128_unavailable_members_obey_decisive_order_and_exact_position() {
+    admitted_queries(|package| {
+        let (owner, before) = query_view_with_amounts(
+            package,
+            &[
+                AmountInput::Missing { claimed_index: 0 },
+                AmountInput::Available(2),
+            ],
+        );
+        let (_, after) = query_view_with_amounts(
+            package,
+            &[
+                AmountInput::Available(2),
+                AmountInput::Missing { claimed_index: 1 },
+            ],
+        );
+        let contains = operation(package, owner, |op| {
+            matches!(op, w::ValueOperation::Contains { collection, .. }
+                if matches!(package.package().declarations[owner as usize].values[collection.index as usize].operation,
+                    w::ValueOperation::Field { .. }))
+        });
+        let missing = match &before.binders[0].value {
+            InputSlot::Available(value) => match value.kind() {
+                ValueKind::Record(fields) => match &fields[0].value {
+                    FieldValue::Compiled(InputSlot::Available(value)) => match value.kind() {
+                        ValueKind::Sequence(values) => match &values[0] {
+                            InputSlot::Unavailable(missing) => missing.clone(),
+                            _ => unreachable!("first member is unavailable"),
+                        },
+                        _ => unreachable!("amounts is a sequence"),
+                    },
+                    _ => unreachable!("amounts is available"),
+                },
+                _ => unreachable!("query input is a record"),
+            },
+            _ => unreachable!("query input is available"),
+        };
+        let selected = EvaluationRequest {
+            declaration: owner,
+            value: contains,
+        };
+        assert!(matches!(
+            state::evaluate(package, selected.clone(), &before, Limits::default()).outcome(),
+            EvaluationOutcome::Incomplete(actual) if actual == &missing
+        ));
+        assert!(matches!(
+            state::evaluate(package, selected.clone(), &after, Limits::default()).outcome(),
+            EvaluationOutcome::Completed(value)
+                if matches!(value.kind(), ValueKind::Boolean(true))
+        ));
+
+        let (_, wrong_position) = query_view_with_amounts(
+            package,
+            &[
+                AmountInput::Available(2),
+                AmountInput::Missing { claimed_index: 0 },
+            ],
+        );
+        assert!(matches!(
+            state::evaluate(package, selected, &wrong_position, Limits::default()).outcome(),
+            EvaluationOutcome::Refused(Refusal::Authority(_))
+        ));
     });
 }
 
