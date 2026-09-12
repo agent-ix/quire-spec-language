@@ -395,6 +395,21 @@ fn decode_with_tags<T: DeserializeOwned>(
     limits: PackageLimits,
     string_tags: bool,
 ) -> Result<(T, PackagePassUsage), Failure> {
+    // `serde_json` normally refuses numeric literals which overflow its finite
+    // number domain. That behavior must not change when another crate enables
+    // serde_json's additive `arbitrary_precision` feature for its own wire.
+    // Preserve this package wire's admission domain before asking Serde to
+    // recognize an otherwise unknown format.
+    if !crate::json_number::all(bytes, |number| {
+        number.parse::<f64>().is_ok_and(f64::is_finite)
+    }) {
+        return Err(Failure {
+            code: Code::InvalidPackage,
+            usage: PackagePassUsage::default(),
+            path: Vec::new(),
+            cause: de::Error::custom("package number is outside the finite JSON domain"),
+        });
+    }
     let mut meter = Meter {
         limits: limits.bounded(),
         string_tags,

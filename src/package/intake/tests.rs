@@ -36,6 +36,25 @@ fn buffered_variants_keep_string_tags_and_object_records() {
 }
 
 #[test]
+#[trace("TC-083", "FR-020-AC-2")]
+fn additive_dependency_features_cannot_expand_the_package_number_domain() {
+    let error = decode::<Recognized>(
+        br#"{"format":"future","value":1e9999}"#,
+        PackageLimits::default(),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.code, Code::InvalidPackage);
+
+    let (recognized, _) = decode::<Recognized>(
+        br#"{"format":"future","value":1e-9999}"#,
+        PackageLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(recognized.0.as_deref(), Some("future"));
+}
+
+#[test]
 #[trace("TC-088", "FR-020-AC-9")]
 fn hard_recognition_entry_and_string_limits_cannot_be_elevated() {
     let hard = PackageLimits::default();
