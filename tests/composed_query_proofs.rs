@@ -379,7 +379,14 @@ fn query_body_safety_covers_the_whole_element_domain() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-4", "FR-040-AC-5", "FR-040-AC-8")]
+#[trace(
+    "TC-119",
+    "TC-127",
+    "FR-040-AC-4",
+    "FR-040-AC-5",
+    "FR-040-AC-8",
+    "FR-046-AC-5"
+)]
 fn sum_proves_every_prefix_from_declared_capacity_not_a_convenient_final_result() {
     for maximum in [5, 6] {
         let model = query_model(maximum);
@@ -421,7 +428,15 @@ fn sum_proves_every_prefix_from_declared_capacity_not_a_convenient_final_result(
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-3", "FR-040-AC-5", "FR-040-AC-8")]
+#[trace(
+    "TC-119",
+    "TC-127",
+    "FR-040-AC-3",
+    "FR-040-AC-5",
+    "FR-040-AC-8",
+    "FR-046-AC-4",
+    "FR-046-AC-5"
+)]
 fn maximal_integer_sum_discharges_real_prefix_bounds_within_default_limits() {
     let model = query_model(10_000);
     inspect(&model, "predicate WideSum using S (input: M::Node): Boolean {
@@ -491,7 +506,7 @@ fn maximal_integer_sum_discharges_real_prefix_bounds_within_default_limits() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-3", "FR-040-AC-5")]
+#[trace("TC-119", "TC-127", "FR-040-AC-3", "FR-040-AC-5", "FR-046-AC-5")]
 fn aggregate_result_domains_keep_exact_units_representation_zero_and_length() {
     let model = query_model(5);
     for expression in [
@@ -610,7 +625,14 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-4", "FR-040-AC-5", "FR-040-AC-8")]
+#[trace(
+    "TC-119",
+    "TC-127",
+    "FR-040-AC-4",
+    "FR-040-AC-5",
+    "FR-040-AC-8",
+    "FR-046-AC-5"
+)]
 fn rational_sum_separates_supported_prefixes_from_missing_domain_transfer() {
     let integral = query_model(5);
     inspect(
@@ -679,7 +701,7 @@ fn rational_sum_separates_supported_prefixes_from_missing_domain_transfer() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-5", "FR-040-AC-9")]
+#[trace("TC-119", "TC-128", "FR-040-AC-5", "FR-040-AC-9", "FR-046-AC-7")]
 fn query_body_proof_exhaustion_keeps_original_types_and_a_fresh_retry() {
     let model = query_model(5);
     inspect(
@@ -726,7 +748,14 @@ fn query_body_proof_exhaustion_keeps_original_types_and_a_fresh_retry() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-4", "FR-040-AC-5", "FR-040-AC-6")]
+#[trace(
+    "TC-119",
+    "TC-126",
+    "FR-040-AC-4",
+    "FR-040-AC-5",
+    "FR-040-AC-6",
+    "FR-046-AC-2"
+)]
 fn optional_and_division_query_guards_belong_to_the_same_element() {
     let model = query_model(5);
     inspect(
