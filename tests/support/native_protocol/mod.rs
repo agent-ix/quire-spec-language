@@ -13,7 +13,7 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::protocol_artifact::{self as artifact, native, wire as w};
+use quire_spec_language::protocol_artifact::{self as artifact, native, v2, wire as w};
 use quire_spec_language::{ByteDigest, Source};
 
 pub struct Unit<'a> {
@@ -388,6 +388,88 @@ impl Inputs {
         bytes: &[u8],
         digest: ByteDigest,
     ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "1", |expected, _| {
+            artifact::read(bytes, &expected, artifact::Limits::default())
+        })
+    }
+
+    /// Read version-2 bytes from the original native and temporal selections.
+    #[allow(dead_code, reason = "Only version-2 artifact controls use this helper")]
+    pub fn read_v2(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        emitted: &native::AdmissionV2,
+        temporal: &[native::TemporalSelection<'_>],
+    ) -> artifact::Report<v2::AdmittedPackage> {
+        self.read_v2_bytes(
+            proofs,
+            emitted.bytes(),
+            emitted.digest(),
+            temporal,
+            artifact::Limits::default(),
+        )
+    }
+
+    /// Check version-2 transport against independently retained selections.
+    #[allow(dead_code, reason = "Only version-2 artifact controls use this helper")]
+    pub fn read_v2_bytes(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        temporal: &[native::TemporalSelection<'_>],
+        limits: artifact::Limits,
+    ) -> artifact::Report<v2::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "2", |inherited, sources| {
+            let expected_temporal: Vec<_> = temporal
+                .iter()
+                .map(|selection| {
+                    let source = sources
+                        .iter()
+                        .find(|source| source.artifact == selection.source)
+                        .expect("selected original source");
+                    let declaration = source
+                        .declarations
+                        .iter()
+                        .find(|declaration| declaration.span == selection.span)
+                        .or_else(|| {
+                            sources
+                                .iter()
+                                .flat_map(|source| source.declarations)
+                                .find(|declaration| declaration.span == selection.span)
+                        })
+                        .expect("selected original declaration span");
+                    v2::ExpectedTemporal {
+                        source: selection.source,
+                        declaration,
+                        definition: v2::ExpectedDefinition {
+                            identity: selection.definition_identity,
+                            revision: selection.definition_revision,
+                            artifact: selection.definition_artifact,
+                        },
+                        clock: selection.clock,
+                    }
+                })
+                .collect();
+            v2::read(
+                bytes,
+                &v2::Expected {
+                    inherited,
+                    temporal: &expected_temporal,
+                },
+                limits,
+            )
+        })
+    }
+
+    fn with_expected<T>(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        version: &str,
+        test: impl FnOnce(artifact::Expected<'_>, &[artifact::ExpectedSource<'_>]) -> T,
+    ) -> T {
         let namespace = proofs.types().binding().namespace();
         let spans: Vec<Vec<_>> = self
             .mappings
@@ -486,7 +568,7 @@ impl Inputs {
             w::ArtifactKind::LinkedPackage,
             "fixture-native-output",
             "quire.compiled-protocol",
-            "1",
+            version,
             bytes,
         );
         artifact.digest = digest;
@@ -495,9 +577,8 @@ impl Inputs {
             edition: "1-draft".into(),
         };
         self.with_selections(|selected| {
-            artifact::read(
-                bytes,
-                &artifact::Expected {
+            test(
+                artifact::Expected {
                     artifact: &artifact,
                     contract: &self.contract,
                     baseline: &self.baseline,
@@ -507,7 +588,7 @@ impl Inputs {
                     dependencies: selected.dependencies,
                     models: selected.models,
                 },
-                artifact::Limits::default(),
+                &sources,
             )
         })
     }
