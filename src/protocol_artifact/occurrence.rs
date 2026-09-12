@@ -28,6 +28,14 @@ impl<'a> From<&'a AdmittedPackage> for AdmittedProtocolView<'a> {
     }
 }
 
+impl<'a> From<&'a super::v2::AdmittedPackage> for AdmittedProtocolView<'a> {
+    fn from(value: &'a super::v2::AdmittedPackage) -> Self {
+        Self {
+            package: value.inherited(),
+        }
+    }
+}
+
 /// One authored role slot and its separately supplied future-instance binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoleSlotSchema {
