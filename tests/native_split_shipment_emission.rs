@@ -218,7 +218,16 @@ fn control_requirements(
 /// transport delivery requirements of the same send over the same channel, and
 /// neither of them is the channel's per-send delivery bound or the effect.
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "TC-134",
+    "FR-042-AC-1",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-2",
+    "FR-048-AC-6"
+)]
 fn two_shipments_of_one_notice_keep_distinct_transport_delivery_identities() {
     let inputs = inputs(SPLIT);
     admitted(&inputs, |package| {
@@ -393,7 +402,14 @@ fn each_shipment_keeps_its_own_authored_constraint_over_its_own_binder() {
 /// first delivery identity by reusing its name, nor substitute another delivery
 /// for the send it observes.
 #[test]
-#[trace("TC-121", "FR-036-AC-4", "FR-042-AC-6", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-036-AC-4",
+    "FR-042-AC-6",
+    "FR-042-AC-8",
+    "FR-048-AC-2"
+)]
 fn a_collapsed_or_substituted_shipment_delivery_identity_is_refused() {
     let collapsed = SPLIT.replace("receive S2 via Shipments", "receive S1 via Shipments");
     scope_refused(

@@ -285,7 +285,15 @@ fn events(controls: &[w::Control]) -> Vec<&w::Event> {
 /// Item 1. The whole retry: a bounded repeat over a pre-loop observed charge
 /// outcome, with the forward attempt and its single effect inside the body.
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-134",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-6"
+)]
 fn payment_retry_over_a_pre_loop_observed_charge_outcome_emits_its_attempt_and_effect() {
     let run = order(&retry(
         "Provider",
@@ -749,7 +757,7 @@ fn a_choice_inside_the_retry_and_a_following_event_keep_their_nested_edges() {
 /// visible basis, both branch roots and their valuations — is inside the
 /// measured budget rather than only the inner choice's.
 #[test]
-#[trace("TC-121", "FR-042-AC-9")]
+#[trace("TC-121", "TC-133", "FR-042-AC-9", "FR-048-AC-5")]
 fn accumulating_work_dimensions_separate_zero_exact_and_one_short_retry_budgets() {
     let body = format!(
         "sequence Iteration {{
@@ -866,7 +874,16 @@ fn accumulating_work_dimensions_separate_zero_exact_and_one_short_retry_budgets(
 /// attempt and never the other way round, and orders O1/O2 sharing provider P
 /// keep distinct binding subjects.
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "TC-134",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-2",
+    "FR-048-AC-6"
+)]
 fn delivery_attempt_and_business_effect_identities_stay_separate_across_a_retry() {
     let run = format!(
         "sequence Orders {{ {} {ORDER_O2} }}",
