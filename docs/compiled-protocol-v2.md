@@ -92,6 +92,15 @@ record selects one exact source artifact plus `ExpectedDeclaration`, definition
 identity/revision/artifact and typed clock configuration. Admission never builds
 that table from the offer.
 
+Version-2 selection failures use `Error::V2(v2::Refusal)`. `Refusal` carries
+public typed `HeaderField`, `BindingCause`/`InventorySide`,
+`DeclarationField`, `DefinitionField`/`ArtifactField`, and `ClockField`
+discriminants. `Refusal::code()` returns the stable machine code (for example
+`v2.definition.artifact.digest` or `v2.clock.sequence-authority`); consumers do
+not parse diagnostics to distinguish axes. Closed-JSON shape errors such as a
+missing or renamed required clock member remain `Error::Json`, while valid
+objects with a wrong alternative or value receive the exact v2 selection code.
+
 The constructor-private compiler entry point is:
 
 ```rust,ignore
@@ -167,11 +176,12 @@ claim that B admitted the artifact or completed an ecosystem acceptance run.
 
 ### Concrete release producer
 
-The release-capable handoff uses the same four authored source units and actual
-model as the established `/1` recipe, while selecting `Due` under the exact
-EventPosition definition and the original configuration bytes
-`{"kind":"event_position","sequence_authority":"workflow-events"}`. Build and
-run it into a new directory:
+The release-capable handoff uses four authored source units and the same actual
+model as the established `/1` recipe. Its v2-only temporal source selects
+`Due`, `DueSample` and `DueTimestamp` under the exact EventPosition,
+FixedSample and TimestampedWindow definitions, with three separately published
+original clock-input files. The historical `/1` recipe and bytes are unchanged.
+Build and run it into a new directory:
 
 ```console
 CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_v2_handoff -- /tmp/quire-native-v2-handoff
@@ -193,8 +203,18 @@ The directory contains:
   canonical bytes and separately authorized external seal;
 - `expected-v2.json`: inherited independent reader selectors, exact temporal
   source/declaration/definition/configuration selectors and selected limits;
-- `event-clock.json`: the original configuration bytes and the sidecar identity
-  and raw-byte digest that select them;
+- `event-clock.json`, `sample-clock.json` and `timestamp-clock.json`: the
+  original deliberately noncanonical configuration bytes and sidecar
+  identities/raw-byte digests that select them; their parsed typed values emit
+  canonical package members, so an input recanonicalization changes the input
+  artifact instead of becoming a vacuous byte comparison;
+- `mutations/manifest.json`: `quire.protocol.v2-mutations/1`, naming the base
+  offer, external reference, independent selection and every emitted mutation's
+  input operation and expected stable refusal code;
+- `mutations/*.json` and `mutations/*.bin`: independently re-sealed header,
+  binding-index/inventory, definition identity/revision/artifact/digest-domain,
+  clock-alternative/member, malformed-member and original-definition-byte
+  substitutions;
 - the four original `.native` files and `model-source.json`; and
 - `dependencies/*.bin`: every exact original definition, rule, model package,
   contract and producer executable selected by the invocation, with paths,
