@@ -266,11 +266,17 @@ pub enum Refusal {
     DuplicateBinding(wire::Handle),
     MissingBinding(wire::Handle),
     SurplusBinding(wire::Handle),
+    /// A graph value names the right nominal domain under an observation
+    /// occurrence for which no selected population was supplied.
+    PopulationDomain(ObjectKey),
     DuplicateObject(ObjectKey),
     AuthorityRevision,
     Authority(wire::Handle),
     UngroundedAuthorityMapping(wire::Handle),
-    Type { expected: u32, actual: u32 },
+    Type {
+        expected: u32,
+        actual: u32,
+    },
     ValueShape(u32),
     Field(wire::ExportRef),
     ContextualValue(wire::ExportRef),
