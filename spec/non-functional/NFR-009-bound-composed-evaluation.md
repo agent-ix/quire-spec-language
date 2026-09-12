@@ -41,7 +41,6 @@ value. The borrowed package and state view remain reusable with fresh limits.
 | Graph edges | At most 100000 inspected reference occurrences per call | 100000 edges | negative-abuse-testing |
 | Active graph depth | At most 64 active recursive graph-expansion frames per call | 64 levels | negative-abuse-testing |
 | Value comparison | At most 100000 compared value pairs per call | 100000 pairs | negative-abuse-testing |
-| Active comparison depth | At most 64 active recursive value-pair comparisons per call | 64 levels | negative-abuse-testing |
 
 ## Counter definitions
 
@@ -73,12 +72,12 @@ a frame; a skipped branch or sequence occurrence creates no frame. Predicate
 call depth independently starts at one on entry to the first callee, increases
 only across an active nested call and decrements when that call returns.
 
-Value comparison charges one pair before inspecting its type-specific content
-and recursively charges child pairs. Comparison depth starts at one for the
-outer pair and increases before each record field, option payload or sequence
-element pair; scalar/reference/object pairs are leaves. Text comparison
-additionally charges its UTF-8 content during input validation; no wall-clock or
-locale-dependent work is introduced.
+Value comparison charges one pair before inspecting its type-specific content.
+The selected composed profile admits equality only for its scalar, enum,
+reference and object-identity types; it does not widen FR-040 with recursive
+record, option or sequence equality. Text comparison additionally charges its
+UTF-8 content during input validation; no wall-clock or locale-dependent work is
+introduced.
 
 Graph reachability performs deterministic depth-first search in authored edge
 order. Entering an unexpanded object charges graph expansion, marks its full
@@ -89,13 +88,15 @@ is entered recursively before the next sibling edge. Duplicate edges therefore
 consume edge work, cycles terminate, and a self-loop remains positive-length.
 Active graph depth starts at one for the selected start object.
 
-Input, expression, predicate-call, comparison and graph depth are independent
-limits and maximum-usage counters. Entering a frame checks its own limit before
-the frame or any work inside it; returning always removes that active frame.
+Input, expression, predicate-call and graph depth are independent limits and
+maximum-usage counters. Entering a frame checks its own limit before the frame
+or any work inside it; returning always removes that active frame.
 
 Every charge checks `used == limit` before performing its operation. Zero is a
-real limit. Counter overflow and allocation refusal return exhaustion without
-performing the next operation. Validation precedes execution, but unavailable
+real limit. Exhaustion records one closed cause—`Limit`, `CounterOverflow` or
+`Allocation`—and the affected dimension. A bounded allocation is attempted only
+after charging its retained-entry dimension; allocator refusal is attributed to
+that dimension without claiming its numeric ceiling was reached. Validation precedes execution, but unavailable
 typed placeholders charge their node/entry and remain dormant until their value
 is selected. Each report exposes the clamped limits and successful charges made
 before its terminal outcome.
@@ -105,7 +106,8 @@ before its terminal outcome.
 Rust public-API tests independently count small fixed inputs for each dimension,
 then run zero/no-work, exact, one-short and above-hard requests while holding all
 other dimensions sufficient. Tests use ordered duplicate sequences, nested
-predicate calls, Unicode text, materializing queries and cyclic/diamond graphs.
+predicate calls, Unicode text, supported identity comparisons, materializing
+queries and cyclic/diamond graphs.
 Mutation controls remove individual charge sites and require the exact-boundary
 case to fail. A sufficient retry after exhaustion returns the same value with
 fresh counters and unchanged inputs.

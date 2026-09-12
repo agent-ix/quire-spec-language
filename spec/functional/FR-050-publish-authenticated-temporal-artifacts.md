@@ -39,9 +39,11 @@ display name or inferred unit is not a compiler clock configuration.
 
 ## Outputs
 
-Canonical `quire.compiled-protocol/2` bytes and an external artifact reference,
+Canonical `quire.compiled-protocol/2` bytes and their complete raw-byte digest,
 or FR-042's typed invalid, unsupported or resource-incomplete disposition with
-no partial package. A successful strict `/2` read returns a constructor-private
+no partial package. The caller remains responsible for placing that digest in
+an independently authorized external `ArtifactRef`; the compiler does not mint
+its authority, identity or revision. A successful strict `/2` read returns a constructor-private
 `protocol_artifact::v2::AdmittedPackage`; it does not authenticate `/1` bytes or
 produce a temporal/protocol assessment result.
 
@@ -58,15 +60,16 @@ The producer's `temporal` input SHALL be a complete table of
 declaration byte span, with expected definition identity/revision/artifact and
 one typed clock configuration.
 
-`AdmissionV2` SHALL expose immutable canonical bytes, digest, usage and the
-strict `/2` admitted view while retaining the same constructor-private native
-authority as FR-042's producer.
+`AdmissionV2` SHALL expose immutable canonical bytes, digest and the strict `/2`
+admitted view while retaining the same constructor-private native authority as
+FR-042's producer. Its enclosing `Report<AdmissionV2>` SHALL expose effective
+limits and usage exactly once, following the existing FR-042 report pattern.
 
 The public L5 entry points SHALL be
 `temporal::evaluate_v2(&protocol_artifact::v2::AdmittedPackage, declaration, trace, limits)`,
 `temporal::evaluate_with_progress_v2(..., ledger)` and
-`temporal::mapping_support_v2(...)`, with the same result types as their existing
-strict `/1` counterparts.
+`temporal::mapping_support_v2(&protocol_artifact::v2::AdmittedPackage, declaration, closure)`,
+with the same result types as their existing strict `/1` counterparts.
 
 The existing `temporal::evaluate`, `evaluate_with_progress` and
 `mapping_support` entry points SHALL retain their `/1` signatures and
@@ -159,10 +162,20 @@ rejects `/2` wire/media/schema selections and the added member.
 The `/2` reader SHALL reject `/1` rather than default temporal bindings or infer
 them from declaration bodies, traces or the environment.
 
-Each v2-specific temporal evaluation entry point SHALL compare a trace's profile identity,
+Each v2-specific trace-evaluation entry point SHALL compare a trace's profile identity,
 revision, clock binding name and exact parameter map to the admitted `/2`
 selection before visiting positions; a mismatch is a typed binding refusal and
 no longer an unauthenticated retained premise.
+
+`mapping_support_v2` takes no runtime trace. It SHALL require the declaration's
+admitted binding to select the same definition/profile before classifying the
+formula closure; it SHALL NOT claim to authenticate a parameter map that is not
+an input to mapping classification.
+
+The progress ledger identity used by `evaluate_with_progress_v2` SHALL include
+the admitted package digest, declaration, definition identity/revision and exact
+clock configuration. Progress recorded for `/1`, another `/2` artifact or a
+different authenticated clock configuration SHALL NOT settle this evaluation.
 
 Changing a selected definition artifact, sequence authority, epoch, period,
 unit or timestamp unit SHALL change canonical `/2` bytes and the external

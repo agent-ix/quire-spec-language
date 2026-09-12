@@ -67,12 +67,14 @@ reduced rational, text, enum, record, option, ordered sequence, reference and
 object value against its compiled nominal type, unit, bounds, field exports and
 declared maximum before evaluation.
 
-An `Available` supplied value SHALL contain only recursively available child
-values.
+Every supplied value position SHALL be an explicit typed slot containing either
+an `Available` payload or one `Unavailable` cause. Aggregate payloads SHALL
+retain their child slots recursively in authored order, so an ordered sequence
+or record can carry an unavailable child without inventing that child's value.
 
-An `Unavailable` supplied value SHALL retain one typed missing observation,
-field, member, membership, sequence, population or closure identity without
-constructing a placeholder semantic value.
+An `Unavailable` slot SHALL retain one typed missing observation, field, member,
+membership, sequence, population or closure identity without constructing a
+placeholder semantic value.
 
 The input validator SHALL permit an unavailable value at a position whose
 compiled expected type and authority are known, so evaluation can preserve
@@ -116,7 +118,7 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | --- | --- | --- |
 | FR-049-AC-1 | Only an `AdmittedPackage` plus an exact declaration-local value selection reaches evaluation; raw bytes, freely constructed wire packages and crossed/out-of-range handles cannot. | Test (TC-136) |
 | FR-049-AC-2 | Binder and population inputs retain exact declaration, compiled requirement, model, type, unit, anchor and authority; duplicate, surplus, foreign and wrong-type entries refuse independently. | Test (TC-136) |
-| FR-049-AC-3 | Available recursive values satisfy exact compiled Boolean/numeric/text/enum/record/option/sequence/reference/object domains without implicit conversion, normalization or duplicate coalescing. | Test (TC-136) |
+| FR-049-AC-3 | Every available payload and recursively typed aggregate slot satisfies the exact compiled Boolean/numeric/text/enum/record/option/sequence/reference/object domain without implicit conversion, normalization or duplicate coalescing. | Test (TC-136) |
 | FR-049-AC-4 | Unavailable values preserve typed missing identities and participate only if evaluation reaches them; they never become null, false, zero, empty or a completed output member. | Test (TC-136) |
 | FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct anchors, compares permitted pre/post identity without retagging reads, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
 | FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
