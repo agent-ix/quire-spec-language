@@ -132,11 +132,59 @@ pub enum InputSlot {
     Unavailable(MissingInput),
 }
 
+/// One available contextual model-field payload or its exact unavailable cause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContextualSlot {
+    Available(ContextualValue),
+    Unavailable(MissingInput),
+}
+
+/// A field payload whose nominal type is supplied by its enclosing field export.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContextualValue {
+    kind: Arc<ContextualValueKind>,
+}
+
+impl ContextualValue {
+    /// Construct an immutable contextual field node without a synthetic wire index.
+    pub fn new(kind: ContextualValueKind) -> Self {
+        Self {
+            kind: Arc::new(kind),
+        }
+    }
+
+    /// Exact semantic shape of this immutable contextual node.
+    pub fn kind(&self) -> &ContextualValueKind {
+        &self.kind
+    }
+}
+
+/// Closed recursively typed field vocabulary interpreted under admitted model metadata.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContextualValueKind {
+    Boolean(bool),
+    Number(ProtocolNumber),
+    Text(String),
+    Enum(wire::ExportRef),
+    Record(Vec<FieldInput>),
+    Option(Option<Box<ContextualSlot>>),
+    Sequence(Vec<ContextualSlot>),
+    Reference(ObjectKey),
+    Object(ObjectKey),
+}
+
+/// Either an ordinary compiled-index value or a model-field-context value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FieldValue {
+    Compiled(InputSlot),
+    Contextual(ContextualSlot),
+}
+
 /// One record/object field, preserving authored occurrence order and duplicates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldInput {
     pub field: wire::ExportRef,
-    pub value: InputSlot,
+    pub value: FieldValue,
 }
 
 /// Exact semantic value, including nominal wire type index.
@@ -225,6 +273,7 @@ pub enum Refusal {
     Type { expected: u32, actual: u32 },
     ValueShape(u32),
     Field(wire::ExportRef),
+    ContextualValue(wire::ExportRef),
     Bounds(u32),
     Dangling(ObjectKey),
     AdmittedInvariant(wire::Handle),
