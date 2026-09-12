@@ -200,6 +200,17 @@ impl Runtime<'_, '_> {
         });
         Ok(at)
     }
+
+    pub(super) fn set_relation(&mut self, binding: u32, relation: u32) -> Result<(), Error> {
+        let binding = self
+            .bindings
+            .get_mut(binding as usize)
+            .ok_or(Error::Invalid(Invalid::Binding))?;
+        if binding.relation.0.replace(relation).is_some() {
+            return Err(Error::Invalid(Invalid::Duplicate));
+        }
+        Ok(())
+    }
     fn declaration_subject(&self) -> w::Subject {
         w::Subject::Declaration {
             declaration: self.layout.declaration,
@@ -560,9 +571,6 @@ pub(super) fn body(
             }
         }
         c::DeclarationKind::Protocol(p) => {
-            if !p.relationships.is_empty() {
-                return Err(Error::Unsupported(Unsupported::Export));
-            }
             let mut roles = Vec::new();
             for (i, role) in p.roles.iter().enumerate() {
                 work.visit()?;
@@ -596,6 +604,38 @@ pub(super) fn body(
                 });
             }
             let channels = super::channels::lower(context, &roles, &mut runtime, builder, work)?;
+            let mut relationships = Vec::new();
+            for relationship in &p.relationships {
+                work.visit()?;
+                let (model, relation) =
+                    relationship_authority(context, relationship, builder, work)?;
+                work.bytes(relationship.name.value.len().saturating_add(13))?;
+                let name = format!("relationship:{}", relationship.name.value);
+                let binding = runtime.add(
+                    Requirement {
+                        name: &name,
+                        kind: w::BindingKind::Relationship,
+                        selected: R::ObservationBinding,
+                        value_type: None,
+                        model: Some(model.clone()),
+                        subject: w::Subject::Declaration {
+                            declaration: layout.declaration,
+                        },
+                        anchor: Anchor::ProtocolInstant,
+                        requires: Vec::new(),
+                        span: relationship.span,
+                    },
+                    work,
+                )?;
+                runtime.set_relation(binding, relation)?;
+                work.charge(Dimension::Entries, 1)?;
+                relationships.push(w::Relationship {
+                    name: text(&relationship.name.value, work)?,
+                    model,
+                    binding,
+                    locus: layout.locus(relationship.span)?,
+                });
+            }
             let mut temporal_requirements = Vec::new();
             for reference in context.references {
                 work.visit()?;
@@ -623,7 +663,7 @@ pub(super) fn body(
                 activation: activation(&p.activation, layout, scope)?,
                 captures: captures(&p.captures, layout, scope, work)?,
                 roles,
-                relationships: Vec::new(),
+                relationships,
                 channels,
                 compensations,
                 temporal_requirements,
@@ -702,6 +742,41 @@ pub(super) fn body(
         )?;
     }
     Ok((runtime.anchors, runtime.bindings, body))
+}
+
+fn relationship_authority(
+    context: &Declaration<'_, '_>,
+    relationship: &c::Relationship,
+    builder: &ValueBuilder<'_>,
+    work: &mut Work,
+) -> Result<(w::ExportRef, u32), Error> {
+    let span = Span {
+        start: relationship.model.model.span.start,
+        end: relationship.model.name.span.end,
+    };
+    for occurrence in &context.exports.occurrences {
+        work.visit()?;
+        if occurrence.span != span {
+            continue;
+        }
+        if let ModelTarget::Relationship(bound) = &occurrence.target {
+            let export = bound.export();
+            if export.path.len() != 1 {
+                return Err(Error::Invalid(Invalid::Model));
+            }
+            let model = builder.export(
+                bound.model(),
+                w::ExportKind::Relationship,
+                &export.path[0],
+                None,
+                work,
+            )?;
+            let relation = builder.producer_relation(bound.model(), work)?;
+            return Ok((model, relation));
+        }
+        return Err(Error::Invalid(Invalid::Model));
+    }
+    Err(Error::Invalid(Invalid::Model))
 }
 
 fn population_name(

@@ -226,6 +226,8 @@ pub(super) fn controls(
                 }
             }
             c::ControlKind::Event(event) => {
+                // Exact endpoint/direction checks require the admitted producer
+                // relationship object, not only its export identity and path.
                 if !event.related.is_empty() {
                     return Err(Error::Unsupported(Unsupported::Export));
                 }
@@ -466,7 +468,7 @@ pub(super) fn controls(
                 )?;
                 work.charge(Dimension::Entries, 1)?;
                 instances.insert(layout.control(original)?.index, instance);
-                let event = match lowered {
+                let lowered_event = match lowered {
                     w::Event::Event {
                         owner,
                         compensation,
@@ -492,7 +494,7 @@ pub(super) fn controls(
                     w::Event::Receive { channel, send } => w::Event::Receive { channel, send },
                 };
                 w::ControlOperation::Event {
-                    event,
+                    event: lowered_event,
                     binder,
                     related: Vec::new(),
                     constraint,

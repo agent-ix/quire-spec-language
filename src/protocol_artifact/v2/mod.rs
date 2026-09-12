@@ -5,7 +5,7 @@ pub(super) mod intake;
 pub(crate) mod refusal;
 pub mod wire;
 
-pub use intake::{encode_candidate, read};
+pub use intake::{encode_candidate, read, read_with_producers};
 pub use refusal::{
     ArtifactField, BindingCause, BindingIndex, ClockField, DeclarationField, DefinitionField,
     HeaderField, InventorySide, Refusal, SelectionSide,

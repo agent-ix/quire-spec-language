@@ -11,6 +11,7 @@ pub mod definitions;
 mod dependencies;
 mod inventory;
 pub mod models;
+pub mod producer;
 pub mod requests;
 pub mod scopes;
 pub mod subject;

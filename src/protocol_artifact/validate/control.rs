@@ -162,7 +162,16 @@ impl<'a> Graph<'a, '_> {
             self.export(&relationship.model, &[ExportKind::Relationship])?;
             let binding =
                 self.binding(owner, relationship.binding, &[BindingKind::Relationship])?;
-            if binding.model.0.as_ref() != Some(&relationship.model) {
+            let relation = self
+                .package
+                .models
+                .get(relationship.model.model as usize)
+                .and_then(|model| model.correspondence.0.as_ref())
+                .map(|correspondence| correspondence.relation)
+                .ok_or(Error::Invalid(Invalid::Binding))?;
+            if binding.model.0.as_ref() != Some(&relationship.model)
+                || binding.relation.0 != Some(relation)
+            {
                 return Err(Error::Invalid(Invalid::Binding));
             }
         }
@@ -439,14 +448,11 @@ impl<'a> Graph<'a, '_> {
                 } => {
                     self.binder(owner, binder, &[BinderKind::Event])?;
                     self.boolean(owner, constraint)?;
-                    for related in related {
-                        self.locus(owner, &related.locus)?;
-                        self.work.visit()?;
-                        if related.relationship as usize >= relationships.len() {
-                            return Err(Error::Invalid(Invalid::Reference));
-                        }
-                        self.value(owner, &related.from)?;
-                        self.value(owner, &related.to)?;
+                    // A relationship index alone cannot establish endpoint types,
+                    // roles, direction or multiplicity. Admit no occurrence until
+                    // the selected producer relationship object is available.
+                    if !related.is_empty() {
+                        return Err(Error::Unsupported(Unsupported::Export));
                     }
                     match event {
                         Event::Send { channel } => {

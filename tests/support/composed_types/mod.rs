@@ -247,6 +247,28 @@ pub fn with_binding(
     limits: BindingLimits,
     test: impl FnOnce(&binding::Report<'_>),
 ) {
+    let inputs: Vec<_> = models
+        .iter()
+        .map(|model| ModelInput::Native(model))
+        .collect();
+    with_binding_inputs(sources, &inputs, limits, test);
+}
+
+pub fn with_binding_inputs(
+    sources: &[Source],
+    inputs: &[ModelInput<'_>],
+    limits: BindingLimits,
+    test: impl FnOnce(&binding::Report<'_>),
+) {
+    with_binding_inputs_and_inventory(sources, inputs, limits, |_, report| test(report));
+}
+
+pub fn with_binding_inputs_and_inventory<T>(
+    sources: &[Source],
+    inputs: &[ModelInput<'_>],
+    limits: BindingLimits,
+    test: impl FnOnce(&SourceInventory, &binding::Report<'_>) -> T,
+) -> T {
     let selected_sources = SourceInventory {
         language: "ix:native".into(),
         edition: "1-draft".into(),
@@ -295,10 +317,6 @@ pub fn with_binding(
         definitions: &definitions,
         rules: &rules,
     };
-    let inputs: Vec<_> = models
-        .iter()
-        .map(|model| ModelInput::Native(model))
-        .collect();
-    let report = binding::bind(admitted.namespace().unwrap(), &definitions, &inputs, limits);
-    test(&report);
+    let report = binding::bind(admitted.namespace().unwrap(), &definitions, inputs, limits);
+    test(&selected_sources, &report)
 }
