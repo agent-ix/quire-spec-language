@@ -15,7 +15,7 @@ use quire_spec_language::protocol_artifact::{
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
-use setup::{Inputs, Unit};
+use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
 
 const DECLARATIONS: [(&str, R); 3] = [
     ("ByEvent", R::EventPosition),
@@ -72,12 +72,17 @@ fn definition_artifact<'a>(
         .artifact
 }
 
+struct TemporalTables<'a> {
+    producer: Vec<native::TemporalSelection<'a>>,
+    expected: Vec<TemporalExpectation>,
+}
+
 fn with_v2(
     test: impl FnOnce(
         &Inputs,
         &proofs::ProofReport<'_, '_, '_>,
         &native::Selections<'_>,
-        &[native::TemporalSelection<'_>],
+        &TemporalTables<'_>,
         &native::AdmissionV2,
     ),
 ) {
@@ -146,7 +151,53 @@ fn with_v2(
                     clock: &clocks[index],
                 })
                 .collect();
-            let report = native::admit_v2(proofs, selected, &temporal, Limits::default());
+            // Re-derive the reader selection from the authored sources and
+            // registered definition catalog. Do not clone or project the
+            // producer's `TemporalSelection` table: producer and reader must be
+            // capable of disagreeing independently.
+            let expected_clocks = [
+                v2::wire::ClockConfiguration::EventPosition {
+                    sequence_authority: "orders".into(),
+                },
+                v2::wire::ClockConfiguration::FixedSample {
+                    epoch: w::Number(NumberWire::Integer {
+                        decimal: "0".into(),
+                    }),
+                    period: w::Number(NumberWire::Rational {
+                        numerator: "1".into(),
+                        denominator: "2".into(),
+                    }),
+                    unit: "second".into(),
+                },
+                v2::wire::ClockConfiguration::TimestampedEvent {
+                    timestamp_unit: "millisecond".into(),
+                },
+            ];
+            let expected: Vec<_> = DECLARATIONS
+                .iter()
+                .enumerate()
+                .map(|(index, (name, definition))| {
+                    inputs.temporal_expectation(
+                        proofs,
+                        index,
+                        name,
+                        TemporalDefinitionExpectation {
+                            identity: definition.identity().into(),
+                            revision: w::Revision {
+                                namespace: selected.definition_revision_namespace.into(),
+                                value: definition.revision().into(),
+                            },
+                            artifact: definition_artifact(selected, *definition).clone(),
+                            clock: expected_clocks[index].clone(),
+                        },
+                    )
+                })
+                .collect();
+            let temporal = TemporalTables {
+                producer: temporal,
+                expected,
+            };
+            let report = native::admit_v2(proofs, selected, &temporal.producer, Limits::default());
             assert!(
                 report.result().is_ok(),
                 "v2 admission: {:?}; locus {:?}",
@@ -314,7 +365,7 @@ fn public_v2_refusal_codes_are_injective_across_every_declared_axis() {
 #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-6")]
 #[test]
 fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
-    with_v2(|inputs, proofs, selected, temporal_selections, emitted| {
+    with_v2(|inputs, proofs, selected, temporal, emitted| {
         let package = emitted.admitted().package();
         assert_eq!(package.temporal_bindings.len(), 3);
         assert!(package
@@ -328,7 +379,7 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
             );
         }
 
-        let read = inputs.read_v2(proofs, emitted, temporal_selections);
+        let read = inputs.read_v2(proofs, emitted, &temporal.expected);
         let admitted = read.result().expect("strict v2 reader");
         assert_eq!(admitted.digest(), emitted.digest());
         assert_eq!(admitted.package(), emitted.admitted().package());
@@ -377,14 +428,11 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         let v1_before = native::emit(&v1_before, Limits::default())
             .into_result()
             .expect("v1 emission");
+        let frozen_v1_digest =
+            include_str!("fixtures/compiled-protocol-v1-v2-fixture.sha256").trim();
+        assert_eq!(v1_before.bytes().len(), 84_780);
+        assert_eq!(v1_before.digest().to_string(), frozen_v1_digest);
         assert!(inputs.read(proofs, &v1_before).result().is_ok());
-        let v1_after = native::admit(proofs, selected, Limits::default())
-            .into_result()
-            .expect("unchanged v1 admission");
-        let v1_after = native::emit(&v1_after, Limits::default())
-            .into_result()
-            .expect("unchanged v1 emission");
-        assert_eq!(v1_before.bytes(), v1_after.bytes());
 
         assert!(inputs
             .read_bytes(proofs, emitted.bytes(), emitted.digest())
@@ -395,7 +443,7 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
                 proofs,
                 v1_before.bytes(),
                 v1_before.digest(),
-                temporal_selections,
+                &temporal.expected,
                 Limits::default(),
             )
             .result()
@@ -408,22 +456,22 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
 fn producer_requires_one_exact_source_definition_and_clock_selection() {
     with_v2(|inputs, proofs, selected, temporal, _| {
         assert_error(
-            &native::admit_v2(proofs, selected, &temporal[..2], Limits::default()),
+            &native::admit_v2(proofs, selected, &temporal.producer[..2], Limits::default()),
             binding(v2::InventorySide::Producer, v2::BindingCause::Missing),
         );
-        let mut surplus = temporal.to_vec();
-        surplus.push(temporal[0]);
+        let mut surplus = temporal.producer.to_vec();
+        surplus.push(temporal.producer[0]);
         assert_error(
             &native::admit_v2(proofs, selected, &surplus, Limits::default()),
             binding(v2::InventorySide::Producer, v2::BindingCause::Surplus),
         );
-        let mut duplicate = temporal.to_vec();
+        let mut duplicate = temporal.producer.to_vec();
         duplicate[2] = duplicate[1];
         assert_error(
             &native::admit_v2(proofs, selected, &duplicate, Limits::default()),
             binding(v2::InventorySide::Producer, v2::BindingCause::Duplicate),
         );
-        let mut foreign = temporal.to_vec();
+        let mut foreign = temporal.producer.to_vec();
         foreign[0].source = &inputs.source_references[1];
         assert_error(
             &native::admit_v2(proofs, selected, &foreign, Limits::default()),
@@ -432,13 +480,13 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
         let wrong_clock = v2::wire::ClockConfiguration::TimestampedEvent {
             timestamp_unit: "millisecond".into(),
         };
-        let mut wrong_profile = temporal.to_vec();
+        let mut wrong_profile = temporal.producer.to_vec();
         wrong_profile[0].clock = &wrong_clock;
         assert_error(
             &native::admit_v2(proofs, selected, &wrong_profile, Limits::default()),
             v2_refusal(v2::Refusal::Clock(v2::ClockField::Alternative)),
         );
-        let mut wrong_definition = temporal.to_vec();
+        let mut wrong_definition = temporal.producer.to_vec();
         wrong_definition[0].definition_identity = R::FixedSample.identity();
         assert_error(
             &native::admit_v2(proofs, selected, &wrong_definition, Limits::default()),
@@ -500,7 +548,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
             ),
         ];
         for (clock, expected) in &invalid_clocks {
-            let mut invalid = temporal.to_vec();
+            let mut invalid = temporal.producer.to_vec();
             invalid[1].clock = clock;
             assert_error(
                 &native::admit_v2(proofs, selected, &invalid, Limits::default()),
@@ -510,7 +558,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
         let empty = v2::wire::ClockConfiguration::EventPosition {
             sequence_authority: String::new(),
         };
-        let mut unnamed = temporal.to_vec();
+        let mut unnamed = temporal.producer.to_vec();
         unnamed[0].clock = &empty;
         assert_error(
             &native::admit_v2(proofs, selected, &unnamed, Limits::default()),
@@ -519,7 +567,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
         let oversized = v2::wire::ClockConfiguration::TimestampedEvent {
             timestamp_unit: "x".repeat(4_097),
         };
-        let mut overlong = temporal.to_vec();
+        let mut overlong = temporal.producer.to_vec();
         overlong[2].clock = &oversized;
         assert_error(
             &native::admit_v2(proofs, selected, &overlong, Limits::default()),
@@ -532,6 +580,7 @@ fn producer_requires_one_exact_source_definition_and_clock_selection() {
 #[test]
 fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
+        let temporal = &temporal.expected;
         let base = emitted.admitted().package();
         let cases: Vec<(v2::wire::Package, Error)> = {
             let mut missing = base.clone();
@@ -644,11 +693,47 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             ),
             binding(v2::InventorySide::Expected, v2::BindingCause::Missing),
         );
+        let mut surplus_expected = temporal.to_vec();
+        surplus_expected.push(temporal[0].clone());
+        assert_error(
+            &inputs.read_v2_bytes(
+                proofs,
+                emitted.bytes(),
+                emitted.digest(),
+                &surplus_expected,
+                Limits::default(),
+            ),
+            binding(v2::InventorySide::Expected, v2::BindingCause::Surplus),
+        );
+        let mut duplicate_expected = temporal.to_vec();
+        duplicate_expected[2] = duplicate_expected[1].clone();
+        assert_error(
+            &inputs.read_v2_bytes(
+                proofs,
+                emitted.bytes(),
+                emitted.digest(),
+                &duplicate_expected,
+                Limits::default(),
+            ),
+            binding(v2::InventorySide::Expected, v2::BindingCause::Duplicate),
+        );
+        let mut changed_span = temporal.to_vec();
+        changed_span[0].declaration.span.start += 1;
+        assert_error(
+            &inputs.read_v2_bytes(
+                proofs,
+                emitted.bytes(),
+                emitted.digest(),
+                &changed_span,
+                Limits::default(),
+            ),
+            binding(v2::InventorySide::Expected, v2::BindingCause::Missing),
+        );
         let changed_clock = v2::wire::ClockConfiguration::EventPosition {
             sequence_authority: "other-orders".into(),
         };
         let mut changed_expected = temporal.to_vec();
-        changed_expected[0].clock = &changed_clock;
+        changed_expected[0].definition.clock = changed_clock;
         assert_error(
             &inputs.read_v2_bytes(
                 proofs,
@@ -659,10 +744,12 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             ),
             v2_refusal(v2::Refusal::Clock(v2::ClockField::SequenceAuthority)),
         );
-        let mut substituted_revision = temporal[0].definition_revision.clone();
-        substituted_revision.value.push_str("-other");
         let mut revision_expected = temporal.to_vec();
-        revision_expected[0].definition_revision = &substituted_revision;
+        revision_expected[0]
+            .definition
+            .revision
+            .value
+            .push_str("-other");
         assert_error(
             &inputs.read_v2_bytes(
                 proofs,
@@ -674,7 +761,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             v2_refusal(v2::Refusal::Definition(v2::DefinitionField::Revision)),
         );
         let mut foreign_owner = temporal.to_vec();
-        foreign_owner[0].source = &inputs.source_references[1];
+        foreign_owner[0].source = inputs.source_references[1].clone();
         assert_error(
             &inputs.read_v2_bytes(
                 proofs,
@@ -687,7 +774,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
         );
 
         for (field, artifact) in {
-            let original = temporal[0].definition_artifact;
+            let original = &temporal[0].definition.artifact;
             let mut ref_version = original.clone();
             ref_version.ref_version.push_str("-other");
             let mut kind = original.clone();
@@ -719,7 +806,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
             ]
         } {
             let mut changed = temporal.to_vec();
-            changed[0].definition_artifact = &artifact;
+            changed[0].definition.artifact = artifact;
             assert_error(
                 &inputs.read_v2_bytes(
                     proofs,
@@ -740,6 +827,7 @@ fn strict_reader_rejects_resealed_structural_and_identity_substitutions() {
 #[test]
 fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
+        let temporal = &temporal.expected;
         let base = emitted.admitted().package();
         for (field, offered) in {
             let mut wire = base.clone();
@@ -858,7 +946,7 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
         ];
         for (index, clock, field) in &clocks {
             let mut expected = temporal.to_vec();
-            expected[*index].clock = clock;
+            expected[*index].definition.clock = clock.clone();
             assert_error(
                 &inputs.read_v2_bytes(
                     proofs,
@@ -877,6 +965,8 @@ fn headers_indices_and_each_clock_member_have_stable_v2_refusals() {
 #[test]
 fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
     with_v2(|inputs, proofs, selected, temporal, emitted| {
+        let producer_temporal = &temporal.producer;
+        let temporal = &temporal.expected;
         let original: serde_json::Value = serde_json::from_slice(emitted.bytes()).unwrap();
         for (binding_index, field, renamed) in [
             (0, "sequence_authority", "sequenceAuthority"),
@@ -908,11 +998,11 @@ fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
             }
         }
 
-        let definition = temporal[0].definition_artifact;
+        let definition = &producer_temporal[0].definition_artifact;
         let at = selected
             .dependencies
             .iter()
-            .position(|dependency| dependency.artifact == definition)
+            .position(|dependency| &dependency.artifact == definition)
             .unwrap();
         let mut dependencies = selected.dependencies.to_vec();
         let mut changed_bytes = dependencies[at].bytes.to_vec();
@@ -923,7 +1013,7 @@ fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
             ..*selected
         };
         assert_error(
-            &native::admit_v2(proofs, &changed, temporal, Limits::default()),
+            &native::admit_v2(proofs, &changed, producer_temporal, Limits::default()),
             Error::Invalid(Invalid::Seal),
         );
     });
@@ -933,6 +1023,7 @@ fn malformed_clock_objects_and_changed_original_definition_bytes_refuse() {
 #[test]
 fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
+        let temporal = &temporal.expected;
         let complete = inputs.read_v2_bytes(
             proofs,
             emitted.bytes(),
@@ -1024,10 +1115,24 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
 #[test]
 fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
     with_v2(|inputs, proofs, _, temporal_selections, emitted| {
+        let temporal_selections = &temporal_selections.expected;
         let admitted = inputs
             .read_v2(proofs, emitted, temporal_selections)
             .into_result()
             .unwrap();
+        let assert_pre_position_refusal =
+            |at: usize, supplied: &temporal::Trace, dimension: temporal::Dimension| {
+                let report =
+                    temporal::evaluate_v2(&admitted, at, supplied, temporal::Limits::default());
+                assert!(matches!(
+                    report.result(),
+                    Err(temporal::Error::Refused(temporal::Refusal::Binding {
+                        dimension: actual,
+                        ..
+                    })) if *actual == dimension
+                ));
+                assert_eq!(report.usage().positions, 0);
+            };
         let at = declaration(&admitted, "BySample");
         let matching = [
             ("epoch", "{\"kind\":\"integer\",\"decimal\":\"0\"}"),
@@ -1056,37 +1161,78 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
                 .clock
                 .parameters
                 .insert(mutate.0.into(), mutate.1.into());
-            let report =
-                temporal::evaluate_v2(&admitted, at, &supplied, temporal::Limits::default());
-            assert!(matches!(
-                report.result(),
-                Err(temporal::Error::Refused(temporal::Refusal::Binding {
-                    dimension: actual,
-                    ..
-                })) if *actual == dimension
-            ));
-            assert_eq!(report.usage().positions, 0);
+            assert_pre_position_refusal(at, &supplied, dimension);
+        }
+
+        for dimension in [
+            temporal::Dimension::Profile,
+            temporal::Dimension::ProfileRevision,
+            temporal::Dimension::Clock,
+        ] {
+            let mut supplied = trace_input("sample-clock", temporal::FIXED_SAMPLE, &matching);
+            match dimension {
+                temporal::Dimension::Profile => {
+                    supplied.clock.profile_identity = temporal::EVENT_POSITION.into();
+                }
+                temporal::Dimension::ProfileRevision => {
+                    supplied.clock.profile_revision = "other-revision".into();
+                }
+                temporal::Dimension::Clock => supplied.clock.name = "other-clock".into(),
+                _ => unreachable!("closed local mutation table"),
+            }
+            assert_pre_position_refusal(at, &supplied, dimension);
+        }
+
+        let event_at = declaration(&admitted, "ByEvent");
+        let changed_event = trace_input(
+            "event-clock",
+            temporal::EVENT_POSITION,
+            &[("sequence_authority", "other-orders")],
+        );
+        assert_pre_position_refusal(
+            event_at,
+            &changed_event,
+            temporal::Dimension::SequenceAuthority,
+        );
+
+        let timestamp_at = declaration(&admitted, "ByTimestamp");
+        let changed_timestamp = trace_input(
+            "timestamp-clock",
+            temporal::TIMESTAMPED_WINDOW,
+            &[("timestamp_unit", "nanosecond")],
+        );
+        assert_pre_position_refusal(
+            timestamp_at,
+            &changed_timestamp,
+            temporal::Dimension::TimestampUnit,
+        );
+
+        for (remove, rename) in [("epoch", None), ("period", Some("sample_period"))] {
+            let mut supplied = trace_input("sample-clock", temporal::FIXED_SAMPLE, &matching);
+            let value = supplied
+                .clock
+                .parameters
+                .remove(remove)
+                .expect("matching parameter exists");
+            if let Some(rename) = rename {
+                supplied.clock.parameters.insert(rename.into(), value);
+            }
+            assert_pre_position_refusal(at, &supplied, temporal::Dimension::ClockParameters);
         }
         let mut extra = trace_input("sample-clock", temporal::FIXED_SAMPLE, &matching);
         extra.clock.parameters.insert("extra".into(), "x".into());
-        let report = temporal::evaluate_v2(&admitted, at, &extra, temporal::Limits::default());
-        assert!(matches!(
-            report.result(),
-            Err(temporal::Error::Refused(temporal::Refusal::Binding {
-                dimension: temporal::Dimension::ClockParameters,
-                ..
-            }))
-        ));
-        assert_eq!(report.usage().positions, 0);
+        assert_pre_position_refusal(at, &extra, temporal::Dimension::ClockParameters);
     });
 }
 
 #[trace("TC-138", "FR-050-AC-6")]
 #[test]
 fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration() {
-    with_v2(|inputs, proofs, selected, temporal_selections, emitted| {
+    with_v2(|inputs, proofs, selected, temporal, emitted| {
+        let producer_temporal = &temporal.producer;
+        let expected_temporal = &temporal.expected;
         let original = inputs
-            .read_v2(proofs, emitted, temporal_selections)
+            .read_v2(proofs, emitted, expected_temporal)
             .into_result()
             .unwrap();
         let changed_clock = v2::wire::ClockConfiguration::FixedSample {
@@ -1099,15 +1245,17 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
             }),
             unit: "minute".into(),
         };
-        let mut changed_selections = temporal_selections.to_vec();
+        let mut changed_selections = producer_temporal.to_vec();
         changed_selections[1].clock = &changed_clock;
         let changed_emission =
             native::admit_v2(proofs, selected, &changed_selections, Limits::default())
                 .into_result()
                 .expect("changed exact configuration emission");
         assert_ne!(emitted.digest(), changed_emission.digest());
+        let mut changed_expected = expected_temporal.to_vec();
+        changed_expected[1].definition.clock = changed_clock;
         let changed = inputs
-            .read_v2(proofs, &changed_emission, &changed_selections)
+            .read_v2(proofs, &changed_emission, &changed_expected)
             .into_result()
             .expect("changed exact configuration admission");
 
@@ -1164,7 +1312,7 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
         let other_emission = native::admit_v2(
             proofs,
             &other_selection,
-            temporal_selections,
+            producer_temporal,
             Limits::default(),
         )
         .into_result()
@@ -1213,24 +1361,26 @@ fn progress_is_partitioned_by_package_definition_and_exact_clock_configuration()
 #[trace("TC-138", "FR-050-AC-3", "FR-050-AC-4")]
 #[test]
 fn digest_domains_and_original_producer_bytes_cannot_be_reinterpreted() {
-    with_v2(|inputs, proofs, selected, temporal_selections, emitted| {
-        let definition_digest = temporal_selections[0].definition_artifact.digest;
+    with_v2(|inputs, proofs, selected, temporal, emitted| {
+        let producer_temporal = &temporal.producer;
+        let expected_temporal = &temporal.expected;
+        let definition_digest = expected_temporal[0].definition.artifact.digest;
         assert_ne!(definition_digest, emitted.digest());
         assert_error(
             &inputs.read_v2_bytes(
                 proofs,
                 emitted.bytes(),
                 definition_digest,
-                temporal_selections,
+                expected_temporal,
                 Limits::default(),
             ),
             Error::Invalid(Invalid::Seal),
         );
 
-        let mut substituted_artifact = temporal_selections[0].definition_artifact.clone();
+        let mut substituted_artifact = expected_temporal[0].definition.artifact.clone();
         substituted_artifact.digest = emitted.digest();
-        let mut substituted_expected = temporal_selections.to_vec();
-        substituted_expected[0].definition_artifact = &substituted_artifact;
+        let mut substituted_expected = expected_temporal.to_vec();
+        substituted_expected[0].definition.artifact = substituted_artifact;
         assert_error(
             &inputs.read_v2_bytes(
                 proofs,
@@ -1264,7 +1414,7 @@ fn digest_domains_and_original_producer_bytes_cannot_be_reinterpreted() {
             ..*selected
         };
         assert_error(
-            &native::admit_v2(proofs, &changed, temporal_selections, Limits::default()),
+            &native::admit_v2(proofs, &changed, producer_temporal, Limits::default()),
             Error::Invalid(Invalid::Seal),
         );
     });

@@ -38,6 +38,35 @@ pub struct Inputs {
     foreign_formal: w::Formal,
 }
 
+/// Independently authored strict-v2 reader selection used by integration tests.
+///
+/// This deliberately owns its values rather than borrowing the native producer's
+/// `TemporalSelection`, so a producer-side selection error cannot appoint the
+/// reader's expectation by construction.
+#[derive(Clone, Debug)]
+pub struct TemporalExpectation {
+    pub source: w::ArtifactRef,
+    pub declaration: TemporalDeclarationExpectation,
+    pub definition: TemporalDefinitionExpectation,
+}
+
+#[derive(Clone, Debug)]
+pub struct TemporalDeclarationExpectation {
+    pub name: String,
+    pub span: w::Span,
+    pub requirement: w::Requirement,
+    pub clause: String,
+    pub execution: w::Execution,
+}
+
+#[derive(Clone, Debug)]
+pub struct TemporalDefinitionExpectation {
+    pub identity: String,
+    pub revision: w::Revision,
+    pub artifact: w::ArtifactRef,
+    pub clock: v2::wire::ClockConfiguration,
+}
+
 fn revision(namespace: &str, value: &str) -> w::Revision {
     w::Revision {
         namespace: namespace.into(),
@@ -75,6 +104,57 @@ fn owner() -> ir::RequirementRef {
 }
 
 impl Inputs {
+    /// Re-derive one strict-v2 expectation from the authored fixture inventory.
+    #[allow(
+        dead_code,
+        reason = "Only strict-v2 integration tests use this selector"
+    )]
+    pub fn temporal_expectation(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        source: usize,
+        name: &str,
+        definition: TemporalDefinitionExpectation,
+    ) -> TemporalExpectation {
+        let mapping = &self.mappings[source];
+        let clause = mapping
+            .clauses
+            .iter()
+            .find(|clause| clause.name == name)
+            .expect("independently selected authored declaration");
+        let [id] = proofs.types().binding().namespace().lookup(name) else {
+            panic!("one independently selected authored declaration")
+        };
+        let span = proofs
+            .types()
+            .binding()
+            .namespace()
+            .syntax(*id)
+            .expect("independently selected authored syntax")
+            .span;
+        TemporalExpectation {
+            source: self.source_references[source].clone(),
+            declaration: TemporalDeclarationExpectation {
+                name: clause.name.clone(),
+                span: w::Span {
+                    start: span.start as u32,
+                    end: span.end as u32,
+                },
+                requirement: w::Requirement {
+                    package: clause.requirement.package().as_str().into(),
+                    identity: clause.requirement.requirement().as_str().into(),
+                    revision: revision(
+                        "test:requirement-revision",
+                        &clause.requirement.revision().get().to_string(),
+                    ),
+                },
+                clause: clause.clause.as_str().into(),
+                execution: self.executions[name].clone(),
+            },
+            definition,
+        }
+    }
+
     #[allow(
         dead_code,
         reason = "Shared fixture module; each test binary selects its own constructor"
@@ -415,13 +495,13 @@ impl Inputs {
         })
     }
 
-    /// Read version-2 bytes from the original native and temporal selections.
+    /// Read version-2 bytes against an independently authored temporal expectation.
     #[allow(dead_code, reason = "Only version-2 artifact controls use this helper")]
     pub fn read_v2(
         &self,
         proofs: &proofs::ProofReport<'_, '_, '_>,
         emitted: &native::AdmissionV2,
-        temporal: &[native::TemporalSelection<'_>],
+        temporal: &[TemporalExpectation],
     ) -> artifact::Report<v2::AdmittedPackage> {
         self.read_v2_bytes(
             proofs,
@@ -439,38 +519,32 @@ impl Inputs {
         proofs: &proofs::ProofReport<'_, '_, '_>,
         bytes: &[u8],
         digest: ByteDigest,
-        temporal: &[native::TemporalSelection<'_>],
+        temporal: &[TemporalExpectation],
         limits: artifact::Limits,
     ) -> artifact::Report<v2::AdmittedPackage> {
-        self.with_expected(proofs, bytes, digest, "2", |inherited, sources| {
+        self.with_expected(proofs, bytes, digest, "2", |inherited, _| {
+            let declarations: Vec<_> = temporal
+                .iter()
+                .map(|selection| artifact::ExpectedDeclaration {
+                    name: &selection.declaration.name,
+                    span: &selection.declaration.span,
+                    requirement: &selection.declaration.requirement,
+                    clause: &selection.declaration.clause,
+                    execution: &selection.declaration.execution,
+                })
+                .collect();
             let expected_temporal: Vec<_> = temporal
                 .iter()
-                .map(|selection| {
-                    let source = sources
-                        .iter()
-                        .find(|source| source.artifact == selection.source)
-                        .expect("selected original source");
-                    let declaration = source
-                        .declarations
-                        .iter()
-                        .find(|declaration| declaration.span == selection.span)
-                        .or_else(|| {
-                            sources
-                                .iter()
-                                .flat_map(|source| source.declarations)
-                                .find(|declaration| declaration.span == selection.span)
-                        })
-                        .expect("selected original declaration span");
-                    v2::ExpectedTemporal {
-                        source: selection.source,
-                        declaration,
-                        definition: v2::ExpectedDefinition {
-                            identity: selection.definition_identity,
-                            revision: selection.definition_revision,
-                            artifact: selection.definition_artifact,
-                        },
-                        clock: selection.clock,
-                    }
+                .zip(&declarations)
+                .map(|(selection, declaration)| v2::ExpectedTemporal {
+                    source: &selection.source,
+                    declaration,
+                    definition: v2::ExpectedDefinition {
+                        identity: &selection.definition.identity,
+                        revision: &selection.definition.revision,
+                        artifact: &selection.definition.artifact,
+                    },
+                    clock: &selection.definition.clock,
                 })
                 .collect();
             v2::read(
