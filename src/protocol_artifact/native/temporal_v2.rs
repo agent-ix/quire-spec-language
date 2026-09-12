@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-050: source-authorized version-2 temporal selection and emission.
 
-use super::{Selections, SourceSelection};
+use super::Selections;
 use crate::checking::composed::proofs::ProofReport;
 use crate::protocol_artifact::{self as artifact, v2, wire as w};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
@@ -47,18 +47,8 @@ impl AdmissionV2 {
     }
 }
 
-fn source<'a>(
-    selections: &'a [SourceSelection<'a>],
-    reference: &w::ArtifactRef,
-) -> Option<&'a SourceSelection<'a>> {
-    selections
-        .iter()
-        .find(|selection| selection.artifact == reference)
-}
-
 fn bindings(
     package: &w::Package,
-    sources: &[SourceSelection<'_>],
     selections: &[TemporalSelection<'_>],
     work: &mut artifact::work::Work,
 ) -> Result<Vec<v2::wire::TemporalBinding>, Error> {
@@ -71,18 +61,6 @@ fn bindings(
     work.charge(Dimension::Entries, selections.len())?;
     if temporal_len != selections.len() {
         return Err(Error::Invalid(Invalid::Inventory));
-    }
-    for (left, right) in selections.iter().enumerate().flat_map(|(left, value)| {
-        selections
-            .iter()
-            .enumerate()
-            .skip(left + 1)
-            .map(move |(right, other)| ((left, value), (right, other)))
-    }) {
-        work.visit()?;
-        if left.1.source == right.1.source && left.1.span == right.1.span {
-            return Err(Error::Invalid(Invalid::Duplicate));
-        }
     }
     let mut result = Vec::new();
     result
@@ -99,25 +77,25 @@ fn bindings(
             .sources
             .get(usize::try_from(declaration.locus.source).unwrap_or(usize::MAX))
             .ok_or(Error::Invalid(Invalid::Locus))?;
-        let selected = selections
-            .iter()
-            .find(|selected| {
-                selected.source == &emitted_source.artifact
-                    && selected.span == &declaration.locus.span
-            })
-            .ok_or_else(|| {
-                if selections
-                    .iter()
-                    .any(|selected| selected.span == &declaration.locus.span)
-                {
-                    Error::Invalid(Invalid::Owner)
+        let mut selected = None;
+        let mut foreign_owner = false;
+        for candidate in selections {
+            work.visit()?;
+            if candidate.span == &declaration.locus.span {
+                if candidate.source == &emitted_source.artifact {
+                    if selected.replace(candidate).is_some() {
+                        return Err(Error::Invalid(Invalid::Duplicate));
+                    }
                 } else {
-                    Error::Invalid(Invalid::Inventory)
+                    foreign_owner = true;
                 }
-            })?;
-        if source(sources, selected.source).is_none() {
-            return Err(Error::Invalid(Invalid::Owner));
+            }
         }
+        let selected = selected.ok_or(Error::Invalid(if foreign_owner {
+            Invalid::Owner
+        } else {
+            Invalid::Inventory
+        }))?;
         let definition = package
             .definitions
             .get(usize::try_from(declaration.profile).unwrap_or(usize::MAX))
@@ -160,7 +138,7 @@ pub fn admit_v2(
         inherited.media = v2::MEDIA.into();
         inherited.schema = v2::SCHEMA.into();
         artifact::validate::package(&inherited, &mut work)?;
-        let temporal_bindings = bindings(&inherited, selections.sources, temporal, &mut work)?;
+        let temporal_bindings = bindings(&inherited, temporal, &mut work)?;
         let package = v2::wire::Package {
             inherited,
             temporal_bindings,
