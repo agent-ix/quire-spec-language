@@ -44,6 +44,14 @@ them. That pinned D revision defines a normative contract but no Rust producer
 or wire schema. Positive local fixtures therefore exercise an explicitly
 caller-selected compatibility adapter and do not claim real D production.
 
+At the producer boundary, a concrete population document uses
+`ArtifactRef(kind="population")` and a concrete finite window document uses
+`ArtifactRef(kind="window")`. Those references retain the documents' byte
+identity; their producer-canonical semantic digests remain separate typed
+members. A population model export remains `ExportKind::Population`. A window
+is an assessment selection rather than a model export and therefore has no
+`ExportKind` alternative.
+
 ## Outputs
 
 An `EvaluationReport` containing effective limits, deterministic usage and one
@@ -63,6 +71,13 @@ declaration.
 
 The input validator SHALL bind every supplied binder and population to one exact
 declaration-local compiled requirement and reject duplicate or surplus bindings.
+
+The compiled artifact SHALL distinguish a later population requirement, window
+requirement and clock requirement as `BindingKind::Population`,
+`BindingKind::Window` and `BindingKind::Clock`. A binding requirement's
+`authority` selects the applicable contract artifact; it is not the concrete
+runtime population or window document. A clock identity or configuration SHALL
+NOT stand in for a window identity, membership, coverage or document digest.
 
 The input validator SHALL validate every available Boolean, exact integer,
 reduced rational, text, enum, record, option, ordered sequence, reference and
@@ -123,10 +138,10 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-049-AC-1 | Only an `AdmittedPackage` plus an exact declaration-local value selection reaches evaluation; raw bytes, freely constructed wire packages and crossed/out-of-range handles cannot. | Test (TC-136) |
-| FR-049-AC-2 | Binder and population inputs retain exact declaration, compiled requirement, model, type, unit, anchor and authority; duplicate, surplus, foreign and wrong-type entries refuse independently. | Test (TC-136) |
+| FR-049-AC-2 | Binder, population and window inputs retain exact declaration, compiled requirement, model, type, unit, anchor and authority; concrete population/window documents use their distinct artifact kinds, and duplicate, surplus, foreign and wrong-type entries refuse independently. | Test (TC-136) |
 | FR-049-AC-3 | Every available payload and recursively typed aggregate slot satisfies the exact compiled Boolean/numeric/text/enum/record/option/sequence/reference/object domain without implicit conversion, normalization or duplicate coalescing. | Test (TC-136) |
 | FR-049-AC-4 | Unavailable values preserve typed missing identities and participate only if evaluation reaches them; they never become null, false, zero, empty or a completed output member. | Test (TC-136) |
-| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct observation occurrences, compares permitted cross-observation identity without retagging reads, keeps D/F identity and digest domains separate from compiled artifacts, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
+| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct observation occurrences, compares permitted cross-observation identity without retagging reads, keeps D/F identity and digest domains separate from compiled artifacts, distinguishes population/window/clock roles, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
 | FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
 | FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
 | FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |
