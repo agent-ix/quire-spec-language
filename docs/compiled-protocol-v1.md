@@ -97,15 +97,22 @@ CompiledProtocolPackage = {
 }
 ```
 
-`ByteDigest` and `ArtifactKind` use the exact shared-reference schema; no new
-artifact kind is added. The external package reference is not copied inside the
-payload. `contract`, `baseline`, producer `binary` and each dependency must match
+`ByteDigest` and `ArtifactKind` use the shared-reference schema rather than a
+package-private vocabulary. The shared vocabulary includes distinct
+`population` and `window` assessment-document kinds; neither is the
+`linked-package` kind of this artifact, and neither makes a runtime assessment
+document package content. The external package reference is not copied inside
+the payload. `contract`, `baseline`, producer `binary` and each dependency must match
 their individually expected role/reference, including wire and revision namespace.
 Definition artifact/rule indices select source-kind dependency bytes; model
 artifacts select model-package-kind dependencies. An export kind is exactly
 `scalar|enum|variant|record|field|object|reference|operation|relationship|population|component|endpoint`.
 Paths and source loci must identify that kind in the admitted producer view;
 unsupported authoritative exports prevent emission/admission of their dependents.
+`window` is not an `ExportKind`: it is an assessment selection rather than a
+model export. Likewise, a `BindingKind::Window` requirement is distinct from a
+`BindingKind::Clock` requirement. Its `authority` selects the applicable
+assessment contract, not a concrete future window instance.
 The native adapter derives a `population` export from an admitted `ObjectRole`,
 using path `[record, universe]` and that role's original source locus. Its
 `object` export retains path `[record]`; its `reference` export retains path
