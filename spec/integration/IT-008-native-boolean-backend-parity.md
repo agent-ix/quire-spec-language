@@ -17,8 +17,9 @@ workflow in [IT-002](./IT-002-native-state-workflow.md).
 ## Target Integration
 
 Native parse/link/check/package/lower → existing IR wire binder → pinned codegen
-→ generated Rust and runtime operators. Native validation/evaluation supplies
-the reference result; actual LLVM coverage supplies generated activation.
+→ generated Rust, generated proptest strategy and runtime operators. Native
+validation/evaluation supplies the reference result; actual LLVM coverage
+supplies generated activation for the exact admitted fixture profile.
 
 ## Preconditions
 
@@ -42,10 +43,11 @@ and negation. Use independently specified truth and activation expectations.
    invoke its public bound generation API.
    IT-008-SC-02: complete generated clauses retain identities and source maps.
 3. Validate and evaluate each native runtime assignment; compile and execute the
-   generated Rust for the same assignments.
+   generated Rust and generated proptest strategy for the same assignments.
    IT-008-SC-03: all native, independent and generated truth results agree.
-4. Measure generated execution with actual coverage and resolve it through the
-   existing source-map/coverage API.
+4. Measure generated execution with actual coverage and resolve the exact LLVM
+   3.1.0 fixture segments through the generated source-map probes. Exercise the
+   pinned reusable reader separately and retain its profile refusal.
    IT-008-SC-04: generated consequent activation agrees with native source events,
    including skipped and entered nested consequents.
 
@@ -53,4 +55,5 @@ and negation. Use independently specified truth and activation expectations.
 
 Every step passes using actual producer bytes and executions. Unsupported
 numeric/reference features retain explicit refusal. Generated attestation bodies
-are not described as sealed or retained proof records.
+are not described as sealed or retained proof records. This fixture does not
+claim that the downstream reusable coverage reader accepts LLVM 3.1.0.

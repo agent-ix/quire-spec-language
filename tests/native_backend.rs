@@ -6,7 +6,7 @@
 #[path = "support/runtime_setup.rs"]
 mod setup;
 
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, path::Path, path::PathBuf, process::Command};
 
 use ix_trace_rs::trace;
 use quire_contract_codegen as codegen;
@@ -17,7 +17,80 @@ use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ImplicationEventKind, QualifiedName,
     ValidationLimits, ValueBinding, ValueId, ValueNode,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
+
+#[derive(Deserialize)]
+struct Llvm31Export {
+    #[serde(rename = "type")]
+    kind: String,
+    version: String,
+    cargo_llvm_cov: Llvm31Producer,
+    data: Vec<Llvm31Data>,
+}
+
+#[derive(Deserialize)]
+struct Llvm31Producer {
+    version: String,
+    manifest_path: String,
+}
+
+#[derive(Deserialize)]
+struct Llvm31Data {
+    files: Vec<Llvm31File>,
+}
+
+#[derive(Deserialize)]
+struct Llvm31File {
+    filename: String,
+    segments: Vec<(u32, u32, u64, bool, bool, bool)>,
+}
+
+impl Llvm31Export {
+    fn parse(bytes: &[u8], source_root: &Path) -> Self {
+        assert!(bytes.len() <= codegen::MAX_COVERAGE_BYTES);
+        let export: Self = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(export.kind, "llvm.coverage.json.export");
+        assert_eq!(export.version, "3.1.0");
+        assert_eq!(export.cargo_llvm_cov.version, "0.9.0");
+        assert_eq!(
+            Path::new(&export.cargo_llvm_cov.manifest_path),
+            source_root.join("Cargo.toml")
+        );
+        assert!(!export.data.is_empty());
+        export
+    }
+
+    fn probe_count(&self, source_root: &Path, region: &codegen::SourceRegion) -> u64 {
+        let expected = source_root.join(&region.artifact_path);
+        let file = self
+            .data
+            .iter()
+            .flat_map(|data| &data.files)
+            .find(|file| Path::new(&file.filename) == expected)
+            .unwrap_or_else(|| panic!("missing generated coverage file {}", expected.display()));
+        let probe = region.probe.expect("generated semantic probe");
+        let start = (probe.line, probe.start_column);
+        let end = (probe.line, probe.end_column);
+        file.segments
+            .windows(2)
+            .find_map(|pair| {
+                let segment = pair[0];
+                let next = pair[1];
+                ((segment.0, segment.1) <= start
+                    && end <= (next.0, next.1)
+                    && segment.3
+                    && !segment.5)
+                    .then_some(segment.2)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "unmeasured generated probe {}:{}:{}",
+                    region.artifact_path, probe.line, probe.start_column
+                )
+            })
+    }
+}
 
 fn run(command: &mut Command) -> Vec<u8> {
     let output = command
@@ -34,18 +107,11 @@ fn run(command: &mut Command) -> Vec<u8> {
 
 #[test]
 #[trace("TC-094", "FR-009-AC-5")]
-fn generated_truth_matches_all_assignments_and_retains_unsupported_coverage() {
-    run_cases(false);
+fn generated_proptest_and_old_profile_activation_match_reference() {
+    run_cases();
 }
 
-#[test]
-#[trace("TC-094", "FR-009-AC-5")]
-#[ignore = "required LC04 activation gate: codegen 240fad84 rejects LLVM 3.1.0; C handoff on CO01"]
-fn required_generated_activation_parity() {
-    run_cases(true);
-}
-
-fn run_cases(require_activation: bool) {
+fn run_cases() {
     // Left-antecedent implication, outer implication, then right-consequent
     // implication: this catches source-map order accidentally using preorder.
     const EXPRESSION: &str = "(a implies b) implies (c implies (not a or not b and c))";
@@ -62,7 +128,15 @@ fn run_cases(require_activation: bool) {
         PackageLimits::default(),
     )
     .unwrap();
+    let unit = package.checked().linked().unit();
+    assert_eq!(unit.language().value, "ix:native");
+    assert_eq!(unit.edition().value, "0-draft");
+    assert_eq!(
+        unit.source().text().lines().nth(1),
+        Some("profile \"state-finite/0-draft\";")
+    );
     let projection = lower(&package, LoweringLimits::default()).unwrap();
+    assert_eq!(projection.profile(), "boolean-oracle/v1");
     // Consume bytes through the real older consumer, without changing production
     // IR types or treating a Serde value conversion as a binding check.
     let consumer = backend_ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
@@ -83,9 +157,27 @@ fn run_cases(require_activation: bool) {
         panic!("complete executable population required")
     };
     assert_eq!(generated_clauses.clauses().len(), 2);
+    let strategy = codegen::generate_i64_strategy(&codegen::StrategyRequest {
+        requirement: generated_clauses.clauses()[0].identity().requirement(),
+        strategy_id: "boolean-oracle-v1-complete-domain",
+        constraint: codegen::StrategyConstraint::Membership {
+            values: &[0, 1, 2, 3, 4, 5, 6, 7],
+        },
+        campaign: codegen::StrategyCampaign::Broad,
+        attestation: codegen::AttestationContext {
+            record_digest: &"0".repeat(64),
+            candidate_revision: &"0".repeat(40),
+        },
+    })
+    .unwrap();
     let root = tempfile::tempdir().unwrap();
     let source_root = root.path().join("package");
     codegen::write_bundle_atomic(generated_clauses.bundle(), &source_root).unwrap();
+    fs::write(
+        source_root.join(&strategy.rust.path),
+        &strategy.rust.contents,
+    )
+    .unwrap();
     let mut program = String::from("// SPDX-License-Identifier: AGPL-3.0-only\n");
     let mut calls = Vec::new();
     for (index, clause) in generated_clauses.clauses().iter().enumerate() {
@@ -140,7 +232,49 @@ fn run_cases(require_activation: bool) {
                 && region.requirement_revision == 7
                 && region.clause_id == clause.identity().clause().as_str()));
     }
-    program.push_str(&format!("fn main() {{ let mut args = std::env::args().skip(1); let a: bool = args.next().unwrap().parse().unwrap(); let b: bool = args.next().unwrap().parse().unwrap(); let c: bool = args.next().unwrap().parse().unwrap(); println!(\"[{{}},{{}}]\", {}, {}); }}\n", calls[0], calls[1]));
+    let strategy_syntax = syn::parse_file(&strategy.rust.contents).unwrap();
+    let strategy_function = strategy_syntax
+        .items
+        .iter()
+        .find_map(|item| match item {
+            syn::Item::Fn(function) if matches!(function.vis, syn::Visibility::Public(_)) => {
+                Some(function.sig.ident.to_string())
+            }
+            _ => None,
+        })
+        .expect("generated public strategy function");
+    program.push_str(&format!(
+        "#[path = {:?}] mod boolean_oracle_v1_domain;\n",
+        strategy.rust.path.strip_prefix("src/").unwrap()
+    ));
+    program.push_str(&format!(
+        r#"fn evaluate(a: bool, b: bool, c: bool) -> [bool; 2] {{ [{}, {}] }}
+fn main() {{
+    let values = std::env::args().skip(1).collect::<Vec<_>>();
+    if values.is_empty() {{
+        use proptest::strategy::Strategy as _;
+        let mut runner = proptest::test_runner::TestRunner::deterministic();
+        let strategy = boolean_oracle_v1_domain::{strategy_function}();
+        runner.run(&strategy, |case| {{
+            proptest::prop_assert!(!case.expected.expects_rejection());
+            proptest::prop_assert_eq!(case.related, None);
+            let bits = u8::try_from(case.primary).unwrap();
+            let [a, b, c] = [bits & 1 != 0, bits & 2 != 0, bits & 4 != 0];
+            let [constant, rule] = evaluate(a, b, c);
+            println!("{{bits}} {{constant}} {{rule}}");
+            Ok(())
+        }}).unwrap();
+        return;
+    }}
+    assert_eq!(values.len(), 3);
+    let a: bool = values[0].parse().unwrap();
+    let b: bool = values[1].parse().unwrap();
+    let c: bool = values[2].parse().unwrap();
+    println!("{{:?}}", evaluate(a, b, c));
+}}
+"#,
+        calls[0], calls[1]
+    ));
     fs::write(source_root.join("src/main.rs"), program).unwrap();
     fs::write(
         source_root.join("Cargo.toml"),
@@ -182,6 +316,23 @@ fn run_cases(require_activation: bool) {
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env("RUSTFLAGS", "-C instrument-coverage"));
     let executable = target.join("debug/native-boolean-parity");
+    let property_raw = root.path().join("property.profraw");
+    let property_output = run(Command::new(&executable).env("LLVM_PROFILE_FILE", &property_raw));
+    fs::remove_file(property_raw).unwrap();
+    let mut property_truth = [None; 8];
+    for line in String::from_utf8(property_output).unwrap().lines() {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        assert_eq!(fields.len(), 3);
+        let bits = fields[0].parse::<usize>().unwrap();
+        assert!(bits < property_truth.len());
+        assert!(fields[1].parse::<bool>().unwrap());
+        let truth = fields[2].parse::<bool>().unwrap();
+        if let Some(previous) = property_truth[bits] {
+            assert_eq!(previous, truth, "generated proptest assignment {bits}");
+        }
+        property_truth[bits] = Some(truth);
+    }
+    assert!(property_truth.iter().all(Option::is_some));
     assert_eq!(
         String::from_utf8(run(
             Command::new(env!("CARGO")).args(["llvm-cov", "--version"])
@@ -216,7 +367,7 @@ fn run_cases(require_activation: bool) {
         .iter()
         .map(|(path, bytes)| codegen::ArtifactBytes { path, bytes })
         .collect::<Vec<_>>();
-    for bits in 0..8 {
+    for (bits, property_expected) in property_truth.into_iter().enumerate() {
         let [a, b, c] = [bits & 1 != 0, bits & 2 != 0, bits & 4 != 0];
         // Direct independent truth/control equations for this fixed fixture.
         let antecedent = !a || b;
@@ -253,6 +404,11 @@ fn run_cases(require_activation: bool) {
             native.outcome(),
             &EvaluationOutcome::Completed(expected),
             "assignment {bits}"
+        );
+        assert_eq!(
+            property_expected,
+            Some(expected),
+            "generated proptest assignment {bits}"
         );
         let mut entries = [0_u64; 3];
         let unit = package.checked().linked().unit();
@@ -292,6 +448,18 @@ fn run_cases(require_activation: bool) {
             .env("LLVM_PROFDATA_FLAGS", "-num-threads=1")
             .env("CARGO_BUILD_JOBS", "1"));
         fs::remove_file(&raw).unwrap();
+        let exact_profile = Llvm31Export::parse(&export, &source_root);
+        let rule_map: Vec<codegen::SourceRegion> =
+            serde_json::from_str(&generated_clauses.clauses()[1].bundle().source_map.contents)
+                .unwrap();
+        let generated_entries = rule_map[2..]
+            .iter()
+            .map(|region| exact_profile.probe_count(&source_root, region))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            generated_entries, entries,
+            "generated activation assignment {bits}"
+        );
         let report = codegen::analyze_bound_coverage(
             &consumer,
             &generated,
@@ -302,29 +470,14 @@ fn run_cases(require_activation: bool) {
             },
         );
         let report: Value = serde_json::from_slice(&report.to_json_bytes().unwrap()).unwrap();
-        if !require_activation {
-            // Retain the real downstream refusal while truth parity progresses.
-            // The separate required activation gate stays visibly pending.
-            assert_eq!(
-                report["state"], "unsupported",
-                "update the qualification when the backend changes: {report}"
-            );
-            assert_eq!(report["diagnostics"][0]["code"], "unsupported_profile");
-            let message = report["diagnostics"][0]["message"].as_str().unwrap();
-            assert!(message.contains("3.0.1") && message.contains("3.1.0"));
-            continue;
-        }
-        assert_eq!(report["state"], "complete", "assignment {bits}: {report}");
-        assert_eq!(report["provenance"], "unqualified");
-        let clauses = report["clauses"].as_array().unwrap();
-        assert_eq!(clauses.len(), 2);
-        assert!(clauses.iter().all(|clause| clause["evaluation_count"] == 1));
-        let counts = clauses[1]["consequents"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|item| item["count"].as_u64().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(counts, entries, "generated activation assignment {bits}");
+        // Preserve the downstream capability boundary: this named fixture can
+        // qualify LLVM 3.1.0, but the reusable pinned reader has not adopted it.
+        assert_eq!(
+            report["state"], "unsupported",
+            "update the qualification when the backend changes: {report}"
+        );
+        assert_eq!(report["diagnostics"][0]["code"], "unsupported_profile");
+        let message = report["diagnostics"][0]["message"].as_str().unwrap();
+        assert!(message.contains("3.0.1") && message.contains("3.1.0"));
     }
 }
