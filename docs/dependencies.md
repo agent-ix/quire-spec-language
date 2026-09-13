@@ -173,7 +173,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-rs | 0.46.0 | `AGPL-3.0-or-later` |
-| quire-spec-language | 0.1.0 | `AGPL-3.0-only` |
+| quire-spec-language | 0.2.0 | `AGPL-3.0-only` |
 | quote | 1.0.47 | `MIT OR Apache-2.0` |
 | r-efi | 5.3.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
 | r-efi | 6.0.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
