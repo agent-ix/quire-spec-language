@@ -124,8 +124,14 @@ pub fn mapping_support(
     declaration: usize,
     surrounding_execution: Closure,
 ) -> Result<Classification, Error> {
-    let (subject, selected) = select_mapping(package.package(), declaration)?;
-    classify_selected(&selected, subject, surrounding_execution, None)
+    let subject = declaration_subject(declaration);
+    let selected = select(package.package(), declaration, subject)?;
+    Ok(classify_selected(
+        &selected,
+        subject,
+        surrounding_execution,
+        None,
+    ))
 }
 
 /// Evaluate one strict version-2 declaration after authenticating its exact clock.
@@ -197,10 +203,13 @@ pub fn evaluate_with_progress_v2(
 
 /// Classify mapping support from an authenticated version-2 definition/profile.
 ///
-/// The declaration's admitted temporal binding must select the declaration's own
-/// definition before any classification is made; a declaration with no binding,
-/// or one whose binding selects another definition, is refused. The
-/// classification retains the authenticated package digest, definition identity,
+/// The retained selection is resolved through the declaration's admitted
+/// temporal binding, not through the declaration alone: a declaration with no
+/// binding is refused, and so is one whose binding selects a definition other
+/// than the declaration's own profile. The strict reader already refuses such a
+/// package, so that second refusal is a re-check that keeps the evidence from
+/// ever naming a definition the classifier did not use. The classification
+/// retains the authenticated package digest, definition identity, namespaced
 /// revision and definition artifact digest. It takes no trace, so it
 /// authenticates no clock parameter map and retains none.
 pub fn mapping_support_v2(
@@ -208,48 +217,23 @@ pub fn mapping_support_v2(
     declaration: usize,
     surrounding_execution: Closure,
 ) -> Result<Classification, Error> {
-    let (subject, selected) = select_mapping(package.inherited(), declaration)?;
-    let binding = admitted_binding(package, declaration, subject)?;
-    if binding.definition != selected.declaration.profile {
-        return Err(Refusal::Binding {
-            dimension: Dimension::Profile,
-            subject,
-        }
-        .into());
-    }
-    let definition_artifact = usize::try_from(selected.definition.artifact)
-        .ok()
-        .and_then(|index| package.inherited().dependencies.get(index))
-        .ok_or(Refusal::Reference { subject })?
-        .artifact
-        .digest;
-    let authenticated = AuthenticatedSelection {
-        package_digest: package.digest(),
-        declaration,
-        definition_identity: selected.profile.identity().into(),
-        definition_revision: selected.revision.clone(),
-        definition_artifact,
-    };
-    classify_selected(
+    let subject = declaration_subject(declaration);
+    let selected = select(package.inherited(), declaration, subject)?;
+    let (_, authenticated) = authenticated_selection(package, declaration, &selected, subject)?;
+    Ok(classify_selected(
         &selected,
         subject,
         surrounding_execution,
         Some(authenticated),
-    )
+    ))
 }
 
-/// Select one temporal declaration for classification, under its own subject.
-fn select_mapping(
-    package: &w::Package,
-    declaration: usize,
-) -> Result<(Subject, Selected<'_>), Error> {
-    let mut work = budget::Work::new(Limits::default());
-    let subject = Subject {
+/// The subject naming one whole declaration.
+fn declaration_subject(declaration: usize) -> Subject {
+    Subject {
         declaration,
         ..Subject::default()
-    };
-    work.subject = subject;
-    Ok((subject, select(package, declaration, &mut work)?))
+    }
 }
 
 fn classify_selected(
@@ -257,15 +241,8 @@ fn classify_selected(
     subject: Subject,
     surrounding_execution: Closure,
     authenticated: Option<AuthenticatedSelection>,
-) -> Result<Classification, Error> {
-    let w::Body::Temporal { activation, .. } = selected.body else {
-        return Err(Refusal::Binding {
-            dimension: Dimension::Profile,
-            subject,
-        }
-        .into());
-    };
-    Ok(Classification::new(
+) -> Classification {
+    Classification::new(
         classify(
             selected.profile,
             Operators::of(&selected.declaration.temporal),
@@ -276,24 +253,29 @@ fn classify_selected(
             name: selected.declaration.name.clone(),
             profile: selected.profile,
             profile_revision: selected.revision.clone(),
-            activation: activation.clone(),
+            activation: selected.activation.clone(),
         },
         authenticated,
-    ))
+    )
 }
 
-/// The admitted version-2 temporal binding for one declaration.
+/// Resolve the definition one declaration's admitted version-2 binding selects,
+/// together with the selection evidence both strict version-2 entry points
+/// retain.
 ///
-/// The strict reader admits exactly one binding per temporal declaration in
-/// declaration order, so a missing binding here is a reference refusal rather
-/// than a default.
-fn admitted_binding(
-    package: &v2::AdmittedPackage,
+/// The strict reader admits exactly one binding per temporal declaration, in
+/// declaration order, whose definition is the declaration's own profile. Every
+/// departure from that is refused here as a reference refusal rather than
+/// defaulted, so no entry point retains evidence for a definition it did not
+/// use.
+fn authenticated_selection<'a>(
+    package: &'a v2::AdmittedPackage,
     declaration: usize,
+    selected: &Selected<'_>,
     subject: Subject,
-) -> Result<&v2::wire::TemporalBinding, Error> {
+) -> Result<(&'a v2::wire::TemporalBinding, AuthenticatedSelection), Error> {
     let bindings = &package.package().temporal_bindings;
-    u32::try_from(declaration)
+    let binding = u32::try_from(declaration)
         .ok()
         .and_then(|declaration| {
             bindings
@@ -301,50 +283,66 @@ fn admitted_binding(
                 .ok()
         })
         .and_then(|index| bindings.get(index))
-        .ok_or_else(|| Refusal::Reference { subject }.into())
+        .ok_or(Refusal::Reference { subject })?;
+    // Admission invariant, re-checked: the binding selects the declaration's
+    // own definition.
+    if binding.definition != selected.declaration.profile {
+        return Err(Refusal::Reference { subject }.into());
+    }
+    let inherited = package.inherited();
+    let definition = usize::try_from(binding.definition)
+        .ok()
+        .and_then(|index| inherited.definitions.get(index))
+        .ok_or(Refusal::Reference { subject })?;
+    let artifact = usize::try_from(definition.artifact)
+        .ok()
+        .and_then(|index| inherited.dependencies.get(index))
+        .ok_or(Refusal::Reference { subject })?
+        .artifact
+        .digest;
+    Ok((
+        binding,
+        AuthenticatedSelection::new(package.digest(), declaration, definition, artifact),
+    ))
 }
 
 /// The admitted declaration, its temporal body and its selected profile.
 struct Selected<'a> {
     declaration: &'a w::Declaration,
     body: &'a w::Body,
-    definition: &'a w::Definition,
+    activation: &'a w::Activation,
     profile: Profile,
     revision: String,
 }
 
-fn select<'a>(
-    package: &'a w::Package,
+fn select(
+    package: &w::Package,
     declaration: usize,
-    work: &mut budget::Work,
-) -> Result<Selected<'a>, Error> {
+    subject: Subject,
+) -> Result<Selected<'_>, Error> {
     let entry = package
         .declarations
         .get(declaration)
-        .ok_or(Refusal::Reference {
-            subject: work.subject,
-        })?;
-    if !matches!(entry.body, w::Body::Temporal { .. }) {
+        .ok_or(Refusal::Reference { subject })?;
+    let w::Body::Temporal { activation, .. } = &entry.body else {
         return Err(Refusal::Binding {
             dimension: Dimension::Profile,
-            subject: work.subject,
+            subject,
         }
         .into());
-    }
+    };
     let definition = package
         .definitions
         .get(usize::try_from(entry.profile).unwrap_or(usize::MAX))
-        .ok_or(Refusal::Reference {
-            subject: work.subject,
-        })?;
+        .ok_or(Refusal::Reference { subject })?;
     let profile = Profile::from_identity(&definition.identity).ok_or(Refusal::Binding {
         dimension: Dimension::Profile,
-        subject: work.subject,
+        subject,
     })?;
     Ok(Selected {
         declaration: entry,
         body: &entry.body,
-        definition,
+        activation,
         profile,
         revision: definition.revision.value.clone(),
     })
@@ -357,12 +355,9 @@ fn run(
     watermark: i64,
     work: &mut budget::Work,
 ) -> Result<Vec<Obligation>, Error> {
-    let subject = Subject {
-        declaration,
-        ..Subject::default()
-    };
+    let subject = declaration_subject(declaration);
     work.subject = subject;
-    let selected = select(package, declaration, work)?;
+    let selected = select(package, declaration, subject)?;
     let w::Body::Temporal {
         clock,
         activation,
@@ -566,12 +561,9 @@ fn authenticate_v2(
     trace: &Trace,
     work: &mut budget::Work,
 ) -> Result<progress::AuthenticatedBinding, Error> {
-    let subject = Subject {
-        declaration,
-        ..Subject::default()
-    };
+    let subject = declaration_subject(declaration);
     work.subject = subject;
-    let selected = select(package.inherited(), declaration, work)?;
+    let selected = select(package.inherited(), declaration, subject)?;
     if trace.clock.profile_identity != selected.profile.identity() {
         return Err(Refusal::Binding {
             dimension: Dimension::Profile,
@@ -605,7 +597,7 @@ fn authenticate_v2(
         }
         .into());
     }
-    let binding = admitted_binding(package, declaration, subject)?;
+    let (binding, selection) = authenticated_selection(package, declaration, &selected, subject)?;
     let expected = expected_parameters(&binding.clock, subject)?;
     if trace.clock.parameters != expected {
         return Err(Refusal::Binding {
@@ -614,11 +606,13 @@ fn authenticate_v2(
         }
         .into());
     }
+    // One derivation for both version-2 entry points: the evaluation binding
+    // restates the classification's selection and adds the clock it checked.
     Ok(progress::AuthenticatedBinding {
-        package_digest: package.digest().to_string(),
-        declaration,
-        definition_identity: selected.profile.identity().into(),
-        definition_revision: selected.revision,
+        package_digest: selection.package_digest().to_string(),
+        declaration: selection.declaration(),
+        definition_identity: selection.definition_identity().into(),
+        definition_revision: selection.definition_revision().value.clone(),
         clock: clock_name.into(),
         parameters: expected,
     })

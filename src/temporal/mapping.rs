@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-045: native-to-TL mapping support classification.
 //!
-//! This is a total function of three inputs and nothing else: the admitted
+//! The disposition is a total function of three inputs and nothing else: the admitted
 //! declaration's selected profile, its reachable operator kinds, and the
 //! surrounding-execution closure named in the request. The owner ruling on
 //! `quire-contract-ir#64` fixes surrounding-execution closure as the axis that
@@ -114,25 +114,82 @@ pub struct Retained {
 /// selects for it. It carries no clock parameters: classification takes no
 /// trace, so it authenticates no parameter map. A later bridge reads the admitted
 /// clock configuration from the package this digest names.
+///
+/// Only the compiler constructs one; private fields prevent a caller from
+/// fabricating the evidence:
+///
+/// ```compile_fail,E0451
+/// use quire_spec_language::protocol_artifact::wire::Revision;
+/// use quire_spec_language::temporal::AuthenticatedSelection;
+/// use quire_spec_language::ByteDigest;
+/// let forged = AuthenticatedSelection {
+///     package_digest: ByteDigest::of(b"forged"),
+///     declaration: 0,
+///     definition_identity: String::new(),
+///     definition_revision: Revision { namespace: String::new(), value: String::new() },
+///     definition_artifact: ByteDigest::of(b"forged"),
+/// };
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticatedSelection {
+    package_digest: ByteDigest,
+    declaration: usize,
+    definition_identity: String,
+    definition_revision: w::Revision,
+    definition_artifact: ByteDigest,
+}
+
+impl AuthenticatedSelection {
+    pub(super) fn new(
+        package_digest: ByteDigest,
+        declaration: usize,
+        definition: &w::Definition,
+        definition_artifact: ByteDigest,
+    ) -> Self {
+        Self {
+            package_digest,
+            declaration,
+            definition_identity: definition.identity.clone(),
+            definition_revision: definition.revision.clone(),
+            definition_artifact,
+        }
+    }
+
     /// Raw-byte digest of the admitted version-2 package.
-    pub package_digest: ByteDigest,
+    pub fn package_digest(&self) -> ByteDigest {
+        self.package_digest
+    }
+
     /// Declaration index in that package.
-    pub declaration: usize,
+    pub fn declaration(&self) -> usize {
+        self.declaration
+    }
+
     /// Registered temporal definition identity the binding selects.
-    pub definition_identity: String,
-    /// Registered semantic revision of that definition.
-    pub definition_revision: String,
+    pub fn definition_identity(&self) -> &str {
+        &self.definition_identity
+    }
+
+    /// Registered semantic revision of that definition, with its namespace.
+    pub fn definition_revision(&self) -> &w::Revision {
+        &self.definition_revision
+    }
+
     /// Raw-byte digest of the exact definition artifact the package selects.
-    pub definition_artifact: ByteDigest,
+    pub fn definition_artifact(&self) -> ByteDigest {
+        self.definition_artifact
+    }
 }
 
 /// One classification request: its disposition, and everything the request
 /// retains from the native declaration it was made against.
 ///
-/// Only this crate constructs one, so a retained authenticated selection is
-/// always the one a strict version-2 entry point checked.
+/// `support` and `retained` stay public fields for the existing version-1
+/// callers, so they are plain data a caller may copy or change. Only the
+/// authenticated selection is sealed. It vouches for itself — the package,
+/// declaration and definition it names — and a consumer that needs the
+/// disposition bound to that evidence re-classifies from the package the
+/// selection names rather than trusting a copied value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Classification {
     /// The disposition read from the reviewed support table.

@@ -65,10 +65,18 @@ selector.
    classification to equal the `/1` classification's disposition and retained
    native subject, and to retain the admitted package digest, the declaration
    index, the registered definition identity and revision, and the digest of the
-   independently selected definition artifact. Require the `/1` classification to
-   retain no authenticated selection, and require a `/2` request for a
-   declaration outside the package to be refused. Inspect the retained selection
-   type and require it to have no public constructor and no clock parameter map.
+   independently selected definition artifact, with the package digest computed
+   from the emitted bytes and the revision compared with its namespace. Require
+   the `/1` classification to retain no authenticated selection, and require a
+   `/2` request for a declaration outside the package, for an unrepresentable
+   index and for the non-temporal protocol declaration to return its exact
+   located refusal. Inspect the retained selection type and require it to have
+   no public constructor (a compile-fail doctest) and no clock parameter map, and
+   inspect the classifier's refusal of a binding that selects another
+   definition, which the strict reader makes unreachable. Group 6 exercises the
+   bounded-future rows under each profile; equivalence for the past-operator and
+   no-operator rows follows by inspection, because `/1` and `/2` share one
+   selection and classification path and differ only in the retained selection.
 
 ## Expected Results
 

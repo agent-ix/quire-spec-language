@@ -4,10 +4,11 @@
 //!
 //! FR-045-AC-6. Each declaration is compiled for real and emitted twice: once
 //! through the version-1 producer and strict reader, and once through the
-//! version-2 producer and a strict reader given an independently authored
-//! temporal selection. Expected dispositions and authenticated selections are
-//! spelt here from the reviewed support table and the independently selected
-//! definition catalog, never read back from the classifier.
+//! version-2 producer and a strict reader whose temporal expectation is
+//! re-derived from the authored sources and the registered catalog rather than
+//! projected from the producer's table. Expected dispositions are spelt here
+//! from the reviewed support table, and expected selections from the registered
+//! catalog and the emitted bytes, never read back from the classifier.
 
 #[path = "support/native_protocol/mod.rs"]
 mod setup;
@@ -15,8 +16,13 @@ mod setup;
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::protocol_artifact::{native, v2, wire as w, Limits, NumberWire};
-use quire_spec_language::temporal::{self, Closure, Support, Unmatched};
+use quire_spec_language::protocol_artifact::{
+    native, v2, wire as w, AdmittedPackage, Limits, NumberWire,
+};
+use quire_spec_language::temporal::{
+    self, Closure, Dimension, Error, Refusal, Subject, Support, Unmatched,
+};
+use quire_spec_language::ByteDigest;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
 
 /// One authored declaration per registered profile, each reaching a bounded
@@ -103,13 +109,10 @@ fn definition_artifact<'a>(
 }
 
 /// Compile the fixture once and hand the test the strict version-1 and
-/// strict version-2 admissions of the same proofs and selections.
+/// strict version-2 admissions of the same proofs and selections, with the
+/// raw-byte digest of the emitted version-2 package computed here.
 fn with_both(
-    test: impl FnOnce(
-        &native::Selections<'_>,
-        &quire_spec_language::protocol_artifact::AdmittedPackage,
-        &v2::AdmittedPackage,
-    ),
+    test: impl FnOnce(&native::Selections<'_>, &AdmittedPackage, &v2::AdmittedPackage, ByteDigest),
 ) {
     let inputs = inputs();
     inputs.with_proofs(
@@ -193,7 +196,12 @@ fn with_both(
                 .into_result()
                 .expect("strict version-1 reader");
 
-            test(selected, &admitted_v1, &admitted_v2);
+            test(
+                selected,
+                &admitted_v1,
+                &admitted_v2,
+                ByteDigest::of(emitted_v2.bytes()),
+            );
         },
     );
 }
@@ -213,7 +221,7 @@ fn position(declarations: &[w::Declaration], name: &str) -> usize {
 #[trace("TC-125", "FR-045-AC-6")]
 #[test]
 fn a_version_two_classification_retains_its_authenticated_definition_selection() {
-    with_both(|selected, v1_package, v2_package| {
+    with_both(|selected, v1_package, v2_package, emitted_digest| {
         for (name, definition) in DECLARATIONS {
             let v1_at = position(&v1_package.package().declarations, name);
             let v2_at = position(&v2_package.inherited().declarations, name);
@@ -257,12 +265,23 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                 let selection = authenticated
                     .authenticated()
                     .unwrap_or_else(|| panic!("{name}: a version-2 selection is retained"));
-                assert_eq!(selection.package_digest, v2_package.digest());
-                assert_eq!(selection.declaration, v2_at);
-                assert_eq!(selection.definition_identity, definition.identity());
-                assert_eq!(selection.definition_revision, definition.revision());
                 assert_eq!(
-                    selection.definition_artifact,
+                    selection.package_digest(),
+                    emitted_digest,
+                    "{name}: the digest of the emitted package bytes",
+                );
+                assert_eq!(selection.declaration(), v2_at);
+                assert_eq!(selection.definition_identity(), definition.identity());
+                assert_eq!(
+                    selection.definition_revision(),
+                    &w::Revision {
+                        namespace: selected.definition_revision_namespace.into(),
+                        value: definition.revision().into(),
+                    },
+                    "{name}: the namespaced registered revision",
+                );
+                assert_eq!(
+                    selection.definition_artifact(),
                     definition_artifact(selected, definition).digest,
                     "{name}: the independently selected definition artifact",
                 );
@@ -272,20 +291,40 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
 }
 
 /// FR-045-AC-6: the version-2 entry point refuses a declaration outside the
-/// admitted package, including one whose index no binding can represent, rather
-/// than classifying it without an authenticated selection.
+/// admitted package, including one whose index no binding can represent, and a
+/// non-temporal declaration, each with its exact located refusal rather than a
+/// classification without an authenticated selection.
 #[trace("TC-125", "FR-045-AC-6")]
 #[test]
-fn a_version_two_request_without_an_admitted_binding_is_refused() {
-    with_both(|_, _, v2_package| {
+fn a_version_two_request_outside_the_package_or_not_temporal_is_refused() {
+    with_both(|_, _, v2_package, _| {
+        let at = |declaration| Subject {
+            declaration,
+            ..Subject::default()
+        };
         let declarations = v2_package.inherited().declarations.len();
-        assert!(
-            temporal::mapping_support_v2(v2_package, declarations, Closure::Closed).is_err(),
+        assert_eq!(
+            temporal::mapping_support_v2(v2_package, declarations, Closure::Closed),
+            Err(Error::Refused(Refusal::Reference {
+                subject: at(declarations)
+            })),
             "a declaration outside the package is refused",
         );
-        assert!(
-            temporal::mapping_support_v2(v2_package, usize::MAX, Closure::Open).is_err(),
+        assert_eq!(
+            temporal::mapping_support_v2(v2_package, usize::MAX, Closure::Open),
+            Err(Error::Refused(Refusal::Reference {
+                subject: at(usize::MAX)
+            })),
             "an unrepresentable declaration index is refused",
+        );
+        let flow = position(&v2_package.inherited().declarations, "Flow");
+        assert_eq!(
+            temporal::mapping_support_v2(v2_package, flow, Closure::Closed),
+            Err(Error::Refused(Refusal::Binding {
+                dimension: Dimension::Profile,
+                subject: at(flow),
+            })),
+            "a protocol declaration has no temporal profile to classify",
         );
     });
 }
