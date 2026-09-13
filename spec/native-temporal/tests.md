@@ -43,12 +43,10 @@ manual-dispatch. The 41 controls are `tests/composed_temporal_evaluation.rs` (14
 `cargo fmt --all -- --check` and Clippy clean under both the minimal and the
 `quire-extraction` lanes.
 
-Trace binding is claimed only where a run on the pinned stack in
-[matrix-status.md](../../docs/matrix-status.md) also reports zero
-`status-column-matches-nothing` diagnostics: on the installed stack an empty
-status-lie list is indistinguishable between a clean run and a skipped check.
 Every coverage table uses the single `Status` column from
-`spec-artifacts-process#87`.
+`spec-artifacts-process#87`, and the installed `quire coverage` at this revision
+reports no `status-column-matches-nothing` diagnostic for any matrix, so the
+status check ran rather than being skipped.
 
 ## Requirements Traceability
 
@@ -83,7 +81,7 @@ Every coverage table uses the single `Status` column from
 | FR-045 | FR-045-AC-3 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-4 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor |
+| FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the other-definition binding refusal is inspected |
 | NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |
