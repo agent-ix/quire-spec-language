@@ -206,6 +206,12 @@ typed `Allocation`, `Json`, `Numeric`, `Invalid`, `Unsupported` or `Incomplete`
 refusal with its report limits, usage and source locus; no partial admission is
 written.
 
+The repository commits one generated instance at
+[`artifacts/compiled-protocol-v2/`](../artifacts/compiled-protocol-v2/). Its
+`SHA256SUMS` lists the raw SHA-256 digest of every other file in that directory;
+TC-138 verifies the inventory and digests and decodes both interchange files
+with the published record types.
+
 The directory contains:
 
 - `compiled-protocol-v2.json` and `compiled-protocol-v2.ref.json`: the raw
