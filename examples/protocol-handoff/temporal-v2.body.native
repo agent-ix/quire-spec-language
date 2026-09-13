@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+temporal Due using T over (view: M::Workflow) clock "events" on origin {
+    always[0,30] holds(Allowed(view.ratio))
+}
+
+temporal DueSample using F over (view: M::Workflow) clock "sample-clock" on origin {
+    always[0,30] holds(Allowed(view.ratio))
+}
+
+temporal DueTimestamp using W over (view: M::Workflow) clock "timestamp-clock" on origin {
+    always[0,30] holds(Allowed(view.ratio))
+}

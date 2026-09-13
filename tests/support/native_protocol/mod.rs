@@ -12,8 +12,10 @@ use quire_spec_language::checking::{CheckBindings, ClauseBinding};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::composed::models::{AdmittedProducerModel, ModelInput};
+use quire_spec_language::linking::composed::subject::StaticSubject;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::protocol_artifact::{self as artifact, native, wire as w};
+use quire_spec_language::protocol_artifact::{self as artifact, native, v2, wire as w};
 use quire_spec_language::{ByteDigest, Source};
 
 pub struct Unit<'a> {
@@ -36,6 +38,35 @@ pub struct Inputs {
     pub model_reference: w::ArtifactRef,
     foreign_source: w::ArtifactRef,
     foreign_formal: w::Formal,
+}
+
+/// Independently authored strict-v2 reader selection used by integration tests.
+///
+/// This deliberately owns its values rather than borrowing the native producer's
+/// `TemporalSelection`, so a producer-side selection error cannot appoint the
+/// reader's expectation by construction.
+#[derive(Clone, Debug)]
+pub struct TemporalExpectation {
+    pub source: w::ArtifactRef,
+    pub declaration: TemporalDeclarationExpectation,
+    pub definition: TemporalDefinitionExpectation,
+}
+
+#[derive(Clone, Debug)]
+pub struct TemporalDeclarationExpectation {
+    pub name: String,
+    pub span: w::Span,
+    pub requirement: w::Requirement,
+    pub clause: String,
+    pub execution: w::Execution,
+}
+
+#[derive(Clone, Debug)]
+pub struct TemporalDefinitionExpectation {
+    pub identity: String,
+    pub revision: w::Revision,
+    pub artifact: w::ArtifactRef,
+    pub clock: v2::wire::ClockConfiguration,
 }
 
 fn revision(namespace: &str, value: &str) -> w::Revision {
@@ -75,8 +106,126 @@ fn owner() -> ir::RequirementRef {
 }
 
 impl Inputs {
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests compare static subjects"
+    )]
+    pub fn producer_subject(&self, producer: &AdmittedProducerModel<'_>) -> StaticSubject {
+        let inputs = [ModelInput::Producer(producer)];
+        composed_inputs::with_binding_inputs_and_inventory(
+            &self.sources,
+            &inputs,
+            BindingLimits::default(),
+            |inventory, binding| {
+                assert!(binding.complete(), "{:?}", binding.exhaustion());
+                StaticSubject::of(inventory, binding).expect("complete producer static subject")
+            },
+        )
+    }
+
+    /// Re-derive one strict-v2 expectation from the authored fixture inventory.
+    #[allow(
+        dead_code,
+        reason = "Only strict-v2 integration tests use this selector"
+    )]
+    pub fn temporal_expectation(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        source: usize,
+        name: &str,
+        definition: TemporalDefinitionExpectation,
+    ) -> TemporalExpectation {
+        let mapping = &self.mappings[source];
+        let clause = mapping
+            .clauses
+            .iter()
+            .find(|clause| clause.name == name)
+            .expect("independently selected authored declaration");
+        let [id] = proofs.types().binding().namespace().lookup(name) else {
+            panic!("one independently selected authored declaration")
+        };
+        let span = proofs
+            .types()
+            .binding()
+            .namespace()
+            .syntax(*id)
+            .expect("independently selected authored syntax")
+            .span;
+        TemporalExpectation {
+            source: self.source_references[source].clone(),
+            declaration: TemporalDeclarationExpectation {
+                name: clause.name.clone(),
+                span: w::Span {
+                    start: span.start as u32,
+                    end: span.end as u32,
+                },
+                requirement: w::Requirement {
+                    package: clause.requirement.package().as_str().into(),
+                    identity: clause.requirement.requirement().as_str().into(),
+                    revision: revision(
+                        "test:requirement-revision",
+                        &clause.requirement.revision().get().to_string(),
+                    ),
+                },
+                clause: clause.clause.as_str().into(),
+                execution: self.executions[name].clone(),
+            },
+            definition,
+        }
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Shared fixture module; each test binary selects its own constructor"
+    )]
     pub fn new(units: &[Unit<'_>]) -> Self {
         Self::with_model(units, composed_inputs::model("NativeEmission"))
+    }
+
+    /// The shared fixture already carries the full signed-64 integer scalar;
+    /// this variant also carries the exact-rational domain at its ceiling.
+    #[allow(
+        dead_code,
+        reason = "Only numeric-boundary consumers need this shared fixture variant"
+    )]
+    pub fn with_signed64_domains(units: &[Unit<'_>]) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_signed64_domains("NativeEmission"),
+        )
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only admitted state-evaluation fixtures need this compact query record"
+    )]
+    pub fn with_query_input(units: &[Unit<'_>], maximum: u32) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_query_input("NativeEmission", maximum),
+        )
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only admitted state-evaluation fixtures need this compact graph role"
+    )]
+    pub fn with_graph_input(units: &[Unit<'_>]) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_graph_input("NativeEmission"),
+        )
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only admitted state-evaluation fixtures need this optional graph role"
+    )]
+    pub fn with_optional_graph_input(units: &[Unit<'_>]) -> Self {
+        Self::with_model(
+            units,
+            composed_inputs::model_with_optional_graph_input("NativeEmission"),
+        )
     }
 
     pub fn with_model(units: &[Unit<'_>], model: NativeModel) -> Self {
@@ -288,6 +437,34 @@ impl Inputs {
         export
     }
 
+    /// Apply an independently derived final export ordinal after producer-only
+    /// exports join the ordered model table.
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests need this remap"
+    )]
+    pub fn remap_operation_contracts(&mut self, pre: &str, post: &str, operation: w::ExportRef) {
+        for (name, expected) in [
+            (
+                pre,
+                w::Execution::Pre {
+                    operation: operation.clone(),
+                },
+            ),
+            (
+                post,
+                w::Execution::Post {
+                    operation: operation.clone(),
+                },
+            ),
+        ] {
+            *self
+                .executions
+                .get_mut(name)
+                .expect("existing operation expectation") = expected;
+        }
+    }
+
     pub fn with_proofs(
         &self,
         type_limits: TypeLimits,
@@ -297,6 +474,35 @@ impl Inputs {
         composed_inputs::with_binding(
             &self.sources,
             &[&self.model],
+            BindingLimits::default(),
+            |binding| {
+                assert!(
+                    binding.complete(),
+                    "binding exhaustion: {:?}",
+                    binding.exhaustion()
+                );
+                let typed = composed::admit_types(binding, &self.formal, type_limits);
+                let proved = proofs::discharge(&typed, &self.mappings, proof_limits);
+                self.with_selections(|selected| test(&proved, selected));
+            },
+        );
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests use this binding path"
+    )]
+    pub fn with_producer_proofs(
+        &self,
+        producer: &AdmittedProducerModel<'_>,
+        type_limits: TypeLimits,
+        proof_limits: proofs::ProofLimits,
+        test: impl FnOnce(&proofs::ProofReport<'_, '_, '_>, &native::Selections<'_>),
+    ) {
+        let inputs = [ModelInput::Producer(producer)];
+        composed_inputs::with_binding_inputs(
+            &self.sources,
+            &inputs,
             BindingLimits::default(),
             |binding| {
                 assert!(
@@ -363,6 +569,99 @@ impl Inputs {
         self.read_bytes(proofs, emitted.bytes(), emitted.digest())
     }
 
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests use this reader"
+    )]
+    pub fn read_with_producers(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        emitted: &native::EmittedPackage,
+        producers: &[artifact::ExpectedProducerModel<'_>],
+    ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(
+            proofs,
+            emitted.bytes(),
+            emitted.digest(),
+            "1",
+            |expected, _| {
+                artifact::read_with_producers(
+                    emitted.bytes(),
+                    &expected,
+                    producers,
+                    artifact::Limits::default(),
+                )
+            },
+        )
+    }
+
+    #[allow(dead_code, reason = "Only producer mutation tests use this reader")]
+    pub fn read_producer_bytes(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        producers: &[artifact::ExpectedProducerModel<'_>],
+    ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "1", |expected, _| {
+            artifact::read_with_producers(bytes, &expected, producers, artifact::Limits::default())
+        })
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Only producer-correspondence tests use this reader"
+    )]
+    pub fn read_v2_with_producers(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        emitted: &native::AdmissionV2,
+        temporal: &[TemporalExpectation],
+        producers: &[artifact::ExpectedProducerModel<'_>],
+    ) -> artifact::Report<v2::AdmittedPackage> {
+        self.with_expected(
+            proofs,
+            emitted.bytes(),
+            emitted.digest(),
+            "2",
+            |inherited, _| {
+                let declarations: Vec<_> = temporal
+                    .iter()
+                    .map(|selection| artifact::ExpectedDeclaration {
+                        name: &selection.declaration.name,
+                        span: &selection.declaration.span,
+                        requirement: &selection.declaration.requirement,
+                        clause: &selection.declaration.clause,
+                        execution: &selection.declaration.execution,
+                    })
+                    .collect();
+                let expected_temporal: Vec<_> = temporal
+                    .iter()
+                    .zip(&declarations)
+                    .map(|(selection, declaration)| v2::ExpectedTemporal {
+                        source: &selection.source,
+                        declaration,
+                        definition: v2::ExpectedDefinition {
+                            identity: &selection.definition.identity,
+                            revision: &selection.definition.revision,
+                            artifact: &selection.definition.artifact,
+                        },
+                        clock: &selection.definition.clock,
+                    })
+                    .collect();
+                v2::read_with_producers(
+                    emitted.bytes(),
+                    &v2::Expected {
+                        inherited,
+                        temporal: &expected_temporal,
+                    },
+                    producers,
+                    artifact::Limits::default(),
+                )
+            },
+        )
+    }
+
     /// Check transport against the original selections and an independently
     /// selected seal. Adverse bytes never acquire native emission authority.
     pub fn read_bytes(
@@ -371,6 +670,82 @@ impl Inputs {
         bytes: &[u8],
         digest: ByteDigest,
     ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "1", |expected, _| {
+            artifact::read(bytes, &expected, artifact::Limits::default())
+        })
+    }
+
+    /// Read version-2 bytes against an independently authored temporal expectation.
+    #[allow(dead_code, reason = "Only version-2 artifact controls use this helper")]
+    pub fn read_v2(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        emitted: &native::AdmissionV2,
+        temporal: &[TemporalExpectation],
+    ) -> artifact::Report<v2::AdmittedPackage> {
+        self.read_v2_bytes(
+            proofs,
+            emitted.bytes(),
+            emitted.digest(),
+            temporal,
+            artifact::Limits::default(),
+        )
+    }
+
+    /// Check version-2 transport against independently retained selections.
+    #[allow(dead_code, reason = "Only version-2 artifact controls use this helper")]
+    pub fn read_v2_bytes(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        temporal: &[TemporalExpectation],
+        limits: artifact::Limits,
+    ) -> artifact::Report<v2::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "2", |inherited, _| {
+            let declarations: Vec<_> = temporal
+                .iter()
+                .map(|selection| artifact::ExpectedDeclaration {
+                    name: &selection.declaration.name,
+                    span: &selection.declaration.span,
+                    requirement: &selection.declaration.requirement,
+                    clause: &selection.declaration.clause,
+                    execution: &selection.declaration.execution,
+                })
+                .collect();
+            let expected_temporal: Vec<_> = temporal
+                .iter()
+                .zip(&declarations)
+                .map(|(selection, declaration)| v2::ExpectedTemporal {
+                    source: &selection.source,
+                    declaration,
+                    definition: v2::ExpectedDefinition {
+                        identity: &selection.definition.identity,
+                        revision: &selection.definition.revision,
+                        artifact: &selection.definition.artifact,
+                    },
+                    clock: &selection.definition.clock,
+                })
+                .collect();
+            v2::read(
+                bytes,
+                &v2::Expected {
+                    inherited,
+                    temporal: &expected_temporal,
+                },
+                limits,
+            )
+        })
+    }
+
+    fn with_expected<T>(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        version: &str,
+        test: impl FnOnce(artifact::Expected<'_>, &[artifact::ExpectedSource<'_>]) -> T,
+    ) -> T {
         let namespace = proofs.types().binding().namespace();
         let spans: Vec<Vec<_>> = self
             .mappings
@@ -469,7 +844,7 @@ impl Inputs {
             w::ArtifactKind::LinkedPackage,
             "fixture-native-output",
             "quire.compiled-protocol",
-            "1",
+            version,
             bytes,
         );
         artifact.digest = digest;
@@ -478,9 +853,8 @@ impl Inputs {
             edition: "1-draft".into(),
         };
         self.with_selections(|selected| {
-            artifact::read(
-                bytes,
-                &artifact::Expected {
+            test(
+                artifact::Expected {
                     artifact: &artifact,
                     contract: &self.contract,
                     baseline: &self.baseline,
@@ -490,7 +864,7 @@ impl Inputs {
                     dependencies: selected.dependencies,
                     models: selected.models,
                 },
-                artifact::Limits::default(),
+                &sources,
             )
         })
     }

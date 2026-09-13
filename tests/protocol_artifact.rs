@@ -8,6 +8,7 @@ mod setup;
 
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
+use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
     self as artifact, wire as w, Dimension, Error, Invalid, Limits, NumberComponent, NumberError,
     NumberWire, Unsupported,
@@ -1079,6 +1080,25 @@ fn real_model_values_and_all_declaration_families_preserve_exact_references() {
         mutate(&mut offered);
         failure(&fixture.offered(&offered), expected);
     }
+}
+
+/// Tracing: TC-131.
+#[trace("TC-131", "FR-047-AC-8")]
+#[test]
+fn composed_reader_refuses_parent_instead_of_inventing_graph_semantics() {
+    let fixture = Fixture::families();
+    let mut offered = fixture.package.clone();
+    offered.declarations[2].values[0].profile = fixture.definition(R::StateGraph);
+    offered.declarations[2].requires.clear();
+    offered.declarations[2].values[0].operation = w::ValueOperation::Parent {
+        reference: setup::owned(2, 1),
+        edge: fixture.export(w::ExportKind::Field, &["Node", "signed"]),
+        universe: fixture.export(w::ExportKind::Population, &["Node", "nodes"]),
+    };
+    failure(
+        &fixture.offered(&offered),
+        Error::Unsupported(Unsupported::Feature),
+    );
 }
 
 #[test]

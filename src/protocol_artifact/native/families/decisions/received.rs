@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-042: lexical/flow and model authority for role-owned observation atoms.
-//! Received covers receives, attempts and authored domain events.
+//! Received covers receives, attempts and authored domain events, for a choice
+//! and for a bounded repeat's guard alike.
 
 use std::collections::BTreeMap;
 
@@ -28,7 +29,7 @@ struct Atom<'m> {
 
 pub(super) struct Received<'s, 'm> {
     context: &'s Context<'s, 'm>,
-    choice: c::ControlId,
+    decision: c::ControlId,
     owner: SymbolId,
     reads: BTreeMap<usize, &'s ValueOccurrence>,
     eligible: BTreeMap<BinderId, bool>,
@@ -36,9 +37,11 @@ pub(super) struct Received<'s, 'm> {
 }
 
 impl<'s, 'm> Received<'s, 'm> {
+    /// `decision` is the choice or bounded repeat whose owner and anchor the
+    /// observed atoms must match.
     pub fn new(
         context: &'s Context<'s, 'm>,
-        choice: c::ControlId,
+        decision: c::ControlId,
         work: &mut Work,
     ) -> Result<Self, Error> {
         if context.scope.disposition() != ScopeDisposition::Resolved
@@ -50,12 +53,20 @@ impl<'s, 'm> Received<'s, 'm> {
         work.visit()?;
         let node = context
             .unit
-            .control(choice)
+            .control(decision)
             .ok_or(Error::Invalid(Invalid::Reference))?;
-        let c::ControlKind::Choice { role, .. } = &node.kind else {
+        let (c::ControlKind::Choice { role, .. } | c::ControlKind::Repeat { role, .. }) =
+            &node.kind
+        else {
             return Err(Error::Invalid(Invalid::Control));
         };
-        let owner = structural(context, Some(choice), role.span, StructuralKind::Role, work)?;
+        let owner = structural(
+            context,
+            Some(decision),
+            role.span,
+            StructuralKind::Role,
+            work,
+        )?;
         let mut reads = BTreeMap::new();
         for read in &context.scope.values {
             work.visit()?;
@@ -69,7 +80,7 @@ impl<'s, 'm> Received<'s, 'm> {
         }
         Ok(Self {
             context,
-            choice,
+            decision,
             owner,
             reads,
             eligible: BTreeMap::new(),
@@ -88,7 +99,7 @@ impl<'s, 'm> Received<'s, 'm> {
         };
         // The existing flow pass exposes only necessarily produced event
         // records here: all-branch joins qualify, branch/await leaks do not.
-        if read.evaluation_anchor != Anchor::Control(self.choice) {
+        if read.evaluation_anchor != Anchor::Control(self.decision) {
             return Ok(None);
         }
         work.visit()?;

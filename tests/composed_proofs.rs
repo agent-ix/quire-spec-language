@@ -938,7 +938,7 @@ fn every_zero_proof_budget_refuses_before_work_and_fresh_retries_preserve_inputs
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-10")]
+#[trace("TC-119", "TC-131", "FR-040-AC-1", "FR-040-AC-10", "FR-047-AC-8")]
 fn composed_discharge_does_not_upgrade_the_historical_model_boundary() {
     let model = setup::model("HistoricalBoundary");
     let sources = [setup::source("composed", &model,

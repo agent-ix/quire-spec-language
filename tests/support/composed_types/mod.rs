@@ -17,17 +17,137 @@ use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
+#[allow(
+    dead_code,
+    reason = "Shared fixture module; each test binary selects its own constructor"
+)]
 pub fn model(name: &str) -> NativeModel {
     model_with_maximum(name, 5)
 }
 
+#[allow(
+    dead_code,
+    reason = "Shared fixture module; each test binary selects its own constructor"
+)]
 pub fn model_with_maximum(name: &str, maximum: u32) -> NativeModel {
     try_model_with_maximum(name, maximum).expect("admitted model fixture")
 }
 
+#[allow(
+    dead_code,
+    reason = "Shared fixture module; each test binary selects its own constructor"
+)]
 pub fn try_model_with_maximum(
     name: &str,
     maximum: u32,
+) -> Result<NativeModel, Box<model_source::ModelSourceError>> {
+    try_model_with(name, maximum, |_| {})
+}
+
+/// The shared fixture already declares the full signed-64 integer scalar `Wide`,
+/// but every rational domain in it is narrow. This variant adds `Exact`, the
+/// rational domain at the denominator ceiling `ir::RationalType::new` admits, so
+/// a literal can reach both signed-64 endpoints and that ceiling.
+#[allow(
+    dead_code,
+    reason = "Only numeric-boundary consumers need this shared fixture variant"
+)]
+pub fn model_with_signed64_domains(name: &str) -> NativeModel {
+    try_model_with(name, 5, |document| {
+        document["scalars"].as_array_mut().unwrap().push(
+            json!({"name":"Exact", "kind":"rational", "numerator_minimum": i64::MIN, "numerator_maximum": i64::MAX, "maximum_denominator": i64::MAX}),
+        );
+        // Model admission requires a declaration site for every scalar role.
+        document["records"][0]["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"exact", "type":{"kind":"scalar", "name":"Exact"}}));
+    })
+    .expect("admitted signed-64 domain model fixture")
+}
+
+#[allow(
+    dead_code,
+    reason = "Only admitted state-evaluation fixtures need this compact query record"
+)]
+pub fn model_with_query_input(name: &str, maximum: u32) -> NativeModel {
+    try_model_with(name, maximum, |document| {
+        document["records"].as_array_mut().unwrap().push(json!({
+            "name":"QueryInput",
+            "fields":[{
+                "name":"amounts",
+                "type":{
+                    "kind":"sequence",
+                    "maximum":maximum,
+                    "value":{"kind":"scalar", "name":"Amount"}
+                }
+            }]
+        }));
+    })
+    .expect("admitted compact query-input model fixture")
+}
+
+#[allow(
+    dead_code,
+    reason = "Only admitted state-evaluation fixtures need this compact graph role"
+)]
+pub fn model_with_graph_input(name: &str) -> NativeModel {
+    model_with_graph_field(
+        name,
+        json!({
+            "kind":"sequence",
+            "maximum":5,
+            "value":{"kind":"record", "name":"GraphNodeRef"}
+        }),
+    )
+}
+
+#[allow(
+    dead_code,
+    reason = "Only admitted state-evaluation fixtures need this optional graph role"
+)]
+pub fn model_with_optional_graph_input(name: &str) -> NativeModel {
+    model_with_graph_field(
+        name,
+        json!({
+            "kind":"option",
+            "value":{"kind":"record", "name":"GraphNodeRef"}
+        }),
+    )
+}
+
+fn model_with_graph_field(name: &str, edge_type: Value) -> NativeModel {
+    try_model_with(name, 5, |document| {
+        document["records"].as_array_mut().unwrap().extend([
+            json!({
+                "name":"GraphNode",
+                "fields":[{
+                    "name":"links",
+                    "type":edge_type
+                }]
+            }),
+            json!({
+                "name":"GraphNodeRef",
+                "fields":[{
+                    "name":"id",
+                    "type":{"kind":"scalar", "name":"ObjectId"}
+                }]
+            }),
+        ]);
+        document["objects"].as_array_mut().unwrap().push(json!({
+            "record":"GraphNode",
+            "reference":"GraphNodeRef",
+            "identity_field":"id",
+            "universe":"graph_nodes"
+        }));
+    })
+    .expect("admitted compact graph model fixture")
+}
+
+fn try_model_with(
+    name: &str,
+    maximum: u32,
+    extend: impl FnOnce(&mut Value),
 ) -> Result<NativeModel, Box<model_source::ModelSourceError>> {
     let mut document: Value =
         serde_json::from_str(include_str!("../../fixtures/native-rule-model.json")).unwrap();
@@ -62,6 +182,7 @@ pub fn try_model_with_maximum(
         "name":"delta", "kind":"input", "type":{"kind":"scalar", "name":"Signed"}
     }));
     document["operations"][0]["parameters"] = json!(["delta"]);
+    extend(&mut document);
     let text = serde_json::to_string_pretty(&document).unwrap();
     let source = Source::read(
         SourceIdentity {
@@ -147,6 +268,28 @@ pub fn with_binding(
     limits: BindingLimits,
     test: impl FnOnce(&binding::Report<'_>),
 ) {
+    let inputs: Vec<_> = models
+        .iter()
+        .map(|model| ModelInput::Native(model))
+        .collect();
+    with_binding_inputs(sources, &inputs, limits, test);
+}
+
+pub fn with_binding_inputs(
+    sources: &[Source],
+    inputs: &[ModelInput<'_>],
+    limits: BindingLimits,
+    test: impl FnOnce(&binding::Report<'_>),
+) {
+    with_binding_inputs_and_inventory(sources, inputs, limits, |_, report| test(report));
+}
+
+pub fn with_binding_inputs_and_inventory<T>(
+    sources: &[Source],
+    inputs: &[ModelInput<'_>],
+    limits: BindingLimits,
+    test: impl FnOnce(&SourceInventory, &binding::Report<'_>) -> T,
+) -> T {
     let selected_sources = SourceInventory {
         language: "ix:native".into(),
         edition: "1-draft".into(),
@@ -195,10 +338,6 @@ pub fn with_binding(
         definitions: &definitions,
         rules: &rules,
     };
-    let inputs: Vec<_> = models
-        .iter()
-        .map(|model| ModelInput::Native(model))
-        .collect();
-    let report = binding::bind(admitted.namespace().unwrap(), &definitions, &inputs, limits);
-    test(&report);
+    let report = binding::bind(admitted.namespace().unwrap(), &definitions, inputs, limits);
+    test(&selected_sources, &report)
 }

@@ -1,0 +1,4 @@
+# The committed handoff is a raw-byte acceptance corpus. Checkout must not
+# rewrite line endings; opaque dependency and mutation payloads are binary.
+artifacts/compiled-protocol-v2/** -text
+artifacts/compiled-protocol-v2/**/*.bin binary

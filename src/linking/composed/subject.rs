@@ -24,6 +24,7 @@ use super::models::{ImportRefusal, ModelInput};
 use super::scopes::{Anchor, BinderKind, BinderType};
 use super::{DependencyKind, DependencySite, SourceInventory, WorkLimits};
 use crate::{ByteDigest, Limits, SourceIdentity};
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Which declared static component of two subjects differs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -95,6 +96,9 @@ pub struct ModelSelection {
     pub revision: String,
     /// SHA-256 of that document's exact bytes.
     pub digest: ByteDigest,
+    /// Complete admitted producer selection when the model entered through the
+    /// producer correspondence seam. Native-only inputs retain `None`.
+    pub producer: Option<Arc<super::producer::ProducerCompatibilitySelection>>,
 }
 
 /// Models component: one authored import and the selection it resolved to.
@@ -263,6 +267,15 @@ impl StaticSubject {
             }
         }
 
+        let mut producer_selections = BTreeMap::new();
+        for input in models.inputs() {
+            if let Some(producer) = (*input).producer_model() {
+                let selection = producer.selection();
+                producer_selections
+                    .entry(std::ptr::from_ref(selection))
+                    .or_insert_with(|| Arc::new(selection.clone()));
+            }
+        }
         let mut imports = Vec::new();
         for import in models.imports() {
             let unit = namespace
@@ -280,8 +293,10 @@ impl StaticSubject {
                 authority: unit.authority.clone(),
                 alias,
                 selection: match &import.selection {
-                    Ok(input) => Ok(model_selection(models.inputs(), *input)
-                        .ok_or(Unavailable::UnmatchedModelInput)?),
+                    Ok(input) => Ok(
+                        model_selection(models.inputs(), &producer_selections, *input)
+                            .ok_or(Unavailable::UnmatchedModelInput)?,
+                    ),
                     Err(refusal) => Err(refusal.clone()),
                 },
             });
@@ -400,22 +415,45 @@ fn selection(definition: &RegisteredDefinition) -> Selection {
     definition.selection()
 }
 
-fn model_selection(inputs: &[ModelInput<'_>], input: usize) -> Option<ModelSelection> {
-    Some(match *inputs.get(input)? {
-        ModelInput::Native(model) => ModelSelection {
+fn model_selection(
+    inputs: &[ModelInput<'_>],
+    producers: &BTreeMap<
+        *const super::producer::ProducerCompatibilitySelection,
+        Arc<super::producer::ProducerCompatibilitySelection>,
+    >,
+    input: usize,
+) -> Option<ModelSelection> {
+    let input = *inputs.get(input)?;
+    Some(if let Some(model) = input.native_model() {
+        let producer = match input.producer_model() {
+            Some(producer) => Some(
+                producers
+                    .get(&std::ptr::from_ref(producer.selection()))?
+                    .clone(),
+            ),
+            None => None,
+        };
+        ModelSelection {
             package: model.environment().owner().package().as_str().to_owned(),
             revision: model.environment().owner().revision().get().to_string(),
             digest: model.digest(),
-        },
-        ModelInput::UnsupportedProducer {
+            producer,
+        }
+    } else {
+        let ModelInput::UnsupportedProducer {
             package,
             revision,
             digest,
             ..
-        } => ModelSelection {
+        } = input
+        else {
+            unreachable!("only unsupported inputs lack a native model")
+        };
+        ModelSelection {
             package: package.to_owned(),
             revision: revision.to_owned(),
             digest,
-        },
+            producer: None,
+        }
     })
 }

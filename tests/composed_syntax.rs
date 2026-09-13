@@ -435,6 +435,46 @@ fn unavailable_edition_is_located_without_falling_back_to_historical_syntax() {
     );
 }
 
+#[trace(
+    "TC-113",
+    "TC-132",
+    "TC-133",
+    "FR-035-AC-4",
+    "FR-048-AC-2",
+    "FR-048-AC-3"
+)]
+#[test]
+fn negative_and_unbounded_choreography_counts_refuse_as_unsigned_syntax() {
+    for text in [
+        format!(
+            "{HEADER}{}",
+            PROTOCOL.replace("delivery [0,3]", "delivery [-1,3]")
+        ),
+        format!(
+            "{HEADER}protocol InvalidRepeat using P over (view: M::OrderView) on origin {{
+                role Service on M::OrderView;
+                run repeat Loop by Service visible (true) max -1 while {{ true }}
+                    check Body using S {{ true }};
+                    exhausted check Exhausted using S {{ true }};
+                finish Closed as (closed: M::OrderView) {{ true }};
+            }}"
+        ),
+        format!(
+            "{HEADER}protocol UnboundedRepeat using P over (view: M::OrderView) on origin {{
+                role Service on M::OrderView;
+                run repeat Loop by Service visible (true) max * while {{ true }}
+                    check Body using S {{ true }};
+                    exhausted check Exhausted using S {{ true }};
+                finish Closed as (closed: M::OrderView) {{ true }};
+            }}"
+        ),
+    ] {
+        let error = read(&text, Limits::default()).expect_err("count must be an unsigned integer");
+        assert_eq!(error.code, Code::InvalidSyntax);
+        assert_eq!(error.phase, Phase::Parse);
+    }
+}
+
 #[test]
 #[trace("TC-113", "FR-035-AC-5")]
 fn exact_small_limits_admit_and_each_next_charge_refuses() {

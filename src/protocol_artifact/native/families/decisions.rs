@@ -4,14 +4,14 @@
 mod formula;
 mod received;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::checking::{composed::DeclarationTypes, NativeType};
 use crate::linking::composed::scopes::{BinderId, BinderKind, BinderType, DeclarationScope};
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::{composed as c, BinaryOp, ExprId, ExprKind, UnaryOp};
 
-use formula::{Arena, Basis, Op};
+use formula::{Arena, Op};
 use received::Received;
 
 pub(super) struct Context<'s, 'm> {
@@ -33,19 +33,32 @@ fn unsupported() -> Error {
     Error::Unsupported(Unsupported::FamilyProof)
 }
 
+/// The decision's authored branches, in the order their feasibility is reported.
+enum Branches<'s> {
+    /// A labeled choice's cases, in authored order.
+    Cases(&'s [c::Case]),
+    /// A bounded repeat's observed guard: continuing, then exhausting.
+    Repeat(ExprId),
+}
+
+/// Proves the observed partition of `decision`, a choice or a bounded repeat,
+/// and reports which authored branch is feasible under the conservative
+/// independent-atom abstraction.
 pub(super) fn partition(
     context: &Context<'_, '_>,
-    choice: c::ControlId,
+    decision: c::ControlId,
     work: &mut Work,
 ) -> Result<Vec<bool>, Error> {
     let control = context
         .unit
-        .control(choice)
+        .control(decision)
         .ok_or(Error::Invalid(Invalid::Reference))?;
-    let c::ControlKind::Choice { visible, cases, .. } = &control.kind else {
-        return Err(Error::Invalid(Invalid::Control));
+    let (visible, branches) = match &control.kind {
+        c::ControlKind::Choice { visible, cases, .. } => (visible, Branches::Cases(cases)),
+        c::ControlKind::Repeat { visible, guard, .. } => (visible, Branches::Repeat(*guard)),
+        _ => return Err(Error::Invalid(Invalid::Control)),
     };
-    let mut received = Received::new(context, choice, work)?;
+    let mut received = Received::new(context, decision, work)?;
     let mut arena = Arena::new();
     let mut meanings = BTreeMap::new();
     for node in context.typed.nodes() {
@@ -70,7 +83,11 @@ pub(super) fn partition(
             meanings.insert(node.expression.0, meaning);
         }
     }
-    let mut basis = BTreeSet::new();
+    let mut visible_roots = Vec::new();
+    work.charge(Dimension::Entries, visible.len())?;
+    visible_roots
+        .try_reserve_exact(visible.len())
+        .map_err(|_| Error::Allocation)?;
     for expression in visible {
         work.visit()?;
         let original = context
@@ -79,30 +96,50 @@ pub(super) fn partition(
             .ok_or(Error::Invalid(Invalid::Reference))?;
         super::locate(context.source, original.span, work)?;
         let root = boolean(&meanings, *expression, work)?.ok_or_else(unsupported)?;
-        match arena.basis(root, work)? {
-            Basis::Constant => {}
-            Basis::Atom(atom) => {
-                if !basis.contains(&atom) {
-                    work.charge(Dimension::Entries, 1)?;
-                    basis.insert(atom);
-                }
-            }
-            Basis::Composite => return Err(unsupported()),
-        }
+        // The arena retains every original operand. It proves whether this
+        // advertised result, rather than its individual atoms, determines a case.
+        visible_roots.push(root);
     }
     let mut guards = Vec::new();
-    for case in cases {
-        let original = context
-            .unit
-            .expression(case.guard)
-            .ok_or(Error::Invalid(Invalid::Reference))?;
-        super::locate(context.source, original.span, work)?;
-        let root = boolean(&meanings, case.guard, work)?.ok_or_else(unsupported)?;
-        work.charge(Dimension::Entries, 1)?;
-        guards.push(root);
+    match branches {
+        Branches::Cases(cases) => {
+            for case in cases {
+                let root = guard(context, &meanings, case.guard, work)?;
+                work.charge(Dimension::Entries, 1)?;
+                guards.try_reserve(1).map_err(|_| Error::Allocation)?;
+                guards.push(root);
+            }
+        }
+        Branches::Repeat(continuing) => {
+            let root = guard(context, &meanings, continuing, work)?;
+            work.charge(Dimension::Entries, 1)?;
+            guards.try_reserve(1).map_err(|_| Error::Allocation)?;
+            guards.push(root);
+            // Exhausting is the exact negation of the authored guard, so the
+            // two branches partition every valuation by construction; the proof
+            // below still carries the visibility and ownership obligations.
+            work.charge(Dimension::Entries, 1)?;
+            let exhausting = arena.push(Op::Not(root), work)?;
+            guards.try_reserve(1).map_err(|_| Error::Allocation)?;
+            guards.push(exhausting);
+        }
     }
     super::locate(context.source, control.span, work)?;
-    arena.partition(&guards, &basis, received.atom_count(), work)
+    arena.partition(&guards, &visible_roots, received.atom_count(), work)
+}
+
+fn guard(
+    context: &Context<'_, '_>,
+    meanings: &BTreeMap<usize, Meaning>,
+    id: ExprId,
+    work: &mut Work,
+) -> Result<usize, Error> {
+    let original = context
+        .unit
+        .expression(id)
+        .ok_or(Error::Invalid(Invalid::Reference))?;
+    super::locate(context.source, original.span, work)?;
+    boolean(meanings, id, work)?.ok_or_else(unsupported)
 }
 
 fn meaning(
