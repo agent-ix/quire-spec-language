@@ -16,7 +16,7 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-019 | FR-019-AC-1 | TC-078, TC-089 | ✅ Qualified |
 | FR-019 | FR-019-AC-2 | TC-078 | ✅ Qualified |
@@ -164,5 +164,4 @@ NFR metric trace-target discrepancy remains a tooling limitation. Shared-domain
 registration and full interchange acceptance remain open under LC02/FS05.
 Independent B/C consumption,
 LC04 actual lowering/backend parity and LC05 Quire integration remain required.
-The existing catalog's Coverage Status versus Status mismatch still requires
-manual status reconciliation; no module or shared classifier is changed here.
+Coverage tables use the single `Status` column from `spec-artifacts-process#87`.

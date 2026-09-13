@@ -1,11 +1,12 @@
 # Matrix status checks
 
-The compiler's seven matrices correctly use `Coverage Status` for functional
-coverage and `Status` for test summaries. Do not rename either header to work
-around the installed catalog. The owning correction is
-[process PR85](https://github.com/agent-ix/spec-artifacts-process/pull/85), with
-[ISO PR37](https://github.com/agent-ix/spec-artifacts-iso/pull/37). Both remain
-review candidates; the compiler does not fork or install a shared catalog.
+The compiler's matrices use one `Status` column for functional coverage, quality
+coverage and test summaries. Upstream
+[`spec-artifacts-process#87`](https://github.com/agent-ix/spec-artifacts-process/pull/87)
+collapsed the former `Coverage Status` and `Status` names into that single
+column; do not rename a header back toward `Coverage Status`. The historical
+record below was measured before that collapse, when functional tables still
+used `Coverage Status`; the compiler does not fork or install a shared catalog.
 
 The following exact stack was checked against compiler `7619105`. Its CLI and
 engine report clean source provenance. The CLI capability has landed through

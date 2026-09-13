@@ -20,23 +20,25 @@ bridge remains outside the matrix: it depends on `quire-contract-ir#63`,
 `quire-contract-ir#64` and actual TL capability. FR-045 covers only the support
 classification, which is decidable from the admitted declaration plus the
 requested surrounding-execution closure, with no bridge and no backend report.
+The owner ruling on `quire-contract-ir#64` fixes surrounding-execution closure as
+the TL row selector. Through a strict
+[FR-050](../functional/FR-050-publish-authenticated-temporal-artifacts.md) `/2`
+package the classification also retains the definition selection it
+authenticated (FR-045-AC-6); authenticated clock parameters and trace premises
+are FR-050's claim under TC-138, not this matrix's.
 
-Two obligations are explicitly outstanding rather than covered. Mutation testing
-of NFR-008's exhaustion paths is not performed by this revision. Independent
-artifact-side checking of a declared sample period, epoch, timestamp unit or
-sequence authority is impossible while the emitted body carries none of them; the
-evaluator retains them as trace premises instead. The FR-042 `/2` wire change is
-compiler-owned work to agree with A; until it lands, this matrix makes no claim
-that those trace premises are authenticated. Pointwise Boolean composition,
-guard/redelivery dispositions and settled-sibling behavior are ratified shared
-semantics from `quire-specification` PR #23. Both outstanding obligations are
-recorded on compiler
+One obligation is explicitly outstanding rather than covered: mutation testing
+of NFR-008's exhaustion paths is not performed by this revision. Pointwise
+Boolean composition, guard/redelivery dispositions and settled-sibling behavior
+are ratified shared semantics from `quire-specification` PR #23. The outstanding
+obligation and the blocked emission half are recorded on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38).
 
 Status values are set from local runs only; hosted workflows remain
-manual-dispatch. The 39 controls are `tests/composed_temporal_evaluation.rs` (14),
+manual-dispatch. The 41 controls are `tests/composed_temporal_evaluation.rs` (14),
 `tests/composed_temporal_activation.rs` (11), `tests/composed_temporal_limits.rs`
-(7) and `tests/composed_temporal_mapping.rs` (7); all pass under
+(7), `tests/composed_temporal_mapping.rs` (7) and
+`tests/composed_temporal_mapping_v2.rs` (2); all pass under
 `cargo test --locked --no-default-features -j 1 -- --test-threads=1`, with
 `cargo fmt --all -- --check` and Clippy clean under both the minimal and the
 `quire-extraction` lanes.
@@ -44,14 +46,15 @@ manual-dispatch. The 39 controls are `tests/composed_temporal_evaluation.rs` (14
 Trace binding is claimed only where a run on the pinned stack in
 [matrix-status.md](../../docs/matrix-status.md) also reports zero
 `status-column-matches-nothing` diagnostics: on the installed stack an empty
-status-lie list is indistinguishable between a clean run and a skipped check. `Coverage Status` and `Status` headers follow
-[matrix-status.md](../../docs/matrix-status.md) and are not renamed.
+status-lie list is indistinguishable between a clean run and a skipped check.
+Every coverage table uses the single `Status` column from
+`spec-artifacts-process#87`.
 
 ## Requirements Traceability
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-043 | FR-043-AC-1 | TC-122 | ✅ Tested |
 | FR-043 | FR-043-AC-2 | TC-122 | ✅ Tested |
@@ -80,6 +83,7 @@ status-lie list is indistinguishable between a clean run and a skipped check. `C
 | FR-045 | FR-045-AC-3 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-4 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
+| FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor |
 | NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |
@@ -111,7 +115,7 @@ groups 2 and 3. Illustrative EX IDs are not minted as acceptance criteria.
 
 ## Six coverage rules
 
-All thirty-two acceptance criteria across FR-043, FR-044, FR-045 and NFR-008
+All thirty-three acceptance criteria across FR-043, FR-044, FR-045 and NFR-008
 appear above exactly once, each bound to one test case so a single trace
 attribute carries a single TC identity.
 
