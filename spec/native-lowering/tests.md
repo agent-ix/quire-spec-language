@@ -17,7 +17,7 @@ its own PR-time specification, code, Rust and gap reviews.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-009 | FR-009-AC-1 | TC-092 | ✅ Tested |
 | FR-009 | FR-009-AC-2 | TC-093 | ✅ Tested |
