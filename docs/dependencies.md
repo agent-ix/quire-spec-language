@@ -8,6 +8,13 @@ notices and compiles against its runtime `8a4d02b9ff4633cf6d02fd8bdf6ee1b11ad763
 (MIT OR Apache-2.0). Syn 2.0.119 (MIT OR Apache-2.0), already resolved transitively,
 is directly selected for Rust syntax inspection in the qualification driver.
 New driver code is Rust under AGPL-3.0-only. No producer source is copied.
+The isolated generated-package fixture now pins proptest 1.5.0 with only its
+`std` feature to compile codegen's generated strategy for `boolean-oracle/v1`.
+Its separate 25-package lock is qualification-only. Cargo metadata reports
+AGPL-3.0-only for the fixture, MIT for libm, the stated MIT/Apache alternatives
+for the remaining registry packages, Unicode-3.0 additionally for unicode-ident,
+the existing LLVM-exception alternatives for wasi, and BSD-2-Clause additionally
+for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 
 The lock now selects 180 packages including this crate, optional and target-specific
 dependencies. Cargo metadata

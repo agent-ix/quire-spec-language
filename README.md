@@ -157,8 +157,11 @@ invocation and object provenance. For the concrete update example, run
 This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
 inputs; native population and frame validation still precedes materialization.
 The LC04 backend qualification uses pinned existing codegen and actual generated
-Rust; activation acceptance is pending the codegen reader's Rust 1.98.1 / LLVM
-3.1.0 migration. [Plan-008](plan/Plan-008-native-lowering/plan.md) retains that gate.
+Rust. Its named `boolean-oracle/v1` fixture compiles a generated proptest strategy,
+checks every Boolean assignment against native evaluation and compares LLVM 3.1.0
+source probes with native implication events. The pinned reusable coverage reader
+still explicitly refuses LLVM 3.1.0; that downstream capability is not inferred
+from the fixture-specific check. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 2. File operands remain OS paths. JSON paths are display text,
@@ -184,13 +187,12 @@ the Quire consumer is enabled explicitly with `quire-extraction`.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
 Backend parity additionally requires Rust 1.98.1's `llvm-tools-preview` component
-and cargo-llvm-cov 0.9.0. Missing tools fail the test. The pending LC04 activation
-gate is explicitly separate from the passing truth/refusal checks:
-`cargo test --locked --offline --target-dir target -j 1 --test native_backend required_generated_activation_parity -- --ignored --test-threads=1`.
-It currently fails on the existing backend's explicit LLVM 3.1.0 refusal and is
-required before claiming complete backend parity.
-This assurance qualification is deferred for proof-of-concept engineering
-delivery. Compiler implementation continues while the criterion remains open.
+and cargo-llvm-cov 0.9.0. Missing tools fail the test. Run the named LC04 parity
+gate with `cargo test --locked --offline --target-dir target -j 1 --test
+native_backend generated_proptest_and_old_profile_activation_match_reference --
+--exact --test-threads=1`. The fixture verifies generated truth and activation
+for `boolean-oracle/v1` while also requiring the pinned reusable reader to retain
+its explicit LLVM 3.1.0 refusal.
 
 On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
 `-j 1`, and run tests with `-- --test-threads=1`. Check for competing builds
