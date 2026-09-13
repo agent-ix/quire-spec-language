@@ -157,9 +157,9 @@ The compiler recognizes a closed registry of the reviewed baseline's exact
 definition and rule bytes; callers explicitly supply those artifacts. The
 registry is implementation support, not a Markdown reader or an implicit source
 of omitted dependencies. Its normative resources preserve the selected standard
-bytes and original licensing. The existing native-state-model/1 producer binds
-through NativeModel. D's canonical/native correspondence and relationship export
-authority remain explicit unsupported boundaries; a same-shaped record grants
+bytes and original licensing. The historical native-state-model/1 producer binds
+through NativeModel. The admitted Producer 1.2 path retains its canonical/native
+correspondence and typed relationship exports; a same-shaped record grants
 neither authority.
 
 `linking::composed::subject::StaticSubject` retains the package contract's six
@@ -182,7 +182,9 @@ checked. Assessment selections and backend support are retained as provenance an
 are never written back into the static subject.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
-runtime requirements. These remain open, as does IT-009's actual D producer
-integration. An admitted request is a handoff record, not a checked or executable
-clause; no result from this stage is a checked or executable package. The
-historical package path remains separate.
+runtime requirements. IT-009 exercises that boundary with the real admitted
+producer, common nominal types across state, temporal and protocol families,
+declaration-owned capture and instance identities, and an explicit unsupported
+temporal projection beside an admitted state request. An admitted request is a
+handoff record, not a checked or executable clause; no result from this stage is
+a checked or executable package. The historical package path remains separate.

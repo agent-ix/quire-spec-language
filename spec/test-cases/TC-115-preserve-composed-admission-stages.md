@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Exercise separation of static linking, runtime binding and downstream capability
-disposition. These are planned compiler controls, not temporal-engine qualification.
+disposition. These are compiler controls, not temporal-engine qualification.
 
 ## Test Procedure
 
