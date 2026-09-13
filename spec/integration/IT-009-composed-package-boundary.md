@@ -84,3 +84,16 @@ static correspondence, not evaluated ecosystem truth. Evaluation, graph
 traversal, protocol conformance and observation completeness remain assigned to
 FR-046 through FR-049, NFR-009 and the downstream B/F contracts; they are not
 verified by this integration.
+
+## Status
+
+`tests/producer_correspondence.rs::real_producer_retains_cross_family_identity_and_backend_refusal`
+executes the public Producer 1.2 adapter and composed compiler boundary. The
+three source families retain one exact admitted producer/native model selection,
+the emitted state, temporal and protocol binders share the selected nominal
+`Node` type without merging declaration-owned handles, and temporal captures,
+workflow instances, role instances and relationship bindings remain distinct.
+The same run retains an admitted state request and an unsupported temporal
+projection, makes aggregate success unavailable and exposes no unsupported body
+as checked. It supplies no assessment observations and makes none of the
+downstream evaluation claims excluded above.
