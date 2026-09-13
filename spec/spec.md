@@ -38,6 +38,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-010
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-043
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-044
