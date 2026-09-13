@@ -14,4 +14,4 @@ relationships:
 Extend the existing compiler projection with explicit integer IR selection,
 actual bound scalar/source correspondence and standalone export. C retains
 backend implementation. Local checks and the requested reviews occur at PR
-readiness; Task-020's deferred activation assurance does not gate this delivery.
+readiness; Task-020 is now complete separately.
