@@ -215,9 +215,11 @@ the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
 controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
 boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
-stage grant no checked or executable package. The real D producer integration
-in [IT-009](../integration/IT-009-composed-package-boundary.md) remains a
-separate boundary. Status records local runs, not ecosystem acceptance.
+stage grant no checked or executable package. The real Producer 1.2 integration
+in [IT-009](../integration/IT-009-composed-package-boundary.md) is exercised by
+`tests/producer_correspondence.rs`, including common cross-family nominal type
+identity, declaration-owned capture and instance identities, and explicit
+backend capability refusal. Status records local runs, not ecosystem acceptance.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports; all seven FR-041 criteria are
