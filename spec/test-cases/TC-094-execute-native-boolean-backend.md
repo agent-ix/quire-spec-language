@@ -18,13 +18,18 @@ clause, for all eight Boolean assignments.
 
 ## Test Procedure
 
-Compile the actual emitted artifacts once, then execute each assignment with
-separate measured coverage. Compare the existing coverage consumer's three
-consequent counts with native source events and independently specified control
-equations, including the implication nested in an antecedent.
+Assert the historical `ix:native` / `0-draft` / `state-finite/0-draft` source
+selection. Compile the actual emitted artifacts and codegen's generated finite
+proptest strategy once. Require its deterministic campaign to cover all eight
+assignments, then execute each assignment with separate measured coverage.
+Compare the exact LLVM 3.1.0 counts at the generated source-map probes with
+native source events and independently specified control equations, including
+the implication nested in an antecedent. Retain the pinned reusable coverage
+consumer's explicit unsupported-profile result as a downstream boundary.
 
 ## Expected Results
 
-All eight truth results and per-source activation counts agree. Complete clause
-identity survives both IR pins. Missing tools, unavailable coverage and failed
-native validation fail the test rather than count as a passing or skipped case.
+All eight native, independent, generated executable and generated-proptest truth
+results agree, as do all per-source activation counts. Complete clause identity
+survives both IR pins. Missing tools, unavailable coverage and failed native
+validation fail the test rather than count as a passing or skipped case.

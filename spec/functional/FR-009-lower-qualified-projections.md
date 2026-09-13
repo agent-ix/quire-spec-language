@@ -81,7 +81,8 @@ retains these ceilings as an additional guard over already checked packages.
 
 ## Status
 
-Proof-of-concept engineering delivery is permitted with the generated activation
-part of FR-009-AC-5 still open, per the owner's 2026-09-09 direction. The full
-criterion and its test remain required for backend qualification; passing truth
-results do not claim activation parity or production readiness.
+FR-009-AC-5 is qualified for the named `boolean-oracle/v1` domain by TC-094.
+The fixture compiles codegen's generated proptest strategy, covers all eight
+assignments, and compares actual LLVM 3.1.0 source probes with native implication
+events. The fixture-specific reader does not expand the pinned reusable coverage
+reader, whose explicit LLVM 3.1.0 refusal remains a downstream capability limit.

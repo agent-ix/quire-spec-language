@@ -14,4 +14,4 @@ relationships:
 Compiler-only LC04 bridge from concrete self fields and pre/post observations
 to existing primitive IR and validated runtime inputs. Reuse model/checker/
 runtime APIs; C retains backend producers. Specify now and run the selected
-QUOIN all-set and code/Rust reviews at PR readiness. Task-020 remains deferred.
+QUOIN all-set and code/Rust reviews at PR readiness. Task-020 is complete separately.

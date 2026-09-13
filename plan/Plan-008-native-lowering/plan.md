@@ -2,7 +2,7 @@
 id: Plan-008
 title: "Native Boolean lowering and backend parity"
 type: Plan
-status: in_progress
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-009
     type: references
@@ -14,8 +14,9 @@ relationships:
 ## Scope
 
 LC04's first executable projection: existing native declarations and exact source
-bindings feed the existing strict IR binder and Boolean backend. Full numeric,
-object and compiled ConfigVersion acceptance remains LC04 work.
+bindings feed the existing strict IR binder and Boolean backend. Compiler-owned
+numeric and state-scalar encodings remain explicit handoffs to downstream
+backend and compiled-workflow owners.
 
 ## Delivery
 
@@ -27,12 +28,11 @@ object and compiled ConfigVersion acceptance remains LC04 work.
 4. [Task-033](tasks/Task-033-state-scalar-ir.md): concrete context-field projection
    and validated primitive inputs at their original observations.
 
-Owner direction for the first proof of concept permits engineering delivery with
-generated activation qualification deferred. Complete the scoped PR review and
-land the working Boolean lowering; continue LC05 engineering independently.
-FR-009-AC-5, IT-008-SC-04 and Task-020 remain open until the actual generated
-activation counts pass. C owns the coverage-reader update; it is an assurance
-dependency, not a prerequisite for further compiler implementation.
+TC-094 completes the named `boolean-oracle/v1` domain with a generated proptest
+strategy and actual generated activation counts for LLVM 3.1.0. The pinned
+reusable reader's explicit profile refusal remains intact. Downstream owners
+retain general strategy generation, coverage-reader expansion, conformance and
+numeric/object backend capability; this plan does not claim those deliveries.
 
 ## Coordination
 
