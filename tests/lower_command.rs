@@ -7,7 +7,7 @@ mod fixtures;
 use ix_trace_rs::trace;
 use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
-use quire_contract_ir_backend as backend_ir;
+use quire_contract_ir as backend_ir;
 use quire_spec_language::{
     lowering::{lower, LoweringLimits},
     package::{NativePackage, PackageLimits},
