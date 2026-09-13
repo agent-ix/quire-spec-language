@@ -87,8 +87,9 @@ source clause or an approximation of unsupported semantics.
 6. Submit the actual ConfigVersion `ParentOrder` and `NoCycle` clauses to the backend projection/
    generation path.
    IT-010-SC-06: each request refuses at the earliest boundary that owns its unrepresentable
-   `deref` or `reaches` semantics, reports the authored clause and exact source locus, emits no
-   partial backend artifact and never fabricates a substitute IR expression.
+   object/graph semantics (`present` before `deref` for the authored `ParentOrder` expression, and
+   `reaches` for `NoCycle`), reports the authored clause and exact source locus, emits no partial
+   backend artifact and never fabricates a substitute IR expression.
 
 ## Expected Results
 

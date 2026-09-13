@@ -1,15 +1,17 @@
 ---
 id: TM-006
-title: "Native Boolean lowering matrix"
+title: "Native verification backend matrix"
 type: TestMatrix
 ---
 
 ## Overview
 
 Scoped to [FR-009](../functional/FR-009-lower-qualified-projections.md).
-Five lowering tests and all eight generated truth and activation assignments
-pass. TC-094 compiles a codegen-produced proptest strategy and observes exact
-LLVM 3.1.0 source probes while retaining the reusable reader's explicit refusal.
+The Boolean, bounded-integer and primitive-state lowering tests pass. TC-094
+compiles a codegen-produced proptest strategy and observes exact LLVM 3.1.0
+source probes while retaining the reusable reader's explicit refusal. IT-010
+compiles the numeric/state oracle and all strategy populations, runs the pinned
+Kani contract and replays its concrete counterexample through native execution.
 Historical code review is retained in SR-114/115; the completion delta receives
 its own PR-time specification, code, Rust and gap reviews.
 
@@ -46,3 +48,9 @@ its own PR-time specification, code, Rust and gap reviews.
 | TC-094 | Actual generated truth and activation through IT-008 | Integration | P1 | FR-009 | ✅ Tested |
 | TC-111 | Bounded integer IR and explicit command target | Integration | P1 | FR-033 | ✅ Tested |
 | TC-112 | State fields and validated primitive inputs | Integration | P1 | FR-034 | ✅ Tested |
+| IT-010-SC-01 | Exact backend/tool/package pins | Integration | P0 | IT-010 | ✅ Tested locally |
+| IT-010-SC-02 | Actual native projection and generated artifact identity | Integration | P0 | IT-010, FR-033, FR-034 | ✅ Tested locally |
+| IT-010-SC-03 | Native/generated bounded-corpus parity | Integration | P0 | IT-010, FR-034 | ✅ Tested locally |
+| IT-010-SC-04 | Executed model-domain strategy populations and rates | Property | P0 | IT-010, FR-034 | ✅ Tested locally |
+| IT-010-SC-05 | Kani proof, counterexample decode and native replay | Formal | P0 | IT-010, FR-034 | ✅ Tested locally |
+| IT-010-SC-06 | Object/graph refusal clause and source locus | Integration | P0 | IT-010, FR-034 | ✅ Tested locally |
