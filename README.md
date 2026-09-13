@@ -142,11 +142,12 @@ See [the package contract](docs/native-linked-packages.md).
 
 `lowering::lower` derives complete Boolean executable projections through the
 existing strict IR binder, retaining original native authority and explicit
-model/read/observation correspondence. Numeric and object expressions refuse.
+model/read/observation correspondence. Object and graph expressions refuse.
 `lowering::lower_for` with `ProjectionTarget::IntegerIrV1` additionally exports
 bounded integer arithmetic and comparisons accepted by the strict IR binder.
 Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
-the existing codegen still refuses numeric expressions. The `standalone_fixtures`
+the pinned codegen emits executable numeric Rust for obligation-free comparisons.
+The `standalone_fixtures`
 example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
 Their native runs return true and false; both export the same integer projection.
 `ProjectionTarget::StateScalarIrV1` additionally projects primitive self fields
@@ -156,6 +157,11 @@ invocation and object provenance. For the concrete update example, run
 `quire-spec lower <unchanged-version/compile.json> --target state-scalar-ir/v1`.
 This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
 inputs; native population and frame validation still precedes materialization.
+IT-010 runs the ConfigVersion state comparison through compiled generated Rust,
+all four generated strategy populations and cargo-kani 0.67.0, and checks the
+shared bounded corpus against `runtime::execute`. Values outside `0..=1000`
+produce no Boolean oracle verdict, while object/graph expressions refuse at the
+earliest source-owned boundary without a substitute IR expression.
 The LC04 backend qualification uses pinned existing codegen and actual generated
 Rust. Its named `boolean-oracle/v1` fixture compiles a generated proptest strategy,
 checks every Boolean assignment against native evaluation and compares LLVM 3.1.0
