@@ -8,7 +8,6 @@ mod setup;
 
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
-use quire_contract_ir_backend as backend_ir;
 use quire_spec_language::{
     lowering::{lower, lower_for, LoweringCode, LoweringLimits, ProjectionTarget},
     native_model::NativeModel,
@@ -84,7 +83,7 @@ fn strict_readers_reconstruct_integer_operators_bounds_and_guarded_obligations()
             ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap(),
             *projection.bound()
         );
-        let consumer = backend_ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
+        let consumer = ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
         assert_eq!(
             consumer.digest().to_string(),
             projection.bound().digest().to_string()
@@ -387,8 +386,8 @@ fn write_job(directory: &Path, native: &NativePackage<'_>, model: &NativeModel) 
 }
 
 #[test]
-#[trace("TC-111", "FR-033-AC-4")]
-fn actual_command_exports_selected_bytes_and_current_backend_refuses_numeric_inputs() {
+#[trace("TC-111", "FR-033-AC-4", "IT-010-SC-02")]
+fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() {
     let directory = tempfile::tempdir().unwrap();
     let models = [model(false, 1000)];
     let native = package(&models, "amount < 7", ClauseKind::Invariant);
@@ -407,8 +406,8 @@ fn actual_command_exports_selected_bytes_and_current_backend_refuses_numeric_inp
     );
     let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
     assert_eq!(output.stdout, projection.bytes());
-    let consumer = backend_ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
-    let error = quire_contract_codegen::generate_bound_oracles(
+    let consumer = ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
+    let generated = quire_contract_codegen::generate_bound_oracles(
         &consumer,
         quire_contract_codegen::AttestationContext {
             // Synthetic generator context only; no attestation claim.
@@ -416,17 +415,90 @@ fn actual_command_exports_selected_bytes_and_current_backend_refuses_numeric_inp
             candidate_revision: &"0".repeat(40),
         },
     )
-    .unwrap_err();
-    let quire_contract_codegen::BoundGenerationError::Clause {
-        identity,
-        diagnostics,
-    } = error
-    else {
-        panic!("expected numeric clause refusal");
+    .unwrap();
+    let quire_contract_codegen::BoundOracleGeneration::Generated(generated) = generated else {
+        panic!("numeric comparison must produce an executable oracle");
     };
-    assert_eq!(identity.clause().as_str(), "population_rule");
-    assert!(diagnostics.iter().any(|diagnostic| diagnostic.code
-        == quire_contract_codegen::GenerationErrorCode::UnsupportedExpression));
+    let generated_clause = generated
+        .clauses()
+        .iter()
+        .find(|clause| clause.identity().clause().as_str() == "population_rule")
+        .expect("selected numeric clause");
+    let bound_clause = consumer
+        .clauses()
+        .iter()
+        .find(|clause| clause.identity() == generated_clause.identity())
+        .expect("generated clause retains a bound source clause");
+    assert_eq!(
+        generated_clause.identity().clause().as_str(),
+        "population_rule"
+    );
+    assert_eq!(
+        generated_clause.expression_digest(),
+        bound_clause.expression_digest()
+    );
+    let syntax = syn::parse_file(&generated_clause.bundle().rust.contents).unwrap();
+    let function = syntax.items.iter().find_map(|item| match item {
+        syn::Item::Fn(function) if matches!(function.vis, syn::Visibility::Public(_)) => {
+            Some(function)
+        }
+        _ => None,
+    });
+    let function = function.expect("generated public numeric oracle");
+    assert_eq!(function.sig.inputs.len(), 1);
+    assert!(
+        matches!(function.sig.output, syn::ReturnType::Type(_, ref ty)
+        if matches!(ty.as_ref(), syn::Type::Path(path) if path.path.is_ident("bool")))
+    );
+    let consumer_root = directory.path().join("integer-oracle");
+    std::fs::create_dir_all(consumer_root.join("src")).unwrap();
+    std::fs::write(
+        consumer_root.join("src/oracle.rs"),
+        &generated_clause.bundle().rust.contents,
+    )
+    .unwrap();
+    std::fs::write(
+        consumer_root.join("src/main.rs"),
+        format!(
+            "#![deny(warnings)]\n#[allow(dead_code)] #[path = \"oracle.rs\"] mod oracle;\nfn main() {{ let value: i64 = std::env::args().nth(1).unwrap().parse().unwrap(); println!(\"{{}}\", oracle::{}(value)); }}\n",
+            function.sig.ident
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        consumer_root.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"integer-oracle\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nquire-contract-runtime = {{ git = \"https://github.com/agent-ix/quire-contract-runtime\", rev = \"{}\" }}\n\n[workspace]\n",
+            quire_contract_codegen::RUNTIME_REVISION
+        ),
+    )
+    .unwrap();
+    let built = Command::new(env!("CARGO"))
+        .args(["build", "--offline", "--quiet", "--target-dir"])
+        .arg(consumer_root.join("target-codex-backends"))
+        .env("RUSTFLAGS", "-Dwarnings")
+        .current_dir(&consumer_root)
+        .output()
+        .unwrap();
+    assert!(
+        built.status.success(),
+        "generated integer oracle did not compile:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let executable = consumer_root
+        .join("target-codex-backends/debug")
+        .join(format!("integer-oracle{}", std::env::consts::EXE_SUFFIX));
+    for (value, expected) in [(0, true), (1000, false)] {
+        let executed = Command::new(&executable)
+            .arg(value.to_string())
+            .output()
+            .unwrap();
+        assert!(executed.status.success());
+        assert_eq!(
+            String::from_utf8(executed.stdout).unwrap().trim(),
+            expected.to_string()
+        );
+    }
     let invalid = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .args(["lower", "/missing/input.json", "--target", "future/v9"])
         .output()
