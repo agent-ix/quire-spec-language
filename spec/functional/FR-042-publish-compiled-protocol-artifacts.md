@@ -72,10 +72,13 @@ wire contract; source stdout, shell commands and hand-edited JSON are not the pr
 handoff. Successfully verified wire content remains distinct from compiler-owned
 family admission and B-owned assessment admission/execution.
 
-Before protocol role model or type admission can refuse, the compiler SHALL establish the report
-locus from that role's owning declaration. In a multi-source package, the reported source index and
-span SHALL identify the same supplied source and slice the exact refused role declaration. The
-compiler SHALL NOT retain a preceding declaration's source index with the current role's span.
+When the compiler begins protocol-role model or type admission, the compiler SHALL establish the
+report locus from that role's owning declaration.
+
+When protocol-role model or type admission refuses in a multi-source package, the compiler SHALL
+report a source index and span that identify the same supplied source and slice the exact refused
+role declaration. The compiler SHALL NOT retain a preceding declaration's source index with the
+current role's span.
 
 ## Behavior
 
