@@ -15,6 +15,12 @@ use serde::{Deserialize, Serialize};
 
 use super::{v2, wire as w, Dimension, Limits, ACCOUNTING_VERSION};
 
+/// Repository path of the committed compiled-protocol v2 consumer handoff.
+pub const PUBLISHED_HANDOFF: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/artifacts/compiled-protocol-v2"
+);
+
 /// One selected dependency, naming the file holding its exact original bytes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -270,11 +276,37 @@ pub enum MutationInput {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     use ix_trace_rs::trace;
     use serde_json::json;
 
-    use super::{MutationInput, MutationManifest, SelectedArtifactLimits};
+    use super::{MutationInput, MutationManifest, SelectedArtifactLimits, PUBLISHED_HANDOFF};
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
+    use crate::ByteDigest;
+
+    #[test]
+    #[trace("TC-121", "FR-042-AC-10")]
+    fn published_handoff_path_exists_and_checksums_verify() {
+        let root = Path::new(PUBLISHED_HANDOFF);
+        assert!(root.is_dir(), "published handoff directory: {root:?}");
+        let sums = fs::read_to_string(root.join("SHA256SUMS")).expect("published SHA256SUMS");
+        assert!(!sums.is_empty(), "published SHA256SUMS is not empty");
+
+        for (line_index, line) in sums.lines().enumerate() {
+            let (expected, relative) = line
+                .split_once("  ./")
+                .unwrap_or_else(|| panic!("malformed SHA256SUMS line {}", line_index + 1));
+            let bytes = fs::read(root.join(relative)).unwrap_or_else(|error| {
+                panic!("read published handoff file {relative:?}: {error}")
+            });
+            assert_eq!(
+                format!("{:x}", ByteDigest::of(&bytes)),
+                expected,
+                "published handoff digest for {relative}"
+            );
+        }
+    }
 
     #[test]
     #[trace("TC-121", "FR-042-AC-9")]

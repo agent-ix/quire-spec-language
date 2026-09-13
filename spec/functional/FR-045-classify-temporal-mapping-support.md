@@ -5,6 +5,7 @@ type: FR
 relationships:
   - { target: ix://agent-ix/quire-spec-language/US-004, type: implements }
   - { target: ix://agent-ix/quire-spec-language/FR-042, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-050, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-043, type: references }
   - { target: ix://agent-ix/quire-specification/FR-095, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-048, type: references }
@@ -25,7 +26,7 @@ The support table is owned by `ix://agent-ix/quire-specification/FR-095`. This
 requirement implements the classification only; it emits no TL formula, no
 valuation request and no correspondence record, and it establishes no bridge.
 
-The classification SHALL be a total function of three inputs and nothing else:
+The disposition SHALL be a total function of three inputs and nothing else:
 the declaration's selected profile, the operator kinds reachable from its root,
 and the surrounding-execution closure named in the request. The first two come
 from the admitted declaration; the third comes from the request, because the
@@ -34,20 +35,40 @@ installed TL version, a syntax match or a historical result. This keeps the clas
 while `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability
 remain outstanding; the emission half of FR-095 stays outside this scope.
 
-### Open question referred to the IR/TL owners
+### Closure axis ruling
 
 FR-095's support table uses two axis vocabularies in adjacent rows: its first row
-keys on "complete execution" and its second on "open prefix". This requirement
-normalizes both to surrounding-execution closure, which is unambiguous for the
-first row. For the second it is a **selection**, not a restatement: the target's
-own name, `mltl.online-prefix/v1`, and FR-091's "open decision scope" language
-both point instead at decision-scope openness, and
-[FR-043](./FR-043-evaluate-bounded-native-temporal.md)-AC-10 forbids substituting
-one axis for the other. Reading that row as decision-scope openness would change
-which target an open-scoped, completely-executed declaration maps to. The
-selection is recorded on compiler
-[#38](https://github.com/agent-ix/quire-spec-language/issues/38) for the IR/TL
-owners to rule on, and SHALL be changed to match that ruling.
+keys on "complete execution" and its second on "open prefix". The IR/TL owner
+ruled on this in
+[`quire-contract-ir#64`](https://github.com/agent-ix/quire-contract-ir/issues/64#issuecomment-5649214124):
+surrounding-execution closure, complete execution against open prefix, selects
+the TL row, and decision-scope closure is not the selector. Both FR-095 rows
+therefore key on surrounding-execution closure. The native result model keeps
+both axes and removes neither; the ruling decides only which axis selects the TL
+row, so [FR-043](./FR-043-evaluate-bounded-native-temporal.md)-AC-10 still forbids
+substituting one axis for the other.
+
+### Authenticated classification
+
+A compiled-protocol `/1` package carries no authenticated temporal definition
+selection, so a classification made through it retains none. Through a strict
+`quire.compiled-protocol/2` package under
+[FR-050](./FR-050-publish-authenticated-temporal-artifacts.md), the classifier
+SHALL resolve the selection through the declaration's admitted temporal binding,
+SHALL refuse a declaration with no binding or whose binding selects a definition
+other than the declaration's own, and SHALL retain the selection it resolved: the
+admitted package digest, the declaration, the definition identity and namespaced
+revision, and the digest of the exact definition artifact the package selects.
+The strict reader already refuses a temporal declaration with no binding and a
+binding that selects another definition, so both refusals are inspected
+re-checks rather than reachable test paths. The
+retained selection SHALL NOT be constructible outside the compiler, and SHALL
+carry no clock parameter map, because classification takes no trace and so
+authenticates none. Only the selection is sealed: the disposition and retained
+native subject stay plain data, so a consumer that needs the disposition bound to
+the selection re-classifies from the package the selection names. Authentication
+SHALL NOT change the disposition: the same declaration classifies identically
+through either version.
 
 ## Inputs
 
@@ -117,11 +138,17 @@ encode. Naming them is not discharging them.
 | FR-045-AC-3 | An unsupported result retains the native declaration subject, its selected profile identity and revision, and its activation record; a source-valid declaration is unchanged by the classification. | Test (TC-125) |
 | FR-045-AC-4 | An unsupported result names every unmatched dimension rather than one summary cause, and a declaration unmatched on two dimensions names both. | Test (TC-125) |
 | FR-045-AC-5 | A supported classification names its outstanding bridge premises, its TL target identity and the source table's baseline revision, and asserts no correspondence; two declarations with equal temporal formula bytes but different selected profiles do not receive the same classification. | Test (TC-125) |
+| FR-045-AC-6 | A declaration classified through a strict `/2` package returns the same disposition and retained native subject as through `/1` under both surrounding-execution closures, and additionally retains the authenticated package digest, declaration, definition identity, namespaced revision and definition artifact digest; a `/1` classification retains no authenticated selection, a `/2` request for a declaration outside the package or for a non-temporal declaration is refused, and the classifier refuses a temporal declaration with no binding or a binding that selects a definition other than the declaration's own (Inspection; unreachable after the strict reader). | Test (TC-125); Inspection |
 
 ## Dependencies
 
 - **Upstream**: [FR-042](./FR-042-publish-compiled-protocol-artifacts.md) supplies
   the admitted declaration, its profile selection and its operation graph.
+- **Upstream**: [FR-050](./FR-050-publish-authenticated-temporal-artifacts.md)
+  supplies the strict `/2` package whose temporal binding authenticates the
+  definition selection an authenticated classification retains.
+- **Ruling**: `quire-contract-ir#64` fixes surrounding-execution closure as the
+  TL row selector.
 - **Peer**: [FR-043](./FR-043-evaluate-bounded-native-temporal.md) evaluates
   natively and is unaffected by this classification.
 - **Blocked, recorded as remaining work on compiler #38**: the emission half of

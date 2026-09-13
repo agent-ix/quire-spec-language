@@ -17,11 +17,13 @@ Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065
 hard exhaustion checks using admitted nested sequences. SR-263 records actual
 local execution. Source-profile reconciliation remains compiler #30.
 
-The fetched 2026-09-12 catalog now aligns this table contract and status reader
-on `Status`; this in-scope matrix adopts that spelling. `quire validate` accepts
-TM-003, and `quire coverage` reads its statuses rather than reporting
-`status-column-matches-nothing`. Remaining work: #28 for the other matrices,
-the required false-status negative control and final installed-stack adoption.
+The #28 status-column defect was two names for one column. Upstream
+`spec-artifacts-process#87` collapsed them to a single `Status` column, which
+both the TestMatrix column assert and `traceability.status.column` now read, so
+every coverage table here uses `Status`. Do not rename it back toward
+`Coverage Status`; a stack that still asserts the old name is stale and is
+upgraded, not authored around. Remaining work: #28 for the negative control on a
+false Tested claim and its readiness-claim corrections.
 
 Two limits of a clean status result are load-bearing and are not visible in
 `status_lies` or `unbacked_rows`. First, this declaration classifies a row by
@@ -393,7 +395,7 @@ same evaluator with independent inclusive counters and charge-before-work
 behavior. No native-runtime NFR-006 result is reused as evidence for this new
 accounting identity.
 
-| Quality Req | Verification Method | Test Cases | Coverage Status |
+| Quality Req | Verification Method | Test Cases | Status |
 | --- | --- | --- | --- |
 | NFR-009 | Test: negative-abuse-testing for every declared metric | TC-137 | ✅ Passed |
 
@@ -477,9 +479,8 @@ At the PR8 linker baseline, Quire reconciliation reported TM-003 10/15 backed,
 FR-005 5/5 and FR-013 6/6, with no status lies or untracked symbols. The PR9
 source bridge subsequently added five executed cases. The current matrix has
 35 qualified cases, including all 13 checker cases. FR-006 has five executed
-judgments and FR-016 has nine qualified criteria. The
-known functional-table Status/Coverage Status classifier limitation is retained;
-explicit TC statuses and executed logs supply the separate completion evidence.
+judgments and FR-016 has nine qualified criteria. Explicit TC
+statuses and executed logs supply the separate completion evidence.
 
 The historical rows specify evidence for LC02. Native linking and static checking are
 implemented; runtime validation/evaluation and qualified projection remain incomplete. The accepted IR ADR-0054
