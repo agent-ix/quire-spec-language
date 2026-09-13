@@ -87,9 +87,9 @@ different-length text values require no content scan. Scalar, enum and complete
 object-key comparisons require only the pair unit.
 The selected composed profile admits equality only for its scalar, enum,
 reference and object-identity types; it does not widen FR-040 with recursive
-record, option or sequence equality. Text comparison additionally charges its
-UTF-8 content during input validation; no wall-clock or locale-dependent work is
-introduced.
+record, option or sequence equality. Text content is charged at the comparison
+point described above, independently of input validation; no wall-clock or
+locale-dependent work is introduced.
 
 Graph reachability performs deterministic depth-first search in authored edge
 order. Entering an unexpanded object charges graph expansion, marks its full
