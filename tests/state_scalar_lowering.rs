@@ -142,8 +142,7 @@ fn concrete_config_update_binds_and_materializes_actual_pre_post_values() {
             ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap(),
             *bound
         );
-        let backend =
-            quire_contract_ir_backend::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
+        let backend = ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
         assert_eq!(backend.digest().to_string(), bound.digest().to_string());
         let clause = &bound.clauses()[0];
         assert_eq!(clause.environment().values().len(), 1);

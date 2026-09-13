@@ -32,7 +32,8 @@ actual IR executable-projection/v1 bytes, strict BoundPackage and direct-read
 correspondence. Integer bounds, signed domain and reject-overflow policy come
 from the checked nominal scalar's actual representation. Nominal scalar names
 and units remain in the originating native model identity; the IR projection
-does not replace that authority. This target does not assert codegen acceptance.
+does not replace that authority. Codegen acceptance remains a separately pinned
+consumer result qualified by IT-010 rather than a claim made by lowering alone.
 
 ## Behavior
 
@@ -59,10 +60,12 @@ promise transactional directory publication.
 | FR-033-AC-1 | The actual strict IR reader reconstructs integer literals, direct declarations, arithmetic/comparisons and source-bound guarded definedness with exact signed bounds and operator order. | Test |
 | FR-033-AC-2 | State/pre/post and captured-input correspondence retain original model/declaration identities; changed scalar bounds alter the relevant native and bound identities. | Test |
 | FR-033-AC-3 | The Boolean default still refuses numeric clauses; unsupported later clauses and node/depth/byte exhaustion return no partial projection, and fresh retries succeed. | Test |
-| FR-033-AC-4 | Actual command target selection exports exactly the library's bytes, identifies integer lowering failures and rejects unknown targets before dependent file access; runnable integer fixtures produce true/false natively and identical projection bytes, while existing codegen explicitly refuses numeric projection. | Test |
+| FR-033-AC-4 | Actual command target selection exports exactly the library's bytes, identifies integer lowering failures and rejects unknown targets before dependent file access; runnable integer fixtures produce true/false natively and identical projection bytes, while the IT-010 pinned codegen generates the obligation-free numeric oracle and explicitly refuses unsupported clauses. | Test |
 | FR-033-AC-5 | Native and Markdown fixture generation propagate output-directory and later file-write errors; the executable returns exit 2 with an error message, and a fresh valid output directory succeeds. | Test |
 
 ## Dependencies
 
 - [FR-009](FR-009-lower-qualified-projections.md): existing complete projection/binder.
 - [FR-029](FR-029-export-executable-projection.md): existing standalone lower command.
+- [IT-010](../integration/IT-010-config-version-numeric-backends.md): pinned generated-backend
+  acceptance, domain parity and proof replay.
