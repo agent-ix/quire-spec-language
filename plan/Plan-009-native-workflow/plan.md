@@ -2,7 +2,7 @@
 id: Plan-009
 title: "Native source integration and usable workflow"
 type: Plan
-status: in_progress
+status: complete
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-022
     type: references
@@ -46,3 +46,9 @@ adoption and assurance remain explicit acceptance work.
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
 optional semantic review remains declined.
+
+## Completion
+
+All thirteen tasks are done. The setup effort, artifact lineage, reproduction
+path and remaining support gaps are recorded in
+`docs/lc05-technical-acceptance.md` at LC05 closeout.
