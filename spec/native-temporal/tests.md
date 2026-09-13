@@ -81,7 +81,7 @@ status check ran rather than being skipped.
 | FR-045 | FR-045-AC-3 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-4 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
-| FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the other-definition binding refusal is inspected |
+| FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the missing-binding and other-definition refusals are inspected |
 | NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |

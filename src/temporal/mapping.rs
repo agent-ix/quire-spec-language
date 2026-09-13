@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-045: native-to-TL mapping support classification.
 //!
-//! The disposition is a total function of three inputs and nothing else: the admitted
-//! declaration's selected profile, its reachable operator kinds, and the
+//! The disposition is a total function of three inputs and nothing else: the
+//! admitted declaration's selected profile, its reachable operator kinds, and the
 //! surrounding-execution closure named in the request. The owner ruling on
 //! `quire-contract-ir#64` fixes surrounding-execution closure as the axis that
 //! selects the TL row; decision-scope closure stays a separate native result axis

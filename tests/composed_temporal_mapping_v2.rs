@@ -291,7 +291,7 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
 }
 
 /// FR-045-AC-6: the version-2 entry point refuses a declaration outside the
-/// admitted package, including one whose index no binding can represent, and a
+/// admitted package, including the largest index a caller can name, and a
 /// non-temporal declaration, each with its exact located refusal rather than a
 /// classification without an authenticated selection.
 #[trace("TC-125", "FR-045-AC-6")]
@@ -315,7 +315,7 @@ fn a_version_two_request_outside_the_package_or_not_temporal_is_refused() {
             Err(Error::Refused(Refusal::Reference {
                 subject: at(usize::MAX)
             })),
-            "an unrepresentable declaration index is refused",
+            "the largest declaration index is outside the package and refused",
         );
         let flow = position(&v2_package.inherited().declarations, "Flow");
         assert_eq!(
