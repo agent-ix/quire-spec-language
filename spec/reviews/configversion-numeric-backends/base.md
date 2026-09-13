@@ -13,8 +13,9 @@ relationships:
 ## Summary
 
 The owner-selected base review covers IT-010's real boundary, six success criteria, related local
-requirements, exact dependencies, error/edge/state cases and cross-repository traceability. Three
-draft defects were repaired; no open base-review finding remains before implementation.
+requirements, exact dependencies, error/edge/state cases and cross-repository traceability. The
+specification findings and two PR-readiness evidence gaps were repaired; no open base-review
+finding remains.
 
 ## Findings
 
@@ -34,5 +35,6 @@ draft defects were repaired; no open base-review finding remains before implemen
   and no unsupported construct can pass through a fabricated IR node.
 - FR-033 retains compiler ownership and now assigns generated acceptance to IT-010. FR-032 and
   FR-034 already define the runtime/model/source inputs that the integration test reuses.
-- The changed three-document scope validates with Quire. The aggregate repository retains eight
-  pre-existing installed TestMatrix `Status`/`Coverage Status` schema conflicts outside this delta.
+- The changed requirement, integration, matrix and review documents validate with pinned Quire
+  0.31.0. The aggregate repository retains seven pre-existing installed TestMatrix
+  `Status`/`Coverage Status` schema conflicts outside this delta.

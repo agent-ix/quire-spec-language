@@ -19,7 +19,7 @@ its own PR-time specification, code, Rust and gap reviews.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-009 | FR-009-AC-1 | TC-092 | ✅ Tested |
 | FR-009 | FR-009-AC-2 | TC-093 | ✅ Tested |
@@ -52,5 +52,5 @@ its own PR-time specification, code, Rust and gap reviews.
 | IT-010-SC-02 | Actual native projection and generated artifact identity | Integration | P0 | IT-010, FR-033, FR-034 | ✅ Tested locally |
 | IT-010-SC-03 | Native/generated bounded-corpus parity | Integration | P0 | IT-010, FR-034 | ✅ Tested locally |
 | IT-010-SC-04 | Executed model-domain strategy populations and rates | Property | P0 | IT-010, FR-034 | ✅ Tested locally |
-| IT-010-SC-05 | Kani proof, counterexample decode and native replay | Formal | P0 | IT-010, FR-034 | ✅ Tested locally |
+| IT-010-SC-05 | Kani proof, counterexample decode and native replay | Analysis | P0 | IT-010, FR-034 | ✅ Tested locally |
 | IT-010-SC-06 | Object/graph refusal clause and source locus | Integration | P0 | IT-010, FR-034 | ✅ Tested locally |

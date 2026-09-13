@@ -255,10 +255,19 @@ fn native_verdict(
     post_version: i64,
 ) -> Option<bool> {
     let (input, selection) = runtime_pair(native, model, pre_version, post_version);
-    runtime::execute(native, input, selection, ExecutionLimits::default(), || {
+    let report = runtime::execute(native, input, selection, ExecutionLimits::default(), || {
         false
-    })
-    .truth()
+    });
+    if !DOMAIN.contains(&pre_version) || !DOMAIN.contains(&post_version) {
+        let runtime::ExecutionOutcome::ValidationFailed(failure) = report.outcome() else {
+            panic!("out-of-domain input reached native evaluation")
+        };
+        assert!(failure.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
+                && diagnostic.message == "integer is outside its nominal bounds"
+        }));
+    }
+    report.truth()
 }
 
 fn attestation() -> codegen::AttestationContext<'static> {
@@ -268,7 +277,7 @@ fn attestation() -> codegen::AttestationContext<'static> {
     }
 }
 
-fn public_function(source: &str) -> &syn::ItemFn {
+fn public_function(source: &str) -> syn::ItemFn {
     let syntax = syn::parse_file(source).unwrap();
     let function = syntax.items.into_iter().find_map(|item| match item {
         syn::Item::Fn(function) if matches!(function.vis, syn::Visibility::Public(_)) => {
@@ -276,7 +285,7 @@ fn public_function(source: &str) -> &syn::ItemFn {
         }
         _ => None,
     });
-    Box::leak(Box::new(function.expect("one public generated function")))
+    function.expect("one public generated function")
 }
 
 struct OracleExecutable {
@@ -446,6 +455,14 @@ fn instrumented_strategy_source(source: &str) -> String {
         })
         .collect::<Vec<_>>();
     assert_eq!(arguments.len(), 2);
+    let pre = arguments
+        .iter()
+        .find(|argument| argument.ends_with("_pre"))
+        .expect("generated state strategy has a pre observation");
+    let post = arguments
+        .iter()
+        .find(|argument| argument.ends_with("_post"))
+        .expect("generated state strategy has a post observation");
     let mut instrumented = source.replacen(
         &format!("pub fn {oracle}("),
         &format!("fn {oracle}_uninstrumented("),
@@ -455,22 +472,25 @@ fn instrumented_strategy_source(source: &str) -> String {
         instrumented,
         r#"
 thread_local! {{
-    static IT_010_OBSERVATIONS: core::cell::RefCell<Vec<(i64, i64)>> = const {{ core::cell::RefCell::new(Vec::new()) }};
+    static IT_010_OBSERVATIONS: core::cell::RefCell<Vec<(i64, i64, bool)>> = const {{ core::cell::RefCell::new(Vec::new()) }};
 }}
 
 /// IT-010 instrumented call preserving the generated oracle body.
 pub fn {oracle}({first}: i64, {second}: i64) -> bool {{
-    IT_010_OBSERVATIONS.with(|values| values.borrow_mut().push(({first}, {second})));
-    {oracle}_uninstrumented({first}, {second})
+    let result = {oracle}_uninstrumented({first}, {second});
+    IT_010_OBSERVATIONS.with(|values| values.borrow_mut().push(({pre}, {post}, result)));
+    result
 }}
 
 /// Drain the exact values observed by this generated campaign.
-pub fn take_it_010_observations() -> Vec<(i64, i64)> {{
+pub fn take_it_010_observations() -> Vec<(i64, i64, bool)> {{
     IT_010_OBSERVATIONS.with(|values| core::mem::take(&mut *values.borrow_mut()))
 }}
 "#,
         first = arguments[0],
         second = arguments[1],
+        pre = pre,
+        post = post,
     )
     .unwrap();
     instrumented
@@ -625,11 +645,13 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
         let summary = super::boundary::{runner}(&mut report).unwrap();
         let observed = super::boundary::take_it_010_observations();
         assert_eq!(observed.len(), usize::try_from(summary.attempted).unwrap());
-        assert!(observed.iter().all(|(left, right)| (0..=1000).contains(left) && (0..=1000).contains(right)));
+        assert!(observed.iter().all(|(pre, post, _)| (0..=1000).contains(pre) && (0..=1000).contains(post)));
+        for (pre, post, generated) in observed {{ println!("IT010-PAIR:{{pre}}:{{post}}:{{generated}}"); }}
         assert_eq!(summary.accepted, summary.attempted);
         assert!(summary.failed > 0 && summary.failed < summary.attempted);
         assert_eq!(summary.discarded, 0);
         assert_eq!(summary.discard_rate(), Some((0, summary.attempted)));
+        println!("IT010-BOUNDARY-COUNT:{{}}", summary.attempted);
     }}
 "#
             )
@@ -674,7 +696,8 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
         let summary = super::{module}::{runner}(&mut runner, &strategy, &mut report).unwrap();
         let observed = super::{module}::take_it_010_observations();
         assert_eq!(observed.len(), 256);
-        assert!(observed.iter().all(|(left, right)| (0..=1000).contains(left) && (0..=1000).contains(right)));
+        assert!(observed.iter().all(|(pre, post, _)| (0..=1000).contains(pre) && (0..=1000).contains(post)));
+        for (pre, post, generated) in observed {{ println!("IT010-PAIR:{{pre}}:{{post}}:{{generated}}"); }}
         assert_eq!(summary.attempted, 256);
         assert_eq!(summary.accepted, 256);
         assert_eq!(summary.rejected, 0);
@@ -701,6 +724,7 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
     let output = Command::new(env!("CARGO"))
         .args(["test", "--offline", "--quiet", "--target-dir"])
         .arg(generated_crate.path().join("target-codex-backends"))
+        .args(["--", "--nocapture", "--test-threads=1"])
         .env("RUSTFLAGS", "-Dwarnings")
         .current_dir(generated_crate.path())
         .output()
@@ -710,6 +734,35 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
         "generated strategy campaigns failed:\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+    let output = String::from_utf8(output.stdout).unwrap();
+    let mut compared = 0_u64;
+    let mut boundary_count = None;
+    for line in output.lines() {
+        if let Some((_, value)) = line.split_once("IT010-BOUNDARY-COUNT:") {
+            boundary_count = Some(value.parse::<u64>().unwrap());
+            continue;
+        }
+        let Some((_, values)) = line.split_once("IT010-PAIR:") else {
+            continue;
+        };
+        let values = values.split(':').collect::<Vec<_>>();
+        let [pre, post, generated] = values.as_slice() else {
+            panic!("malformed generated observation {line}")
+        };
+        let pre = pre.parse().unwrap();
+        let post = post.parse().unwrap();
+        let generated = generated.parse().unwrap();
+        assert_eq!(
+            native_verdict(&native, &models[0], pre, post),
+            Some(generated),
+            "generated strategy/native disagreement for pre={pre}, post={post}"
+        );
+        compared += 1;
+    }
+    assert_eq!(
+        compared,
+        3 * 256 + boundary_count.expect("generated boundary count was reported")
     );
 }
 
