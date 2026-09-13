@@ -65,6 +65,10 @@ observations belong only to the later consumer fixture.
    selected profile. Place prohibited forms in unused/unreachable source.
    No erased operand, symbolic proof witness or guessed model authority can
    repair the refused emission.
+   In a two-unit package, place a temporal declaration first and a protocol declaration second.
+   Bind the protocol role to a bare record with no object role, require `Invalid::Type`, and resolve
+   the returned locus through the reported source index. The indexed source slice must equal the
+   exact refused role declaration; the temporal source at the same byte range must not be selected.
    For native reference populations, use two admitted object roles sharing a
    universe label and independently selected models. Check the exact original
    role locus and model/object/universe binding through current, pre-state and
