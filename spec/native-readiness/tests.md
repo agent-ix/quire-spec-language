@@ -16,7 +16,7 @@ evaluation, shared wire and external producer qualification are outside this pla
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-001 | FR-001-AC-1 | TC-011 | ✅ Passed locally |
 | FR-001 | FR-001-AC-2 | TC-011 | ✅ Passed locally |
@@ -80,7 +80,6 @@ traceability plus executed scoped assertions, not whole-program code coverage.
 
 All tests use the actual Rust implementation and canonical ix-trace-rs tags.
 The normal suite is local and requires no private standard packet. The separate
-LR02 private-packet lane remains a regression check. The catalog currently
-requires Coverage Status but classifies Status on this functional table; retain
-the structural contract, report the mismatch, and manually reconcile row status
-against execution. TC-summary Status remains machine-classifiable.
+LR02 private-packet lane remains a regression check. The functional
+table and the TC summary both use the single `Status` column from
+`spec-artifacts-process#87`, so both are machine-classifiable.

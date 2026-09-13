@@ -17,22 +17,12 @@ Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065
 hard exhaustion checks using admitted nested sequences. SR-263 records actual
 local execution. Source-profile reconciliation remains compiler #30.
 
-The #28 status-column defect is a property of the installed catalog revision,
-not of this document. The installed `spec-artifacts-process` module carries a
-single `traceability.status.column: Status` while its TestMatrix archetype
-asserts the `functional_coverage` columns as `Coverage Status`, so the two
-spellings cannot both be satisfied: renaming the authored column to `Status`
-makes `quire validate` fail the column assert, and keeping `Coverage Status`
-makes `quire coverage` skip classification with `status-column-matches-nothing`.
-The producer fix already exists. With the pinned stack recorded in
-[docs/matrix-status.md](../../docs/matrix-status.md) — CLI `ff638b9`, engine
-`d3bc2ba`, process module `e6ea515`, ISO module `a60ee12` — the
-`functional-coverage` declaration carries its own `status_column: Coverage
-Status`, no `status-column-matches-nothing` diagnostic is raised, and
-`status_lies` is an empty list because the check ran rather than because it was
-skipped. Do not author around the installed revision: keep `Coverage Status`,
-and read status results from the pinned stack until those producer changes are
-installed. Remaining work: #28 for that installed-stack adoption.
+The #28 status-column defect was two names for one column. Upstream
+`spec-artifacts-process#87` collapsed them to a single `Status` column, which
+both the TestMatrix column assert and `traceability.status.column` now read, so
+every coverage table here uses `Status`. Do not rename it back toward
+`Coverage Status`; a stack that still asserts the old name is stale and is
+upgraded, not authored around.
 
 Two limits of a clean status result are load-bearing and are not visible in
 `status_lies` or `unbacked_rows`. First, this declaration classifies a row by
@@ -51,7 +41,7 @@ rows, before moving any row off Planned.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-005 | FR-005-AC-1 | TC-020 | ✅ Passed |
 | FR-005 | FR-005-AC-2 | TC-021 | ✅ Passed |
@@ -402,7 +392,7 @@ same evaluator with independent inclusive counters and charge-before-work
 behavior. No native-runtime NFR-006 result is reused as evidence for this new
 accounting identity.
 
-| Quality Req | Verification Method | Test Cases | Coverage Status |
+| Quality Req | Verification Method | Test Cases | Status |
 | --- | --- | --- | --- |
 | NFR-009 | Test: negative-abuse-testing for every declared metric | TC-137 | ✅ Passed |
 
@@ -486,9 +476,8 @@ At the PR8 linker baseline, Quire reconciliation reported TM-003 10/15 backed,
 FR-005 5/5 and FR-013 6/6, with no status lies or untracked symbols. The PR9
 source bridge subsequently added five executed cases. The current matrix has
 35 qualified cases, including all 13 checker cases. FR-006 has five executed
-judgments and FR-016 has nine qualified criteria. The
-known functional-table Status/Coverage Status classifier limitation is retained;
-explicit TC statuses and executed logs supply the separate completion evidence.
+judgments and FR-016 has nine qualified criteria. Explicit TC
+statuses and executed logs supply the separate completion evidence.
 
 The historical rows specify evidence for LC02. Native linking and static checking are
 implemented; runtime validation/evaluation and qualified projection remain incomplete. The accepted IR ADR-0054
