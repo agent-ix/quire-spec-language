@@ -21,9 +21,10 @@ Their unresolved profile/model selectors do not qualify later binding.
 actual native rule-model producer and exact normative definition/rule inputs.
 `composed_definitions`, `composed_definition_source`, `composed_models` and
 `composed_scopes` cover its adverse selections, original owners, lexical/causal
-environments and bounded retries. Expression typing, complete runtime roles and
-D's selected producer correspondence remain outstanding; these cases do not
-discharge all of TC-114 or IT-009.
+environments and bounded retries. The real Producer 1.2 correspondence and the
+cross-family type/capture/instance boundary are completed by
+`tests/producer_correspondence.rs` under IT-009. None of these static cases
+claims runtime observations or family evaluation.
 
 ## Test Procedure
 
