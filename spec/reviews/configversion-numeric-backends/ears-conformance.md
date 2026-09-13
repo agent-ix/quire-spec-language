@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Quire's EARS engine reports 496/496 repository documents grammar-clean with zero grammar findings.
+Quire's EARS engine reports 502/502 repository documents grammar-clean with zero grammar findings.
 Semantic inspection finds the affected FR trigger/response statements concrete and correctly
 classified; IT prose is outside the EARS requirement-statement scope.
 

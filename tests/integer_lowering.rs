@@ -499,6 +499,66 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
             expected.to_string()
         );
     }
+    let strategy = quire_contract_codegen::generate_bound_strategy(
+        &quire_contract_codegen::BoundStrategyRequest {
+            package: &consumer,
+            clause: bound_clause.identity(),
+            population: quire_contract_codegen::BoundStrategyPopulation::Boundary,
+            minimum_accepted_cases: 1,
+            minimum_rejected_cases: 0,
+            maximum_discarded_cases: 0,
+            attestation: quire_contract_codegen::AttestationContext {
+                record_digest: &"0".repeat(64),
+                candidate_revision: quire_contract_codegen::IR_CANDIDATE_REVISION,
+            },
+        },
+    )
+    .unwrap();
+    syn::parse_file(&strategy.rust.contents).expect("generated integer strategy is Rust");
+    assert!(strategy.rust.contents.contains("run_census"));
+
+    let true_expression = ir::Expression::new(
+        ir::ExpressionKind::BooleanLiteral { value: true },
+        bound_clause.source().clone(),
+    );
+    let precondition = bound_clause
+        .environment()
+        .check_expression(
+            &true_expression,
+            &ir::ValueType::Boolean,
+            bound_clause.anchor(),
+            true,
+        )
+        .unwrap();
+    let precondition_clause = ir::ClauseId::new("amount_absent_precondition").unwrap();
+    let kani = quire_contract_codegen::generate_kani_bundle(&quire_contract_codegen::KaniRequest {
+        requirement: bound_clause.identity().requirement(),
+        precondition_clause: &precondition_clause,
+        postcondition_clause: bound_clause.identity().clause(),
+        precondition: &precondition,
+        postcondition: bound_clause.expression(),
+        proof_id: "it-010-plain-integer",
+        subject_path: "crate::subject",
+        backend_version: quire_contract_codegen::KANI_BACKEND_VERSION,
+        backend_executable_sha256:
+            "7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9",
+        unwind: 2,
+        solver: quire_contract_codegen::KaniSolver::Cadical,
+        dependencies: &[],
+        attestation: quire_contract_codegen::AttestationContext {
+            record_digest: &"0".repeat(64),
+            candidate_revision: quire_contract_codegen::IR_CANDIDATE_REVISION,
+        },
+    })
+    .unwrap();
+    syn::parse_file(&kani.rust.contents).expect("generated integer Kani adapter is Rust");
+    let graph: quire_contract_codegen::ProofDependencyGraph =
+        serde_json::from_str(&kani.proof_graph.contents).unwrap();
+    assert_eq!(graph.proof_id, "it-010-plain-integer");
+    assert_eq!(graph.subject_arguments.len(), 1);
+    assert!(graph.subject_results.is_empty());
+    let bounds = graph.subject_arguments[0].integer_bounds.as_ref().unwrap();
+    assert_eq!((bounds.minimum, bounds.maximum), (0, 1000));
     let invalid = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .args(["lower", "/missing/input.json", "--target", "future/v9"])
         .output()

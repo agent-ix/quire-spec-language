@@ -23,7 +23,7 @@ failure domains now have explicit fail-closed outcomes and no open finding remai
 | FND-001 | high | Closed: `-1` and `1001` cannot be evaluated as ordinary Boolean oracle inputs; both paths retain invalid-domain classification and no Boolean truth. | IT-010-SC-03 |
 | FND-002 | high | Closed: Kani playback must decode the exact printed counterexample, keep its result in-domain and replay that same pre/post pair; substituting a convenient fixture is forbidden. | IT-010-SC-05 |
 | FND-003 | medium | Closed: malformed playback, missing/mismatched cargo-kani, proof timeout/failure and generated compilation failure cannot be reported as a proof or parity result. | IT-010-SC-01, IT-010-SC-05 |
-| FND-004 | medium | Closed: ParentOrder and NoCycle terminate at the earliest representational boundary with clause/span identity and no partial artifact; cycles are not traversed or approximated in this backend slice. | IT-010-SC-06 |
+| FND-004 | medium | Closed: ParentOrder stops at its first unrepresentable `present` object read before reaching `deref`, and NoCycle stops at `reaches`; both retain clause/span identity and no partial artifact. | IT-010-SC-06 |
 
 ## Failure Controls
 
