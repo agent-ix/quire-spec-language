@@ -22,7 +22,8 @@ The #28 status-column defect was two names for one column. Upstream
 both the TestMatrix column assert and `traceability.status.column` now read, so
 every coverage table here uses `Status`. Do not rename it back toward
 `Coverage Status`; a stack that still asserts the old name is stale and is
-upgraded, not authored around.
+upgraded, not authored around. Remaining work: #28 for the negative control on a
+false Tested claim and its readiness-claim corrections.
 
 Two limits of a clean status result are load-bearing and are not visible in
 `status_lies` or `unbacked_rows`. First, this declaration classifies a row by

@@ -163,8 +163,9 @@ path to a retained capture record.
 
 ## Mapping support classification
 
-The disposition `temporal::mapping_support` returns is a total function of the selected profile, the
-reachable operator kinds and the requested surrounding-execution closure. The
+The disposition `temporal::mapping_support` returns is a total function of the
+selected profile, the reachable operator kinds and the requested
+surrounding-execution closure. The
 owner ruling on `quire-contract-ir#64` fixes surrounding-execution closure as the
 TL row selector; decision-scope closure stays a separate result axis and never
 selects a row. It consults no backend capability report, installed TL version,

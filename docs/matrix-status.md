@@ -89,11 +89,14 @@ with `status_lies: []`, no `status-column-matches-nothing` diagnostic and
 `coverage.backed` 374/383 matrix rows over 264 criteria; `validate --scope .
 'spec/**/*.md'` exits 0.
 
-`status_lies: []` on the pinned stack means the check ran and found nothing. The
-same empty list from the installed CLI `4f6ed024` means the check was skipped,
-because that revision raises `status-column-matches-nothing` for all seven
-matrices. The two are indistinguishable in the field, so only the pinned stack's
-result may be cited as a status verification.
+At the time of this record, `status_lies: []` on the pinned stack meant the check
+ran and found nothing, while the same empty list from the installed CLI
+`4f6ed024` meant the check was skipped, because that revision raised
+`status-column-matches-nothing` for all seven matrices. Before
+`spec-artifacts-process#87`, only the pinned stack's result could be cited as a
+status verification. Since #87 collapsed the two names to one `Status` column,
+an installed stack at or after that module revision that reports no
+`status-column-matches-nothing` diagnostic may be cited instead.
 
 Four limits of that clean result are worth stating, because none is caught by the
 absence of status diagnostics:
@@ -158,6 +161,8 @@ Two further traps, both found by paying for them once:
   method cell, not only the status.
 
 [SR-275](../reviews/26-09-09-matrix-status-review.md) records the bounded review.
-Compiler [#28](https://github.com/agent-ix/quire-spec-language/issues/28) remains
-open for producer merge and installed-stack adoption; unrelated engineering
-continues while those steps are pending.
+The producer merge and installed-stack adoption landed through
+`spec-artifacts-process#87`. Remaining work: compiler
+[#28](https://github.com/agent-ix/quire-spec-language/issues/28) for the negative
+control on a false Tested claim and the readiness-claim corrections it lists;
+unrelated engineering continues while those steps are pending.
