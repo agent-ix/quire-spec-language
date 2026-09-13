@@ -102,46 +102,46 @@ rows, before moving any row off Planned.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 Planned |
-| FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed locally |
-| FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed locally |
-| FR-046 | FR-046-AC-3 | TC-127 | ✅ Passed locally |
-| FR-046 | FR-046-AC-4 | TC-127 | ✅ Passed locally |
-| FR-046 | FR-046-AC-5 | TC-127 | ✅ Passed locally |
-| FR-046 | FR-046-AC-6 | TC-128 | ✅ Passed locally |
-| FR-046 | FR-046-AC-7 | TC-128 | ✅ Passed locally |
-| FR-046 | FR-046-AC-8 | TC-126, TC-127 | ✅ Passed locally |
-| FR-047 | FR-047-AC-1 | TC-129 | ✅ Passed locally |
-| FR-047 | FR-047-AC-2 | TC-129, TC-131 | ✅ Passed locally |
-| FR-047 | FR-047-AC-3 | TC-129 | ✅ Passed locally |
-| FR-047 | FR-047-AC-4 | TC-130 | ✅ Passed locally |
-| FR-047 | FR-047-AC-5 | TC-130 | ✅ Passed locally |
-| FR-047 | FR-047-AC-6 | TC-130 | ✅ Passed locally |
-| FR-047 | FR-047-AC-7 | TC-131 | ✅ Passed locally |
-| FR-047 | FR-047-AC-8 | TC-131 | ✅ Passed locally |
-| FR-048 | FR-048-AC-1 | TC-132 | ✅ Passed locally |
-| FR-048 | FR-048-AC-2 | TC-132 | ✅ Passed locally |
-| FR-048 | FR-048-AC-3 | TC-133 | ✅ Passed locally |
-| FR-048 | FR-048-AC-4 | TC-133 | ✅ Passed locally |
-| FR-048 | FR-048-AC-5 | TC-133 | ✅ Passed locally |
-| FR-048 | FR-048-AC-6 | TC-134 | ✅ Passed locally |
-| FR-048 | FR-048-AC-7 | TC-134 | ✅ Passed locally |
-| FR-048 | FR-048-AC-8 | TC-134 | ✅ Passed locally |
+| FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed |
+| FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed |
+| FR-046 | FR-046-AC-3 | TC-127 | ✅ Passed |
+| FR-046 | FR-046-AC-4 | TC-127 | ✅ Passed |
+| FR-046 | FR-046-AC-5 | TC-127 | ✅ Passed |
+| FR-046 | FR-046-AC-6 | TC-128 | ✅ Passed |
+| FR-046 | FR-046-AC-7 | TC-128 | ✅ Passed |
+| FR-046 | FR-046-AC-8 | TC-126, TC-127 | ✅ Passed |
+| FR-047 | FR-047-AC-1 | TC-129 | ✅ Passed |
+| FR-047 | FR-047-AC-2 | TC-129, TC-131 | ✅ Passed |
+| FR-047 | FR-047-AC-3 | TC-129 | ✅ Passed |
+| FR-047 | FR-047-AC-4 | TC-130 | ✅ Passed |
+| FR-047 | FR-047-AC-5 | TC-130 | ✅ Passed |
+| FR-047 | FR-047-AC-6 | TC-130 | ✅ Passed |
+| FR-047 | FR-047-AC-7 | TC-131 | ✅ Passed |
+| FR-047 | FR-047-AC-8 | TC-131 | ✅ Passed |
+| FR-048 | FR-048-AC-1 | TC-132 | ✅ Passed |
+| FR-048 | FR-048-AC-2 | TC-132 | ✅ Passed |
+| FR-048 | FR-048-AC-3 | TC-133 | ✅ Passed |
+| FR-048 | FR-048-AC-4 | TC-133 | ✅ Passed |
+| FR-048 | FR-048-AC-5 | TC-133 | ✅ Passed |
+| FR-048 | FR-048-AC-6 | TC-134 | ✅ Passed |
+| FR-048 | FR-048-AC-7 | TC-134 | ✅ Passed |
+| FR-048 | FR-048-AC-8 | TC-134 | ✅ Passed |
 | FR-048 | FR-048-AC-9 | TC-135 | 🚧 Planned |
 | FR-048 | FR-048-AC-10 | TC-135 | 🚧 Planned |
-| FR-049 | FR-049-AC-1 | TC-136 | ✅ Passed locally |
-| FR-049 | FR-049-AC-2 | TC-136 | ✅ Passed locally |
-| FR-049 | FR-049-AC-3 | TC-136 | ✅ Passed locally |
-| FR-049 | FR-049-AC-4 | TC-136 | ✅ Passed locally |
-| FR-049 | FR-049-AC-5 | TC-136 | ✅ Passed locally |
-| FR-049 | FR-049-AC-6 | TC-136, TC-137 | ✅ Passed locally |
-| FR-049 | FR-049-AC-7 | TC-137 | ✅ Passed locally |
-| FR-049 | FR-049-AC-8 | TC-137 | ✅ Passed locally |
-| FR-050 | FR-050-AC-1 | TC-138 | ✅ Passed locally |
-| FR-050 | FR-050-AC-2 | TC-138 | ✅ Passed locally |
-| FR-050 | FR-050-AC-3 | TC-138 | ✅ Passed locally |
-| FR-050 | FR-050-AC-4 | TC-138 | ✅ Passed locally |
-| FR-050 | FR-050-AC-5 | TC-138 | ✅ Passed locally |
-| FR-050 | FR-050-AC-6 | TC-138 | ✅ Passed locally |
+| FR-049 | FR-049-AC-1 | TC-136 | ✅ Passed |
+| FR-049 | FR-049-AC-2 | TC-136 | ✅ Passed |
+| FR-049 | FR-049-AC-3 | TC-136 | ✅ Passed |
+| FR-049 | FR-049-AC-4 | TC-136 | ✅ Passed |
+| FR-049 | FR-049-AC-5 | TC-136 | ✅ Passed |
+| FR-049 | FR-049-AC-6 | TC-136, TC-137 | ✅ Passed |
+| FR-049 | FR-049-AC-7 | TC-137 | ✅ Passed |
+| FR-049 | FR-049-AC-8 | TC-137 | ✅ Passed |
+| FR-050 | FR-050-AC-1 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-2 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-3 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-4 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-5 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-6 | TC-138 | ✅ Passed |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -404,7 +404,7 @@ accounting identity.
 
 | Quality Req | Verification Method | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| NFR-009 | Test: negative-abuse-testing for every declared metric | TC-137 | ✅ Passed locally |
+| NFR-009 | Test: negative-abuse-testing for every declared metric | TC-137 | ✅ Passed |
 
 ## Reusable predicates and ordered queries (L3)
 
