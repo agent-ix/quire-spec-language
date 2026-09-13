@@ -17,22 +17,11 @@ Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065
 hard exhaustion checks using admitted nested sequences. SR-263 records actual
 local execution. Source-profile reconciliation remains compiler #30.
 
-The #28 status-column defect is a property of the installed catalog revision,
-not of this document. The installed `spec-artifacts-process` module carries a
-single `traceability.status.column: Status` while its TestMatrix archetype
-asserts the `functional_coverage` columns as `Coverage Status`, so the two
-spellings cannot both be satisfied: renaming the authored column to `Status`
-makes `quire validate` fail the column assert, and keeping `Coverage Status`
-makes `quire coverage` skip classification with `status-column-matches-nothing`.
-The producer fix already exists. With the pinned stack recorded in
-[docs/matrix-status.md](../../docs/matrix-status.md) — CLI `ff638b9`, engine
-`d3bc2ba`, process module `e6ea515`, ISO module `a60ee12` — the
-`functional-coverage` declaration carries its own `status_column: Coverage
-Status`, no `status-column-matches-nothing` diagnostic is raised, and
-`status_lies` is an empty list because the check ran rather than because it was
-skipped. Do not author around the installed revision: keep `Coverage Status`,
-and read status results from the pinned stack until those producer changes are
-installed. Remaining work: #28 for that installed-stack adoption.
+The fetched 2026-09-12 catalog now aligns this table contract and status reader
+on `Status`; this in-scope matrix adopts that spelling. `quire validate` accepts
+TM-003, and `quire coverage` reads its statuses rather than reporting
+`status-column-matches-nothing`. Remaining work: #28 for the other matrices,
+the required false-status negative control and final installed-stack adoption.
 
 Two limits of a clean status result are load-bearing and are not visible in
 `status_lies` or `unbacked_rows`. First, this declaration classifies a row by
@@ -51,7 +40,7 @@ rows, before moving any row off Planned.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-005 | FR-005-AC-1 | TC-020 | ✅ Passed |
 | FR-005 | FR-005-AC-2 | TC-021 | ✅ Passed |
@@ -224,9 +213,11 @@ the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
 controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
 boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
-stage grant no checked or executable package. The real D producer integration
-in [IT-009](../integration/IT-009-composed-package-boundary.md) remains a
-separate boundary. Status records local runs, not ecosystem acceptance.
+stage grant no checked or executable package. The real Producer 1.2 integration
+in [IT-009](../integration/IT-009-composed-package-boundary.md) is exercised by
+`tests/producer_correspondence.rs`, including common cross-family nominal type
+identity, declaration-owned capture and instance identities, and explicit
+backend capability refusal. Status records local runs, not ecosystem acceptance.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports; all seven FR-041 criteria are

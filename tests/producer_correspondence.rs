@@ -20,6 +20,9 @@ use quire_spec_language::linking::composed::producer::{
     ProducerConfigurationSelection, ProducerDigest, ProducerExportKind, ProducerExportSelection,
     ProducerModelRefusal, ProducerObjectSelection, ProducerRevision,
 };
+use quire_spec_language::linking::composed::requests::{
+    self, Aggregate, Assessment, Backend, Capability, Disposition, Family, Request,
+};
 use quire_spec_language::linking::composed::subject::ComponentKind;
 use quire_spec_language::protocol_artifact::{self as artifact, native, v2, wire as w, Limits};
 use quire_spec_language::ByteDigest;
@@ -531,7 +534,14 @@ fn expected_filament_selection(inputs: &Inputs) -> ProducerCompatibilitySelectio
 }
 
 fn direct_producer_inputs(related: &str) -> (Inputs, w::ArtifactRef, w::ArtifactRef) {
-    let mut inputs = inputs_with_related(related);
+    let (mut inputs, interface, relation) = add_producer_dependencies(inputs_with_related(related));
+    let mut operation = inputs.step_contracts("Before", "After");
+    operation.export += 3;
+    inputs.remap_operation_contracts("Before", "After", operation);
+    (inputs, interface, relation)
+}
+
+fn add_producer_dependencies(mut inputs: Inputs) -> (Inputs, w::ArtifactRef, w::ArtifactRef) {
     inputs.model_reference.revision = w::Revision {
         namespace: filament::NATIVE_REVISION_NAMESPACE.into(),
         value: "1".into(),
@@ -561,10 +571,233 @@ fn direct_producer_inputs(related: &str) -> (Inputs, w::ArtifactRef, w::Artifact
     inputs.dependencies.sort_by(|left, right| {
         (left.0.kind.as_str(), &left.0.identity).cmp(&(right.0.kind.as_str(), &right.0.identity))
     });
-    let mut operation = inputs.step_contracts("Before", "After");
-    operation.export += 3;
-    inputs.remap_operation_contracts("Before", "After", operation);
     (inputs, interface, relation)
+}
+
+#[test]
+#[trace(
+    "TC-114",
+    "TC-115",
+    "IT-009",
+    "FR-036-AC-1",
+    "FR-036-AC-4",
+    "FR-036-AC-6"
+)]
+fn real_producer_retains_cross_family_identity_and_backend_refusal() {
+    let inputs = Inputs::new(&[
+        Unit {
+            name: "it009-state",
+            body: "predicate Positive using S (amount: M::Version): Boolean { amount >= 0 }\n\
+                   invariant Healthy using S on M::Node at current { Positive(self.n) }",
+            declarations: &["Positive", "Healthy"],
+        },
+        Unit {
+            name: "it009-temporal",
+            body: "temporal Due using T over (view: M::Node) clock \"orders\" \
+                   on each (started: M::Node) when (Positive(started.n)) { \
+                   capture saved: M::Version = started.n; \
+                   eventually[0,1] holds(Positive(view.n) and saved >= 0) }",
+            declarations: &["Due"],
+        },
+        Unit {
+            name: "it009-protocol",
+            body: "protocol Flow using P over (view: M::Node) on origin { \
+                   role Service on M::Node; \
+                   relationship OrderPayment = M::OrderPayment; \
+                   requires temporal Due; \
+                   run sequence O1 { \
+                     event Happened by Service as (happened: M::Plain) \
+                       related by OrderPayment(view, happened) { happened.ready }; \
+                     check HealthyNow using S { Positive(view.n) }; \
+                   } \
+                   finish Closed as (closed: M::Node) { Positive(closed.n) }; \
+                   }",
+            declarations: &["Flow"],
+        },
+    ]);
+    let (inputs, interface, relation) = add_producer_dependencies(inputs);
+    let bundle = admitted_filament_bundle(&inputs, filament::RelationshipDirection::SourceToTarget);
+    let expected = expected_filament_selection(&inputs);
+    let admitted = admit_filament_producer_model(
+        &bundle,
+        &inputs.model_reference.identity,
+        &inputs.model,
+        &expected,
+    )
+    .expect("the real producer admits the exact selected native model");
+
+    let subject = inputs.producer_subject(&admitted);
+    assert_eq!(subject.models().len(), 3);
+    let selected_models = subject
+        .models()
+        .iter()
+        .map(|model| model.selection.as_ref().expect("admitted model selection"))
+        .collect::<Vec<_>>();
+    assert!(selected_models.iter().all(|model| {
+        model.package == selected_models[0].package
+            && model.revision == selected_models[0].revision
+            && model.digest == selected_models[0].digest
+            && model.producer == selected_models[0].producer
+    }));
+
+    inputs.with_producer_proofs(
+        &admitted,
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selections| {
+            let binding = proofs.types().binding();
+            let namespace = binding.namespace();
+            let [healthy] = namespace.lookup("Healthy") else {
+                panic!("one Healthy declaration")
+            };
+            let [due] = namespace.lookup("Due") else {
+                panic!("one Due declaration")
+            };
+            let healthy = *healthy;
+            let due = *due;
+
+            let requests = [
+                Request {
+                    declaration: healthy,
+                    capability: Capability::StateOperation,
+                    required: true,
+                },
+                Request {
+                    declaration: due,
+                    capability: Capability::TemporalProjection,
+                    required: true,
+                },
+            ];
+            let capabilities = [Capability::FamilyCheck, Capability::StateOperation];
+            let families = [
+                Family::Predicate,
+                Family::State,
+                Family::Temporal,
+                Family::Protocol,
+            ];
+            let assessment = Assessment {
+                population: Some("orders"),
+                window: None,
+                trace: None,
+                backend: Backend {
+                    identity: "state-only/1",
+                    capabilities: &capabilities,
+                    families: &families,
+                },
+            };
+            let responses = requests::report(binding, &assessment, &requests);
+            assert_eq!(responses.responses().len(), requests.len());
+            assert_eq!(responses.retains(&requests), Ok(()));
+            assert_eq!(
+                responses.disposition(healthy, Capability::StateOperation),
+                Some(Disposition::Admitted)
+            );
+            assert_eq!(
+                responses.disposition(due, Capability::TemporalProjection),
+                Some(Disposition::UnsupportedCapability)
+            );
+            assert_eq!(
+                responses.aggregate(),
+                Aggregate::Unavailable { response: 1 }
+            );
+            assert!(responses.admitted_bodies().is_empty());
+
+            let producer = native::ProducerSelection {
+                model: &admitted,
+                interface: &interface,
+                relation: &relation,
+            };
+            let admission =
+                native::admit_with_producers(proofs, selections, &[producer], Limits::default())
+                    .into_result()
+                    .expect("the supported families admit with the real producer");
+            let package = admission.package();
+            let declaration = |name| {
+                package
+                    .declarations
+                    .iter()
+                    .position(|declaration| declaration.name == name)
+                    .expect("emitted declaration")
+            };
+            let state_index = declaration("Healthy");
+            let temporal_index = declaration("Due");
+            let protocol_index = declaration("Flow");
+            let state = &package.declarations[state_index];
+            let temporal = &package.declarations[temporal_index];
+            let protocol = &package.declarations[protocol_index];
+            let state_self = state
+                .binders
+                .iter()
+                .find(|binder| binder.kind == w::BinderKind::SelfValue)
+                .expect("state self binder");
+            let w::Body::Temporal {
+                input: temporal_input,
+                captures,
+                ..
+            } = &temporal.body
+            else {
+                panic!("temporal body")
+            };
+            let w::Body::Protocol {
+                input: protocol_input,
+                roles,
+                relationships,
+                ..
+            } = &protocol.body
+            else {
+                panic!("protocol body")
+            };
+            let temporal_input_index =
+                usize::try_from(temporal_input.index).expect("temporal input index fits usize");
+            let protocol_input_index =
+                usize::try_from(protocol_input.index).expect("protocol input index fits usize");
+            assert_eq!(
+                state_self.value_type,
+                temporal.binders[temporal_input_index].value_type
+            );
+            assert_eq!(
+                state_self.value_type,
+                protocol.binders[protocol_input_index].value_type
+            );
+            let [capture] = captures.as_slice() else {
+                panic!("one temporal capture")
+            };
+            let capture_declaration =
+                usize::try_from(capture.declaration).expect("capture declaration index fits usize");
+            let capture_index =
+                usize::try_from(capture.index).expect("capture binder index fits usize");
+            assert_eq!(capture_declaration, temporal_index);
+            assert_eq!(temporal.binders[capture_index].kind, w::BinderKind::Capture);
+            assert_ne!(capture_declaration, protocol_index);
+
+            let workflow = protocol
+                .bindings
+                .iter()
+                .position(|binding| binding.kind == w::BindingKind::WorkflowInstance)
+                .expect("workflow instance binding");
+            let [role] = roles.as_slice() else {
+                panic!("one role instance")
+            };
+            let [relationship] = relationships.as_slice() else {
+                panic!("one relationship binding")
+            };
+            let role_instance =
+                usize::try_from(role.instance).expect("role instance index fits usize");
+            let relationship_binding = usize::try_from(relationship.binding)
+                .expect("relationship binding index fits usize");
+            assert_eq!(
+                protocol.bindings[role_instance].kind,
+                w::BindingKind::RoleInstance
+            );
+            assert_eq!(
+                protocol.bindings[relationship_binding].kind,
+                w::BindingKind::Relationship
+            );
+            assert_ne!(workflow, role_instance);
+            assert_ne!(workflow, relationship_binding);
+            assert_ne!(role.instance, relationship.binding);
+        },
+    );
 }
 
 #[test]
