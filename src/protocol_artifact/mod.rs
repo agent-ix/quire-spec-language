@@ -11,11 +11,14 @@
 
 mod decode;
 mod encoding;
+pub mod handoff;
 mod intake;
 mod models;
 pub mod native;
 mod number;
+mod occurrence;
 mod recovery;
+pub mod v2;
 mod validate;
 mod value_graph;
 pub mod wire;
@@ -27,8 +30,13 @@ pub use number::{
 };
 
 pub use encoding::encode_candidate;
-pub use intake::read;
-pub use work::{Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
+pub use intake::{read, read_with_producers};
+pub use occurrence::{
+    occurrence_key_schema, AdmittedProtocolView, NodeOccurrenceSchema, NodeRole, OccurrenceKey,
+    OccurrenceKeyError, OccurrenceKeySchema, RepeatOrdinalSchema, RoleSlotSchema,
+    WorkflowInstanceIdentity,
+};
+pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::{native_model::NativeModel, ByteDigest};
 
@@ -74,6 +82,17 @@ pub struct AdmittedModel<'a> {
     pub model: &'a NativeModel,
     /// Independent source/formal correspondence for original model loci.
     pub source: &'a ExpectedForeignSource<'a>,
+}
+
+/// Independently admitted producer view for one selected native model.
+#[derive(Clone, Copy, Debug)]
+pub struct ExpectedProducerModel<'a> {
+    /// Constructor-admitted producer/native correspondence.
+    pub model: &'a crate::linking::composed::models::AdmittedProducerModel<'a>,
+    /// Exact producer interface dependency selected by the caller.
+    pub interface: &'a wire::ArtifactRef,
+    /// Exact producer-declared relation dependency selected by the caller.
+    pub relation: &'a wire::ArtifactRef,
 }
 
 /// Independently selected authored declaration correspondence.
@@ -188,12 +207,126 @@ pub enum Error {
     Json { line: usize, column: usize },
     #[error(transparent)]
     Numeric(NumberError),
+    #[error(transparent)]
+    Producer(crate::linking::composed::producer::ProducerModelRefusal),
     #[error("invalid compiled protocol data: {0:?}")]
     Invalid(Invalid),
+    /// Strict version-2 refusal with a stable, axis-specific public code.
+    #[error("invalid version-2 compiled protocol data: {0}")]
+    V2(v2::Refusal),
     #[error("unsupported compiled protocol interpretation: {0:?}")]
     Unsupported(Unsupported),
     #[error(transparent)]
     Incomplete(Exhaustion),
+}
+
+impl Error {
+    /// Stable machine-readable refusal code covering every axis, so a consumer
+    /// never matches on a variant or parses a diagnostic to tell two refusals
+    /// apart. Codes are append-only and are never message-derived;
+    /// `Error::V2` delegates to [`v2::Refusal::code`].
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Allocation => "allocation",
+            Self::Json { .. } => "json",
+            Self::Numeric(error) => numeric_code(error),
+            Self::Producer(refusal) => producer_code(refusal),
+            Self::Invalid(invalid) => invalid_code(*invalid),
+            Self::V2(refusal) => refusal.code(),
+            Self::Unsupported(unsupported) => unsupported_code(*unsupported),
+            Self::Incomplete(exhaustion) => incomplete_code(exhaustion.dimension),
+        }
+    }
+}
+
+const fn numeric_code(error: &NumberError) -> &'static str {
+    match error {
+        NumberError::NonCanonicalDecimal { .. } => "numeric.non-canonical-decimal",
+        NumberError::ComponentOutOfRange { .. } => "numeric.component-out-of-range",
+        NumberError::NonPositiveDenominator => "numeric.non-positive-denominator",
+        NumberError::UnreducedRational => "numeric.unreduced-rational",
+    }
+}
+
+const fn producer_code(
+    refusal: &crate::linking::composed::producer::ProducerModelRefusal,
+) -> &'static str {
+    use crate::linking::composed::producer::ProducerModelRefusal as P;
+    match refusal {
+        P::ResourceExhausted(_) => "producer.resource-exhausted",
+        P::Interface => "producer.interface",
+        P::Bundle => "producer.bundle",
+        P::Model => "producer.model",
+        P::Profile => "producer.profile",
+        P::Configuration => "producer.configuration",
+        P::Correspondence => "producer.correspondence",
+        P::DefinitionClosure => "producer.definition-closure",
+        P::Exports => "producer.exports",
+        P::ProducerDigest => "producer.producer-digest",
+        P::NativeDigest => "producer.native-digest",
+        P::NativeBytes => "producer.native-bytes",
+    }
+}
+
+const fn invalid_code(invalid: Invalid) -> &'static str {
+    match invalid {
+        Invalid::Selection => "invalid.selection",
+        Invalid::Seal => "invalid.seal",
+        Invalid::Name => "invalid.name",
+        Invalid::StructuralInteger => "invalid.structural-integer",
+        Invalid::WrongNumericKind => "invalid.wrong-numeric-kind",
+        Invalid::NumericDomain => "invalid.numeric-domain",
+        Invalid::Inventory => "invalid.inventory",
+        Invalid::Order => "invalid.order",
+        Invalid::Duplicate => "invalid.duplicate",
+        Invalid::Dependency => "invalid.dependency",
+        Invalid::Definition => "invalid.definition",
+        Invalid::Model => "invalid.model",
+        Invalid::ForeignLocus => "invalid.foreign-locus",
+        Invalid::Locus => "invalid.locus",
+        Invalid::Reference => "invalid.reference",
+        Invalid::Owner => "invalid.owner",
+        Invalid::Scope => "invalid.scope",
+        Invalid::Type => "invalid.type",
+        Invalid::Profile => "invalid.profile",
+        Invalid::Call => "invalid.call",
+        Invalid::Binding => "invalid.binding",
+        Invalid::Control => "invalid.control",
+        Invalid::Cycle => "invalid.cycle",
+        Invalid::Feature => "invalid.feature",
+        Invalid::Canonical => "invalid.canonical",
+        Invalid::Encoding => "invalid.encoding",
+    }
+}
+
+const fn unsupported_code(unsupported: Unsupported) -> &'static str {
+    match unsupported {
+        Unsupported::Wire => "unsupported.wire",
+        Unsupported::Feature => "unsupported.feature",
+        Unsupported::Definition => "unsupported.definition",
+        Unsupported::Profile => "unsupported.profile",
+        Unsupported::ProducerCorrespondence => "unsupported.producer-correspondence",
+        Unsupported::FamilyProof => "unsupported.family-proof",
+        Unsupported::Export => "unsupported.export",
+    }
+}
+
+const fn incomplete_code(dimension: Dimension) -> &'static str {
+    match dimension {
+        Dimension::PayloadBytes => "incomplete.payload-bytes",
+        Dimension::OutputBytes => "incomplete.output-bytes",
+        Dimension::SourceBytes => "incomplete.source-bytes",
+        Dimension::ContentBytes => "incomplete.content-bytes",
+        Dimension::Sources => "incomplete.sources",
+        Dimension::Dependencies => "incomplete.dependencies",
+        Dimension::Definitions => "incomplete.definitions",
+        Dimension::Models => "incomplete.models",
+        Dimension::Declarations => "incomplete.declarations",
+        Dimension::Entries => "incomplete.entries",
+        Dimension::References => "incomplete.references",
+        Dimension::ByteWork => "incomplete.byte-work",
+        Dimension::Depth => "incomplete.depth",
+    }
 }
 
 impl From<Exhaustion> for Error {
@@ -279,6 +412,10 @@ impl Candidate {
 pub struct AdmittedPackage {
     package: wire::Package,
     digest: ByteDigest,
+    artifact: wire::ArtifactRef,
+    // Owned copies of the independently admitted models retain the field/type
+    // schema needed by state evaluation after the reader's borrowed inputs end.
+    model_schema: Vec<NativeModel>,
 }
 
 impl AdmittedPackage {
@@ -289,5 +426,14 @@ impl AdmittedPackage {
     /// Raw-byte digest that matched the independently expected external seal.
     pub fn digest(&self) -> ByteDigest {
         self.digest
+    }
+
+    pub(crate) fn schema_model(&self, index: u32) -> Option<&NativeModel> {
+        self.model_schema.get(usize::try_from(index).ok()?)
+    }
+
+    /// Independently selected compiled artifact identity admitted by the reader.
+    pub fn artifact(&self) -> &wire::ArtifactRef {
+        &self.artifact
     }
 }

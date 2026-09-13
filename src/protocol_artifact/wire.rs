@@ -163,15 +163,16 @@ mod digest {
 }
 
 labels! {
-    /// Existing ArtifactRef/3 kind vocabulary; this adapter adds no artifact kind.
+    /// Shared ArtifactRef/3 kinds used by compiled and assessment boundaries.
     ArtifactKind {
         Binding => "binding", DependencyClosure => "dependency-closure", Environment => "environment",
         ExecutableProjection => "executable-projection", FaultModel => "fault-model",
         GeneratedArtifact => "generated-artifact", Invocation => "invocation", LinkedPackage => "linked-package",
         ModelLock => "model-lock", ModelManifest => "model-manifest", ModelPackage => "model-package",
-        Observation => "observation", Oracle => "oracle", Property => "property",
+        Observation => "observation", Oracle => "oracle", Population => "population", Property => "property",
         ReviewDisposition => "review-disposition", ReviewProcedure => "review-procedure",
-        RunArtifact => "run-artifact", Snapshot => "snapshot", Source => "source", Trace => "trace"
+        RunArtifact => "run-artifact", Snapshot => "snapshot", Source => "source", Trace => "trace",
+        Window => "window"
     }
 }
 labels! {
@@ -531,7 +532,8 @@ labels! {
         Delivery => "delivery", Attempt => "attempt", Effect => "effect", CompensationRegistration => "compensation_registration",
         CompensationAttempt => "compensation_attempt", CompensationEffect => "compensation_effect", Commit => "commit",
         Snapshot => "snapshot", Invocation => "invocation", Population => "population", Relationship => "relationship",
-        Clock => "clock", Observation => "observation", Progress => "progress", Closure => "closure", Capture => "capture"
+        Clock => "clock", Window => "window", Observation => "observation", Progress => "progress",
+        Closure => "closure", Capture => "capture"
     }
 }
 record! { /// Exact static authority, role and prerequisite contracts for a later binding.

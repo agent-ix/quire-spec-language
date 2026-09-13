@@ -66,6 +66,33 @@ fn reference_bytes(value: &ArtifactRef) -> usize {
         + 71
 }
 
+fn retained_text(value: &str) -> Result<String, Error> {
+    let mut retained = String::new();
+    retained
+        .try_reserve_exact(value.len())
+        .map_err(|_| Error::Allocation)?;
+    retained.push_str(value);
+    Ok(retained)
+}
+
+pub(super) fn retained_reference(value: &ArtifactRef) -> Result<ArtifactRef, Error> {
+    Ok(ArtifactRef {
+        ref_version: retained_text(&value.ref_version)?,
+        kind: value.kind,
+        authority: retained_text(&value.authority)?,
+        identity: retained_text(&value.identity)?,
+        revision: Revision {
+            namespace: retained_text(&value.revision.namespace)?,
+            value: retained_text(&value.revision.value)?,
+        },
+        digest: value.digest,
+        wire: Wire {
+            identity: retained_text(&value.wire.identity)?,
+            version: retained_text(&value.wire.version)?,
+        },
+    })
+}
+
 pub(super) fn same_reference(
     a: &ArtifactRef,
     b: &ArtifactRef,
@@ -79,7 +106,7 @@ pub(super) fn same_reference(
     }
 }
 
-fn find_reference<T>(
+pub(super) fn find_reference<T>(
     values: &[T],
     target: &ArtifactRef,
     get: impl Fn(&T) -> &ArtifactRef,
@@ -135,7 +162,7 @@ pub(super) fn sorted_indices(values: &[u32], work: &mut Work) -> Result<(), Erro
     Ok(())
 }
 
-fn selected<'a>(
+pub(super) fn selected<'a>(
     package: &Package,
     expected: &'a Expected<'a>,
     work: &mut Work,
@@ -248,7 +275,11 @@ fn headers(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Resul
     Ok(())
 }
 
-fn sources(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Result<(), Error> {
+pub(super) fn sources(
+    package: &Package,
+    expected: &Expected<'_>,
+    work: &mut Work,
+) -> Result<(), Error> {
     work.charge(Dimension::Sources, expected.sources.len())?;
     work.charge(Dimension::Sources, package.sources.len())?;
     work.charge(Dimension::Declarations, package.declarations.len())?;
@@ -380,7 +411,7 @@ fn definition_key(value: &Definition) -> (&str, &str, &str) {
     )
 }
 
-fn definitions(
+pub(super) fn definitions(
     package: &Package,
     supplied: &[&SuppliedDependency<'_>],
     work: &mut Work,
@@ -487,6 +518,16 @@ fn definitions(
 /// Read exact bounded bytes without parsing any embedded native source text.
 /// The returned admission is scoped to the independently supplied selections.
 pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<AdmittedPackage> {
+    read_with_producers(bytes, expected, &[], limits)
+}
+
+/// Read exact bounded bytes with independently admitted producer views.
+pub fn read_with_producers(
+    bytes: &[u8],
+    expected: &Expected<'_>,
+    producers: &[super::ExpectedProducerModel<'_>],
+    limits: Limits,
+) -> Report<AdmittedPackage> {
     let mut work = Work::new(limits);
     let result = (|| {
         work.charge(Dimension::PayloadBytes, bytes.len())?;
@@ -501,13 +542,24 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         sources(&package, expected, &mut work)?;
         definitions(&package, &supplied, &mut work)?;
         super::validate::package(&package, &mut work)?;
-        super::models::validate(&package, expected.models, expected.dependencies, &mut work)?;
+        let model_schema = super::models::validate_with_producers(
+            &package,
+            expected.models,
+            expected.dependencies,
+            producers,
+            &mut work,
+        )?;
         let canonical = super::encoding::bytes(&package, &mut work)?;
         work.bytes(bytes.len().saturating_add(canonical.len()))?;
         if canonical != bytes {
             return Err(Error::Invalid(Invalid::Canonical));
         }
-        Ok(AdmittedPackage { package, digest })
+        Ok(AdmittedPackage {
+            package,
+            digest,
+            artifact: retained_reference(expected.artifact)?,
+            model_schema,
+        })
     })();
     report(work, result)
 }

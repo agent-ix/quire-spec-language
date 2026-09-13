@@ -62,6 +62,8 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
         json!({"name":"RationalTotal","kind":"rational","numerator_minimum":0,"numerator_maximum":100,"maximum_denominator":1,"unit":"U"}),
         json!({"name":"IntegralTotal","kind":"rational","numerator_minimum":-5,"numerator_maximum":5,"maximum_denominator":1}),
         json!({"name":"FractionTotal","kind":"rational","numerator_minimum":-5,"numerator_maximum":5,"maximum_denominator":2}),
+        json!({"name":"WideFractionTotal","kind":"rational","numerator_minimum":-10,"numerator_maximum":10,"maximum_denominator":2}),
+        json!({"name":"SingleFractionTotal","kind":"rational","numerator_minimum":-1,"numerator_maximum":1,"maximum_denominator":2}),
     ]);
     document["records"][0]["fields"].as_array_mut().unwrap().extend([
         json!({"name":"largeTotal","type":{"kind":"scalar","name":"LargeTotal"}}),
@@ -76,6 +78,8 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
         json!({"name":"rationalTotal","type":{"kind":"scalar","name":"RationalTotal"}}),
         json!({"name":"integralTotal","type":{"kind":"scalar","name":"IntegralTotal"}}),
         json!({"name":"fractionTotal","type":{"kind":"scalar","name":"FractionTotal"}}),
+        json!({"name":"wideFractionTotal","type":{"kind":"scalar","name":"WideFractionTotal"}}),
+        json!({"name":"singleFractionTotal","type":{"kind":"scalar","name":"SingleFractionTotal"}}),
         json!({"name":"signeds","type":{"kind":"sequence","maximum":maximum,"value":{"kind":"scalar","name":"Signed"}}}),
         json!({"name":"fractions","type":{"kind":"sequence","maximum":maximum,"value":{"kind":"scalar","name":"Q"}}}),
         json!({"name":"optionals","type":{"kind":"sequence","maximum":maximum,"value":{"kind":"option","value":{"kind":"scalar","name":"Q"}}}}),
@@ -379,7 +383,14 @@ fn query_body_safety_covers_the_whole_element_domain() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-4", "FR-040-AC-5", "FR-040-AC-8")]
+#[trace(
+    "TC-119",
+    "TC-127",
+    "FR-040-AC-4",
+    "FR-040-AC-5",
+    "FR-040-AC-8",
+    "FR-046-AC-5"
+)]
 fn sum_proves_every_prefix_from_declared_capacity_not_a_convenient_final_result() {
     for maximum in [5, 6] {
         let model = query_model(maximum);
@@ -421,7 +432,15 @@ fn sum_proves_every_prefix_from_declared_capacity_not_a_convenient_final_result(
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-3", "FR-040-AC-5", "FR-040-AC-8")]
+#[trace(
+    "TC-119",
+    "TC-127",
+    "FR-040-AC-3",
+    "FR-040-AC-5",
+    "FR-040-AC-8",
+    "FR-046-AC-4",
+    "FR-046-AC-5"
+)]
 fn maximal_integer_sum_discharges_real_prefix_bounds_within_default_limits() {
     let model = query_model(10_000);
     inspect(&model, "predicate WideSum using S (input: M::Node): Boolean {
@@ -491,7 +510,7 @@ fn maximal_integer_sum_discharges_real_prefix_bounds_within_default_limits() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-3", "FR-040-AC-5")]
+#[trace("TC-119", "TC-127", "FR-040-AC-3", "FR-040-AC-5", "FR-046-AC-5")]
 fn aggregate_result_domains_keep_exact_units_representation_zero_and_length() {
     let model = query_model(5);
     for expression in [
@@ -610,8 +629,27 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-4", "FR-040-AC-5", "FR-040-AC-8")]
-fn rational_sum_separates_supported_prefixes_from_missing_domain_transfer() {
+#[trace(
+    "TC-119",
+    "TC-127",
+    "FR-040-AC-4",
+    "FR-040-AC-5",
+    "FR-040-AC-8",
+    "FR-046-AC-5"
+)]
+fn rational_sum_proves_fractional_prefixes_or_refuses_an_insufficient_total() {
+    let single = query_model_with_denominator(1, 2);
+    inspect(
+        &single,
+        "predicate SingleFraction using S (input: M::Node): Boolean {
+        sum<M::SingleFractionTotal>(part in input.fractions: part) >= rational(-1,1)
+    }",
+        &["SingleFraction"],
+        handler(),
+        |report| {
+            discharged(report, "SingleFraction");
+        },
+    );
     let integral = query_model(5);
     inspect(
         &integral,
@@ -636,6 +674,26 @@ fn rational_sum_separates_supported_prefixes_from_missing_domain_transfer() {
     let fractional = query_model_with_denominator(5, 2);
     inspect(
         &fractional,
+        "predicate WideFractional using S (input: M::Node): Boolean {
+        sum<M::WideFractionTotal>(part in input.fractions: part) >= rational(-10,1)
+    }",
+        &["WideFractional"],
+        handler(),
+        |report| {
+            let proof = discharged(report, "WideFractional");
+            assert!(proof
+                .goals()
+                .iter()
+                .any(|goal| goal
+                    .checked()
+                    .obligations()
+                    .iter()
+                    .any(|obligation| obligation.kind()
+                        == ir::DefinednessObligationKind::CheckedRange)));
+        },
+    );
+    inspect(
+        &fractional,
         "predicate Fractional using S (input: M::Node): Boolean {
         sum<M::FractionTotal>(part in input.fractions: part) >= rational(-5,1)
     }",
@@ -649,12 +707,7 @@ fn rational_sum_separates_supported_prefixes_from_missing_domain_transfer() {
             let cause = proof
                 .causes()
                 .iter()
-                .find(|cause| {
-                    matches!(
-                        cause.kind,
-                        CauseKind::Unsupported(proofs::Unsupported::SumDomainTransfer)
-                    )
-                })
+                .find(|cause| matches!(cause.kind, CauseKind::UnprovedAggregateDomain))
                 .unwrap_or_else(|| panic!("{:?}", proof.causes()));
             assert_eq!(cause.site.declaration, at);
             assert_eq!(cause.site.unit, proof.unit());
@@ -679,7 +732,7 @@ fn rational_sum_separates_supported_prefixes_from_missing_domain_transfer() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-5", "FR-040-AC-9")]
+#[trace("TC-119", "TC-128", "FR-040-AC-5", "FR-040-AC-9", "FR-046-AC-7")]
 fn query_body_proof_exhaustion_keeps_original_types_and_a_fresh_retry() {
     let model = query_model(5);
     inspect(
@@ -726,7 +779,14 @@ fn query_body_proof_exhaustion_keeps_original_types_and_a_fresh_retry() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-4", "FR-040-AC-5", "FR-040-AC-6")]
+#[trace(
+    "TC-119",
+    "TC-126",
+    "FR-040-AC-4",
+    "FR-040-AC-5",
+    "FR-040-AC-6",
+    "FR-046-AC-2"
+)]
 fn optional_and_division_query_guards_belong_to_the_same_element() {
     let model = query_model(5);
     inspect(

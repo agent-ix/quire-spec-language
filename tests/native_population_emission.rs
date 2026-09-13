@@ -68,10 +68,10 @@ fn graph_inputs(owner: &str) -> Inputs {
         &[Unit {
             name: "two-populations",
             body: "invariant Left using G on M::Node at current {
-            self.peer = self.peer and deref(self.peer).n >= 0 and reaches(self,self,parent)
+            self.peer = self.peer and deref(self.peer).n >= 0 and reaches(self,self,parent) and reaches(self,self,peer)
         }
         invariant Right using G on M::Other at current {
-            self.peer = self.peer and deref(self.peer).n >= 0 and reaches(self,self,parent)
+            self.peer = self.peer and deref(self.peer).n >= 0 and reaches(self,self,parent) and reaches(self,self,peer)
         }
         protocol Flow using P over(view:M::Node) on origin {
             role Service on M::Node;
@@ -120,7 +120,15 @@ fn failure<T>(report: &artifact::Report<T>, expected: Error) {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-6", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-130",
+    "FR-042-AC-1",
+    "FR-042-AC-4",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-047-AC-6"
+)]
 fn original_object_roles_grant_distinct_populations_despite_equal_universe_names() {
     let inputs = graph_inputs("Populations");
     inputs.with_proofs(
@@ -223,11 +231,19 @@ fn original_object_roles_grant_distinct_populations_despite_equal_universe_names
                         _ => None,
                     })
                     .collect();
-                assert_eq!(reaches.len(), 1);
-                assert_eq!(reaches[0].1, &population);
+                assert_eq!(reaches.len(), 2);
+                assert!(reaches.iter().all(|(_, universe)| *universe == &population));
+                let edges = reaches
+                    .iter()
+                    .map(|(edge, _)| {
+                        package.models[0].exports[edge.export as usize]
+                            .path
+                            .as_slice()
+                    })
+                    .collect::<Vec<_>>();
                 assert_eq!(
-                    package.models[0].exports[reaches[0].0.export as usize].path,
-                    [record, "parent"]
+                    edges,
+                    [[record, "parent"].as_slice(), [record, "peer"].as_slice(),]
                 );
                 assert!(declaration.values.iter().any(|value| matches!(
                     value.operation,

@@ -303,7 +303,7 @@ fn exact_literal_domain_failures_are_distinct_from_zero_denominator() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-2")]
+#[trace("TC-119", "TC-126", "FR-040-AC-1", "FR-040-AC-2", "FR-046-AC-2")]
 fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee() {
     inspect(
         "predicate Base using S (input: M::Node): Boolean { input.n >= 0 }\n\
@@ -336,7 +336,14 @@ fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-3")]
+#[trace(
+    "TC-119",
+    "TC-126",
+    "FR-040-AC-1",
+    "FR-040-AC-3",
+    "FR-046-AC-1",
+    "FR-046-AC-2"
+)]
 fn call_arguments_keep_declared_arity_order_and_contextual_types() {
     inspect(
         "predicate Callee using S (flag: Boolean, fraction: M::Q, label: M::Label): Boolean { flag and fraction = rational(1,2) and label = \"ok\" }\n\
@@ -359,7 +366,14 @@ fn call_arguments_keep_declared_arity_order_and_contextual_types() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-3")]
+#[trace(
+    "TC-119",
+    "TC-126",
+    "FR-040-AC-1",
+    "FR-040-AC-3",
+    "FR-046-AC-1",
+    "FR-046-AC-2"
+)]
 fn equal_type_spellings_in_distinct_units_retain_their_exact_model_owners() {
     let first = setup::model("First");
     let second = setup::model("Second");
@@ -410,7 +424,15 @@ fn equal_type_spellings_in_distinct_units_retain_their_exact_model_owners() {
 }
 
 #[test]
-#[trace("TC-119", "FR-040-AC-1", "FR-040-AC-6", "FR-040-AC-7")]
+#[trace(
+    "TC-119",
+    "TC-126",
+    "FR-040-AC-1",
+    "FR-040-AC-6",
+    "FR-040-AC-7",
+    "FR-046-AC-1",
+    "FR-046-AC-8"
+)]
 fn type_facts_keep_original_let_query_activation_and_invocation_anchors() {
     inspect(
         "post Changed using S on M::Node::step { self.signed = pre(let prior = self.signed in prior + delta) and result }\n\

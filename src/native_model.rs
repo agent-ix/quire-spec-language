@@ -6,6 +6,7 @@ mod artifact;
 
 use quire_contract_ir::{AnchorName, DeclarationEnvironment, SourceSpan, SymbolName};
 use serde::Serialize;
+use std::sync::Arc;
 
 use crate::{formal_source::FormalSource, ByteDigest, Code, Diagnostic, Phase};
 
@@ -214,6 +215,11 @@ impl ModelLimits {
 /// An immutable admitted native model; population membership is still unproved.
 #[derive(Clone, Debug)]
 pub struct NativeModel {
+    inner: Arc<NativeModelData>,
+}
+
+#[derive(Debug)]
+struct NativeModelData {
     profile: NativeModelProfile,
     source: FormalSource,
     environment: DeclarationEnvironment,
@@ -261,38 +267,40 @@ impl NativeModel {
         )?;
         let digest = ByteDigest::of(&artifact);
         Ok(Self {
-            profile,
-            source,
-            environment,
-            roles,
-            artifact,
-            digest,
+            inner: Arc::new(NativeModelData {
+                profile,
+                source,
+                environment,
+                roles,
+                artifact,
+                digest,
+            }),
         })
     }
 
     /// Actual admitted profile, also encoded in the artifact bytes.
     pub fn profile(&self) -> NativeModelProfile {
-        self.profile
+        self.inner.profile
     }
     /// Exact original model source and explicit formal identity.
     pub fn source(&self) -> &FormalSource {
-        &self.source
+        &self.inner.source
     }
     /// Existing validated formal declarations, retaining original provenance.
     pub fn environment(&self) -> &DeclarationEnvironment {
-        &self.environment
+        &self.inner.environment
     }
     /// Admitted roles in deterministic declaration order.
     pub fn roles(&self) -> &NativeRoles {
-        &self.roles
+        &self.inner.roles
     }
     /// Exact profile-bearing native model artifact content.
     pub fn artifact_bytes(&self) -> &[u8] {
-        &self.artifact
+        &self.inner.artifact
     }
     /// Raw SHA-256 of the artifact, distinct from IR semantic identity.
     pub fn digest(&self) -> ByteDigest {
-        self.digest
+        self.inner.digest
     }
 }
 

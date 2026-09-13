@@ -329,6 +329,46 @@ fn multi_unit_native_families_keep_callee_source_ids_and_lexical_provenance() {
 }
 
 #[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn multi_unit_invalid_role_type_reports_the_role_in_its_own_source() {
+    let inputs = Inputs::new(&[
+        Unit {
+            name: "a-temporal",
+            body: "temporal Due using T over (view: M::Node) clock \"temporal_instant\" on origin { always[0,1] holds(true) }",
+            declarations: &["Due"],
+        },
+        Unit {
+            name: "z-protocol",
+            body: "protocol InvalidRole using P over (view: M::Node) on origin { role Service on M::Plain; run sequence Main {} finish Closed as (closed: M::Node) { true }; }",
+            declarations: &["InvalidRole"],
+        },
+    ]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let report = native::admit(proofs, selected, Limits::default());
+            assert_eq!(
+                report.result().expect_err("invalid role type is refused"),
+                &Error::Invalid(Invalid::Type)
+            );
+            let locus = report.locus().expect("role refusal retains its locus");
+            assert_eq!(locus.source, 1);
+            let source = inputs
+                .sources
+                .get(usize::try_from(locus.source).expect("u32 source index fits usize"))
+                .expect("reported source exists");
+            let span = quire_spec_language::Span {
+                start: usize::try_from(locus.span.start).expect("u32 span start fits usize"),
+                end: usize::try_from(locus.span.end).expect("u32 span end fits usize"),
+            };
+            assert_eq!(source.slice(span), Some("role Service on M::Plain;"));
+        },
+    );
+}
+
+#[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-8")]
 fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision() {
     let mut inputs = Inputs::new(&[Unit {
@@ -626,8 +666,16 @@ fn native_operation_contracts_events_effects_and_commit_keep_distinct_authority(
     );
 }
 
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-2"
+)]
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-7")]
 fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
     let inputs = Inputs::new(&[Unit {
         name: "record-channels",
@@ -881,8 +929,15 @@ fn native_record_channels_preserve_fifo_keys_send_identity_and_cardinality() {
     );
 }
 
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-1",
+    "FR-042-AC-4",
+    "FR-042-AC-6",
+    "FR-048-AC-2"
+)]
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-6")]
 fn native_scalar_channel_declares_exact_fifo_type_without_invented_event_projection() {
     let inputs = Inputs::new(&[Unit {
         name: "scalar-channel",
@@ -963,8 +1018,73 @@ fn native_scalar_channel_declares_exact_fifo_type_without_invented_event_project
     );
 }
 
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-1",
+    "FR-042-AC-6",
+    "FR-042-AC-7",
+    "FR-048-AC-2"
+)]
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-6", "FR-042-AC-8")]
+fn zero_delivery_cardinality_is_preserved_by_emission_and_reading() {
+    let inputs = Inputs::new(&[Unit {
+        name: "zero-delivery",
+        body: "protocol ZeroDelivery using P over (view: M::Node) on origin {
+            role Service on M::Node;
+            channel None from Service to Service carries M::Plain
+                ordering unordered delivery [0,0];
+            run check Ready using S { true };
+            finish Closed as (closed: M::Node) { true };
+        }",
+        declarations: &["ZeroDelivery"],
+    }]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("zero is an authored finite delivery cardinality");
+            let package = admitted.package();
+            let w::Body::Protocol { channels, .. } = &package.declarations[0].body else {
+                panic!("protocol")
+            };
+            let [channel] = channels.as_slice() else {
+                panic!("one channel")
+            };
+            assert_eq!(
+                (
+                    integer_value(&channel.delivery.lower),
+                    integer_value(&channel.delivery.upper)
+                ),
+                (0, 0)
+            );
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .expect("emit zero delivery cardinality");
+            assert_eq!(
+                inputs
+                    .read(proofs, &emitted)
+                    .into_result()
+                    .expect("independent reader preserves zero delivery cardinality")
+                    .package(),
+                package
+            );
+        },
+    );
+}
+
+#[test]
+#[trace(
+    "TC-121",
+    "TC-132",
+    "FR-042-AC-5",
+    "FR-042-AC-6",
+    "FR-042-AC-8",
+    "FR-048-AC-2"
+)]
 fn native_channels_refuse_missing_correspondence_bad_keys_and_reversed_cardinality() {
     for (channel, run, expected) in [
         (
@@ -984,6 +1104,11 @@ fn native_channels_refuse_missing_correspondence_bad_keys_and_reversed_cardinali
         ),
         (
             "channel Samples from Service to Service carries M::Plain ordering unordered delivery [2,1];",
+            "check Ready using S { true };",
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            "channel Samples from Service to Service carries M::Plain ordering unordered delivery [0,9223372036854775808];",
             "check Ready using S { true };",
             Error::Invalid(Invalid::NumericDomain),
         ),
@@ -1117,7 +1242,14 @@ fn nonprogressing_native_repeat_is_refused_after_real_value_discharge() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-048-AC-3"
+)]
 fn native_owned_choice_proves_nonliteral_constant_guards_and_preserves_both_branches() {
     let guard = "((not false) and (false or true)) and ((false implies false) = (true != false))
         and (if true then true else false) and (if false then false else true)";
@@ -1219,11 +1351,31 @@ fn native_choice_refuses_overlap_uncovered_and_unproved_dynamic_decisions() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-5", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-1",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-048-AC-3",
+    "FR-048-AC-5"
+)]
 fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
     for (maximum, guard, body, observable) in [
         (
-            2,
+            2_i64,
+            "true = true",
+            "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
+            true,
+        ),
+        (
+            1_i64,
+            "true = true",
+            "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
+            true,
+        ),
+        (
+            i64::MAX,
             "true = true",
             "event Advanced by Service as (advanced: M::Plain) { advanced.ready };",
             true,
@@ -1312,14 +1464,36 @@ fn native_repeat_emits_event_progress_and_respects_zero_or_false_guard_paths() {
     }
 }
 
+#[trace("TC-121", "TC-133", "FR-042-AC-5", "FR-042-AC-8", "FR-048-AC-3")]
+#[test]
+fn repeat_maximum_above_signed64_refuses_before_artifact_emission() {
+    let run = "repeat Loop by Service visible (not false) max 9223372036854775808 while { true }
+        event Advanced by Service as (advanced: M::Plain) { advanced.ready };
+        exhausted check Stopped using S { true };";
+    let inputs = control_inputs("repeat-maximum-overflow", run);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            failure(
+                &native::admit(proofs, selected, Limits::default()),
+                Error::Invalid(Invalid::NumericDomain),
+            );
+        },
+    );
+}
+
 #[test]
 #[trace(
     "TC-121",
+    "TC-133",
     "FR-042-AC-1",
     "FR-042-AC-5",
     "FR-042-AC-6",
     "FR-042-AC-7",
-    "FR-042-AC-8"
+    "FR-042-AC-8",
+    "FR-048-AC-3"
 )]
 fn native_await_emits_clock_authority_but_a_deadline_alone_cannot_prove_repeat_progress() {
     let await_node = "await Response after Main::Started using T clock \"reply-clock\" within [0,2]
@@ -1601,4 +1775,147 @@ fn missing_selected_model_and_independent_limits_cannot_emit_partial_packages() 
             );
         },
     );
+}
+
+/// A producer-owned configuration object, authored with member order and
+/// whitespace that are deliberately not RFC 8785/JCS canonical.
+const CONFIG_AUTHORED: &[u8] =
+    b"{\n  \"profile\": \"native-state-model\",\n  \"edition\": \"1-draft\",\n  \"declarations\": 1\n}\n";
+
+/// The same configuration object written out literally in RFC 8785/JCS form.
+/// This repository registers no JCS canonicalizer and must not grow one; the
+/// constant exists only to name the other domain's byte sequence.
+const CONFIG_JCS: &[u8] =
+    b"{\"declarations\":1,\"edition\":\"1-draft\",\"profile\":\"native-state-model\"}";
+
+const CONFIG_IDENTITY: &str = "fixture-producer-config";
+
+/// The producer's external byte selection for the configuration object. Only the
+/// digest varies across the cases below; every other selector is held fixed.
+fn config_reference(digest: ByteDigest) -> w::ArtifactRef {
+    w::ArtifactRef {
+        ref_version: "ix.artifact-ref/3-draft".into(),
+        kind: w::ArtifactKind::Environment,
+        authority: "test:native-emission".into(),
+        identity: CONFIG_IDENTITY.into(),
+        revision: w::Revision {
+            namespace: "test:producer-config-revision".into(),
+            value: "1".into(),
+        },
+        digest,
+        wire: w::Wire {
+            identity: "test:producer-config".into(),
+            version: "1".into(),
+        },
+    }
+}
+
+/// Real native source with the producer-owned config artifact added to the exact
+/// dependency inventory under the given reference digest and supplied bytes.
+fn config_inputs(digest: ByteDigest, bytes: &[u8]) -> Inputs {
+    let mut inputs = Inputs::new(&[Unit {
+        name: "digest-domains-config",
+        body: SIMPLE,
+        declarations: &["Simple"],
+    }]);
+    inputs
+        .dependencies
+        .push((config_reference(digest), bytes.to_vec()));
+    inputs
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-3")]
+fn recanonicalized_producer_bytes_do_not_satisfy_the_authored_config_selection() {
+    // The two spellings denote the same object and differ only in
+    // canonicalization, so no structural comparison can tell the cases apart.
+    assert_ne!(CONFIG_AUTHORED, CONFIG_JCS);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(CONFIG_AUTHORED).unwrap(),
+        serde_json::from_slice::<serde_json::Value>(CONFIG_JCS).unwrap()
+    );
+    let authored = ByteDigest::of(CONFIG_AUTHORED);
+    let canonical = ByteDigest::of(CONFIG_JCS);
+    assert_ne!(authored, canonical);
+    // Positive controls: each spelling admits when the reference selects its own
+    // bytes, so neither spelling is refused on its own account and no unrelated
+    // guard is armed by this fixture.
+    for (name, digest, bytes) in [
+        (
+            "authored reference over authored bytes",
+            authored,
+            CONFIG_AUTHORED,
+        ),
+        (
+            "canonical reference over canonical bytes",
+            canonical,
+            CONFIG_JCS,
+        ),
+    ] {
+        let inputs = config_inputs(digest, bytes);
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selections| {
+                discharged(proofs);
+                let admitted = native::admit(proofs, selections, Limits::default())
+                    .into_result()
+                    .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+                let dependency = admitted
+                    .package()
+                    .dependencies
+                    .iter()
+                    .find(|dependency| dependency.artifact.identity == CONFIG_IDENTITY)
+                    .expect("the exact producer-selected dependency is retained");
+                assert_eq!(dependency.artifact, config_reference(digest), "{name}");
+            },
+        );
+    }
+    // Crossing the same two cells is the only change: an equal-meaning
+    // re-encoding of the producer's object does not satisfy the authored byte
+    // selection, and the authored spelling does not satisfy a canonicalized one.
+    // Admission refuses outright, so no artifact is emitted in either direction.
+    for (name, digest, bytes) in [
+        (
+            "authored reference over recanonicalized bytes",
+            authored,
+            CONFIG_JCS,
+        ),
+        (
+            "canonical reference over authored bytes",
+            canonical,
+            CONFIG_AUTHORED,
+        ),
+    ] {
+        let inputs = config_inputs(digest, bytes);
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selections| {
+                discharged(proofs);
+                let mismatches: Vec<_> = selections
+                    .dependencies
+                    .iter()
+                    .filter(|dependency| {
+                        ByteDigest::of(dependency.bytes) != dependency.artifact.digest
+                    })
+                    .map(|dependency| dependency.artifact.identity.as_str())
+                    .collect();
+                assert_eq!(mismatches, [CONFIG_IDENTITY], "{name}: one changed axis");
+                let report = native::admit(proofs, selections, Limits::default());
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Invalid(Invalid::Seal)),
+                    "{name}"
+                );
+                // Native metadata verifies dependency seals before visiting
+                // source or model tables. Together with the isolated mismatch
+                // and matched controls, this distinguishes this refusal from
+                // a later reader/source seal failure.
+                assert_eq!(report.usage().sources, 0, "{name}");
+                assert_eq!(report.usage().models, 0, "{name}");
+                assert_eq!(report.locus(), None, "{name}");
+            },
+        );
+    }
 }

@@ -216,7 +216,14 @@ fn concrete_model_retains_exact_bounds_roles_and_original_source() {
 }
 
 #[test]
-#[trace("TC-110", "FR-032-AC-1", "FR-032-AC-2", "FR-032-AC-3")]
+#[trace(
+    "TC-110",
+    "TC-131",
+    "FR-032-AC-1",
+    "FR-032-AC-2",
+    "FR-032-AC-3",
+    "FR-047-AC-8"
+)]
 fn actual_native_commands_execute_named_semantics_and_distinct_case_identities() {
     let directory = tempfile::tempdir().unwrap();
     let model = fixtures::model().unwrap();
@@ -342,7 +349,7 @@ fn actual_markdown_and_native_cases_agree_without_reusing_source_identity() {
 }
 
 #[test]
-#[trace("TC-110", "FR-032-AC-2", "FR-032-AC-4")]
+#[trace("TC-110", "TC-131", "FR-032-AC-2", "FR-032-AC-4", "FR-047-AC-8")]
 fn exported_config_version_packages_reconstruct_the_same_native_outcomes() {
     let directory = tempfile::tempdir().unwrap();
     let model = fixtures::model().unwrap();

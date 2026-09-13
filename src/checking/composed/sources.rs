@@ -4,7 +4,7 @@
 use super::work::{Dimension, Exhaustion, Work};
 use super::Site;
 use crate::formal_source::FormalSource;
-use crate::linking::composed::{binding, models::ModelInput, UnitId};
+use crate::linking::composed::{binding, UnitId};
 use crate::Source;
 
 pub(super) struct Correspondence<'s> {
@@ -78,20 +78,17 @@ impl<'s> Correspondence<'s> {
                     if let Some(models) = binding.models() {
                         for input in models.inputs() {
                             charge(Dimension::Constraints, 1)?;
-                            match input {
-                                ModelInput::Native(model) => {
-                                    charge(
-                                        Dimension::Bytes,
-                                        source.identity().document().as_str().len()
-                                            + model.source().identity().document().as_str().len(),
-                                    )?;
-                                    if source.identity() == model.source().identity()
-                                        && !same(source.source(), model.source().source())
-                                    {
-                                        invalid = true;
-                                    }
+                            if let Some(model) = (*input).native_model() {
+                                charge(
+                                    Dimension::Bytes,
+                                    source.identity().document().as_str().len()
+                                        + model.source().identity().document().as_str().len(),
+                                )?;
+                                if source.identity() == model.source().identity()
+                                    && !same(source.source(), model.source().source())
+                                {
+                                    invalid = true;
                                 }
-                                ModelInput::UnsupportedProducer { .. } => {}
                             }
                         }
                     }

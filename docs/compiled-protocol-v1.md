@@ -97,15 +97,22 @@ CompiledProtocolPackage = {
 }
 ```
 
-`ByteDigest` and `ArtifactKind` use the exact shared-reference schema; no new
-artifact kind is added. The external package reference is not copied inside the
-payload. `contract`, `baseline`, producer `binary` and each dependency must match
+`ByteDigest` and `ArtifactKind` use the shared-reference schema rather than a
+package-private vocabulary. The shared vocabulary includes distinct
+`population` and `window` assessment-document kinds; neither is the
+`linked-package` kind of this artifact, and neither makes a runtime assessment
+document package content. The external package reference is not copied inside
+the payload. `contract`, `baseline`, producer `binary` and each dependency must match
 their individually expected role/reference, including wire and revision namespace.
 Definition artifact/rule indices select source-kind dependency bytes; model
 artifacts select model-package-kind dependencies. An export kind is exactly
 `scalar|enum|variant|record|field|object|reference|operation|relationship|population|component|endpoint`.
 Paths and source loci must identify that kind in the admitted producer view;
 unsupported authoritative exports prevent emission/admission of their dependents.
+`window` is not an `ExportKind`: it is an assessment selection rather than a
+model export. Likewise, a `BindingKind::Window` requirement is distinct from a
+`BindingKind::Clock` requirement. Its `authority` selects the applicable
+assessment contract, not a concrete future window instance.
 The native adapter derives a `population` export from an admitted `ObjectRole`,
 using path `[record, universe]` and that role's original source locus. Its
 `object` export retains path `[record]`; its `reference` export retains path
@@ -382,11 +389,15 @@ Ordinary and qualified domain events share the same exact-role and causal
 availability rule; all existing family/binding checks remain required.
 
 `visible(...)` declares the information obligation. Each entry in this fragment
-is a direct eligible received or same-owner attempt/domain-event Boolean field,
-transparent grouping/immutable alias to that exact atom, or a closed Boolean
-constant; every guard atom must occur in that validated atom set. A composite
-visible expression such as `a and b` does
-not disclose its individual atoms and remains `Unsupported::FamilyProof`.
+is a supported Boolean formula over eligible received or same-owner
+attempt/domain-event fields, transparent immutable aliases and closed constants.
+Every original operand must be authorized; every guard atom must occur in the
+advertised formulas' original operand closure. A composite expression discloses
+only its Boolean result: any two abstract assignments with the same ordered
+advertised-result vector must select the same case. Thus `visible(a and b)` with
+guards `a and b` and its complement admits; guards `a` and `not a` refuse with
+`Unsupported::FamilyProof`, even though they form a partition. Retained disclosure
+signatures charge Entries; evaluation and comparison charge References before work.
 Listing an arbitrary input or another role's observed value grants no visibility.
 Supported guard formulas are Boolean literals and fields, grouping, `not`, `and`,
 `or`, `implies`, Boolean `=`/`!=`, Boolean conditionals and immutable `let` aliases.
@@ -394,8 +405,12 @@ Alias/capture tracing uses the existing source-owned initializer and observation
 provenance, with the same availability checks; it cannot manufacture a prior
 observation. All original operands are checked, including unused initializers
 and conditional branches.
-Numeric comparisons, queries, arbitrary input atoms, callee-body expansion and
-dynamic repeat guards remain outside this proof fragment.
+Numeric comparisons, queries, arbitrary input atoms and callee-body expansion
+remain outside this proof fragment. A bounded repeat's guard may use this same
+fragment over observed Booleans; its atoms carry the repeat's own anchor, must be
+owned by the role named by `by`, and must appear in that repeat's visible set. A
+guard atom established only inside the repeat body has no availability at the
+decision instant and stays outside the fragment.
 
 Family admission proves that exactly one case guard holds for every valuation
 of a conservative abstraction in which distinct observation atoms are independent.
