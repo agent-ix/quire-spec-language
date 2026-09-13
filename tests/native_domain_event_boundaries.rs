@@ -299,10 +299,10 @@ fn omitted_and_composite_visible_domain_event_bases_do_not_grant_admission() {
             "not (observedA.ready and observedB.ready)",
         ),
         (
-            "composite advertised value",
+            "composite result does not disclose its individual operands",
             "observedA.ready and observedB.ready",
-            "observedA.ready and observedB.ready",
-            "not (observedA.ready and observedB.ready)",
+            "observedA.ready",
+            "not observedA.ready",
         ),
     ] {
         let decision = choice("Receiver", visible, yes, no);

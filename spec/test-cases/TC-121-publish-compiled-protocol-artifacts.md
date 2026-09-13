@@ -87,14 +87,14 @@ observations belong only to the later consumer fixture.
    owner and complementary guards `received.ready` / `not received.ready` with
    that field in `visible(...)`. Exercise grouping, conjunction, disjunction,
    implication, Boolean equality/inequality, conditionals and source-owned let
-   aliases in guards; visible entries retain direct atoms, transparent aliases or
-   closed constants. Check exact original receive binder, field export and anchor
+   aliases in guards; visible entries retain supported Boolean formulas, direct
+   atoms, transparent aliases or closed constants. Check exact original receive binder, field export and anchor
    through emission and independent reading. Repeated reads/aliases share an atom;
    separate receive binders or fields cannot be merged by spelling or equal type.
    Independently enumerate small Boolean assignments to confirm exactly one
    case, retaining original guards and every original operand in the artifact.
    Change the receiver role, omit a guard's visible atom, use an arbitrary input
-   or composite `a and b` in `visible(...)`, or replace a field with another
+   or disclose only `a and b` while guarding on `a` / `not a`, or replace a field with another
    receive's field. Missing visibility/provenance returns `Unsupported::FamilyProof`
    after prior stages; an already refused source/scope keeps its actual cause. A guaranteed receive
    after a parallel all-join is positive; the sibling before the join, a
@@ -118,12 +118,23 @@ observations belong only to the later consumer fixture.
    records. Send, effect and commit records remain ineligible atom sources.
    Check domain-event resource exhaustion and fresh retry without implying
    registration, activation or business-effect success.
+   For composite visibility, accept `visible(a and b)` with guards `a and b`
+   and its complement, preserving original expressions through emission/reading.
+   Refuse a partition whose selected case differs between assignments with the
+   same advertised results, including `visible(a or not a)` with `a` / `not a`.
+   Exercise aliases, nested formulas, duplicate advertised roots, foreign-role
+   operands and a guard atom absent from every advertised operand closure.
+   Exhaust signature allocation/evaluation/comparison budgets; require typed
+   incomplete at the original choice, exact/one-short limits and a fresh retry.
    Retain definedness success while giving symbolic guards an abstract overlap
    or hole, including correlated facts whose model constraints are not imported
    into this abstraction; require `Unsupported::FamilyProof`, not a claimed
    concrete counterexample. Closed literal overlap/hole remains `Invalid::Control`.
-   Numeric comparisons, queries, callee expansion and dynamic repeat guards
-   remain unsupported. Put hidden inputs behind `false and`, `true or`,
+   Numeric comparisons, queries and callee expansion remain unsupported.
+   Admit an observed repeat guard over the same fragment, and require
+   `Unsupported::FamilyProof` for a foreign-role, unlisted or composite guard
+   atom, and an out-of-scope type discharge refusal, before family admission,
+   for an atom established only inside the repeat body. Put hidden inputs behind `false and`, `true or`,
    `false implies` and an unselected conditional branch; require FamilyProof
    rather than admission through the closed-decision path. Closed Boolean let
    aliases retain the evaluated overlap/hole `Invalid::Control` classification.
@@ -135,6 +146,20 @@ observations belong only to the later consumer fixture.
    progress. The latter remains FamilyProof unless another guaranteed body
    event establishes whole-body progress. A closed check-only repeat retains
    its `Invalid::Control` refusal.
+   Repeat the same comparison under an observed guard: the continuing body
+   carries the identical progress obligation, a non-progressing body remains
+   `Invalid::Control`, an unproved one remains FamilyProof, and guard
+   falsification is a normal exit rather than evidence of progress.
+   Nest that repeat inside an enclosing bounded repeat that has no other
+   progress source: a feasible false valuation supplies the enclosing repeat
+   no progress and refuses with `Invalid::Control`, while a guard no valuation
+   falsifies supplies it and admits with the authored guard retained.
+   Author a payment retry as a bounded repeat over a pre-loop observed charge
+   outcome. Require one static attempt identity for the authored attempt,
+   distinct from the carrying delivery and from the single business effect,
+   with no further attempt record minted per iteration, and require that a
+   retried attempt inherit no earlier effect. Exercise zero, exact and one-short budgets for the repeat's
+   valuation work.
 6. Bind O1 and O2 to the same provider through distinct instance requirements.
    Preserve one message, two delivery observations and one effect. Inspect
    effect-before-registration, separate registration/activation captures,

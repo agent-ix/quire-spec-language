@@ -196,6 +196,9 @@ fn a_reached_ceiling_never_emits_a_boolean() {
         // suppresses a Boolean that was otherwise available.
         let settled = temporal::evaluate(package, at, &supplied, Limits::default());
         assert_eq!(assessment(&settled).truth, Some(Truth::False));
+        // The version-1 entry point authenticates nothing, so its report
+        // retains no authenticated clock identity to be mistaken for one.
+        assert!(settled.authenticated().is_none());
 
         for (dimension, limits) in [
             (

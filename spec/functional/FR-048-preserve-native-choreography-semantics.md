@@ -1,0 +1,253 @@
+---
+id: FR-048
+title: "Preserve native choreography semantics for assessment"
+type: FR
+relationships:
+  - { target: ix://agent-ix/quire-spec-language/US-002, type: implements }
+  - { target: ix://agent-ix/quire-spec-language/US-003, type: implements }
+  - { target: ix://agent-ix/quire-spec-language/FR-036, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-043, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-044, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-045, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-050, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-049, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-050, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-051, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-052, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-053, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-054, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-055, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-056, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-057, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-058, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-059, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-060, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-061, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-062, type: references }
+  - { target: ix://agent-ix/filament-core-data/FR-100, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-101, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-102, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-103, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-104, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-105, type: references }
+  - { target: ix://agent-ix/quire-protocol/FR-001, type: references }
+  - { target: ix://agent-ix/quire-protocol/IT-001, type: references }
+---
+# FR-048: Preserve native choreography semantics for assessment
+
+## Description
+
+When a native protocol family is admitted, the compiler SHALL preserve the
+source-owned choreography, binding requirements and causal/recovery structure
+needed by downstream protocol and observation assessment.
+
+This requirement retrospectively scopes roadmap L6 under compiler
+[#39](https://github.com/agent-ix/quire-spec-language/issues/39). The compiler
+produces an immutable assessment subject; it does not send messages, execute
+business operations, infer observations or decide protocol conformance.
+
+## Inputs
+
+The exact admitted native source and definition selections; D-owned static model,
+type, field, operation, participant, component, endpoint, relationship,
+configuration and producer/native correspondence exports; the selected L5
+temporal declarations; F-owned observation-role definitions; and finite compiler
+admission/emission limits.
+
+D's selected normative input is the draft **Producer interface 1.2.0** contract at immutable
+`filament-core-data` revision
+`6259d3a5b99088740df9bcc8e8d60f3720aaa603`. Static compilation consumes its
+model/profile/configuration meaning, exports and correspondence. Population,
+snapshot, window, member, relationship-instance and closure identities are also
+D-owned; their concrete assessment selection is not a static compiler input.
+
+That pinned D revision defines no Rust producer or wire schema. Until D ships a
+reviewed producer, A accepts only an explicit typed caller-supplied compatibility
+adapter that preserves D's bare revision and three-field canonical digest
+separately from A's namespaced revision and native raw-byte digest. The adapter
+must carry an explicit configuration and producer/native correspondence
+relation; A does not infer either mapping. Local positive fixtures for that seam
+are synthetic contract fixtures and are not evidence of real D production.
+
+F owns concrete record admission, mapping a record to its exact workflow/node/
+role/delivery/attempt/effect occurrence, and the availability, membership,
+completeness, progress and closure assertions handed to assessment. F supplies
+those facts under D's selected identities and cannot mint or reinterpret them.
+
+Future workflow instances, relationship instances, deliveries, attempts,
+effects, clock observations, records, progress and closure assertions are
+assessment inputs and are not required to compile a static template. A missing
+authoritative static D export remains an unsupported prerequisite rather than
+guessed metadata. A missing or inconsistent F assessment fact remains the
+downstream incomplete or refused input selected by F/B; the compiler does not
+convert it into a static export or a protocol result.
+
+## Outputs
+
+An admitted compiled-protocol family retaining exact typed role and occurrence
+handles, value/control graphs, temporal/recovery requirements and producer/native
+correspondence, or a typed invalid, unsupported or resource-incomplete family
+disposition. An untimed subject remains representable by strict
+`quire.compiled-protocol/1`. A timed choreography requires the separately
+reviewed `quire.compiled-protocol/2` extension described under Dependencies;
+it cannot be emitted as `/1` with unauthenticated clock premises. Both versions
+are consumed only through the version-exact parser-free Rust readers owned by
+[FR-042](FR-042-publish-compiled-protocol-artifacts.md) and
+[FR-050](FR-050-publish-authenticated-temporal-artifacts.md).
+
+## Behavior
+
+The compiler SHALL retain the static protocol declaration, authored role slots,
+participant/component/endpoint selections, relationship declarations and every
+authored node handle. Its admitted-package occurrence-schema projection SHALL
+return the protocol declaration, workflow-instance binding requirement, each
+authored node, the node's role slot when that node is role-owned, and every
+outer-to-inner enclosing repeat ordinal domain. It SHALL NOT emit future O1/O2
+workflow instances or concrete ordinals. Those concrete identities and ordinal
+values are supplied later, and the retained schema prevents two instances from
+collapsing when they share a provider, model, local name or transport value.
+
+The compiler SHALL retain channel sender/receiver roles, payload type,
+delivery bounds, ordering rule and each authored send/receive occurrence without
+inventing concrete delivery correspondence.
+
+The compiler SHALL retain sequence order, choice branches, parallel branches
+and joins, bounded repeat bodies/exits, awaits, checks, events and commits as
+distinct authored control nodes.
+
+When a choice or repeat guard consumes observations, the compiler SHALL derive
+each visible atom from its exact eligible receive, same-owner attempt or
+same-owner domain-event Boolean binding and original anchor.
+
+The compiler SHALL establish choice coverage/non-overlap and repeat feasibility
+over the conservative independent-atom abstraction without replacing authored
+guard operands with proof witnesses.
+
+If repeat exit is feasible, then the compiler SHALL treat the repeat as
+contributing no guaranteed progress to an enclosing progress obligation.
+
+If repeat exit is infeasible, then the compiler SHALL derive the repeat's
+enclosing-progress contribution from the entered body's independently admitted
+progress.
+
+The compiler SHALL require observable progress in every feasible continuing
+repeat body and preserve the authored maximum and exhaustion branch.
+
+The compiler SHALL retain delivery, attempt, operation effect, domain event,
+compensation registration, compensation activation and commit as different
+requirements; evidence for one cannot satisfy another.
+
+The compiler SHALL bind each compensation to its exact forward-effect node,
+trigger, target capture, registration capture, activation capture, positive
+attempt maximum, retry relationship, recovery predicate and forbidding commit
+node or explicit `never`.
+
+The compiler SHALL preserve one compensation obligation across distinct retry
+attempt identities without treating operation success as recovery success.
+
+For `activate first`, the compiler SHALL preserve the exact trigger identity,
+registration identity and requirement for an admitted causal/sequence order
+between distinct eligible triggers. It SHALL NOT encode ingestion order or
+timestamp as the selection rule. It SHALL retain the downstream requirements
+that repeated delivery of one semantic trigger keeps separate receipt provenance
+without another activation/registration and that a later distinct trigger does
+not reactivate the same registered forward effect. The compiler does not execute
+those rules; missing order/correlation and inconsistent runtime bindings remain
+typed F/B assessment outcomes.
+
+The compiler SHALL derive recovery population, relationship, snapshot,
+progress, closure, clock and captured-origin requirements from original recovery
+operands and anchors rather than source-span proximity or simplified proofs.
+
+The compiler SHALL retain the selected temporal declaration/clock/activation
+interface without evaluating temporal settlement inside choreography admission.
+
+For a timed choreography, the `/2` artifact SHALL carry each selected temporal
+definition's identity, revision, raw-byte digest and immutable artifact reference,
+plus exactly one tagged clock configuration for that selection. Missing,
+duplicate, untagged or profile-incompatible clock configuration refuses the
+timed family. The strict `/1` reader SHALL continue to reject `/2`, and the
+strict `/2` reader SHALL NOT reinterpret or silently upgrade `/1`. This extension
+authenticates the inputs required by L5; it defines no clock progression,
+deadline settlement or late-evidence meaning.
+
+The compiler SHALL retain every required observation binding's owning native
+declaration, source locus, role kind, anchor, scope premises and capture
+dependencies without appointing a concrete observation adapter.
+
+If a producer correspondence, relationship, component, endpoint or typed
+effect selector required by the selected profile is unavailable, then the
+compiler SHALL return an explicit unsupported prerequisite without omitting or
+fabricating the dependent record.
+
+The compiler SHALL preserve independent source, model, producer, dependency,
+compiled-artifact and protocol-result identity/digest domains across the
+producer/consumer handoff.
+
+The compiler SHALL produce the same static subject when only valid concrete
+runtime values, relationship instances, observation records or assessment-time
+limits change under the same selected contracts. Compiler admission/emission
+limits are excluded from this invariance: an insufficient compiler limit returns
+resource incompleteness and emits no static subject.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-048-AC-1 | One reusable template retains its static role/relationship requirements and exposes the full runtime occurrence-key schema from an admitted `/1` or `/2` package without changing wire bytes. Later O1/O2 bindings sharing one external payment provider therefore require distinct workflow and node-occurrence identities plus one concrete ordinal for every returned repeat domain, without the compiler fabricating any instance or ordinal. | Test (TC-132) |
+| FR-048-AC-2 | Channels preserve exact endpoint roles, payloads, order/delivery bounds and separate send, receive, delivery, attempt and effect identities; concrete fan-out remains a consumer binding. | Test (TC-132) |
+| FR-048-AC-3 | Sequence, choice, parallel, join, await, repeat, exhaustion, check, event and commit nodes retain their authored topology and exact typed control edges. | Test (TC-133) |
+| FR-048-AC-4 | Observed choice/repeat guards admit only causally visible eligible atoms; same spelling, wrong owner, branch-local or success-only values refuse without disappearing in unused operands. | Test (TC-133) |
+| FR-048-AC-5 | A repeat with a feasible false guard contributes no guaranteed enclosing progress; an infeasible false valuation permits the entered body's proven progress; zero/exact/one-short proof budgets retain charge order and typed outcomes. | Test (TC-133) |
+| FR-048-AC-6 | Split shipments, one authored payment attempt under distinct supplied repeat ordinals, and refund paths preserve separate static subjects and required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation or minting another static attempt. | Test (TC-134) |
+| FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
+| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. Missing static producer authority is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
+| FR-048-AC-9 | The release producer emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/model/producer/artifact/result digest substitution or recanonicalization refuses. | Test (TC-135) |
+| FR-048-AC-10 | A's release producer contributes the exact source-derived artifact, selection and static binding requirements to the separately owned pinned campaign run. The contribution is byte-identical at B's intake and retains every required D, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
+
+## Dependencies
+
+[FR-042](FR-042-publish-compiled-protocol-artifacts.md) owns the artifact and
+producer handoff. D's draft Producer interface 1.2.0 contract at
+`6259d3a5b99088740df9bcc8e8d60f3720aaa603` owns the model, relationship,
+population and configuration identities and correspondence that A consumes.
+F's observation contract owns concrete record/correlation, availability,
+membership, completeness, progress and closure assertions.
+
+The pinned D revision explicitly implements no producer or wire schema. A's
+typed compatibility-adapter fixtures verify the compiler boundary only; real D
+producer acceptance remains a campaign dependency and cannot be inferred from
+those fixtures.
+
+The pinned external L5 requirement and Rust-interface baseline is merged PR #70,
+compiler revision `72507f8`, comprising FR-043/044/045 and
+`temporal::evaluate`, `temporal::evaluate_with_progress` and
+`temporal::mapping_support`. That baseline records its narrow A-owned prerequisite:
+`quire.compiled-protocol/2` must extend `/1` with each selected temporal
+definition identity/revision/raw-byte digest/artifact and exactly one tagged
+clock configuration, while strict `/1` readers remain unchanged. This
+FR consumes that requirement but does not invent its schema or treat the L5
+evaluator alone as an authenticated compiler seam;
+[FR-050](FR-050-publish-authenticated-temporal-artifacts.md) owns the versioned
+wire/reader change. E remains the semantic authority for clock progression,
+deadline settlement and late evidence. The `/2` extension and L5 acceptance are
+prerequisites only for the timed campaign case, not for untimed static
+choreography emission.
+
+`quire-protocol` [#11](https://github.com/agent-ix/quire-protocol/issues/11)
+owns artifact intake, [#6](https://github.com/agent-ix/quire-protocol/issues/6)
+owns PT02 conformance, and
+[#12](https://github.com/agent-ix/quire-protocol/issues/12) owns the temporal/
+observation integration. D owns the version-lock manifest, Rust integration
+driver and aggregate campaign record under
+[quire-research#39](https://github.com/agent-ix/quire-research/issues/39) and
+[IN01 #49](https://github.com/agent-ix/quire-research/issues/49) until an
+integration-repository transfer is approved. Standard FR-049 supplies choreography syntax;
+FR-050–059 supply protocol meaning; FR-060–062 are downstream claim, result and
+portable-projection boundaries referenced but not implemented here. The compiler
+owns only source-to-artifact preservation and the exact static roles and runtime
+key requirements those consumers must bind. This retrospective cycle under
+[#66](https://github.com/agent-ix/quire-spec-language/issues/66) records that
+earlier choreography implementation and tests preceded this requirement.

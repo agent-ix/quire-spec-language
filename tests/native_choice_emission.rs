@@ -19,6 +19,8 @@ const RECEIVE_A: &str = "send SentA via Messages as (sentA: M::Plain) { true };
 const RECEIVE_B: &str = "send SentB via Messages as (sentB: M::Plain) { true };
     receive GotB via Messages of SentB as (gotB: M::Plain) { true };";
 
+const PROGRESSING_BODY: &str = "event Looped by Receiver as (looped: M::Plain) { true };";
+
 const OWN_ATTEMPT: &str = "attempt Tried by Receiver on M::Node::step contracts []
     as (attempted: M::Plain) { true };";
 
@@ -200,7 +202,15 @@ fn own_attempt_reference_budget_exhaustion_preserves_original_locus_and_retries(
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-5", "FR-042-AC-7")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-1",
+    "FR-042-AC-4",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-048-AC-4"
+)]
 fn own_attempt_choice_preserves_cross_unit_contract_and_observation_owners() {
     let mut inputs = Inputs::new(&[
         Unit { name: "attempt-contracts", body: "pre Ready using S on M::Node::step { delta >= 0 }\npost Done using S on M::Node::step { result }", declarations: &["Ready", "Done"] },
@@ -389,7 +399,7 @@ fn own_attempt_choice_preserves_cross_unit_contract_and_observation_owners() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+#[trace("TC-121", "TC-133", "FR-042-AC-5", "FR-042-AC-8", "FR-048-AC-4")]
 fn foreign_role_cannot_use_an_attempt_even_with_the_same_model_type() {
     let decision = choice(
         "Sender",
@@ -759,6 +769,13 @@ fn choice(owner: &str, visible: &str, yes: &str, no: &str) -> String {
           case yes when {{ {yes} }} check Accepted using S {{ true }};
           case no when {{ {no} }} check Rejected using S {{ true }};
         }}"
+    )
+}
+
+fn repeat(owner: &str, visible: &str, maximum: u8, guard: &str, body: &str) -> String {
+    format!(
+        "repeat Loop by {owner} visible ({visible}) max {maximum} while {{ {guard} }} {body}
+          exhausted check Limit using S {{ true }};"
     )
 }
 
@@ -1486,11 +1503,11 @@ fn role_knowledge_visible_basis_and_abstract_partition_failures_do_not_grant_adm
             Error::Unsupported(Unsupported::FamilyProof),
         ),
         (
-            "composite advertised value",
+            "composite result does not disclose its individual operands",
             "Receiver",
             "gotA.ready and gotB.ready",
-            "gotA.ready and gotB.ready",
-            "not (gotA.ready and gotB.ready)",
+            "gotA.ready",
+            "not gotA.ready",
             Error::Unsupported(Unsupported::FamilyProof),
         ),
         (
@@ -1592,7 +1609,14 @@ fn sibling_optional_branch_and_await_records_refuse_at_the_original_lexical_use(
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-042-AC-8",
+    "FR-048-AC-5"
+)]
 fn repeat_progress_covers_every_feasible_dynamic_case_and_keeps_dead_cases() {
     for (case, no_body, after, guard, succeeds) in [
         (
@@ -1621,7 +1645,7 @@ fn repeat_progress_covers_every_feasible_dynamic_case_and_keeps_dead_cases() {
             "event Rejected by Receiver as (rejected: M::Plain) { true };",
             "",
             "gotA.ready",
-            false,
+            true,
         ),
     ] {
         let visible = if guard == "true" {
@@ -1686,7 +1710,315 @@ fn repeat_progress_covers_every_feasible_dynamic_case_and_keeps_dead_cases() {
 }
 
 #[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-8")]
+fn an_observed_repeat_guard_requires_owned_listed_and_individual_atoms() {
+    for (case, received, owner, visible, guard) in [
+        (
+            "foreign observing role",
+            RECEIVE_A.to_owned(),
+            "Sender",
+            "gotA.ready",
+            "gotA.ready",
+        ),
+        (
+            "unlisted guard atom",
+            RECEIVE_A.to_owned(),
+            "Receiver",
+            "true",
+            "gotA.ready",
+        ),
+        (
+            "composite visible entry",
+            format!("{RECEIVE_A} {RECEIVE_B}"),
+            "Receiver",
+            "gotA.ready and gotB.ready",
+            "gotA.ready",
+        ),
+    ] {
+        let loop_ = repeat(owner, visible, 2, guard, PROGRESSING_BODY);
+        let inputs = inputs(&format!("sequence Main {{ {received} {loop_} }}"));
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                let report = native::admit(proofs, selected, Limits::default());
+                assert_eq!(
+                    report.result().err(),
+                    Some(&Error::Unsupported(Unsupported::FamilyProof)),
+                    "{case}; locus {:?}",
+                    report.locus()
+                );
+            },
+        );
+    }
+}
+
+#[test]
+#[trace("TC-121", "TC-133", "FR-042-AC-5", "FR-042-AC-8", "FR-048-AC-4")]
+fn a_repeat_guard_atom_established_inside_the_body_has_no_decision_availability() {
+    let loop_ = repeat(
+        "Receiver",
+        "gotA.ready",
+        2,
+        "gotA.ready",
+        &format!("sequence Iteration {{ {RECEIVE_A} {PROGRESSING_BODY} }}"),
+    );
+    let inputs = inputs(&format!("sequence Main {{ {loop_} }}"));
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            let namespace = proofs.types().binding().namespace();
+            let [id] = namespace.lookup("Decisions") else {
+                panic!("one declaration")
+            };
+            let scope = proofs
+                .types()
+                .binding()
+                .scopes()
+                .unwrap()
+                .declaration(*id)
+                .unwrap();
+            let unavailable: Vec<_> = scope
+                .issues
+                .iter()
+                .filter_map(|issue| match issue {
+                    ScopeIssue::OutOfScope { name, span, .. } if name == "gotA" => Some(span),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                unavailable.len(),
+                2,
+                "the visible entry and the guard both refuse; issues {:?}",
+                scope.issues
+            );
+            for span in unavailable {
+                assert_eq!(&inputs.sources[0].text()[span.start..span.end], "gotA");
+            }
+            assert_eq!(
+                proofs.types().disposition(*id),
+                Some(TypeDisposition::Refused)
+            );
+            let report = native::admit(proofs, selected, Limits::default());
+            assert_eq!(
+                report.result().err(),
+                Some(&Error::Unsupported(Unsupported::FamilyProof)),
+                "locus {:?}",
+                report.locus()
+            );
+        },
+    );
+}
+
+#[test]
 #[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7", "FR-042-AC-8")]
+fn an_observed_repeat_guard_carries_the_true_constant_guard_body_obligation() {
+    for (case, body, expected) in [
+        (
+            "continuing body proves no progress",
+            "check Stalled using S { true };".to_owned(),
+            Error::Invalid(Invalid::Control),
+        ),
+        (
+            "continuing body progress stays unproved",
+            format!(
+                "sequence Iteration {{
+                   choice Decide by Receiver visible (gotA.ready) {{
+                     case yes when {{ gotA.ready }} {PROGRESSING_BODY}
+                     case no when {{ not gotA.ready }} check Rejected using S {{ true }};
+                   }}
+                 }}"
+            ),
+            Error::Unsupported(Unsupported::FamilyProof),
+        ),
+    ] {
+        let loop_ = repeat("Receiver", "gotA.ready", 2, "gotA.ready", &body);
+        let inputs = inputs(&format!("sequence Main {{ {RECEIVE_A} {loop_} }}"));
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                let report = native::admit(proofs, selected, Limits::default());
+                assert_eq!(
+                    report.result().err(),
+                    Some(&expected),
+                    "{case}; locus {:?}",
+                    report.locus()
+                );
+            },
+        );
+    }
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-5", "FR-042-AC-7")]
+fn a_zero_maximum_observed_repeat_keeps_its_authored_bound_without_a_body_obligation() {
+    let loop_ = repeat(
+        "Receiver",
+        "gotA.ready",
+        0,
+        "gotA.ready",
+        "check Stalled using S { true };",
+    );
+    let inputs = inputs(&format!("sequence Main {{ {RECEIVE_A} {loop_} }}"));
+    admitted(&inputs, |_proofs, package| {
+        let w::Body::Protocol { controls, .. } = &package.declarations[0].body else {
+            panic!("protocol")
+        };
+        let repeat = controls.iter().find(|c| c.name == "Loop").unwrap();
+        let w::ControlOperation::Repeat {
+            maximum,
+            visible,
+            guard,
+            ..
+        } = &repeat.operation
+        else {
+            panic!("repeat")
+        };
+        let artifact::ProtocolNumber::Integer(maximum) = maximum.checked().unwrap() else {
+            panic!("authored integer")
+        };
+        assert_eq!(maximum.value(), 0);
+        // The observed guard and its visible entry stay retained expressions,
+        // never a proof witness or a simplified constant.
+        assert_eq!(visible.len(), 1);
+        assert!(matches!(
+            package.declarations[0].values[guard.index as usize].operation,
+            w::ValueOperation::Field { .. }
+        ));
+    });
+}
+
+#[test]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-042-AC-8",
+    "FR-048-AC-5"
+)]
+fn an_observed_repeat_supplies_enclosing_progress_only_when_it_cannot_exit_early() {
+    // An infeasible true valuation carries no body obligation, even though its
+    // authored body contains only a check. It still contributes no progress.
+    let never = repeat(
+        "Receiver",
+        "gotA.ready",
+        2,
+        "gotA.ready and not gotA.ready",
+        "check Stalled using S { true };",
+    );
+    let standalone = inputs(&format!("sequence Main {{ {RECEIVE_A} {never} }}"));
+    admitted(&standalone, |_proofs, _package| {});
+
+    for (case, guard, maximum, body, exhausted, admits) in [
+        (
+            "a feasible false valuation exits before any iteration",
+            "gotA.ready",
+            2,
+            PROGRESSING_BODY,
+            "check Limit using S { true };",
+            false,
+        ),
+        (
+            "no valuation makes the guard false, so an iteration always runs",
+            "gotA.ready or not gotA.ready",
+            2,
+            PROGRESSING_BODY,
+            "check Limit using S { true };",
+            true,
+        ),
+        (
+            "a zero maximum cannot force exhaustion when the guard may be false",
+            "gotA.ready",
+            0,
+            "check Stalled using S { true };",
+            "event Limit by Receiver as (limited: M::Plain) { true };",
+            false,
+        ),
+        (
+            "an always-true zero-maximum guard contributes exhausted-child progress",
+            "gotA.ready or not gotA.ready",
+            0,
+            "check Stalled using S { true };",
+            "event Limit by Receiver as (limited: M::Plain) { true };",
+            true,
+        ),
+        (
+            "an infeasible true valuation cannot contribute exhausted-child progress",
+            "gotA.ready and not gotA.ready",
+            2,
+            "check Stalled using S { true };",
+            "event Limit by Receiver as (limited: M::Plain) { true };",
+            false,
+        ),
+    ] {
+        let run = format!(
+            "sequence Main {{ {RECEIVE_A}
+              repeat Outer by Receiver visible (true) max 2 while {{ true }}
+                repeat Inner by Receiver visible (gotA.ready) max {maximum} while {{ {guard} }}
+                  {body}
+                exhausted {exhausted}
+              exhausted check Done using S {{ true }}; }}"
+        );
+        let inputs = inputs(&run);
+        if admits {
+            admitted(&inputs, |_proofs, package| {
+                let w::Body::Protocol { controls, .. } = &package.declarations[0].body else {
+                    panic!("protocol")
+                };
+                let outer = controls.iter().find(|c| c.name == "Outer").unwrap();
+                let w::ControlOperation::Repeat { body, .. } = &outer.operation else {
+                    panic!("repeat")
+                };
+                // Same controls arena, so the outer body handle names the inner
+                // repeat that supplied the admitted progress.
+                let inner = &controls[body.index as usize];
+                assert_eq!(inner.name, "Inner");
+                let w::ControlOperation::Repeat { guard, .. } = &inner.operation else {
+                    panic!("repeat")
+                };
+                // The tautology stays the authored disjunction; progress comes
+                // from the infeasible false branch, not from a rewritten guard.
+                assert!(matches!(
+                    package.declarations[0].values[guard.index as usize].operation,
+                    w::ValueOperation::Binary {
+                        operator: w::Binary::Or,
+                        ..
+                    }
+                ));
+            });
+        } else {
+            inputs.with_proofs(
+                TypeLimits::default(),
+                proofs::ProofLimits::default(),
+                |proofs, selected| {
+                    discharged(proofs);
+                    let report = native::admit(proofs, selected, Limits::default());
+                    assert_eq!(
+                        report.result().err(),
+                        Some(&Error::Invalid(Invalid::Control)),
+                        "{case}; locus {:?}",
+                        report.locus()
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[trace(
+    "TC-121",
+    "TC-133",
+    "FR-042-AC-5",
+    "FR-042-AC-7",
+    "FR-042-AC-8",
+    "FR-048-AC-4"
+)]
 fn an_unused_boolean_let_initializer_still_requires_its_received_atom() {
     for (visible, succeeds) in [("gotB.ready", true), ("true", false)] {
         let decision = choice(

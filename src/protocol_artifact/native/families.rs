@@ -258,22 +258,65 @@ fn protocol_check(
                 exhausted,
                 ..
             } => {
-                visible_constants(visible, &constants, work)?;
+                let observed = if constants.contains_key(&guard.0) {
+                    visible_constants(visible, &constants, work)?;
+                    None
+                } else {
+                    // An observed guard partitions every valuation into exactly
+                    // the continuing and the exhausting branch, under the same
+                    // atom, ownership and visibility obligations as a choice.
+                    let context = decisions::Context {
+                        unit,
+                        typed,
+                        scope,
+                        protocol,
+                        source,
+                    };
+                    Some(decisions::partition(&context, c::ControlId(at), work)?)
+                };
                 let maximum = natural(&maximum.value, work)?;
-                let guard = constant(*guard, &constants, work)?;
+                // `exiting` is the feasibility of the guard being false at a
+                // decision instant. A closed true guard never exits that way;
+                // a closed false guard is already handled by `!continuing`.
+                let (continuing, exiting) = match &observed {
+                    None => (constant(*guard, &constants, work)?, false),
+                    Some(feasible) => {
+                        let [continuing, exiting] = feasible[..] else {
+                            return Err(Error::Invalid(Invalid::Control));
+                        };
+                        (continuing, exiting)
+                    }
+                };
                 let body = child(*body, &progress, work)?;
                 let exhausted = child(*exhausted, &progress, work)?;
-                if !guard {
+                if !continuing {
                     Progress::None
                 } else if maximum == 0 {
-                    exhausted
+                    // A feasible false valuation exits before the limit branch,
+                    // so the repeat guarantees nothing to an enclosing loop.
+                    if exiting {
+                        Progress::None
+                    } else {
+                        exhausted
+                    }
                 } else {
+                    // A feasible observed guard carries the same body obligation
+                    // as a true constant one; falsification is a normal exit and
+                    // never evidence of body progress.
                     match body {
-                        Progress::Observable => Progress::Observable,
+                        Progress::Observable => {}
                         Progress::None => return Err(Error::Invalid(Invalid::Control)),
                         Progress::NeedsAuthority => {
                             return Err(Error::Unsupported(Unsupported::FamilyProof))
                         }
+                    }
+                    // That internal obligation is not a contribution: a repeat
+                    // whose guard can be false at its first decision may run no
+                    // iteration at all and observe nothing.
+                    if exiting {
+                        Progress::None
+                    } else {
+                        Progress::Observable
                     }
                 }
             }

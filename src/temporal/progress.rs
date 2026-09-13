@@ -19,6 +19,29 @@ use std::collections::BTreeMap;
 use super::result::{Closure, Completeness, Dimension, Refusal, Subject};
 use super::trace::Trace;
 
+/// The exact clock identity a strict version-2 evaluation authenticated before
+/// it ran any evaluation work.
+///
+/// This is retained evidence, not an assertion: it records which admitted
+/// package, declaration, registered definition and clock configuration the
+/// trace was checked against. A version-1 evaluation authenticates nothing and
+/// retains none of this.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct AuthenticatedBinding {
+    /// Raw-byte digest of the admitted version-2 package.
+    pub package_digest: String,
+    /// Declaration index in that package.
+    pub declaration: usize,
+    /// Registered temporal definition identity.
+    pub definition_identity: String,
+    /// Registered semantic revision of that definition.
+    pub definition_revision: String,
+    /// Emitted clock binding name, without the `clock:` requirement prefix.
+    pub clock: String,
+    /// Exact authenticated clock parameters, by member name.
+    pub parameters: BTreeMap<String, String>,
+}
+
 /// The exact binding one progress assertion is made under. A foreign clock,
 /// subject or profile is a different key, never the same progress.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -74,6 +97,7 @@ impl Progress {
 #[derive(Clone, Debug, Default)]
 pub struct Ledger {
     retained: BTreeMap<Binding, Progress>,
+    authenticated: BTreeMap<AuthenticatedBinding, Progress>,
 }
 
 impl Ledger {
@@ -121,6 +145,37 @@ impl Ledger {
             }
         }
         self.retained.insert(binding, progress);
+        Ok(progress)
+    }
+
+    pub(super) fn record_authenticated(
+        &mut self,
+        binding: AuthenticatedBinding,
+        progress: Progress,
+    ) -> Result<Progress, Refusal> {
+        let subject = Subject {
+            declaration: binding.declaration,
+            ..Subject::default()
+        };
+        if let Some(retained) = self.authenticated.get(&binding) {
+            if progress.watermark < retained.watermark {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Watermark,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+            if retained.completeness == Completeness::Complete
+                && progress.completeness == Completeness::Incomplete
+            {
+                return Err(Refusal::Progress {
+                    dimension: Dimension::Completeness,
+                    clock: binding.clock,
+                    subject,
+                });
+            }
+        }
+        self.authenticated.insert(binding, progress);
         Ok(progress)
     }
 }

@@ -7,10 +7,7 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use quire_contract_ir as ir;
 
 use crate::checking::{composed::ObservationOrigin, Catalog, NativeType};
-use crate::linking::composed::{
-    models::ModelInput,
-    scopes::{Anchor, BinderKind},
-};
+use crate::linking::composed::scopes::{Anchor, BinderKind};
 use crate::native_model::{NativeModel, ObjectRole};
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid};
 use crate::Span;
@@ -95,15 +92,15 @@ impl<'s, 'm> Collector<'s, 'm> {
     fn catalog(&self, model: &NativeModel, work: &mut Work) -> Result<&'s Catalog<'m>, Error> {
         for (input, selected) in self.context.models.inputs().iter().enumerate() {
             work.visit()?;
-            match selected {
-                ModelInput::Native(candidate) if std::ptr::eq(*candidate, model) => {
+            match (*selected).native_model() {
+                Some(candidate) if std::ptr::eq(candidate, model) => {
                     return self
                         .context
                         .models
                         .catalog_at(input)
                         .ok_or(Error::Invalid(Invalid::Model));
                 }
-                ModelInput::Native(_) | ModelInput::UnsupportedProducer { .. } => {}
+                Some(_) | None => {}
             }
         }
         Err(Error::Invalid(Invalid::Model))

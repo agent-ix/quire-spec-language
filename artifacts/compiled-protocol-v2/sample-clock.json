@@ -1,0 +1,1 @@
+{ "kind": "fixed_sample", "epoch": { "kind": "integer", "decimal": "0" }, "period": { "kind": "rational", "numerator": "1", "denominator": "2" }, "unit": "second" }
