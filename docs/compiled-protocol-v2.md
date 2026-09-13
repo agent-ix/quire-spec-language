@@ -136,7 +136,11 @@ progress during artifact admission.
 
 `mapping_support_v2(package, declaration, closure)` has no trace input; it
 checks the declaration's authenticated definition/profile binding before using
-the existing formula-closure classifier and makes no parameter-map claim.
+the existing surrounding-execution-closure classifier and makes no parameter-map
+claim. Its `Classification::authenticated()` accessor returns the sealed
+`AuthenticatedSelection` containing package digest, declaration, definition
+identity/revision and definition artifact digest. Version-1 classification
+returns `None`; neither path authenticates clock parameters without a trace.
 `evaluate_with_progress_v2` keys retained progress by the admitted package
 digest, declaration, definition identity/revision and exact clock configuration,
 so another artifact, `/1` evaluation or changed clock selection cannot lend it
@@ -152,7 +156,8 @@ that retains this contract and names the exact public surface it consumes:
   `protocol_artifact::v2::wire::{Package, TemporalBinding,
   ClockConfiguration}`;
 - `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`; and
-- `temporal::{evaluate_v2, evaluate_with_progress_v2, mapping_support_v2}`.
+- `temporal::{AuthenticatedSelection, Classification, evaluate_v2,
+  evaluate_with_progress_v2, mapping_support_v2}`.
 
 The producing caller supplies the actual parser/linker/proof report plus the
 complete `native::Selections`: original native source and model artifacts,

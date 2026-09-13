@@ -169,8 +169,8 @@ no longer an unauthenticated retained premise.
 
 `mapping_support_v2` takes no runtime trace. It SHALL require the declaration's
 admitted binding to select the same definition/profile before classifying the
-formula closure; it SHALL NOT claim to authenticate a parameter map that is not
-an input to mapping classification.
+requested surrounding-execution closure; it SHALL NOT claim to authenticate a
+parameter map that is not an input to mapping classification.
 
 The progress ledger identity used by `evaluate_with_progress_v2` SHALL include
 the admitted package digest, declaration, definition identity/revision and exact
