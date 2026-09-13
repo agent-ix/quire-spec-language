@@ -3,14 +3,21 @@
 //!
 //! This is a total function of three inputs and nothing else: the admitted
 //! declaration's selected profile, its reachable operator kinds, and the
-//! surrounding-execution closure named in the request. Decision-scope closure is
-//! a separate axis and is never substituted for it.
+//! surrounding-execution closure named in the request. The owner ruling on
+//! `quire-contract-ir#64` fixes surrounding-execution closure as the axis that
+//! selects the TL row; decision-scope closure stays a separate native result axis
+//! and is never substituted for it.
 //! It consults no backend capability report, no installed TL version, no syntax
 //! match and no historical result. It emits no TL formula, no valuation request
 //! and no correspondence record: the emission half of the bridge remains blocked
 //! on `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability.
+//!
+//! A classification made through a strict version-2 package also retains the
+//! authenticated definition selection it was made against. One made through a
+//! version-1 package retains none, so the two are never mistaken for each other.
 
 use crate::protocol_artifact::wire as w;
+use crate::ByteDigest;
 
 use super::profile::Profile;
 use super::result::Subject;
@@ -99,14 +106,61 @@ pub struct Retained {
     pub activation: w::Activation,
 }
 
+/// The authenticated definition selection a strict version-2 classification
+/// was made against.
+///
+/// This is retained evidence, not an assertion. It names the admitted package,
+/// the declaration, and the registered definition the package's temporal binding
+/// selects for it. It carries no clock parameters: classification takes no
+/// trace, so it authenticates no parameter map. A later bridge reads the admitted
+/// clock configuration from the package this digest names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedSelection {
+    /// Raw-byte digest of the admitted version-2 package.
+    pub package_digest: ByteDigest,
+    /// Declaration index in that package.
+    pub declaration: usize,
+    /// Registered temporal definition identity the binding selects.
+    pub definition_identity: String,
+    /// Registered semantic revision of that definition.
+    pub definition_revision: String,
+    /// Raw-byte digest of the exact definition artifact the package selects.
+    pub definition_artifact: ByteDigest,
+}
+
 /// One classification request: its disposition, and everything the request
 /// retains from the native declaration it was made against.
+///
+/// Only this crate constructs one, so a retained authenticated selection is
+/// always the one a strict version-2 entry point checked.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Classification {
     /// The disposition read from the reviewed support table.
     pub support: Support,
     /// The retained native subject, profile and activation record.
     pub retained: Retained,
+    authenticated: Option<AuthenticatedSelection>,
+}
+
+impl Classification {
+    pub(super) fn new(
+        support: Support,
+        retained: Retained,
+        authenticated: Option<AuthenticatedSelection>,
+    ) -> Self {
+        Self {
+            support,
+            retained,
+            authenticated,
+        }
+    }
+
+    /// The definition selection a strict version-2 entry point authenticated
+    /// before classifying. `None` for a version-1 classification, which
+    /// authenticates nothing.
+    pub fn authenticated(&self) -> Option<&AuthenticatedSelection> {
+        self.authenticated.as_ref()
+    }
 }
 
 /// Which operator kinds a declaration's temporal graph reaches.

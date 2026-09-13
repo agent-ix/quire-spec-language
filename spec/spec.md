@@ -354,7 +354,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Typed wire reader implemented; complete family admission and real source-to-consumer emission remain open under #40 |
 | [FR-043](functional/FR-043-evaluate-bounded-native-temporal.md) | FR | Planned bounded temporal evaluation; compiler #38 |
 | [FR-044](functional/FR-044-activate-temporal-obligations.md) | FR | Planned temporal activation and immutable captures; compiler #38 |
-| [FR-045](functional/FR-045-classify-temporal-mapping-support.md) | FR | Planned native-to-TL mapping support classification; bridge emission blocked on quire-contract-ir #63/#64 |
+| [FR-045](functional/FR-045-classify-temporal-mapping-support.md) | FR | Native-to-TL mapping support classification, including the `/2` authenticated selection; bridge emission blocked on quire-contract-ir #63/#64; compiler #38 |
 | [NFR-008](non-functional/NFR-008-bound-temporal-evaluation.md) | NFR | Planned temporal work, instance and retention limits; compiler #38 |
 | [FR-046](functional/FR-046-execute-predicates-and-ordered-queries.md) | FR | Retrospective L3 draft under #66; review, matrix binding and full query runtime acceptance remain pending |
 | [FR-047](functional/FR-047-evaluate-finite-object-reference-graphs.md) | FR | Retrospective L4 finite graph contract under #66; implementation/evidence reconciliation pending |

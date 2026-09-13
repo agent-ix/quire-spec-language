@@ -18,9 +18,12 @@ support table in `resources/native-v1/spec/functional/FR-095-preserve-native-tl-
 never from an installed TL version, a backend report or the classifier's own
 output. Each numbered group corresponds to the matching acceptance criterion.
 
-Controls execute in `tests/composed_temporal_mapping.rs`. No TL evaluator, bridge
-definition or contract-IR predicate projection participates; the classification is
-a total function of the admitted declaration.
+Groups 1–5 execute in `tests/composed_temporal_mapping.rs` and group 6 in
+`tests/composed_temporal_mapping_v2.rs`. No TL evaluator, bridge definition or
+contract-IR predicate projection participates; the classification is a total
+function of the admitted declaration and the requested surrounding-execution
+closure, which the owner ruling on `quire-contract-ir#64` fixes as the TL row
+selector.
 
 ## Test Procedure
 
@@ -54,12 +57,26 @@ a total function of the admitted declaration.
    unencoded result dimensions — and to assert no correspondence. Compile two
    declarations whose temporal formula bytes are equal but whose selected profiles
    differ, and require their classifications to differ.
+6. Compile one declaration per profile, each reaching a bounded future operator,
+   and emit it through both the `/1` producer and the `/2` producer. Admit the
+   `/2` bytes with a strict reader given a temporal selection re-derived from the
+   authored sources and registered definition catalog, not projected from the
+   producer's table. Under each surrounding-execution closure, require the `/2`
+   classification to equal the `/1` classification's disposition and retained
+   native subject, and to retain the admitted package digest, the declaration
+   index, the registered definition identity and revision, and the digest of the
+   independently selected definition artifact. Require the `/1` classification to
+   retain no authenticated selection, and require a `/2` request for a
+   declaration outside the package to be refused. Inspect the retained selection
+   type and require it to have no public constructor and no clock parameter map.
 
 ## Expected Results
 
 Every disposition is derived from the admitted declaration alone. Unsupported
 results name every unmatched dimension and retain the native subject, its profile
-and its activation record; nothing is substituted or reduced.
+and its activation record; nothing is substituted or reduced. A `/2`
+classification retains the definition selection it authenticated, and a `/1`
+classification is never mistakable for one.
 
 The emission half of the bridge — the TL formula, valuation request and
 correspondence record under

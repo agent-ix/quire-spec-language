@@ -164,9 +164,21 @@ path to a retained capture record.
 ## Mapping support classification
 
 `temporal::mapping_support` is a total function of the selected profile, the
-reachable operator kinds and the requested decision-scope closure. It consults no
-backend capability report, installed TL version, syntax match or historical
-result, and it emits no TL formula, valuation request or correspondence record.
+reachable operator kinds and the requested surrounding-execution closure. The
+owner ruling on `quire-contract-ir#64` fixes surrounding-execution closure as the
+TL row selector; decision-scope closure stays a separate result axis and never
+selects a row. It consults no backend capability report, installed TL version,
+syntax match or historical result, and it emits no TL formula, valuation request
+or correspondence record.
+
+`temporal::mapping_support_v2` classifies the same declaration through a strict
+`/2` package. It first requires the admitted temporal binding to select the
+declaration's own definition, then returns the identical disposition and retained
+native subject together with `Classification::authenticated()`: the package
+digest, declaration, definition identity and revision, and definition artifact
+digest. A `/1` classification returns `None` there. The retained selection is
+not constructible outside the crate and carries no clock parameters, because
+classification takes no trace.
 Its table restates `quire-specification` FR-095's reviewed disposition. The
 emission half of that requirement remains blocked on `quire-contract-ir#63`,
 `quire-contract-ir#64` and actual TL capability.
