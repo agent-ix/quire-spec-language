@@ -22,7 +22,11 @@ cover bytes, depth, strings, populations, expressions and visited fields.
 The compile-fail surface attempts public construction and evaluator/callback
 injection. Runtime vectors attempt a textual AST, self-asserted trust/total
 flags, false/numeric leaves, foreign spans, clock/profile/capture substitutions,
-unknown history kinds and noncanonical JSON.
+unknown history kinds and noncanonical JSON. A guarded temporal fixture selects
+the exact activation guard as a checked predicate while proving that it does not
+enter the temporal formula's reachable `holds(...)` population. Guard and
+formula document bytes are cross-wired against the other's selection, and
+trigger and anchor handles remain invalid predicate selections.
 
 ## Expected Results
 
@@ -34,4 +38,5 @@ availability, progress, closure or completeness.
 
 ## Status
 
-Passing for `quire-spec-language#90`.
+Passing for `quire-spec-language#90`; activation-guard coverage extended by
+`quire-spec-language#98`.
