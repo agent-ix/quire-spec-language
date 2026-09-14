@@ -2,7 +2,7 @@
 
 FR-051 changes the production dependency key `quire-contract-ir` to select the
 cycle-free `quire-contract-model` package at
-`942950a6619e24a51f4ea68abd8b77b8335ed4a2`, retaining its declared
+`53cc03c639e2e26528132d34d96dc56449df78e8`, retaining its declared
 `MIT OR Apache-2.0` grant. The compatibility `quire-contract-ir` package at
 `04eb6f849c03be23177d373549c6c272551f957d` is now explicitly named
 `quire-contract-ir-historical` and is development-only for the already retained

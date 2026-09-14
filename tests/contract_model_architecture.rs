@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, process::Command};
 use ix_trace_rs::trace;
 use serde_json::Value;
 
-const MODEL_REVISION: &str = "942950a6619e24a51f4ea68abd8b77b8335ed4a2";
+const MODEL_REVISION: &str = "53cc03c639e2e26528132d34d96dc56449df78e8";
 const HISTORICAL_IR_REVISION: &str = "04eb6f849c03be23177d373549c6c272551f957d";
 
 #[trace("TC-139", "FR-051-AC-6")]

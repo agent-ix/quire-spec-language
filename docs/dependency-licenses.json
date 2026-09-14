@@ -579,7 +579,7 @@
     "name": "quire-contract-model",
     "version": "0.1.0",
     "license": "MIT OR Apache-2.0",
-    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=942950a6619e24a51f4ea68abd8b77b8335ed4a2#942950a6619e24a51f4ea68abd8b77b8335ed4a2"
+    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=53cc03c639e2e26528132d34d96dc56449df78e8#53cc03c639e2e26528132d34d96dc56449df78e8"
   },
   {
     "name": "quire-contract-ir",
