@@ -5,6 +5,7 @@ type: TC
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-050, type: verifies }
   - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
+  - { target: ix://agent-ix/quire-protocol/IT-001, type: references }
 ---
 # TC-138: Publish and read authenticated compiled temporal selections
 
@@ -48,6 +49,14 @@ compare its bytes to the frozen expected artifact. Offer `/1` to the `/2` reader
 and `/2` to the `/1` reader. For every added work dimension, independently count
 the successful `/2` run and retry with exact, one-short and above-hard limits.
 
+Import the public `protocol_artifact::handoff` path, member-name and mutation
+format constants. Join each member name to `PUBLISHED_HANDOFF`, require every
+named file to exist, decode the named mutation manifest, and compare its base
+offer, artifact reference, independent selection and format fields with the
+published constants. Verify every entry in the named checksum inventory against
+the corresponding handoff bytes without consulting an environment variable or
+redeclaring a path, filename or format literal in the consumer harness.
+
 ## Expected Results
 
 The positive `/2` artifact has one binding per temporal declaration in canonical
@@ -67,4 +76,6 @@ The existing `/1` L5 entry points retain their public signatures and prior
 unauthenticated-parameter results. The v2-specific entry points accept only the
 v2 admitted type; trace evaluation retains the artifact-authenticated parameter
 map, mapping classification claims none, and progress does not cross an artifact
-or clock-configuration identity.
+or clock-configuration identity. Every published handoff address resolves its
+owned committed member, and the decoded mutation manifest repeats exactly the
+published base-member and format identities.

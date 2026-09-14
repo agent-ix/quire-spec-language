@@ -10,6 +10,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-044, type: references }
   - { target: ix://agent-ix/quire-spec-language/FR-045, type: references }
   - { target: ix://agent-ix/quire-specification/FR-090, type: depends_on }
+  - { target: ix://agent-ix/quire-protocol/IT-001, type: references }
 ---
 # FR-050: Publish authenticated temporal selections in compiled protocol v2
 
@@ -54,6 +55,17 @@ The public Rust consumer entry point SHALL be
 
 The public Rust producer entry point SHALL be
 `protocol_artifact::native::admit_v2(proofs, selected, temporal, limits) -> Report<AdmissionV2>`.
+
+When a Rust consumer locates the committed `/2` handoff, the compiler crate
+SHALL publish `protocol_artifact::handoff::PUBLISHED_HANDOFF` and the exact
+member-name constants `PUBLISHED_OFFER_FILE`,
+`PUBLISHED_ARTIFACT_REFERENCE_FILE`, `PUBLISHED_SELECTION_FILE`,
+`PUBLISHED_MUTATION_MANIFEST_FILE`, `PUBLISHED_CHECKSUMS_FILE` and
+`MUTATION_MANIFEST_FORMAT`. Their values SHALL respectively name
+`compiled-protocol-v2.json`, `compiled-protocol-v2.ref.json`,
+`expected-v2.json`, `mutations/manifest.json`, `SHA256SUMS` and
+`quire.protocol.v2-mutations/1`. A consumer SHALL NOT require an environment
+variable or redeclare those producer-owned values to address the handoff.
 
 The producer's `temporal` input SHALL be a complete table of
 `native::TemporalSelection` records keyed by exact source `ArtifactRef` and
@@ -195,6 +207,7 @@ extension.
 | FR-050-AC-4 | `/1` bytes remain byte-identical and readable only by the unchanged strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138) |
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results, while the existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138) |
+| FR-050-AC-7 | The public handoff path, five member filenames and mutation format constants resolve the committed `/2` inventory and decoded manifest without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
 
 ## Dependencies
 
