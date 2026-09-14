@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:native-temporal-request:1",
+  "title": "Native temporal evaluation request version 1",
+  "description": "FR-052 canonical formula-wide native temporal request. Schema validity grants no admission; use the bounded strict Rust reader with the exact FR-051 checked temporal subject.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "subject", "instance", "anchor", "correspondence", "definition", "positions", "triggers", "trigger_evidence", "trigger_scope", "axes", "execution", "completeness", "authoritative_origin", "evicted", "limits"],
+  "properties": {
+    "contract": {"const": "quire.native-temporal-request/v1"},
+    "identity": {"$ref": "#/$defs/digest"},
+    "subject": {"$ref": "#/$defs/subject"},
+    "instance": {"$ref": "#/$defs/text"},
+    "anchor": {"$ref": "#/$defs/text"},
+    "correspondence": {"$ref": "#/$defs/evidence"},
+    "definition": {"$ref": "#/$defs/definition"},
+    "positions": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/position"}},
+    "triggers": {"type": "array", "maxItems": 1, "items": {"$ref": "#/$defs/trigger"}},
+    "trigger_evidence": {"enum": ["admitted", "missing", "refused"]},
+    "trigger_scope": {"$ref": "#/$defs/closure"},
+    "axes": {"$ref": "#/$defs/axes"},
+    "execution": {"$ref": "#/$defs/execution"},
+    "completeness": {"$ref": "#/$defs/completeness"},
+    "authoritative_origin": {"type": "boolean"},
+    "evicted": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/eviction"}},
+    "limits": {"$ref": "#/$defs/limits"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 1048576},
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "u64": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+    "handle": {"type": "object", "additionalProperties": false, "required": ["declaration", "index"], "properties": {"declaration": {"$ref": "#/$defs/u32"}, "index": {"$ref": "#/$defs/u32"}}},
+    "closure": {"enum": ["open", "closed"]},
+    "execution": {"enum": ["completed", "failed"]},
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "schema_digest", "identity", "digest", "authority_identity", "authority_revision", "authority_digest", "scope", "population"],
+      "properties": {
+        "contract": {"$ref": "#/$defs/text"}, "schema_digest": {"$ref": "#/$defs/digest"}, "identity": {"$ref": "#/$defs/text"}, "digest": {"$ref": "#/$defs/digest"},
+        "authority_identity": {"$ref": "#/$defs/text"}, "authority_revision": {"$ref": "#/$defs/text"}, "authority_digest": {"$ref": "#/$defs/digest"},
+        "scope": {"$ref": "#/$defs/text"}, "population": {"$ref": "#/$defs/u64"}
+      }
+    },
+    "subject": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "identity", "digest", "package_digest", "declaration", "root"],
+      "properties": {"contract": {"const": "quire.checked-temporal-subject/v1"}, "identity": {"$ref": "#/$defs/digest"}, "digest": {"$ref": "#/$defs/digest"}, "package_digest": {"$ref": "#/$defs/digest"}, "declaration": {"$ref": "#/$defs/u32"}, "root": {"$ref": "#/$defs/handle"}}
+    },
+    "definition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_identity", "profile_revision", "clock_name", "clock_configuration"],
+      "properties": {"profile_identity": {"$ref": "#/$defs/text"}, "profile_revision": {"$ref": "#/$defs/text"}, "clock_name": {"$ref": "#/$defs/text"}, "clock_configuration": {"$ref": "#/$defs/clock"}}
+    },
+    "clock": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["kind", "sequence_authority"], "properties": {"kind": {"const": "event_position"}, "sequence_authority": {"$ref": "#/$defs/text"}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "epoch", "period", "unit"], "properties": {"kind": {"const": "fixed_sample"}, "epoch": {}, "period": {}, "unit": {"$ref": "#/$defs/text"}}}
+      ]
+    },
+    "order": {"type": ["object", "null"], "required": ["authority", "key"], "additionalProperties": false, "properties": {"authority": {"$ref": "#/$defs/text"}, "key": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}}},
+    "valuation": {"type": "object", "additionalProperties": false, "required": ["node", "leaf", "value"], "properties": {"node": {"$ref": "#/$defs/u32"}, "leaf": {"$ref": "#/$defs/handle"}, "value": {"type": "boolean"}}},
+    "position": {"type": "object", "additionalProperties": false, "required": ["identity", "observation", "coordinate", "order", "valuations"], "properties": {"identity": {"$ref": "#/$defs/digest"}, "observation": {"$ref": "#/$defs/evidence"}, "coordinate": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}, "order": {"$ref": "#/$defs/order"}, "valuations": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/valuation"}}}},
+    "capture": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["kind", "anchor", "value"], "properties": {"kind": {"const": "value"}, "anchor": {"$ref": "#/$defs/text"}, "value": {"type": "string", "maxLength": 1048576}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"enum": ["missing", "null", "wrong_type", "stale"]}}}
+    ]},
+    "trigger": {"type": "object", "additionalProperties": false, "required": ["identity", "receipt", "anchor", "payload", "guard", "captures"], "properties": {"identity": {"$ref": "#/$defs/text"}, "receipt": {"$ref": "#/$defs/text"}, "anchor": {"$ref": "#/$defs/text"}, "payload": {"type": "string", "maxLength": 1048576}, "guard": {"type": ["boolean", "null"]}, "captures": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/capture"}}}},
+    "progress": {"type": "object", "additionalProperties": false, "required": ["reference", "watermark"], "properties": {"reference": {"$ref": "#/$defs/evidence"}, "watermark": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}}},
+    "closure_record": {"type": "object", "additionalProperties": false, "required": ["reference", "state"], "properties": {"reference": {"$ref": "#/$defs/evidence"}, "state": {"$ref": "#/$defs/closure"}}},
+    "axes": {"type": "object", "additionalProperties": false, "required": ["decision_progress", "decision_closure", "surrounding_progress", "surrounding_closure"], "properties": {"decision_progress": {"$ref": "#/$defs/progress"}, "decision_closure": {"$ref": "#/$defs/closure_record"}, "surrounding_progress": {"$ref": "#/$defs/progress"}, "surrounding_closure": {"$ref": "#/$defs/closure_record"}}},
+    "completeness": {"type": "object", "additionalProperties": false, "required": ["reference", "state", "facts"], "properties": {"reference": {"$ref": "#/$defs/evidence"}, "state": {"enum": ["complete", "incomplete"]}, "facts": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/evidence"}}}},
+    "eviction": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["kind", "node", "coordinate"], "properties": {"kind": {"const": "valuation"}, "node": {"$ref": "#/$defs/u32"}, "coordinate": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "instance", "capture"], "properties": {"kind": {"const": "capture"}, "instance": {"$ref": "#/$defs/text"}, "capture": {"$ref": "#/$defs/u64"}}}
+    ]},
+    "limits": {"type": "object", "additionalProperties": false, "required": ["input_bytes", "output_bytes", "json_depth", "string_bytes", "formula_nodes", "formula_depth", "positions", "valuations", "captures", "support", "history_span", "evaluation_steps", "lineage", "visited"], "properties": {
+      "input_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "output_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "json_depth": {"type": "integer", "minimum": 0, "maximum": 64}, "string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+      "formula_nodes": {"type": "integer", "minimum": 0, "maximum": 100000}, "formula_depth": {"type": "integer", "minimum": 0, "maximum": 64}, "positions": {"type": "integer", "minimum": 0, "maximum": 1000000}, "valuations": {"type": "integer", "minimum": 0, "maximum": 1000000},
+      "captures": {"type": "integer", "minimum": 0, "maximum": 100000}, "support": {"type": "integer", "minimum": 0, "maximum": 1000000}, "history_span": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}, "evaluation_steps": {"type": "integer", "minimum": 0, "maximum": 1000000}, "lineage": {"type": "integer", "minimum": 0, "maximum": 1024}, "visited": {"type": "integer", "minimum": 0, "maximum": 2000000}
+    }}
+  }
+}
