@@ -9,7 +9,7 @@ relationships:
 
 ## Description
 
-Planned owner-boundary checks for FR-051. No implementation coverage is claimed.
+Owner-boundary checks for the implemented FR-051 public APIs.
 
 ## Test Procedure
 
@@ -34,4 +34,4 @@ availability, progress, closure or completeness.
 
 ## Status
 
-Planned for `quire-spec-language#90`.
+Passing for `quire-spec-language#90`.

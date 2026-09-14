@@ -129,5 +129,5 @@ handoffs.
 
 ## Status
 
-Proposed implementation contract for `quire-spec-language#90` and
-`tl-syntax#52`.
+Implemented for `quire-spec-language#90` under the reviewed `tl-syntax#52`
+ecosystem architecture.

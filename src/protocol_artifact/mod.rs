@@ -9,6 +9,8 @@
 //!
 //! [contract]: https://github.com/agent-ix/quire-spec-language/blob/main/docs/compiled-protocol-v1.md
 
+mod checked_handoff;
+pub mod checked_predicate;
 mod decode;
 mod encoding;
 pub mod handoff;
@@ -18,6 +20,7 @@ pub mod native;
 mod number;
 mod occurrence;
 mod recovery;
+pub mod temporal_subject;
 pub mod v2;
 mod validate;
 mod value_graph;
