@@ -40,10 +40,11 @@ obligation and the blocked emission half are recorded on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38).
 
 Status values are set from local runs only; hosted workflows remain
-manual-dispatch. The 41 controls are `tests/composed_temporal_evaluation.rs` (14),
+manual-dispatch. The 51 controls are `tests/composed_temporal_evaluation.rs` (14),
 `tests/composed_temporal_activation.rs` (11), `tests/composed_temporal_limits.rs`
 (7), `tests/composed_temporal_mapping.rs` (7) and
-`tests/composed_temporal_mapping_v2.rs` (2); all pass under
+`tests/composed_temporal_mapping_v2.rs` (2), plus the formula-wide owner suite
+`tests/native_temporal_owner.rs` (10); all pass under
 `cargo test --locked --no-default-features -j 1 -- --test-threads=1`, with
 `cargo fmt --all -- --check` and Clippy clean under both the minimal and the
 `quire-extraction` lanes.
@@ -88,7 +89,7 @@ status check ran rather than being skipped.
 | FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the missing-binding and other-definition refusals are inspected |
 | FR-051 | FR-051-AC-1, FR-051-AC-2, FR-051-AC-3, FR-051-AC-4, FR-051-AC-5, FR-051-AC-6 | TC-139 | ✅ Implemented |
-| FR-052 | FR-052-AC-1 through FR-052-AC-8 | TC-140 | 🚧 Planned |
+| FR-052 | FR-052-AC-1 through FR-052-AC-8 | TC-140 | ✅ Passing locally; review/merge pending |
 | NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |
@@ -118,7 +119,7 @@ groups 2 and 3. Illustrative EX IDs are not minted as acceptance criteria.
 | TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | ✅ Tested |
 | TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | ✅ Tested |
 | TC-139 | Publish and read checked native handoffs | Integration | P0 | FR-051 | ✅ Passing |
-| TC-140 | Canonical native temporal request/result owner boundary | Integration | P0 | FR-052 | 🚧 Planned |
+| TC-140 | Canonical native temporal request/result owner boundary | Integration | P0 | FR-052 | ✅ 11 traced controls passing locally; review/merge pending |
 
 ## Six coverage rules
 
