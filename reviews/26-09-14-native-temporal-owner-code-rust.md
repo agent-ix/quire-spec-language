@@ -67,7 +67,8 @@ the complete repository gate passes, and no actionable scoped finding remains.
 | Full no-default-feature unit/integration/doc suite, one job and serial tests | pass; 3 inherited private-packet tests ignored |
 | Independent clean no-default-feature build | pass |
 | TC-140 owner, semantics, mutation, correction, resource, schema and public-surface controls | pass; 11/11 |
-| `quire validate --strict` | pass; 513/513 grammar-clean |
+| `quire validate --scope . 'spec/**/*.md' 'plan/**/*.md' 'reviews/**/*.md' --summary` | pass; 714/714 documents grammar-clean |
 | Immutable schema digest verification | pass |
+| Downstream QProtocol exact locked gate against corrected QSL revision | pass; fmt, all-target clippy, unit/integration/doc tests |
 
 Hosted CI was not dispatched.
