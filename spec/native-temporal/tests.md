@@ -13,6 +13,9 @@ Scoped to [FR-043](../functional/FR-043-evaluate-bounded-native-temporal.md),
 the compiler's evaluation of the temporal body emitted by
 [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md).
 
+FR-051 and TC-139 extend this matrix with the static checked-predicate and
+temporal-subject handoff boundary required by epic `tl-syntax#52`.
+
 Parsing, linking, type admission and protocol-artifact emission of temporal
 declarations were delivered earlier and are covered by TM-002, TM-005 and TM-007;
 this matrix adds no claim about them. The emission half of the native-to-TL
@@ -82,6 +85,7 @@ status check ran rather than being skipped.
 | FR-045 | FR-045-AC-4 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the missing-binding and other-definition refusals are inspected |
+| FR-051 | FR-051-AC-1, FR-051-AC-2, FR-051-AC-3, FR-051-AC-4, FR-051-AC-5, FR-051-AC-6 | TC-139 | ✅ Implemented |
 | NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-2 | TC-124 | ✅ Tested |
 | NFR-008 | NFR-008-AC-3 | TC-124 | ✅ Tested |
@@ -110,6 +114,7 @@ groups 2 and 3. Illustrative EX IDs are not minted as acceptance criteria.
 | TC-123 | Activation dispositions and immutable captures | Integration | P1 | FR-044 | ✅ Tested |
 | TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | ✅ Tested |
 | TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | ✅ Tested |
+| TC-139 | Publish and read checked native handoffs | Integration | P0 | FR-051 | ✅ Passing |
 
 ## Six coverage rules
 
