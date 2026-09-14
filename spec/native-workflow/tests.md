@@ -22,7 +22,7 @@ appropriate error provenance, explicitly rather than through a presence guard.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-011 | FR-011-AC-1 | TC-108 | ✅ Tested |
 | FR-011 | FR-011-AC-2 | TC-108 | ✅ Tested |

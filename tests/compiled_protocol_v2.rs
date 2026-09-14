@@ -28,7 +28,9 @@ use quire_spec_language::protocol_artifact::{
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
+use serde_json::Value;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
+use sha2::{Digest as _, Sha256};
 
 const DECLARATIONS: [(&str, R); 3] = [
     ("ByEvent", R::EventPosition),
@@ -135,10 +137,16 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
 }
 
 fn inputs() -> Inputs {
+    inputs_with_event_body(
+        "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { true }",
+    )
+}
+
+fn inputs_with_event_body(event_body: &str) -> Inputs {
     Inputs::new(&[
         Unit {
             name: "event-time",
-            body: "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { true }",
+            body: event_body,
             declarations: &["ByEvent"],
         },
         Unit {
@@ -197,7 +205,19 @@ fn with_v2(
         &native::AdmissionV2,
     ),
 ) {
-    let inputs = inputs();
+    with_v2_inputs(inputs(), test);
+}
+
+fn with_v2_inputs(
+    inputs: Inputs,
+    test: impl FnOnce(
+        &Inputs,
+        &proofs::ProofReport<'_, '_, '_>,
+        &native::Selections<'_>,
+        &TemporalTables<'_>,
+        &native::AdmissionV2,
+    ),
+) {
     inputs.with_proofs(
         TypeLimits::default(),
         proofs::ProofLimits::default(),
@@ -361,6 +381,437 @@ fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
         .iter()
         .position(|declaration| declaration.name == name)
         .expect("authored temporal declaration")
+}
+
+fn checked_leaf(package: &v2::AdmittedPackage) -> (u32, w::Handle) {
+    package
+        .inherited()
+        .declarations
+        .iter()
+        .enumerate()
+        .find_map(|(index, declaration)| {
+            let root = match &declaration.body {
+                w::Body::Predicate { root, .. } | w::Body::State { root, .. } => Some(root.clone()),
+                w::Body::Temporal { .. } => declaration.temporal.iter().find_map(|node| {
+                    if let w::TemporalOperation::Holds { value } = &node.operation {
+                        Some(value.clone())
+                    } else {
+                        None
+                    }
+                }),
+                w::Body::Protocol {
+                    controls, finish, ..
+                } => controls
+                    .iter()
+                    .find_map(|control| {
+                        if let w::ControlOperation::Check { value, .. } = &control.operation {
+                            Some(value.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| Some(finish.constraint.clone())),
+            }?;
+            Some((u32::try_from(index).ok()?, root))
+        })
+        .expect("fixture contains a checked Boolean clause")
+}
+
+fn assert_handoff_identity(document: &[u8], domain: &str) -> Value {
+    let value: Value = serde_json::from_slice(document).expect("canonical handoff JSON");
+    let marker = b",\"identity\":\"";
+    let start = document
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("canonical identity member");
+    let value_start = start + marker.len();
+    let value_end = value_start + 64;
+    assert_eq!(document.get(value_end), Some(&b'"'));
+    let mut preimage = Vec::with_capacity(document.len() - marker.len() - 65);
+    preimage.extend_from_slice(&document[..start]);
+    preimage.extend_from_slice(&document[value_end + 1..]);
+    let mut digest = Sha256::new();
+    digest.update(domain.as_bytes());
+    digest.update([0]);
+    digest.update(preimage);
+    assert_eq!(value["identity"], format!("{:x}", digest.finalize()));
+    value
+}
+
+fn assert_schema(schema: &[u8], digest: &str, document: &[u8]) {
+    assert_eq!(format!("{:x}", ByteDigest::of(schema)), digest);
+    let schema: Value = serde_json::from_slice(schema).expect("published schema JSON");
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft202012)
+        .compile(&schema)
+        .expect("published handoff schema");
+    let document: Value = serde_json::from_slice(document).expect("handoff JSON");
+    assert!(validator.is_valid(&document));
+}
+
+#[trace("TC-139", "FR-051-AC-1", "FR-051-AC-4", "FR-051-AC-6")]
+#[test]
+fn checked_predicate_and_temporal_handoffs_derive_read_and_retain_static_authority() {
+    with_v2(|inputs, proofs, _, temporal, emitted| {
+        let admitted = inputs
+            .read_v2(proofs, emitted, &temporal.expected)
+            .into_result()
+            .expect("strict v2 package");
+        let (predicate_declaration, predicate_root) = checked_leaf(&admitted);
+        let predicate_selection = artifact::checked_predicate::ClauseSelection::new(
+            predicate_declaration,
+            predicate_root,
+        );
+        let predicate = artifact::checked_predicate::derive(
+            &admitted,
+            predicate_selection.clone(),
+            artifact::checked_predicate::Limits::default(),
+        )
+        .into_result()
+        .expect("derive checked predicate handoff");
+        assert_schema(
+            artifact::checked_predicate::SCHEMA_BYTES,
+            artifact::checked_predicate::SCHEMA_SHA256,
+            predicate.bytes(),
+        );
+        let predicate_value =
+            assert_handoff_identity(predicate.bytes(), "quire.checked-predicate/v1");
+        let predicate_view = artifact::checked_predicate::read(
+            predicate.bytes(),
+            &admitted,
+            predicate_selection,
+            artifact::checked_predicate::Limits::default(),
+        )
+        .into_result()
+        .expect("strict checked predicate reader");
+        assert_eq!(predicate_view.document().identity(), predicate.identity());
+        assert_eq!(predicate_view.package_digest(), admitted.digest());
+        assert_eq!(predicate_view.declaration(), predicate_declaration);
+        assert_eq!(predicate_view.parent_kind(), Some("protocol"));
+        assert!(!predicate_view.type_indices().is_empty());
+        assert!(!predicate_view.values().collect::<Vec<_>>().is_empty());
+        assert!(predicate_value.get("truth").is_none());
+
+        let temporal_declaration =
+            u32::try_from(declaration(&admitted, "ByEvent")).expect("declaration index");
+        let temporal_selection =
+            artifact::temporal_subject::DeclarationSelection::new(temporal_declaration);
+        let temporal_document = artifact::temporal_subject::derive(
+            &admitted,
+            temporal_selection,
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("derive checked temporal subject");
+        assert_schema(
+            artifact::temporal_subject::SCHEMA_BYTES,
+            artifact::temporal_subject::SCHEMA_SHA256,
+            temporal_document.bytes(),
+        );
+        let temporal_value = assert_handoff_identity(
+            temporal_document.bytes(),
+            "quire.checked-temporal-subject/v1",
+        );
+        let temporal_view = artifact::temporal_subject::read(
+            temporal_document.bytes(),
+            &admitted,
+            temporal_selection,
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("strict checked temporal subject reader");
+        assert_eq!(temporal_view.package_digest(), admitted.digest());
+        assert_eq!(temporal_view.declaration(), temporal_declaration);
+        assert_eq!(temporal_view.history_boundary(), Some("execution-origin"));
+        assert_eq!(
+            temporal_view.operators(),
+            Some(["constant".into()].as_slice())
+        );
+        assert!(temporal_view
+            .predicate_leaves()
+            .is_some_and(<[_]>::is_empty));
+        assert!(temporal_value.get("observation").is_none());
+        assert!(temporal_value.get("result").is_none());
+        assert!(temporal_value.get("progress").is_none());
+        assert!(temporal_value.get("closure").is_none());
+        assert!(temporal_value.get("completeness").is_none());
+    });
+}
+
+#[trace("TC-139", "FR-051-AC-1", "FR-051-AC-6")]
+#[test]
+fn temporal_handoff_exports_only_reachable_checked_holds_leaves() {
+    let inputs = inputs_with_event_body(
+        "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { holds(view.ready) }",
+    );
+    with_v2_inputs(inputs, |inputs, proofs, _, temporal, emitted| {
+        let admitted = inputs
+            .read_v2(proofs, emitted, &temporal.expected)
+            .into_result()
+            .expect("strict v2 package with a holds leaf");
+        let declaration =
+            u32::try_from(declaration(&admitted, "ByEvent")).expect("temporal declaration index");
+        let temporal = artifact::temporal_subject::derive(
+            &admitted,
+            artifact::temporal_subject::DeclarationSelection::new(declaration),
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("derive temporal subject");
+        let temporal = artifact::temporal_subject::read(
+            temporal.bytes(),
+            &admitted,
+            artifact::temporal_subject::DeclarationSelection::new(declaration),
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("read temporal subject");
+        assert_eq!(temporal.operators(), Some(["holds".into()].as_slice()));
+        let [leaf] = temporal
+            .predicate_leaves()
+            .expect("temporal subject predicate leaves")
+        else {
+            panic!("one reachable holds leaf")
+        };
+
+        let selection =
+            artifact::checked_predicate::ClauseSelection::new(declaration, leaf.clone());
+        let predicate = artifact::checked_predicate::derive(
+            &admitted,
+            selection.clone(),
+            artifact::checked_predicate::Limits::default(),
+        )
+        .into_result()
+        .expect("derive checked holds leaf");
+        assert_eq!(
+            artifact::checked_predicate::read(
+                predicate.bytes(),
+                &admitted,
+                selection,
+                artifact::checked_predicate::Limits::default(),
+            )
+            .into_result()
+            .expect("read checked holds leaf")
+            .parent_kind(),
+            Some("temporal")
+        );
+    });
+}
+
+fn assert_handoff_error<T>(
+    report: &artifact::checked_predicate::Report<T>,
+    code: artifact::checked_predicate::ErrorCode,
+) {
+    match report.result() {
+        Ok(_) => panic!("handoff must refuse"),
+        Err(error) => assert_eq!(error.code(), code),
+    }
+}
+
+#[trace("TC-139", "FR-051-AC-2", "FR-051-AC-3", "FR-051-AC-5")]
+#[test]
+fn checked_handoff_readers_refuse_mutation_cross_wiring_and_resource_overrun() {
+    with_v2(|inputs, proofs, _, temporal, emitted| {
+        let admitted = inputs
+            .read_v2(proofs, emitted, &temporal.expected)
+            .into_result()
+            .expect("strict v2 package");
+        let (declaration_index, root) = checked_leaf(&admitted);
+        let selection =
+            artifact::checked_predicate::ClauseSelection::new(declaration_index, root.clone());
+        let limits = artifact::checked_predicate::Limits::default();
+        let document = artifact::checked_predicate::derive(&admitted, selection.clone(), limits)
+            .into_result()
+            .expect("control document");
+
+        let mut unknown: Value = serde_json::from_slice(document.bytes()).unwrap();
+        unknown["unknown"] = Value::Bool(true);
+        let unknown = serde_json::to_vec(&unknown).unwrap();
+        assert_handoff_error(
+            &artifact::checked_predicate::read(&unknown, &admitted, selection.clone(), limits),
+            artifact::checked_predicate::ErrorCode::NonCanonical,
+        );
+
+        let control: Value = serde_json::from_slice(document.bytes()).unwrap();
+        for field in [
+            "contract",
+            "identity",
+            "package",
+            "subject",
+            "source",
+            "clause",
+            "expression",
+            "bindings",
+            "type",
+            "profiles",
+            "limits",
+        ] {
+            let mut missing = control.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert_handoff_error(
+                &artifact::checked_predicate::read(
+                    &serde_json::to_vec(&missing).unwrap(),
+                    &admitted,
+                    selection.clone(),
+                    limits,
+                ),
+                artifact::checked_predicate::ErrorCode::NonCanonical,
+            );
+            let mut changed = control.clone();
+            changed[field] = Value::Null;
+            assert_handoff_error(
+                &artifact::checked_predicate::read(
+                    &serde_json::to_vec(&changed).unwrap(),
+                    &admitted,
+                    selection.clone(),
+                    limits,
+                ),
+                artifact::checked_predicate::ErrorCode::NonCanonical,
+            );
+        }
+
+        let marker = b"{\"contract\":";
+        assert!(document.bytes().starts_with(marker));
+        let mut duplicate = b"{\"contract\":\"duplicate\",\"contract\":".to_vec();
+        duplicate.extend_from_slice(&document.bytes()[marker.len()..]);
+        assert_handoff_error(
+            &artifact::checked_predicate::read(&duplicate, &admitted, selection.clone(), limits),
+            artifact::checked_predicate::ErrorCode::NonCanonical,
+        );
+
+        let mut changed_identity: Value = serde_json::from_slice(document.bytes()).unwrap();
+        changed_identity["identity"] = Value::String("0".repeat(64));
+        let changed_identity = serde_json::to_vec(&changed_identity).unwrap();
+        assert_handoff_error(
+            &artifact::checked_predicate::read(
+                &changed_identity,
+                &admitted,
+                selection.clone(),
+                limits,
+            ),
+            artifact::checked_predicate::ErrorCode::NonCanonical,
+        );
+
+        let mut trailing = document.bytes().to_vec();
+        trailing.push(b'\n');
+        assert_handoff_error(
+            &artifact::checked_predicate::read(&trailing, &admitted, selection.clone(), limits),
+            artifact::checked_predicate::ErrorCode::NonCanonical,
+        );
+
+        let input_limited = artifact::checked_predicate::Limits {
+            input_bytes: document.bytes().len().saturating_sub(1),
+            ..limits
+        };
+        assert_handoff_error(
+            &artifact::checked_predicate::read(
+                document.bytes(),
+                &admitted,
+                selection.clone(),
+                input_limited,
+            ),
+            artifact::checked_predicate::ErrorCode::ResourceIncomplete,
+        );
+        for limited in [
+            artifact::checked_predicate::Limits {
+                json_depth: 1,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                population: 1,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                string_bytes: 1,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                visited_fields: 1,
+                ..limits
+            },
+        ] {
+            let report = artifact::checked_predicate::read(
+                document.bytes(),
+                &admitted,
+                selection.clone(),
+                limited,
+            );
+            assert_handoff_error(
+                &report,
+                artifact::checked_predicate::ErrorCode::ResourceIncomplete,
+            );
+            assert_eq!(
+                report.usage().output_bytes,
+                0,
+                "input census must refuse before canonical derivation"
+            );
+        }
+        let output_limited = artifact::checked_predicate::Limits {
+            output_bytes: 0,
+            ..limits
+        };
+        assert_handoff_error(
+            &artifact::checked_predicate::derive(&admitted, selection.clone(), output_limited),
+            artifact::checked_predicate::ErrorCode::ResourceIncomplete,
+        );
+        for limited in [
+            artifact::checked_predicate::Limits {
+                json_depth: 1,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                population: 0,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                expression_depth: 0,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                string_bytes: 0,
+                ..limits
+            },
+            artifact::checked_predicate::Limits {
+                visited_fields: 0,
+                ..limits
+            },
+        ] {
+            assert_handoff_error(
+                &artifact::checked_predicate::derive(&admitted, selection.clone(), limited),
+                artifact::checked_predicate::ErrorCode::ResourceIncomplete,
+            );
+        }
+
+        let foreign = artifact::checked_predicate::ClauseSelection::new(
+            declaration_index.saturating_add(10_000),
+            root,
+        );
+        assert_handoff_error(
+            &artifact::checked_predicate::derive(&admitted, foreign, limits),
+            artifact::checked_predicate::ErrorCode::InvalidSelection,
+        );
+
+        let temporal_declaration =
+            u32::try_from(declaration(&admitted, "ByEvent")).expect("declaration index");
+        let temporal_selection =
+            artifact::temporal_subject::DeclarationSelection::new(temporal_declaration);
+        let temporal_document = artifact::temporal_subject::derive(
+            &admitted,
+            temporal_selection,
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("temporal document");
+        assert_handoff_error(
+            &artifact::checked_predicate::read(
+                temporal_document.bytes(),
+                &admitted,
+                selection,
+                limits,
+            ),
+            artifact::checked_predicate::ErrorCode::NonCanonical,
+        );
+    });
 }
 
 #[trace("TC-132", "FR-048-AC-1")]

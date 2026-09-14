@@ -23,7 +23,7 @@ serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"]
 sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
-quire-contract-ir = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
 agent-ix-baseline-producer = { git = "https://github.com/agent-ix/filament-core-data", rev = "f79e5a641b3eac702642282ad6cc84dd48d280dc" }
 
 [dev-dependencies]
@@ -32,6 +32,7 @@ serde_json = { version = "=1.0.151", features = ["raw_value"] }
 tempfile = "=3.27.0"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
 quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
+quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
 syn = { version = "=2.0.119", features = ["full"] }
 
 [[bin]]
