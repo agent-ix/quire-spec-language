@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-baseline-producer"
 version = "0.0.0"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=f79e5a641b3eac702642282ad6cc84dd48d280dc#f79e5a641b3eac702642282ad6cc84dd48d280dc"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=404288282402d60de007295ccbafa960532b955e#404288282402d60de007295ccbafa960532b955e"
 dependencies = [
  "serde",
  "serde_json",
