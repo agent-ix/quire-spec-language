@@ -582,7 +582,7 @@ fn outcome(report: &temporal::Report) -> Result<Outcome, Error> {
 
 fn relation(
     value: Relation<'_>,
-    request: &ValidatedRequest<'_>,
+    request: &ValidatedRequest,
     limits: Limits,
 ) -> Result<(u64, RelationWire, u64), Error> {
     match value {
@@ -605,7 +605,7 @@ fn relation(
 
 fn corrected_relation(
     predecessor: &ValidatedResult,
-    request: &ValidatedRequest<'_>,
+    request: &ValidatedRequest,
     limits: Limits,
     kind: RelationKind,
 ) -> Result<(u64, RelationWire, u64), Error> {
@@ -643,7 +643,7 @@ fn corrected_relation(
 }
 
 fn build(
-    request: &ValidatedRequest<'_>,
+    request: &ValidatedRequest,
     relation_input: Relation<'_>,
     limits: Limits,
     usage: &mut Usage,
@@ -752,7 +752,7 @@ fn finish(wire: Wire, limits: Limits, usage: &mut Usage) -> Result<Document, Err
 
 /// Evaluates the exact validated request and emits one formula-wide owner result.
 pub fn evaluate(
-    request: &ValidatedRequest<'_>,
+    request: &ValidatedRequest,
     relation: Relation<'_>,
     limits: Limits,
 ) -> Report<Document> {
@@ -766,7 +766,7 @@ pub fn evaluate(
 /// Strictly reads by re-evaluating the exact request and relation before byte comparison.
 pub fn read(
     bytes: &[u8],
-    request: &ValidatedRequest<'_>,
+    request: &ValidatedRequest,
     relation: Relation<'_>,
     limits: Limits,
 ) -> Report<ValidatedResult> {
