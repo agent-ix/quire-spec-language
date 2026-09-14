@@ -133,6 +133,7 @@ rows, before moving any row off Planned.
 | FR-050 | FR-050-AC-4 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-5 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-6 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-7 | TC-138 | ✅ Passed |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -196,7 +197,7 @@ invented for that criterion.
 | TC-135 | Demonstrate the composed compiler-to-assessment ecosystem handoff | E2E | P1 | FR-048-AC-9, FR-048-AC-10, FR-042-AC-10 | 🚧 Planned; B/F integration pending |
 | TC-136 | Admit exact composed state views and typed outcomes | Integration | P1 | FR-049-AC-1..FR-049-AC-6 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-137 | Bound composed evaluation and retry immutable inputs | Property | P1 | FR-049-AC-6..FR-049-AC-8, NFR-009 | ✅ Passed locally (tests/composed_state_evaluation.rs, src/state/work.rs) |
-| TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-6 | ✅ Passed locally (tests/compiled_protocol_v2.rs) |
+| TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-7 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs) |
 
 ## Composed language admission (L2)
 
@@ -382,6 +383,9 @@ TC-138 uses real native compilation, the strict `/2` reader and L5 evaluation.
 Its version-crossing, definition-byte, numeric/profile and exact/one-short
 controls prevent `/1` compatibility or trace premises from being mistaken for
 authenticated `/2` correspondence.
+Its handoff-address control imports the producer-owned directory, member and
+format constants, verifies their committed inventory, and leaves no
+environment-variable or duplicated-vocabulary escape hatch.
 
 ## Composed evaluation admission and bounds (L3/L4)
 
