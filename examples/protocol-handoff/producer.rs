@@ -28,7 +28,9 @@ use quire_spec_language::{
         handoff::{
             MutationCase, MutationInput, MutationManifest, SelectedArtifactLimits,
             SelectedClockInput, SelectedDeclaration, SelectedDependency, SelectedModel,
-            SelectedSource, SelectedTemporal, Selection, SelectionV2,
+            SelectedSource, SelectedTemporal, Selection, SelectionV2, MUTATION_MANIFEST_FORMAT,
+            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
+            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
         },
         native, v2, wire as w,
     },
@@ -1850,15 +1852,15 @@ fn write_files_v2(
         write_file(&directory.join(file), content)?;
     }
     write_file(
-        &directory.join("mutations/manifest.json"),
+        &directory.join(PUBLISHED_MUTATION_MANIFEST_FILE),
         &mutation_manifest,
     )?;
-    write_file(&directory.join("expected-v2.json"), &selected_bytes)?;
+    write_file(&directory.join(PUBLISHED_SELECTION_FILE), &selected_bytes)?;
     write_file(
-        &directory.join("compiled-protocol-v2.ref.json"),
+        &directory.join(PUBLISHED_ARTIFACT_REFERENCE_FILE),
         &reference_bytes,
     )?;
-    write_file(&directory.join("compiled-protocol-v2.json"), bytes)
+    write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)
 }
 
 fn mutation_fixtures(
@@ -2314,10 +2316,10 @@ fn mutation_fixtures(
 
     Ok((
         MutationManifest {
-            format: "quire.protocol.v2-mutations/1".into(),
-            base_offer: "compiled-protocol-v2.json".into(),
-            base_artifact: "compiled-protocol-v2.ref.json".into(),
-            independent_selection: "expected-v2.json".into(),
+            format: MUTATION_MANIFEST_FORMAT.into(),
+            base_offer: PUBLISHED_OFFER_FILE.into(),
+            base_artifact: PUBLISHED_ARTIFACT_REFERENCE_FILE.into(),
+            independent_selection: PUBLISHED_SELECTION_FILE.into(),
             cases,
         },
         files,

@@ -42,6 +42,9 @@ adoption and assurance remain explicit acceptance work.
   constraints into their owning types, following PR #16's review under #27.
 - [Task-036](tasks/Task-036-runtime-input-schema.md): publish and exercise the
   native runtime input schema, preserving the exact reader's authority.
+- [Task-037](tasks/Task-037-published-v2-handoff-addresses.md): publish the
+  producer-owned `/2` handoff member and format addresses required by the
+  independent Rust consumer.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
@@ -49,6 +52,8 @@ optional semantic review remains declined.
 
 ## Completion
 
-All thirteen tasks are done. The setup effort, artifact lineage, reproduction
-path and remaining support gaps are recorded in
-`docs/lc05-technical-acceptance.md` at LC05 closeout.
+All fourteen tasks are done. Task-037 completed issue #78's bounded public
+handoff-address correction without reopening LC05 behavior or the v0.2.0
+release. The setup effort, artifact lineage, reproduction path and remaining
+support gaps are recorded in `docs/lc05-technical-acceptance.md` at LC05
+closeout.

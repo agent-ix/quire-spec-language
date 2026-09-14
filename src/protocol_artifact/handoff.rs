@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! FR-042/TC-121: the published record shapes of the compiled-protocol handoff.
+//! FR-042/TC-121 and FR-050/TC-138: the published compiled-protocol handoff.
 //!
 //! An independent consumer reads a handoff directory: the offered artifact
 //! bytes, an `expected-v2.json` reader selection, and a `mutations/manifest.json`
@@ -20,6 +20,24 @@ pub const PUBLISHED_HANDOFF: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/artifacts/compiled-protocol-v2"
 );
+
+/// Handoff-relative file containing the canonical version-2 package bytes.
+pub const PUBLISHED_OFFER_FILE: &str = "compiled-protocol-v2.json";
+
+/// Handoff-relative file containing the independently authorized artifact reference.
+pub const PUBLISHED_ARTIFACT_REFERENCE_FILE: &str = "compiled-protocol-v2.ref.json";
+
+/// Handoff-relative file containing the independent version-2 reader selection.
+pub const PUBLISHED_SELECTION_FILE: &str = "expected-v2.json";
+
+/// Handoff-relative file containing the adverse mutation inventory.
+pub const PUBLISHED_MUTATION_MANIFEST_FILE: &str = "mutations/manifest.json";
+
+/// Handoff-relative file containing raw SHA-256 digests for the published inventory.
+pub const PUBLISHED_CHECKSUMS_FILE: &str = "SHA256SUMS";
+
+/// Format identity of the published version-2 mutation corpus.
+pub const MUTATION_MANIFEST_FORMAT: &str = "quire.protocol.v2-mutations/1";
 
 /// One selected dependency, naming the file holding its exact original bytes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -281,7 +299,11 @@ mod tests {
     use ix_trace_rs::trace;
     use serde_json::json;
 
-    use super::{MutationInput, MutationManifest, SelectedArtifactLimits, PUBLISHED_HANDOFF};
+    use super::{
+        MutationInput, MutationManifest, SelectedArtifactLimits, MUTATION_MANIFEST_FORMAT,
+        PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_CHECKSUMS_FILE, PUBLISHED_HANDOFF,
+        PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+    };
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
     use crate::ByteDigest;
 
@@ -290,7 +312,8 @@ mod tests {
     fn published_handoff_path_exists_and_checksums_verify() {
         let root = Path::new(PUBLISHED_HANDOFF);
         assert!(root.is_dir(), "published handoff directory: {root:?}");
-        let sums = fs::read_to_string(root.join("SHA256SUMS")).expect("published SHA256SUMS");
+        let sums =
+            fs::read_to_string(root.join(PUBLISHED_CHECKSUMS_FILE)).expect("published SHA256SUMS");
         assert!(!sums.is_empty(), "published SHA256SUMS is not empty");
 
         for (line_index, line) in sums.lines().enumerate() {
@@ -306,6 +329,31 @@ mod tests {
                 "published handoff digest for {relative}"
             );
         }
+    }
+
+    #[test]
+    #[trace("TC-138", "FR-050-AC-7")]
+    fn published_handoff_addresses_resolve_the_owned_inventory() {
+        let root = Path::new(PUBLISHED_HANDOFF);
+        for relative in [
+            PUBLISHED_OFFER_FILE,
+            PUBLISHED_ARTIFACT_REFERENCE_FILE,
+            PUBLISHED_SELECTION_FILE,
+            PUBLISHED_MUTATION_MANIFEST_FILE,
+            PUBLISHED_CHECKSUMS_FILE,
+        ] {
+            assert!(root.join(relative).is_file(), "published member {relative}");
+        }
+
+        let manifest: MutationManifest = serde_json::from_slice(
+            &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE))
+                .expect("published mutation manifest"),
+        )
+        .expect("decode published mutation manifest");
+        assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
+        assert_eq!(manifest.base_offer, PUBLISHED_OFFER_FILE);
+        assert_eq!(manifest.base_artifact, PUBLISHED_ARTIFACT_REFERENCE_FILE);
+        assert_eq!(manifest.independent_selection, PUBLISHED_SELECTION_FILE);
     }
 
     #[test]
@@ -331,10 +379,10 @@ mod tests {
     #[trace("TC-138", "FR-050-AC-4")]
     fn mutation_envelope_and_inputs_are_closed_records() {
         let manifest = MutationManifest {
-            format: "quire.protocol.v2-mutations/1".into(),
-            base_offer: "compiled-protocol-v2.json".into(),
-            base_artifact: "compiled-protocol-v2.ref.json".into(),
-            independent_selection: "expected-v2.json".into(),
+            format: MUTATION_MANIFEST_FORMAT.into(),
+            base_offer: PUBLISHED_OFFER_FILE.into(),
+            base_artifact: PUBLISHED_ARTIFACT_REFERENCE_FILE.into(),
+            independent_selection: PUBLISHED_SELECTION_FILE.into(),
             cases: Vec::new(),
         };
         let mut encoded = serde_json::to_value(&manifest).expect("serialize published manifest");

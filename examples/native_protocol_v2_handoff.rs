@@ -27,7 +27,13 @@ fn run() -> Result<(), producer::Error> {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use quire_spec_language::protocol_artifact::{v2, wire as w};
+    use quire_spec_language::protocol_artifact::{
+        handoff::{
+            MUTATION_MANIFEST_FORMAT, PUBLISHED_ARTIFACT_REFERENCE_FILE,
+            PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+        },
+        v2, wire as w,
+    };
     use quire_spec_language::ByteDigest;
 
     #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
@@ -38,7 +44,7 @@ mod tests {
         let output = directory.path().join("handoff-v2");
         super::producer::write_v2(&output).expect("real v2 producer and independent strict reader");
 
-        let bytes = std::fs::read(output.join("compiled-protocol-v2.json")).unwrap();
+        let bytes = std::fs::read(output.join(PUBLISHED_OFFER_FILE)).unwrap();
         let package: v2::wire::Package = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(package.inherited.wire, v2::WIRE);
         assert_eq!(package.temporal_bindings.len(), 3);
@@ -64,7 +70,7 @@ mod tests {
         );
 
         let reference: w::ArtifactRef = serde_json::from_slice(
-            &std::fs::read(output.join("compiled-protocol-v2.ref.json")).unwrap(),
+            &std::fs::read(output.join(PUBLISHED_ARTIFACT_REFERENCE_FILE)).unwrap(),
         )
         .unwrap();
         assert_eq!(reference.wire.identity, "quire.compiled-protocol");
@@ -72,7 +78,7 @@ mod tests {
         assert_eq!(reference.digest, ByteDigest::of(&bytes));
 
         let sidecar: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(output.join("expected-v2.json")).unwrap())
+            serde_json::from_slice(&std::fs::read(output.join(PUBLISHED_SELECTION_FILE)).unwrap())
                 .unwrap();
         assert_eq!(sidecar["temporal"].as_array().unwrap().len(), 3);
         for temporal in sidecar["temporal"].as_array().unwrap() {
@@ -116,10 +122,11 @@ mod tests {
             model_source["artifact"]["digest"].as_str().unwrap()
         );
 
-        let manifest: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(output.join("mutations/manifest.json")).unwrap())
-                .unwrap();
-        assert_eq!(manifest["format"], "quire.protocol.v2-mutations/1");
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(output.join(PUBLISHED_MUTATION_MANIFEST_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["format"], MUTATION_MANIFEST_FORMAT);
         let cases = manifest["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 28);
         for case in cases {
