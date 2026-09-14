@@ -131,5 +131,7 @@ Contract IR constructs and cross-checks the owner request and joins the result.
 
 ## Status
 
-Remaining work: #95. This is the missing formula-wide native owner boundary
-discovered during Contract IR FR-026 implementation for `tl-syntax#52`.
+Implemented locally with both canonical schemas, bounded strict readers,
+formula-wide native evaluation, direct correction lineage and all eleven TC-140
+controls passing in the full serial Rust suite. Remaining work: #95. Review and
+merge precede Contract IR FR-026 consumption of the owner API.

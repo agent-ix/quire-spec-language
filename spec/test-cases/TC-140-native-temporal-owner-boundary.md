@@ -32,4 +32,6 @@ failure and no partial request, result or Boolean.
 
 ## Status
 
-Remaining work: #95. This is the QSL owner prerequisite of Contract IR FR-026.
+All eleven traced controls pass locally with the full serial no-default-feature
+suite, strict Clippy and formatting. Remaining work: #95. Review and merge
+precede the Contract IR FR-026 consumer handoff.

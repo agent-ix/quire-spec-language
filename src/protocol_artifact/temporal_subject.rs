@@ -58,105 +58,112 @@ impl Document {
 /// use quire_spec_language::protocol_artifact::temporal_subject::ValidatedTemporalSubject;
 /// let _ = ValidatedTemporalSubject;
 /// ```
-pub struct ValidatedTemporalSubject(Document);
+pub struct ValidatedTemporalSubject<'a> {
+    document: Document,
+    package: &'a v2::AdmittedPackage,
+}
 
-impl ValidatedTemporalSubject {
+impl<'a> ValidatedTemporalSubject<'a> {
     /// Returns the exact canonical document that was admitted.
     pub fn document(&self) -> &Document {
-        &self.0
+        &self.document
     }
 
     /// Returns the selected admitted package byte digest.
     pub fn package_digest(&self) -> ByteDigest {
-        self.0 .0.package_digest()
+        self.document.0.package_digest()
     }
 
     /// Returns the selected admitted package artifact reference.
     pub fn package_artifact(&self) -> &w::ArtifactRef {
-        self.0 .0.package_artifact()
+        self.document.0.package_artifact()
     }
 
     /// Returns the selected declaration-table index.
     pub fn declaration(&self) -> u32 {
-        self.0 .0.declaration()
+        self.document.0.declaration()
     }
 
     /// Returns the selected temporal root handle.
     pub fn root(&self) -> &w::Handle {
-        self.0 .0.root()
+        self.document.0.root()
     }
 
     /// Returns the exact authored source and source span.
     pub fn source(&self) -> (&w::Source, &w::Span) {
-        self.0 .0.source()
+        self.document.0.source()
     }
 
     /// Returns the requirement, clause identity, and execution contract.
     pub fn clause(&self) -> (&w::Requirement, &str, &w::Execution) {
-        self.0 .0.clause()
+        self.document.0.clause()
     }
 
     /// Iterates reachable value expressions in index order.
     pub fn values(&self) -> impl ExactSizeIterator<Item = (u32, &w::Value)> {
-        self.0 .0.values()
+        self.document.0.values()
     }
 
     /// Iterates reachable temporal expressions in index order.
     pub fn temporal_nodes(&self) -> impl ExactSizeIterator<Item = (u32, &w::Temporal)> {
-        self.0 .0.temporal()
+        self.document.0.temporal()
     }
 
     /// Iterates sorted owner identity bindings as `(kind, identity)` pairs.
     pub fn bindings(&self) -> impl ExactSizeIterator<Item = (&str, &str)> {
-        self.0 .0.bindings()
+        self.document.0.bindings()
     }
 
     /// Returns all retained Boolean type-table indices.
     pub fn type_indices(&self) -> &[u32] {
-        self.0 .0.type_indices()
+        self.document.0.type_indices()
     }
 
     /// Iterates the exact evaluation and definedness profile identities.
     pub fn profile_identities(&self) -> impl Iterator<Item = &str> {
-        self.0 .0.profile_identities()
+        self.document.0.profile_identities()
     }
 
     /// Returns the declaration activation policy.
     pub fn activation(&self) -> Option<&w::Activation> {
-        self.0 .0.temporal_subject().map(|subject| subject.0)
+        self.document.0.temporal_subject().map(|subject| subject.0)
     }
 
     /// Returns the selected clock index and immutable clock configuration.
     pub fn clock(&self) -> Option<(u32, &v2::wire::ClockConfiguration)> {
-        self.0
-             .0
+        self.document
+            .0
             .temporal_subject()
             .map(|subject| (subject.1, subject.2))
     }
 
     /// Returns the declaration capture handles.
     pub fn captures(&self) -> Option<&[w::Handle]> {
-        self.0 .0.temporal_subject().map(|subject| subject.3)
+        self.document.0.temporal_subject().map(|subject| subject.3)
     }
 
     /// Returns `execution-origin` or `history-cutoff` for the admitted activation.
     pub fn history_boundary(&self) -> Option<&str> {
-        self.0 .0.temporal_subject().map(|subject| subject.4)
+        self.document.0.temporal_subject().map(|subject| subject.4)
     }
 
     /// Returns the sorted temporal operator inventory.
     pub fn operators(&self) -> Option<&[String]> {
-        self.0 .0.temporal_subject().map(|subject| subject.5)
+        self.document.0.temporal_subject().map(|subject| subject.5)
     }
 
     /// Returns the exact retained interval requirements.
     pub fn required_history(&self) -> Option<&[w::Interval]> {
-        self.0 .0.temporal_subject().map(|subject| subject.6)
+        self.document.0.temporal_subject().map(|subject| subject.6)
     }
 
     /// Returns the sorted Boolean value leaves reachable from the temporal root.
     pub fn predicate_leaves(&self) -> Option<&[w::Handle]> {
-        self.0 .0.temporal_subject().map(|subject| subject.7)
+        self.document.0.temporal_subject().map(|subject| subject.7)
+    }
+
+    pub(crate) fn package(&self) -> &'a v2::AdmittedPackage {
+        self.package
     }
 }
 
@@ -177,12 +184,12 @@ pub fn derive(
 }
 
 /// Strictly admits `bytes` by independently deriving and comparing the canonical document.
-pub fn read(
+pub fn read<'a>(
     bytes: &[u8],
-    package: &v2::AdmittedPackage,
+    package: &'a v2::AdmittedPackage,
     selection: DeclarationSelection,
     limits: Limits,
-) -> Report<ValidatedTemporalSubject> {
+) -> Report<ValidatedTemporalSubject<'a>> {
     handoff::read(
         bytes,
         package,
@@ -191,5 +198,8 @@ pub fn read(
         },
         limits,
     )
-    .map(|document| ValidatedTemporalSubject(Document(document)))
+    .map(|document| ValidatedTemporalSubject {
+        document: Document(document),
+        package,
+    })
 }

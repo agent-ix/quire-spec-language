@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:native-temporal-result:1",
+  "title": "Native temporal evaluation result version 1",
+  "description": "FR-052 canonical formula-wide native temporal result. Schema validity grants no admission; use the strict Rust reader, which re-evaluates the exact validated request and relation.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only",
+  "type": "object", "additionalProperties": false,
+  "required": ["contract", "identity", "revision", "relation", "request", "subject_identity", "instance", "correspondence", "activation", "execution", "truth", "non_value", "settlement", "axes", "completeness", "support", "limits", "lineage"],
+  "properties": {
+    "contract": {"const": "quire.native-temporal-result/v1"}, "identity": {"$ref": "#/$defs/digest"}, "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+    "relation": {"$ref": "#/$defs/relation"}, "request": {"$ref": "#/$defs/request"}, "subject_identity": {"$ref": "#/$defs/digest"}, "instance": {"$ref": "#/$defs/text"}, "correspondence": {"$ref": "#/$defs/evidence"},
+    "activation": {"enum": ["inactive", "unknown", "active", "unavailable"]}, "execution": {"enum": ["completed", "failed"]},
+    "truth": {"type": ["string", "null"], "enum": ["true", "false", "pending", null]}, "non_value": {"oneOf": [{"$ref": "#/$defs/non_value"}, {"type": "null"}]},
+    "settlement": {"type": ["string", "null"], "enum": ["closed_scope", "decisive_witness", "decisive_counterexample", "unsettled", "unavailable", null]},
+    "axes": {"$ref": "#/$defs/axes"}, "completeness": {"$ref": "#/$defs/completeness"},
+    "support": {"type": "array", "maxItems": 1000000, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}}, "limits": {"$ref": "#/$defs/limits"}, "lineage": {"type": "integer", "minimum": 0, "maximum": 1024}
+  },
+  "$defs": {
+    "digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}, "text": {"type": "string", "minLength": 1, "maxLength": 1048576}, "u64": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["contract", "schema_digest", "identity", "digest", "authority_identity", "authority_revision", "authority_digest", "scope", "population"], "properties": {
+      "contract": {"$ref": "#/$defs/text"}, "schema_digest": {"$ref": "#/$defs/digest"}, "identity": {"$ref": "#/$defs/text"}, "digest": {"$ref": "#/$defs/digest"}, "authority_identity": {"$ref": "#/$defs/text"}, "authority_revision": {"$ref": "#/$defs/text"}, "authority_digest": {"$ref": "#/$defs/digest"}, "scope": {"$ref": "#/$defs/text"}, "population": {"$ref": "#/$defs/u64"}
+    }},
+    "request": {"type": "object", "additionalProperties": false, "required": ["identity", "digest"], "properties": {"identity": {"$ref": "#/$defs/digest"}, "digest": {"$ref": "#/$defs/digest"}}},
+    "predecessor": {"type": "object", "additionalProperties": false, "required": ["identity", "digest"], "properties": {"identity": {"$ref": "#/$defs/digest"}, "digest": {"$ref": "#/$defs/digest"}}},
+    "relation": {"type": "object", "additionalProperties": false, "required": ["kind", "predecessor"], "properties": {"kind": {"enum": ["original", "superseding", "invalidating"]}, "predecessor": {"oneOf": [{"$ref": "#/$defs/predecessor"}, {"type": "null"}]}}},
+    "non_value": {"type": "object", "additionalProperties": false, "required": ["kind", "code", "dimension"], "properties": {"kind": {"enum": ["inactive", "activation_unknown", "missing", "refused", "unactivated"]}, "code": {"$ref": "#/$defs/text"}, "dimension": {"type": ["string", "null"], "maxLength": 1048576}}},
+    "progress": {"type": "object", "additionalProperties": false, "required": ["reference", "watermark"], "properties": {"reference": {"$ref": "#/$defs/evidence"}, "watermark": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807}}},
+    "closure": {"type": "object", "additionalProperties": false, "required": ["reference", "state"], "properties": {"reference": {"$ref": "#/$defs/evidence"}, "state": {"enum": ["open", "closed"]}}},
+    "axes": {"type": "object", "additionalProperties": false, "required": ["decision_progress", "decision_closure", "surrounding_progress", "surrounding_closure"], "properties": {"decision_progress": {"$ref": "#/$defs/progress"}, "decision_closure": {"$ref": "#/$defs/closure"}, "surrounding_progress": {"$ref": "#/$defs/progress"}, "surrounding_closure": {"$ref": "#/$defs/closure"}}},
+    "completeness": {"type": "object", "additionalProperties": false, "required": ["reference", "state", "facts"], "properties": {"reference": {"$ref": "#/$defs/evidence"}, "state": {"enum": ["complete", "incomplete"]}, "facts": {"type": "array", "maxItems": 1000000, "items": {"$ref": "#/$defs/evidence"}}}},
+    "limits": {"type": "object", "additionalProperties": false, "required": ["input_bytes", "output_bytes", "json_depth", "string_bytes", "formula_nodes", "formula_depth", "positions", "valuations", "captures", "support", "history_span", "evaluation_steps", "lineage", "visited"], "properties": {
+      "input_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "output_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "json_depth": {"type": "integer", "minimum": 0, "maximum": 64}, "string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576}, "formula_nodes": {"type": "integer", "minimum": 0, "maximum": 100000}, "formula_depth": {"type": "integer", "minimum": 0, "maximum": 64}, "positions": {"type": "integer", "minimum": 0, "maximum": 1000000}, "valuations": {"type": "integer", "minimum": 0, "maximum": 1000000}, "captures": {"type": "integer", "minimum": 0, "maximum": 100000}, "support": {"type": "integer", "minimum": 0, "maximum": 1000000}, "history_span": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}, "evaluation_steps": {"type": "integer", "minimum": 0, "maximum": 1000000}, "lineage": {"type": "integer", "minimum": 0, "maximum": 1024}, "visited": {"type": "integer", "minimum": 0, "maximum": 2000000}
+    }}
+  }
+}
