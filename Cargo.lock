@@ -931,6 +931,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-contract-model"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=53cc03c639e2e26528132d34d96dc56449df78e8#53cc03c639e2e26528132d34d96dc56449df78e8"
+dependencies = [
+ "jsonschema 0.17.1",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "sha2",
+ "stacker",
+]
+
+[[package]]
 name = "quire-rs"
 version = "0.46.0"
 source = "git+https://github.com/agent-ix/quire-rs?rev=8b8020e665c61a11bc74f3f23b84617c80c0c442#8b8020e665c61a11bc74f3f23b84617c80c0c442"
@@ -961,6 +974,7 @@ dependencies = [
  "logos",
  "quire-contract-codegen",
  "quire-contract-ir",
+ "quire-contract-model",
  "quire-rs",
  "serde",
  "serde_json",

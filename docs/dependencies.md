@@ -1,5 +1,14 @@
 # Dependency and generated-artifact inventory
 
+FR-051 changes the production dependency key `quire-contract-ir` to select the
+cycle-free `quire-contract-model` package at
+`53cc03c639e2e26528132d34d96dc56449df78e8`, retaining its declared
+`MIT OR Apache-2.0` grant. The compatibility `quire-contract-ir` package at
+`04eb6f849c03be23177d373549c6c272551f957d` is now explicitly named
+`quire-contract-ir-historical` and is development-only for the already retained
+code-generation fixtures. No source is copied, and the production graph does
+not contain that compatibility package.
+
 LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
 and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
 The latter has a dev-only alias for the existing consumer's exact wire reader;
@@ -170,7 +179,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | proc-macro2 | 1.0.107 | `MIT OR Apache-2.0` |
 | psm | 0.1.32 | `MIT OR Apache-2.0` |
 | quire-contract-codegen | 0.1.0 | `MIT OR Apache-2.0` |
-| quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
+| quire-contract-model | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-rs | 0.46.0 | `AGPL-3.0-or-later` |
 | quire-spec-language | 0.2.0 | `AGPL-3.0-only` |

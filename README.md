@@ -54,6 +54,18 @@ General dynamic choice/progress proofs, first-class relationship exports,
 runtime recovery and B's public consumer acceptance remain open; the supported
 boundary is stated in the wire contract.
 
+`protocol_artifact::checked_predicate` and
+`protocol_artifact::temporal_subject` publish the FR-051 native-owner handoffs.
+Each module embeds immutable schema bytes and their SHA-256 digest, derives one
+canonical static document from a strict `compiled-protocol/2` admission, and
+reads it only by independently re-deriving the same package-bound document.
+The readers are bounded and fail closed on changed, reordered, duplicated,
+unknown, or trailing data. Their constructor-private views expose source,
+clause, expression, binding, Boolean-type, profile, activation, clock, history,
+and reachable-leaf authority; they expose no truth, observation, result, parser,
+evaluator, callback, trust flag, or Boolean coercion. See the
+[checked native handoff contract](docs/checked-native-handoffs.md).
+
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
 The library links exact imports and scoped names against supplied Contract IR

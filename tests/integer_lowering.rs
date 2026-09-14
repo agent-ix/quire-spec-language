@@ -8,6 +8,7 @@ mod setup;
 
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
+use quire_contract_ir_historical as backend_ir;
 use quire_spec_language::{
     lowering::{lower, lower_for, LoweringCode, LoweringLimits, ProjectionTarget},
     native_model::NativeModel,
@@ -406,7 +407,7 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
     );
     let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
     assert_eq!(output.stdout, projection.bytes());
-    let consumer = ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
+    let consumer = backend_ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
     let generated = quire_contract_codegen::generate_bound_oracles(
         &consumer,
         quire_contract_codegen::AttestationContext {
@@ -517,20 +518,20 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
     syn::parse_file(&strategy.rust.contents).expect("generated integer strategy is Rust");
     assert!(strategy.rust.contents.contains("run_census"));
 
-    let true_expression = ir::Expression::new(
-        ir::ExpressionKind::BooleanLiteral { value: true },
+    let true_expression = backend_ir::Expression::new(
+        backend_ir::ExpressionKind::BooleanLiteral { value: true },
         bound_clause.source().clone(),
     );
     let precondition = bound_clause
         .environment()
         .check_expression(
             &true_expression,
-            &ir::ValueType::Boolean,
+            &backend_ir::ValueType::Boolean,
             bound_clause.anchor(),
             true,
         )
         .unwrap();
-    let precondition_clause = ir::ClauseId::new("amount_absent_precondition").unwrap();
+    let precondition_clause = backend_ir::ClauseId::new("amount_absent_precondition").unwrap();
     let kani = quire_contract_codegen::generate_kani_bundle(&quire_contract_codegen::KaniRequest {
         requirement: bound_clause.identity().requirement(),
         precondition_clause: &precondition_clause,
