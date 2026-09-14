@@ -18,8 +18,13 @@ use quire_spec_language::linking::composed::binding_work::{
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::producer::ProducerModelRefusal;
 use quire_spec_language::protocol_artifact::{
-    self as artifact, native, v2, wire as w, Dimension as WorkDimension, Error, Invalid, Limits,
-    NumberComponent, NumberError, NumberWire, Unsupported,
+    self as artifact,
+    handoff::{
+        MUTATION_MANIFEST_FORMAT, PUBLISHED_CHECKSUMS_FILE, PUBLISHED_HANDOFF,
+        PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
+    },
+    native, v2, wire as w, Dimension as WorkDimension, Error, Invalid, Limits, NumberComponent,
+    NumberError, NumberWire, Unsupported,
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
@@ -46,7 +51,7 @@ fn handoff_files(root: &Path, directory: &Path, files: &mut BTreeSet<PathBuf>) {
                 .strip_prefix(root)
                 .expect("handoff entry remains below its root")
                 .to_owned();
-            if relative != Path::new("SHA256SUMS") {
+            if relative != Path::new(PUBLISHED_CHECKSUMS_FILE) {
                 assert!(files.insert(relative), "duplicate handoff file");
             }
         }
@@ -56,8 +61,9 @@ fn handoff_files(root: &Path, directory: &Path, files: &mut BTreeSet<PathBuf>) {
 #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
 #[test]
 fn committed_handoff_checksums_and_interchange_records_are_complete() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts/compiled-protocol-v2");
-    let sums = fs::read_to_string(root.join("SHA256SUMS")).expect("committed SHA256SUMS");
+    let root = Path::new(PUBLISHED_HANDOFF);
+    let sums =
+        fs::read_to_string(root.join(PUBLISHED_CHECKSUMS_FILE)).expect("committed SHA256SUMS");
     let mut listed = BTreeSet::new();
 
     for (line_index, line) in sums.lines().enumerate() {
@@ -87,11 +93,11 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
     }
 
     let mut actual = BTreeSet::new();
-    handoff_files(&root, &root, &mut actual);
+    handoff_files(root, root, &mut actual);
     assert_eq!(listed, actual, "SHA256SUMS must cover every handoff file");
 
     let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
-        &fs::read(root.join("expected-v2.json")).expect("committed reader selection"),
+        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("committed reader selection"),
     )
     .expect("decode expected-v2.json with the published type");
     assert_eq!(selection.temporal.len(), DECLARATIONS.len());
@@ -103,10 +109,11 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
     );
 
     let manifest: artifact::handoff::MutationManifest = serde_json::from_slice(
-        &fs::read(root.join("mutations/manifest.json")).expect("committed mutation manifest"),
+        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE))
+            .expect("committed mutation manifest"),
     )
     .expect("decode mutations/manifest.json with the published type");
-    assert_eq!(manifest.format, "quire.protocol.v2-mutations/1");
+    assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
     assert_eq!(manifest.cases.len(), 28);
     let manifest_bytes =
         serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
