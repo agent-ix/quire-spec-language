@@ -598,6 +598,119 @@ fn temporal_handoff_exports_only_reachable_checked_holds_leaves() {
     });
 }
 
+#[trace("TC-139", "FR-051-AC-1", "FR-051-AC-2", "FR-051-AC-6")]
+#[test]
+fn temporal_activation_guard_is_a_distinct_checked_predicate_selection() {
+    let inputs = inputs_with_event_body(
+        "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on each (started: M::Node) when (started.n >= 0) { holds(view.ready) }",
+    );
+    with_v2_inputs(inputs, |inputs, proofs, _, temporal, emitted| {
+        let admitted = inputs
+            .read_v2(proofs, emitted, &temporal.expected)
+            .into_result()
+            .expect("strict guarded temporal package");
+        let declaration =
+            u32::try_from(declaration(&admitted, "ByEvent")).expect("temporal declaration index");
+        let w::Body::Temporal {
+            activation:
+                w::Activation::Each {
+                    trigger,
+                    guard: w::Nullable(Some(guard)),
+                    anchor,
+                },
+            ..
+        } = &admitted.inherited().declarations
+            [usize::try_from(declaration).expect("host declaration index")]
+        .body
+        else {
+            panic!("authored guarded activation")
+        };
+
+        let temporal = artifact::temporal_subject::derive(
+            &admitted,
+            artifact::temporal_subject::DeclarationSelection::new(declaration),
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("derive guarded temporal subject");
+        let temporal = artifact::temporal_subject::read(
+            temporal.bytes(),
+            &admitted,
+            artifact::temporal_subject::DeclarationSelection::new(declaration),
+            artifact::temporal_subject::Limits::default(),
+        )
+        .into_result()
+        .expect("read guarded temporal subject");
+        let [formula_leaf] = temporal
+            .predicate_leaves()
+            .expect("temporal formula leaves")
+        else {
+            panic!("one reachable holds leaf")
+        };
+        assert_ne!(
+            guard, formula_leaf,
+            "activation guard is not a formula leaf"
+        );
+
+        let guard_selection =
+            artifact::checked_predicate::ClauseSelection::new(declaration, guard.clone());
+        let guard_document = artifact::checked_predicate::derive(
+            &admitted,
+            guard_selection.clone(),
+            artifact::checked_predicate::Limits::default(),
+        )
+        .into_result()
+        .expect("derive checked activation guard");
+        let predicate = artifact::checked_predicate::read(
+            guard_document.bytes(),
+            &admitted,
+            guard_selection.clone(),
+            artifact::checked_predicate::Limits::default(),
+        )
+        .into_result()
+        .expect("read checked activation guard");
+        assert_eq!(predicate.parent_kind(), Some("temporal"));
+        assert_eq!(predicate.leaf(), guard);
+
+        let formula_selection =
+            artifact::checked_predicate::ClauseSelection::new(declaration, formula_leaf.clone());
+        let formula_document = artifact::checked_predicate::derive(
+            &admitted,
+            formula_selection.clone(),
+            artifact::checked_predicate::Limits::default(),
+        )
+        .into_result()
+        .expect("derive checked formula leaf");
+        for (bytes, selection) in [
+            (guard_document.bytes(), formula_selection),
+            (formula_document.bytes(), guard_selection),
+        ] {
+            let report = artifact::checked_predicate::read(
+                bytes,
+                &admitted,
+                selection,
+                artifact::checked_predicate::Limits::default(),
+            );
+            assert_handoff_error(
+                &report,
+                artifact::checked_predicate::ErrorCode::NonCanonical,
+            );
+        }
+
+        for invalid in [trigger, anchor] {
+            let report = artifact::checked_predicate::derive(
+                &admitted,
+                artifact::checked_predicate::ClauseSelection::new(declaration, invalid.clone()),
+                artifact::checked_predicate::Limits::default(),
+            );
+            assert_handoff_error(
+                &report,
+                artifact::checked_predicate::ErrorCode::InvalidSelection,
+            );
+        }
+    });
+}
+
 fn assert_handoff_error<T>(
     report: &artifact::checked_predicate::Report<T>,
     code: artifact::checked_predicate::ErrorCode,
