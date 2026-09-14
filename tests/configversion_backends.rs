@@ -10,6 +10,7 @@ use std::{cell::Cell, env, fmt::Write as _, fs, path::Path, path::PathBuf, proce
 use ix_trace_rs::trace;
 use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
+use quire_contract_ir_historical as backend_ir;
 use quire_spec_language::{
     checking::{check, CheckBindings, CheckLimits, ClauseBinding},
     formal_source::FormalSource,
@@ -376,8 +377,8 @@ impl OracleExecutable {
 }
 
 fn generated_oracle(
-    bound: &ir::BoundPackage,
-) -> (&ir::BoundClause, codegen::GeneratedBoundOracles) {
+    bound: &backend_ir::BoundPackage,
+) -> (&backend_ir::BoundClause, codegen::GeneratedBoundOracles) {
     let generated = codegen::generate_bound_oracles(bound, attestation()).unwrap();
     let codegen::BoundOracleGeneration::Generated(generated) = generated else {
         panic!("ConfigVersion has one executable state comparison")
@@ -539,7 +540,9 @@ fn compiled_state_oracle_and_native_execute_agree_on_complete_corpus() {
     .unwrap();
     let strict = ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
     assert_eq!(&strict, projection.bound());
-    let (bound_clause, generated) = generated_oracle(&strict);
+    let consumer = backend_ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
+    assert_eq!(consumer.digest().to_string(), strict.digest().to_string());
+    let (bound_clause, generated) = generated_oracle(&consumer);
     let generated_clause = generated
         .clauses()
         .iter()
@@ -591,7 +594,7 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
         LoweringLimits::default(),
     )
     .unwrap();
-    let bound = ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
+    let bound = backend_ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
     let clause = bound
         .clauses()
         .iter()
@@ -766,17 +769,23 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
     );
 }
 
-fn config_kani_bundle(clause: &ir::BoundClause) -> codegen::KaniArtifactBundle {
-    let true_source = ir::Expression::new(
-        ir::ExpressionKind::BooleanLiteral { value: true },
+fn config_kani_bundle(clause: &backend_ir::BoundClause) -> codegen::KaniArtifactBundle {
+    let true_source = backend_ir::Expression::new(
+        backend_ir::ExpressionKind::BooleanLiteral { value: true },
         clause.source().clone(),
     );
     let precondition = clause
         .environment()
-        .check_expression(&true_source, &ir::ValueType::Boolean, clause.anchor(), true)
+        .check_expression(
+            &true_source,
+            &backend_ir::ValueType::Boolean,
+            clause.anchor(),
+            true,
+        )
         .expect("canonical absent precondition is a zero-dependency Boolean true");
     assert!(precondition.dependencies().is_empty());
-    let precondition_clause = ir::ClauseId::new("version_unchanged_absent_precondition").unwrap();
+    let precondition_clause =
+        backend_ir::ClauseId::new("version_unchanged_absent_precondition").unwrap();
     codegen::generate_kani_bundle(&codegen::KaniRequest {
         requirement: clause.identity().requirement(),
         precondition_clause: &precondition_clause,
@@ -859,7 +868,7 @@ fn pinned_kani_proves_identity_and_counterexample_replays_natively() {
         LoweringLimits::default(),
     )
     .unwrap();
-    let bound = ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
+    let bound = backend_ir::BoundPackage::from_json_bytes(projection.bytes()).unwrap();
     let clause = bound
         .clauses()
         .iter()

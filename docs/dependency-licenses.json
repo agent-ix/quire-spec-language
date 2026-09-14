@@ -576,16 +576,16 @@
     "source": "git+https://github.com/agent-ix/quire-contract-codegen?rev=240fad84a9565ab723ba9844e18faea4e5d96f66#240fad84a9565ab723ba9844e18faea4e5d96f66"
   },
   {
-    "name": "quire-contract-ir",
+    "name": "quire-contract-model",
     "version": "0.1.0",
     "license": "MIT OR Apache-2.0",
-    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f849c03be23177d373549c6c272551f957d#04eb6f849c03be23177d373549c6c272551f957d"
+    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=942950a6619e24a51f4ea68abd8b77b8335ed4a2#942950a6619e24a51f4ea68abd8b77b8335ed4a2"
   },
   {
     "name": "quire-contract-ir",
     "version": "0.1.0",
     "license": "MIT OR Apache-2.0",
-    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=690bde7f2dc58662cf9ff0595c2c0e3b17107c6f#690bde7f2dc58662cf9ff0595c2c0e3b17107c6f"
+    "source": "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f849c03be23177d373549c6c272551f957d#04eb6f849c03be23177d373549c6c272551f957d"
   },
   {
     "name": "quire-rs",

@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:checked-temporal-subject:1",
+  "title": "Checked native temporal subject handoff version 1",
+  "description": "FR-051 immutable owner-derived checked temporal subject handoff. Schema validity alone grants no admission; consumers must use the public strict Rust reader with the exact admitted package and selection.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "package", "subject", "source", "clause", "expression", "bindings", "type", "profiles", "limits"],
+  "properties": {
+    "contract": {"const": "quire.checked-temporal-subject/v1"},
+    "identity": {"$ref": "#/$defs/digest"},
+    "package": {"$ref": "#/$defs/package"},
+    "subject": {"$ref": "#/$defs/temporal_subject"},
+    "source": {"$ref": "#/$defs/source"},
+    "clause": {"$ref": "#/$defs/clause"},
+    "expression": {"$ref": "#/$defs/expression"},
+    "bindings": {"$ref": "#/$defs/bindings"},
+    "type": {"$ref": "#/$defs/boolean_type"},
+    "profiles": {"$ref": "#/$defs/profiles"},
+    "limits": {"$ref": "#/$defs/limits"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "handle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declaration", "index"],
+      "properties": {"declaration": {"$ref": "#/$defs/u32"}, "index": {"$ref": "#/$defs/u32"}}
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "digest", "native_identity", "native_revision", "package_definition"],
+      "properties": {
+        "artifact": {"type": "object"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "native_identity": {"type": "string", "minLength": 1},
+        "native_revision": {"type": "string", "minLength": 1},
+        "package_definition": {"type": "string", "minLength": 1}
+      }
+    },
+    "temporal_subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "parent_kind", "declaration", "activation", "clock", "clock_configuration", "captures", "root", "history_boundary", "operators", "required_history", "predicate_leaves"],
+      "properties": {
+        "kind": {"const": "temporal_subject"},
+        "parent_kind": {"const": "temporal"},
+        "declaration": {"$ref": "#/$defs/u32"},
+        "activation": {"type": "object"},
+        "clock": {"$ref": "#/$defs/u32"},
+        "clock_configuration": {"type": "object"},
+        "captures": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/handle"}},
+        "root": {"$ref": "#/$defs/handle"},
+        "history_boundary": {"enum": ["execution-origin", "history-cutoff"]},
+        "operators": {"type": "array", "maxItems": 10000, "items": {"type": "string", "minLength": 1}},
+        "required_history": {"type": "array", "maxItems": 10000, "items": {"type": "object"}},
+        "predicate_leaves": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/handle"}}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "span"],
+      "properties": {"source": {"type": "object"}, "span": {"type": "object"}}
+    },
+    "clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "clause", "execution"],
+      "properties": {
+        "requirement": {"type": "object"},
+        "clause": {"type": "string", "minLength": 1},
+        "execution": {"type": "object"}
+      }
+    },
+    "expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "values", "temporal"],
+      "properties": {
+        "root": {"$ref": "#/$defs/handle"},
+        "values": {"type": "array", "maxItems": 10000, "items": {"type": "object"}},
+        "temporal": {"type": "array", "maxItems": 10000, "items": {"type": "object"}}
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "identity"],
+        "properties": {
+          "kind": {"enum": ["binder", "capture", "declaration", "expression", "model", "runtime_requirement"]},
+          "identity": {"type": "string", "minLength": 1, "maxLength": 1048576}
+        }
+      }
+    },
+    "boolean_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "indices"],
+      "properties": {
+        "kind": {"const": "boolean"},
+        "indices": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/$defs/u32"}}
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation", "definedness"],
+      "properties": {
+        "evaluation": {"type": "object"},
+        "definedness": {"type": "array", "maxItems": 10000, "items": {"type": "object"}}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ceilings", "measured"],
+      "properties": {
+        "ceilings": {"$ref": "#/$defs/limit_values"},
+        "measured": {"$ref": "#/$defs/measure_values"}
+      }
+    },
+    "limit_values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_bytes", "output_bytes", "json_depth", "string_bytes", "population", "expression_depth", "visited_fields"],
+      "properties": {
+        "input_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608},
+        "output_bytes": {"type": "integer", "minimum": 0, "maximum": 8388608},
+        "json_depth": {"type": "integer", "minimum": 0, "maximum": 64},
+        "string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+        "population": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "expression_depth": {"type": "integer", "minimum": 0, "maximum": 256},
+        "visited_fields": {"type": "integer", "minimum": 0, "maximum": 1000000}
+      }
+    },
+    "measure_values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output_bytes", "json_depth", "string_bytes", "population", "expression_depth", "visited_fields"],
+      "properties": {
+        "output_bytes": {"type": "integer", "minimum": 1, "maximum": 8388608},
+        "json_depth": {"type": "integer", "minimum": 0, "maximum": 64},
+        "string_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+        "population": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "expression_depth": {"type": "integer", "minimum": 0, "maximum": 256},
+        "visited_fields": {"type": "integer", "minimum": 0, "maximum": 1000000}
+      }
+    }
+  }
+}
