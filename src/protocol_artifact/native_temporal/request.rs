@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Canonical `quire.native-temporal-request/v1` production and strict reading.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -94,20 +97,20 @@ impl Document {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 /// Constructor-private request admitted by production or strict reading.
 ///
 /// ```compile_fail
 /// use quire_spec_language::protocol_artifact::native_temporal::request::ValidatedRequest;
 /// let _ = ValidatedRequest;
 /// ```
-pub struct ValidatedRequest<'a> {
+pub struct ValidatedRequest {
     document: Document,
-    package: &'a v2::AdmittedPackage,
+    package: Arc<v2::AdmittedPackage>,
     declaration: u32,
 }
 
-impl<'a> ValidatedRequest<'a> {
+impl ValidatedRequest {
     pub fn document(&self) -> &Document {
         &self.document
     }
@@ -187,8 +190,8 @@ impl<'a> ValidatedRequest<'a> {
     pub(crate) fn trace(&self) -> &temporal::Trace {
         &self.document.trace
     }
-    pub(crate) const fn subject_package(&self) -> &'a v2::AdmittedPackage {
-        self.package
+    pub(crate) fn subject_package(&self) -> &v2::AdmittedPackage {
+        &self.package
     }
     pub(crate) const fn subject_declaration(&self) -> u32 {
         self.declaration
@@ -633,7 +636,7 @@ fn preimage(wire: &Wire, limits: Limits) -> Result<Vec<u8>, Error> {
     )
 }
 
-fn required_leaves(subject: &ValidatedTemporalSubject<'_>) -> BTreeMap<u32, w::Handle> {
+fn required_leaves(subject: &ValidatedTemporalSubject) -> BTreeMap<u32, w::Handle> {
     subject
         .temporal_nodes()
         .filter_map(|(node, value)| match &value.operation {
@@ -643,7 +646,7 @@ fn required_leaves(subject: &ValidatedTemporalSubject<'_>) -> BTreeMap<u32, w::H
         .collect()
 }
 
-fn formula_metrics(subject: &ValidatedTemporalSubject<'_>) -> Result<(usize, usize, usize), Error> {
+fn formula_metrics(subject: &ValidatedTemporalSubject) -> Result<(usize, usize, usize), Error> {
     let nodes: BTreeMap<_, _> = subject.temporal_nodes().collect();
     let mut stack = vec![(subject.root().index, 1usize)];
     let mut depths = BTreeMap::<u32, usize>::new();
@@ -720,7 +723,7 @@ fn validate_limits(document: Limits, reader: Limits) -> Result<(), Error> {
     Ok(())
 }
 
-fn subject_wire(subject: &ValidatedTemporalSubject<'_>) -> SubjectWire {
+fn subject_wire(subject: &ValidatedTemporalSubject) -> SubjectWire {
     SubjectWire {
         contract: "quire.checked-temporal-subject/v1".into(),
         identity: subject.document().identity().into(),
@@ -732,7 +735,7 @@ fn subject_wire(subject: &ValidatedTemporalSubject<'_>) -> SubjectWire {
 }
 
 fn expected_definition(
-    subject: &ValidatedTemporalSubject<'_>,
+    subject: &ValidatedTemporalSubject,
 ) -> Result<(String, String, String, v2::wire::ClockConfiguration), Error> {
     let package = &subject.package().package().inherited;
     let declaration = package
@@ -760,7 +763,7 @@ fn expected_definition(
 
 fn validate_wire(
     wire: &Wire,
-    subject: &ValidatedTemporalSubject<'_>,
+    subject: &ValidatedTemporalSubject,
     reader_limits: Limits,
     usage: &mut Usage,
 ) -> Result<temporal::Trace, Error> {
@@ -1117,7 +1120,7 @@ fn clock_parameters(
 }
 
 fn build_wire(
-    subject: &ValidatedTemporalSubject<'_>,
+    subject: &ValidatedTemporalSubject,
     input: Input,
     limits: Limits,
 ) -> Result<Wire, Error> {
@@ -1312,7 +1315,7 @@ fn finish(
 
 /// Produces one canonical request from a strict FR-051 subject and complete input.
 pub fn produce(
-    subject: &ValidatedTemporalSubject<'_>,
+    subject: &ValidatedTemporalSubject,
     input: Input,
     limits: Limits,
 ) -> Report<Document> {
@@ -1327,11 +1330,11 @@ pub fn produce(
 }
 
 /// Strictly reads canonical request bytes against the exact checked subject.
-pub fn read<'a>(
+pub fn read(
     bytes: &[u8],
-    subject: &ValidatedTemporalSubject<'a>,
+    subject: &ValidatedTemporalSubject,
     limits: Limits,
-) -> Report<ValidatedRequest<'a>> {
+) -> Report<ValidatedRequest> {
     let limits = limits.bounded();
     let mut usage = Usage::default();
     let result = (|| {
@@ -1357,7 +1360,7 @@ pub fn read<'a>(
                 trace,
                 limits: document_limits,
             },
-            package: subject.package(),
+            package: subject.package_arc(),
             declaration: subject.declaration(),
         })
     })();

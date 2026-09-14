@@ -17,7 +17,7 @@ relationships:
 The combined Golden Path code review and idiomatic Rust review covers the full
 FR-052 implementation. QSL publishes immutable request and result schemas,
 canonical domain-separated documents, bounded strict readers, a
-constructor-private request authority borrowing the exact FR-051 admitted
+constructor-private request authority sharing the exact FR-051 admitted
 package, formula-wide evaluation through the existing native evaluator, typed
 non-values and direct immutable correction lineage.
 
@@ -35,10 +35,11 @@ the complete repository gate passes, and no actionable scoped finding remains.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Resolved: strict request admission retained a fallible clone of the entire admitted package. `ValidatedTemporalSubject` and `ValidatedRequest` now borrow the exact admitted package with constructor-private lifetimes, eliminating the duplicate authority and allocation. | `temporal_subject.rs`; `native_temporal/request.rs` |
+| FND-001 | medium | Resolved: strict request admission initially cloned the entire admitted package again. The final representation performs one bounded clone when the FR-051 subject is admitted, retains it behind `Arc`, and lets each `ValidatedRequest` share that exact authority with an infallible `Arc` clone. | `temporal_subject.rs`; `native_temporal/request.rs` |
 | FND-002 | medium | Resolved: producer conversion allocated trigger, capture, valuation and eviction collections before proving all coupled limits. Counts now use checked arithmetic before allocation, owned inputs move into wire values, and each retained vector uses fallible reservation. | `native_temporal/request.rs`; FR-052-AC-7 |
 | FND-003 | low | Resolved: correction relation selection contained a logically unreachable production panic and test fixtures used unchecked numeric casts. Correction kinds now use an explicit helper and all boundary conversions are checked. | `native_temporal/result.rs`; `native_temporal_owner.rs` |
 | FND-004 | medium | Resolved: FR-052-AC-8 was exercised but stranded as the sixth tag on one test symbol. A dedicated closed-public-surface control now checks forbidden seams and every downstream structural accessor; Quire reports all eight criteria backed. | FR-052-AC-8; TC-140 |
+| FND-005 | high | Resolved after downstream replay: the first package-sharing remediation added a lifetime parameter to the public FR-051 subject type and broke the merged QProtocol owner API. The final `Arc` representation restores the non-generic public type, preserves constructor privacy, and compiles through the QProtocol/QCI dependency chain. | `temporal_subject.rs`; `quire-protocol::result::Input`; #95 |
 
 ## Rust review
 
@@ -66,7 +67,8 @@ the complete repository gate passes, and no actionable scoped finding remains.
 | Full no-default-feature unit/integration/doc suite, one job and serial tests | pass; 3 inherited private-packet tests ignored |
 | Independent clean no-default-feature build | pass |
 | TC-140 owner, semantics, mutation, correction, resource, schema and public-surface controls | pass; 11/11 |
-| `quire validate --strict` | pass; 513/513 grammar-clean |
+| `quire validate --scope . 'spec/**/*.md' 'plan/**/*.md' 'reviews/**/*.md' --summary` | pass; 714/714 documents grammar-clean |
 | Immutable schema digest verification | pass |
+| Downstream QProtocol exact locked gate against corrected QSL revision | pass; fmt, all-target clippy, unit/integration/doc tests |
 
 Hosted CI was not dispatched.

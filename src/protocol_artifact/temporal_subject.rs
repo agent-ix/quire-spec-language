@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! FR-051 checked native temporal-subject handoff.
 
+use std::sync::Arc;
+
 use super::{checked_handoff as handoff, v2, wire as w};
 use crate::ByteDigest;
 
@@ -58,12 +60,12 @@ impl Document {
 /// use quire_spec_language::protocol_artifact::temporal_subject::ValidatedTemporalSubject;
 /// let _ = ValidatedTemporalSubject;
 /// ```
-pub struct ValidatedTemporalSubject<'a> {
+pub struct ValidatedTemporalSubject {
     document: Document,
-    package: &'a v2::AdmittedPackage,
+    package: Arc<v2::AdmittedPackage>,
 }
 
-impl<'a> ValidatedTemporalSubject<'a> {
+impl ValidatedTemporalSubject {
     /// Returns the exact canonical document that was admitted.
     pub fn document(&self) -> &Document {
         &self.document
@@ -162,8 +164,12 @@ impl<'a> ValidatedTemporalSubject<'a> {
         self.document.0.temporal_subject().map(|subject| subject.7)
     }
 
-    pub(crate) fn package(&self) -> &'a v2::AdmittedPackage {
-        self.package
+    pub(crate) fn package(&self) -> &v2::AdmittedPackage {
+        &self.package
+    }
+
+    pub(crate) fn package_arc(&self) -> Arc<v2::AdmittedPackage> {
+        Arc::clone(&self.package)
     }
 }
 
@@ -184,12 +190,12 @@ pub fn derive(
 }
 
 /// Strictly admits `bytes` by independently deriving and comparing the canonical document.
-pub fn read<'a>(
+pub fn read(
     bytes: &[u8],
-    package: &'a v2::AdmittedPackage,
+    package: &v2::AdmittedPackage,
     selection: DeclarationSelection,
     limits: Limits,
-) -> Report<ValidatedTemporalSubject<'a>> {
+) -> Report<ValidatedTemporalSubject> {
     handoff::read(
         bytes,
         package,
@@ -200,6 +206,6 @@ pub fn read<'a>(
     )
     .map(|document| ValidatedTemporalSubject {
         document: Document(document),
-        package,
+        package: Arc::new(package.clone()),
     })
 }
