@@ -24,7 +24,7 @@ sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
-agent-ix-baseline-producer = { git = "https://github.com/agent-ix/filament-core-data", rev = "f79e5a641b3eac702642282ad6cc84dd48d280dc" }
+agent-ix-baseline-producer = { git = "https://github.com/agent-ix/filament-core-data", rev = "404288282402d60de007295ccbafa960532b955e" }
 
 [dev-dependencies]
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
