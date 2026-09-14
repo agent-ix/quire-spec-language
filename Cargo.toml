@@ -23,7 +23,7 @@ serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"]
 sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
-quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "942950a6619e24a51f4ea68abd8b77b8335ed4a2" }
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
 agent-ix-baseline-producer = { git = "https://github.com/agent-ix/filament-core-data", rev = "f79e5a641b3eac702642282ad6cc84dd48d280dc" }
 
 [dev-dependencies]

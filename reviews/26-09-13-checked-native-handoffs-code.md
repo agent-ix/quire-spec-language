@@ -20,6 +20,12 @@ inputs, closed serialized records, independently derived canonical bytes,
 constructor-private validated views, explicit static-only vocabulary, bounded
 iterative graph walks, and a non-retaining strict-reader census.
 
+The promotion rereview merged QSL `main` at `93c411b`, replaced the provisional
+Contract Model candidate with the promoted merge revision
+`53cc03c639e2e26528132d34d96dc56449df78e8`, and replayed the complete gate on
+that exact dependency graph. The merge introduced no conflict or behavioral
+delta in the reviewed owner modules.
+
 ## Verdict
 
 **PASS** — the allocation accounting, reachability, convergence, and API
@@ -61,7 +67,7 @@ Rust, code/test-alignment, integrity, or spec-faithfulness finding remains.
 | `cargo fmt --all -- --check` | pass |
 | Clippy, all targets, no default features, `-D warnings` | pass |
 | Full no-default-feature unit/integration/doc suite | pass; 3 named inherited private-packet tests ignored |
-| Clean no-default-feature build | pass |
+| Clean no-default-feature build against Contract Model `53cc03c` | pass |
 | `fixture-audit self-test` | pass; 6 negative controls |
 | `fixture-audit model-bytes tests/fixtures` | pass; 5 exact producer checkpoints |
 | TC-139 owner, adverse, reachability, resource, schema and architecture tests | pass |

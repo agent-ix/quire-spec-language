@@ -21,6 +21,13 @@ tests, documentation, and a cycle-free production dependency. QSL's allocations
 within the umbrella owner-contract and cycle-break tasks have no remaining gap;
 the other repositories remain tracked by their own Plan-010 tasks.
 
+Promotion reconciliation merged QSL `main` at `93c411b` and retargeted the
+production dependency, lockfile, license inventory, documentation, and
+architecture test from the provisional Contract Model candidate to promoted
+merge `53cc03c639e2e26528132d34d96dc56449df78e8`. The full repository gate then
+passed on that exact graph, so the cycle-free dependency evidence is final
+rather than branch-relative.
+
 ## Verdict
 
 **PASS** — every FR-051 criterion and TC-139 is backed by executing Rust, and no
