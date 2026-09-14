@@ -66,6 +66,15 @@ and reachable-leaf authority; they expose no truth, observation, result, parser,
 evaluator, callback, trust flag, or Boolean coercion. See the
 [checked native handoff contract](docs/checked-native-handoffs.md).
 
+`protocol_artifact::native_temporal::{request,result}` publishes the FR-052
+formula-wide owner boundary over a strict FR-051 temporal subject. Canonical
+requests bind complete explicit leaf valuations and independent progress,
+closure and completeness evidence; canonical results obtain truth, settlement
+and support only from the existing native evaluator. Strict result reading
+re-evaluates the exact request and direct correction relation before admitting
+bytes. This surface neither consumes nor emits a checked-leaf Protocol result.
+See the [native temporal owner contract](docs/native-temporal-owner.md).
+
 Private native compiler for `ix:native`, edition `0-draft`, profile
 `state-finite/0-draft`. It parses and formats source with located diagnostics.
 The library links exact imports and scoped names against supplied Contract IR
