@@ -56,7 +56,7 @@ pub struct Expected<'a> {
 }
 
 /// A version-2 package admitted against independent selections.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AdmittedPackage {
     pub(super) package: wire::Package,
     pub(super) digest: ByteDigest,
