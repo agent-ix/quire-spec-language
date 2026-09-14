@@ -1430,23 +1430,44 @@ fn build(
             if expression.declaration != declaration_index {
                 return Err(invalid_selection("expression.declaration"));
             }
-            let (parent_kind, parameters, leaves) = match &declaration.body {
+            let (parent_kind, parameters, selected) = match &declaration.body {
                 w::Body::Predicate {
                     parameters, root, ..
-                } => ("predicate", parameters.clone(), vec![root.clone()]),
-                w::Body::State { root, .. } => ("state", Vec::new(), vec![root.clone()]),
-                w::Body::Temporal { root, .. } => {
+                } => ("predicate", parameters.clone(), root == expression),
+                w::Body::State { root, .. } => ("state", Vec::new(), root == expression),
+                w::Body::Temporal {
+                    activation, root, ..
+                } => {
                     let (_, leaves, _, _) =
                         collect_temporal(declaration_index, declaration, root, limits, usage)?;
-                    ("temporal", Vec::new(), leaves)
+                    let activation_guard = matches!(
+                        activation,
+                        w::Activation::Each {
+                            guard: w::Nullable(Some(guard)),
+                            ..
+                        } if guard == expression
+                    );
+                    (
+                        "temporal",
+                        Vec::new(),
+                        activation_guard || leaves.iter().any(|leaf| leaf == expression),
+                    )
                 }
-                w::Body::Protocol { .. } => (
-                    "protocol",
-                    Vec::new(),
-                    protocol_predicate_roots(declaration_index, &declaration.body, limits, usage)?,
-                ),
+                w::Body::Protocol { .. } => {
+                    let leaves = protocol_predicate_roots(
+                        declaration_index,
+                        &declaration.body,
+                        limits,
+                        usage,
+                    )?;
+                    (
+                        "protocol",
+                        Vec::new(),
+                        leaves.iter().any(|leaf| leaf == expression),
+                    )
+                }
             };
-            if !leaves.iter().any(|leaf| leaf == expression) {
+            if !selected {
                 return Err(invalid_selection("subject.leaf"));
             };
             (

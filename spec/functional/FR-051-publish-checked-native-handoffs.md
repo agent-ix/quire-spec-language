@@ -63,7 +63,9 @@ and no insignificant alternative encoding is accepted by `read`.
 ## Predicate document
 
 The predicate document is admitted only for a constructor-private checked
-Boolean `holds(expr)` leaf or complete Boolean clause leaf. It additionally
+Boolean `holds(expr)` leaf, the exact optional activation guard of a temporal
+declaration, or a complete Boolean clause leaf. An activation guard remains
+distinct from the formula's reachable `holds(expr)` population. It additionally
 retains leaf kind, owning clause, the exact checked expression node, ordered
 argument/binder identities, required valuation bindings and the complete static
 definedness obligations discharged or left as explicit runtime requirements.
@@ -108,7 +110,7 @@ Contract-IR vocabulary, TL proposition value or Boolean coercion participates.
 | FR-051-AC-3 | Unknown fields/contracts, trailing bytes, noncanonical encodings, invalid spans, duplicate/unbounded populations and exact-limit-plus-one inputs refuse before excess state is retained. | Test (TC-139) |
 | FR-051-AC-4 | Independent schema and identity digest vectors match the producer, and same identity on unequal canonical bytes refuses. | Test (TC-139) |
 | FR-051-AC-5 | A textual or externally built expression, self-asserted trust/total flag, non-Boolean leaf, evaluator callback, and copied consumer vocabulary cannot construct either validated view. | Test (TC-139) |
-| FR-051-AC-6 | The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable predicate identities without asserting observation or result state; the predicate view asserts no truth. | Test (TC-139) |
+| FR-051-AC-6 | The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable formula predicate identities without asserting observation or result state; the predicate view admits the exact optional temporal activation guard separately and asserts no truth. | Test (TC-139) |
 
 ## Ownership
 
@@ -130,4 +132,5 @@ handoffs.
 ## Status
 
 Implemented for `quire-spec-language#90` under the reviewed `tl-syntax#52`
-ecosystem architecture.
+ecosystem architecture; temporal activation-guard selection is extended by
+`quire-spec-language#98`.

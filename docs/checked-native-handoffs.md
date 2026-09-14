@@ -4,7 +4,9 @@ FR-051 publishes two static, immutable handoffs from an already admitted
 `quire.compiled-protocol/2` package:
 
 - `quire.checked-predicate/v1` identifies a complete checked Boolean clause
-  leaf or a checked `holds(...)` leaf reachable from a temporal root.
+  leaf, a checked `holds(...)` leaf reachable from a temporal root, or that
+  temporal declaration's exact optional activation guard. The guard does not
+  become a formula leaf.
 - `quire.checked-temporal-subject/v1` identifies one checked temporal
   declaration, its clock/profile selection, activation and history boundary,
   temporal graph, and reachable checked predicate leaves.
