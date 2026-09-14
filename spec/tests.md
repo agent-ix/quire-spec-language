@@ -15,7 +15,7 @@ outside this audit-only plan.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-012 | FR-012-AC-1 | TC-001 | ✅ Passed locally |
 | FR-012 | FR-012-AC-2 | TC-002 | ✅ Passed locally |

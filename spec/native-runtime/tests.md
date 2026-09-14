@@ -18,7 +18,7 @@ IT-002 still owns the full compiled-model/backend workflow.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-007 | FR-007-AC-1 | TC-059 | ✅ Passed |
 | FR-007 | FR-007-AC-2 | TC-059 | ✅ Passed |

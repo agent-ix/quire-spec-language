@@ -42,7 +42,7 @@ rows, before moving any row off Planned.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-005 | FR-005-AC-1 | TC-020 | ✅ Passed |
 | FR-005 | FR-005-AC-2 | TC-021 | ✅ Passed |
@@ -234,7 +234,7 @@ requirements in `tests/composed_type_pipeline.rs`; FR-040 reports 10 of 10 backe
 The local status of these rows is a test-summary record, not review or assurance
 acceptance; neither test set establishes complete compiler #35/#40.
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-035 | FR-035-AC-1 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-2 | TC-113 | ✅ Passed |
@@ -273,7 +273,7 @@ acceptance; neither test set establishes complete compiler #35/#40.
 The separate numeric component of compiler #40 is tracked below; it does not
 establish composed parsing, model admission or source-to-artifact correspondence.
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-038 | FR-038-AC-1 | TC-117 | ✅ Passed |
 | FR-038 | FR-038-AC-2 | TC-117 | ✅ Passed |
@@ -357,7 +357,7 @@ under epic [quire-protocol#14](https://github.com/agent-ix/quire-protocol/issues
 its integration caller owns [IT-001](ix://agent-ix/quire-protocol/IT-001) on the
 consumer side. TC-135 records the separate D-owned campaign gate.
 
-| Functional Req | Acceptance Criteria | Test Cases | Status |
+| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed locally |
