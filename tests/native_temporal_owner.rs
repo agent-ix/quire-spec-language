@@ -279,10 +279,10 @@ fn input_rows(nodes: &[u32], rows: &[Vec<bool>], correspondence: &str) -> reques
     request
 }
 
-fn checked_subject<'a>(
-    package: &'a v2::AdmittedPackage,
+fn checked_subject(
+    package: &v2::AdmittedPackage,
     declaration: u32,
-) -> artifact::temporal_subject::ValidatedTemporalSubject<'a> {
+) -> artifact::temporal_subject::ValidatedTemporalSubject {
     let selection = artifact::temporal_subject::DeclarationSelection::new(declaration);
     let document = artifact::temporal_subject::derive(
         package,

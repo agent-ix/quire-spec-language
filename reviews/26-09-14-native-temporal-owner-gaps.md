@@ -41,8 +41,8 @@ lie. The fifteen inherited repository gaps are outside FR-052 and are not
 claimed by this change.
 
 Every changed production symbol belongs to the FR-052 native temporal request
-or result boundary, or to the FR-051 authority lifetime required to avoid
-duplicating the admitted package. The schemas and documentation describe the
+or result boundary, or to the FR-051 shared authority required to avoid
+repeatedly duplicating the admitted package. The schemas and documentation describe the
 same two contracts. Untraced changed production behavior: 0. Production stubs:
 0. Test stubs: 0.
 
