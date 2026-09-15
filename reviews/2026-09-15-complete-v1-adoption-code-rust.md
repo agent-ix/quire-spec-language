@@ -15,20 +15,22 @@ relationships:
 
 Reviewed the changed Rust test, frozen projection fixture, trace tags, matrices,
 identifier reconciliation and changed-file surface under the repository's Rust
-and local-only gate rules. No active code, test, integrity or reverse-trace gap
-remains.
+and local-only gate rules. An independent Rust review found and resolved one
+dependency-edge assertion gap; no active code, test, integrity or reverse-trace
+gap remains.
 
 ## Verdict
 
-**PASS** — the changed Rust is deterministic, assertion-bearing, fully traced
-and limited to validating specification/plan artifacts; production behavior is
-unchanged.
+**PASS after correction** — the changed Rust is deterministic,
+assertion-bearing, fully traced and limited to validating specification/plan
+artifacts; production behavior is unchanged.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No findings. The review-time prefix-only weakness was corrected by comparing all 83 complete tuples against the accepted QSpec projection fixture. | tests/complete_v1_plan.rs; tests/fixtures/complete-v1-agent-a.txt |
+| FND-001 | medium | Resolved: the first audit checked predecessor target text without binding it to `type: depends_on` or rejecting extra task back-edges. It now extracts adjacent target/type pairs and requires the exact zero-or-one-edge serial chain. | tests/complete_v1_plan.rs |
+| FND-002 | low | Resolved during initial review: prefix-only allocation checks were replaced by comparison of all 83 complete tuples against the accepted QSpec projection fixture. | tests/complete_v1_plan.rs; tests/fixtures/complete-v1-agent-a.txt |
 
 ## Rust review
 
