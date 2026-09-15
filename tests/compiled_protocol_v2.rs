@@ -111,6 +111,24 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
     )
     .expect("decode expected-v2.json with the published type");
     assert_eq!(selection.temporal.len(), DECLARATIONS.len());
+    assert_eq!(
+        fs::read(root.join(&selection.inherited.model.source_file))
+            .expect("committed v2 model source"),
+        include_bytes!("../examples/protocol-handoff/model-v2-frozen.json"),
+        "the preserved v2 recipe must retain its historical model bytes"
+    );
+    let workflow = selection
+        .inherited
+        .sources
+        .iter()
+        .find(|source| source.file == "workflow.native")
+        .expect("committed v2 workflow source");
+    assert!(
+        workflow.source.text.ends_with(include_str!(
+            "../examples/protocol-handoff/workflow-v2-frozen.body.native"
+        )),
+        "the preserved v2 recipe must retain its historical workflow body"
+    );
     let selection_bytes = serde_json::to_vec(&selection).expect("encode published selection type");
     assert_eq!(
         serde_json::from_slice::<artifact::handoff::SelectionV2>(&selection_bytes)
