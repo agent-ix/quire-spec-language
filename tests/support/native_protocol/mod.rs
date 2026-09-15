@@ -15,7 +15,7 @@ use quire_spec_language::linking::composed::definition_source::RegisteredDefinit
 use quire_spec_language::linking::composed::models::{AdmittedProducerModel, ModelInput};
 use quire_spec_language::linking::composed::subject::StaticSubject;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::protocol_artifact::{self as artifact, native, v2, wire as w};
+use quire_spec_language::protocol_artifact::{self as artifact, native, v2, v3, wire as w};
 use quire_spec_language::{ByteDigest, Source};
 
 pub struct Unit<'a> {
@@ -732,6 +732,56 @@ impl Inputs {
                 &v2::Expected {
                     inherited,
                     temporal: &expected_temporal,
+                },
+                limits,
+            )
+        })
+    }
+
+    /// Check version-3 transport against independent temporal and activation selections.
+    #[allow(dead_code)]
+    pub fn read_v3_bytes(
+        &self,
+        proofs: &proofs::ProofReport<'_, '_, '_>,
+        bytes: &[u8],
+        digest: ByteDigest,
+        temporal: &[TemporalExpectation],
+        activations: &[v3::ExpectedActivation],
+        limits: artifact::Limits,
+    ) -> artifact::Report<v3::AdmittedPackage> {
+        self.with_expected(proofs, bytes, digest, "3", |inherited, _| {
+            let declarations: Vec<_> = temporal
+                .iter()
+                .map(|selection| artifact::ExpectedDeclaration {
+                    name: &selection.declaration.name,
+                    span: &selection.declaration.span,
+                    requirement: &selection.declaration.requirement,
+                    clause: &selection.declaration.clause,
+                    execution: &selection.declaration.execution,
+                })
+                .collect();
+            let expected_temporal: Vec<_> = temporal
+                .iter()
+                .zip(&declarations)
+                .map(|(selection, declaration)| v2::ExpectedTemporal {
+                    source: &selection.source,
+                    declaration,
+                    definition: v2::ExpectedDefinition {
+                        identity: &selection.definition.identity,
+                        revision: &selection.definition.revision,
+                        artifact: &selection.definition.artifact,
+                    },
+                    clock: &selection.definition.clock,
+                })
+                .collect();
+            v3::read(
+                bytes,
+                &v3::Expected {
+                    inherited: v2::Expected {
+                        inherited,
+                        temporal: &expected_temporal,
+                    },
+                    activations,
                 },
                 limits,
             )

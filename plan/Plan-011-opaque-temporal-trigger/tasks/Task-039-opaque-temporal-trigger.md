@@ -2,7 +2,7 @@
 id: Task-039
 title: "Publish opaque native-temporal v2 trigger identity"
 type: Task
-status: active
+status: done
 track: serial
 priority: high
 relationships:
@@ -26,4 +26,4 @@ textual instance API unchanged.
 - [x] Implement request v2 production and strict reading with canonical binary encoding.
 - [x] Implement result v2 evaluation and strict reading tied to the exact request bytes.
 - [x] Prove version separation, mutation refusal and absence of field substitution.
-- [ ] Run local Rust gates and PR-time reviews; then update the QProtocol pin.
+- [x] Run local Rust gates and PR-time reviews; then update the QProtocol pin.
