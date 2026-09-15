@@ -274,6 +274,8 @@ pub struct StateView {
 /// Closed defensive or input-admission refusal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Refusal {
+    /// Version-2 compiler output has not been independently published and read.
+    UnpublishedArtifact,
     RequestDeclaration(u32),
     RequestValue(wire::Handle),
     Owner(wire::Handle),
