@@ -23,7 +23,7 @@ use quire_spec_language::protocol_artifact::{
         MUTATION_MANIFEST_FORMAT, PUBLISHED_CHECKSUMS_FILE, PUBLISHED_HANDOFF,
         PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
     },
-    native, v2, wire as w, Dimension as WorkDimension, Error, ExactInteger, Invalid, Limits,
+    native, v2, v3, wire as w, Dimension as WorkDimension, Error, ExactInteger, Invalid, Limits,
     NumberComponent, NumberError, NumberWire, ProtocolNumber, Unsupported,
 };
 use quire_spec_language::state::{
@@ -1919,6 +1919,134 @@ fn admitted_v2_exposes_the_inherited_occurrence_key_schema_without_translation()
 
 fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
     assert_eq!(report.result().err(), Some(&expected));
+}
+
+/// TC-142: FR-054-AC-1 through FR-054-AC-4.
+#[trace("TC-142", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
+#[test]
+fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
+    with_v2(|inputs, proofs, _, temporal, emitted| {
+        let mut inherited = emitted.admitted().package().inherited.clone();
+        inherited.wire = v3::WIRE.into();
+        inherited.media = v3::MEDIA.into();
+        inherited.schema = v3::SCHEMA.into();
+        let flow = u32::try_from(declaration(emitted.admitted(), "Flow")).expect("flow index");
+        let controls = match &inherited.declarations[flow as usize].body {
+            w::Body::Protocol { controls, .. } => controls,
+            _ => panic!("fixture flow is protocol"),
+        };
+        let event = u32::try_from(
+            controls
+                .iter()
+                .position(|control| matches!(control.operation, w::ControlOperation::Event { .. }))
+                .expect("fixture event control"),
+        )
+        .expect("control index");
+        let activation = v3::ExpectedActivation {
+            control: w::Handle {
+                declaration: flow,
+                index: event,
+            },
+            temporal_declaration: u32::try_from(declaration(emitted.admitted(), "ByEvent"))
+                .expect("temporal index"),
+        };
+        let package = v3::wire::Package {
+            inherited,
+            temporal_bindings: emitted.admitted().package().temporal_bindings.clone(),
+            activation_mappings: vec![v3::wire::ActivationMapping {
+                control: activation.control.clone(),
+                temporal_declaration: activation.temporal_declaration,
+            }],
+        };
+        let candidate = v3::encode_candidate(&package, Limits::default())
+            .into_result()
+            .expect("canonical v3 candidate");
+        assert!(inputs
+            .read_v3_bytes(
+                proofs,
+                candidate.bytes(),
+                candidate.digest(),
+                &temporal.expected,
+                std::slice::from_ref(&activation),
+                Limits::default()
+            )
+            .result()
+            .is_ok());
+        let mut substituted = package.clone();
+        substituted.activation_mappings[0].temporal_declaration =
+            u32::try_from(declaration(emitted.admitted(), "BySample"))
+                .expect("other temporal index");
+        let substituted = v3::encode_candidate(&substituted, Limits::default())
+            .into_result()
+            .expect("canonical substitute");
+        assert_error(
+            &inputs.read_v3_bytes(
+                proofs,
+                substituted.bytes(),
+                substituted.digest(),
+                &temporal.expected,
+                std::slice::from_ref(&activation),
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::Expected(v3::MappingField::TemporalDeclaration)),
+        );
+        let mut missing = package.clone();
+        missing.activation_mappings.clear();
+        let missing = v3::encode_candidate(&missing, Limits::default())
+            .into_result()
+            .expect("canonical missing mapping");
+        assert_error(
+            &inputs.read_v3_bytes(
+                proofs,
+                missing.bytes(),
+                missing.digest(),
+                &temporal.expected,
+                std::slice::from_ref(&activation),
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::Mapping {
+                side: v3::InventorySide::Offer,
+                cause: v3::MappingCause::Missing,
+            }),
+        );
+        let mut duplicate = package.clone();
+        duplicate
+            .activation_mappings
+            .push(duplicate.activation_mappings[0].clone());
+        let duplicate = v3::encode_candidate(&duplicate, Limits::default())
+            .into_result()
+            .expect("canonical duplicate mapping");
+        assert_error(
+            &inputs.read_v3_bytes(
+                proofs,
+                duplicate.bytes(),
+                duplicate.digest(),
+                &temporal.expected,
+                std::slice::from_ref(&activation),
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::Mapping {
+                side: v3::InventorySide::Offer,
+                cause: v3::MappingCause::Duplicate,
+            }),
+        );
+        let mut non_temporal = package;
+        non_temporal.activation_mappings[0].temporal_declaration = flow;
+        let non_temporal = v3::encode_candidate(&non_temporal, Limits::default())
+            .into_result()
+            .expect("canonical non-temporal mapping");
+        assert_error(
+            &inputs.read_v3_bytes(
+                proofs,
+                non_temporal.bytes(),
+                non_temporal.digest(),
+                &temporal.expected,
+                &[activation],
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::TemporalDeclaration),
+        );
+    });
 }
 
 fn v2_refusal(refusal: v2::Refusal) -> Error {
