@@ -18,6 +18,10 @@ use quire_spec_language::linking::composed::{
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, v2, wire as w, Error, Invalid, Limits, ProtocolNumber, Unsupported,
 };
+use quire_spec_language::state::{
+    self, BinderInput, EvaluationOutcome, EvaluationRequest, InputSlot, Limits as StateLimits,
+    Refusal, StateView, Value, ValueKind,
+};
 use quire_spec_language::syntax::composed as c;
 use quire_spec_language::ByteDigest;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
@@ -817,6 +821,70 @@ fn timed_compensation_is_admitted_and_reread_only_as_authenticated_v2() {
                 admitted.package().inherited.declarations[temporal_requirements[0] as usize]
                     .profile
             );
+            let owner = admitted
+                .inherited()
+                .declarations
+                .iter()
+                .position(|declaration| declaration.name == "RecoveryFlow")
+                .and_then(|index| u32::try_from(index).ok())
+                .expect("recovery declaration fits the wire handle domain");
+            for compensation in compensations {
+                let initialized_captures = compensation
+                    .registration_captures
+                    .iter()
+                    .chain(&compensation.activation_captures)
+                    .collect::<Vec<_>>();
+                for value in [
+                    compensation.guard.clone(),
+                    compensation.retry.clone(),
+                    compensation.recover.clone(),
+                ] {
+                    let report = state::evaluate_v2(
+                        &admitted,
+                        EvaluationRequest {
+                            declaration: owner,
+                            value,
+                        },
+                        &StateView::default(),
+                        StateLimits::default(),
+                    );
+                    match report.outcome() {
+                        EvaluationOutcome::Refused(Refusal::MissingBinding(missing)) => {
+                            assert!(
+                                !initialized_captures.contains(&missing),
+                                "initialized capture {missing:?} must be resolved from its authored initializer"
+                            );
+                        }
+                        other => panic!("compensation expression must request only an external input: {other:?}"),
+                    }
+                }
+                for capture in initialized_captures {
+                    let report = state::evaluate_v2(
+                        &admitted,
+                        EvaluationRequest {
+                            declaration: owner,
+                            value: compensation.guard.clone(),
+                        },
+                        &StateView {
+                            binders: vec![BinderInput {
+                                binder: capture.clone(),
+                                requirement: None,
+                                authority: None,
+                                // Input admission must reject the capture before
+                                // this deliberately arbitrary payload can be read.
+                                value: InputSlot::Available(Value::new(0, ValueKind::Boolean(true))),
+                            }],
+                            populations: Vec::new(),
+                        },
+                        StateLimits::default(),
+                    );
+                    assert_eq!(
+                        report.outcome(),
+                        &EvaluationOutcome::Refused(Refusal::SurplusBinding(capture.clone())),
+                        "an initialized capture is evaluator-owned and cannot be overridden"
+                    );
+                }
+            }
         },
     );
 }
