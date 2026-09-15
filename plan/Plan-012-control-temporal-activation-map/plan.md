@@ -25,28 +25,28 @@ relationships:
 
 ## Test Plan
 
-- [x] **TC-142**: canonical `/3` round trip; every mapping mutation; exact
+- [x] **TC-143**: canonical `/3` round trip; every mapping mutation; exact
   cross-version refusals; no profile/clock or coordinate inference.
 
 ## Completed Work
 
 ### Track A: Critical Path (serial)
 
-- **A1 = Task-041** Strict `/3` activation mapping — complete: the producer
+- **A1 = Task-045** Strict `/3` activation mapping — complete: the producer
   and independent reader accept only exact authored mappings while `/1` and
   `/2` remain byte-identical and reject `/3`.
 
 ## Parallel Execution Summary
 
 ```text
-Task-041: specification fixtures -> `/3` wire/producer/reader -> TC-142 -> QProtocol pin
+Task-045: specification fixtures -> `/3` wire/producer/reader -> TC-143 -> QProtocol pin
 ```
 
 ## Task File Mapping
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-041 | A | FR-054 | TC-142 | done |
+| Task-045 | A | FR-054 | TC-143 | done |
 
 ## Coordination Rules
 
