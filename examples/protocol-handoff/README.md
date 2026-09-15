@@ -77,6 +77,15 @@ The output directory contains:
   `model-source.json`: the complete original sources.
 - `dependencies/`: exact selected model, binary, contract, definition and rule
   bytes; `expected.json` maps each reference to its file and direct prerequisites.
+- `SHA256SUMS`: a deterministic complete inventory of every other generated
+  handoff member, using normalized handoff-relative paths.
+
+The immutable checked-in consumer copy is addressed by
+`protocol_artifact::handoff::PUBLISHED_V1_HANDOFF`; its version-explicit member
+constants prevent consumers from guessing filenames. Selecting the pinned crate
+and this owner-published directory is separate from offering the package bytes:
+decoding `Selection` remains inert until the caller constructs and invokes the
+strict public reader.
 
 The baseline is the accepted registered Edition artifact, identity `ix:native`,
 semantic revision `1-draft.2`, from [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15).
