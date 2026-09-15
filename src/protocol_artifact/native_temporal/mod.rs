@@ -4,6 +4,7 @@
 mod common;
 pub mod request;
 pub mod result;
+pub mod v2;
 
 pub use common::{
     Error, ErrorCode, EvidenceRef, Limits, Report, Usage, REQUEST_CONTRACT, RESULT_CONTRACT,
