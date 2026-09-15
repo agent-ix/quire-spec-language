@@ -184,9 +184,11 @@ fn compensation_inputs() -> Inputs {
                     capture activated: Boolean = trigger.ready;
                   }
                   within [0,30]; attempts 3 of M::Plain;
-                  retry (earlier: M::Plain, later: M::Plain) { earlier.ready = later.ready };
+                  retry (earlier: M::Plain, later: M::Plain) {
+                    earlier.ready = later.ready and not activated
+                  };
                   commit never;
-                  recover (recovered: M::Node) { recovered.n = 1 };
+                  recover (recovered: M::Node) { recovered.n = 1 and not activated };
                 }
                 compensate Partial for Main::Applied as (partialForward: M::Node)
                     by Service on M::Node::step using T clock \"event-clock\" {
@@ -196,10 +198,12 @@ fn compensation_inputs() -> Inputs {
                   }
                   within [0,30]; attempts 3 of M::Plain;
                   retry (partialEarlier: M::Plain, partialLater: M::Plain) {
-                    partialEarlier.ready = partialLater.ready
+                    partialEarlier.ready = partialLater.ready and not partialActivated
                   };
                   commit never;
-                  recover (partialRecovered: M::Node) { partialRecovered.n = 1 };
+                  recover (partialRecovered: M::Node) {
+                    partialRecovered.n = 1 and not partialActivated
+                  };
                 }
                 requires temporal ByEvent;
                 run sequence Main {
@@ -841,14 +845,17 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                         binders: vec![
                             plain_binder(&admitted, compensation.earlier.clone(), true),
                             plain_binder(&admitted, compensation.later.clone(), true),
+                            plain_binder(&admitted, compensation.trigger.clone(), false),
                         ],
                         populations: Vec::new(),
                     },
                 ),
-                (
-                    compensation.recover.clone(),
-                    recovery_view(&admitted, compensation.recovery.clone(), 1),
-                ),
+                (compensation.recover.clone(), {
+                    let mut view = recovery_view(&admitted, compensation.recovery.clone(), 1);
+                    view.binders
+                        .push(plain_binder(&admitted, compensation.trigger.clone(), false));
+                    view
+                }),
             ];
             for (value, view) in cases {
                 let selected = request(value);
@@ -943,6 +950,25 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                         if exhaustion.dimension == StateDimension::ExpressionWork
                 ));
 
+                let one_short_retention = StateLimits {
+                    retained_output: usage
+                        .retained_output
+                        .checked_sub(1)
+                        .expect("completed value retains output"),
+                    ..StateLimits::default()
+                };
+                assert!(matches!(
+                    state::evaluate_v2(
+                        &admitted,
+                        selected.clone(),
+                        &view,
+                        one_short_retention,
+                    )
+                    .outcome(),
+                    EvaluationOutcome::Exhausted(exhaustion)
+                        if exhaustion.dimension == StateDimension::RetainedOutput
+                ));
+
                 let zero = state::evaluate_v2(
                     &admitted,
                     selected.clone(),
@@ -1004,6 +1030,111 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                 w::Body::Protocol { compensations, .. } => compensations,
                 _ => panic!("protocol"),
             };
+            for selected_compensation in compensations {
+                let retry_view = StateView {
+                    binders: vec![
+                        plain_binder(&admitted, selected_compensation.earlier.clone(), true),
+                        plain_binder(&admitted, selected_compensation.later.clone(), true),
+                        plain_binder(&admitted, selected_compensation.trigger.clone(), false),
+                    ],
+                    populations: Vec::new(),
+                };
+                let retry = state::evaluate_v2(
+                    &admitted,
+                    request(selected_compensation.retry.clone()),
+                    &retry_view,
+                    StateLimits::default(),
+                );
+                assert!(matches!(
+                    retry.outcome(),
+                    EvaluationOutcome::Completed(value)
+                        if matches!(value.kind(), StateValueKind::Boolean(true))
+                ));
+                let mut activated_retry = retry_view.clone();
+                *activated_retry
+                    .binders
+                    .iter_mut()
+                    .find(|input| input.binder == selected_compensation.trigger)
+                    .expect("trigger input remains selected") =
+                    plain_binder(&admitted, selected_compensation.trigger.clone(), true);
+                assert!(matches!(
+                    state::evaluate_v2(
+                        &admitted,
+                        request(selected_compensation.retry.clone()),
+                        &activated_retry,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    EvaluationOutcome::Completed(value)
+                        if matches!(value.kind(), StateValueKind::Boolean(false))
+                ));
+
+                let mut recover_view =
+                    recovery_view(&admitted, selected_compensation.recovery.clone(), 1);
+                recover_view.binders.push(plain_binder(
+                    &admitted,
+                    selected_compensation.trigger.clone(),
+                    false,
+                ));
+                assert!(matches!(
+                    state::evaluate_v2(
+                        &admitted,
+                        request(selected_compensation.recover.clone()),
+                        &recover_view,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    EvaluationOutcome::Completed(value)
+                        if matches!(value.kind(), StateValueKind::Boolean(true))
+                ));
+
+                let capture = selected_compensation.activation_captures[0].clone();
+                let capture_owner =
+                    usize::try_from(capture.declaration).expect("bounded capture owner");
+                let capture_index = usize::try_from(capture.index).expect("bounded capture index");
+                let capture_type = admitted.inherited().declarations[capture_owner].binders
+                    [capture_index]
+                    .value_type;
+                let injected_capture = StateView {
+                    binders: vec![BinderInput {
+                        binder: capture.clone(),
+                        requirement: None,
+                        authority: None,
+                        value: InputSlot::Available(StateValue::new(
+                            capture_type,
+                            StateValueKind::Boolean(false),
+                        )),
+                    }],
+                    populations: Vec::new(),
+                };
+                assert_eq!(
+                    state::evaluate_v2(
+                        &admitted,
+                        request(selected_compensation.retry.clone()),
+                        &injected_capture,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    &EvaluationOutcome::Refused(StateRefusal::SurplusBinding(capture))
+                );
+
+                let mut missing_external = retry_view;
+                missing_external
+                    .binders
+                    .retain(|input| input.binder != selected_compensation.trigger);
+                assert_eq!(
+                    state::evaluate_v2(
+                        &admitted,
+                        request(selected_compensation.retry.clone()),
+                        &missing_external,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    &EvaluationOutcome::Refused(StateRefusal::MissingBinding(
+                        selected_compensation.trigger.clone(),
+                    ))
+                );
+            }
             let other = &compensations[1];
             let crossed_compensation_view = StateView {
                 binders: vec![plain_binder(&admitted, other.trigger.clone(), true)],
@@ -1092,18 +1223,97 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
             ));
 
             let mut crossed_population = recovery_view(&admitted, compensation.recovery.clone(), 1);
+            crossed_population.binders.push(plain_binder(
+                &admitted,
+                compensation.trigger.clone(),
+                false,
+            ));
             crossed_population.populations[0].requirement.index =
                 binder_requirement(&admitted, &compensation.trigger);
-            assert!(matches!(
-                state::evaluate_v2(
-                    &admitted,
-                    request(compensation.recover.clone()),
-                    &crossed_population,
-                    StateLimits::default(),
-                )
-                .outcome(),
-                EvaluationOutcome::Refused(StateRefusal::SurplusBinding(_))
-            ));
+            let crossed_population_outcome = state::evaluate_v2(
+                &admitted,
+                request(compensation.recover.clone()),
+                &crossed_population,
+                StateLimits::default(),
+            );
+            assert!(
+                matches!(
+                    crossed_population_outcome.outcome(),
+                    EvaluationOutcome::Refused(StateRefusal::SurplusBinding(_))
+                ),
+                "crossed population: {:?}",
+                crossed_population_outcome.outcome()
+            );
+        },
+    );
+}
+
+/// Tracing: TC-142.
+#[trace("TC-142", "FR-049-AC-9")]
+#[test]
+fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initializers() {
+    with_v2_inputs(
+        compensation_inputs(),
+        |inputs, proofs, _, temporal, emitted| {
+            let base = emitted.admitted().package();
+            let (owner, compensation) = base
+                .inherited
+                .declarations
+                .iter()
+                .enumerate()
+                .find_map(|(owner, declaration)| match &declaration.body {
+                    w::Body::Protocol { compensations, .. } => {
+                        Some((owner, compensations.first().expect("one compensation")))
+                    }
+                    _ => None,
+                })
+                .expect("compensation declaration");
+            let capture = &compensation.activation_captures[0];
+            let capture_index = usize::try_from(capture.index).expect("bounded capture index");
+            let initializer = base.inherited.declarations[owner].binders[capture_index]
+                .initializer
+                .0
+                .as_ref()
+                .expect("capture initializer")
+                .clone();
+
+            let mut foreign = base.clone();
+            foreign.inherited.declarations[owner].binders[capture_index]
+                .initializer
+                .0
+                .as_mut()
+                .expect("capture initializer")
+                .declaration = capture.declaration.saturating_sub(1);
+            let bytes = serde_json::to_vec(&foreign).expect("canonical adverse wire shape");
+            assert_error(
+                &inputs.read_v2_bytes(
+                    proofs,
+                    &bytes,
+                    ByteDigest::of(&bytes),
+                    &temporal.expected,
+                    Limits::default(),
+                ),
+                Error::Invalid(Invalid::Owner),
+            );
+
+            let mut recursive = base.clone();
+            let initializer_index =
+                usize::try_from(initializer.index).expect("bounded initializer index");
+            recursive.inherited.declarations[owner].values[initializer_index].operation =
+                w::ValueOperation::Group {
+                    value: compensation.retry.clone(),
+                };
+            let bytes = serde_json::to_vec(&recursive).expect("canonical adverse wire shape");
+            assert_error(
+                &inputs.read_v2_bytes(
+                    proofs,
+                    &bytes,
+                    ByteDigest::of(&bytes),
+                    &temporal.expected,
+                    Limits::default(),
+                ),
+                Error::Invalid(Invalid::Cycle),
+            );
         },
     );
 }
