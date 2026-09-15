@@ -15,6 +15,24 @@ use serde::{Deserialize, Serialize};
 
 use super::{v2, wire as w, Dimension, Limits, ACCOUNTING_VERSION};
 
+/// Repository path of the committed compiled-protocol v1 consumer handoff.
+pub const PUBLISHED_V1_HANDOFF: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/artifacts/compiled-protocol-v1"
+);
+
+/// Handoff-relative file containing the canonical version-1 package bytes.
+pub const PUBLISHED_V1_OFFER_FILE: &str = "compiled-protocol.json";
+
+/// Handoff-relative file containing the independently authorized version-1 artifact reference.
+pub const PUBLISHED_V1_ARTIFACT_REFERENCE_FILE: &str = "compiled-protocol.ref.json";
+
+/// Handoff-relative file containing the independent version-1 reader selection.
+pub const PUBLISHED_V1_SELECTION_FILE: &str = "expected.json";
+
+/// Handoff-relative file containing raw SHA-256 digests for the version-1 inventory.
+pub const PUBLISHED_V1_CHECKSUMS_FILE: &str = "SHA256SUMS";
+
 /// Repository path of the committed compiled-protocol v2 consumer handoff.
 pub const PUBLISHED_HANDOFF: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -294,41 +312,136 @@ pub enum MutationInput {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::{
+        collections::BTreeSet,
+        fs,
+        path::{Component, Path, PathBuf},
+    };
 
     use ix_trace_rs::trace;
     use serde_json::json;
 
     use super::{
-        MutationInput, MutationManifest, SelectedArtifactLimits, MUTATION_MANIFEST_FORMAT,
-        PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_CHECKSUMS_FILE, PUBLISHED_HANDOFF,
-        PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+        MutationInput, MutationManifest, SelectedArtifactLimits, Selection,
+        MUTATION_MANIFEST_FORMAT, PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_CHECKSUMS_FILE,
+        PUBLISHED_HANDOFF, PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE,
+        PUBLISHED_SELECTION_FILE, PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+        PUBLISHED_V1_CHECKSUMS_FILE, PUBLISHED_V1_HANDOFF, PUBLISHED_V1_OFFER_FILE,
+        PUBLISHED_V1_SELECTION_FILE,
     };
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
     use crate::ByteDigest;
+
+    fn handoff_files(root: &Path, directory: &Path, files: &mut BTreeSet<PathBuf>) {
+        for entry in fs::read_dir(directory).expect("read published handoff directory") {
+            let entry = entry.expect("read published handoff entry");
+            let file_type = entry.file_type().expect("published handoff file type");
+            assert!(!file_type.is_symlink(), "published handoff has no symlinks");
+            let path = entry.path();
+            if file_type.is_dir() {
+                handoff_files(root, &path, files);
+            } else {
+                assert!(file_type.is_file(), "published handoff entries are files");
+                files.insert(
+                    path.strip_prefix(root)
+                        .expect("published entry remains beneath root")
+                        .to_owned(),
+                );
+            }
+        }
+    }
+
+    fn normalized_handoff_path(relative: &Path) -> bool {
+        relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    }
+
+    fn verify_complete_checksums(root: &Path, checksums: &str) -> BTreeSet<PathBuf> {
+        let sums = fs::read_to_string(root.join(checksums)).expect("published SHA256SUMS");
+        assert!(!sums.is_empty(), "published SHA256SUMS is not empty");
+        let mut listed = BTreeSet::new();
+        for (line_index, line) in sums.lines().enumerate() {
+            let (expected, relative) = line
+                .split_once("  ./")
+                .unwrap_or_else(|| panic!("malformed SHA256SUMS line {}", line_index + 1));
+            let relative = PathBuf::from(relative);
+            assert!(
+                normalized_handoff_path(&relative),
+                "checksum path must remain relative and normalized"
+            );
+            assert!(
+                listed.insert(relative.clone()),
+                "duplicate checksum path {relative:?}"
+            );
+            let bytes = fs::read(root.join(&relative)).unwrap_or_else(|error| {
+                panic!("read published handoff file {relative:?}: {error}")
+            });
+            assert_eq!(
+                format!("{:x}", ByteDigest::of(&bytes)),
+                expected,
+                "published handoff digest for {relative:?}"
+            );
+        }
+
+        let mut actual = BTreeSet::new();
+        handoff_files(root, root, &mut actual);
+        actual.remove(Path::new(checksums));
+        assert_eq!(listed, actual, "SHA256SUMS covers every handoff file");
+        listed
+    }
+
+    #[test]
+    #[trace("TC-121", "FR-042-AC-10")]
+    fn published_v1_handoff_addresses_are_complete() {
+        let root = Path::new(PUBLISHED_V1_HANDOFF);
+        assert!(root.is_dir(), "published v1 handoff directory: {root:?}");
+        for relative in [
+            PUBLISHED_V1_OFFER_FILE,
+            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE,
+            PUBLISHED_V1_SELECTION_FILE,
+            PUBLISHED_V1_CHECKSUMS_FILE,
+        ] {
+            assert!(
+                root.join(relative).is_file(),
+                "published v1 member {relative}"
+            );
+        }
+        let listed = verify_complete_checksums(root, PUBLISHED_V1_CHECKSUMS_FILE);
+        let selection: Selection = serde_json::from_slice(
+            &fs::read(root.join(PUBLISHED_V1_SELECTION_FILE)).expect("published v1 selection"),
+        )
+        .expect("decode published v1 selection");
+        for relative in selection
+            .sources
+            .iter()
+            .map(|source| source.file.as_str())
+            .chain(
+                selection
+                    .dependencies
+                    .iter()
+                    .map(|dependency| dependency.file.as_str()),
+            )
+            .chain(std::iter::once(selection.model.source_file.as_str()))
+        {
+            let relative = Path::new(relative);
+            assert!(
+                normalized_handoff_path(relative),
+                "selected path remains normalized: {relative:?}"
+            );
+            assert!(
+                listed.contains(relative),
+                "selected path is checksum-covered: {relative:?}"
+            );
+        }
+    }
 
     #[test]
     #[trace("TC-121", "FR-042-AC-10")]
     fn published_handoff_path_exists_and_checksums_verify() {
         let root = Path::new(PUBLISHED_HANDOFF);
         assert!(root.is_dir(), "published handoff directory: {root:?}");
-        let sums =
-            fs::read_to_string(root.join(PUBLISHED_CHECKSUMS_FILE)).expect("published SHA256SUMS");
-        assert!(!sums.is_empty(), "published SHA256SUMS is not empty");
-
-        for (line_index, line) in sums.lines().enumerate() {
-            let (expected, relative) = line
-                .split_once("  ./")
-                .unwrap_or_else(|| panic!("malformed SHA256SUMS line {}", line_index + 1));
-            let bytes = fs::read(root.join(relative)).unwrap_or_else(|error| {
-                panic!("read published handoff file {relative:?}: {error}")
-            });
-            assert_eq!(
-                format!("{:x}", ByteDigest::of(&bytes)),
-                expected,
-                "published handoff digest for {relative}"
-            );
-        }
+        let _ = verify_complete_checksums(root, PUBLISHED_CHECKSUMS_FILE);
     }
 
     #[test]

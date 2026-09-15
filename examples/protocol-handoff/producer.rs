@@ -349,6 +349,8 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("cannot serialize the selected reader limits: {0}")]
     HandoffLimits(#[from] artifact::handoff::LimitWidthError),
+    #[error("invalid generated handoff path: {0}")]
+    HandoffPath(String),
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
     #[error("authored declaration {name}: {cause}")]
@@ -1813,7 +1815,51 @@ fn write_files(
         &directory.join("compiled-protocol.ref.json"),
         &reference_bytes,
     )?;
-    write_file(&directory.join("compiled-protocol.json"), bytes)
+    write_file(&directory.join("compiled-protocol.json"), bytes)?;
+    write_checksum_inventory(directory)
+}
+
+fn collect_handoff_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut BTreeSet<PathBuf>,
+) -> Result<(), Error> {
+    for entry in fs::read_dir(directory).map_err(|error| io_at(directory, error))? {
+        let entry = entry.map_err(|error| io_at(directory, error))?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|error| io_at(&path, error))?;
+        if file_type.is_dir() {
+            collect_handoff_files(root, &path, files)?;
+        } else if file_type.is_file() {
+            files.insert(
+                path.strip_prefix(root)
+                    .map_err(|error| Error::HandoffPath(error.to_string()))?
+                    .to_owned(),
+            );
+        } else {
+            return Err(Error::HandoffPath(path.display().to_string()));
+        }
+    }
+    Ok(())
+}
+
+fn write_checksum_inventory(directory: &Path) -> Result<(), Error> {
+    let mut files = BTreeSet::new();
+    collect_handoff_files(directory, directory, &mut files)?;
+    let mut sums = String::new();
+    for relative in files {
+        let path = directory.join(&relative);
+        let bytes = fs::read(&path).map_err(|error| io_at(&path, error))?;
+        use std::fmt::Write as _;
+        writeln!(
+            sums,
+            "{:x}  ./{}",
+            ByteDigest::of(&bytes),
+            relative.display()
+        )
+        .map_err(|error| Error::HandoffPath(error.to_string()))?;
+    }
+    write_file(&directory.join("SHA256SUMS"), sums.as_bytes())
 }
 
 fn write_files_v2(
