@@ -197,6 +197,9 @@ const UNITS: &[UnitRecipe] = &[
     },
 ];
 
+// The committed `/2` handoff predates the distinct-authority `/1` correction.
+// Keep its exact authored source/model inputs frozen rather than silently
+// regenerating another contract version as a side effect of `/1` maintenance.
 const UNITS_V2: &[UnitRecipe] = &[
     UnitRecipe {
         file: "predicates.native",
@@ -291,7 +294,7 @@ const UNITS_V2: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow",
         document: "ProtocolHandoffWorkflow",
         requirement: "HandoffWorkflow",
-        body: include_str!("workflow.body.native"),
+        body: include_str!("workflow-v2-frozen.body.native"),
         clauses: &[AuthoredClause {
             name: "Flow",
             clause: "flow",
@@ -518,14 +521,14 @@ fn formal(source: Source, document: &str) -> Result<FormalSource, Error> {
     ))
 }
 
-fn model() -> Result<NativeModel, Error> {
+fn model(bytes: &[u8]) -> Result<NativeModel, Error> {
     let source = Source::read(
         SourceIdentity {
             identity: format!("{AUTHORITY}/examples/protocol-handoff/model"),
             revision: "1".into(),
         },
         "examples/protocol-handoff/model.json",
-        include_bytes!("model.json"),
+        bytes,
         quire_spec_language::Limits::default().source_bytes,
     )?;
     Ok(model_source::read(
@@ -815,18 +818,19 @@ impl UnitInput {
 
 impl Inputs {
     fn new() -> Result<Self, Error> {
-        Self::new_with(UNITS, &[R::EventPosition])
+        Self::new_with(UNITS, &[R::EventPosition], include_bytes!("model.json"))
     }
 
     fn new_v2() -> Result<Self, Error> {
         Self::new_with(
             UNITS_V2,
             &[R::EventPosition, R::FixedSample, R::TimestampedWindow],
+            include_bytes!("model-v2-frozen.json"),
         )
     }
 
-    fn new_with(recipes: &[UnitRecipe], temporal: &[R]) -> Result<Self, Error> {
-        let model = model()?;
+    fn new_with(recipes: &[UnitRecipe], temporal: &[R], model_bytes: &[u8]) -> Result<Self, Error> {
+        let model = model(model_bytes)?;
         let operation = OperationSelection::new(&model)?;
         let units = recipes
             .iter()

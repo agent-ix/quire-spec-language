@@ -195,4 +195,25 @@ fn committed_v1_handoff_admits_through_the_public_reader() {
         .into_result()
         .expect("public strict v1 reader admits the committed handoff");
     assert_eq!(admitted.digest(), fixture.selection.artifact.digest);
+
+    let flow = admitted
+        .package()
+        .declarations
+        .iter()
+        .find(|declaration| declaration.name == "Flow")
+        .expect("published Flow declaration");
+    let w::Body::Protocol { roles, .. } = &flow.body else {
+        panic!("published Flow retains its protocol body")
+    };
+    let [service, provider] = roles.as_slice() else {
+        panic!("published Flow retains its two authored roles")
+    };
+    assert_eq!(
+        (service.name.as_str(), provider.name.as_str()),
+        ("Service", "Provider")
+    );
+    assert_ne!(
+        service.model, provider.model,
+        "the published handoff must not assign two roles one authority"
+    );
 }
