@@ -3,7 +3,7 @@
 // the receipt/target comparisons specify the distinct recovery conditions.
 protocol Flow using P over (view: M::Workflow) on origin {
     role Service on M::Workflow;
-    role Provider on M::Workflow;
+    role Provider on M::Provider;
     channel Decisions from Provider to Service carries M::Notice
         ordering unordered delivery [1,1];
 

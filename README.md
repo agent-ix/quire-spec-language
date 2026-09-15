@@ -54,8 +54,10 @@ operations, retaining the executable bytes and independently derived selectors.
 `/1` handoff directly from the pinned crate. Version-explicit member constants
 name its offer, external reference, `Selection` record and checksum inventory;
 consumers need no environment variable, producer execution or repository-layout
-guess. The existing unversioned `PUBLISHED_HANDOFF` family continues to address
-the unchanged `/2` corpus.
+guess. Its `Service` and `Provider` roles retain distinct admitted model
+authorities so a strict consumer linker can enforce duplicate-authority refusal
+without rejecting the positive corpus. The existing unversioned
+`PUBLISHED_HANDOFF` family continues to address the unchanged `/2` corpus.
 General dynamic choice/progress proofs, first-class relationship exports,
 runtime recovery and B's public consumer acceptance remain open; the supported
 boundary is stated in the wire contract.
