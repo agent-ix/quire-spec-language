@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-054: strict compiled-protocol version-3 activation mappings.
 
-mod intake;
+pub(crate) mod intake;
 pub mod refusal;
 pub mod wire;
 
@@ -38,10 +38,10 @@ pub struct Expected<'a> {
 /// A constructor-private package admitted against independent selections.
 #[derive(Clone, Debug)]
 pub struct AdmittedPackage {
-    pub(super) package: wire::Package,
-    pub(super) digest: ByteDigest,
-    pub(super) artifact: Option<crate::protocol_artifact::wire::ArtifactRef>,
-    pub(super) model_schema: Vec<crate::native_model::NativeModel>,
+    pub(crate) package: wire::Package,
+    pub(crate) digest: ByteDigest,
+    pub(crate) artifact: Option<crate::protocol_artifact::wire::ArtifactRef>,
+    pub(crate) model_schema: Vec<crate::native_model::NativeModel>,
 }
 
 impl AdmittedPackage {

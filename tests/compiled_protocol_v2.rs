@@ -1926,10 +1926,7 @@ fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
 #[test]
 fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
-        let mut inherited = emitted.admitted().package().inherited.clone();
-        inherited.wire = v3::WIRE.into();
-        inherited.media = v3::MEDIA.into();
-        inherited.schema = v3::SCHEMA.into();
+        let inherited = emitted.admitted().package().inherited.clone();
         let flow = u32::try_from(declaration(emitted.admitted(), "Flow")).expect("flow index");
         let controls = match &inherited.declarations[flow as usize].body {
             w::Body::Protocol { controls, .. } => controls,
@@ -1950,22 +1947,90 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             temporal_declaration: u32::try_from(declaration(emitted.admitted(), "ByEvent"))
                 .expect("temporal index"),
         };
-        let package = v3::wire::Package {
-            inherited,
-            temporal_bindings: emitted.admitted().package().temporal_bindings.clone(),
-            activation_mappings: vec![v3::wire::ActivationMapping {
-                control: activation.control.clone(),
+        let produced = native::admit_v3(
+            emitted,
+            &[native::ActivationSelection {
+                control: &activation.control,
                 temporal_declaration: activation.temporal_declaration,
             }],
+            Limits::default(),
+        )
+        .into_result()
+        .expect("source-authorized canonical v3 emission");
+        let package = produced.admitted().package().clone();
+        let out_of_range = w::Handle {
+            declaration: u32::MAX,
+            index: 0,
         };
-        let candidate = v3::encode_candidate(&package, Limits::default())
-            .into_result()
-            .expect("canonical v3 candidate");
+        assert_error(
+            &native::admit_v3(
+                emitted,
+                &[native::ActivationSelection {
+                    control: &out_of_range,
+                    temporal_declaration: activation.temporal_declaration,
+                }],
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::Control),
+        );
+        let non_event = u32::try_from(
+            controls
+                .iter()
+                .position(|control| !matches!(control.operation, w::ControlOperation::Event { .. }))
+                .expect("fixture non-event control"),
+        )
+        .expect("non-event control index");
+        let non_event = w::Handle {
+            declaration: flow,
+            index: non_event,
+        };
+        assert_error(
+            &native::admit_v3(
+                emitted,
+                &[native::ActivationSelection {
+                    control: &non_event,
+                    temporal_declaration: activation.temporal_declaration,
+                }],
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::Control),
+        );
+        assert_error(
+            &native::admit_v3(
+                emitted,
+                &[native::ActivationSelection {
+                    control: &activation.control,
+                    temporal_declaration: flow,
+                }],
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::TemporalDeclaration),
+        );
+        assert_error(
+            &native::admit_v3(
+                emitted,
+                &[
+                    native::ActivationSelection {
+                        control: &activation.control,
+                        temporal_declaration: activation.temporal_declaration,
+                    },
+                    native::ActivationSelection {
+                        control: &activation.control,
+                        temporal_declaration: activation.temporal_declaration,
+                    },
+                ],
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::Mapping {
+                side: v3::InventorySide::Offer,
+                cause: v3::MappingCause::Duplicate,
+            }),
+        );
         let admitted = inputs
             .read_v3_bytes(
                 proofs,
-                candidate.bytes(),
-                candidate.digest(),
+                produced.bytes(),
+                produced.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1975,6 +2040,71 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
         assert_eq!(
             admitted.activation_mappings(),
             package.activation_mappings.as_slice()
+        );
+        assert!(inputs
+            .read_v3_bytes(
+                proofs,
+                emitted.bytes(),
+                emitted.digest(),
+                &temporal.expected,
+                std::slice::from_ref(&activation),
+                Limits::default(),
+            )
+            .result()
+            .is_err());
+        assert!(inputs
+            .read_v2_bytes(
+                proofs,
+                produced.bytes(),
+                produced.digest(),
+                &temporal.expected,
+                Limits::default(),
+            )
+            .result()
+            .is_err());
+        assert!(inputs
+            .read_bytes(proofs, produced.bytes(), produced.digest())
+            .result()
+            .is_err());
+        let mut reordered = package.clone();
+        let second = match &mut reordered.inherited.declarations[flow as usize].body {
+            w::Body::Protocol { controls, .. } => {
+                let cloned = controls[event as usize].clone();
+                controls.push(cloned);
+                w::Handle {
+                    declaration: flow,
+                    index: u32::try_from(controls.len() - 1).expect("appended control index"),
+                }
+            }
+            _ => panic!("fixture flow remains protocol"),
+        };
+        let second = v3::ExpectedActivation {
+            control: second,
+            temporal_declaration: activation.temporal_declaration,
+        };
+        reordered.activation_mappings = vec![
+            v3::wire::ActivationMapping {
+                control: second.control.clone(),
+                temporal_declaration: second.temporal_declaration,
+            },
+            v3::wire::ActivationMapping {
+                control: activation.control.clone(),
+                temporal_declaration: activation.temporal_declaration,
+            },
+        ];
+        let reordered = v3::encode_candidate(&reordered, Limits::default())
+            .into_result()
+            .expect("canonical reordered mapping candidate");
+        assert_error(
+            &inputs.read_v3_bytes(
+                proofs,
+                reordered.bytes(),
+                reordered.digest(),
+                &temporal.expected,
+                &[activation.clone(), second],
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::OfferOrder),
         );
         let mut substituted = package.clone();
         substituted.activation_mappings[0].temporal_declaration =
