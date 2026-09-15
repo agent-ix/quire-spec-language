@@ -676,6 +676,11 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             )
         } else {
             match (anchor.kind, binder.kind) {
+                (w::AnchorKind::Registration, w::BinderKind::ForwardEffect) => (
+                    w::BindingKind::CompensationRegistration,
+                    compensation_subject(declaration, anchor, handle)?,
+                    binder.value_type,
+                ),
                 (w::AnchorKind::CompensationActivation, w::BinderKind::CompensationTrigger) => (
                     w::BindingKind::Observation,
                     compensation_subject(declaration, anchor, handle)?,
