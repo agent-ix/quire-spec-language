@@ -23,8 +23,16 @@ use quire_spec_language::protocol_artifact::{
         MUTATION_MANIFEST_FORMAT, PUBLISHED_CHECKSUMS_FILE, PUBLISHED_HANDOFF,
         PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
     },
-    native, v2, wire as w, Dimension as WorkDimension, Error, Invalid, Limits, NumberComponent,
-    NumberError, NumberWire, Unsupported,
+    native, v2, wire as w, Dimension as WorkDimension, Error, ExactInteger, Invalid, Limits,
+    NumberComponent, NumberError, NumberWire, ProtocolNumber, Unsupported,
+};
+use quire_spec_language::state::{
+    self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
+    ContextualSlot, Dimension as StateDimension, EvaluationOutcome, EvaluationRequest, FieldInput,
+    FieldValue, InputSlot, Limits as StateLimits, MissingInput, ObjectInput, ObjectKey,
+    ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput,
+    Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
+    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
@@ -140,6 +148,332 @@ fn inputs() -> Inputs {
     inputs_with_event_body(
         "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { true }",
     )
+}
+
+fn compensation_inputs() -> Inputs {
+    let mut inputs = Inputs::new(&[
+        Unit {
+            name: "event-time",
+            body: "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { true }",
+            declarations: &["ByEvent"],
+        },
+        Unit {
+            name: "sample-time",
+            body: "temporal BySample using F over (view: M::Plain) clock \"sample-clock\" on origin { true }",
+            declarations: &["BySample"],
+        },
+        Unit {
+            name: "timestamp-time",
+            body: "temporal ByTimestamp using W over (view: M::Plain) clock \"timestamp-clock\" on origin { true }",
+            declarations: &["ByTimestamp"],
+        },
+        Unit {
+            name: "recovery-contracts",
+            body: "pre Before using S on M::Node::step { delta >= 0 }
+                   post After using S on M::Node::step { result }",
+            declarations: &["Before", "After"],
+        },
+        Unit {
+            name: "recovery-flow",
+            body: "protocol RecoveryFlow using P over (view: M::Node) on origin {
+                role Service on M::Node;
+                compensate Full for Main::Applied as (forward: M::Node)
+                    by Service on M::Node::step using T clock \"event-clock\" {
+                  capture target: M::Total = forward.total;
+                  activate first (trigger: M::Plain) when { trigger.ready } {
+                    capture activated: Boolean = trigger.ready;
+                  }
+                  within [0,30]; attempts 3 of M::Plain;
+                  retry (earlier: M::Plain, later: M::Plain) { earlier.ready = later.ready };
+                  commit never;
+                  recover (recovered: M::Node) { recovered.n = 1 };
+                }
+                compensate Partial for Main::Applied as (partialForward: M::Node)
+                    by Service on M::Node::step using T clock \"event-clock\" {
+                  capture partialTarget: M::Total = partialForward.total;
+                  activate first (partialTrigger: M::Plain) when { partialTrigger.ready } {
+                    capture partialActivated: Boolean = partialTrigger.ready;
+                  }
+                  within [0,30]; attempts 3 of M::Plain;
+                  retry (partialEarlier: M::Plain, partialLater: M::Plain) {
+                    partialEarlier.ready = partialLater.ready
+                  };
+                  commit never;
+                  recover (partialRecovered: M::Node) { partialRecovered.n = 1 };
+                }
+                requires temporal ByEvent;
+                run sequence Main {
+                  attempt Tried by Service on M::Node::step contracts [Before,After]
+                      as (attempted: M::Plain) { attempted.ready };
+                  effect Applied of Main::Tried as (applied: M::Node) { true };
+                }
+                finish Closed as (closed: M::Node) { true };
+            }",
+            declarations: &["RecoveryFlow"],
+        },
+    ]);
+    let _ = inputs.step_contracts("Before", "After");
+    inputs
+}
+
+fn canonical(value: char) -> CanonicalDigest {
+    CanonicalDigest {
+        algorithm: "sha256".into(),
+        domain: "filament-canonical-json-1".into(),
+        value: format!("sha256:{}", value.to_string().repeat(64)),
+    }
+}
+
+fn observation_digest(value: char) -> ObservationDigest {
+    ObservationDigest(format!("sha256:{}", value.to_string().repeat(64)))
+}
+
+fn state_authority(
+    package: &v2::AdmittedPackage,
+    owner: u32,
+    requirement_index: u32,
+) -> AuthorityEvidence {
+    let inherited = package.inherited();
+    let requirement = &inherited.declarations[owner as usize].bindings[requirement_index as usize];
+    let selection = requirement
+        .model
+        .0
+        .as_ref()
+        .expect("model-bound requirement");
+    let producer = inherited.dependencies
+        [inherited.models[selection.model as usize].artifact as usize]
+        .artifact
+        .clone();
+    let static_selection = StaticAuthority {
+        interface_version: "1.2.0".into(),
+        document_identity: "document:selected".into(),
+        document_digest: canonical('1'),
+        model_identity: "model:selected".into(),
+        model_digest: canonical('2'),
+        profile_identity: "profile:selected".into(),
+        profile_digest: canonical('3'),
+        configuration_identity: "configuration:selected".into(),
+        configuration_digest: canonical('4'),
+    };
+    let assessment_selection = AssessmentAuthority {
+        population_identity: "population:selected".into(),
+        membership_digest: observation_digest('5'),
+        membership_complete: true,
+        snapshot_identity: "snapshot:selected".into(),
+        snapshot_digest: observation_digest('6'),
+        window_identity: None,
+        window_digest: None,
+        closure_identity: "closure:selected".into(),
+        closure_digest: observation_digest('7'),
+    };
+    let mut adapter_artifact = requirement.authority.clone();
+    adapter_artifact.kind = w::ArtifactKind::Binding;
+    adapter_artifact.identity = "explicit-d-f-compatibility".into();
+    adapter_artifact.digest = ByteDigest::of(b"explicit compatibility mapping fixture");
+    adapter_artifact.wire.identity = "quire.state.authority-adapter".into();
+    adapter_artifact.wire.version = "1".into();
+    let compiled = package.artifact().expect("strict package artifact").clone();
+    let observation = requirement.authority.clone();
+    let adapter = AuthorityAdapter {
+        artifact: adapter_artifact,
+        compiled: compiled.clone(),
+        requirement: observation.clone(),
+        producer: producer.clone(),
+        observation: observation.clone(),
+        producer_contract_revision: PRODUCER_CONTRACT_REVISION.into(),
+        observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
+        static_selection: static_selection.clone(),
+        assessment_selection: assessment_selection.clone(),
+    };
+    AuthorityEvidence {
+        producer_contract_revision: PRODUCER_CONTRACT_REVISION.into(),
+        observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
+        producer,
+        observation,
+        compiled,
+        adapter: Some(adapter),
+        static_selection,
+        assessment_selection,
+    }
+}
+
+fn binder_requirement(package: &v2::AdmittedPackage, binder: &w::Handle) -> u32 {
+    let declaration = &package.inherited().declarations[binder.declaration as usize];
+    declaration.anchors[declaration.binders[binder.index as usize].anchor.index as usize]
+        .binding
+        .0
+        .expect("runtime-bound compensation binder")
+}
+
+fn field_export(
+    package: &v2::AdmittedPackage,
+    model: u32,
+    record: &str,
+    field: &str,
+) -> w::ExportRef {
+    let export = package.inherited().models[model as usize]
+        .exports
+        .iter()
+        .position(|export| export.kind == w::ExportKind::Field && export.path == [record, field])
+        .expect("selected model field");
+    w::ExportRef {
+        model,
+        export: u32::try_from(export).expect("bounded fixture export"),
+    }
+}
+
+fn plain_binder(package: &v2::AdmittedPackage, binder: w::Handle, ready: bool) -> BinderInput {
+    let declaration = &package.inherited().declarations[binder.declaration as usize];
+    let binding = &declaration.binders[binder.index as usize];
+    let w::Type::Record { export } = &package.inherited().types[binding.value_type as usize] else {
+        panic!("Plain binder record type")
+    };
+    let boolean_type = package
+        .inherited()
+        .types
+        .iter()
+        .position(|value| matches!(value, w::Type::Boolean {}))
+        .and_then(|index| u32::try_from(index).ok())
+        .expect("Boolean wire type");
+    let requirement = binder_requirement(package, &binder);
+    BinderInput {
+        binder,
+        requirement: Some(requirement),
+        authority: Some(state_authority(
+            package,
+            binding.anchor.declaration,
+            requirement,
+        )),
+        value: InputSlot::Available(StateValue::new(
+            binding.value_type,
+            StateValueKind::Record(vec![FieldInput {
+                field: field_export(package, export.model, "Plain", "ready"),
+                value: FieldValue::Compiled(InputSlot::Available(StateValue::new(
+                    boolean_type,
+                    StateValueKind::Boolean(ready),
+                ))),
+            }]),
+        )),
+    }
+}
+
+fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> StateView {
+    let inherited = package.inherited();
+    let declaration = &inherited.declarations[binder.declaration as usize];
+    let binding = &declaration.binders[binder.index as usize];
+    let requirement_index = binder_requirement(package, &binder);
+    let w::Type::Object {
+        export: object_type,
+    } = &inherited.types[binding.value_type as usize]
+    else {
+        panic!("recovery object type")
+    };
+    let population_index = declaration
+        .bindings
+        .iter()
+        .position(|requirement| {
+            requirement.kind == w::BindingKind::Population
+                && requirement.anchor == binding.anchor
+                && requirement
+                    .model
+                    .0
+                    .as_ref()
+                    .is_some_and(|model| model.model == object_type.model)
+        })
+        .and_then(|index| u32::try_from(index).ok())
+        .expect("recovery population requirement");
+    let closure_index = declaration
+        .bindings
+        .iter()
+        .position(|requirement| {
+            requirement.kind == w::BindingKind::Closure
+                && requirement.requires == [population_index]
+        })
+        .and_then(|index| u32::try_from(index).ok())
+        .expect("recovery population closure");
+    let population = declaration.bindings[population_index as usize]
+        .model
+        .0
+        .clone()
+        .expect("population export");
+    let key = ObjectKey {
+        observation: ObservationKey {
+            anchor: binding.anchor.clone(),
+            snapshot: ObservationIdentity("snapshot:selected".into()),
+            window: None,
+            record: ObservationIdentity("record:recovery".into()),
+        },
+        model: object_type.model,
+        universe: population,
+        object_type: object_type.clone(),
+        identifier: "logical-recovery".into(),
+    };
+    let n_field = field_export(package, object_type.model, "Node", "n");
+    let n_type = declaration
+        .values
+        .iter()
+        .find_map(|value| match &value.operation {
+            w::ValueOperation::Field { field, .. } if field == &n_field => Some(value.value_type),
+            _ => None,
+        })
+        .expect("selected recovery field type");
+    let fields = inherited.models[object_type.model as usize]
+        .exports
+        .iter()
+        .enumerate()
+        .filter(|(_, export)| {
+            export.kind == w::ExportKind::Field
+                && export.path.len() == 2
+                && export.path[0] == "Node"
+        })
+        .map(|(index, _)| w::ExportRef {
+            model: object_type.model,
+            export: u32::try_from(index).expect("bounded fixture field"),
+        })
+        .map(|field| FieldInput {
+            value: if field == n_field {
+                FieldValue::Compiled(InputSlot::Available(StateValue::new(
+                    n_type,
+                    StateValueKind::Number(ProtocolNumber::Integer(ExactInteger::new(n))),
+                )))
+            } else {
+                FieldValue::Contextual(ContextualSlot::Unavailable(MissingInput::Field {
+                    object: key.clone(),
+                    field: field.clone(),
+                }))
+            },
+            field,
+        })
+        .collect();
+    StateView {
+        binders: vec![BinderInput {
+            binder: binder.clone(),
+            requirement: Some(requirement_index),
+            authority: Some(state_authority(
+                package,
+                binder.declaration,
+                requirement_index,
+            )),
+            value: InputSlot::Available(StateValue::new(
+                binding.value_type,
+                StateValueKind::Object(key.clone()),
+            )),
+        }],
+        populations: vec![PopulationInput {
+            requirement: w::Handle {
+                declaration: binder.declaration,
+                index: population_index,
+            },
+            closure_requirement: w::Handle {
+                declaration: binder.declaration,
+                index: closure_index,
+            },
+            authority: state_authority(package, binder.declaration, population_index),
+            membership: Ok(()),
+            closure: Ok(()),
+            objects: vec![ObjectInput { key, fields }],
+        }],
+    }
 }
 
 fn inputs_with_event_body(event_body: &str) -> Inputs {
@@ -447,6 +781,331 @@ fn assert_schema(schema: &[u8], digest: &str, document: &[u8]) {
         .expect("published handoff schema");
     let document: Value = serde_json::from_slice(document).expect("handoff JSON");
     assert!(validator.is_valid(&document));
+}
+
+/// Tracing: TC-141.
+#[trace("TC-141", "FR-049-AC-9", "NFR-009-AC-4")]
+#[test]
+fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting() {
+    with_v2_inputs(
+        compensation_inputs(),
+        |inputs, proofs, _, temporal, emitted| {
+            let unpublished = emitted.admitted();
+            let (owner, compensation) = unpublished
+                .inherited()
+                .declarations
+                .iter()
+                .enumerate()
+                .find_map(|(owner, declaration)| match &declaration.body {
+                    w::Body::Protocol { compensations, .. } => Some((
+                        u32::try_from(owner).expect("bounded owner"),
+                        &compensations[0],
+                    )),
+                    _ => None,
+                })
+                .expect("one compensation");
+            let request = |value: w::Handle| EvaluationRequest {
+                declaration: owner,
+                value,
+            };
+            assert_eq!(
+                state::evaluate_v2(
+                    unpublished,
+                    request(compensation.guard.clone()),
+                    &StateView::default(),
+                    StateLimits::default(),
+                )
+                .outcome(),
+                &EvaluationOutcome::Refused(StateRefusal::UnpublishedArtifact)
+            );
+
+            let admitted = inputs
+                .read_v2(proofs, emitted, &temporal.expected)
+                .into_result()
+                .expect("strict v2 package");
+            let compensation = match &admitted.inherited().declarations[owner as usize].body {
+                w::Body::Protocol { compensations, .. } => &compensations[0],
+                _ => panic!("protocol"),
+            };
+            let cases = [
+                (
+                    compensation.guard.clone(),
+                    StateView {
+                        binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
+                        populations: Vec::new(),
+                    },
+                ),
+                (
+                    compensation.retry.clone(),
+                    StateView {
+                        binders: vec![
+                            plain_binder(&admitted, compensation.earlier.clone(), true),
+                            plain_binder(&admitted, compensation.later.clone(), true),
+                        ],
+                        populations: Vec::new(),
+                    },
+                ),
+                (
+                    compensation.recover.clone(),
+                    recovery_view(&admitted, compensation.recovery.clone(), 1),
+                ),
+            ];
+            for (value, view) in cases {
+                let selected = request(value);
+                assert!(matches!(
+                    state::evaluate_v2(
+                        &admitted,
+                        selected.clone(),
+                        &StateView::default(),
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    EvaluationOutcome::Refused(StateRefusal::MissingBinding(_))
+                ));
+
+                let mut missing_source = view.clone();
+                let missing_binder = &missing_source.binders[0];
+                let selected_authority = missing_binder
+                    .authority
+                    .as_ref()
+                    .expect("selected source authority");
+                let binding = &admitted.inherited().declarations
+                    [missing_binder.binder.declaration as usize]
+                    .binders[missing_binder.binder.index as usize];
+                let missing = MissingInput::Observation(ObservationKey {
+                    anchor: binding.anchor.clone(),
+                    snapshot: ObservationIdentity(
+                        selected_authority
+                            .assessment_selection
+                            .snapshot_identity
+                            .clone(),
+                    ),
+                    window: selected_authority
+                        .assessment_selection
+                        .window_identity
+                        .clone()
+                        .map(ObservationIdentity),
+                    record: ObservationIdentity("record:missing".into()),
+                });
+                missing_source.binders[0].value = InputSlot::Unavailable(missing.clone());
+                assert_eq!(
+                    state::evaluate_v2(
+                        &admitted,
+                        selected.clone(),
+                        &missing_source,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    &EvaluationOutcome::Incomplete(missing)
+                );
+
+                let first =
+                    state::evaluate_v2(&admitted, selected.clone(), &view, StateLimits::default());
+                assert!(matches!(
+                    first.outcome(),
+                    EvaluationOutcome::Completed(value)
+                        if matches!(value.kind(), StateValueKind::Boolean(true))
+                ));
+                let replay =
+                    state::evaluate_v2(&admitted, selected.clone(), &view, StateLimits::default());
+                assert_eq!(replay.outcome(), first.outcome());
+                assert_eq!(replay.usage(), first.usage());
+
+                let usage = first.usage();
+                let exact_limits = StateLimits {
+                    input_value_nodes: usage.input_value_nodes,
+                    input_aggregate_entries: usage.input_aggregate_entries,
+                    input_text_bytes: usage.input_text_bytes,
+                    input_structural_depth: usage.input_structural_depth,
+                    expression_work: usage.expression_work,
+                    active_expression_depth: usage.active_expression_depth,
+                    predicate_call_depth: usage.predicate_call_depth,
+                    sequence_work: usage.sequence_work,
+                    retained_output: usage.retained_output,
+                    graph_expansion: usage.graph_expansion,
+                    graph_edges: usage.graph_edges,
+                    active_graph_depth: usage.active_graph_depth,
+                    value_comparison: usage.value_comparison,
+                };
+                assert!(matches!(
+                    state::evaluate_v2(&admitted, selected.clone(), &view, exact_limits).outcome(),
+                    EvaluationOutcome::Completed(value)
+                        if matches!(value.kind(), StateValueKind::Boolean(true))
+                ));
+
+                let one_short = StateLimits {
+                    expression_work: usage.expression_work - 1,
+                    ..StateLimits::default()
+                };
+                assert!(matches!(
+                    state::evaluate_v2(&admitted, selected.clone(), &view, one_short).outcome(),
+                    EvaluationOutcome::Exhausted(exhaustion)
+                        if exhaustion.dimension == StateDimension::ExpressionWork
+                ));
+
+                let zero = state::evaluate_v2(
+                    &admitted,
+                    selected.clone(),
+                    &view,
+                    StateLimits {
+                        expression_work: 0,
+                        ..StateLimits::default()
+                    },
+                );
+                assert!(matches!(
+                    zero.outcome(),
+                    EvaluationOutcome::Exhausted(exhaustion)
+                        if exhaustion.dimension == StateDimension::ExpressionWork
+                ));
+                assert!(matches!(
+                    state::evaluate_v2(
+                        &admitted,
+                        selected.clone(),
+                        &view,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    EvaluationOutcome::Completed(value)
+                        if matches!(value.kind(), StateValueKind::Boolean(true))
+                ));
+
+                let mut crossed_authority = view.clone();
+                crossed_authority.binders[0]
+                    .authority
+                    .as_mut()
+                    .expect("binder authority")
+                    .compiled = admitted.inherited().producer.binary.clone();
+                assert!(matches!(
+                    state::evaluate_v2(
+                        &admitted,
+                        selected,
+                        &crossed_authority,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    EvaluationOutcome::Refused(StateRefusal::Authority(_))
+                ));
+            }
+
+            let mut crossed = request(compensation.guard.clone());
+            crossed.value.declaration = owner.saturating_add(1);
+            assert!(matches!(
+                state::evaluate_v2(
+                    &admitted,
+                    crossed,
+                    &StateView::default(),
+                    StateLimits::default(),
+                )
+                .outcome(),
+                EvaluationOutcome::Refused(StateRefusal::Owner(_))
+            ));
+
+            let compensations = match &admitted.inherited().declarations[owner as usize].body {
+                w::Body::Protocol { compensations, .. } => compensations,
+                _ => panic!("protocol"),
+            };
+            let other = &compensations[1];
+            let crossed_compensation_view = StateView {
+                binders: vec![plain_binder(&admitted, other.trigger.clone(), true)],
+                populations: Vec::new(),
+            };
+            assert!(matches!(
+                state::evaluate_v2(
+                    &admitted,
+                    request(compensation.guard.clone()),
+                    &crossed_compensation_view,
+                    StateLimits::default(),
+                )
+                .outcome(),
+                EvaluationOutcome::Refused(StateRefusal::SurplusBinding(_))
+            ));
+
+            let mut wrong_type = StateView {
+                binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
+                populations: Vec::new(),
+            };
+            let InputSlot::Available(value) = &mut wrong_type.binders[0].value else {
+                unreachable!("available fixture value")
+            };
+            value.value_type = u32::MAX;
+            assert!(matches!(
+                state::evaluate_v2(
+                    &admitted,
+                    request(compensation.guard.clone()),
+                    &wrong_type,
+                    StateLimits::default(),
+                )
+                .outcome(),
+                EvaluationOutcome::Refused(StateRefusal::Type { .. })
+            ));
+
+            let mut wrong_producer = StateView {
+                binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
+                populations: Vec::new(),
+            };
+            let authority = wrong_producer.binders[0]
+                .authority
+                .as_mut()
+                .expect("binder authority");
+            authority.producer = admitted.inherited().producer.binary.clone();
+            authority
+                .adapter
+                .as_mut()
+                .expect("explicit adapter")
+                .producer = authority.producer.clone();
+            assert!(matches!(
+                state::evaluate_v2(
+                    &admitted,
+                    request(compensation.guard.clone()),
+                    &wrong_producer,
+                    StateLimits::default(),
+                )
+                .outcome(),
+                EvaluationOutcome::Refused(StateRefusal::Authority(_))
+            ));
+
+            let mut wrong_anchor = StateView {
+                binders: vec![plain_binder(&admitted, compensation.trigger.clone(), true)],
+                populations: Vec::new(),
+            };
+            let mut observation = ObservationKey {
+                anchor: admitted.inherited().declarations[owner as usize].binders
+                    [compensation.trigger.index as usize]
+                    .anchor
+                    .clone(),
+                snapshot: ObservationIdentity("snapshot:selected".into()),
+                window: None,
+                record: ObservationIdentity("record:wrong-anchor".into()),
+            };
+            observation.anchor.index = observation.anchor.index.saturating_add(1);
+            wrong_anchor.binders[0].value =
+                InputSlot::Unavailable(MissingInput::Observation(observation));
+            assert!(matches!(
+                state::evaluate_v2(
+                    &admitted,
+                    request(compensation.guard.clone()),
+                    &wrong_anchor,
+                    StateLimits::default(),
+                )
+                .outcome(),
+                EvaluationOutcome::Refused(StateRefusal::Authority(_))
+            ));
+
+            let mut crossed_population = recovery_view(&admitted, compensation.recovery.clone(), 1);
+            crossed_population.populations[0].requirement.index =
+                binder_requirement(&admitted, &compensation.trigger);
+            assert!(matches!(
+                state::evaluate_v2(
+                    &admitted,
+                    request(compensation.recover.clone()),
+                    &crossed_population,
+                    StateLimits::default(),
+                )
+                .outcome(),
+                EvaluationOutcome::Refused(StateRefusal::SurplusBinding(_))
+            ));
+        },
+    );
 }
 
 #[trace("TC-139", "FR-051-AC-1", "FR-051-AC-4", "FR-051-AC-6")]

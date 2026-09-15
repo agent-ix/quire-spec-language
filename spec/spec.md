@@ -366,8 +366,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-046](functional/FR-046-execute-predicates-and-ordered-queries.md) | FR | Retrospective L3 draft under #66; review, matrix binding and full query runtime acceptance remain pending |
 | [FR-047](functional/FR-047-evaluate-finite-object-reference-graphs.md) | FR | Retrospective L4 finite graph contract under #66; implementation/evidence reconciliation pending |
 | [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
-| [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Draft immutable composed-evaluation input and typed-outcome boundary under #66 |
+| [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Implemented exact admitted `/1` and `/2` composed-evaluation input and typed-outcome boundary; `/2` compensation expressions completed under #101 |
 | [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
 | [FR-051](functional/FR-051-publish-checked-native-handoffs.md) | FR | Implemented strict checked predicate and temporal subject owner handoffs for #90 |
 | [FR-052](functional/FR-052-publish-native-temporal-evaluation-owner.md) | FR | Implemented canonical native temporal request/result owner boundary for Contract IR FR-026; review/merge pending |
-| [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Draft composed-evaluation work and retained-value bounds under #66 |
+| [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
