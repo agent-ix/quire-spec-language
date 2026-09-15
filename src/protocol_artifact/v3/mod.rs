@@ -61,4 +61,13 @@ impl AdmittedPackage {
     pub fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel> {
         self.model_schema.get(usize::try_from(index).ok()?)
     }
+
+    /// Complete strict-reader-admitted authored control-to-temporal mapping.
+    ///
+    /// The returned rows retain declaration-local control handles and temporal
+    /// declaration indices exactly as validated; callers cannot infer or
+    /// substitute a relation from unrelated package coordinates.
+    pub fn activation_mappings(&self) -> &[wire::ActivationMapping] {
+        &self.package.activation_mappings
+    }
 }

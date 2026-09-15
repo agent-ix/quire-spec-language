@@ -1961,17 +1961,21 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
         let candidate = v3::encode_candidate(&package, Limits::default())
             .into_result()
             .expect("canonical v3 candidate");
-        assert!(inputs
+        let admitted = inputs
             .read_v3_bytes(
                 proofs,
                 candidate.bytes(),
                 candidate.digest(),
                 &temporal.expected,
                 std::slice::from_ref(&activation),
-                Limits::default()
+                Limits::default(),
             )
-            .result()
-            .is_ok());
+            .into_result()
+            .expect("strict v3 reader");
+        assert_eq!(
+            admitted.activation_mappings(),
+            package.activation_mappings.as_slice()
+        );
         let mut substituted = package.clone();
         substituted.activation_mappings[0].temporal_declaration =
             u32::try_from(declaration(emitted.admitted(), "BySample"))
