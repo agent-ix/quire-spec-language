@@ -105,12 +105,6 @@ fn mappings(
 ) -> Result<(), Error> {
     work.charge(Dimension::Entries, package.activation_mappings.len())?;
     work.charge(Dimension::Entries, expected.len())?;
-    if package.activation_mappings.len() < expected.len() {
-        return Err(mapping_refusal(InventorySide::Offer, MappingCause::Missing));
-    }
-    if package.activation_mappings.len() > expected.len() {
-        return Err(mapping_refusal(InventorySide::Offer, MappingCause::Surplus));
-    }
     let mut seen = Vec::new();
     seen.try_reserve_exact(expected.len())
         .map_err(|_| Error::Allocation)?;
@@ -128,6 +122,12 @@ fn mappings(
         {
             return Err(Error::V3(Refusal::OfferOrder));
         }
+    }
+    if package.activation_mappings.len() < expected.len() {
+        return Err(mapping_refusal(InventorySide::Offer, MappingCause::Missing));
+    }
+    if package.activation_mappings.len() > expected.len() {
+        return Err(mapping_refusal(InventorySide::Offer, MappingCause::Surplus));
     }
     for mapping in &package.activation_mappings {
         work.visit()?;
