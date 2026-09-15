@@ -8,6 +8,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
+  - { target: ix://agent-ix/quire-protocol/FR-003, type: references }
 ---
 # FR-049: Admit immutable composed evaluation inputs
 
@@ -25,11 +26,13 @@ representation.
 
 ## Inputs
 
-The public Rust entry point takes an `AdmittedPackage`, an `EvaluationRequest`,
-a borrowed `StateView` and caller-lowered `Limits`. The request selects one
-declaration and one declaration-local value handle. The state view contains
-explicit binder values and finite population/object views selected by their
-declaration-local binding requirements.
+The public Rust entry points take either a version-1 `AdmittedPackage` or a
+version-2 `v2::AdmittedPackage`, an `EvaluationRequest`, a borrowed `StateView`
+and caller-lowered `Limits`. The request selects one declaration and one
+declaration-local value handle. The state view contains explicit binder values
+and finite population/object views selected by their declaration-local binding
+requirements. Version-2 evaluation includes compensation guard, retry and
+recovery value handles retained by [FR-048](FR-048-preserve-native-choreography-semantics.md).
 
 D's draft Producer interface 1.2.0 contract at filament-core-data revision
 `6259d3a5b99088740df9bcc8e8d60f3720aaa603` supplies model, object-type,
@@ -62,8 +65,16 @@ identity and a closed typed reason; callers never classify outcomes from text.
 
 ## Behavior
 
-The public evaluator SHALL accept only a package produced by the constructor-
-private successful compiled-artifact reader.
+The public evaluators SHALL accept only packages produced by their constructor-
+private successful version-exact compiled-artifact readers.
+
+When the caller selects version-2 evaluation, the evaluator SHALL read the
+admitted inherited value/type/binding graph, retained model schema and selected
+version-2 artifact identity without converting the package to version 1.
+
+If a version-2 compiler emission has no independently admitted published
+artifact identity, then the evaluator SHALL refuse before accepting runtime
+authority with `Refusal::UnpublishedArtifact`.
 
 The request validator SHALL reject an absent declaration, a foreign or
 out-of-range value handle and a value whose owner differs from the selected
@@ -126,6 +137,9 @@ refused or exhausted outcome encountered under the selected operator order.
 The evaluator SHALL borrow the admitted package and state view without mutating
 them or retaining mutable process-global evaluation state.
 
+The version-1 and version-2 entry points SHALL execute one shared evaluator
+implementation with identical request, input, outcome and accounting semantics.
+
 The evaluator SHALL apply the versioned charge-before-work rules in
 [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md) and start every
 call with fresh counters.
@@ -145,6 +159,7 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
 | FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
 | FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |
+| FR-049-AC-9 | A strictly read `/2` package evaluates its exact compensation guard, retry and recovery handles through the shared state evaluator. Crossed handles and artifact/authority substitutions refuse with their existing typed causes; an unpublished compiler emission returns `Refusal::UnpublishedArtifact`; missing inputs and exhausted work remain distinct; the version-1 API remains source-compatible. | Test (TC-142) |
 
 ## Dependencies
 
@@ -161,3 +176,8 @@ against the compiled requirements they supply.
 The revision pins above select semantic producer and observation contracts, not
 a crate dependency or copied wire representation. A revision change must be
 reconciled explicitly before its values are admitted through `StateView`.
+
+`quire-protocol` [FR-003](ix://agent-ix/quire-protocol/FR-003) consumes the
+version-2 entry point for compensation assessment. QSL remains the sole owner of
+native expression evaluation; the consumer neither reparses nor mirrors the
+admitted graph.
