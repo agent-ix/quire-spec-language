@@ -22,6 +22,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-010
     type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-011
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-038
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-042
@@ -39,6 +41,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-051
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-054
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-055
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
@@ -186,6 +190,11 @@ and NFR-008. L6 preserves choreography for downstream assessment under FR-048.
 FR-042 and FR-050 own the strict `/1` and `/2` compiled-artifact producer/
 consumer boundaries. Each stage consumes shared model and observation contracts
 without taking over their producer authority.
+
+IT-011 adopts the accepted complete-V1 QSpec baseline into one repository-local
+delivery plan. It preserves the existing L1 through L6 evidence and assigns all
+remaining source, type, expression, model, runtime, tooling and WASM work without
+changing the central architecture or requirement meaning.
 
 ### 2.2 Out of Scope
 

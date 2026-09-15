@@ -9,4 +9,4 @@ okf_version: "0.1"
 ## Contents
 
 * [Plan overview](./plan.md)
-* [Task-041: Publish strict v3 control temporal activation mappings](./tasks/Task-041-publish-v3-control-temporal-map.md)
+* [Task-045: Publish strict v3 control temporal activation mappings](./tasks/Task-045-publish-v3-control-temporal-map.md)
