@@ -17,6 +17,11 @@ constants), authored model sources and `.native` inputs under `examples/` and
 `artifacts/compiled-protocol-v2/` handoff. Their next deliberate regeneration
 adopts `AGPL-3.0-or-later`.
 
+The committed `artifacts/compiled-protocol-v1/` handoff was generated after the
+relicense by the Rust producer under `AGPL-3.0-or-later`. Its selected original
+source members retain their pre-existing `AGPL-3.0-only` notices and exact bytes;
+the package, executable and checksum inventory do not relicense those inputs.
+
 New implementation source, build/check scripts and implementation test fixtures
 use SPDX `AGPL-3.0-or-later`. The included LICENSE is the unmodified GNU Affero
 General Public License version 3 text; source notices select version 3 or, at
