@@ -33,3 +33,6 @@ four-source handoff from the pinned crate. The producer writes the complete
 checksum inventory in Rust. TC-121 validates its closed inventory and replays
 the committed offer through the public strict reader; the independently selected
 Protocol intake and historical two-revision comparison remain in Protocol #11.
+The first Protocol static-link execution exposed duplicate role authorities in
+the published corpus; Task-044/#114 owns and completes that corpus correction
+without changing this publication boundary.

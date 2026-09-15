@@ -58,6 +58,9 @@ adoption and assurance remain explicit acceptance work.
 - [Task-043](tasks/Task-043-published-v1-handoff.md): publish the existing
   four-source `/1` producer output at a version-explicit owner address for the
   pinned Protocol consumer.
+- [Task-044](tasks/Task-044-distinct-v1-role-authorities.md): correct the
+  published `/1` producer corpus so its two authored roles retain distinct
+  model authorities through the consumer linker.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
@@ -65,7 +68,7 @@ optional semantic review remains declined.
 
 ## Completion
 
-All eighteen tasks are done. Task-037 completed issue #78's bounded public
+All nineteen tasks are done. Task-037 completed issue #78's bounded public
 handoff-address correction without reopening LC05 behavior or the v0.2.0
 release. Task-040 completes issue #101's exact v2 state-evaluation seam without
 adding a second evaluator or changing Protocol ownership. Task-041 tracks issue
@@ -73,6 +76,9 @@ adding a second evaluator or changing Protocol ownership. Task-041 tracks issue
 Task-042 completes the exact forward-effect admission gap found by the
 independent Protocol consumer after #105. Task-043 completes issue #112 by
 committing the existing `/1` producer output and publishing its typed addresses;
-Protocol's independent intake and historical comparison remain in its #11. The setup effort,
+Task-044 completes issue #114 by regenerating that handoff with distinct Service
+and Provider model authorities after Protocol's first static-link execution
+exposed the duplicate. Protocol's independent intake and historical comparison
+remain in its #11. The setup effort,
 artifact lineage, reproduction path and remaining support gaps are recorded in
 `docs/lc05-technical-acceptance.md` at LC05 closeout.
