@@ -370,4 +370,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
 | [FR-051](functional/FR-051-publish-checked-native-handoffs.md) | FR | Implemented strict checked predicate and temporal subject owner handoffs for #90 |
 | [FR-052](functional/FR-052-publish-native-temporal-evaluation-owner.md) | FR | Implemented canonical native temporal request/result owner boundary for Contract IR FR-026; review/merge pending |
+| [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | Versioned opaque semantic-trigger identity bridge for Protocol FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |

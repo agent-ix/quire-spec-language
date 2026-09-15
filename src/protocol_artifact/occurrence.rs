@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-048: bounded runtime occurrence-key schemas over admitted protocol graphs.
 //!
 //! This module projects static key dimensions only. Concrete workflow identities

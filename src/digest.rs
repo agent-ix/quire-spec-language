@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-001/004: exact byte integrity, independent of semantic canonicalization.
 use sha2::{Digest, Sha256};
 use std::{fmt, str::FromStr};

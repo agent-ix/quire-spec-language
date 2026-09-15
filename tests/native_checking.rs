@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-006/016: real native reference/operation judgments under qualified models.
 
 #[path = "native_checking_cases/bindings.rs"]

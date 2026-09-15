@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: source namespace and native dependency stages through public APIs.
 //! Model/profile admission and the real producer boundary remain separate work.
 

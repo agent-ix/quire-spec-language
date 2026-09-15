@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-119: real three-family type admission preserves cross-unit dependencies.
 //! This is a static type pipeline; proof, runtime and artifact delivery remain open.
 

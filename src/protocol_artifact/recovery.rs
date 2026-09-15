@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: one recovery-to-population attribution rule for both artifact paths.
 
 use std::collections::BTreeSet;

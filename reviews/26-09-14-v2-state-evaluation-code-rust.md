@@ -3,14 +3,14 @@ id: SR-432
 title: "Code and Rust review of v2 state evaluation"
 type: SpecReview
 analysis: code-review
-scope: "quire-spec-language#101; FR-049; NFR-009; TC-141; src/state; tests/compiled_protocol_v2.rs"
+scope: "quire-spec-language#101; FR-049; NFR-009; TC-142; src/state; tests/compiled_protocol_v2.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-049
     type: reviews
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: reviews
-  - target: ix://agent-ix/quire-spec-language/TC-141
+  - target: ix://agent-ix/quire-spec-language/TC-142
     type: reviews
 ---
 
@@ -53,7 +53,7 @@ resource, or stub finding remains.
 - Existing expression and retained-population ceilings remain the single source
   of accounting. Fresh retry, one-short and zero-budget cases exercise the same
   deterministic boundary.
-- TC-141 uses a strictly read real package and non-constant activation, retry
+- TC-142 uses a strictly read real package and non-constant activation, retry
   and recovery expressions. Crossed owner, trigger, authority, type, anchor and
   population cases all refuse.
 
@@ -73,4 +73,4 @@ resource, or stub finding remains.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No unresolved code or Rust finding remains after remediation. | #101; FR-049; NFR-009; TC-141 |
+| FND-001 | low | No unresolved code or Rust finding remains after remediation. | #101; FR-049; NFR-009; TC-142 |

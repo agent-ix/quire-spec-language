@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-073–076: original event lineage, exact stops, immutable retries and refusals.
 
 use super::*;

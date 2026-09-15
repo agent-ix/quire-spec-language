@@ -133,7 +133,7 @@ fresh counters and unchanged inputs.
 | NFR-009-AC-1 | All thirteen counters use the exact units and inclusive hard ceilings in this requirement, including one pair unit plus equal-length UTF-8 byte units for text comparison; a caller may lower each independently, zero remains effective and a request above a hard ceiling is clamped. | Test (TC-137) |
 | NFR-009-AC-2 | Each charged dimension admits its independently counted exact case and stops its one-short case before the next operation, retaining only successful usage and no partial completed value. | Test (TC-137) |
 | NFR-009-AC-3 | Any checked-counter overflow or allocator refusal reached by the implementation produces its closed typed exhaustion cause assigned to the affected charged dimension and cannot be reclassified from diagnostic text. | Analysis |
-| NFR-009-AC-4 | Re-evaluation starts with fresh counters, leaves the borrowed artifact and input view unchanged, and returns the same result and usage when the immutable inputs and sufficient effective limits are equal for both version-exact entry points. | Test (TC-137, TC-141) |
+| NFR-009-AC-4 | Re-evaluation starts with fresh counters, leaves the borrowed artifact and input view unchanged, and returns the same result and usage when the immutable inputs and sufficient effective limits are equal for both version-exact entry points. | Test (TC-137, TC-142) |
 
 ## Dependencies
 

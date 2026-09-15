@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use ix_trace_rs::trace;
 use quire_spec_language::source_map::{Layout, Segment, SourceMap};
 use quire_spec_language::{parse_source, ByteDigest, Code, Limits, Source, SourceIdentity, Span};

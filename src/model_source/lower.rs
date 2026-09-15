@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-025: lower decoded declarations into existing IR and native roles.
 
 use super::decode::{DecodedEnum, DecodedModel, DecodedOperation, DecodedRecord};

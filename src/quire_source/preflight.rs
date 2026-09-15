@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-030: distinguish input ceilings, profile skew and foreign Quire context.
 
 use super::{

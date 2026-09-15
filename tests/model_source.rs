@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-025: public source frontend, exact provenance and actual native execution.
 
 // Existing helpers construct runtime data and call public compiler APIs.
@@ -461,7 +461,7 @@ fn entry_budgets_precede_value_decoding_and_later_operations() {
         (EntryKind::Deleted, "/operations/0/frame/deleted", 2),
     ] {
         let mut input = json!({
-            "license":"AGPL-3.0-only", "package":"test:model", "requirement":"Model", "revision":1,
+            "license":"AGPL-3.0-or-later", "package":"test:model", "requirement":"Model", "revision":1,
             "scalars":[], "records":[], "enums":[], "values":[], "objects":[], "operations":[]
         });
         match kind {

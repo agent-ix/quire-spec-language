@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-121: actual native stages produce emission authority for supported families.
 //! Fixture-selected producer/baseline records establish neither public acceptance
 //! nor the separately owned quire-protocol integration and full #40 completion.

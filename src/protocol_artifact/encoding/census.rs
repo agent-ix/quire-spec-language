@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: reserve borrowed wire input before serde_json scans strings.
 
 use super::super::{work::Work, Dimension, Error, Invalid};

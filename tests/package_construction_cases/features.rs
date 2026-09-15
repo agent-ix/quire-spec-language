@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-078/080: complete selected closure and exhaustive native feature families.
 
 use std::collections::BTreeSet;

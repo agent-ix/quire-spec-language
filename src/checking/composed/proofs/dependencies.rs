@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Bounded native totality propagation; unvisited targets remain unfinished.
 
 use super::work::{Dimension as D, Work};

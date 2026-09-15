@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-044: activation dispositions, instance identity and immutable captures.
 //!
 //! Instance identity is the admitted semantic trigger identity or the admitted

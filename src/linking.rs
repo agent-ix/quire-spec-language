@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-005/013/015: exact imports and formal/native declaration correspondence.
 //! Linking establishes names and provenance, not typing or evaluability.
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: authored family bodies and static requirements for later runtime input.
 mod compensations;
 use super::context::Declaration;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-051 checked native Boolean predicate handoff.
 
 use super::{checked_handoff as handoff, v2, wire as w};

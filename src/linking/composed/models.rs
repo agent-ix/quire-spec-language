@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: exact unit-local imports over the existing admitted NativeModel.
 //! No model schema, runtime population or producer canonical correspondence is inferred.
 

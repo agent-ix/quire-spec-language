@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! IT-005 / FR-025: fixture setup through the public model-source frontend.
 
 use quire_contract_ir as ir;

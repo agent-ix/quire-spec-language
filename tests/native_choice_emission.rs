@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Observed Boolean decision facts pass through actual compiler stages. These
 //! tests establish static admission and retained graphs, not runtime choices.
 

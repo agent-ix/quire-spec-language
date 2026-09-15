@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: compare the static subject through its declared semantic components.
 //!
 //! The [package contract][contract] names the static components as Sources,

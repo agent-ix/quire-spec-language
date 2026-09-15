@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-031: select one authored binding and invoke the actual Quire consumer.
 
 use super::{wire, Intake, Result, RunCause};

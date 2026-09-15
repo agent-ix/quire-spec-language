@@ -1,5 +1,5 @@
 ---
-id: TC-141
+id: TC-142
 title: "Evaluate admitted version-2 compensation expressions"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: verifies
 ---
-# TC-141: Evaluate admitted version-2 compensation expressions
+# TC-142: Evaluate admitted version-2 compensation expressions
 
 ## Description
 

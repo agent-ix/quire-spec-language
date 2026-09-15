@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-124: checked bounds, exhaustion and required retained state.
 //!
 //! NFR-008. Expected charges come from the counter definitions published in

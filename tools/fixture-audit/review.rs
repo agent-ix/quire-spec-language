@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012 AC-1/2: historical review bindings and discriminating negative controls.
 use crate::{
     error::{ensure, Code, Error, Result},

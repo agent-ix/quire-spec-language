@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: the concrete named model and actual file-driven workflow.
 
 #[path = "../examples/config-version/fixtures.rs"]

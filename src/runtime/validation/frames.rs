@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-007: recorded population differences and immutable model effect frames.
 
 use super::super::{FieldBinding, ObjectIdentity, QualifiedName, ValueId, ValueNode};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-065/066: independently lowered budgets, deterministic stops and immutable retries.
 
 use super::setup::{authored_model, recorded};

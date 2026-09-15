@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036/040/042: authored channel payloads and distinct communication premises.
 //! Delivery bounds count deliveries per send; they never select a clock.
 

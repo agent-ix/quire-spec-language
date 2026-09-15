@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-043/FR-044/FR-045: bounded evaluation of an emitted native temporal body.
 //!
 //! The public contract is in

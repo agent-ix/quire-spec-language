@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-031: actual standalone Markdown execution and feature/mode refusals.
 
 #[path = "support/standalone_setup.rs"]

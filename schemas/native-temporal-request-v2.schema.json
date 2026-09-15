@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:native-temporal-request:2",
+  "title": "Native temporal evaluation request version 2",
+  "description": "FR-053 opaque semantic-trigger wrapper. Schema validity grants no admission; use the bounded strict Rust reader with the exact FR-051 checked temporal subject.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only; trigger and request use lowercase hexadecimal binary encoding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "trigger", "request"],
+  "properties": {
+    "contract": {"const": "quire.native-temporal-request/v2"},
+    "identity": {"$ref": "#/$defs/digest"},
+    "trigger": {"$ref": "#/$defs/nonempty_hex"},
+    "request": {"$ref": "#/$defs/nonempty_hex"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "nonempty_hex": {"type": "string", "minLength": 2, "maxLength": 16777216, "pattern": "^[0-9a-f]+$"}
+  }
+}

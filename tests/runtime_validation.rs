@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-007: real checked-model population validation, before predicate execution.
 
 #[path = "runtime_validation_cases/bindings.rs"]

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-138: strict compiled-protocol v2 production, admission and L5 handoff.
 
 #[path = "support/native_protocol/mod.rs"]
@@ -783,8 +783,8 @@ fn assert_schema(schema: &[u8], digest: &str, document: &[u8]) {
     assert!(validator.is_valid(&document));
 }
 
-/// Tracing: TC-141.
-#[trace("TC-141", "FR-049-AC-9", "NFR-009-AC-4")]
+/// Tracing: TC-142.
+#[trace("TC-142", "FR-049-AC-9", "NFR-009-AC-4")]
 #[test]
 fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting() {
     with_v2_inputs(

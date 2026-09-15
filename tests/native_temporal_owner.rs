@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-140: canonical formula-wide native temporal owner requests and results.
 
 #[allow(
@@ -16,7 +16,7 @@ use quire_spec_language::{
     linking::composed::definition_source::RegisteredDefinition,
     protocol_artifact::{
         self as artifact, native,
-        native_temporal::{self, request, result},
+        native_temporal::{self, request, result, v2 as temporal_v2},
         v2, wire as w,
     },
     temporal, ByteDigest,
@@ -232,6 +232,52 @@ fn input(leaf: u32, value: bool, correspondence: &str) -> request::Input {
         },
         authoritative_origin: true,
         evicted: Vec::new(),
+    }
+}
+
+fn input_v2(leaf: u32, trigger: Vec<u8>) -> temporal_v2::Input {
+    let request::Input {
+        correspondence,
+        positions,
+        anchor,
+        triggers,
+        trigger_evidence,
+        trigger_scope,
+        decision_progress,
+        decision_closure,
+        surrounding_progress,
+        surrounding_closure,
+        execution,
+        completeness,
+        authoritative_origin,
+        evicted,
+        ..
+    } = input(leaf, true, "correspondence:opaque-v2");
+    temporal_v2::Input {
+        trigger: temporal_v2::SemanticTriggerIdentity::new(trigger).expect("nonempty trigger"),
+        correspondence,
+        positions,
+        anchor,
+        triggers: triggers
+            .into_iter()
+            .map(|value| temporal_v2::TriggerInput {
+                receipt: value.receipt,
+                anchor: value.anchor,
+                payload: value.payload,
+                guard: value.guard,
+                captures: value.captures,
+            })
+            .collect(),
+        trigger_evidence,
+        trigger_scope,
+        decision_progress,
+        decision_closure,
+        surrounding_progress,
+        surrounding_closure,
+        execution,
+        completeness,
+        authoritative_origin,
+        evicted,
     }
 }
 
@@ -1332,6 +1378,149 @@ fn activation_captures_are_immutable_identity_inputs_and_bounded() {
                     .expect_err("capture one over limit must stop")
                     .code(),
                 native_temporal::ErrorCode::ResourceIncomplete,
+            );
+        },
+    );
+}
+
+#[trace(
+    "TC-141",
+    "FR-053-AC-1",
+    "FR-053-AC-2",
+    "FR-053-AC-3",
+    "FR-053-AC-4",
+    "FR-053-AC-5"
+)]
+#[test]
+fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_documents() {
+    with_package(
+        FixtureProfile::Event,
+        "holds(view.ready)",
+        |package, declaration| {
+            let subject = checked_subject(package, declaration);
+            let leaf = leaf(package, declaration);
+            let first = temporal_v2::produce(
+                &subject,
+                input_v2(leaf, vec![0, 0xff, b'/', 0x80]),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("produce v2 request");
+            assert_schema(
+                temporal_v2::REQUEST_SCHEMA_BYTES,
+                temporal_v2::REQUEST_SCHEMA_SHA256,
+                first.bytes(),
+            );
+            let request =
+                temporal_v2::read(first.bytes(), &subject, native_temporal::Limits::default())
+                    .into_result()
+                    .expect("strict read v2 request");
+            assert_eq!(request.semantic_trigger(), &[0, 0xff, b'/', 0x80]);
+            let output = temporal_v2::evaluate(
+                &request,
+                temporal_v2::Relation::Original,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("evaluate v2 result");
+            assert_schema(
+                temporal_v2::RESULT_SCHEMA_BYTES,
+                temporal_v2::RESULT_SCHEMA_SHA256,
+                output.bytes(),
+            );
+            let result = temporal_v2::read_result(
+                output.bytes(),
+                &request,
+                temporal_v2::Relation::Original,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("strict read v2 result");
+            assert_eq!(result.semantic_trigger(), &[0, 0xff, b'/', 0x80]);
+
+            let second = temporal_v2::produce(
+                &subject,
+                input_v2(leaf, vec![0, 0xfe, b'/', 0x80]),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("one-byte mutation remains a distinct v2 request");
+            assert_ne!(first.identity(), second.identity());
+            let other_request =
+                temporal_v2::read(second.bytes(), &subject, native_temporal::Limits::default())
+                    .into_result()
+                    .expect("read changed request");
+            assert!(temporal_v2::read_result(
+                output.bytes(),
+                &other_request,
+                temporal_v2::Relation::Original,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .is_err());
+            assert!(temporal_v2::evaluate(
+                &other_request,
+                temporal_v2::Relation::Superseding(&result),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .is_err());
+            let mut correction_input = input_v2(leaf, vec![0, 0xff, b'/', 0x80]);
+            correction_input.triggers[0].receipt = "receipt:2".into();
+            let correction_document = temporal_v2::produce(
+                &subject,
+                correction_input,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("changed delivery creates a new request for the same trigger");
+            let correction_request = temporal_v2::read(
+                correction_document.bytes(),
+                &subject,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("strict read correction request");
+            let correction = temporal_v2::evaluate(
+                &correction_request,
+                temporal_v2::Relation::Superseding(&result),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("same-trigger correction is admitted");
+            assert!(temporal_v2::read_result(
+                correction.bytes(),
+                &correction_request,
+                temporal_v2::Relation::Superseding(&result),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .is_ok());
+            let mut malformed: Value = serde_json::from_slice(first.bytes()).expect("v2 JSON");
+            malformed["trigger"] = Value::String("00FF2f80".into());
+            let malformed = serde_json::to_vec(&malformed).expect("mutated JSON");
+            assert!(
+                temporal_v2::read(&malformed, &subject, native_temporal::Limits::default(),)
+                    .into_result()
+                    .is_err()
+            );
+            assert!(temporal_v2::SemanticTriggerIdentity::new(Vec::new()).is_err());
+            assert!(
+                request::read(first.bytes(), &subject, native_temporal::Limits::default())
+                    .into_result()
+                    .is_err()
+            );
+            let v1 = request::produce(
+                &subject,
+                input(leaf, true, "correspondence:v1-cross-version"),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("produce v1 request");
+            assert!(
+                temporal_v2::read(v1.bytes(), &subject, native_temporal::Limits::default())
+                    .into_result()
+                    .is_err()
             );
         },
     );

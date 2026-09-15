@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020: real compiler reconstruction from independently frozen package bytes.
 
 #[path = "package_reading_cases/mod.rs"]
