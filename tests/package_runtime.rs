@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-089 / IT-007: runtime observations through newly reconstructed packages.
 
 #[path = "support/runtime_setup.rs"]

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-043: the caller-supplied observation trace.
 //!
 //! Agent F owns observation transport, storage, replay and completeness

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-ix:quire-spec-language:native-temporal-result:2",
+  "title": "Native temporal evaluation result version 2",
+  "description": "FR-053 opaque semantic-trigger result wrapper. Schema validity grants no admission; use the strict Rust reader with the exact v2 request and relation.",
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only; trigger and result use lowercase hexadecimal binary encoding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "identity", "request_identity", "trigger", "result"],
+  "properties": {
+    "contract": {"const": "quire.native-temporal-result/v2"},
+    "identity": {"$ref": "#/$defs/digest"},
+    "request_identity": {"$ref": "#/$defs/digest"},
+    "trigger": {"$ref": "#/$defs/nonempty_hex"},
+    "result": {"$ref": "#/$defs/nonempty_hex"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "nonempty_hex": {"type": "string", "minLength": 2, "maxLength": 16777216, "pattern": "^[0-9a-f]+$"}
+  }
+}

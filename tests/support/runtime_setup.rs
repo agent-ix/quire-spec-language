@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared public-API setup for native validation and reference execution tests.
 
 #[path = "native_rule_model.rs"]

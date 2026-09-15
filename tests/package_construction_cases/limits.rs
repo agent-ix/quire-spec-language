@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-088: independent JSON workloads, pass boundaries and atomic retries.
 
 use quire_spec_language::package::{PackagePassUsage, PackageStage};

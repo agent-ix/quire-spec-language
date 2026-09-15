@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-050/TC-138: release-capable strict v2 producer handoff for B.
 
 #[allow(dead_code, reason = "The shared module also preserves the v1 recipe")]

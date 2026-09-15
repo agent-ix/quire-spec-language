@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-043: retained per-binding progress, closure and completeness.
 //!
 //! Progress is asserted under one binding — one declaration, one clock binding

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-045: native-to-TL mapping support classification.
 //!
 //! The disposition is a total function of three inputs and nothing else: the

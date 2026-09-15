@@ -49,7 +49,7 @@ adoption and assurance remain explicit acceptance work.
 - [Task-037](tasks/Task-037-published-v2-handoff-addresses.md): publish the
   producer-owned `/2` handoff member and format addresses required by the
   independent Rust consumer.
-- [Task-039](tasks/Task-039-v2-state-evaluation.md): evaluate strictly admitted
+- [Task-040](tasks/Task-040-v2-state-evaluation.md): evaluate strictly admitted
   `/2` compensation expressions through the existing bounded state evaluator.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
@@ -60,7 +60,7 @@ optional semantic review remains declined.
 
 All fifteen tasks are done. Task-037 completed issue #78's bounded public
 handoff-address correction without reopening LC05 behavior or the v0.2.0
-release. Task-039 completes issue #101's exact v2 state-evaluation seam without
+release. Task-040 completes issue #101's exact v2 state-evaluation seam without
 adding a second evaluator or changing Protocol ownership. The setup effort,
 artifact lineage, reproduction path and remaining support gaps are recorded in
 `docs/lc05-technical-acceptance.md` at LC05 closeout.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-001: immutable exact source bytes, integrity and checked scalar coordinates.
 use crate::{ByteDigest, Code, Diagnostic, Phase};
 use std::sync::Arc;

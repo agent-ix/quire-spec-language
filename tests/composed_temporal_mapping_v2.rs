@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-125 group 6: mapping support classification through a strict
 //! compiled-protocol version-2 package.
 //!

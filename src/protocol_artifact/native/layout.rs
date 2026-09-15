@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036/040/042: original occurrence identities mapped to canonical local tables.
 use crate::checking::composed::DeclarationTypes;
 use crate::linking::composed::scopes::{Anchor, BinderKind, BinderType, DeclarationScope};

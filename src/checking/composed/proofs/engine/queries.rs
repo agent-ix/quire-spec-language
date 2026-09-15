@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-040-AC-5: query-body totality and bounded prefix witnesses, never execution.
 
 use super::*;

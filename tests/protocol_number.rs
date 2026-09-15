@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-038: independent exact vectors and strict numeric wire refusal controls.
 
 use ix_trace_rs::trace;

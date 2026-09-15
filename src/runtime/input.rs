@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-018/024: flat native input drafts, closed decoding and structural error context.
 
 use quire_contract_ir as ir;

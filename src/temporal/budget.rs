@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! NFR-008: invocation-local ceilings for bounded temporal evaluation.
 //!
 //! The counters mirror the compiled-protocol accounting contract's shape so a

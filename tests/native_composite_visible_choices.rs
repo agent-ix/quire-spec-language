@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: a composite visible formula discloses its Boolean output while
 //! retaining every original operand's authorization and observation identity.
 

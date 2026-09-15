@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-123: activation of temporal obligations and immutable captures.
 //!
 //! FR-044. Expected instance identities, capture values, dispositions and

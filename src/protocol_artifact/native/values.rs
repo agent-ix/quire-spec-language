@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036/040/042: executable pure values derived from the original typed AST.
 //! Symbolic proof witnesses are deliberately not an input to this lowering.
 

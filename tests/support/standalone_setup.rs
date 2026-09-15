@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026–029, FR-031/033: example setup through public native APIs.
 
 // The shared fixture module also serves other runtime test targets.

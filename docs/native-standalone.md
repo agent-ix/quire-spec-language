@@ -4,7 +4,7 @@
 reads exact snapshot/invocation bytes, then validates and executes the requested
 clause. No Filament, Quoin, producer process or network service is needed.
 
-Generate the synthetic AGPL-3.0-only example files through existing Rust APIs:
+Generate the synthetic AGPL-3.0-or-later example files through existing Rust APIs:
 
 ```sh
 nice -n 10 cargo run --locked --offline --target-dir target -j 1 --example standalone_fixtures -- /tmp/native-workflow-example

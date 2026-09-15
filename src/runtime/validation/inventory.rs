@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-007: bounded exact selection and complete population-index construction.
 
 use super::super::ModelBinding;

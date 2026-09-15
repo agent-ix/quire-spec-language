@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036/040/042: exact future population inputs over admitted native object roles.
 //! Reuses the binding catalog; no observation or membership is supplied here.
 

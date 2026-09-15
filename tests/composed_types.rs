@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-119: public composed type admission over real /2 producer and binding inputs.
 //! Typed values retain pending proof obligations; no test supplies observations.
 

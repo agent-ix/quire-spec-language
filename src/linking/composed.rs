@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: closed source inventory, native names and declaration dependencies.
 //! This stage precedes definition, model, lexical/type and family admission.
 //! Its output cannot construct a historical LinkedPackage or CheckedPackage.

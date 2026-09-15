@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Native syntax, formatting and source diagnostics for the finite-state profile.
 //!
 //! Parsing does not establish model binding, type correctness or execution support.

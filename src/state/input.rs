@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-049: immutable typed state inputs and closed outcomes.
 
 use std::sync::Arc;

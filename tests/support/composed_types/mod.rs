@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real source/model/definition inputs shared by the composed type controls.
 
 use quire_contract_ir as ir;

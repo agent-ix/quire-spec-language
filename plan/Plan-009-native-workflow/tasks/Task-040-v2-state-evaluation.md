@@ -1,5 +1,5 @@
 ---
-id: Task-039
+id: Task-040
 title: "Evaluate admitted v2 compensation expressions"
 type: Task
 status: done
@@ -8,7 +8,7 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: references
-  - target: ix://agent-ix/quire-spec-language/TC-141
+  - target: ix://agent-ix/quire-spec-language/TC-142
     type: verifies
 ---
 ## Scope
@@ -21,7 +21,7 @@ Protocol-owned truth callback or synthetic artifact authority.
 
 ## Subtasks
 
-- [x] Add TC-141 over a real strictly read v2 compensation package.
+- [x] Add TC-142 over a real strictly read v2 compensation package.
 - [x] Share one evaluator across the existing v1 and new v2 public entry points.
 - [x] Admit compensation-specific binder anchors, subjects and model authority.
 - [x] Exercise unpublished, crossed, unavailable, wrong-authority and bounded paths.
@@ -31,7 +31,7 @@ Protocol-owned truth callback or synthetic artifact authority.
 ## Delivery
 
 The focused test first failed because `state::evaluate_v2` and
-`Refusal::UnpublishedArtifact` did not exist. TC-141 now executes non-constant
+`Refusal::UnpublishedArtifact` did not exist. TC-142 now executes non-constant
 activation, retry and recovery expressions with exact binder and population
 inputs, deterministic accounting and fresh retries. Formatting, strict Clippy,
 the focused evaluator suites and the full default- and all-feature Cargo suites

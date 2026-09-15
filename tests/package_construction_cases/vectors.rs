@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-078/090: independently composed expectations for a real minimal unit.
 
 use quire_spec_language::native_model::NativeModel;

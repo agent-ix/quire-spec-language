@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-003: format validated source by rewriting whitespace, preserving every token and
 //! comment. Syntax formatting does not need a second expression printer/grammar.
 use crate::token::Kind;

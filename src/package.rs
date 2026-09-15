@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: immutable native checked artifacts and source-bound static identity.
 
 mod encoding;

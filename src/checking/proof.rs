@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-016: shared symbolic proof graph and actual bounded IR discharge.
 
 pub(super) mod facts;

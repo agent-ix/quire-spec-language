@@ -159,7 +159,7 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
 | FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
 | FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |
-| FR-049-AC-9 | A strictly read `/2` package evaluates its exact compensation guard, retry and recovery handles through the shared state evaluator. Crossed handles and artifact/authority substitutions refuse with their existing typed causes; an unpublished compiler emission returns `Refusal::UnpublishedArtifact`; missing inputs and exhausted work remain distinct; the version-1 API remains source-compatible. | Test (TC-141) |
+| FR-049-AC-9 | A strictly read `/2` package evaluates its exact compensation guard, retry and recovery handles through the shared state evaluator. Crossed handles and artifact/authority substitutions refuse with their existing typed causes; an unpublished compiler emission returns `Refusal::UnpublishedArtifact`; missing inputs and exhausted work remain distinct; the version-1 API remains source-compatible. | Test (TC-142) |
 
 ## Dependencies
 

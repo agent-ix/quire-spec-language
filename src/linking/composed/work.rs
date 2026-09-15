@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Invocation-local, charge-before-work accounting for the syntax namespace stage.
 
 /// Version of the charging rules, not a language or package identity.
