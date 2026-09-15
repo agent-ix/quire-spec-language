@@ -2,7 +2,7 @@
 id: Plan-011
 title: "Opaque native-temporal trigger identity"
 type: Plan
-status: active
+status: complete
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-053
     type: references
@@ -34,7 +34,7 @@ Existing FR-052 owner tests remain the v1 regression control.
 
 | Task | Track | Status |
 | --- | --- | --- |
-| [Task-039](tasks/Task-039-opaque-temporal-trigger.md) | serial | active |
+| [Task-039](tasks/Task-039-opaque-temporal-trigger.md) | serial | done |
 
 One serial task is required: the v2 request type must exist before result
 evaluation and strict reading can bind it. PR-time Rust/spec/gap review occurs
