@@ -21,6 +21,9 @@ without translating the package or weakening its authority and resource rules.
 Compile and strictly read the real native compensation fixture as `/2`. Select
 each compensation's authored guard, retry and recovery handle from the admitted
 package and supply its exact typed binder, population and authority inputs.
+Make both Full and Partial retry/recovery expressions read immutable
+registration and activation captures; supply only their authored external
+forward-effect and trigger sources, never the capture binders themselves.
 Evaluate each handle with sufficient limits and repeat the same call.
 
 Independently cross the declaration, expression handle, compiled artifact,
@@ -35,6 +38,8 @@ version-1 entry point in the same crate build.
 
 The three exact `/2` compensation expressions return their independently
 expected Boolean values and exact replay returns the same value and usage.
+Forward-effect sources admit only through the exact compensation-registration
+anchor, subject, type, model and authority, and captures remain evaluator-owned.
 Every crossed or unpublished selection returns a typed refusal before runtime
 authority is accepted. Missing data returns `Incomplete`; insufficient work
 returns `Exhausted` with its exact dimension and no partial value; a fresh retry
