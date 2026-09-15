@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020/NFR-007: independent JSON grammar and charged-event controls.
 
 use super::*;

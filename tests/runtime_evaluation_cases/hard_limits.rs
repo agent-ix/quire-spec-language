@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-071/075: finite hard ceilings and borrowed sequence reads under zero comparison fuel.
 
 use super::*;

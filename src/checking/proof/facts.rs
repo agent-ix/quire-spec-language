@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-016: presence-only propositional consequences, with charged set operations.
 
 use std::collections::BTreeMap;

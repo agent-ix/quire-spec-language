@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use ix_trace_rs::trace;
 use quire_spec_language::format::{format, format_with_limit};
 use quire_spec_language::{parse, Code, Diagnostic, Limits, Phase, SourceIdentity};

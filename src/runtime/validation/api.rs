@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-007: exact validation requests, immutable contexts and classified reports.
 
 use std::cmp::Ordering;

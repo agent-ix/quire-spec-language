@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-022: compile one mapped native clause without losing its original source.
 
 use quire_contract_ir as ir;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-006/016: native constraints and guarded IR proofs over exact authored input.
 
 mod bindings;

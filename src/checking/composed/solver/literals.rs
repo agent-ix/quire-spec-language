@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Exact contextual literals using the existing IR rational normalizer.
 use super::*;
 use std::collections::BTreeSet;

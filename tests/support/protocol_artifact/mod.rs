@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Authored reader data and independent selections, not native compiler emission.
 
 use std::collections::BTreeMap;

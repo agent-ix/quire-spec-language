@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: closed control ownership and the contract's finite edge expansion.
 
 use std::collections::{BTreeMap, BTreeSet};

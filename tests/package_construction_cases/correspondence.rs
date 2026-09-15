@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-079: explicit lexical, capture and transitive-obligation inventories.
 
 use quire_spec_language::linking::{

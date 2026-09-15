@@ -16,7 +16,7 @@ production IR remains `690bde7`. Generated Rust retains codegen's MIT/Apache
 notices and compiles against its runtime `8a4d02b9ff4633cf6d02fd8bdf6ee1b11ad76354`
 (MIT OR Apache-2.0). Syn 2.0.119 (MIT OR Apache-2.0), already resolved transitively,
 is directly selected for Rust syntax inspection in the qualification driver.
-New driver code is Rust under AGPL-3.0-only. No producer source is copied.
+New driver code is Rust under AGPL-3.0-or-later. No producer source is copied.
 The isolated generated-package fixture now pins proptest 1.5.0 with only its
 `std` feature to compile codegen's generated strategy for `boolean-oracle/v1`.
 Its separate 25-package lock is qualification-only. Cargo metadata reports
@@ -33,7 +33,7 @@ FR-030 adds optional quire-rs 0.46.0 at
 Its default, Python and wasm features are disabled; default native builds omit it.
 The additional 40 locked entries retain their declared grants below, including
 Quire's target-specific Loom dependencies; this consumer does not run Loom or
-copy producer source. New native consumer code remains AGPL-3.0-only.
+copy producer source. New native consumer code remains AGPL-3.0-or-later.
 The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
@@ -60,12 +60,12 @@ the development dependency for source-aware Rust fixture decoding. Borrowed
 values retain their original occurrences; Serde continues to own JSON grammar.
 The feature adds no package or copied source and preserves serde_json's
 `MIT OR Apache-2.0` grant. Cargo.lock is unchanged. The authored adapter and
-regression fixtures retain AGPL-3.0-only.
+regression fixtures retain AGPL-3.0-or-later.
 
 The initial FR-019/021 package producer uses existing serde/serde_json Formatter
 hooks and sha2 with unchanged versions, features and grants. Its production,
 fixture composition, assertions and hard-limit controls are Rust under
-AGPL-3.0-only. No new dependency or executable audit helper is introduced.
+AGPL-3.0-or-later. No new dependency or executable audit helper is introduced.
 The follow-up qualification selects the already locked MIT jsonschema 0.17.1
 as a direct development dependency with default features disabled and only
 draft202012 enabled. Cargo metadata confirms those resolved features: no HTTP,
@@ -190,7 +190,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | quire-contract-model | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-rs | 0.46.0 | `AGPL-3.0-or-later` |
-| quire-spec-language | 0.2.0 | `AGPL-3.0-only` |
+| quire-spec-language | 0.2.0 | `AGPL-3.0-or-later` |
 | quote | 1.0.47 | `MIT OR Apache-2.0` |
 | r-efi | 5.3.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
 | r-efi | 6.0.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
@@ -272,7 +272,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | zerovec-derive | 0.11.6 | `Unicode-3.0` |
 | zmij | 1.0.23 | `MIT` |
 
-New native source, tests and declarative token definitions are AGPL-3.0-only.
+New native source, tests and declarative token definitions are AGPL-3.0-or-later.
 The imported IR remains MIT OR Apache-2.0, and ix-trace-rs AGPL-3.0-or-later.
 Logos and thiserror derive generate Rust at compile time; generated build files
 are not checked in. Original dependency notices remain in their packages.
@@ -282,7 +282,7 @@ No external parser corpus or model implementation was copied.
 LC03's input constructors explicitly enable serde's existing derive feature on
 the direct pinned serde 1.0.228 dependency. The pinned IR already enabled that
 feature, so Cargo.lock and the resolved package/grant inventory are unchanged.
-The authored runtime modules and Rust tests are AGPL-3.0-only; serde derives
+The authored runtime modules and Rust tests are AGPL-3.0-or-later; serde derives
 generate only build output, and no external input reader was copied or added.
 
 ## Optional model producer toolchain

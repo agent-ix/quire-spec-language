@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Owned-attempt Boolean choices combined with immutable aliases and finite
 //! repeat progress, driven through the actual parse/link/type/proof/admit/
 //! emit/read stages. An admitted attempt record is a defined observation, not

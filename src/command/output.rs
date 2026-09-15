@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026: construct typed JSON views of native outcomes and actual provenance.
 
 #[cfg(feature = "quire-extraction")]

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-009/FR-033/FR-034: native projections and validated primitive backend inputs.
 
 mod inputs;

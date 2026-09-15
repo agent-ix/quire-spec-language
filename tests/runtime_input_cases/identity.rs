@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-056: exact input labels, bytes, independent expectations and role selectors.
 
 use super::*;

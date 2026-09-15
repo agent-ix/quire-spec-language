@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042-AC-2: literals typed by full signed-64 and exact-rational domains
 //! reach native emission and the independent reader without loss or an
 //! alternate spelling. These tests inspect emitted numbers, not evaluation.

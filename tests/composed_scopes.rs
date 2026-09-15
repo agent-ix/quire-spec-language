@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114/115: lexical and structural stages through their public Rust boundary.
 //! Unresolved authored model types remain syntax in model-independent scope cases.
 #[path = "support/native_rule_model.rs"]

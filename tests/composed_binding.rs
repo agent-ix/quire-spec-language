@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: one real multi-unit static binding path, with dependent refusals.
 //! Native rule-model production is exercised; this does not claim D's IT-009.
 
@@ -150,7 +150,7 @@ fn large_admitted_model_resolves_repeated_nominal_parameters_at_defaults() {
         })
         .collect::<Vec<_>>();
     let document = serde_json::json!({
-        "license": "AGPL-3.0-only", "package": "test/large", "requirement": "Large",
+        "license": "AGPL-3.0-or-later", "package": "test/large", "requirement": "Large",
         "revision": 1, "scalars": [], "records": records, "values": [],
         "objects": [], "operations": []
     });

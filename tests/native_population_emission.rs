@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real model/source emission controls for static population authority.
 //! No fixture supplies runtime populations or claims relationship correspondence.
 

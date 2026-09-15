@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-025/041: source-aware rule-model intake with explicit native profile selection.
 
 mod decode;

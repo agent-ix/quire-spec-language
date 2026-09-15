@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-069: private fault controls for invariants public constructors prevent violating.
 
 use crate::runtime::{

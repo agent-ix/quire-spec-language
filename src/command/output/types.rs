@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026: typed native result views; upstream identities retain their serializers.
 
 use super::super::wire;

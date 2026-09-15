@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-119: actual query definedness over declared domains and authored sources.
 //! Discharge proves neither query truth nor execution/order/runtime conformance.
 

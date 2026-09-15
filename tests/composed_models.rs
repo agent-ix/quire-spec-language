@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: real native-model artifacts and composed export ownership.
 
 #[path = "support/native_rule_model.rs"]

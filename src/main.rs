@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-010/026: parse one command, execute it, and write one explicit outcome.
 mod cli;
 

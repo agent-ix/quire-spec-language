@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-004: checked body-to-document byte correspondence; no Markdown or wire decoding.
 use crate::{Code, Diagnostic, LocatedSpan, Phase, Source, Span};
 

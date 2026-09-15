@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012: bounded immutable file intake and strict decoded JSON maps.
 use crate::error::{ensure, Code, Error, Result};
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042/TC-121: real native producer fixture; B's IT-001 remains a separate gate.
 
 #[allow(dead_code, reason = "The shared module also provides the v2 recipe")]

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: bounded Boolean partition proof over source-authorized observations.
 
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid, Unsupported};

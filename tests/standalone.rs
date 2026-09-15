@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026/028: real file-driven native command outcomes and adverse intake.
 
 #[path = "support/standalone_setup.rs"]

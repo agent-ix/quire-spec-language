@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-017/025: typed JSON values with checked provenance from Serde's original borrow.
 
 use crate::{formal_source::FormalSource, Diagnostic, Span};

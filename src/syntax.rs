@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: located syntax and parser ceilings, before model linking or evaluation.
 use crate::source::{Source, Span, Spanned};
 
