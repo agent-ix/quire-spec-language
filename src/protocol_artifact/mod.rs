@@ -23,6 +23,7 @@ mod occurrence;
 mod recovery;
 pub mod temporal_subject;
 pub mod v2;
+pub mod v3;
 mod validate;
 mod value_graph;
 pub mod wire;
@@ -218,6 +219,9 @@ pub enum Error {
     /// Strict version-2 refusal with a stable, axis-specific public code.
     #[error("invalid version-2 compiled protocol data: {0}")]
     V2(v2::Refusal),
+    /// Strict version-3 refusal with a stable, axis-specific public code.
+    #[error("invalid version-3 compiled protocol data: {0}")]
+    V3(v3::Refusal),
     #[error("unsupported compiled protocol interpretation: {0:?}")]
     Unsupported(Unsupported),
     #[error(transparent)]
@@ -228,7 +232,7 @@ impl Error {
     /// Stable machine-readable refusal code covering every axis, so a consumer
     /// never matches on a variant or parses a diagnostic to tell two refusals
     /// apart. Codes are append-only and are never message-derived;
-    /// `Error::V2` delegates to [`v2::Refusal::code`].
+    /// `Error::V2` and `Error::V3` delegate to their versioned refusal codes.
     pub fn code(&self) -> &'static str {
         match self {
             Self::Allocation => "allocation",
@@ -237,6 +241,7 @@ impl Error {
             Self::Producer(refusal) => producer_code(refusal),
             Self::Invalid(invalid) => invalid_code(*invalid),
             Self::V2(refusal) => refusal.code(),
+            Self::V3(refusal) => refusal.code(),
             Self::Unsupported(unsupported) => unsupported_code(*unsupported),
             Self::Incomplete(exhaustion) => incomplete_code(exhaustion.dimension),
         }

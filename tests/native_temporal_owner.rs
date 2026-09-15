@@ -1389,7 +1389,8 @@ fn activation_captures_are_immutable_identity_inputs_and_bounded() {
     "FR-053-AC-2",
     "FR-053-AC-3",
     "FR-053-AC-4",
-    "FR-053-AC-5"
+    "FR-053-AC-5",
+    "FR-053-AC-6"
 )]
 #[test]
 fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_documents() {
@@ -1416,6 +1417,8 @@ fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_docu
                     .into_result()
                     .expect("strict read v2 request");
             assert_eq!(request.semantic_trigger(), &[0, 0xff, b'/', 0x80]);
+            assert_eq!(request.evaluation_anchor(), "origin");
+            assert!(request.activation_captures().next().is_none());
             let output = temporal_v2::evaluate(
                 &request,
                 temporal_v2::Relation::Original,
@@ -1437,6 +1440,10 @@ fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_docu
             .into_result()
             .expect("strict read v2 result");
             assert_eq!(result.semantic_trigger(), &[0, 0xff, b'/', 0x80]);
+            assert_eq!(
+                result.activation(),
+                native_temporal::result::ActivationState::Active
+            );
 
             let second = temporal_v2::produce(
                 &subject,

@@ -63,7 +63,7 @@ pub struct AdmittedPackage {
     // Present only on the reader path, which admits an independently selected
     // artifact identity. Compiler emission has no published identity yet.
     pub(super) artifact: Option<ArtifactRef>,
-    pub(super) model_schema: Vec<crate::native_model::NativeModel>,
+    pub(crate) model_schema: Vec<crate::native_model::NativeModel>,
 }
 
 impl AdmittedPackage {
