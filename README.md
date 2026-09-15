@@ -50,6 +50,12 @@ compensation registration, activation, retries and full/partial recovery
 requirements. The [Rust producer recipe](examples/protocol-handoff/README.md)
 combines four source units, queries, population/reference roles and actual model
 operations, retaining the executable bytes and independently derived selectors.
+`protocol_artifact::handoff::PUBLISHED_V1_HANDOFF` now addresses that committed
+`/1` handoff directly from the pinned crate. Version-explicit member constants
+name its offer, external reference, `Selection` record and checksum inventory;
+consumers need no environment variable, producer execution or repository-layout
+guess. The existing unversioned `PUBLISHED_HANDOFF` family continues to address
+the unchanged `/2` corpus.
 General dynamic choice/progress proofs, first-class relationship exports,
 runtime recovery and B's public consumer acceptance remain open; the supported
 boundary is stated in the wire contract.
