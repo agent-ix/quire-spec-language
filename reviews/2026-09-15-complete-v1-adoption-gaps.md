@@ -27,6 +27,7 @@ underspecified changed-behavior gap remains.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No scoped gaps found. Task-046 and its mirrored plan row are done; every FR-055 criterion is asserted, and all downstream product work remains visibly not started. | Plan-013 Task-046; FR-055; TM-010; TC-144 |
+| FND-002 | low | Resolved during independent review: the repository-wide informational rollup was refreshed after the trace fixes; scoped coverage and verdict were unchanged. | `quire coverage --scope . --json` |
 
 ## Coverage
 
@@ -37,7 +38,7 @@ underspecified changed-behavior gap remains.
 - Matrix rows: TC-144 is backed 1 / 1; five FR-055 criteria are carried by two
   tagged Rust test symbols. Scoped unbacked rows, status lies, untracked symbols
   and diagnostics: 0.
-- Repository-wide engine rollup: 499 / 524 rows backed. The inherited 25 rows
+- Repository-wide engine rollup: 502 / 524 rows backed. The inherited 22 rows
   outside FR-055/TM-010 remain separately visible and are not promoted here.
 - Changed production behaviors: 0. Untraced changed behaviors: 0. Source stubs:
   0. Test stubs: 0.
