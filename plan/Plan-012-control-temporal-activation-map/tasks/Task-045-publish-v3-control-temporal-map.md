@@ -1,5 +1,5 @@
 ---
-id: Task-041
+id: Task-045
 title: "Publish strict v3 control temporal activation mappings"
 type: Task
 status: done
@@ -8,10 +8,10 @@ priority: P0
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-054
     type: references
-  - target: ix://agent-ix/quire-spec-language/TC-142
+  - target: ix://agent-ix/quire-spec-language/TC-143
     type: verifies
 ---
-# Task-041: Publish strict v3 control temporal activation mappings
+# Task-045: Publish strict v3 control temporal activation mappings
 
 ## Scope
 
@@ -21,7 +21,7 @@ independent strict-reader expectation and admitted view without changing `/1` or
 
 ## Subtasks
 
-- [x] Write TC-142 fixture and mutation controls first.
+- [x] Write TC-143 fixture and mutation controls first.
 - [x] Add the versioned mapping row and canonical `/3` encoder/reader.
 - [x] Validate complete expected mappings independently of offered bytes.
 - [x] Prove every adverse mapping axis and cross-version refusal.
@@ -30,7 +30,7 @@ independent strict-reader expectation and admitted view without changing `/1` or
 ## Deliverables
 
 - Constructor-private `/3` admitted package and mapping view.
-- Exact producer/reader interfaces and TC-142 coverage.
+- Exact producer/reader interfaces and TC-143 coverage.
 
 ## Notes
 
