@@ -1,0 +1,9 @@
+language "ix:native" edition "1-draft";
+profile G = "quire.state.graph/v1" version "1-draft.3" digest "sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c";
+profile T = "quire.temporal.event-position.false-extension/v1" version "1-draft.3" digest "sha256:03baffdf9158653b1713625e1c246a8ee6ebbab29c2895db18b8724b83dc8498";
+profile P = "quire.protocol.finite-global/v1" version "1-draft.4" digest "sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c";
+model M = "agent-ix/protocol-handoff" version "1" digest "sha256:a37be55ea91c45df9061c0cfd0cb2f311a4cfc530ad6c74887161c10824781d0";
+// SPDX-License-Identifier: AGPL-3.0-only
+temporal Due using T over (view: M::Workflow) clock "events" on origin {
+    always[0,30] holds(Allowed(view.ratio))
+}

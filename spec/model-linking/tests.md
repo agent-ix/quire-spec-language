@@ -32,11 +32,11 @@ backed test case is classified `complete` whatever the criterion in its
 `Acceptance Criteria` cell is worth. Per-criterion honesty therefore rests on
 the minted acceptance-criterion targets, which `quire coverage` reports
 separately, and the row status never carries it. Second, and for the same
-reason, `FR-042-AC-10` names `TC-121`, `TC-121` binds through nine modules, and
-so the row is backed and a completion label on it would not be reported as a
-status lie; only the FR-042 group count, 9 of 10, exposes that the criterion
-itself carries no tag. Check the per-group backed counts, not only the unbacked
-rows, before moving any row off Planned.
+reason, `FR-042-AC-10` names `TC-121`, and its QSL producer-leg tests now carry
+the criterion tag even though Protocol's separate consumer leg remains open.
+The coverage engine therefore reports the criterion backed but cannot infer
+cross-repository completion. Check the owning integration ticket as well as the
+per-group counts before moving this row to Passed.
 
 ## Requirements Traceability
 
@@ -92,7 +92,7 @@ rows, before moving any row off Planned.
 | FR-042 | FR-042-AC-7 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed |
-| FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 Planned |
+| FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
 | FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-3 | TC-127 | ✅ Passed |
@@ -185,7 +185,7 @@ invented for that criterion.
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
-| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 FR-042-AC-10 planned; FR-042-AC-1..FR-042-AC-9 passed locally (tests/protocol_artifact.rs, tests/native_protocol_emission.rs, tests/native_population_emission.rs, tests/native_choice_emission.rs, tests/native_compensation_emission.rs, tests/native_query_emission.rs, tests/native_domain_event_choices.rs, tests/native_domain_event_boundaries.rs, tests/native_mixed_observation_choices.rs) |
+| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-10 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending |
 | TC-126 | Preserve exact predicate meaning at cross-family calls | Integration | P1 | FR-046-AC-1, FR-046-AC-2, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-127 | Evaluate ordered query values against independent expected results | Integration | P1 | FR-046-AC-3, FR-046-AC-4, FR-046-AC-5, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-128 | Keep incomplete query inputs and exhausted work distinct from values | Integration | P1 | FR-046-AC-6, FR-046-AC-7 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
@@ -324,10 +324,12 @@ consumer's RFC 8785/JCS protocol-result identity: an exact producer reference
 survives emission and reading, either substituted digest refuses, and a
 recanonicalized producer reference refuses at producer admission.
 
-FR-042-AC-1 through FR-042-AC-9 each carry `#[trace("TC-121", "FR-042-AC-n")]`
-tags on executed Rust tests, and `quire coverage --scope . --json` reports each of
-those minted acceptance-criterion targets as backed, FR-042 9 of 10; FR-042-AC-10
-is reported unbacked. One module carrying each criterion's tag:
+FR-042-AC-1 through FR-042-AC-10 each carry
+`#[trace("TC-121", "FR-042-AC-n")]` tags on executed Rust tests, and `quire
+coverage --scope . --json` reports those minted targets as backed. AC-10's QSL
+test proves only the producer-owned publication and strict-reader leg; the
+cross-repository Protocol leg remains open. One module carrying each criterion's
+tag:
 
 | Criterion | Module carrying the tag |
 | --- | --- |
@@ -340,22 +342,21 @@ is reported unbacked. One module carrying each criterion's tag:
 | FR-042-AC-7 | `tests/protocol_artifact.rs` |
 | FR-042-AC-8 | `tests/native_choice_emission.rs` |
 | FR-042-AC-9 | `tests/native_domain_event_boundaries.rs` |
-| FR-042-AC-10 | none; see below |
+| FR-042-AC-10 | `tests/published_protocol_v1.rs`; Protocol #11 remains below |
 
 Per-criterion backing comes from those minted criterion targets and not from the
 row status: the `functional-coverage` declaration classifies a row by its
-`Test Cases` cell, so every FR-042 row above — AC-10 included — reads as backed
-through `TC-121` and a completion label on AC-10 would not be reported as a
-status lie. The FR-042 group count, 9 of 10, is the only place the gap shows.
-This status records engine-verified trace binding plus a local serial test run;
-it is not a claim of complete family semantics or of executed consumer
-integration.
+`Test Cases` cell and cannot observe the outstanding Protocol repository. This
+status records engine-verified trace binding plus a local serial QSL test run;
+it is not a claim of executed consumer integration.
 
 ### Consumer handoff
 
-FR-042-AC-10 stays planned. No test carries its tag, and the compiler-local leg
-cannot establish B/F ecosystem acceptance. The downstream intake of the native
-compiler artifact is [quire-protocol#11](https://github.com/agent-ix/quire-protocol/issues/11)
+FR-042-AC-10 stays partially complete. QSL now publishes and strictly reads the
+immutable four-source `/1` handoff through version-explicit public addresses,
+but that compiler-local leg cannot establish B/F ecosystem acceptance. The
+downstream intake of the native compiler artifact is
+[quire-protocol#11](https://github.com/agent-ix/quire-protocol/issues/11)
 under epic [quire-protocol#14](https://github.com/agent-ix/quire-protocol/issues/14);
 its integration caller owns [IT-001](ix://agent-ix/quire-protocol/IT-001) on the
 consumer side. TC-135 records the separate D-owned campaign gate.
@@ -371,7 +372,7 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 | FR-042 | FR-042-AC-7 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed locally |
-| FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 Planned |
+| FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
 
 ## Authenticated temporal artifact selections (L5/L6)
 
