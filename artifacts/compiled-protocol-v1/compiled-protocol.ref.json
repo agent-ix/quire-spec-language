@@ -1,0 +1,15 @@
+{
+  "refVersion": "ix.artifact-ref/3-draft",
+  "kind": "linked-package",
+  "authority": "ix://agent-ix/quire-spec-language",
+  "identity": "examples/protocol-handoff/workflow",
+  "revision": {
+    "namespace": "example-output",
+    "value": "1"
+  },
+  "digest": "sha256:41b7de1fa097dc024d3436dc5ba4cf9fbc136107c4a0e5219ad8e0c24a473655",
+  "wire": {
+    "identity": "quire.compiled-protocol",
+    "version": "1"
+  }
+}
