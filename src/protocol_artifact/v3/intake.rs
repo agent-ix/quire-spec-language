@@ -98,7 +98,7 @@ fn temporal_declaration(package: &wire::Package, index: u32) -> Result<(), Error
     }
 }
 
-fn mappings(
+pub(crate) fn validate_mappings(
     package: &wire::Package,
     expected: &[ExpectedActivation],
     work: &mut Work,
@@ -234,7 +234,7 @@ pub fn read_with_producers(
             expected.inherited.temporal,
             &mut work,
         )?;
-        mappings(&package, expected.activations, &mut work)?;
+        validate_mappings(&package, expected.activations, &mut work)?;
         let supplied = artifact::intake::selected(
             &package.inherited,
             &expected.inherited.inherited,

@@ -202,7 +202,7 @@ impl Limits {
     }
 }
 
-pub(super) struct Work {
+pub(crate) struct Work {
     pub limits: Limits,
     pub usage: Usage,
     pub locus: Option<Locus>,

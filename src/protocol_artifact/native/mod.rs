@@ -11,6 +11,7 @@ mod metadata;
 mod populations;
 mod runtime;
 mod temporal_v2;
+mod temporal_v3;
 mod types;
 mod values;
 
@@ -20,6 +21,7 @@ use crate::formal_source::FormalSource;
 use crate::linking::composed::models::AdmittedProducerModel;
 
 pub use temporal_v2::{admit_v2, admit_v2_with_producers, AdmissionV2, TemporalSelection};
+pub use temporal_v3::{admit_v3, ActivationSelection, AdmissionV3};
 
 /// Explicit external namespace selection for an actual authored formal source.
 #[derive(Clone, Copy, Debug)]
