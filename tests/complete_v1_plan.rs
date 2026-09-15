@@ -141,13 +141,23 @@ fn complete_v1_plan_preserves_the_serial_campaign_and_delivery_constraints() {
         assert!(task.contains("type: Task"), "untyped task: {id}");
         assert!(task.contains("type: references"), "unowned task: {id}");
         assert!(task.contains("type: verifies"), "unverified task: {id}");
-        if let Some(predecessor) = predecessor {
-            assert!(
-                task.contains(&format!(
-                    "target: ix://agent-ix/quire-spec-language/{predecessor}"
-                )),
-                "{id} does not depend on {predecessor}"
-            );
-        }
+
+        let dependencies: Vec<_> = task
+            .lines()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .filter_map(|pair| {
+                let target = pair[0]
+                    .trim()
+                    .strip_prefix("- target: ix://agent-ix/quire-spec-language/")?;
+                (pair[1].trim() == "type: depends_on" && target.starts_with("Task-"))
+                    .then_some(target)
+            })
+            .collect();
+        let expected: Vec<_> = predecessor.iter().copied().collect();
+        assert_eq!(
+            dependencies, expected,
+            "{id} must have exactly its permitted serial predecessor"
+        );
     }
 }
