@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012: stable diagnostics for the private fixture audit boundary.
 use std::{collections::BTreeMap, fmt, io, path::Path};
 

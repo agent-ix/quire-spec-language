@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: independently authored native package construction expectations.
 
 #[path = "package_construction_cases/correspondence.rs"]

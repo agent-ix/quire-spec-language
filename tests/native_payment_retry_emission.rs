@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-121: the payment-retry choreography of #39 through the actual parse,
 //! link, type, proof, admission, emission and public reader stages.
 //!

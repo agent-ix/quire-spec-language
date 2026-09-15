@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-031: typed extraction provenance inside native command output.
 
 use super::{diagnostic, source, types};

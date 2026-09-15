@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: declaration-owned lexical environments and protocol structural names.
 //! Scope resolution preserves authored types; it does not prove expression types.
 mod protocol;

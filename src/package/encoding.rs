@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! NFR-007: Serde-owned JSON output with measured grammar events and bounded writes.
 
 use std::io::{self, Write};

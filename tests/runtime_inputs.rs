@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-018: exact public runtime input construction, before population validation.
 
 #[path = "runtime_input_cases/identity.rs"]

@@ -122,4 +122,4 @@ Its exact serde 1.0.228 requirement is selected consistently for this crate;
 existing Rust fixture audits and parser gates must pass after the dependency
 change. Pin the native toolchain/local workflow recipe to Rust 1.98.1, with
 Cargo rust-version 1.98. Hosted workflows remain workflow_dispatch only and are
-not dispatched. New native implementation remains AGPL-3.0-only.
+not dispatched. New native implementation remains AGPL-3.0-or-later.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-015/041: explicit native profiles over source-bound, validated IR declarations.
 
 mod admission;

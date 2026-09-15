@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real public compiler setup for the independently frozen package vectors.
 
 use quire_contract_ir as ir;

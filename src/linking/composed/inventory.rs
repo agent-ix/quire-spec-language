@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Exact closed intake and package-wide native declaration name collection.
 
 use std::collections::BTreeMap;

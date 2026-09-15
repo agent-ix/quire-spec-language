@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Composed productions on the existing token cursor and value Pratt parser.
 use super::{c, Parser, K};
 use crate::syntax::{ClauseKind, ExprId, ModelImport, LANGUAGE};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: fixed native definition selections and their exact normative resources.
 //! Supplied-inventory refusal and declaration admission are tested separately.
 

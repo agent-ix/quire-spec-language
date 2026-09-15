@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: one catalog of authored case inputs; expected results stay in tests.
 
 #[derive(Clone, Copy)]

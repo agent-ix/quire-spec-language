@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020/NFR-007: metered Serde events over the original JSON bytes.
 
 use std::{collections::BTreeSet, fmt};

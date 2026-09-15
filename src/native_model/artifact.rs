@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-015: exact, bounded native model artifact encoding over existing IR bytes.
 
 use std::io::{self, Write};

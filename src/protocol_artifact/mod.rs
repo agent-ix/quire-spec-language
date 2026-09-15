@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-038/042: exact compiled protocol data and bounded consumer validation.
 //!
 //! The wire records represent [the compiled protocol contract][contract].

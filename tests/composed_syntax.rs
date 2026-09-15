@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-113: independent grammar scenarios through the public edition-selected API.
 
 use ix_trace_rs::trace;

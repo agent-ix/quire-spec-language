@@ -54,6 +54,6 @@ nice -n 10 cargo run --locked --offline --target-dir target -j 1 --example autho
 
 This is domain-specific fixture authoring, not a general canonicalizer, model
 authority or replacement for shared Quoin evidence tooling. The recipe, new
-maintenance executable and assertions are Rust under AGPL-3.0-only. Fixed
+maintenance executable and assertions are Rust under AGPL-3.0-or-later. Fixed
 positive data was authored after the initial producer, from the corrected
 independent recipe; the earlier failed setup evidence remains unchanged.

@@ -30,7 +30,7 @@ Native source, build/check scripts, generated content and optional producer fixt
 
 ## Verification
 
-Check the owner-approved AGPL-3.0-only terms for new implementation and preserve inherited dependency grants. Publication remains separately reviewed; private specification prose terms remain unresolved.
+Check the owner-approved AGPL-3.0-or-later terms for new implementation and preserve inherited dependency grants. Publication remains separately reviewed; private specification prose terms remain unresolved.
 
 ## Dependencies
 

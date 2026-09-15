@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-016-AC-9: transitive population needs, including nested and skipped inputs.
 
 use std::collections::{BTreeMap, BTreeSet};

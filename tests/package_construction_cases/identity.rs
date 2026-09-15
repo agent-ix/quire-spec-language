@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-090/091: independent preimage controls and admissible static changes.
 
 use sha2::{Digest, Sha256};

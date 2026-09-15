@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-051: measured inclusive budgets and bounded expansion of shared aliases.
 
 use super::*;

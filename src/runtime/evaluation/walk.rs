@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-008: left-to-right native execution, lexical captures and finite graph walks.
 
 use super::*;

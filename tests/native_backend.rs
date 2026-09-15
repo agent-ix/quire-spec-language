@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! IT-008: actual generated Rust and measured coverage against native execution.
 
 // This shared fixture module also serves operation/graph tests in other binaries.
@@ -178,7 +178,7 @@ fn run_cases() {
         &strategy.rust.contents,
     )
     .unwrap();
-    let mut program = String::from("// SPDX-License-Identifier: AGPL-3.0-only\n");
+    let mut program = String::from("// SPDX-License-Identifier: AGPL-3.0-or-later\n");
     let mut calls = Vec::new();
     for (index, clause) in generated_clauses.clauses().iter().enumerate() {
         let artifact = &clause.bundle().rust;

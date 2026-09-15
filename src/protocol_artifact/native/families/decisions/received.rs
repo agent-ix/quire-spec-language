@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: lexical/flow and model authority for role-owned observation atoms.
 //! Received covers receives, attempts and authored domain events, for a choice
 //! and for a bounded repeat's guard alike.

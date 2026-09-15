@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-046/047/049: exact evaluation over one admitted compiled value graph.
 #![allow(
     clippy::result_large_err,

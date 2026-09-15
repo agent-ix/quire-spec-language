@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-027: actual CLI artifact bytes, verified consumer intake and stage failures.
 
 #[path = "support/standalone_setup.rs"]

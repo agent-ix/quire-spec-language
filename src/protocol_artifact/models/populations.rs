@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: nominal population requirements and admitted finite-graph fields.
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};

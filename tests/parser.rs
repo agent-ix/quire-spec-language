@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use ix_trace_rs::trace;
 use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
 use quire_spec_language::{format::format, parse, Code, Limits, ParsedUnit, SourceIdentity, Span};

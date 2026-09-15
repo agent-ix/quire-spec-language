@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Versioned deterministic charge-before-work contract for guarded definedness.
 //!
 //! Correspondence is admitted before namespace-ordered declarations. Original

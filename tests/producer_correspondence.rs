@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Producer 1.2 model admission through the existing compiled contract.
 
 #[allow(dead_code)]

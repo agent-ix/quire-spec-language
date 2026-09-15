@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Actual query source reaches family admission and the independent wire reader.
 //! These tests inspect emitted structure, not query execution or runtime conformance.
 

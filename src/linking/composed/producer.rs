@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Typed Producer 1.2 correspondence admission for compiler model inputs.
 
 use std::{borrow::Cow, collections::BTreeSet};

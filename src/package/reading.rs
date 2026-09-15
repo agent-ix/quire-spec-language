@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020: ordered selection, explicit authority, real reconstruction and comparison.
 
 use super::{

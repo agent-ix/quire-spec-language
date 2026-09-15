@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-043/FR-044: the orthogonal dimensions a temporal assessment reports.
 //!
 //! Truth, settlement basis, activation, both progress/closure axes, assessment

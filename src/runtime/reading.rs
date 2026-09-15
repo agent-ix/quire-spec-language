@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-024: selected native bytes, closed Serde decoding and structural admission.
 
 use crate::serde_object::Object;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Compare the actual private canonical pass separately from its digest.
 
 use crate::runtime_test_setup::native_rule_model;
