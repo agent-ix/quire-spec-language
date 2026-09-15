@@ -439,7 +439,7 @@ fn temporal(
     Ok(())
 }
 
-pub(super) fn validate(
+pub(crate) fn validate(
     package: &wire::Package,
     expected: &[ExpectedTemporal<'_>],
     work: &mut Work,
