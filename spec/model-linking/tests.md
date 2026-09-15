@@ -127,7 +127,7 @@ rows, before moving any row off Planned.
 | FR-049 | FR-049-AC-6 | TC-136, TC-137 | ✅ Passed |
 | FR-049 | FR-049-AC-7 | TC-137 | ✅ Passed |
 | FR-049 | FR-049-AC-8 | TC-137 | ✅ Passed |
-| FR-049 | FR-049-AC-9 | TC-142 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
+| FR-049 | FR-049-AC-9 | TC-142 | ✅ Passed locally, including initialized Full/Partial captures (`tests/compiled_protocol_v2.rs`) |
 | FR-050 | FR-050-AC-1 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-2 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-3 | TC-138 | ✅ Passed |
@@ -199,7 +199,7 @@ invented for that criterion.
 | TC-136 | Admit exact composed state views and typed outcomes | Integration | P1 | FR-049-AC-1..FR-049-AC-6 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-137 | Bound composed evaluation and retry immutable inputs | Property | P1 | FR-049-AC-6..FR-049-AC-8, NFR-009 | ✅ Passed locally (tests/composed_state_evaluation.rs, src/state/work.rs) |
 | TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-7 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs) |
-| TC-142 | Evaluate admitted version-2 compensation expressions | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
+| TC-142 | Evaluate admitted version-2 compensation expressions and initialized captures | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 
 ## Composed language admission (L2)
 

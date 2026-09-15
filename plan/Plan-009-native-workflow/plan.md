@@ -51,6 +51,8 @@ adoption and assurance remain explicit acceptance work.
   independent Rust consumer.
 - [Task-040](tasks/Task-040-v2-state-evaluation.md): evaluate strictly admitted
   `/2` compensation expressions through the existing bounded state evaluator.
+- [Task-041](tasks/Task-041-initialized-capture-evaluation.md): resolve admitted
+  compensation captures through their authored initializer and anchor.
 
 Use Rust, serial local Cargo phases and existing caches. No hosted CI or agents.
 QUOIN specification and actual code/Rust reviews occur once at PR readiness;
@@ -58,9 +60,10 @@ optional semantic review remains declined.
 
 ## Completion
 
-All fifteen tasks are done. Task-037 completed issue #78's bounded public
+All sixteen tasks are done. Task-037 completed issue #78's bounded public
 handoff-address correction without reopening LC05 behavior or the v0.2.0
 release. Task-040 completes issue #101's exact v2 state-evaluation seam without
-adding a second evaluator or changing Protocol ownership. The setup effort,
+adding a second evaluator or changing Protocol ownership. Task-041 tracks issue
+#105's implementation correction without reopening that architecture. The setup effort,
 artifact lineage, reproduction path and remaining support gaps are recorded in
 `docs/lc05-technical-acceptance.md` at LC05 closeout.
