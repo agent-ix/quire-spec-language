@@ -46,10 +46,10 @@ source-table order.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-054-AC-1 | A valid authored mapping round-trips through canonical `/3` production and strict reading with each control and temporal declaration unchanged. | Test (TC-142) |
-| FR-054-AC-2 | Missing, duplicate, foreign, out-of-range, non-event-triggered, reordered and substituted mappings refuse before a view is admitted. | Test (TC-142) |
-| FR-054-AC-3 | `/1` and `/2` remain byte-identical and reject `/3`; `/3` rejects `/1` and `/2` rather than upgrading or inferring a mapping. | Test (TC-142) |
-| FR-054-AC-4 | A profile/clock match, display name, source position, timestamp or observation cannot substitute for an independently expected mapping row. | Test (TC-142) |
+| FR-054-AC-1 | A valid authored mapping round-trips through canonical `/3` production and strict reading with each control and temporal declaration unchanged. | Test (TC-143) |
+| FR-054-AC-2 | Missing, duplicate, foreign, out-of-range, non-event-triggered, reordered and substituted mappings refuse before a view is admitted. | Test (TC-143) |
+| FR-054-AC-3 | `/1` and `/2` remain byte-identical and reject `/3`; `/3` rejects `/1` and `/2` rather than upgrading or inferring a mapping. | Test (TC-143) |
+| FR-054-AC-4 | A profile/clock match, display name, source position, timestamp or observation cannot substitute for an independently expected mapping row. | Test (TC-143) |
 
 ## Dependencies
 
