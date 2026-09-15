@@ -26,6 +26,12 @@
     {"name": "WorkflowRef", "fields": [
       {"name": "id", "type": {"kind": "scalar", "name": "ObjectId"}}
     ]},
+    {"name": "Provider", "fields": [
+      {"name": "id", "type": {"kind": "scalar", "name": "ObjectId"}}
+    ]},
+    {"name": "ProviderRef", "fields": [
+      {"name": "id", "type": {"kind": "scalar", "name": "ObjectId"}}
+    ]},
     {"name": "Notice", "fields": [
       {"name": "ready", "type": {"kind": "boolean"}}
     ]}
@@ -36,7 +42,8 @@
     {"name": "apply_result", "kind": "input", "type": {"kind": "boolean"}}
   ],
   "objects": [
-    {"record": "Workflow", "reference": "WorkflowRef", "identity_field": "id", "universe": "workflows"}
+    {"record": "Workflow", "reference": "WorkflowRef", "identity_field": "id", "universe": "workflows"},
+    {"record": "Provider", "reference": "ProviderRef", "identity_field": "id", "universe": "providers"}
   ],
   "operations": [
     {"name": "apply", "context": "Workflow", "anchor": "apply", "parameters": ["amount"], "result": "apply_result",
