@@ -1921,8 +1921,8 @@ fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
     assert_eq!(report.result().err(), Some(&expected));
 }
 
-/// TC-142: FR-054-AC-1 through FR-054-AC-4.
-#[trace("TC-142", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
+/// TC-143: FR-054-AC-1 through FR-054-AC-4.
+#[trace("TC-143", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
 #[test]
 fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
