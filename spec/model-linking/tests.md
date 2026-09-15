@@ -127,7 +127,7 @@ rows, before moving any row off Planned.
 | FR-049 | FR-049-AC-6 | TC-136, TC-137 | ✅ Passed |
 | FR-049 | FR-049-AC-7 | TC-137 | ✅ Passed |
 | FR-049 | FR-049-AC-8 | TC-137 | ✅ Passed |
-| FR-049 | FR-049-AC-9 | TC-142 | ✅ Passed locally, including initialized Full/Partial captures (`tests/compiled_protocol_v2.rs`) |
+| FR-049 | FR-049-AC-9 | TC-142 | ✅ Passed locally, including initialized Full/Partial captures from exact forward-effect and trigger sources (`tests/compiled_protocol_v2.rs`) |
 | FR-050 | FR-050-AC-1 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-2 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-3 | TC-138 | ✅ Passed |

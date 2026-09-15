@@ -35,3 +35,6 @@ immutable value for later reads in the same request. TC-142 exercises Full and
 Partial retry/recovery expressions, exact replay and accounting, unavailable
 sources, caller substitution, and malformed foreign/cyclic initializer graphs.
 Issue #105 closes with the PR; `quire-protocol` #5 repins to the merge commit.
+Independent consumer replay then exposed the distinct forward-effect admission
+gap tracked and completed by issue #108 / Task-042; Task-041's initializer and
+cycle behavior was preserved.
