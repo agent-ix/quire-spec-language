@@ -2,7 +2,7 @@
 id: Task-041
 title: "Publish strict v3 control temporal activation mappings"
 type: Task
-status: not_started
+status: done
 track: A
 priority: P0
 relationships:
@@ -21,11 +21,11 @@ independent strict-reader expectation and admitted view without changing `/1` or
 
 ## Subtasks
 
-- [ ] Write TC-142 fixture and mutation controls first.
-- [ ] Add the versioned mapping row and canonical `/3` encoder/reader.
-- [ ] Validate complete expected mappings independently of offered bytes.
-- [ ] Prove every adverse mapping axis and cross-version refusal.
-- [ ] Run the documented local Rust gates and PR-time reviews.
+- [x] Write TC-142 fixture and mutation controls first.
+- [x] Add the versioned mapping row and canonical `/3` encoder/reader.
+- [x] Validate complete expected mappings independently of offered bytes.
+- [x] Prove every adverse mapping axis and cross-version refusal.
+- [x] Run the documented local Rust gates and PR-time reviews.
 
 ## Deliverables
 

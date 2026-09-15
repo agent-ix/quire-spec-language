@@ -2,7 +2,7 @@
 id: Plan-012
 title: "Compiled protocol v3 activation mapping"
 type: Plan
-status: active
+status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-054
     type: references
@@ -11,7 +11,7 @@ relationships:
 
 ## Requirements Summary
 
-- [ ] **FR-054**: Publish a strict `/3` control-to-temporal activation mapping
+- [x] **FR-054**: Publish a strict `/3` control-to-temporal activation mapping
   while retaining `/1` and `/2` unchanged.
 
 ## Dependency Graph
@@ -25,14 +25,14 @@ relationships:
 
 ## Test Plan
 
-- [ ] **TC-142**: canonical `/3` round trip; every mapping mutation; exact
+- [x] **TC-142**: canonical `/3` round trip; every mapping mutation; exact
   cross-version refusals; no profile/clock or coordinate inference.
 
-## Remaining Work
+## Completed Work
 
 ### Track A: Critical Path (serial)
 
-- **A1 = Task-041** Strict `/3` activation mapping — Hard; exit: the producer
+- **A1 = Task-041** Strict `/3` activation mapping — complete: the producer
   and independent reader accept only exact authored mappings while `/1` and
   `/2` remain byte-identical and reject `/3`.
 
@@ -46,7 +46,7 @@ Task-041: specification fixtures -> `/3` wire/producer/reader -> TC-142 -> QProt
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-041 | A | FR-054 | TC-142 | not_started |
+| Task-041 | A | FR-054 | TC-142 | done |
 
 ## Coordination Rules
 
