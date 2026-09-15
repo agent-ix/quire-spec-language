@@ -101,6 +101,7 @@ fn evaluate_package<P: StatePackage + ?Sized>(
         graph_keys: Vec::new(),
         catalogs: Vec::new(),
         locals: Vec::new(),
+        initializers: Vec::new(),
         call_depth: 0,
         anchor: None,
     };
@@ -131,6 +132,9 @@ struct Evaluator<'a, P: StatePackage + ?Sized> {
     graph_keys: Vec<&'a ObjectKey>,
     catalogs: Vec<(u32, Catalog<'a>)>,
     locals: Vec<((u32, u32), Value)>,
+    /// Initialized binders currently being resolved. This closes an admitted
+    /// initializer cycle before it can be reclassified as depth exhaustion.
+    initializers: Vec<(u32, u32)>,
     call_depth: usize,
     anchor: Option<w::Handle>,
 }
@@ -1745,7 +1749,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             ),
             w::ValueOperation::Text { value } => ValueKind::Text(value.clone()),
             w::ValueOperation::Enum { variant } => ValueKind::Enum(variant.clone()),
-            w::ValueOperation::Read { binder } => return self.read(handle, binder),
+            w::ValueOperation::Read { binder } => return self.read(handle, binder, depth),
             w::ValueOperation::Group { value } => return self.expression(value, depth + 1),
             w::ValueOperation::Field { base, field } => {
                 let base = self.expression(base, depth + 1)?;
@@ -1847,7 +1851,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
         Ok(Value::new(node.value_type, kind))
     }
 
-    fn read(&self, value: &w::Handle, binder: &w::Handle) -> Result<Value> {
+    fn read(&mut self, value: &w::Handle, binder: &w::Handle, depth: usize) -> Result<Value> {
         let declared = self
             .package
             .package()
@@ -1874,6 +1878,20 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .find(|(candidate, _)| *candidate == (binder.declaration, binder.index))
         {
             return Ok(value.clone());
+        }
+        if let Some(initializer) = &declared.initializer.0 {
+            let key = (binder.declaration, binder.index);
+            if self.initializers.contains(&key) {
+                return Err(Stop::Refused(Refusal::AdmittedInvariant(binder.clone())));
+            }
+            self.initializers.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
+            self.initializers.push(key);
+            let result = self.expression_at(initializer, depth + 1, declared.anchor.clone());
+            let removed = self.initializers.pop();
+            debug_assert_eq!(removed, Some(key));
+            return result;
         }
         let slot = self
             .binders
@@ -2485,9 +2503,9 @@ fn required_inputs(
                     .binders
                     .get(binder.index as usize)
                     .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(binder.clone())))?;
-                if value.initializer.0.is_none()
-                    && !matches!(value.kind, w::BinderKind::Let | w::BinderKind::Query)
-                {
+                if let Some(initializer) = &value.initializer.0 {
+                    discovery_push(work, &mut pending, initializer)?;
+                } else if !matches!(value.kind, w::BinderKind::Let | w::BinderKind::Query) {
                     let key = (binder.declaration, binder.index);
                     if !required_binders.contains(&key) {
                         work.charge(Dimension::InputAggregateEntries, 1)
