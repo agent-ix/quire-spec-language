@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-115: static meaning, every requested capability, historical compatibility.
 //! Request dispositions are compiler-side records; this does not claim D's IT-009.
 

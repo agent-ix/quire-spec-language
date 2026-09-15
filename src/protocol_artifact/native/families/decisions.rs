@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: Boolean decisions over causally available role-owned observations.
 
 mod formula;

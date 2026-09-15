@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020: exact integer spelling and raw duplicate members before any host map.
 use super::*;
 use serde::{

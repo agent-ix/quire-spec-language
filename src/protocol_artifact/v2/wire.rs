@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-050: the closed version-2 temporal binding delta.
 
 use crate::protocol_artifact::wire as v1;

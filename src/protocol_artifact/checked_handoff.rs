@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared FR-051 machinery for constructor-private checked handoffs.
 
 use std::collections::{BTreeMap, BTreeSet};

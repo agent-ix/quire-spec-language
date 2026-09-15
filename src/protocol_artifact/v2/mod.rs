@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-050: strict compiled-protocol version-2 production and admission.
 
 pub(super) mod intake;

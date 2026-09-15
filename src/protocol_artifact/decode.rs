@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: allocation-free Serde census before allocating closed wire records.
 //!
 //! Both passes use serde_json. The census constructs no generic JSON tree and

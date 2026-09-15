@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042/TC-121: example compilation recipe and independent input selections.
 //! It calls production APIs; it is not a production request format or B reader.
 

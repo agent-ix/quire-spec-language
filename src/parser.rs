@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: bounded declarations and precedence parsing into flat located syntax.
 use crate::lexer::{self, Kind, Token};
 use crate::syntax::*;

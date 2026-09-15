@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Native compensation source preserves static recovery obligations through
 //! actual proof discharge and emission. No runtime recovery is executed here.
 

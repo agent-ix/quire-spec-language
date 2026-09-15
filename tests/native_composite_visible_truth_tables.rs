@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Exhaustive two-atom output-determinacy cases through the public compiler.
 //! A four-row bit table is the independent test oracle, not a formula evaluator.
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-121: strict wire-reader controls; native family emission is a separate gate.
 //! AC-5/6 exercise only static wire branches; choice totality, runtime progress,
 //! delivery/recovery semantics and the complete acceptance criteria remain open.

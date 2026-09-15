@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026/029/031/033: selected output directory for native/Markdown workflows.
 
 #[path = "../tests/support/standalone_setup.rs"]

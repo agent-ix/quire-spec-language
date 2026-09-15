@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-139: QSL's production graph uses the cycle-free Contract Model substrate.
 
 use std::{collections::BTreeMap, process::Command};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Exact source correspondence shared with the eventual authored proof seam.
 
 use super::work::{Dimension, Exhaustion, Work};

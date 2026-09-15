@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-048/052: nominal/operator eligibility and retained runtime obligations.
 
 use super::*;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-015: bounded complete admission before native model construction.
 
 use std::collections::{BTreeMap, BTreeSet};

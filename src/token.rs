@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: one declarative vocabulary; Logos generates the token recognizer.
 use logos::Logos;
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-015: native model selection and explicit reference/operation correspondence.
 
 #[path = "support/native_rule_model.rs"]

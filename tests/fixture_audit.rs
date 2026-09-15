@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012: real audit process boundaries, immutable checkpoints and private packet lane.
 use ix_trace_rs::trace;
 use quire_spec_language::ByteDigest;

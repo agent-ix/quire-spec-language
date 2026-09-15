@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Authored source/clause selection reuses the native formal-source admission.
 
 use super::work::{Dimension as D, Work};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: invocation-local work for definition, model and lexical binding.
 
 /// Charging contract for static binding; independent of source namespace work.

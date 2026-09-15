@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: compiler-owned interpretations of exact native definition artifacts.
 //!
 //! Resources preserve the normative bytes from [standard PR #15][baseline].

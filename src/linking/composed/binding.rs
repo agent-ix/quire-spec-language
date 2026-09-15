@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: compose static definition, model/export and lexical binding stages.
 //! Resolved names are inputs to type/family checking, never executable packages.
 

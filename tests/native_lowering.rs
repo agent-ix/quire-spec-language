@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-009: real frontend-to-binder correspondence and refusal controls.
 
 // This shared fixture module also serves runtime execution tests in other binaries.

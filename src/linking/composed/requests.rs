@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: retain every requested clause/capability pair and its disposition.
 //!
 //! When the compiler hands a linked subject to a downstream checker or backend,

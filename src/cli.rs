@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-010/026: the binary's bounded positional command grammar.
 
 use quire_spec_language::lowering::{ProjectionTarget, UnknownProjectionTarget};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-052 canonical formula-wide native temporal evaluation owner boundary.
 
 mod common;

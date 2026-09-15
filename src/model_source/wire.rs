@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-025: closed wire shapes, borrowing undecoded entry groups from the source.
 
 use crate::serde_object::{deserialize_empty_object, from_object as deserialize_object};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-008: independent truth and accounting through checked, validated native inputs.
 
 #[path = "support/runtime_setup.rs"]

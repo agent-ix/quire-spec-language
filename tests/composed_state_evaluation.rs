@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public admitted-artifact state evaluation controls.
 
 #[path = "support/native_protocol/mod.rs"]

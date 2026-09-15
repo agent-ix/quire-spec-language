@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-023: native validation and execution with retained request provenance.
 
 use crate::package::NativePackage;

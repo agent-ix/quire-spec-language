@@ -602,7 +602,7 @@
   {
     "name": "quire-spec-language",
     "version": "0.2.0",
-    "license": "AGPL-3.0-only",
+    "license": "AGPL-3.0-or-later",
     "source": null
   },
   {

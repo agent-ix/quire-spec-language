@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-067/068/070: independent finite graph and ordered sequence expectations.
 
 use super::*;

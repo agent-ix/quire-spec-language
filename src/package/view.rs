@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: borrowed typed package views, preserving the specified record order.
 
 use std::{collections::BTreeSet, fmt};

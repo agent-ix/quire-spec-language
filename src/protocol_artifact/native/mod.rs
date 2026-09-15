@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036/040/042: native source compilation, separate from wire-data admission.
 //! Only completed source binding, native typing, authored definedness discharge
 //! and supported family checks can construct the private emission authority.

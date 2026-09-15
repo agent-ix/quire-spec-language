@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-034: concrete native state reads, strict IR binding and validated input materialization.
 
 // Existing shared fixtures use only the public compiler/runtime APIs.

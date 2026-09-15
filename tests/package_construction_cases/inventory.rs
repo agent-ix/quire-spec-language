@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-078/079/081: complete source-ordered clause and operation obligations.
 
 use serde_json::{json, Value};

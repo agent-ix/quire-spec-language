@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-035: edition-selected syntax only; no model, profile or execution admission.
 pub(crate) mod arena;
 

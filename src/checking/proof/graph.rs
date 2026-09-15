@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-016/040: one bounded materializer for historical and composed proof graphs.
 
 use super::*;

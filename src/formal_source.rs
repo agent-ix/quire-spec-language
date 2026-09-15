@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-014/030/031: explicit native/formal identities and exact source correspondence.
 //! This binding checks coordinates; assigning authored identities is the caller's role.
 
