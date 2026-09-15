@@ -1745,7 +1745,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             ),
             w::ValueOperation::Text { value } => ValueKind::Text(value.clone()),
             w::ValueOperation::Enum { variant } => ValueKind::Enum(variant.clone()),
-            w::ValueOperation::Read { binder } => return self.read(handle, binder),
+            w::ValueOperation::Read { binder } => return self.read(handle, binder, depth),
             w::ValueOperation::Group { value } => return self.expression(value, depth + 1),
             w::ValueOperation::Field { base, field } => {
                 let base = self.expression(base, depth + 1)?;
@@ -1847,7 +1847,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
         Ok(Value::new(node.value_type, kind))
     }
 
-    fn read(&self, value: &w::Handle, binder: &w::Handle) -> Result<Value> {
+    fn read(&mut self, value: &w::Handle, binder: &w::Handle, depth: usize) -> Result<Value> {
         let declared = self
             .package
             .package()
@@ -1874,6 +1874,33 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .find(|(candidate, _)| *candidate == (binder.declaration, binder.index))
         {
             return Ok(value.clone());
+        }
+        if declared.kind == w::BinderKind::Capture {
+            let initializer = declared
+                .initializer
+                .0
+                .as_ref()
+                .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(binder.clone())))?;
+            if initializer.declaration != binder.declaration {
+                return Err(Stop::Refused(Refusal::AdmittedInvariant(
+                    initializer.clone(),
+                )));
+            }
+            let initializer_declaration = usize::try_from(initializer.declaration)
+                .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(initializer.clone())))?;
+            let initializer_index = usize::try_from(initializer.index)
+                .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(initializer.clone())))?;
+            let anchor = self
+                .package
+                .package()
+                .declarations
+                .get(initializer_declaration)
+                .and_then(|declaration| declaration.values.get(initializer_index))
+                .map(|initializer| initializer.anchor.clone())
+                .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(initializer.clone())))?;
+            let captured = self.expression_at(initializer, depth + 1, anchor)?;
+            self.bind_local((binder.declaration, binder.index), captured.clone())?;
+            return Ok(captured);
         }
         let slot = self
             .binders
@@ -2485,7 +2512,18 @@ fn required_inputs(
                     .binders
                     .get(binder.index as usize)
                     .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(binder.clone())))?;
-                if value.initializer.0.is_none()
+                if value.kind == w::BinderKind::Capture {
+                    let initializer =
+                        value.initializer.0.as_ref().ok_or_else(|| {
+                            Stop::Refused(Refusal::AdmittedInvariant(binder.clone()))
+                        })?;
+                    if initializer.declaration != binder.declaration {
+                        return Err(Stop::Refused(Refusal::AdmittedInvariant(
+                            initializer.clone(),
+                        )));
+                    }
+                    discovery_push(work, &mut pending, initializer)?;
+                } else if value.initializer.0.is_none()
                     && !matches!(value.kind, w::BinderKind::Let | w::BinderKind::Query)
                 {
                     let key = (binder.declaration, binder.index);
