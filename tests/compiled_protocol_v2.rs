@@ -185,10 +185,12 @@ fn compensation_inputs() -> Inputs {
                   }
                   within [0,30]; attempts 3 of M::Plain;
                   retry (earlier: M::Plain, later: M::Plain) {
-                    earlier.ready = later.ready and not activated
+                    earlier.ready = later.ready and target >= 0 and not activated
                   };
                   commit never;
-                  recover (recovered: M::Node) { recovered.n = 1 and not activated };
+                  recover (recovered: M::Node) {
+                    recovered.n = 1 and target >= 0 and not activated
+                  };
                 }
                 compensate Partial for Main::Applied as (partialForward: M::Node)
                     by Service on M::Node::step using T clock \"event-clock\" {
@@ -198,11 +200,13 @@ fn compensation_inputs() -> Inputs {
                   }
                   within [0,30]; attempts 3 of M::Plain;
                   retry (partialEarlier: M::Plain, partialLater: M::Plain) {
-                    partialEarlier.ready = partialLater.ready and not partialActivated
+                    partialEarlier.ready = partialLater.ready
+                    and partialTarget >= 0 and not partialActivated
                   };
                   commit never;
                   recover (partialRecovered: M::Node) {
-                    partialRecovered.n = 1 and not partialActivated
+                    partialRecovered.n = 1
+                    and partialTarget >= 0 and not partialActivated
                   };
                 }
                 requires temporal ByEvent;
@@ -361,7 +365,12 @@ fn plain_binder(package: &v2::AdmittedPackage, binder: w::Handle, ready: bool) -
     }
 }
 
-fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> StateView {
+fn object_integer_view(
+    package: &v2::AdmittedPackage,
+    binder: w::Handle,
+    field_name: &str,
+    n: i64,
+) -> StateView {
     let inherited = package.inherited();
     let declaration = &inherited.declarations[binder.declaration as usize];
     let binding = &declaration.binders[binder.index as usize];
@@ -370,7 +379,7 @@ fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> St
         export: object_type,
     } = &inherited.types[binding.value_type as usize]
     else {
-        panic!("recovery object type")
+        panic!("selected object type")
     };
     let population_index = declaration
         .bindings
@@ -385,7 +394,7 @@ fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> St
                     .is_some_and(|model| model.model == object_type.model)
         })
         .and_then(|index| u32::try_from(index).ok())
-        .expect("recovery population requirement");
+        .expect("selected object population requirement");
     let closure_index = declaration
         .bindings
         .iter()
@@ -394,7 +403,7 @@ fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> St
                 && requirement.requires == [population_index]
         })
         .and_then(|index| u32::try_from(index).ok())
-        .expect("recovery population closure");
+        .expect("selected object population closure");
     let population = declaration.bindings[population_index as usize]
         .model
         .0
@@ -405,14 +414,14 @@ fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> St
             anchor: binding.anchor.clone(),
             snapshot: ObservationIdentity("snapshot:selected".into()),
             window: None,
-            record: ObservationIdentity("record:recovery".into()),
+            record: ObservationIdentity(format!("record:{field_name}")),
         },
         model: object_type.model,
         universe: population,
         object_type: object_type.clone(),
-        identifier: "logical-recovery".into(),
+        identifier: format!("logical-{field_name}"),
     };
-    let n_field = field_export(package, object_type.model, "Node", "n");
+    let n_field = field_export(package, object_type.model, "Node", field_name);
     let n_type = declaration
         .values
         .iter()
@@ -478,6 +487,16 @@ fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> St
             objects: vec![ObjectInput { key, fields }],
         }],
     }
+}
+
+fn recovery_view(package: &v2::AdmittedPackage, binder: w::Handle, n: i64) -> StateView {
+    object_integer_view(package, binder, "n", n)
+}
+
+fn merge_view(mut left: StateView, right: StateView) -> StateView {
+    left.binders.extend(right.binders);
+    left.populations.extend(right.populations);
+    left
 }
 
 fn inputs_with_event_body(event_body: &str) -> Inputs {
@@ -841,17 +860,23 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                 ),
                 (
                     compensation.retry.clone(),
-                    StateView {
-                        binders: vec![
-                            plain_binder(&admitted, compensation.earlier.clone(), true),
-                            plain_binder(&admitted, compensation.later.clone(), true),
-                            plain_binder(&admitted, compensation.trigger.clone(), false),
-                        ],
-                        populations: Vec::new(),
-                    },
+                    merge_view(
+                        object_integer_view(&admitted, compensation.forward.clone(), "total", 1),
+                        StateView {
+                            binders: vec![
+                                plain_binder(&admitted, compensation.earlier.clone(), true),
+                                plain_binder(&admitted, compensation.later.clone(), true),
+                                plain_binder(&admitted, compensation.trigger.clone(), false),
+                            ],
+                            populations: Vec::new(),
+                        },
+                    ),
                 ),
                 (compensation.recover.clone(), {
-                    let mut view = recovery_view(&admitted, compensation.recovery.clone(), 1);
+                    let mut view = merge_view(
+                        object_integer_view(&admitted, compensation.forward.clone(), "total", 1),
+                        recovery_view(&admitted, compensation.recovery.clone(), 1),
+                    );
                     view.binders
                         .push(plain_binder(&admitted, compensation.trigger.clone(), false));
                     view
@@ -1031,14 +1056,22 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                 _ => panic!("protocol"),
             };
             for selected_compensation in compensations {
-                let retry_view = StateView {
-                    binders: vec![
-                        plain_binder(&admitted, selected_compensation.earlier.clone(), true),
-                        plain_binder(&admitted, selected_compensation.later.clone(), true),
-                        plain_binder(&admitted, selected_compensation.trigger.clone(), false),
-                    ],
-                    populations: Vec::new(),
-                };
+                let retry_view = merge_view(
+                    object_integer_view(
+                        &admitted,
+                        selected_compensation.forward.clone(),
+                        "total",
+                        1,
+                    ),
+                    StateView {
+                        binders: vec![
+                            plain_binder(&admitted, selected_compensation.earlier.clone(), true),
+                            plain_binder(&admitted, selected_compensation.later.clone(), true),
+                            plain_binder(&admitted, selected_compensation.trigger.clone(), false),
+                        ],
+                        populations: Vec::new(),
+                    },
+                );
                 let retry = state::evaluate_v2(
                     &admitted,
                     request(selected_compensation.retry.clone()),
@@ -1069,8 +1102,15 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                         if matches!(value.kind(), StateValueKind::Boolean(false))
                 ));
 
-                let mut recover_view =
-                    recovery_view(&admitted, selected_compensation.recovery.clone(), 1);
+                let mut recover_view = merge_view(
+                    object_integer_view(
+                        &admitted,
+                        selected_compensation.forward.clone(),
+                        "total",
+                        1,
+                    ),
+                    recovery_view(&admitted, selected_compensation.recovery.clone(), 1),
+                );
                 recover_view.binders.push(plain_binder(
                     &admitted,
                     selected_compensation.trigger.clone(),
@@ -1088,34 +1128,80 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                         if matches!(value.kind(), StateValueKind::Boolean(true))
                 ));
 
-                let capture = selected_compensation.activation_captures[0].clone();
-                let capture_owner =
-                    usize::try_from(capture.declaration).expect("bounded capture owner");
-                let capture_index = usize::try_from(capture.index).expect("bounded capture index");
-                let capture_type = admitted.inherited().declarations[capture_owner].binders
-                    [capture_index]
-                    .value_type;
-                let injected_capture = StateView {
-                    binders: vec![BinderInput {
-                        binder: capture.clone(),
-                        requirement: None,
-                        authority: None,
-                        value: InputSlot::Available(StateValue::new(
-                            capture_type,
-                            StateValueKind::Boolean(false),
-                        )),
-                    }],
-                    populations: Vec::new(),
-                };
+                for capture in selected_compensation
+                    .registration_captures
+                    .iter()
+                    .chain(&selected_compensation.activation_captures)
+                {
+                    let capture_owner =
+                        usize::try_from(capture.declaration).expect("bounded capture owner");
+                    let capture_index =
+                        usize::try_from(capture.index).expect("bounded capture index");
+                    let capture_type = admitted.inherited().declarations[capture_owner].binders
+                        [capture_index]
+                        .value_type;
+                    let injected_capture = StateView {
+                        binders: vec![BinderInput {
+                            binder: capture.clone(),
+                            requirement: None,
+                            authority: None,
+                            value: InputSlot::Available(StateValue::new(
+                                capture_type,
+                                StateValueKind::Boolean(false),
+                            )),
+                        }],
+                        populations: Vec::new(),
+                    };
+                    assert_eq!(
+                        state::evaluate_v2(
+                            &admitted,
+                            request(selected_compensation.retry.clone()),
+                            &injected_capture,
+                            StateLimits::default(),
+                        )
+                        .outcome(),
+                        &EvaluationOutcome::Refused(StateRefusal::SurplusBinding(capture.clone()))
+                    );
+                }
+
+                let mut missing_forward = retry_view.clone();
+                missing_forward
+                    .binders
+                    .retain(|input| input.binder != selected_compensation.forward);
                 assert_eq!(
                     state::evaluate_v2(
                         &admitted,
                         request(selected_compensation.retry.clone()),
-                        &injected_capture,
+                        &missing_forward,
                         StateLimits::default(),
                     )
                     .outcome(),
-                    &EvaluationOutcome::Refused(StateRefusal::SurplusBinding(capture))
+                    &EvaluationOutcome::Refused(StateRefusal::MissingBinding(
+                        selected_compensation.forward.clone(),
+                    ))
+                );
+
+                let mut crossed_forward_authority = retry_view.clone();
+                crossed_forward_authority
+                    .binders
+                    .iter_mut()
+                    .find(|input| input.binder == selected_compensation.forward)
+                    .expect("forward input remains selected")
+                    .requirement = Some(binder_requirement(
+                    &admitted,
+                    &selected_compensation.trigger,
+                ));
+                assert_eq!(
+                    state::evaluate_v2(
+                        &admitted,
+                        request(selected_compensation.retry.clone()),
+                        &crossed_forward_authority,
+                        StateLimits::default(),
+                    )
+                    .outcome(),
+                    &EvaluationOutcome::Refused(StateRefusal::Authority(
+                        selected_compensation.forward.clone(),
+                    ))
                 );
 
                 let mut missing_external = retry_view;
@@ -1222,13 +1308,16 @@ fn admitted_v2_evaluates_exact_compensation_expressions_with_shared_accounting()
                 EvaluationOutcome::Refused(StateRefusal::Authority(_))
             ));
 
-            let mut crossed_population = recovery_view(&admitted, compensation.recovery.clone(), 1);
+            let mut crossed_population = merge_view(
+                object_integer_view(&admitted, compensation.forward.clone(), "total", 1),
+                recovery_view(&admitted, compensation.recovery.clone(), 1),
+            );
             crossed_population.binders.push(plain_binder(
                 &admitted,
                 compensation.trigger.clone(),
                 false,
             ));
-            crossed_population.populations[0].requirement.index =
+            crossed_population.populations[1].requirement.index =
                 binder_requirement(&admitted, &compensation.trigger);
             let crossed_population_outcome = state::evaluate_v2(
                 &admitted,
