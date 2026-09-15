@@ -101,6 +101,7 @@ fn evaluate_package<P: StatePackage + ?Sized>(
         graph_keys: Vec::new(),
         catalogs: Vec::new(),
         locals: Vec::new(),
+        initializers: Vec::new(),
         call_depth: 0,
         anchor: None,
     };
@@ -131,6 +132,9 @@ struct Evaluator<'a, P: StatePackage + ?Sized> {
     graph_keys: Vec<&'a ObjectKey>,
     catalogs: Vec<(u32, Catalog<'a>)>,
     locals: Vec<((u32, u32), Value)>,
+    /// Initialized binders currently being resolved. This closes an admitted
+    /// initializer cycle before it can be reclassified as depth exhaustion.
+    initializers: Vec<(u32, u32)>,
     call_depth: usize,
     anchor: Option<w::Handle>,
 }
@@ -1890,7 +1894,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
                 .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(initializer.clone())))?;
             let initializer_index = usize::try_from(initializer.index)
                 .map_err(|_| Stop::Refused(Refusal::AdmittedInvariant(initializer.clone())))?;
-            let anchor = self
+            let initializer_anchor = self
                 .package
                 .package()
                 .declarations
@@ -1898,8 +1902,25 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
                 .and_then(|declaration| declaration.values.get(initializer_index))
                 .map(|initializer| initializer.anchor.clone())
                 .ok_or_else(|| Stop::Refused(Refusal::AdmittedInvariant(initializer.clone())))?;
-            let captured = self.expression_at(initializer, depth + 1, anchor)?;
-            self.bind_local((binder.declaration, binder.index), captured.clone())?;
+            let key = (binder.declaration, binder.index);
+            if self.initializers.contains(&key) {
+                return Err(Stop::Refused(Refusal::AdmittedInvariant(binder.clone())));
+            }
+            self.initializers.try_reserve(1).map_err(|_| {
+                Stop::Exhausted(self.work.allocation(Dimension::InputAggregateEntries, 1))
+            })?;
+            self.initializers.push(key);
+            let result = if initializer_anchor == declared.anchor {
+                self.expression_at(initializer, depth + 1, declared.anchor.clone())
+            } else {
+                Err(Stop::Refused(Refusal::AdmittedInvariant(
+                    initializer.clone(),
+                )))
+            };
+            let removed = self.initializers.pop();
+            debug_assert_eq!(removed, Some(key));
+            let captured = result?;
+            self.bind_local(key, captured.clone())?;
             return Ok(captured);
         }
         let slot = self
