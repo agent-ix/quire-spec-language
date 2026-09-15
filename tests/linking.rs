@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public-API qualification of the native-formal-environment/1 binding profile.
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;

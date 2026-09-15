@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042: one choice observing an actual received record and the chooser's own
 //! attempt record together. These are static admission facts about retained
 //! graphs and emitted bytes, not runtime decision outcomes.

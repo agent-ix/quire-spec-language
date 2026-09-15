@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: exact supplied definition/rule closure and unit-local profile aliases.
 //!
 //! The supported interpretation registry is compiler-owned. Supplying arbitrary

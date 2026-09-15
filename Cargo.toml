@@ -8,7 +8,7 @@ version = "0.2.0"
 publish = false
 edition = "2021"
 rust-version = "1.98"
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-or-later"
 description = "Native finite-state specification syntax and source diagnostics"
 default-run = "quire-spec"
 

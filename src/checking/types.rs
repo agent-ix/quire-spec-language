@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-016: exact native type identities and borrowed model declaration indexes.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -460,7 +460,7 @@ mod profile_tests {
     #[test]
     #[trace("TC-120", "FR-041-AC-4", "FR-041-AC-5")]
     fn historical_and_composed_interpret_the_same_admitted_rational_differently() {
-        let text = r#"{"license":"AGPL-3.0-only","package":"test/catalog","requirement":"Model","revision":1,
+        let text = r#"{"license":"AGPL-3.0-or-later","package":"test/catalog","requirement":"Model","revision":1,
             "scalars":[{"kind":"rational","name":"Ratio","numerator_minimum":-1,"numerator_maximum":1,"maximum_denominator":2}],
             "records":[],"values":[
                 {"name":"direct","kind":"state","type":{"kind":"scalar","name":"Ratio"}},

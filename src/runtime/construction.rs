@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-018/NFR-006: bounded structural inspection and deterministic artifact output.
 
 use std::io::{self, Write};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: bounded lookup of a declaration's contiguous parser-arena region.
 
 use super::binding_work::{Dimension, Exhaustion, Work};

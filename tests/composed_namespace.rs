@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: exact source inventory and bounded namespace admission.
 //! Unresolved profile/model strings are syntax inputs, not IT-009 evidence.
 

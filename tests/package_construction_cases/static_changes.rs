@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-082/091: independent canonical mutations and admissible changed inputs.
 
 use sha2::{Digest, Sha256};

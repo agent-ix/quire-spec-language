@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: newly authored ConfigVersion fixtures through public native APIs.
 
 use quire_contract_ir as ir;

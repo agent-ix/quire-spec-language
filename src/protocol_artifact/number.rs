@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-038: exact tagged decimal strings, with no wire normalization or rounding.
 
 use std::fmt;

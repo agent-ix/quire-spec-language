@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-122: bounded temporal truth under each selected profile.
 //!
 //! FR-043. Expected truths, bases and premises come from the authored source and

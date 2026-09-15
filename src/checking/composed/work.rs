@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Versioned charge-before-work contract for composed type admission.
 //!
 //! Declarations are visited in namespace order; each expression/control and each

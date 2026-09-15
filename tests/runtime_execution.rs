@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-023: real native execution and retained request provenance.
 
 // This shared public-API fixture also serves graph and operation binaries.

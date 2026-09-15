@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-042/TC-121 and FR-050/TC-138: the published compiled-protocol handoff.
 //!
 //! An independent consumer reads a handoff directory: the offered artifact

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! NFR-006 / FR-007: fresh charge-before-work accounting and retained error facts.
 
 use super::{

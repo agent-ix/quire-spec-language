@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-083: structural Draft 2020-12 checks, separate from compiler authority.
 
 use jsonschema::{Draft, JSONSchema};

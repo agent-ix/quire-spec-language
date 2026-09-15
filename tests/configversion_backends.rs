@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! IT-010: actual ConfigVersion parity across native and generated numeric backends.
 
 #[allow(dead_code)]

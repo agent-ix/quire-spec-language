@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-030: consume actual Quire extraction and verify its original native body.
 //! Quire retains Markdown, availability and schema ownership; native semantics
 //! remain in the existing mapped compiler. Enabled by `quire-extraction`.

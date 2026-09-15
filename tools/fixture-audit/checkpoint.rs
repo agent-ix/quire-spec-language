@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012 AC-4/5: selected producer bytes and real native syntax, not evaluation.
 use crate::{
     error::{ensure, Code, Error, Result},

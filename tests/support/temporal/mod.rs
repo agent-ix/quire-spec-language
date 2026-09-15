@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared setup for the native temporal evaluation controls.
 //!
 //! Compiles real native temporal source through the existing parser, linker,

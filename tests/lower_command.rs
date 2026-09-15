@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-029: actual source-only projection export and existing backend consumption.
 
 #[path = "support/standalone_setup.rs"]

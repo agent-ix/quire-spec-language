@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: shared value and temporal trees with explicit lexical environments.
 use super::super::models::{ModelError, ModelErrorKind};
 use super::*;

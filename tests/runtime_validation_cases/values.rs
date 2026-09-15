@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-060/063: generated native shapes at each supplied value/capture site.
 
 use super::setup::{authored_model, qualified, recorded};

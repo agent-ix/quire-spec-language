@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-043: bounded evaluation of the emitted temporal operation graph.
 //!
 //! Evaluation is three-valued. `Unknown` means the observed prefix does not

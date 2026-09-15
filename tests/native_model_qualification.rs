@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-015: complete native admission through public IR and source-bound models.
 
 #[path = "native_model_cases/admission.rs"]

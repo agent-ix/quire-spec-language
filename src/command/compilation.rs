@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026/027: source-model admission and the shared static compiler pipeline.
 
 use super::{wire, Intake, Result, RunCause};

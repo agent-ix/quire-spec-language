@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-033: one target-name catalog for library parsing, display and CLI selection.
 
 /// A requested lowering target is outside the published catalog.

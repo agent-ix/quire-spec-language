@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-120: explicit rational producer profiles through the public source/model APIs.
 
 use ix_trace_rs::trace;
@@ -58,7 +58,7 @@ fn source(text: &str) -> FormalSource {
 
 fn document(scalars: &str, records: &str, values: &str) -> String {
     format!(
-        r#"{{"license":"AGPL-3.0-only","package":"test/rational","requirement":"RationalModel","revision":1,"scalars":[{scalars}],"records":[{records}],"values":[{values}],"objects":[],"operations":[]}}"#
+        r#"{{"license":"AGPL-3.0-or-later","package":"test/rational","requirement":"RationalModel","revision":1,"scalars":[{scalars}],"records":[{records}],"values":[{values}],"objects":[],"operations":[]}}"#
     )
 }
 

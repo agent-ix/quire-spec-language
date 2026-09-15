@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-014: exact native/IR source correspondence through actual public types.
 
 use ix_trace_rs::trace;
