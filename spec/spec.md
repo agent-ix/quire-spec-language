@@ -38,6 +38,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-051
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-054
+    type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-010
@@ -371,4 +373,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-051](functional/FR-051-publish-checked-native-handoffs.md) | FR | Implemented strict checked predicate and temporal subject owner handoffs for #90 |
 | [FR-052](functional/FR-052-publish-native-temporal-evaluation-owner.md) | FR | Implemented canonical native temporal request/result owner boundary for Contract IR FR-026; review/merge pending |
 | [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | Versioned opaque semantic-trigger identity bridge for Protocol FR-300 |
+| [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
