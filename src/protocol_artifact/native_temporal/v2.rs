@@ -123,6 +123,27 @@ impl ValidatedRequest {
     pub const fn declaration(&self) -> u32 {
         self.inner.declaration()
     }
+
+    /// Returns the exact evaluation anchor admitted into this request.
+    ///
+    /// This is an owner fact for the downstream FR-300 bridge. It carries no
+    /// protocol control or observation-subject selection.
+    pub fn evaluation_anchor(&self) -> &str {
+        self.inner.anchor()
+    }
+
+    /// Returns the selected event trigger's immutable capture population.
+    ///
+    /// V2 admission proves that there is exactly one trigger. The public
+    /// identity remains opaque through [`Self::semantic_trigger`]; this view
+    /// deliberately exposes only its already-admitted captures.
+    pub fn activation_captures(&self) -> impl ExactSizeIterator<Item = request::CaptureView<'_>> {
+        self.inner
+            .triggers()
+            .next()
+            .expect("v2 validated requests retain exactly one trigger")
+            .captures()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +184,14 @@ impl ValidatedResult {
     }
     pub fn truth(&self) -> Option<result::Truth> {
         self.inner.truth()
+    }
+
+    /// Returns the checked activation state from strict result admission.
+    ///
+    /// The result owner evaluates this state; downstream consumers may retain
+    /// it but cannot submit or reconstruct it.
+    pub fn activation(&self) -> result::ActivationState {
+        self.inner.activation()
     }
 }
 
