@@ -20,7 +20,7 @@ use super::{EvaluationOutcome, EvaluationReport, Limits};
 use crate::checking::{Catalog, NativeType};
 use crate::native_model::{ScalarKind, ScalarSite, Unit};
 use crate::protocol_artifact::{
-    wire as w, AdmittedPackage, ExactInteger, ExactRational, ProtocolNumber,
+    v2, wire as w, AdmittedPackage, ExactInteger, ExactRational, ProtocolNumber,
 };
 
 enum Stop {
@@ -38,6 +38,59 @@ pub fn evaluate(
     view: &StateView,
     limits: Limits,
 ) -> EvaluationReport {
+    evaluate_package(package, request, view, limits)
+}
+
+/// Evaluate one exact declaration-local value from an admitted version-2 artifact.
+pub fn evaluate_v2(
+    package: &v2::AdmittedPackage,
+    request: EvaluationRequest,
+    view: &StateView,
+    limits: Limits,
+) -> EvaluationReport {
+    evaluate_package(package, request, view, limits)
+}
+
+trait StatePackage {
+    fn package(&self) -> &w::Package;
+    fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel>;
+    fn artifact(&self) -> Option<&w::ArtifactRef>;
+}
+
+impl StatePackage for AdmittedPackage {
+    fn package(&self) -> &w::Package {
+        AdmittedPackage::package(self)
+    }
+
+    fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel> {
+        AdmittedPackage::schema_model(self, index)
+    }
+
+    fn artifact(&self) -> Option<&w::ArtifactRef> {
+        Some(AdmittedPackage::artifact(self))
+    }
+}
+
+impl StatePackage for v2::AdmittedPackage {
+    fn package(&self) -> &w::Package {
+        v2::AdmittedPackage::inherited(self)
+    }
+
+    fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel> {
+        v2::AdmittedPackage::schema_model(self, index)
+    }
+
+    fn artifact(&self) -> Option<&w::ArtifactRef> {
+        v2::AdmittedPackage::artifact(self)
+    }
+}
+
+fn evaluate_package<P: StatePackage + ?Sized>(
+    package: &P,
+    request: EvaluationRequest,
+    view: &StateView,
+    limits: Limits,
+) -> EvaluationReport {
     let mut evaluator = Evaluator {
         package,
         request,
@@ -51,11 +104,15 @@ pub fn evaluate(
         call_depth: 0,
         anchor: None,
     };
-    let outcome = match evaluator.run() {
-        Ok(value) => EvaluationOutcome::Completed(value),
-        Err(Stop::Incomplete(value)) => EvaluationOutcome::Incomplete(value),
-        Err(Stop::Refused(value)) => EvaluationOutcome::Refused(value),
-        Err(Stop::Exhausted(value)) => EvaluationOutcome::Exhausted(value),
+    let outcome = if evaluator.package.artifact().is_none() {
+        EvaluationOutcome::Refused(Refusal::UnpublishedArtifact)
+    } else {
+        match evaluator.run() {
+            Ok(value) => EvaluationOutcome::Completed(value),
+            Err(Stop::Incomplete(value)) => EvaluationOutcome::Incomplete(value),
+            Err(Stop::Refused(value)) => EvaluationOutcome::Refused(value),
+            Err(Stop::Exhausted(value)) => EvaluationOutcome::Exhausted(value),
+        }
     };
     EvaluationReport {
         limits: evaluator.work.limits,
@@ -64,8 +121,8 @@ pub fn evaluate(
     }
 }
 
-struct Evaluator<'a> {
-    package: &'a AdmittedPackage,
+struct Evaluator<'a, P: StatePackage + ?Sized> {
+    package: &'a P,
     request: EvaluationRequest,
     view: &'a StateView,
     work: Work,
@@ -242,7 +299,7 @@ impl<'a> PopulationIndex<'a> {
     }
 }
 
-impl<'a> Evaluator<'a> {
+impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
     fn run(&mut self) -> Result<Value> {
         let declaration = self
             .package
@@ -594,35 +651,53 @@ impl<'a> Evaluator<'a> {
                     .map_err(|_| Stop::Refused(Refusal::Authority(handle.clone())))?,
             )
             .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))?;
-        let expected_kind = match anchor.kind {
+        let ordinary_kind = match anchor.kind {
             w::AnchorKind::Current
             | w::AnchorKind::TemporalInstant
-            | w::AnchorKind::ProtocolInstant => w::BindingKind::Snapshot,
+            | w::AnchorKind::ProtocolInstant => Some(w::BindingKind::Snapshot),
             w::AnchorKind::InvocationInput
             | w::AnchorKind::InvocationPre
-            | w::AnchorKind::InvocationPost => w::BindingKind::Invocation,
-            w::AnchorKind::Activation => w::BindingKind::WorkflowInstance,
-            w::AnchorKind::Finish => w::BindingKind::Closure,
-            _ => return Err(Stop::Refused(Refusal::Authority(handle.clone()))),
+            | w::AnchorKind::InvocationPost => Some(w::BindingKind::Invocation),
+            w::AnchorKind::Activation => Some(w::BindingKind::WorkflowInstance),
+            w::AnchorKind::Finish => Some(w::BindingKind::Closure),
+            _ => None,
         };
-        let subject = w::Subject::Declaration {
-            declaration: handle.declaration,
+        let (expected_kind, subject, expected_type) = if let Some(kind) = ordinary_kind {
+            (
+                kind,
+                w::Subject::Declaration {
+                    declaration: handle.declaration,
+                },
+                declaration_root_type(declaration, handle)?,
+            )
+        } else {
+            match (anchor.kind, binder.kind) {
+                (w::AnchorKind::CompensationActivation, w::BinderKind::CompensationTrigger) => (
+                    w::BindingKind::Observation,
+                    compensation_subject(declaration, anchor, handle)?,
+                    binder.value_type,
+                ),
+                (
+                    w::AnchorKind::Retry,
+                    w::BinderKind::EarlierAttempt | w::BinderKind::LaterAttempt,
+                ) => (
+                    w::BindingKind::CompensationAttempt,
+                    compensation_subject(declaration, anchor, handle)?,
+                    binder.value_type,
+                ),
+                (w::AnchorKind::Recovery, w::BinderKind::Recovery) => (
+                    w::BindingKind::Snapshot,
+                    compensation_subject(declaration, anchor, handle)?,
+                    binder.value_type,
+                ),
+                _ => return Err(Stop::Refused(Refusal::Authority(handle.clone()))),
+            }
         };
-        let root = declaration
-            .binders
-            .iter()
-            .find(|candidate| {
-                matches!(
-                    candidate.kind,
-                    w::BinderKind::Input | w::BinderKind::SelfValue
-                )
-            })
-            .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))?;
-        let root_model = self.type_model(root.value_type)?;
+        let root_model = self.type_model(expected_type)?;
         if requirement.kind != expected_kind
             || requirement.anchor != binder.anchor
             || requirement.subject != subject
-            || requirement.value_type.0 != Some(root.value_type)
+            || requirement.value_type.0 != Some(expected_type)
             || root_model.is_some_and(|model| {
                 requirement
                     .model
@@ -857,9 +932,11 @@ impl<'a> Evaluator<'a> {
         {
             return Err(Stop::Refused(Refusal::AuthorityRevision));
         }
-        if offered.compiled != *self.package.artifact()
-            || offered.observation != requirement.authority
-        {
+        let compiled = self
+            .package
+            .artifact()
+            .ok_or(Stop::Refused(Refusal::UnpublishedArtifact))?;
+        if offered.compiled != *compiled || offered.observation != requirement.authority {
             return Err(Stop::Refused(Refusal::Authority(handle)));
         }
         let Some(adapter) = &offered.adapter else {
@@ -2307,6 +2384,44 @@ impl<'a> Evaluator<'a> {
             _ => Err(Stop::Refused(Refusal::ContextualValue(edge.clone()))),
         }
     }
+}
+
+fn compensation_subject(
+    declaration: &w::Declaration,
+    anchor: &w::Anchor,
+    handle: &w::Handle,
+) -> Result<w::Subject> {
+    let compensation = anchor
+        .owner
+        .0
+        .as_ref()
+        .filter(|owner| owner.declaration == handle.declaration)
+        .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))?;
+    let w::Body::Protocol { compensations, .. } = &declaration.body else {
+        return Err(Stop::Refused(Refusal::Authority(handle.clone())));
+    };
+    let index = usize::try_from(compensation.index)
+        .map_err(|_| Stop::Refused(Refusal::Authority(handle.clone())))?;
+    if compensations.get(index).is_none() {
+        return Err(Stop::Refused(Refusal::Authority(handle.clone())));
+    }
+    Ok(w::Subject::Compensation {
+        compensation: compensation.clone(),
+    })
+}
+
+fn declaration_root_type(declaration: &w::Declaration, handle: &w::Handle) -> Result<u32> {
+    declaration
+        .binders
+        .iter()
+        .find(|candidate| {
+            matches!(
+                candidate.kind,
+                w::BinderKind::Input | w::BinderKind::SelfValue
+            )
+        })
+        .map(|root| root.value_type)
+        .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))
 }
 
 fn valid_digest(value: &CanonicalDigest) -> bool {

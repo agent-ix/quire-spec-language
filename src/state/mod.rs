@@ -5,7 +5,7 @@ mod evaluation;
 mod input;
 mod work;
 
-pub use evaluation::evaluate;
+pub use evaluation::{evaluate, evaluate_v2};
 pub use input::{
     AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
     ContextualSlot, ContextualValue, ContextualValueKind, EvaluationOutcome, EvaluationReport,
