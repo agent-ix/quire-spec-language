@@ -24,13 +24,30 @@ fn string(lex: &mut logos::Lexer<'_, Kind>) -> Result<String, LexError> {
     serde_json::from_str(lex.slice()).map_err(|_| LexError::String)
 }
 
+pub(crate) fn is_lexer_whitespace(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b' ' | b'\t' | b'\n' => index += 1,
+            b'\r' if bytes.get(index + 1) == Some(&b'\n') => index += 2,
+            _ => return false,
+        }
+    }
+    !bytes.is_empty()
+}
+
 macro_rules! vocabulary {
-    ($($variant:ident => $text:literal),+ $(,)?) => {
+    (
+        $($base_variant:ident => $base_text:literal),+;
+        complete: $($complete_variant:ident => $complete_text:literal),+ $(,)?
+    ) => {
         #[derive(Logos, Clone, Debug, PartialEq)]
         #[logos(error = LexError)]
         #[logos(skip r"[ \t\n]+|\r\n")]
         pub(crate) enum Kind {
-            $(#[token($text)] $variant,)+
+            $(#[token($base_text)] $base_variant,)+
+            $(#[token($complete_text)] $complete_variant,)+
             #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_owned())]
             Identifier(String),
             #[regex(r"[0-9]+", integer)]
@@ -41,29 +58,40 @@ macro_rules! vocabulary {
             Fractional,
             #[regex(r"[0-9]+(\.[0-9]+)?[eE][+-]?")]
             BadExponent,
-            #[regex(r"helper|rec|set|bag|Set|Bag|OrderedSet|collect|flatten|cast|tuple|Tuple|Decimal|Rational|allInstances", priority = 3)]
+            #[regex(r"helper|rec|cast|Tuple", priority = 3)]
             Unsupported,
+            #[regex(r"0x[0-9a-f]+", |lex| lex.slice().to_owned(), priority = 4)]
+            Hex(String),
             #[regex(r"//[^\r\n]*", allow_greedy = true)]
             Comment,
             End,
         }
+        macro_rules! complete_only_kind_pattern {
+            () => { $(Kind::$complete_variant)|+ };
+        }
         impl Kind {
             pub(crate) fn is_word(&self) -> bool {
                 match self {
-                    $(Self::$variant => $text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
+                    $(Self::$base_variant => $base_text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
+                    $(Self::$complete_variant => $complete_text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
                     Self::Identifier(_) | Self::Unsupported => true,
                     _ => false,
                 }
             }
             pub(crate) fn description(&self) -> &'static str {
                 match self {
-                    $(Self::$variant => $text,)+
+                    $(Self::$base_variant => $base_text,)+
+                    $(Self::$complete_variant => $complete_text,)+
                     Self::Identifier(_) => "identifier", Self::Integer(_) => "integer",
                     Self::Text(_) => "quoted string", Self::Fractional => "fractional number",
                     Self::BadExponent => "exponent digits", Self::Unsupported => "unsupported construct",
+                    Self::Hex(_) => "hexadecimal bit pattern",
                     Self::End => "end of source",
                     Self::Comment => "comment",
                 }
+            }
+            fn complete_only(&self) -> bool {
+                matches!(self, $(Self::$complete_variant)|+ | Self::Hex(_))
             }
         }
     }
@@ -99,13 +127,75 @@ vocabulary! {
     OpenParen => "(", CloseParen => ")", OpenBrace => "{", CloseBrace => "}",
     OpenBracket => "[", CloseBracket => "]", Semicolon => ";", Colon => ":", Comma => ",",
     Dot => ".", Equal => "=", Less => "<", Greater => ">", Plus => "+", Minus => "-",
-    Star => "*", Slash => "/", Qualify => "::", NotEqual => "!=", LessEqual => "<=", GreaterEqual => ">="
+    Star => "*", Slash => "/", Qualify => "::", NotEqual => "!=", LessEqual => "<=", GreaterEqual => ">=";
+    complete:
+    Import => "import", Dimension => "dimension", Unit => "unit", Ordered => "ordered",
+    Enum => "enum", Record => "record", Tuple => "tuple", Type => "type",
+    Function => "function", Pure => "pure", Decreases => "decreases",
+    IntegerType => "Integer", IntType => "Int", RationalType => "Rational",
+    DecimalType => "Decimal", Float32Type => "Float32", Float64Type => "Float64",
+    TextType => "Text", OptionType => "Option", SequenceType => "Sequence",
+    SetType => "Set", BagType => "Bag", OrderedSetType => "OrderedSet",
+    ReferenceType => "Reference", Null => "null", NoneValue => "none",
+    Decimal => "decimal", Float32 => "float32", Float64 => "float64", Bits => "bits",
+    Convert => "convert", AllInstances => "allInstances", Collect => "collect",
+    FlatMap => "flatMap", Flatten => "flatten", Fold => "fold", Reduce => "reduce",
+    Identity => "identity", Exact => "exact",
+    Nfc => "nfc", Nfd => "nfd", Nfkc => "nfkc", Nfkd => "nfkd",
+    SetValue => "set", BagValue => "bag",
+    OrderedSetValue => "orderedSet", Lifetime => "lifetime", Workflow => "workflow",
+    Scope => "scope", Capacity => "capacity", Symbolic => "symbolic", Overflow => "overflow",
+    Reject => "reject", Block => "block", Loss => "loss", Unknown => "unknown",
+    Any => "any", Quorum => "quorum",
+    Outstanding => "outstanding", Continue => "continue", Cancel => "cancel",
+    Variant => "variant", Relation => "relation", Hyper => "hyper", Trace => "trace",
+    Bounded => "bounded", Hybrid => "hybrid", Mode => "mode", Flow => "flow",
+    Transition => "transition", Reset => "reset", Synthesis => "synthesis",
+    Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",
+    Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
+    Caret => "^", Question => "?", Apostrophe => "'"
 }
 
 impl Kind {
+    fn unreserved(self, spelling: &str) -> Self {
+        if matches!(
+            spelling,
+            "set"
+                | "bag"
+                | "Set"
+                | "Bag"
+                | "OrderedSet"
+                | "collect"
+                | "flatten"
+                | "tuple"
+                | "Decimal"
+                | "Rational"
+                | "allInstances"
+        ) {
+            return Self::Unsupported;
+        }
+        if identifier_spelling(spelling) {
+            Self::Identifier(spelling.into())
+        } else {
+            Self::Unsupported
+        }
+    }
+
+    /// Remove complete-facet reservations when parsing the composed base grammar.
+    pub(crate) fn composed_base(self, spelling: &str) -> Self {
+        if self.complete_only() {
+            self.unreserved(spelling)
+        } else {
+            self
+        }
+    }
+
     // Edition classification uses the recognized token's original spelling;
     // it does not tokenize source again or reserve new words in old editions.
     pub(crate) fn historical(self, spelling: &str) -> Self {
+        if self.complete_only() {
+            return self.unreserved(spelling);
+        }
         match self {
             Self::Map | Self::Always | Self::Eventually | Self::Send | Self::Receive => {
                 Self::Unsupported
@@ -246,6 +336,17 @@ impl Kind {
             | Self::Unsupported
             | Self::Comment
             | Self::End) => unchanged,
+            complete_only_kind_pattern!() | Self::Hex(_) => {
+                unreachable!("complete-only tokens are unreserved before historical matching")
+            }
         }
     }
+}
+
+pub(crate) fn identifier_spelling(spelling: &str) -> bool {
+    let mut bytes = spelling.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphabetic())
+        && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
 }
