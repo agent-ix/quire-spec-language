@@ -22,7 +22,7 @@ its exact implementation ticket, central TestCase and qualification owner.
 
 ## Inputs
 
-- QSpec complete-V1 semantic baseline `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` (the QSpec PR #73 merge, amending the QSpec #68 complete scalar contracts over the PR #64 baseline).
+- QSpec complete-V1 semantic baseline `5d88578ba53a6206223aa4a0cd6fe1e2762d54e9` (the QSpec PR #74 merge, amending the QSpec #68 complete contracts after PR #73 over the PR #64 baseline).
 - The accepted central capability inventory, delivery-ticket manifest and TM-009.
 - Current QSL default-branch code, tests, matrices, issues and retained L1–L6 evidence.
 
@@ -44,7 +44,7 @@ its exact implementation ticket, central TestCase and qualification owner.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-055-AC-1 | Plan-013 identifies QSpec `a25c93c875231664d90f5d4b3f2ac51f1dc77a75`, contains exactly the 83 accepted Agent-A capability identities and introduces no local semantic replacement. | Test (TC-144) |
+| FR-055-AC-1 | Plan-013 identifies QSpec `5d88578ba53a6206223aa4a0cd6fe1e2762d54e9`, contains exactly the 83 accepted Agent-A capability identities and introduces no local semantic replacement. | Test (TC-144) |
 | FR-055-AC-2 | Every capability row has exactly one permitted primary ticket, one concrete central TestCase and QSL #123 as qualification owner. | Test (TC-144) |
 | FR-055-AC-3 | The plan records 18 complete, 36 partial and 29 missing implementation rows; 16 complete, 38 partial and 29 missing verification rows; and 83 missing qualification rows without promotion. | Test (TC-144) |
 | FR-055-AC-4 | Nine typed tasks preserve the serial QSL #116–123 and WASM #6 chain while naming the external model, temporal, protocol, IR and integration prerequisites. | Test (TC-144) |
