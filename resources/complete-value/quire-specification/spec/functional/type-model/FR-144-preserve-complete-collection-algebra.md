@@ -104,7 +104,7 @@ when they are FR-149 equal.
 | Quantity of one unit | exact value in that unit, ascending |
 | `Text[..]` | the FR-141 compared form under the type's profile (the normalized scalar sequence, or the UTF-8 bytes for `binary-utf8`), ordered lexicographically by scalar value or byte |
 | enumeration | declaration position for an `ordered enum`; otherwise the case identifier's ASCII bytes, lexicographically, never its declaration position |
-| `Reference<T>` | the FR-204 identity triple (universe identity, object-type declaration identity, object identity), compared component by component, each component lexicographically by its canonical identity bytes |
+| `Reference<T>` | the FR-204 identity triple (universe identity, object-type declaration identity, object identity), compared component by component, each component lexicographically by its canonical identity bytes; under `quire.model.complete/v1` the universe and type bytes are the UTF-8 domain string followed by the 32 digest bytes, and the object bytes are the exact producer UTF-8 object identity, all compared unsigned bytewise with a proper prefix first |
 | `Option<T>` | `none` before a present value, then the key of the payload |
 | record, tuple | lexicographic over fields in declaration order or positions in order; a slot orders `absent` before `null` before a present value, and present values by key |
 | `Sequence<T>`, `OrderedSet<T>` | lexicographic over element keys; a proper prefix comes first |
@@ -112,7 +112,9 @@ when they are FR-149 equal.
 
 A recursive record type has a key because every finite value of it does.
 References from different universes never meet in one collection, because
-their FR-149 comparison refuses construction.
+their FR-149 comparison refuses construction. A universe is a model-level object
+universe shared by a whole generalization component, never a population, so
+references to a supertype and its subtypes do meet in one collection.
 
 A canonical key is not an ordering operator and is not semantic. The
 identifier-byte key of an unordered enumeration and the identity-byte key of a
@@ -193,6 +195,7 @@ FR-146 and FR-307; otherwise it is
 | FR-144-AC-8 | Collection construction charges `collection.element`, `collection.member-walk`, `collection.member-test`, `collection.bound` and `collection.result-retain` in the stated order and amounts, and each denied charge returns incomplete with no partial collection. | Test (TC-189) |
 | FR-144-AC-9 | The cardinality bound is part of collection type identity, so equality between bounds that differ is `ill_typed`; an unordered enumeration key uses identifier bytes and never declaration position. | Test (TC-189) |
 | FR-144-AC-10 | A collection literal takes exactly its unique expected type, and a literal without one is `ill_typed` with cause `ambiguous-literal`. | Test (TC-189) |
+| FR-144-AC-11 | Reference keys order by universe, most-specific type and object bytes exactly as the published model reference-key vectors state. | Test (TC-198) |
 
 ## Dependencies
 

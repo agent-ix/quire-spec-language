@@ -2,7 +2,7 @@
 
 The files below `quire-specification/` are unmodified bytes of
 [agent-ix/quire-specification](https://github.com/agent-ix/quire-specification)
-at merged revision `5d88578ba53a6206223aa4a0cd6fe1e2762d54e9` (QSpec PR #74, amending QSpec #68 after PR #73),
+at merged revision `7d7943ab1482e091f6d126401ada38957c4a1ccf` (QSpec PR #75, amending QSpec #68 after PRs #73 and #74),
 copied with `git show <revision>:<path>` at their repository-relative paths so
 the lock's relative `artifact_path` values resolve unchanged. QSL #118 /
 Plan-013 Task-048 consumes them; QSL #119 / Plan-013 Task-049 adds the

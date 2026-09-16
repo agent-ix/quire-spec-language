@@ -19,7 +19,7 @@
     {
       "role": "accounting",
       "artifact_path": "value-accounting.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"b714cfd58de4c0c3f4886cfbdb4ee00a22d750c572f4d38c785e564db40d7f3b"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"aa00b46dc4c4f0b628ff159d2f686be7e8b48fdb9307e0c361019863a2f30bef"}
     },
     {
       "role": "compound_unit",
@@ -39,7 +39,7 @@
     {
       "role": "rule_manifest",
       "artifact_path": "value-complete-rules.json",
-      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"f3d1a8a40194b928c4b63446d9d7b04b6dffa791eeff38a47a7c40b8a43d75c9"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"d005f1e42da3a5d4951c5da0d0d8740f7281ba412bcb67615450ed7437f1a414"}
     },
     {
       "role": "text_profile",
@@ -74,7 +74,7 @@
     {
       "role": "rule_shared_grammar",
       "artifact_path": "../shared-grammar.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.shared-grammar/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"377be4cd1a635c32e8d67a05ea299ea635c675acdb74a1c0c87093d1040e5cdf"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.shared-grammar/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"3247668c5cf6cfd7b3b7565db1bc515a268b98ba5c8b9df0bfa8eabc22dd910f"}
     },
     {
       "role": "rule_ad_005",
@@ -109,7 +109,7 @@
     {
       "role": "rule_fr_149",
       "artifact_path": "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-149/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"896111b55905c637a1089b61f55dc54423fd2a0081c289dd1182229698a92c65"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-149/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"a70f5aad5af665940099c4469eb99e1c35445f81f1558cc2cd42e5b4776b250e"}
     }
   ],
   "package_selection": {

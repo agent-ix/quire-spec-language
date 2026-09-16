@@ -40,6 +40,11 @@ completed result. That record is closed; its members are defined under
 | rational arithmetic | `rational-arithmetic.operands`, `rational-arithmetic.arithmetic`, `rational-arithmetic.normalize`, `rational-arithmetic.result-retain` for each `Rational[..]` `+`, `-`, `*`, `/` and unary `-`, and each `Integer` or `Int[..]` `/` producing a `Rational[..]` |
 | numeric ordering | `ordering.operands`, `ordering.arithmetic`, `ordering.result-retain` for each `Integer`, `Int[..]`, `Rational[..]` or `Decimal[..]` `<`, `<=`, `>` and `>=` |
 | Boolean connective | `boolean.result-retain` for each `and`, `or`, `implies` and `not` |
+| model reference | `model.deref` for each `deref(...)`; `model.navigate` for each runtime `.name` field or relationship-end navigation, followed for a multi-valued end by one `collection.visit` per target, `collection.bound` and `collection.result-retain` |
+| graph | `graph.expand` before each node is discovered (the start included), one `graph.edge` before each edge target is tested, then `graph.result-retain` for each `reaches(...)` |
+| lookup | `lookup.key`, then `lookup.result-retain` when a value is returned, for each `lookup<T>(p, r) absent m` |
+| population | one `population.visit` before each member walked by `allInstances<T>(p)`, conforming or not, then `collection.bound` and `collection.result-retain` |
+| dispatch | `dispatch.select` for each dispatched `receiver.name(args)` call, followed by the callee's `function.call` |
 
 Each charge is the following exact `{ counter: amount }` vector. A semantic-size
 counter records the high-water maximum, not a sum: admitting amount `n` changes
@@ -54,15 +59,21 @@ scalar/composite occurrence (`none` counts one; a present option counts one plus
 its payload; a record or tuple counts one plus its present field values, while an
 `absent` or `null` slot counts zero; a collection counts one plus every
 occurrence, a bag occurrence once per multiplicity; a reference counts one), and `maxparts(r)` the maximum `bits` of a reduced
-rational's numerator and positive denominator.
+rational's numerator and positive denominator. For a coefficient `c` shifted
+by `k` decimal places, `sbits(c,k)` is `bits(c)` when `k = 0` and
+`bits(c) + bits(10^k)` otherwise, and `sdigits(c,k)` is `digits(c) + k`; both
+are derived from the unshifted coefficient and never from the materialized
+product. Every amount below is derived from the bit and digit lengths of the
+charge's operands, which are materialized before the charge, and never from an
+unmaterialized result.
 
 | Charge point | Exact counter amount before adding one `work_unit` |
 | --- | --- |
 | `decimal.operands` | `integer_bits=max(bits(coeff_i))`, `decimal_digits=max(digits(coeff_i))`, `value_occurrences=operand_count` |
-| `decimal.scale-expansion` | `scale_expansion=max decimal-place shift in this operation`, `integer_bits`/`decimal_digits` of every expanded coefficient |
-| `decimal.arithmetic` | `integer_bits=maxparts(exact intermediate)` and `decimal_digits=max(digits(numerator),digits(denominator))` |
-| `decimal.rounding` | `integer_bits=bits(rounded coefficient)`, `decimal_digits=digits(rounded coefficient)`; charged only under the decimal applicability rule below |
-| `decimal.result-retain` | semantic sizes of the completed decimal's retained representation (`v × 10^T`, `T`), `value_occurrences=1`, `result_units += 1` |
+| `decimal.scale-expansion` | `scale_expansion=max decimal-place shift in this operation`; `integer_bits=max(sbits(c,k))` and `decimal_digits=max(sdigits(c,k))` over every coefficient `c` expanded by shift `k` |
+| `decimal.arithmetic` | on the aligned operands, where aligned operand `i` has `A_i=sbits(c_i,k_i)` and `G_i=sdigits(c_i,k_i)` for its coefficient `c_i` and applied shift `k_i` (zero when not expanded): `integer_bits=max(A_1,A_2)+1`, `decimal_digits=max(G_1,G_2)+1` for addition and subtraction; `integer_bits=A_1+A_2`, `decimal_digits=G_1+G_2` for multiplication; `integer_bits=max(A_1,A_2)`, `decimal_digits=max(G_1,G_2)` for division; `integer_bits=bits(c)`, `decimal_digits=digits(c)` for negation and conversion |
+| `decimal.rounding` | exactly the operand-derived `integer_bits` and `decimal_digits` of the preceding `decimal.arithmetic` row, computed by that row's formula from the aligned operands' `sbits(c_i,k_i)` and `sdigits(c_i,k_i)` (for negation and conversion, `bits(c)` and `digits(c)`), never from the intermediate or the rounded coefficient; they bound the rounded coefficient, which never exceeds the intermediate's numerator; charged only under the decimal applicability rule below |
+| `decimal.result-retain` | computed analytically before the retained representation (`v × 10^T`, `T`) is materialized: for the result coefficient `c` that `decimal.arithmetic` or `decimal.rounding` materialized at scale `s` (for division and rounding `s = T`; when `s > T` with all-zero discarded digits, `c` is the materialized coefficient at `T` and `s` is taken as `T`), with upscale shift `k = T − s`: `scale_expansion=k`, `integer_bits=sbits(c,k)`, `decimal_digits=sdigits(c,k)`, `value_occurrences=1`, `result_units += 1`; the coefficient `c × 10^k` is materialized only after this charge is granted |
 | `text.input-bytes` | `text_input_bytes=sum UTF-8 bytes of all operands`, `value_occurrences=operand_count` |
 | `text.decode-scalars` | `text_scalars=sum decoded scalars of all operands` |
 | `text.normalize-input` | no size-counter change |
@@ -72,15 +83,15 @@ rational's numerator and positive denominator.
 | `enum.result-retain` | `result_units += 1` |
 | each `unit.identity-read` | `value_occurrences=number of quantity operands read so far`, `integer_bits=maxparts` over their exact rational values |
 | kth `unit.edge` | `unit_edges=k` across all source/target root paths |
-| each `unit.rational-arithmetic` | `integer_bits=maxparts` over the exact rational result of the scheduled operation |
-| `unit.target-domain` | for a decimal target, `integer_bits` and `decimal_digits` of the retained coefficient; for an integer target, only `integer_bits=bits(rounded integer)`; zero for an unbounded rational target |
+| each `unit.rational-arithmetic` | `integer_bits` of the `rational-arithmetic.arithmetic` row for the scheduled operation applied to its operands, the current exact value `a/b` and the edge constant or other operand `c/d` (an integer taken as `n/1`); for integer power `x^n`, `integer_bits=max(1, abs(n) × maxparts(x))` |
+| `unit.target-domain` | for the reduced final value `a/b` and a decimal target at scale `T`, `integer_bits=sbits(a,T)` and `decimal_digits=sdigits(a,T)`; for an integer target, only `integer_bits=bits(a)`; zero for an unbounded rational target |
 | `unit.result-retain` | `value_occurrences=occ(result)`, `result_units += occ(result)` |
 | `integer-division.operands` | `integer_bits=max(bits(a),bits(b))`, `value_occurrences=2` |
-| `integer-division.arithmetic` | `integer_bits=max(bits(a),bits(b),bits(q),bits(r))` |
+| `integer-division.arithmetic` | `integer_bits=max(bits(a),bits(b))`, which bounds both quotient and remainder |
 | `integer-division.domain-pair` | `value_occurrences=2` |
 | `integer-division.result-pair` | `result_units += 2` atomically |
 | `integer-modulus.operands` | `integer_bits=max(bits(a),bits(b))`, `value_occurrences=2` |
-| `integer-modulus.arithmetic` | `integer_bits=max(bits(a),bits(b),bits(q),bits(r))` for the Euclidean quotient `q` and remainder `r` |
+| `integer-modulus.arithmetic` | `integer_bits=max(bits(a),bits(b))`, which bounds the Euclidean quotient and remainder |
 | `integer-modulus.domain` | `value_occurrences=1` |
 | `integer-modulus.result-retain` | `result_units += 1` |
 | `ieee.operands` | `integer_bits=selected width`, `value_occurrences=arity`; for conversions, the source width or the exact source size in the IEEE conversion paragraph |
@@ -100,21 +111,32 @@ rational's numerator and positive denominator.
 | `collection.result-retain` | `value_occurrences=occ(result)`, `result_units += occ(result)`; `result_units += 1` for a scalar query result |
 | `composite.result-retain` | `value_occurrences=occ(result)`, `result_units += occ(result)` |
 | `integer-arithmetic.operands` | `integer_bits=max(bits(operand_i))`, `value_occurrences=operand_count` |
-| `integer-arithmetic.arithmetic` | `integer_bits=bits(exact result)`, derived before the result is materialized |
+| `integer-arithmetic.arithmetic` | `integer_bits=bits(a)+bits(b)` for `*`; `integer_bits=max(bits(a),bits(b))+1` for `+` and `-`; `integer_bits=bits(a)` for unary `-` |
 | `integer-arithmetic.result-retain` | `result_units += 1` |
 | `rational-arithmetic.operands` | `integer_bits=max(maxparts(operand_i))`, an integer operand `n` taken as `n/1`, `value_occurrences=operand_count` |
-| `rational-arithmetic.arithmetic` | `integer_bits=max(bits(N),bits(D))` of the unreduced exact intermediate `N/D` for operands `a/b` and `c/d`: `N=a×d±c×b`, `D=b×d` for `+` and `-`; `N=a×c`, `D=b×d` for `*`; `N=a×d`, `D=b×c` for `/`; `N=-a`, `D=b` for unary `-` |
-| `rational-arithmetic.normalize` | `integer_bits=maxparts(reduced result)` |
+| `rational-arithmetic.arithmetic` | `integer_bits=max(N,D)` for operands `a/b` and `c/d`, where `N=bits(a)+bits(c)`, `D=bits(b)+bits(d)` for `*`; `N=bits(a)+bits(d)`, `D=bits(b)+bits(c)` for `/`; `N=max(bits(a)+bits(d),bits(c)+bits(b))+1`, `D=bits(b)+bits(d)` for `+` and `-`; `integer_bits=max(bits(a),bits(b))` for unary `-` |
+| `rational-arithmetic.normalize` | `integer_bits=max(bits(n),bits(d))` of the unreduced intermediate `n/d`, which is materialized by the arithmetic step after the `rational-arithmetic.arithmetic` charge and before this charge; the amount therefore sizes a charged, materialized value, as the operand rule above requires |
 | `rational-arithmetic.result-retain` | `result_units += 1` |
 | `ordering.operands` | `integer_bits=max` over both operands of `bits` for an integer, `maxparts` for a rational and `bits(coefficient)` for a decimal; `decimal_digits=max(digits(coefficient))` for decimals, each decimal measured in its retained representation `(coefficient, scale)` as retained and never normalized; `value_occurrences=2` |
-| `ordering.arithmetic` | for integers, `integer_bits=max(bits(a),bits(b))`; for rationals `a/b` and `c/d`, `integer_bits=max(bits(a×d),bits(c×b))`; for decimals in their retained representations `(c1,s1)` and `(c2,s2)`, never normalized, aligned to `s=max(s1,s2)`, `scale_expansion=|s1-s2|` and the `integer_bits` and `decimal_digits` of both aligned coefficients |
+| `ordering.arithmetic` | for integers, `integer_bits=max(bits(a),bits(b))`; for rationals `a/b` and `c/d`, `integer_bits=max(bits(a)+bits(d),bits(c)+bits(b))`; for decimals in their retained representations `(c1,s1)` and `(c2,s2)`, never normalized, aligned to `s=max(s1,s2)`, `scale_expansion=|s1-s2|`, `integer_bits=max(sbits(c1,s-s1),sbits(c2,s-s2))` and `decimal_digits=max(sdigits(c1,s-s1),sdigits(c2,s-s2))` |
 | `ordering.result-retain` | `result_units += 1` |
 | `boolean.result-retain` | `result_units += 1` |
+| each `model.deref` | `value_occurrences=1` |
+| each `model.navigate` | `value_occurrences=1` |
+| kth `graph.expand` | `value_occurrences=k`, the number of distinct nodes discovered by this `reaches` evaluation including this one |
+| each `graph.edge` | no size-counter change; `work_units += 1` |
+| `graph.result-retain` | `result_units += 1` |
+| `lookup.key` | `value_occurrences=1` |
+| `lookup.result-retain` | `value_occurrences=occ(result)`, `result_units += occ(result)`: one for a `Reference<T>` or `none`, two for a present `Option<Reference<T>>` |
+| each `population.visit` | no size-counter change; `work_units += 1` |
+| `dispatch.select` | `value_occurrences=c`, where `c` is the number of linked candidates of the called effective operation; `work_units += c` instead of one |
 
 For each non-repeated row, `work_units += 1`; repeated identity, edge, rational,
-normalization-output, equality-pair, function-call, collection-element and
-collection-visit rows add one per event, and `equality.plan-form`,
-`collection.member-walk` and `collection.member-test` add their stated amounts.
+normalization-output, equality-pair, function-call, collection-element,
+collection-visit, model-deref, model-navigate, graph-expand, graph-edge and
+population-visit rows add one per event, and `equality.plan-form`,
+`collection.member-walk`, `collection.member-test` and `dispatch.select` add
+their stated amounts.
 Retaining a paired quotient/remainder costs two result units; a composite retained value costs
 `occ(result)`. Checked amount derivation and counter arithmetic precede
 allocation or semantic arithmetic. A counter amount greater than `u64::MAX`
@@ -152,17 +174,16 @@ charges the decimal conversion schedule below. An `Int[..]` or
 `Rational[..;d,1]` source converted to `Decimal[c1,c2;s1,s2;m]` charges the
 same four decimal points on the integer `n`: `decimal.operands` with
 `integer_bits=bits(n)`, `decimal_digits=digits(n)` and `value_occurrences=1`;
-`decimal.scale-expansion` with `scale_expansion=s1` and the `integer_bits` and
-`decimal_digits` of `n × 10^s1`; `decimal.arithmetic` with those same amounts;
+`decimal.scale-expansion` with `scale_expansion=s1`, `integer_bits=sbits(n,s1)`
+and `decimal_digits=sdigits(n,s1)`; `decimal.arithmetic` with those same amounts;
 and `decimal.result-retain` for the retained `(n × 10^s1, s1)`. A `Decimal`
 source `(c, s)` converted to `Rational[..]` charges `decimal.operands` on
 `(c, s)`; `decimal.scale-expansion` with `scale_expansion=s` and
-`integer_bits=bits(10^s)`; `decimal.arithmetic` with `integer_bits=maxparts`
-and `decimal_digits=max(digits(numerator),digits(denominator))` of the reduced
-`c/10^s`; and `decimal.result-retain` with `integer_bits=maxparts` of that
-rational, `value_occurrences=1` and `result_units += 1`. Every amount is derived
-analytically before materialization, and none of these conversions has a
-rounding step. Every other admitted equality conversion keeps the source
+`integer_bits=bits(10^s)`; `decimal.arithmetic` with `integer_bits=max(bits(c),bits(10^s))`
+and `decimal_digits=max(digits(c),s+1)`; and `decimal.result-retain` with
+`integer_bits=maxparts` of the materialized reduced rational `c/10^s`,
+`value_occurrences=1` and `result_units += 1`. Every amount before retention is
+derived from operand sizes, and none of these conversions has a rounding step. Every other admitted equality conversion keeps the source
 magnitude and has no charge point. Record and tuple construction charges
 `composite.result-retain` after its last field or argument, and its field
 expressions and calls charge their own points. Integer `+`, `-`, `*` and unary
@@ -179,8 +200,8 @@ by direct kernel evaluation is undefined after `rational-arithmetic.operands`.
 `Integer`, `Int[..]`, `Rational[..]` and `Decimal[..]` ordering `<`, `<=`, `>`
 and `>=` charges `ordering.operands`, `ordering.arithmetic` and
 `ordering.result-retain`: three work units and one result unit. Quantity
-ordering keeps its FR-142 unit schedule. Every amount is derived analytically
-before any product or aligned coefficient is materialized. FR-144 collection construction and every FR-145 query and conversion
+ordering keeps its FR-142 unit schedule. Every amount is derived from operand
+sizes before any product or aligned coefficient is materialized. FR-144 collection construction and every FR-145 query and conversion
 charge the collection family in the order those requirements define: a
 constructor element or visited occurrence charges before it is evaluated or
 bound, each membership comparison charges `collection.member-walk` before its
@@ -224,16 +245,16 @@ division and integer power, and every conversion to an exact rational target,
 has an unbounded exact rational result, so its `unit.target-domain` charges no
 size counter: that result's size is already charged by its final
 `unit.rational-arithmetic` event, or by the identity read for a conversion
-without edges. For a decimal target, FR-140's rounding step and the bits and
-digits of the retained coefficient `v × 10^T` (rounded when a rounding step
-occurs) are decided analytically, without materializing that coefficient;
-strict `exact` at a rounding step refuses before `unit.target-domain`; that
-charge carries those `integer_bits` and `decimal_digits` amounts; the
+without edges. For a decimal target, FR-140's rounding step is decided
+exactly from the reduced final value `a/b` without materializing the retained
+coefficient `v × 10^T`; strict `exact` at a rounding step refuses before
+`unit.target-domain`; that charge carries `integer_bits=sbits(a,T)` and
+`decimal_digits=sdigits(a,T)`, which bound the retained coefficient; the
 coefficient is materialized only after it; and FR-140 membership, which charges
 nothing, refuses after it and before `unit.result-retain`. An integer target is
 a decimal target at scale zero: its rounding step, strict `exact` refusal and
 `unit.target-domain` sizing occur at the same positions, except that its
-`unit.target-domain` carries only `integer_bits = bits(rounded integer)` and no
+`unit.target-domain` carries only `integer_bits = bits(a)` and no
 `decimal_digits` amount, and integer-domain
 membership, which charges nothing, refuses after `unit.target-domain` and
 before `unit.result-retain`. Decimal and integer targets charge no `decimal.*`
@@ -281,7 +302,7 @@ charges `ieee.result-retain`. An IEEE-to-exact conversion charges
 `ieee.operands` with `integer_bits=source width`; a NaN or infinity is then
 undefined; a finite value, either zero included, then charges
 `ieee.exact-intermediate` with `integer_bits=maxparts` of the exact result
-rational, sized analytically from the decoded exponent and mantissa before the
+rational, sized from the operand's decoded exponent and mantissa before the
 rational is materialized, then decides `Rational[..]` target membership at
 evaluation, exempt from FR-044's static result-bound proof, which makes no
 charge and returns `refused { code: ieee_rational_out_of_domain }` for a
@@ -332,6 +353,138 @@ membership refusal follows `integer-division.domain-pair` or
 `integer-division.*` point, and `div`/`rem` never charges an
 `integer-modulus.*` point.
 
+Model and graph evaluation follows the selected `quire.model.complete/v1`
+rules. Static resolution, conformance, kind, direction, closure and foreign
+checks decided at checking make no evaluation charge; they are charged under
+`ModelNormalizationLimitsV1` below. Population binding admission makes no
+evaluation charge; it is charged under `PopulationAdmissionLimitsV1` below.
+Evaluation stops at its first undefined, refused or incomplete outcome.
+`deref(r)` evaluates `r`, charges `model.deref`, then decides a dangling
+reference without a charge. A field or relationship-end navigation `r.name`
+evaluates `r`, charges `model.navigate` and takes the end's targets in
+canonical reference-key order. A single-valued end then decides, without a
+charge, every target's dangling check in that order and after them the end's
+count bound, and returns the `Reference<T>` or `Option<Reference<T>>` with no
+further charge. A multi-valued end decides each target's dangling check without
+a charge and then charges one `collection.visit` for that target; after the
+last target it charges `collection.bound`, decides the FR-144 bound check
+without a charge, and charges `collection.result-retain`. A dangling target
+therefore refuses before the count bound is decided.
+`reaches(a, b, e)` evaluates `a` and `b`, then explores breadth-first. The start
+`a` is discovered but not reached: `reaches` charges `graph.expand` for `a` and
+enqueues it. For each dequeued node, in discovery order, and for each target `t`
+of edge `e` in the edge value's own order (sequence order for a sequence edge),
+it decides a snapshot mismatch or dangling target without a charge, charges one
+`graph.edge`, and then, when `t` is `b`, the result is `true` and exploration
+stops; otherwise, when `t` is not yet discovered, it charges `graph.expand` for
+`t` and enqueues it. When the queue is empty the result is `false`. It then
+charges `graph.result-retain`. Thus `reaches(a, a, e)` is `false` for an
+isolated `a` and `true` when a self-loop or a cycle returns to `a`, as
+FR-043-AC-2 requires.
+`lookup<T>(p, r) absent m` evaluates `p` and then `r`, charges `lookup.key`,
+decides the foreign-universe check and then key presence without a charge, and
+charges `lookup.result-retain` only when it returns a value; `absent undefined`
+and `absent refused` make no later charge. `allInstances<T>(p)` has its object
+and subtype closure decided at binding admission; it walks every admitted
+member of `p` in canonical reference-key order, charging one `population.visit`
+before each member walked whether or not its most-specific type conforms to
+`T`, and then selects the member, without a charge, exactly when that type
+conforms to `T`. It then charges `collection.bound` with `value_occurrences=n`
+for the `n` selected members, decides the declared maximum without a charge,
+and charges `collection.result-retain`. A dispatched call evaluates the
+receiver and then its arguments left to right, charges `dispatch.select`,
+selects the linked method for the receiver's most-specific type without a
+charge, decides the selected method's effective precondition (its own
+evaluation charges apply), and then charges `function.call` before binding the
+arguments.
+
+## Population admission limits
+
+A request that binds a population binding carries `PopulationAdmissionLimitsV1`
+with exact `u64` limits for `population_members` and `work_units`, in that
+field order. Omission is a refused request; zero is a real limit and never
+means unlimited. These counters are independent of `ScalarLimitsV1` and of
+`ModelNormalizationLimitsV1`. `population_members` is a high-water semantic
+size; `work_units` is cumulative. Binding admission first decides, without a
+charge and in this order, the FR-153 `modelIdentity` check, object closure and
+subtype closure; each is read from one document or bundle header member. It
+then charges:
+
+| Charge point | Order | Exact counter amount |
+| --- | --- | --- |
+| kth `binding.member` | each member record of the population document, in document order, before its key is formed | `population_members=k`; `work_units += 1` |
+| each `binding.subset-value` | after the last `binding.member`: objects in canonical reference-key order, then each subsetting record reaching the object's most-specific type ascending by producer key, then each value of the subsetting feature in its value order, before that value is tested | no size-counter change; `work_units += max(1, n)`, where `n` is the number of values of the subsetted feature of that object, which the test scans |
+
+After each `binding.member` charge, admission decides without a further charge,
+in this order, `foreign_reference`/`foreign-type` for a member type absent from
+the effective view, and then, against the members admitted before it, duplicate
+collapse or `invalid_runtime_input`/`conflicting-identity`. After each
+`binding.subset-value` charge it decides
+`invalid_runtime_input`/`subsetting-violation` for that value. Admission stops at
+its first refusal and admits no population. The first unavailable charge
+returns `incomplete { limit_kind, limit, consumed, next_charge, charge_point }`,
+where `limit_kind` is the first `PopulationAdmissionLimitsV1` field, in field
+order, whose amount is unavailable, and admits no population. The
+qualification seam below applies to these points with the `work_units` of this
+limit object.
+
+## Model normalization limits
+
+Checking a package that selects `quire.model.complete/v1` carries
+`ModelNormalizationLimitsV1` with exact `u64` limits for `producer_records`,
+`derivation_facts`, `effective_declarations`, `dispatch_candidates`,
+`hashed_bytes` and `work_units`, in that field order. Omission is a refused
+request; zero is a real limit and never means unlimited. These counters are
+independent of `ScalarLimitsV1`. `producer_records`, `derivation_facts`,
+`effective_declarations` and `dispatch_candidates` are high-water semantic
+sizes; `hashed_bytes` and `work_units` are cumulative. Every row adds one work
+unit unless it states another addition.
+
+Checking runs these stages in order: decoding (`normalize.record` and, for
+producer interface `1.2.0`, `normalize.unsupplied-item`); normalization phases
+2, 3 and 4, each a stage; canonicalization (phase 5); conformance; systems
+kind mapping, connection and allocation checks; source resolution, including
+static navigation; and dispatch linking.
+
+| Charge point | Order | Exact counter amount |
+| --- | --- | --- |
+| kth `normalize.record` | each decoded producer record (type export, member export, component, endpoint, relationship, generalization, subsetting or redefinition record; the bundle header is not a record), ascending producer key | `producer_records=k` |
+| each `normalize.unsupplied-item` | producer interface `1.2.0` only, after the last `normalize.record`: one before each refusal item of the `quire.model.complete/v1` producer interface `1.2.0` table, in that table's order | no size-counter change |
+| kth `normalize.fact` | each derivation fact before it is formed: phase 2, then phase 3, then phase 4, each ascending by (owner producer key, declaration producer key, inputs), where a type fact has no owner and sorts before every owned fact | `derivation_facts=k` |
+| each `normalize.cycle-check` | immediately before the `normalize.fact` of each phase 3 type fact, before testing whether the extended path's new general type already lies on the path | no size-counter change; `work_units += L` instead of one, where `L` is the number of generalization records in the extended path; a closing extension is charged even when its cycle's record set was already reported, and each cycle is reported once, at its first closing charge, as `quire.model.complete/v1` states |
+| each `normalize.redefinition-check` | phase 4, before its first `normalize.fact`: each redefinition record ascending by producer key, before testing that its target is a member inherited by its owning type and that no record checked before it names the same redefining feature with another target | no size-counter change; `work_units += m + r` instead of one, where `m` is the number of effective members of the owning type and `r` the number of redefinition records checked before it |
+| each `normalize.conflict-check` | phase 4, after its last `normalize.fact`: each (effective type, redefined member) reached by `c >= 2` redefinition records, ascending by effective member key, before its redefining owners are compared pairwise | no size-counter change; `work_units += Σ (c − 1) × f(o)` instead of one, summed over the `c` redefining owners `o`, where `f(o)` is the number of type derivation facts (qualify and inherit) of `o` that each proper-descendant test of `o` against another owner scans, one work unit per fact |
+| kth `normalize.declaration` | each effective declaration before its identity is computed: effective types, then effective members, each ascending by effective member key | `effective_declarations=k` |
+| each `normalize.hash` | before a preimage is hashed: each effective declaration preimage immediately after that declaration's `normalize.declaration`, then each object universe preimage ascending by its first root type identity, then the effective view preimage | `hashed_bytes += b`, where `b` is the RFC 8785 JCS byte length of the preimage |
+| each `conformance.axis` | each FR-151 axis, redefinition records then subsetting records, each ascending by record producer key, axes in FR-151 order | no size-counter change; a type-conformance axis charges `work_units += f(x)` instead of one, where `x` is the type whose conformance is tested and `f(x)` the number of its type derivation facts (qualify and inherit) that the conformance walk scans, one work unit per fact, or one for a non-object type decided by the FR-149 equality-conversion table: the field value type axis and the subsetting type test use the redefining or subsetting feature's type, parameter type axis `i` uses the redefined parameter `i`'s type (so the parameter type axes together charge the sum of `f` over the parameters), and the result type axis uses the redefining result type, or one when either result is absent; for the operation effect axis, `work_units += max(1, t)` instead of one, where `t` sums, over each redefining effect entry in `fieldWrites`, `creates`, `deletes` order: for a field write, `n × (1 + r)`, with `n` the number of redefined `fieldWrites` entries it is compared against and `r` the number of redefinition records walked from the written field; for a create or delete, `f(x)` for every redefined `creates` (respectively `deletes`) grant it is tested against, with `f(x)` the number of type derivation facts of the created or deleted type `x` that the conformance test scans; every entry is compared with every grant |
+| each `systems.kind` | each component record, then each endpoint record, then each relationship record, each group ascending by producer key, before its FR-152 kind is mapped | no size-counter change |
+| each `systems.connection-condition` | each Connection ascending by producer key, then each of its three FR-152 conditions in table order, before that condition is checked | no size-counter change; the interface-type condition charges `work_units += f(x)` instead of one, where `x` is the flow-source port's interface type and `f(x)` the number of its type derivation facts scanned by the conformance walk (for `bidirectional`, the first end's interface type) |
+| each `systems.allocation` | each Allocation ascending by producer key, before its target is checked | no size-counter change |
+| each `systems.resolve` | in source order, each qualified-name segment after the model alias and each runtime `.name` navigation site, before it is resolved statically | no size-counter change |
+| each `dispatch.subtype` | per called effective operation in effective member order, each closed subtype ascending by effective type identity, before its applicable candidate set is formed | no size-counter change |
+| kth `dispatch.candidate` | after that subtype's `dispatch.subtype`, each family member that has a body ascending by effective member key, before its applicability test | `dispatch_candidates=k`; `work_units += f` instead of one, where `f` is the number of type derivation facts (qualify and inherit) of the subtype, one work unit per fact scanned by the conformance walk |
+| each `dispatch.dominance` | after a subtype's candidate tests, when `c >= 2` candidates are applicable, before the dominance pairs are enumerated | no size-counter change; `work_units += Σ (c − 1) × f(o)` instead of one, summed over the owners `o` of the `c` applicable candidates, where `f(o)` is the number of type derivation facts of `o` that each proper-descendant test of `o` against another candidate's owner scans, one work unit per fact |
+
+Checking is exhaustive within a stage and under these limits. Each row is
+charged before the work it names runs, in the stated order, and every refusal
+that work exposes is reported, in charge order, when its stage ends; a
+refusal decided from a header member before a stage's first charge is reported
+first. A stage that reports a refusal ends checking: no later stage runs or
+charges. Conformance therefore reports every failing axis of every record, and
+dispatch linking reports every no-applicable or ambiguous subtype of every
+called operation. A generalization cycle is exposed by the `normalize.cycle-check`
+of the closing extension, whose `normalize.fact` is not charged; exploration
+continues with the next extension, and a cycle whose record set was already
+reported is not reported again. Runtime evaluation, by contrast, stops at its
+first failure. The first unavailable charge ends checking with
+`incomplete { limit_kind, limit, consumed, next_charge, charge_point }`, where
+`limit_kind` is the first `ModelNormalizationLimitsV1` field, in field order,
+whose amount is unavailable; a checker surfaces it as `refused { code:
+resource_exhausted, cause: insufficient-next-charge }` at stage
+`model-normalization`, reports no refusal found in the unfinished stage and
+produces no effective view. The qualification seam below applies to these
+points with the `work_units` of this limit object.
+
 ## Incomplete record
 
 The normative conformance record is exactly
@@ -364,7 +517,9 @@ injected denial at point `P` returns exactly
 charge_point: P }`, where `w` is the work units consumed before `P` and `n` is
 the `work_units` addition `P` requires (one, the `equality.plan`
 reservation, or the stated amount of `equality.plan-form`,
-`collection.member-walk` or `collection.member-test`). A canonical exact-bound run permits every charge through result
+`collection.member-walk`, `collection.member-test` or `dispatch.select`, or
+the stated `work_units` addition of a population admission or model
+normalization row). A canonical exact-bound run permits every charge through result
 retention; its one-less partner denies the final named charge. Implementations
 may use a more efficient internal algorithm, but cannot omit, reorder or change
 normative charges or expose internal partial state.

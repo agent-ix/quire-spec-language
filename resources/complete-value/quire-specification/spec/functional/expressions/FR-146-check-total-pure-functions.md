@@ -64,7 +64,12 @@ nontermination.
 Functions are first order. A function is not a value, and a call names a
 `function` declaration or FR-307 export by its exact identity, so the call graph
 is static. The graph includes calls inside `let`, `if`, collection binders, fold
-steps and measure expressions. A call to a reserved `quire::value::...`
+steps and measure expressions, and, under `quire.model.complete/v1`, the FR-151
+dispatch edges from the declaration containing a dispatched call to every
+candidate `operation-body` and every clause of every candidate's effective
+precondition. Operation bodies and contract clauses have no `decreases` form, so
+a strongly connected component containing a dispatch edge is refused at link
+time as `refused { code: invalid_package, cause: definition-cycle }`. A call to a reserved `quire::value::...`
 intrinsic is not a call-graph edge. A function declaration is
 `function f using V (p: T, ...): R pure [decreases(m)] { body }`, where `V` is
 the declared value-profile alias.
@@ -116,8 +121,12 @@ Definedness and range proofs use exactly the
 guard facts and section 6 interval discharge, closed as follows. A producer
 admits nothing that these rules do not prove and refuses nothing that they do.
 
-A *stable path* is a parameter or `let` name followed by zero or more field
-projections and proved `value(q)` steps. The facts are:
+A *stable path* is a parameter or `let` name, or `self` inside a
+`quire.model.complete/v1` invariant, precondition, postcondition or
+`operation-body` block, followed by zero or more field projections and proved
+`value(q)` steps. When discharging an FR-151 refinement obligation, a projection
+`self.f` onto a redefining field or the field it redefines has the declared
+facts of the redefined parent member being refined, not the redefining type. The facts are:
 
 1. **Declared facts.** Each integer stable path has its declared type's
    interval, and `size(c)` for a stable collection path `c` has the declared

@@ -63,7 +63,7 @@ implicit conversion or local-name equality creates a common type.
 | Set | equal member count and recursively equal members independent of iteration order |
 | Bag | equal occurrence count and recursively equal members with equal multiplicity |
 | Ordered set | recursively equal unique values in the same occurrence order |
-| Object reference | identical FR-143 identity triple (universe, object-type declaration, object identity); referenced state and observation are not inspected; different universes return `refused { code: foreign_reference }` |
+| Object reference | identical FR-143 identity triple (universe, object-type declaration, object identity); referenced state and observation are not inspected; different universes return `refused { code: foreign_reference, cause: foreign-universe }` |
 | IEEE binary32/binary64 | the explicitly selected FR-148 `numericEqual`, `totalOrder` equivalence or `bitIdentical` intrinsic; the grammar's `=` and `!=` select none of them and are `ill_typed` for any operand type containing `Float32` or `Float64` at any depth |
 
 Operands of different types are comparable only after an explicit conversion
@@ -116,10 +116,15 @@ converts with no rounding step, loss, undefined or refused outcome.
 | `Decimal[c1,c2;s1,s2;m]` | `Decimal[c3,c4;s3,s4;m2]` | `s3 <= s1`, `s2 <= s4`, and either `s3 = s1` with `c3 <= c1` and `c2 <= c4`, or `s3 < s1` with `c3 <= min(c1,0)` and `max(c2,0) <= c4` |
 | `Decimal[c1,c2;0,0;m]` | `Integer` or `Int[..]` | the row for source `Int[c1,c2]` admits it |
 | quantity in unit `U` | quantity in unit `V` with an exact rational value | FR-142 admits the conversion |
+| `Reference<S>` | `Reference<T>` | the package selects `quire.model.complete/v1` and `S` conforms to `T` in the closed FR-151 effective view |
 
 An unbounded `Integer` source converts only to `Integer`. No conversion to or
 from `Float32` or `Float64`, and no text-profile, enumeration, record, tuple,
-option, collection-kind or reference conversion, is an equality conversion.
+option, collection-kind or other reference conversion, is an equality conversion.
+The reference upcast row is a static retyping: it keeps the FR-204 triple,
+including the most-specific type component, has no charge point, and is also
+the only implicit subsumption admitted for arguments and bindings. A reference
+downcast is never implicit and no checked downcast form is selected.
 FR-148 intrinsics take FR-148 conversions under FR-148's own rules. In operand
 order before the comparison: an admitted FR-142 unit conversion charges its
 `unit.*` schedule; an admitted `Decimal`-to-`Decimal` conversion charges the
@@ -127,7 +132,7 @@ accounting decimal-conversion schedule with no `decimal.rounding`; and an
 admitted `Int[..]`-to-`Decimal[..]`, `Rational[..;d,1]`-to-`Decimal[..]` or
 `Decimal[..]`-to-`Rational[..]` conversion charges the accounting decimal
 schedule for that conversion, with `scale_expansion` and `integer_bits` sized
-analytically. Every other admitted equality conversion keeps the source
+from operand bit lengths. Every other admitted equality conversion keeps the source
 magnitude, has no charge point and produces only the comparison value.
 
 ## Occurrence-pair plan
@@ -158,7 +163,7 @@ The pair count is the number of nodes in this tree. It depends only on the two
 values, never on representation sharing, insertion order or hash order, and
 there is no early exit after an unequal pair. A set or bag is equal when every
 rank pair is equal. If plan formation finds a reference pair whose universes
-differ, the equality is `refused { code: foreign_reference }` after
+differ, the equality is `refused { code: foreign_reference, cause: foreign-universe }` after
 `equality.plan-form` and before `equality.plan`, with no further charge and no
 Boolean.
 
@@ -201,6 +206,7 @@ collection and object-reference rows of this requirement.
 | FR-149-AC-9 | Top-level Boolean, numeric and reference equality charge exactly `equality.plan-form` and the one-pair equality schedule, while `=` on an IEEE-bearing type is `ill_typed`. | Test (TC-194) |
 | FR-149-AC-10 | Exactly the tabled equality conversions are admitted from declared bounds, every other conversion operand of `=` or `!=` is `ill_typed` before any charge even when the value fits, and admitted decimal and rational conversions charge their decimal schedule. | Test (TC-194) |
 | FR-149-AC-11 | Plan pair counts follow the structural-mismatch, keyed-rank and cardinality short-circuit rules exactly, every plan walk is charged by `equality.plan-form` before it happens, and a foreign-universe reference pair refuses after that charge and before `equality.plan`. | Test (TC-194) |
+| FR-149-AC-12 | Under `quire.model.complete/v1`, `Reference<Sub>` compares with `Reference<Super>` through the upcast row with no charge and unchanged identity, and a non-conforming reference pair is `ill_typed`. | Test (TC-198) |
 
 ## Dependencies
 

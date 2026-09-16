@@ -156,10 +156,15 @@ a record, tuple, enumeration, alias of a value type or other value type is
 No Complete-V1 source literal, constructor or conversion creates an object
 identity or a `Reference<T>` value. A reference is obtained only from a bound
 model snapshot under the selected state contract, as a model field of
-reference type, a receiver or a population member. It can also arrive through a
-parameter, `let` binding or composite field that carries such a value. Its
-identity is the snapshot-supplied FR-009/FR-204 triple (universe, object-type
-declaration identity, declared object identity). Its retained observation is
+reference type, a receiver, a population member, an `allInstances` member, a
+`lookup` result or a relationship-end navigation result (FR-152, FR-153). It can
+also arrive through a parameter, `let` binding or composite field that carries
+such a value. Its identity is the snapshot-supplied FR-009/FR-204 triple
+(universe, object-type declaration identity, declared object identity). Under
+the selected `quire.model.complete/v1` definition the universe is the
+`quire.model.object-universe/v1` identity, the type is the effective
+declaration identity of the object's most-specific type, never the static `T`,
+and `Reference<S>` converts to `Reference<T>` only by the FR-149 upcast row. Its retained observation is
 not part of identity. `Reference<T>` is terminal in containment, construction
 and equality.
 
@@ -177,6 +182,7 @@ and equality.
 | FR-143-AC-8 | Record fields are evaluated in declaration order, the first stopped field propagates its outcome with no later field evaluated or charged, and a completed construction charges `composite.result-retain`. | Test (TC-188) |
 | FR-143-AC-9 | `Reference<T>` admits only a model object type, and a runtime composite value from another checked package is `invalid_runtime_input` before evaluation. | Test (TC-188) |
 | FR-143-AC-10 | A `?` field projection is admitted only under `present` or `value`, an unguarded `value` is `undefined_expression` with cause `unproved-presence`, and any other use is `ill_typed` with cause `type-mismatch`. | Test (TC-188) |
+| FR-143-AC-11 | Under `quire.model.complete/v1`, a reference obtained by navigation, lookup or `allInstances` carries the object's most-specific effective type, and no other source creates a reference. | Test (TC-198) |
 
 ## Dependencies
 
