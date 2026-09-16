@@ -230,18 +230,42 @@ impl ExactLossValue {
 }
 
 /// `(value / 5^k, k)` for the greatest `k <= limit` with `5^k | value`, for a
-/// nonzero `value`.
+/// nonzero `value`, in `O(log k)` divisions.
+///
+/// The ascending pass divides out `5^1, 5^2, 5^4, ...` while each divides and
+/// fits the limit, so it stops with the remaining multiplicity `m` and limit
+/// `l` satisfying `min(m, l) < 2^(J+1)` for the last squared exponent `2^J`.
+/// The descending pass then takes each `5^(2^j)`, `j = J..0`, exactly when
+/// `2^j <= min(m, l)`, which strips the binary digits of `min(m, l)`.
 fn split_factor_five(value: &Integer, limit: u64) -> (Integer, u64) {
-    let five = Integer::from(5_i64);
     let mut remaining = value.clone();
-    let mut count = 0;
-    while count < limit {
-        let (quotient, remainder) = remaining.div_rem_truncating(&five);
+    let mut count = 0_u64;
+    // `(5^width, width)` with `width = 2^j`.
+    let mut powers = vec![(Integer::from(5_i64), 1_u64)];
+    loop {
+        let (power, width) = powers.last().expect("the ladder starts with 5^1");
+        if *width > limit - count {
+            break;
+        }
+        let (quotient, remainder) = remaining.div_rem_truncating(power);
         if !remainder.is_zero() {
             break;
         }
         remaining = quotient;
-        count += 1;
+        count += width;
+        // `width <= multiplicity < bits(value)`, so doubling stays in `u64`.
+        let next = (power.mul(power), width * 2);
+        powers.push(next);
+    }
+    for (power, width) in powers.iter().rev() {
+        if *width > limit - count {
+            continue;
+        }
+        let (quotient, remainder) = remaining.div_rem_truncating(power);
+        if remainder.is_zero() {
+            remaining = quotient;
+            count += width;
+        }
     }
     (remaining, count)
 }
