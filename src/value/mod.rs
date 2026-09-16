@@ -95,9 +95,9 @@ pub use expression::{
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
-    IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeFlags,
-    IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance, IeeeResult,
-    IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+    IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag,
+    IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance,
+    IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
 };
 pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,

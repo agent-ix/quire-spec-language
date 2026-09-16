@@ -8,6 +8,7 @@ use super::cst::{
     self, CstElement, LosslessCst, Production, RawNode, Recovery, RecoveryKind, TokenClass,
     TokenKind,
 };
+use super::diagnostic::{CompleteCause, HostCause};
 use super::grammar::{self, Grammar, Rule, Terminal};
 use super::{
     CompleteCode, CompleteDiagnostic, DefinitionDigest, DefinitionRef, ImportSelection,
@@ -98,8 +99,17 @@ pub(super) fn parse(
                     },
                     |token| token.span,
                 );
-                let code = selection_code(&significant, failure.position)
-                    .unwrap_or(CompleteCode::InvalidSyntax);
+                let (code, cause) = selection_code(&significant, failure.position).map_or(
+                    (
+                        CompleteCode::InvalidSyntax,
+                        if failure.position == significant.len() {
+                            CompleteCause::UnexpectedEnd
+                        } else {
+                            CompleteCause::UnexpectedToken
+                        },
+                    ),
+                    |code| (code, CompleteCause::UnsupportedSelection),
+                );
                 let expected = failure
                     .expected
                     .into_iter()
@@ -108,6 +118,7 @@ pub(super) fn parse(
                 diagnostics.push(*super::diagnostic::error(
                     &source,
                     code,
+                    cause,
                     if code == CompleteCode::InvalidSyntax {
                         Phase::Parse
                     } else {
@@ -139,6 +150,7 @@ pub(super) fn parse(
                 return Err(super::diagnostic::error(
                     &source,
                     CompleteCode::ResourceExhausted,
+                    CompleteCause::InsufficientNextCharge,
                     Phase::Parse,
                     span.start,
                     span.end,
@@ -312,7 +324,7 @@ fn extract_selections(
 
     struct InvalidDefinition<'a> {
         token: &'a Significant,
-        code: CompleteCode,
+        cause: HostCause,
         message: &'static str,
     }
 
@@ -323,17 +335,17 @@ fn extract_selections(
     ) -> Result<DefinitionRef, InvalidDefinition<'a>> {
         let invalid_identity = || InvalidDefinition {
             token: identity,
-            code: CompleteCode::InvalidIdentifier,
+            cause: HostCause::SelectionIdentity,
             message: "profile or import identity must be non-empty and at most 512 bytes",
         };
         let invalid_version = || InvalidDefinition {
             token: version,
-            code: CompleteCode::InvalidIdentifier,
+            cause: HostCause::SelectionVersion,
             message: "profile or import version must be non-empty and at most 256 bytes",
         };
         let invalid_digest = || InvalidDefinition {
             token: digest,
-            code: CompleteCode::InvalidDigest,
+            cause: HostCause::SelectionDigest,
             message: "profile or import digest must be canonical SHA-256",
         };
         let identity_value = text(identity).ok_or_else(invalid_identity)?;
@@ -360,17 +372,17 @@ fn extract_selections(
     ) -> Result<ModelRef, InvalidDefinition<'a>> {
         let invalid_identity = || InvalidDefinition {
             token: identity,
-            code: CompleteCode::InvalidIdentifier,
+            cause: HostCause::SelectionIdentity,
             message: "compiled-model identity must be non-empty and at most 512 bytes",
         };
         let invalid_version = || InvalidDefinition {
             token: version,
-            code: CompleteCode::InvalidIdentifier,
+            cause: HostCause::SelectionVersion,
             message: "compiled-model version must be non-empty and at most 256 bytes",
         };
         let invalid_digest = || InvalidDefinition {
             token: digest,
-            code: CompleteCode::InvalidDigest,
+            cause: HostCause::SelectionDigest,
             message: "compiled-model document digest must be canonical SHA-256",
         };
         let identity_value = text(identity).ok_or_else(invalid_identity)?;
@@ -397,7 +409,8 @@ fn extract_selections(
     ) {
         diagnostics.push(*super::diagnostic::error(
             source,
-            invalid.code,
+            invalid.cause.code(),
+            CompleteCause::Host(invalid.cause),
             Phase::Profile,
             invalid.token.span.start,
             invalid.token.span.end,
@@ -537,6 +550,7 @@ impl LeafBudget<'_> {
             return Err(super::diagnostic::error(
                 self.source,
                 CompleteCode::ResourceExhausted,
+                CompleteCause::InsufficientNextCharge,
                 Phase::Lex,
                 span.start,
                 span.end,
@@ -635,14 +649,23 @@ fn scan(
             Ok(Kind::Comment) => (TokenClass::Comment, Some(Kind::Comment)),
             Ok(kind) => (TokenClass::Token, Some(kind)),
             Err(reason) => {
-                let message = match reason {
-                    LexError::Character => "unexpected source character or unterminated string",
-                    LexError::LeadingZero => "integer literals cannot have leading zeros",
-                    LexError::String => "invalid JSON string",
+                // The string token pattern admits no raw control character, so a
+                // recognized quoted region fails JSON decoding only at an escape.
+                let (cause, message) = match reason {
+                    LexError::Character => (
+                        CompleteCause::InvalidToken,
+                        "unexpected source character or unterminated string",
+                    ),
+                    LexError::LeadingZero => (
+                        CompleteCause::InvalidToken,
+                        "integer literals cannot have leading zeros",
+                    ),
+                    LexError::String => (CompleteCause::InvalidEscape, "invalid JSON string"),
                 };
                 diagnostics.push(*super::diagnostic::error(
                     source,
                     CompleteCode::InvalidSyntax,
+                    cause,
                     Phase::Lex,
                     span.start,
                     span.end,
@@ -742,6 +765,7 @@ fn scan(
         return Err(super::diagnostic::error(
             source,
             CompleteCode::ResourceExhausted,
+            CompleteCause::InsufficientNextCharge,
             Phase::Lex,
             span.start,
             span.end,

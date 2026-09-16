@@ -485,25 +485,19 @@ impl ProfileCatalog {
         Ok(catalog)
     }
 
-    pub(crate) fn unknown_profile<'a>(
-        &self,
-        selections: &'a SourceSelections,
-    ) -> Option<&'a ProfileSelection> {
-        selections
-            .profiles
-            .iter()
-            .find(|selection| !self.profiles.contains(&selection.definition))
-    }
-
     pub(crate) fn profile_status(&self, selected: &DefinitionRef) -> ProfileStatus {
         if self.profiles.contains(selected) {
             ProfileStatus::Exact
+        } else if self.profiles.iter().any(|profile| {
+            profile.identity == selected.identity && profile.version == selected.version
+        }) {
+            ProfileStatus::Stale(StaleProfile::ByteDigest)
         } else if self
             .profiles
             .iter()
             .any(|profile| profile.identity == selected.identity)
         {
-            ProfileStatus::Stale
+            ProfileStatus::Stale(StaleProfile::Revision)
         } else {
             ProfileStatus::Unknown
         }
@@ -561,8 +555,17 @@ impl ModelCatalog {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProfileStatus {
     Exact,
-    Stale,
+    Stale(StaleProfile),
     Unknown,
+}
+
+/// How a known profile identity differs from its selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StaleProfile {
+    /// No known profile has the selected version.
+    Revision,
+    /// A known profile has the selected version with another digest.
+    ByteDigest,
 }
 
 /// Original source authority retained through package graph resolution/lowering.
