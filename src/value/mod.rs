@@ -45,6 +45,7 @@ mod library;
 mod node;
 mod numeric;
 mod outcome;
+mod package_identity;
 mod quantity;
 mod rational;
 mod reference;
@@ -103,9 +104,10 @@ pub use integer::{
     OutOfDomain,
 };
 pub use library::{
-    check_migration, resolve_libraries, Export, ExportIdentity, ImportDeclaration, ImportPath,
+    check_migration, resolve_libraries, ExportIdentity, ImportDeclaration, ImportPath,
     InvalidLibraryName, LibraryCause, LibraryLock, LibraryMigration, LibraryName, LibraryPackage,
-    LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause, PACKAGE_ID_PATH,
+    LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause,
+    IDENTITY_PREIMAGE_PATH, PACKAGE_ID_PATH,
 };
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
@@ -116,6 +118,7 @@ pub use numeric::{
     BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
 pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
+pub use package_identity::{NodeDefect, PreimageDefect};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,

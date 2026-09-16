@@ -7,16 +7,18 @@
 //! A package's `quire.package.semantic/v2` `package_id` is the SHA-256 of the
 //! RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity preimage.
 //! [`LibraryPackage`] carries those bytes as produced by the CheckedPackage V2
-//! writer, and resolution recomputes every `package_id` from them before any
-//! import is followed. This layer hashes the preimage but does not read it: its
-//! export node keys are supplied with the package, and its local declarations
-//! are exactly its exports.
+//! writer. Resolution recomputes every `package_id` from them and validates the
+//! preimage structurally before any import is followed. Each export node key is
+//! the `node_id` of the `identity_projection` node whose nominal
+//! `qualified_declaration` spells the exported name; a package's local
+//! declarations are exactly its exports.
 
 use std::collections::BTreeMap;
 
 use sha2::{Digest, Sha256};
 
 use super::node::{is_qualified_name, NodeKey};
+use super::package_identity::{project_exports, PreimageDefect, ProjectedDeclarations};
 use crate::diagnostic::Code;
 
 /// A qualified library identity.
@@ -69,15 +71,6 @@ pub struct ImportDeclaration {
     pub qualifier: Option<String>,
 }
 
-/// One exported declaration.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Export {
-    /// Its name.
-    pub name: String,
-    /// Its node key in the library's graph.
-    pub node: NodeKey,
-}
-
 /// A checked library or importing package.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct LibraryPackage {
@@ -92,8 +85,9 @@ pub struct LibraryPackage {
     pub identity_preimage: Box<[u8]>,
     /// Imports in declaration order.
     pub imports: Vec<ImportDeclaration>,
-    /// Exported declarations.
-    pub exports: Vec<Export>,
+    /// Exported qualified declarations, spelled with `::`. Each node key is
+    /// derived from the identity preimage.
+    pub exports: Vec<String>,
 }
 
 /// An export identity: (library package key, export node key).
@@ -166,6 +160,8 @@ pub enum StaleCause {
 
 /// The member path of a refused `package_id`.
 pub const PACKAGE_ID_PATH: &str = "/package_id";
+/// The member path of a structurally malformed identity preimage.
+pub const IDENTITY_PREIMAGE_PATH: &str = "/identity_preimage";
 
 /// Why a package's import closure is refused.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
@@ -180,6 +176,16 @@ pub enum LibraryRefusal {
         claimed: PackageId,
         /// The recomputed `package_id`.
         recomputed: PackageId,
+    },
+    /// A package's identity preimage is structurally malformed or declares
+    /// none of an export, refused at [`IDENTITY_PREIMAGE_PATH`] before
+    /// resolution.
+    #[error("malformed identity preimage")]
+    InvalidPreimage {
+        /// The package's identity.
+        library: LibraryName,
+        /// What is malformed.
+        defect: PreimageDefect,
     },
     /// An `as` qualifier is not an identifier.
     #[error("invalid import qualifier")]
@@ -232,6 +238,7 @@ impl LibraryRefusal {
             Self::StaleDependency { .. } => Code::StaleDependency,
             Self::MissingImport { .. } => Code::MissingImport,
             Self::PackageIdMismatch { .. }
+            | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
@@ -243,6 +250,7 @@ impl LibraryRefusal {
     pub fn cause(&self) -> LibraryCause {
         match self {
             Self::PackageIdMismatch { .. }
+            | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. } => LibraryCause::InvalidValue,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
@@ -263,6 +271,7 @@ impl LibraryRefusal {
     pub fn member_path(&self) -> Option<&'static str> {
         match self {
             Self::PackageIdMismatch { .. } | Self::DuplicatePackageId(_) => Some(PACKAGE_ID_PATH),
+            Self::InvalidPreimage { .. } => Some(IDENTITY_PREIMAGE_PATH),
             Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. }
@@ -272,26 +281,40 @@ impl LibraryRefusal {
     }
 }
 
-/// Recompute `package`'s `package_id` from its identity preimage.
-fn verify_package_id(package: &LibraryPackage) -> Result<(), LibraryRefusal> {
+/// Recompute `package`'s `package_id` from its identity preimage, then
+/// validate the preimage and derive the package's export node keys from it.
+fn verify_package(package: &LibraryPackage) -> Result<ProjectedDeclarations, LibraryRefusal> {
     let recomputed = PackageId::of_preimage(&package.identity_preimage);
-    if recomputed == package.package_id {
-        Ok(())
-    } else {
-        Err(LibraryRefusal::PackageIdMismatch {
+    if recomputed != package.package_id {
+        return Err(LibraryRefusal::PackageIdMismatch {
             library: package.library.clone(),
             claimed: package.package_id,
             recomputed,
-        })
+        });
     }
+    project_exports(&package.identity_preimage, &package.exports).map_err(|defect| {
+        LibraryRefusal::InvalidPreimage {
+            library: package.library.clone(),
+            defect,
+        }
+    })
+}
+
+/// One selected package with its derived export node keys and the first
+/// dependency path that reached it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Selected {
+    package: LibraryPackage,
+    exports: ProjectedDeclarations,
+    path: ImportPath,
 }
 
 /// A resolved import closure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibraryLock {
-    root: LibraryPackage,
-    /// Selected packages by identity, with the first path that reached each.
-    selected: BTreeMap<LibraryName, (LibraryPackage, ImportPath)>,
+    root: Selected,
+    /// Selected packages by identity.
+    selected: BTreeMap<LibraryName, Selected>,
 }
 
 struct Pending<'a> {
@@ -307,21 +330,21 @@ pub fn resolve_libraries(
     root: &LibraryPackage,
     supplied: &[LibraryPackage],
 ) -> Result<LibraryLock, LibraryRefusal> {
-    verify_package_id(root)?;
-    let mut by_id: BTreeMap<PackageId, &LibraryPackage> = BTreeMap::new();
+    let root_exports = verify_package(root)?;
+    let mut by_id: BTreeMap<PackageId, (&LibraryPackage, ProjectedDeclarations)> = BTreeMap::new();
     for package in supplied {
-        verify_package_id(package)?;
+        let exports = verify_package(package)?;
         match by_id.get(&package.package_id) {
-            Some(existing) if *existing != package => {
+            Some((existing, _)) if *existing != package => {
                 return Err(LibraryRefusal::DuplicatePackageId(package.package_id));
             }
             Some(_) => {}
             None => {
-                by_id.insert(package.package_id, package);
+                by_id.insert(package.package_id, (package, exports));
             }
         }
     }
-    let mut selected: BTreeMap<LibraryName, (LibraryPackage, ImportPath)> = BTreeMap::new();
+    let mut selected: BTreeMap<LibraryName, Selected> = BTreeMap::new();
     let mut stack = vec![Pending {
         package: root,
         next: 0,
@@ -350,22 +373,24 @@ pub fn resolve_libraries(
                 cycle: path.split_off(start),
             });
         }
-        if let Some((existing, first)) = selected.get(&import.library) {
-            if existing.version == import.version && existing.package_id == import.package_id {
+        if let Some(existing) = selected.get(&import.library) {
+            if existing.package.version == import.version
+                && existing.package.package_id == import.package_id
+            {
                 continue;
             }
             return Err(LibraryRefusal::ConflictingDefinition {
                 library: import.library.clone(),
-                paths: [first.clone(), path],
+                paths: [existing.path.clone(), path],
             });
         }
-        let found = by_id.get(&import.package_id).copied().filter(|package| {
+        let found = by_id.get(&import.package_id).filter(|(package, _)| {
             package.library == import.library && package.version == import.version
         });
-        let Some(package) = found else {
+        let Some((package, exports)) = found else {
             let same_id = by_id
                 .get(&import.package_id)
-                .is_some_and(|package| package.library == import.library);
+                .is_some_and(|(package, _)| package.library == import.library);
             let same_identity = supplied
                 .iter()
                 .any(|package| package.library == import.library);
@@ -382,7 +407,14 @@ pub fn resolve_libraries(
                 cause,
             });
         };
-        selected.insert(import.library.clone(), (package.clone(), path.clone()));
+        selected.insert(
+            import.library.clone(),
+            Selected {
+                package: (*package).clone(),
+                exports: exports.clone(),
+                path: path.clone(),
+            },
+        );
         stack.push(Pending {
             package,
             next: 0,
@@ -390,7 +422,11 @@ pub fn resolve_libraries(
         });
     }
     Ok(LibraryLock {
-        root: root.clone(),
+        root: Selected {
+            package: root.clone(),
+            exports: root_exports,
+            path: vec![root.library.clone()],
+        },
         selected,
     })
 }
@@ -447,19 +483,19 @@ impl NameRefusal {
 impl LibraryLock {
     /// The resolved root package.
     pub fn root(&self) -> &LibraryPackage {
-        &self.root
+        &self.root.package
     }
 
     /// One selection per library identity, in ascending identity order.
     pub fn selections(&self) -> Vec<(LibraryName, Selection)> {
         self.selected
             .iter()
-            .map(|(library, (package, _))| {
+            .map(|(library, selected)| {
                 (
                     library.clone(),
                     Selection {
-                        version: package.version.clone(),
-                        package_id: package.package_id,
+                        version: selected.package.version.clone(),
+                        package_id: selected.package.package_id,
                     },
                 )
             })
@@ -475,16 +511,16 @@ impl LibraryLock {
         reference: &NameReference,
     ) -> Result<ExportIdentity, NameRefusal> {
         let missing = || NameRefusal::MissingDeclaration(reference.clone());
-        let (package, path) = if *user == self.root.library {
-            (&self.root, vec![self.root.library.clone()])
+        let user_selection = if *user == self.root.package.library {
+            &self.root
         } else {
-            let (package, path) = self.selected.get(user).ok_or_else(missing)?;
-            (package, path.clone())
+            self.selected.get(user).ok_or_else(missing)?
         };
         let (owner, name) = match reference {
-            NameReference::Unqualified(name) => (package, name),
+            NameReference::Unqualified(name) => (user_selection, name),
             NameReference::Qualified { qualifier, name } => {
-                let bound: Vec<&ImportDeclaration> = package
+                let bound: Vec<&ImportDeclaration> = user_selection
+                    .package
                     .imports
                     .iter()
                     .filter(|import| import.qualifier.as_ref() == Some(qualifier))
@@ -492,7 +528,7 @@ impl LibraryLock {
                 match bound.as_slice() {
                     [] => return Err(missing()),
                     [import] => {
-                        let (owner, _) = self.selected.get(&import.library).ok_or_else(missing)?;
+                        let owner = self.selected.get(&import.library).ok_or_else(missing)?;
                         (owner, name)
                     }
                     [..] => {
@@ -501,7 +537,7 @@ impl LibraryLock {
                             paths: bound
                                 .iter()
                                 .map(|import| {
-                                    let mut import_path = path.clone();
+                                    let mut import_path = user_selection.path.clone();
                                     import_path.push(import.library.clone());
                                     import_path
                                 })
@@ -513,11 +549,10 @@ impl LibraryLock {
         };
         owner
             .exports
-            .iter()
-            .find(|export| export.name == *name)
-            .map(|export| ExportIdentity {
-                package: owner.package_id,
-                node: export.node,
+            .node(name)
+            .map(|node| ExportIdentity {
+                package: owner.package.package_id,
+                node,
             })
             .ok_or_else(missing)
     }
@@ -546,8 +581,8 @@ pub fn check_migration(
     from: &LibraryPackage,
     to: &LibraryPackage,
 ) -> Result<LibraryMigration, LibraryRefusal> {
-    verify_package_id(from)?;
-    verify_package_id(to)?;
+    verify_package(from)?;
+    verify_package(to)?;
     if from.package_id == to.package_id {
         return Ok(LibraryMigration::Unchanged);
     }

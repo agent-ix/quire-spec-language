@@ -17,7 +17,7 @@ const DEFINITIONS: &str =
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
 /// `7d7943ab1482e091f6d126401ada38957c4a1ccf` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 20] = [
+const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     (
         "spec/functional/expressions/FR-146-check-total-pure-functions.md",
         "4d21ad026fdf637f9eea9ec9455c678a4e78a8d4f6b87fd9446e7cde31556d29",
@@ -93,6 +93,10 @@ const PINNED_NON_CATALOG: [(&str, &str); 20] = [
     (
         "proposals/checked-package-v2/node-identity-preimage.schema.json",
         "978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501",
+    ),
+    (
+        "proposals/checked-package-v2/fixtures/positive-nominal-identities.json",
+        "b6b1f81f33d6b8756f91ac3fefed74e8cb01b85892c4520a072952232e968a47",
     ),
     (
         "spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",

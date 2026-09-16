@@ -12,7 +12,9 @@ TC-190, TC-191, TC-194 and TC-227 procedures, and consumes FR-149.
 `complete-value-lock.json` is the authority for every qualification-catalog
 artifact digest; `tests/complete_value_lock.rs` recomputes each vendored
 artifact's raw-byte SHA-256 against that lock. The lock itself, the selection
-vectors, the checked-package-v2 node-identity vectors and preimage schema, and
+vectors, the checked-package-v2 node-identity vectors and preimage schema, the
+`positive-nominal-identities` CheckedPackage V2 fixture whose identity preimage
+FR-307 resolution reads, and
 the FR-143/FR-144/FR-145/FR-146/FR-307 rules and the
 TC-185/TC-186/TC-187/TC-188/TC-189/TC-190/TC-191/TC-192/TC-193/TC-194/TC-227
 procedures are not in the catalog, so the same
