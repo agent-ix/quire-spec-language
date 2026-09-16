@@ -58,8 +58,8 @@ pub use node::{
 };
 pub use outcome::{Outcome, Refusal, Undefined};
 pub use quantity::{
-    convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity, QuantityOperation,
-    QuantityTarget, QuantityUnit,
+    compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
+    QuantityOperation, QuantityTarget, QuantityUnit,
 };
 pub use rational::{Rational, ZeroDenominator};
 pub use text::{

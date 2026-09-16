@@ -69,14 +69,8 @@ pub enum Refusal {
     /// The profile length (scalars, or bytes for `binary-utf8`) is outside the
     /// declared `Text[min,max; profile]` bounds.
     TextLengthOutOfDomain,
-    /// Quantity operands or a conversion's source and target have different
-    /// normalized dimension maps.
-    IncompatibleDimensions,
-    /// Arithmetic was applied to an affine (nonzero-offset) quantity.
-    AffineUnitArithmetic,
-    /// Addition or subtraction of compatible quantities in different units;
-    /// conversion never occurs implicitly.
-    DistinctUnits,
+    /// An exact conversion result is outside the target integer domain.
+    IntegerOutOfDomain,
 }
 
 /// Internal early-exit carrier converted into [`Outcome`].

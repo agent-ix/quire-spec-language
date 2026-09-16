@@ -616,44 +616,168 @@ pub(crate) struct Placed {
 }
 
 impl DecimalType {
-    /// Place `value` at `T` under the target rounding mode; strict `exact`
-    /// refuses a nonzero discarded digit.
-    pub(crate) fn place(&self, value: &Rational) -> Result<Placed, Refusal> {
+    /// Decide how `value` is placed at `T` under the target rounding mode and
+    /// the exact retained sizes of that placement, without materializing a
+    /// coefficient larger than the inputs. Strict `exact` refuses a nonzero
+    /// discarded digit.
+    pub(crate) fn placement(&self, value: &Rational) -> Result<Placement, Refusal> {
         let (numerator, denominator) = (value.numerator(), value.denominator());
+        let target_scale = u64::from(self.max_scale);
         let terminating = terminating_scale(denominator)
             .and_then(|scale| u32::try_from(scale).ok())
             .filter(|scale| *scale <= self.max_scale);
-        match terminating {
-            Some(scale) => {
-                // `n/d = n × (10^k / d) × 10^-k`; `10^k` has at most `k` more
-                // bits than `d` has twos and fives.
-                let factor = Integer::power_of_ten(u64::from(scale)).exact_div(denominator);
-                Ok(Placed {
-                    coefficient: numerator.mul(&factor),
-                    scale,
-                    loss: None,
-                })
-            }
-            None => {
-                let units = Rational::from_integer(
-                    numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
-                )
-                // A reduced denominator is positive, so the division exists.
-                .div(&Rational::from_integer(denominator.clone()))
-                .ok_or(Refusal::InexactDecimal)?;
-                let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
-                Ok(Placed {
-                    loss: Some(DecimalLoss {
-                        exact: value.clone(),
-                        rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
-                        mode: self.rounding,
-                    }),
-                    coefficient: rounded,
-                    scale: self.max_scale,
-                })
-            }
+        if let Some(scale) = terminating {
+            // `n/d = n × (10^k / d) × 10^-k` with `k <= bits(d)`.
+            let factor = Integer::power_of_ten(u64::from(scale)).exact_div(denominator);
+            let placed = Placed {
+                coefficient: numerator.mul(&factor),
+                scale,
+                loss: None,
+            };
+            let (bits, digits) = placed.retained_sizes(self);
+            return Ok(Placement {
+                bits,
+                digits: Integer::from(digits),
+                kind: PlacementKind::Placed(placed),
+            });
+        }
+        // A reduced value that is not a multiple of `10^-T` always discards a
+        // nonzero digit.
+        if self.rounding == RoundingMode::Exact {
+            return Err(Refusal::InexactDecimal);
+        }
+        if target_scale
+            <= ANALYTIC_PLACEMENT_BITS_FACTOR.saturating_mul(denominator.magnitude_bits())
+        {
+            // `n × 10^T` has at most `bits(n) + 7 × bits(d) + 1` bits here.
+            let placed = self.round_at_target(value)?;
+            let (bits, digits) = placed.retained_sizes(self);
+            return Ok(Placement {
+                bits,
+                digits: Integer::from(digits),
+                kind: PlacementKind::Placed(placed),
+            });
+        }
+        let (bits, digits) = rounded_sizes(&numerator.abs(), denominator, target_scale);
+        Ok(Placement {
+            bits,
+            digits,
+            kind: PlacementKind::Deferred(value.clone()),
+        })
+    }
+
+    /// Round `value × 10^T` to an integer coefficient at `T`, recording the
+    /// loss. The caller has charged or bounded its size.
+    fn round_at_target(&self, value: &Rational) -> Result<Placed, Refusal> {
+        let (numerator, denominator) = (value.numerator(), value.denominator());
+        let units = Rational::from_integer(
+            numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
+        )
+        // A reduced denominator is positive, so the division exists.
+        .div(&Rational::from_integer(denominator.clone()))
+        .ok_or(Refusal::InexactDecimal)?;
+        let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
+        Ok(Placed {
+            loss: Some(DecimalLoss {
+                exact: value.clone(),
+                rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
+                mode: self.rounding,
+            }),
+            coefficient: rounded,
+            scale: self.max_scale,
+        })
+    }
+}
+
+/// A rounded placement is sized analytically once `T > 2 × bits(d)`; below
+/// that, `n × 10^T` is bounded by the inputs and is materialized. The two
+/// routes agree; the bound only avoids allocating a coefficient before its
+/// charge.
+const ANALYTIC_PLACEMENT_BITS_FACTOR: u64 = 2;
+
+/// A decided placement at `T` with its exact retained `(integer_bits,
+/// decimal_digits)`.
+pub(crate) struct Placement {
+    bits: Integer,
+    digits: Integer,
+    kind: PlacementKind,
+}
+
+enum PlacementKind {
+    /// A coefficient already bounded by the inputs.
+    Placed(Placed),
+    /// A rounded coefficient whose materialization waits for its charge.
+    Deferred(Rational),
+}
+
+impl Placement {
+    /// Exact retained `(integer_bits, decimal_digits)` of `v × 10^T`.
+    pub(crate) fn retained_sizes(&self) -> (&Integer, &Integer) {
+        (&self.bits, &self.digits)
+    }
+
+    /// Materialize the placed coefficient after its sizes were charged.
+    pub(crate) fn materialize(self, target: &DecimalType) -> Result<Placed, Refusal> {
+        match self.kind {
+            PlacementKind::Placed(placed) => Ok(placed),
+            PlacementKind::Deferred(value) => target.round_at_target(&value),
         }
     }
+}
+
+/// Exact `(bits, digits)` of `round(a × 10^T / d)` for `a >= 1`, `d > 1`,
+/// `d ∤ a × 10^T` and `T > 2 × bits(d)`, without the power.
+///
+/// Let `M = a × 10^T` and `q = floor(M / d)`; `r = M mod d` is nonzero, so the
+/// rounded magnitude is `q` or `q + 1` and `M` never equals `d × 2^j` or
+/// `d × 10^j`.
+///
+/// Digits: `q >= 10^j` exactly when `a × 10^(T-j) > d`, so with `t0` the least
+/// integer where `a × 10^t0 > d`, `digits(q) = T - t0 + 1`. Bits: with
+/// `B = bits(M)`, `q >= 2^j` holds for every `j < B - bits(d)` and for no
+/// `j > B - bits(d)`, so `bits(q) = B - bits(d) + [M > d × 2^(B - bits(d))]`.
+///
+/// `q + 1` is neither a power of ten nor of two: `M + d - r = d × 10^k` or
+/// `d × 2^k` with `k >= bits(q) - 1 > bits(d)` would give
+/// `v2(d - r) >= min(T, k) >= bits(d)`, but `0 < d - r < d`. So `q + 1` has
+/// the sizes of `q` and the rounding direction does not change them.
+fn rounded_sizes(
+    magnitude: &Integer,
+    denominator: &Integer,
+    target_scale: u64,
+) -> (Integer, Integer) {
+    let ten = Integer::from(10_i64);
+    let least_scale = if magnitude > denominator {
+        // `t0 = -k` for the greatest `k` with `a > d × 10^k`.
+        let mut lifted = denominator.mul(&ten);
+        let mut k = Integer::zero();
+        while magnitude > &lifted {
+            lifted = lifted.mul(&ten);
+            k = k.add(&Integer::one());
+        }
+        k.neg()
+    } else {
+        let mut scaled = magnitude.mul(&ten);
+        let mut t = Integer::one();
+        while &scaled <= denominator {
+            scaled = scaled.mul(&ten);
+            t = t.add(&Integer::one());
+        }
+        t
+    };
+    let target_scale = Integer::from(target_scale);
+    let digits = target_scale.add(&Integer::one()).sub(&least_scale);
+    let power_bits = Integer::power_product_bits(magnitude, &ten, &target_scale);
+    let candidate = power_bits.sub(&Integer::from(denominator.magnitude_bits()));
+    let above =
+        Integer::compare_power_product(magnitude, &ten, &target_scale, denominator, &candidate)
+            .is_gt();
+    let bits = if above {
+        candidate.add(&Integer::one())
+    } else {
+        candidate
+    };
+    (bits, digits)
 }
 
 /// The least `k` with `denominator | 10^k`, or `None` when the positive
@@ -692,6 +816,11 @@ impl Placed {
         } else {
             Err(Refusal::DecimalOutOfDomain)
         }
+    }
+
+    /// The scale-zero coefficient and loss record of an integer target.
+    pub(crate) fn into_integer(self) -> (Integer, Option<DecimalLoss>) {
+        (self.coefficient, self.loss)
     }
 
     /// The completed result retaining `(v × 10^T, T)`.
