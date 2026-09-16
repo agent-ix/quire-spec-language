@@ -548,27 +548,41 @@ fn p07_nonrecursive_functions_need_no_measure() {
     let double = |measure| {
         function(
             "double",
-            &[("n", int_type(0, 9))],
+            &[("n", ValueType::Integer)],
             ValueType::Integer,
             measure,
             binary(BinaryOperator::Add, name("n"), name("n")),
         )
     };
-    let quad = |argument| {
-        function(
-            "quad",
-            &[("n", int_type(0, 9))],
-            ValueType::Integer,
-            None,
-            call("double", vec![argument]),
-        )
-    };
-    // TC-191 P07 as written nests `double(double(n))`. FR-146 gives a call the
-    // interval of its declared `Integer` result, so the outer `Int[0,9]`
-    // argument is an unproved range; that conflict is reported against the
-    // vector. The measure question P07 asks is answered with `double(n)`.
-    let nested = quad(call("double", vec![name("n")]));
-    let refused = refusal(check(vec![double(None), nested]));
+    let quad = function(
+        "quad",
+        &[("n", int_type(0, 9))],
+        ValueType::Integer,
+        None,
+        call("double", vec![call("double", vec![name("n")])]),
+    );
+    check(vec![double(None), quad.clone()]).unwrap();
+    check(vec![double(Some(name("n"))), quad]).unwrap();
+}
+
+#[trace("TC-191", "FR-146-AC-7")]
+#[test]
+fn p07_a_call_interval_is_its_declared_result_so_a_ranged_nesting_is_unproved() {
+    let double = function(
+        "double",
+        &[("n", int_type(0, 9))],
+        ValueType::Integer,
+        None,
+        binary(BinaryOperator::Add, name("n"), name("n")),
+    );
+    let quad = function(
+        "quad",
+        &[("n", int_type(0, 9))],
+        ValueType::Integer,
+        None,
+        call("double", vec![call("double", vec![name("n")])]),
+    );
+    let refused = refusal(check(vec![double, quad]));
     assert_eq!(refused.cause.cause(), Some("unproved-range"));
     assert_eq!(
         refused.location.origin,
@@ -577,8 +591,6 @@ fn p07_nonrecursive_functions_need_no_measure() {
             index: 1
         }
     );
-    check(vec![double(None), quad(name("n"))]).unwrap();
-    check(vec![double(Some(name("n"))), quad(name("n"))]).unwrap();
 }
 
 #[trace("TC-191", "FR-146-AC-2")]
