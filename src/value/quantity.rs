@@ -35,7 +35,7 @@ impl QuantityUnit {
 
     /// Whether an operation requiring equal dimensions admits `self` and
     /// `other`: their normalized base-dimension maps are equal.
-    fn has_dimension_of(&self, other: &Self) -> bool {
+    pub(crate) fn has_dimension_of(&self, other: &Self) -> bool {
         self.dimension() == other.dimension()
     }
 

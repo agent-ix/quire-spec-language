@@ -11,9 +11,12 @@
 //! 2. explicit operation tables: [`evaluate_decimal`] (FR-140), [`divide`] and
 //!    [`modulo`] (FR-147), [`admit_text`], [`compare_text`] and [`compare_enum`]
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after the type-checking [`IllTyped`] refusal;
-//! 3. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
+//! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
+//!    [`TypeEnvironment`], and the FR-149 equality matrix
+//!    [`evaluate_equality`] (QSL #119);
+//! 4. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
-//! 4. `quire.value.accounting/v1` metering through [`Meter`].
+//! 5. `quire.value.accounting/v1` metering through [`Meter`].
 //!
 //! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
 //! operate on exact bit patterns with soft-float arithmetic over big integers.
@@ -23,22 +26,35 @@
 //! conversion is used by any semantic path.
 
 mod accounting;
+mod collection;
 mod comparison;
+mod composite;
+mod containment;
 mod decimal;
 mod definition;
 mod division;
 mod enumeration;
+mod equality;
 mod ieee;
 mod integer;
 mod node;
 mod outcome;
 mod quantity;
 mod rational;
+mod reference;
 mod text;
 mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
+pub use collection::{CollectionKind, CollectionValue};
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
+pub use composite::{
+    Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,
+    ConstructionRefusal, ConstructorDeclaration, DeclarationCause, FieldDeclaration,
+    FieldExpression, FieldValue, InvalidDeclaration, OptionValue, Presence, TypeEnvironment, Value,
+    ValueType,
+};
+pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{
     evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult,
     DecimalType, RoundingMode,
@@ -55,6 +71,7 @@ pub use division::{
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
+pub use equality::{convert_for_equality, evaluate_equality, plan_equality, EqualityPlan};
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
@@ -76,6 +93,10 @@ pub use quantity::{
     QuantityOperation, QuantityTarget, QuantityUnit,
 };
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
+pub use reference::{
+    InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
+    ObjectIdentity, ObjectReference,
+};
 pub use text::{
     admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,
     Text, TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION,

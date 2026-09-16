@@ -414,7 +414,7 @@ impl Meter {
 
     /// The qualification-seam record: as if the `work_units` limit were the
     /// work already consumed, so `limit = consumed = w`.
-    fn check_injected(&self, point: ChargePoint, work_units: u64) -> Result<(), Incomplete> {
+    fn check_injected(&self, point: ChargePoint, work_units: Integer) -> Result<(), Incomplete> {
         match self.denial {
             Some(denial)
                 if denial.point == point
@@ -425,7 +425,7 @@ impl Meter {
                     limit_kind: LimitKind::WorkUnits,
                     limit: consumed,
                     consumed,
-                    next_charge: Integer::from(work_units),
+                    next_charge: work_units,
                     charge_point: point,
                 })
             }
@@ -437,7 +437,7 @@ impl Meter {
     /// `ScalarLimitsV1` field order.
     pub(crate) fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
-        self.check_injected(point, charge.work_units)?;
+        self.check_injected(point, Integer::from(charge.work_units))?;
         // Every semantic-size counter precedes `work_units` and `result_units`
         // in field order.
         charge.sizes.sort_by_key(|(kind, _)| kind.index());
@@ -462,11 +462,45 @@ impl Meter {
         }
         self.consumed[LimitKind::WorkUnits.index()] = work;
         self.consumed[LimitKind::ResultUnits.index()] = results;
+        self.admit(point);
+        Ok(())
+    }
+
+    fn admit(&mut self, point: ChargePoint) {
         match self.occurrences.iter_mut().find(|(seen, _)| *seen == point) {
             Some((_, count)) => *count = count.saturating_add(1),
             None => self.occurrences.push((point, 1)),
         }
         self.admitted.push(point);
+    }
+
+    /// The FR-149 `equality.plan` charge: size `value_occurrences` is the
+    /// planned pair count; without changing any consumed counter it requires
+    /// `pairs + 2` remaining work units and one remaining result unit, then
+    /// consumes the plan's own work unit.
+    pub(crate) fn charge_plan(&mut self, pairs: &Integer) -> Result<(), Incomplete> {
+        let point = ChargePoint::EqualityPlan;
+        let reservation = pairs.add(&Integer::from(2_u64));
+        self.check_injected(point, reservation.clone())?;
+        let kind = LimitKind::ValueOccurrences;
+        let size = pairs
+            .to_u64()
+            .filter(|size| *size <= kind.limit(&self.limits))
+            .ok_or_else(|| self.incomplete(kind, pairs.clone(), point))?;
+        let remaining = |kind: LimitKind| {
+            Integer::from(kind.limit(&self.limits)).sub(&Integer::from(self.consumed(kind)))
+        };
+        if reservation > remaining(LimitKind::WorkUnits) {
+            return Err(self.incomplete(LimitKind::WorkUnits, reservation, point));
+        }
+        if remaining(LimitKind::ResultUnits) < Integer::one() {
+            return Err(self.incomplete(LimitKind::ResultUnits, Integer::one(), point));
+        }
+        let slot = &mut self.consumed[kind.index()];
+        *slot = (*slot).max(size);
+        let work = &mut self.consumed[LimitKind::WorkUnits.index()];
+        *work = work.saturating_add(1);
+        self.admit(point);
         Ok(())
     }
 }

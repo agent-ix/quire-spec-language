@@ -101,4 +101,13 @@ pub enum IllTypedCause {
     /// An IEEE value is converted directly to `Decimal`, `Integer` or
     /// `Int[..]`; only a `Rational[..]` target is defined.
     IeeeToNonRationalExact,
+    /// Equality operands are of different value kinds, or of option or
+    /// collection types with different declared payload/element types.
+    DistinctValueTypes,
+    /// Record, tuple, variant or reference operands name different
+    /// declarations; equal shapes never create a common type.
+    DistinctDeclarations,
+    /// No explicitly declared lossless conversion reaches the requested
+    /// comparison type.
+    NoLosslessConversion,
 }

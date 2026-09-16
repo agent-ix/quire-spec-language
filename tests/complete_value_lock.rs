@@ -17,7 +17,19 @@ const DEFINITIONS: &str =
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
 /// `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 9] = [
+const PINNED_NON_CATALOG: [(&str, &str); 12] = [
+    (
+        "spec/functional/type-model/FR-143-evaluate-record-tuple-recursive-values.md",
+        "1eb49d817aadd722770f0fc57c2db5b1c9f831bddfc0ea52ba0d64d790066744",
+    ),
+    (
+        "spec/test-cases/TC-188-record-tuple-and-recursive-values.md",
+        "52e8e080254691baef498a6dad1c4445bbacf60d62bc79c6422ffe439cc3e242",
+    ),
+    (
+        "spec/test-cases/TC-194-complete-equality-matrix.md",
+        "d7ae3099b0c88d2c6601cd1999736fef0b85d4dfdb4a6d11c9b320349846a0f8",
+    ),
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
         "8bb7238b7e811aa810b07b49466693c5ee7d5d39fc6858b88d0740526de27370",
