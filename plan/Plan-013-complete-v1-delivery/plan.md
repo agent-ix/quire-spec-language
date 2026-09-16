@@ -69,7 +69,8 @@ relationships:
 
 ## Scope
 
-Adopt the QSpec complete-V1 baseline reviewed at `8d0fbad` and merged by PR #64,
+Adopt the QSpec complete-V1 baseline `4780a9e6119bb86ffb1322fe0a141ef3905b11ef` (the QSpec #68 merge, which
+advanced the PR #64 baseline with the complete scalar contracts),
 then execute QSL #116 through #123 and `quire-wasm` #6. This is the single
 repository plan for Agent-A's complete source/package, type/expression, model,
 reference-runtime, tooling, WASM and qualification lane. Central QSpec retains
@@ -80,7 +81,7 @@ evidence state.
 
 - [x] **FR-055 / IT-011 / QSL #116:** install the frozen contract, exact allocation,
   evidence reconciliation and serial issue graph.
-- [ ] **AD-003, FR-131/134, FR-302/303 and FR-339:** complete source packages,
+- [x] **AD-003, FR-131/134, FR-302/303 and FR-339:** complete source packages,
   grammar, identities, lossless CST and incremental source tooling foundations
   in QSL #117. FR-132/133 and the authority-bound diagnostic/semantic repeats
   remain in QSL #123.
@@ -153,8 +154,8 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 
 - [ ] **TC-185–187:** decimal, text/enum and unit semantics over all positive,
   boundary and refusal vectors.
-- [ ] **TC-192–194:** integer division, IEEE exceptions/rounding and complete
-  cross-type equality.
+- [ ] **TC-192/193:** integer division and IEEE exceptions/rounding. Task-048
+  supplies scalar equality primitives without claiming complete TC-194.
 
 ### Composite/expression semantics (#119)
 
@@ -307,7 +308,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 | --- | --- | --- | --- | --- |
 | Task-046 | A00 | FR-055, IT-011 | TC-144 | done |
 | Task-047 | A01 | FR-131/134, FR-302/303, FR-339 | TC-180/184, TC-222 | done |
-| Task-048 | A02 | FR-140–142, FR-147–149 | TC-185–187, TC-192–194 | not_started |
+| Task-048 | A02 | FR-140–142, FR-147/148 | TC-185–187, TC-192/193 | in_progress |
 | Task-049 | A03 | FR-143–146, FR-149, FR-307 | TC-188–191, TC-194, TC-227 | not_started |
 | Task-050 | A04 | FR-150–153 | TC-195–198 | not_started |
 | Task-051 | A05 | FR-180/181 | TC-209/210 | not_started |

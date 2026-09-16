@@ -2,3 +2,6 @@
 # rewrite line endings; opaque dependency and mutation payloads are binary.
 artifacts/compiled-protocol-v2/** -text
 artifacts/compiled-protocol-v2/**/*.bin binary
+
+# Exact Unicode 17.0.0 artifacts: SHA-256 is over the downloaded bytes.
+resources/complete-value/unicode-17.0.0/** -text -whitespace

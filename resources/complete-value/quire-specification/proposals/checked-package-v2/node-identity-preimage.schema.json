@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quire:checked-semantic-node-preimage:v1",
+  "title": "Complete-V1 admitted nominal semantic node identity preimages",
+  "oneOf": [
+    {"$ref": "#/$defs/EnumDeclaration"},
+    {"$ref": "#/$defs/EnumMember"},
+    {"$ref": "#/$defs/Dimension"},
+    {"$ref": "#/$defs/Unit"}
+  ],
+  "$defs": {
+    "Nonempty": {"type": "string", "minLength": 1},
+    "HexDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "Identifier": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "QualifiedName": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/Identifier"}},
+    "SourceOwner": {"type": "object", "required": ["kind", "authority", "identity"], "properties": {"kind": {"const": "source"}, "authority": {"$ref": "#/$defs/Nonempty"}, "identity": {"$ref": "#/$defs/Nonempty"}}, "additionalProperties": false},
+    "DefinitionOwner": {"type": "object", "required": ["kind", "authority", "identity"], "properties": {"kind": {"const": "definition"}, "authority": {"$ref": "#/$defs/Nonempty"}, "identity": {"$ref": "#/$defs/Nonempty"}}, "additionalProperties": false},
+    "ModelOwner": {"type": "object", "required": ["kind", "authority", "identity", "export"], "properties": {"kind": {"const": "model"}, "authority": {"$ref": "#/$defs/Nonempty"}, "identity": {"$ref": "#/$defs/Nonempty"}, "export": {"$ref": "#/$defs/Nonempty"}}, "additionalProperties": false},
+    "Owner": {"oneOf": [{"$ref": "#/$defs/SourceOwner"}, {"$ref": "#/$defs/DefinitionOwner"}, {"$ref": "#/$defs/ModelOwner"}]},
+    "NodeId": {"type": "object", "required": ["domain", "digest"], "properties": {"domain": {"const": "quire.checked-semantic-node/v1"}, "digest": {"$ref": "#/$defs/HexDigest"}}, "additionalProperties": false},
+    "IntegerString": {"type": "string", "pattern": "^(0|-?[1-9][0-9]*)$"},
+    "PositiveIntegerString": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    "Rational": {"type": "object", "required": ["numerator", "denominator"], "properties": {"numerator": {"$ref": "#/$defs/IntegerString"}, "denominator": {"$ref": "#/$defs/PositiveIntegerString"}}, "additionalProperties": false},
+    "DimensionTerm": {"type": "object", "required": ["dimension_node_id", "exponent"], "properties": {"dimension_node_id": {"$ref": "#/$defs/NodeId"}, "exponent": {"$ref": "#/$defs/IntegerString"}}, "additionalProperties": false},
+    "EnumDeclaration": {"type": "object", "required": ["version", "owner", "qualified_declaration", "ordered", "members"], "properties": {"version": {"const": "quire.enum-declaration-node/v1"}, "owner": {"$ref": "#/$defs/Owner"}, "qualified_declaration": {"$ref": "#/$defs/QualifiedName"}, "ordered": {"type": "boolean"}, "members": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/Identifier"}}}, "additionalProperties": false},
+    "EnumMember": {"type": "object", "required": ["version", "declaration_node_id", "case"], "properties": {"version": {"const": "quire.enum-member-node/v1"}, "declaration_node_id": {"$ref": "#/$defs/NodeId"}, "case": {"$ref": "#/$defs/Identifier"}}, "additionalProperties": false},
+    "Dimension": {"type": "object", "required": ["version", "owner", "qualified_declaration", "terms"], "properties": {"version": {"const": "quire.dimension-node/v1"}, "owner": {"$ref": "#/$defs/Owner"}, "qualified_declaration": {"$ref": "#/$defs/QualifiedName"}, "terms": {"type": "array", "items": {"$ref": "#/$defs/DimensionTerm"}}}, "additionalProperties": false},
+    "Unit": {"type": "object", "required": ["version", "owner", "qualified_declaration", "dimension_node_id", "target_unit_node_id", "scale", "offset"], "properties": {"version": {"const": "quire.unit-node/v1"}, "owner": {"$ref": "#/$defs/Owner"}, "qualified_declaration": {"$ref": "#/$defs/QualifiedName"}, "dimension_node_id": {"$ref": "#/$defs/NodeId"}, "target_unit_node_id": {"oneOf": [{"$ref": "#/$defs/NodeId"}, {"type": "null"}]}, "scale": {"$ref": "#/$defs/Rational"}, "offset": {"$ref": "#/$defs/Rational"}}, "additionalProperties": false}
+  }
+}

@@ -38,6 +38,7 @@ pub mod state;
 pub mod syntax;
 pub mod temporal;
 mod token;
+pub mod value;
 pub mod wire_format;
 
 pub use diagnostic::{Code, Diagnostic, Phase};
