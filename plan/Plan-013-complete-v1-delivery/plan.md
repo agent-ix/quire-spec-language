@@ -152,9 +152,9 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 
 ### Scalar/type semantics (#118)
 
-- [ ] **TC-185–187:** decimal, text/enum and unit semantics over all positive,
+- [x] **TC-185–187:** decimal, text/enum and unit semantics over all positive,
   boundary and refusal vectors.
-- [ ] **TC-192/193:** integer division and IEEE exceptions/rounding. Task-048
+- [x] **TC-192/193:** integer division and IEEE exceptions/rounding. Task-048
   supplies scalar equality primitives without claiming complete TC-194.
 
 ### Composite/expression semantics (#119)
@@ -308,7 +308,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 | --- | --- | --- | --- | --- |
 | Task-046 | A00 | FR-055, IT-011 | TC-144 | done |
 | Task-047 | A01 | FR-131/134, FR-302/303, FR-339 | TC-180/184, TC-222 | done |
-| Task-048 | A02 | FR-140–142, FR-147/148 | TC-185–187, TC-192/193 | in_progress |
+| Task-048 | A02 | FR-140–142, FR-147/148 | TC-185–187, TC-192/193 | done |
 | Task-049 | A03 | FR-143–146, FR-149, FR-307 | TC-188–191, TC-194, TC-227 | not_started |
 | Task-050 | A04 | FR-150–153 | TC-195–198 | not_started |
 | Task-051 | A05 | FR-180/181 | TC-209/210 | not_started |
