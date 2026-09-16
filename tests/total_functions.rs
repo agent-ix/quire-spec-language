@@ -1004,6 +1004,37 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         invoke("q", vec![int(3), int(2)], UNLIMITED),
         (format!("{:?}", Outcome::Completed(half)), 10, 2)
     );
+    // `rational-arithmetic.arithmetic` for `3/1` and `2/1`: `N = bits(3) +
+    // bits(1) = 3`, `D = bits(1) + bits(2) = 3`, so `integer_bits` 3; the
+    // operands (2) and normalize (2) stay below it.
+    let mut meter = Meter::new(UNLIMITED);
+    package
+        .call("q", vec![int(3), int(2)], &objects, &mut meter)
+        .unwrap();
+    assert_eq!(meter.consumed(LimitKind::IntegerBits), 3);
+    let mut narrow = Meter::new(ScalarLimits {
+        integer_bits: 2,
+        ..UNLIMITED
+    });
+    assert_eq!(
+        format!(
+            "{:?}",
+            package
+                .call("q", vec![int(3), int(2)], &objects, &mut narrow)
+                .unwrap()
+                .outcome
+        ),
+        format!(
+            "{:?}",
+            Outcome::<Value>::Incomplete(Incomplete {
+                limit_kind: LimitKind::IntegerBits,
+                limit: 2,
+                consumed: 2,
+                next_charge: integer(3),
+                charge_point: ChargePoint::RationalArithmeticArithmetic,
+            })
+        )
+    );
     assert_eq!(
         invoke("q", vec![int(3), int(2)], work_limit(9)).0,
         incomplete(9, ChargePoint::RationalArithmeticResultRetain)

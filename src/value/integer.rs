@@ -5,7 +5,6 @@
 //! [`IntegerInterval`] is an explicit admission that either returns a
 //! [`BoundedInteger`] or refuses.
 
-use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
 use std::str::FromStr;
@@ -172,69 +171,6 @@ impl Integer {
             let (low, high) = bracket_bits(factor, base, exponent, precision);
             if low == high {
                 return Self(BigInt::from(low));
-            }
-            precision = precision.saturating_mul(2);
-        }
-    }
-
-    /// Compare `|factor| × |base|^exponent` with `|other| × 2^shift` for a
-    /// nonnegative `exponent` and a signed `shift`, without materializing the
-    /// power.
-    ///
-    /// Unequal bit lengths decide at once. Otherwise the power is bracketed as
-    /// in [`Integer::power_product_bits`] and the precision doubles until the
-    /// bracket excludes the other side or collapses to the exact value.
-    pub(crate) fn compare_power_product(
-        factor: &Self,
-        base: &Self,
-        exponent: &Self,
-        other: &Self,
-        shift: &Self,
-    ) -> Ordering {
-        let left_zero = factor.is_zero() || base.is_zero() && !exponent.is_zero();
-        match (left_zero, other.is_zero()) {
-            (true, true) => return Ordering::Equal,
-            (true, false) => return Ordering::Less,
-            (false, true) => return Ordering::Greater,
-            (false, false) => {}
-        }
-        let left_bits = Self::power_product_bits(factor, base, exponent);
-        let right_bits = Self(BigInt::from(other.0.bits()) + &shift.0);
-        if left_bits != right_bits {
-            return left_bits.cmp(&right_bits);
-        }
-        let other = other.0.magnitude();
-        let mut precision = 64_u64;
-        loop {
-            let (low, high, low_shift) = bracket(
-                factor.0.magnitude(),
-                base.0.magnitude(),
-                exponent.0.magnitude(),
-                precision,
-            );
-            // Equal bit lengths keep `|low_shift - shift|` within the bit
-            // lengths of `high` and `other`, so the aligned sides are small.
-            let gap = BigInt::from(low_shift) - &shift.0;
-            let distance = u64::try_from(gap.magnitude()).expect(
-                "equal bit lengths bound the alignment gap by in-memory mantissa bit lengths",
-            );
-            let aligned = |mantissa: &BigUint| {
-                if gap.is_negative() {
-                    (mantissa.clone(), other << distance)
-                } else {
-                    (mantissa << distance, other.clone())
-                }
-            };
-            let (high_side, other_side) = aligned(&high);
-            if high_side < other_side {
-                return Ordering::Less;
-            }
-            let (low_side, other_side) = aligned(&low);
-            if low_side > other_side {
-                return Ordering::Greater;
-            }
-            if low == high {
-                return low_side.cmp(&other_side);
             }
             precision = precision.saturating_mul(2);
         }

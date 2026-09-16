@@ -1606,7 +1606,7 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
         )
         .unwrap();
     let limits = ScalarLimits {
-        integer_bits: 7,
+        integer_bits: 8,
         decimal_digits: 3,
         scale_expansion: 2,
         value_occurrences: 1,
@@ -1629,7 +1629,8 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
     assert_eq!(meter.admitted_charges(), expected.as_slice());
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 9);
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
-    assert_eq!(meter.consumed(LimitKind::IntegerBits), 7);
+    // `sbits(1,2) = bits(1) + bits(100) = 8`, `sdigits(1,2) = 3`.
+    assert_eq!(meter.consumed(LimitKind::IntegerBits), 8);
     assert_eq!(meter.consumed(LimitKind::DecimalDigits), 3);
     assert_eq!(meter.consumed(LimitKind::ScaleExpansion), 2);
     let mut short = Meter::new(ScalarLimits {

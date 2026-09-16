@@ -17,8 +17,8 @@ use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
 use super::decimal::{
-    alignment_bits, compare_shifted, evaluate_decimal, shifted_digits, Decimal, DecimalOperation,
-    DecimalType,
+    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Decimal,
+    DecimalOperation, DecimalType,
 };
 use super::enumeration::compare_enum;
 use super::integer::Integer;
@@ -500,23 +500,25 @@ fn integer_to_decimal(
             .size(LimitKind::DecimalDigits, value.decimal_digits())
             .size(LimitKind::ValueOccurrences, 1),
     )?;
-    let (bits, digits) = (alignment_bits(value, scale), shifted_digits(value, scale));
-    for point in [
-        ChargePoint::DecimalScaleExpansion,
-        ChargePoint::DecimalArithmetic,
-    ] {
-        let mut charge = Charge::new(point)
+    let (bits, digits) = (sbits(value, scale), sdigits(value, scale));
+    meter.charge(
+        Charge::new(ChargePoint::DecimalScaleExpansion)
+            .size(LimitKind::ScaleExpansion, scale)
             .exact_size(LimitKind::IntegerBits, bits.clone())
-            .size(LimitKind::DecimalDigits, digits);
-        if point == ChargePoint::DecimalScaleExpansion {
-            charge = charge.size(LimitKind::ScaleExpansion, scale);
-        }
-        meter.charge(charge)?;
-    }
+            .exact_size(LimitKind::DecimalDigits, digits.clone()),
+    )?;
+    meter.charge(
+        Charge::new(ChargePoint::DecimalArithmetic)
+            .exact_size(LimitKind::IntegerBits, bits.clone())
+            .exact_size(LimitKind::DecimalDigits, digits.clone()),
+    )?;
+    // Retention upscales `n` at scale 0 by `k = s1`, sized before
+    // `n × 10^s1` is materialized.
     meter.charge(
         Charge::new(ChargePoint::DecimalResultRetain)
+            .size(LimitKind::ScaleExpansion, scale)
             .exact_size(LimitKind::IntegerBits, bits)
-            .size(LimitKind::DecimalDigits, digits)
+            .exact_size(LimitKind::DecimalDigits, digits)
             .size(LimitKind::ValueOccurrences, 1)
             .results(1),
     )?;
@@ -541,22 +543,22 @@ fn decimal_to_rational(value: &Decimal, meter: &mut Meter) -> Result<Value, Stop
     meter.charge(
         Charge::new(ChargePoint::DecimalScaleExpansion)
             .size(LimitKind::ScaleExpansion, scale)
+            .exact_size(LimitKind::IntegerBits, power_of_ten_bits(scale)),
+    )?;
+    meter.charge(
+        Charge::new(ChargePoint::DecimalArithmetic)
             .exact_size(
                 LimitKind::IntegerBits,
-                alignment_bits(&Integer::one(), scale),
+                Integer::from(coefficient.magnitude_bits()).max(power_of_ten_bits(scale)),
+            )
+            .exact_size(
+                LimitKind::DecimalDigits,
+                Integer::from(coefficient.decimal_digits())
+                    .max(Integer::from(scale).add(&Integer::one())),
             ),
     )?;
     let rational = representation.to_rational();
     let maxparts = rational.max_part_bits();
-    let digits = rational
-        .numerator()
-        .decimal_digits()
-        .max(rational.denominator().decimal_digits());
-    meter.charge(
-        Charge::new(ChargePoint::DecimalArithmetic)
-            .size(LimitKind::IntegerBits, maxparts)
-            .size(LimitKind::DecimalDigits, digits),
-    )?;
     meter.charge(
         Charge::new(ChargePoint::DecimalResultRetain)
             .size(LimitKind::IntegerBits, maxparts)

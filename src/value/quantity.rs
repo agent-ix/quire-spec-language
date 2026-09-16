@@ -7,8 +7,11 @@ use std::cmp::Ordering;
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
-use super::decimal::{DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
+use super::decimal::{
+    sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode,
+};
 use super::integer::{BoundedInteger, Integer, IntegerInterval};
+use super::numeric::{rational_arithmetic_bits, RationalArithmetic};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge};
@@ -256,13 +259,22 @@ fn read_identities(operands: &[&Quantity], meter: &mut Meter) -> Result<(), Stop
     Ok(())
 }
 
-/// One scheduled exact rational event.
-fn rational_event(value: Rational, meter: &mut Meter) -> Result<Rational, Stop> {
+/// One scheduled exact rational event, charged from its operands before the
+/// result is computed.
+fn rational_event(operation: RationalArithmetic<'_>, meter: &mut Meter) -> Result<Rational, Stop> {
     meter.charge(
         Charge::new(ChargePoint::UnitRationalArithmetic)
-            .size(LimitKind::IntegerBits, value.max_part_bits()),
+            .exact_size(LimitKind::IntegerBits, rational_arithmetic_bits(operation)),
     )?;
-    Ok(value)
+    Ok(match operation {
+        RationalArithmetic::Add(left, right) => left.add(right),
+        RationalArithmetic::Subtract(left, right) => left.sub(right),
+        RationalArithmetic::Multiply(left, right) => left.mul(right),
+        RationalArithmetic::Divide(left, right) => left
+            .div(right)
+            .ok_or(Stop::Undefined(Undefined::DivisionByZero))?,
+        RationalArithmetic::Negate(operand) => operand.neg(),
+    })
 }
 
 /// The direction an edge is traversed.
@@ -368,11 +380,11 @@ fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quant
     check_undefined(operation)?;
     let result = match operation {
         QuantityOperation::Add(a, b) => Quantity {
-            value: rational_event(a.value.add(&b.value), meter)?,
+            value: rational_event(RationalArithmetic::Add(&a.value, &b.value), meter)?,
             unit: a.unit.clone(),
         },
         QuantityOperation::Subtract(a, b) => Quantity {
-            value: rational_event(a.value.sub(&b.value), meter)?,
+            value: rational_event(RationalArithmetic::Subtract(&a.value, &b.value), meter)?,
             unit: a.unit.clone(),
         },
         QuantityOperation::Multiply(a, b) | QuantityOperation::Divide(a, b) => {
@@ -384,15 +396,12 @@ fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quant
                 (a.unit.canonical_compound(), b.unit.canonical_compound());
             if matches!(operation, QuantityOperation::Multiply(..)) {
                 Quantity {
-                    value: rational_event(left.mul(&right), meter)?,
+                    value: rational_event(RationalArithmetic::Multiply(&left, &right), meter)?,
                     unit: QuantityUnit::Compound(left_unit.multiply(&right_unit)),
                 }
             } else {
-                let quotient = left
-                    .div(&right)
-                    .ok_or(Stop::Undefined(Undefined::DivisionByZero))?;
                 Quantity {
-                    value: rational_event(quotient, meter)?,
+                    value: rational_event(RationalArithmetic::Divide(&left, &right), meter)?,
                     unit: QuantityUnit::Compound(left_unit.divide(&right_unit)),
                 }
             }
@@ -423,16 +432,15 @@ fn events(
     for (edge, direction) in edges {
         current = match direction {
             Direction::Forward => {
-                let scaled = rational_event(current.mul(edge.scale()), meter)?;
-                rational_event(scaled.add(edge.offset()), meter)?
+                let scaled =
+                    rational_event(RationalArithmetic::Multiply(&current, edge.scale()), meter)?;
+                rational_event(RationalArithmetic::Add(&scaled, edge.offset()), meter)?
             }
             Direction::Reverse => {
-                let shifted = rational_event(current.sub(edge.offset()), meter)?;
+                let shifted =
+                    rational_event(RationalArithmetic::Subtract(&current, edge.offset()), meter)?;
                 // Admitted scales are nonzero.
-                let divided = shifted
-                    .div(edge.scale())
-                    .ok_or(Stop::Undefined(Undefined::DivisionByZero))?;
-                rational_event(divided, meter)?
+                rational_event(RationalArithmetic::Divide(&shifted, edge.scale()), meter)?
             }
         };
     }
@@ -443,11 +451,11 @@ fn events(
 /// `None` is a zero base under a negative exponent, which `check_undefined`
 /// has already refused.
 fn power(base: &Rational, exponent: &Integer, meter: &mut Meter) -> Result<Option<Rational>, Stop> {
-    // For reduced `n/d`, `(n/d)^e` is reduced with parts `|n|^|e|` and
-    // `d^|e|` (swapped for a negative exponent), so its `maxparts` is
-    // `bits(max(|n|, d)^|e|)`.
-    let largest = base.numerator().abs().max(base.denominator().clone());
-    let bits = Integer::power_product_bits(&Integer::one(), &largest, &exponent.abs());
+    // `max(1, |n| × maxparts(x))` bounds both parts of `x^n`.
+    let bits = exponent
+        .abs()
+        .mul(&Integer::from(base.max_part_bits()))
+        .max(Integer::one());
     meter.charge(
         Charge::new(ChargePoint::UnitRationalArithmetic).exact_size(LimitKind::IntegerBits, bits),
     )?;
@@ -532,12 +540,18 @@ fn place(
     meter: &mut Meter,
 ) -> Result<Placed, Stop> {
     let placement = decimal.placement(exact).map_err(Stop::Refused)?;
-    let (bits, digits) = placement.retained_sizes();
-    let charge =
-        Charge::new(ChargePoint::UnitTargetDomain).exact_size(LimitKind::IntegerBits, bits.clone());
+    // Sized from the reduced exact numerator `a`, before placement
+    // materializes any coefficient.
+    let numerator = exact.numerator();
+    let charge = Charge::new(ChargePoint::UnitTargetDomain);
     meter.charge(match retained {
-        Retained::Decimal => charge.exact_size(LimitKind::DecimalDigits, digits.clone()),
-        Retained::Integer => charge,
+        Retained::Decimal => {
+            let scale = u64::from(decimal.max_scale());
+            charge
+                .exact_size(LimitKind::IntegerBits, sbits(numerator, scale))
+                .exact_size(LimitKind::DecimalDigits, sdigits(numerator, scale))
+        }
+        Retained::Integer => charge.size(LimitKind::IntegerBits, numerator.magnitude_bits()),
     })?;
     placement.materialize(decimal).map_err(Stop::Refused)
 }

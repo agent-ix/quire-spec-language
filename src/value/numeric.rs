@@ -9,7 +9,7 @@
 use std::cmp::Ordering;
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
-use super::decimal::{alignment_bits, shifted_digits, Decimal};
+use super::decimal::{sbits, sdigits, Decimal};
 use super::integer::{Integer, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
@@ -123,13 +123,13 @@ fn order(
                     .size(LimitKind::ScaleExpansion, left_shift.max(right_shift))
                     .exact_size(
                         LimitKind::IntegerBits,
-                        alignment_bits(left_coefficient, left_shift)
-                            .max(alignment_bits(right_coefficient, right_shift)),
+                        sbits(left_coefficient, left_shift)
+                            .max(sbits(right_coefficient, right_shift)),
                     )
-                    .size(
+                    .exact_size(
                         LimitKind::DecimalDigits,
-                        shifted_digits(left_coefficient, left_shift)
-                            .max(shifted_digits(right_coefficient, right_shift)),
+                        sdigits(left_coefficient, left_shift)
+                            .max(sdigits(right_coefficient, right_shift)),
                     ),
             )?;
             left.compare(right)
@@ -139,45 +139,65 @@ fn order(
     Ok(operator.holds(ordering))
 }
 
-/// `bits(a × b)`, derived without materializing the product.
-fn product_bits(left: &Integer, right: &Integer) -> Integer {
-    Integer::power_product_bits(left, right, &Integer::one())
-}
-
 // Arithmetic charge amounts: one function per charge point, so an amount rule
-// changes in exactly one place.
+// changes in exactly one place. Every amount derives from operand sizes.
+
+/// `bits(n)` as an unbounded amount.
+fn bits(value: &Integer) -> Integer {
+    Integer::from(value.magnitude_bits())
+}
 
 /// The `integer_bits` amount of `ordering.arithmetic` for integers.
 fn integer_ordering_bits(left: &Integer, right: &Integer) -> Integer {
-    Integer::from(left.magnitude_bits().max(right.magnitude_bits()))
+    bits(left).max(bits(right))
 }
 
 /// The `integer_bits` amount of `ordering.arithmetic` for `a/b` and `c/d`:
-/// `max(bits(a × d), bits(c × b))`.
+/// `max(bits(a)+bits(d), bits(c)+bits(b))`.
 fn rational_ordering_bits(left: &Rational, right: &Rational) -> Integer {
-    product_bits(left.numerator(), right.denominator())
-        .max(product_bits(right.numerator(), left.denominator()))
+    cross_bits(left, right).max(cross_bits(right, left))
 }
 
-/// The `integer_bits` amount of `integer-arithmetic.arithmetic`: the bits of
-/// the exact result, a product measured without materializing it.
+/// `bits(a)+bits(d)` for `a/b` and `c/d`.
+fn cross_bits(left: &Rational, right: &Rational) -> Integer {
+    bits(left.numerator()).add(&bits(right.denominator()))
+}
+
+/// The `integer_bits` amount of `integer-arithmetic.arithmetic`:
+/// `bits(a)+bits(b)` for `*`, `max(bits(a),bits(b))+1` for `+` and `-`, and
+/// `bits(a)` for unary `-`.
 fn integer_arithmetic_bits(operation: IntegerArithmetic<'_>) -> Integer {
     match operation {
-        IntegerArithmetic::Add(left, right) => Integer::from(left.add(right).magnitude_bits()),
-        IntegerArithmetic::Subtract(left, right) => Integer::from(left.sub(right).magnitude_bits()),
-        IntegerArithmetic::Negate(operand) => Integer::from(operand.magnitude_bits()),
-        IntegerArithmetic::Multiply(left, right) => product_bits(left, right),
+        IntegerArithmetic::Add(left, right) | IntegerArithmetic::Subtract(left, right) => {
+            bits(left).max(bits(right)).add(&Integer::one())
+        }
+        IntegerArithmetic::Multiply(left, right) => bits(left).add(&bits(right)),
+        IntegerArithmetic::Negate(operand) => bits(operand),
     }
 }
 
-/// The `integer_bits` amount of `rational-arithmetic.arithmetic`: the larger
-/// part of the unreduced intermediate `numerator / denominator`.
-fn rational_arithmetic_bits(
-    _operation: RationalArithmetic<'_>,
-    numerator: &Integer,
-    denominator: &Integer,
-) -> u64 {
-    numerator.magnitude_bits().max(denominator.magnitude_bits())
+/// The `integer_bits` amount of `rational-arithmetic.arithmetic` for `a/b`
+/// and `c/d`: `max(N,D)`, with `N` and `D` bounding the unreduced parts, and
+/// `max(bits(a),bits(b))` for unary `-`. `unit.rational-arithmetic` reuses it.
+pub(crate) fn rational_arithmetic_bits(operation: RationalArithmetic<'_>) -> Integer {
+    let (numerator, denominator) = match operation {
+        RationalArithmetic::Multiply(left, right) => (
+            bits(left.numerator()).add(&bits(right.numerator())),
+            bits(left.denominator()).add(&bits(right.denominator())),
+        ),
+        RationalArithmetic::Divide(left, right) => (
+            cross_bits(left, right),
+            bits(left.denominator()).add(&bits(right.numerator())),
+        ),
+        RationalArithmetic::Add(left, right) | RationalArithmetic::Subtract(left, right) => (
+            rational_ordering_bits(left, right).add(&Integer::one()),
+            bits(left.denominator()).add(&bits(right.denominator())),
+        ),
+        RationalArithmetic::Negate(operand) => {
+            (bits(operand.numerator()), bits(operand.denominator()))
+        }
+    };
+    numerator.max(denominator)
 }
 
 /// One `Integer` or `Int[..]` arithmetic operation.
@@ -256,8 +276,9 @@ pub enum RationalArithmetic<'a> {
 }
 
 /// Evaluate rational arithmetic: `rational-arithmetic.operands`, a zero
-/// divisor as undefined, `rational-arithmetic.arithmetic` on the unreduced
-/// intermediate, `rational-arithmetic.normalize`, the uncharged membership of
+/// divisor as undefined, `rational-arithmetic.arithmetic` from the operands,
+/// `rational-arithmetic.normalize` on the unreduced intermediate, the
+/// uncharged membership of
 /// an optional FR-044 result domain, then `rational-arithmetic.result-retain`.
 pub fn evaluate_rational_arithmetic(
     operation: RationalArithmetic<'_>,
@@ -291,8 +312,10 @@ fn rational_arithmetic(
             return Err(Stop::Undefined(Undefined::DivisionByZero));
         }
     }
-    // Products of admitted operands are at most twice their width, so the
-    // unreduced intermediate is formed to be measured.
+    meter.charge(
+        Charge::new(ChargePoint::RationalArithmeticArithmetic)
+            .exact_size(LimitKind::IntegerBits, rational_arithmetic_bits(operation)),
+    )?;
     let (numerator, denominator) = match operation {
         RationalArithmetic::Add(left, right) => (
             left.numerator()
@@ -318,16 +341,12 @@ fn rational_arithmetic(
             (operand.numerator().neg(), operand.denominator().clone())
         }
     };
-    meter.charge(Charge::new(ChargePoint::RationalArithmeticArithmetic).size(
+    meter.charge(Charge::new(ChargePoint::RationalArithmeticNormalize).size(
         LimitKind::IntegerBits,
-        rational_arithmetic_bits(operation, &numerator, &denominator),
+        numerator.magnitude_bits().max(denominator.magnitude_bits()),
     ))?;
     let result = Rational::new(numerator, denominator)
         .map_err(|_| Stop::Undefined(Undefined::DivisionByZero))?;
-    meter.charge(
-        Charge::new(ChargePoint::RationalArithmeticNormalize)
-            .size(LimitKind::IntegerBits, result.max_part_bits()),
-    )?;
     if domain.is_some_and(|domain| !domain.contains(&result)) {
         return Err(Stop::Refused(Refusal::RationalOutOfDomain));
     }
