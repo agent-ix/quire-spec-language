@@ -25,8 +25,13 @@ impl Rational {
         if denominator.is_zero() {
             return Err(ZeroDenominator);
         }
+        Ok(Self::reduce(numerator, denominator))
+    }
+
+    /// Reduce a fraction whose denominator is known to be nonzero.
+    fn reduce(numerator: Integer, denominator: Integer) -> Self {
         if numerator.is_zero() {
-            return Ok(Self::from_integer(Integer::zero()));
+            return Self::from_integer(Integer::zero());
         }
         let divisor = numerator.gcd(&denominator);
         let (mut numerator, mut denominator) = (
@@ -37,10 +42,10 @@ impl Rational {
             numerator = numerator.neg();
             denominator = denominator.neg();
         }
-        Ok(Self {
+        Self {
             numerator,
             denominator,
-        })
+        }
     }
 
     /// The exact integer `value/1`.
@@ -73,6 +78,64 @@ impl Rational {
         Self {
             numerator: self.numerator.exact_div(&divisor),
             denominator: denominator.exact_div(&divisor),
+        }
+    }
+
+    /// Whether the value is zero.
+    pub fn is_zero(&self) -> bool {
+        self.numerator.is_zero()
+    }
+
+    /// Exact `self + other`.
+    pub(crate) fn add(&self, other: &Self) -> Self {
+        Self::reduce(
+            self.numerator
+                .mul(&other.denominator)
+                .add(&other.numerator.mul(&self.denominator)),
+            self.denominator.mul(&other.denominator),
+        )
+    }
+
+    /// Exact `self - other`.
+    pub(crate) fn sub(&self, other: &Self) -> Self {
+        self.add(&other.neg())
+    }
+
+    /// Exact `-self`.
+    pub(crate) fn neg(&self) -> Self {
+        Self {
+            numerator: self.numerator.neg(),
+            denominator: self.denominator.clone(),
+        }
+    }
+
+    /// Exact `self × other`.
+    pub(crate) fn mul(&self, other: &Self) -> Self {
+        Self::reduce(
+            self.numerator.mul(&other.numerator),
+            self.denominator.mul(&other.denominator),
+        )
+    }
+
+    /// Exact `self / other`, or `None` for a zero divisor.
+    pub(crate) fn div(&self, other: &Self) -> Option<Self> {
+        (!other.is_zero()).then(|| {
+            Self::reduce(
+                self.numerator.mul(&other.denominator),
+                self.denominator.mul(&other.numerator),
+            )
+        })
+    }
+
+    /// Exact `self^exponent`, or `None` for zero raised to a negative power.
+    /// Callers bound the result size before calling.
+    pub(crate) fn pow(&self, exponent: &Integer) -> Option<Self> {
+        let (numerator, denominator) =
+            (self.numerator.pow(exponent), self.denominator.pow(exponent));
+        if exponent.is_negative() {
+            (!numerator.is_zero()).then(|| Self::reduce(denominator, numerator))
+        } else {
+            Some(Self::reduce(numerator, denominator))
         }
     }
 

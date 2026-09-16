@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::integer::Integer;
+
 /// `ScalarLimitsV1`. Every member is required; zero is a real limit.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -172,6 +174,14 @@ pub enum ChargePoint {
     IntegerDivisionDomainPair,
     /// `integer-division.result-pair`.
     IntegerDivisionResultPair,
+    /// `integer-modulus.operands`.
+    IntegerModulusOperands,
+    /// `integer-modulus.arithmetic`.
+    IntegerModulusArithmetic,
+    /// `integer-modulus.domain`.
+    IntegerModulusDomain,
+    /// `integer-modulus.result-retain`.
+    IntegerModulusResultRetain,
     /// `ieee.operands`.
     IeeeOperands,
     /// `ieee.exact-intermediate`.
@@ -190,7 +200,7 @@ pub enum ChargePoint {
 
 impl ChargePoint {
     /// Every named point, grouped by family in normative order.
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 32] = [
         Self::DecimalOperands,
         Self::DecimalScaleExpansion,
         Self::DecimalArithmetic,
@@ -212,6 +222,10 @@ impl ChargePoint {
         Self::IntegerDivisionArithmetic,
         Self::IntegerDivisionDomainPair,
         Self::IntegerDivisionResultPair,
+        Self::IntegerModulusOperands,
+        Self::IntegerModulusArithmetic,
+        Self::IntegerModulusDomain,
+        Self::IntegerModulusResultRetain,
         Self::IeeeOperands,
         Self::IeeeExactIntermediate,
         Self::IeeeRound,
@@ -245,6 +259,10 @@ impl ChargePoint {
             Self::IntegerDivisionArithmetic => "integer-division.arithmetic",
             Self::IntegerDivisionDomainPair => "integer-division.domain-pair",
             Self::IntegerDivisionResultPair => "integer-division.result-pair",
+            Self::IntegerModulusOperands => "integer-modulus.operands",
+            Self::IntegerModulusArithmetic => "integer-modulus.arithmetic",
+            Self::IntegerModulusDomain => "integer-modulus.domain",
+            Self::IntegerModulusResultRetain => "integer-modulus.result-retain",
             Self::IeeeOperands => "ieee.operands",
             Self::IeeeExactIntermediate => "ieee.exact-intermediate",
             Self::IeeeRound => "ieee.round",
@@ -262,18 +280,20 @@ impl ChargePoint {
 }
 
 /// The exact incomplete record: `incomplete { limit_kind, limit, consumed,
-/// next_charge, charge_point }`. It never carries a partial value.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+/// next_charge, charge_point }`. It never carries a partial value or any other
+/// member.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Incomplete {
-    /// First unavailable counter.
+    /// First unavailable counter in `ScalarLimitsV1` field order.
     pub limit_kind: LimitKind,
     /// That counter's configured limit.
     pub limit: u64,
     /// That counter's consumed value before the denied charge.
     pub consumed: u64,
-    /// The denied amount (a size for high-water counters, an increment for
-    /// cumulative counters).
-    pub next_charge: u64,
+    /// The denied amount (a size for high-water counters, an addition for
+    /// cumulative counters). It is a mathematical integer because a unit
+    /// integer power can require more than `u64::MAX`.
+    pub next_charge: Integer,
     /// The named point whose charge was denied.
     pub charge_point: ChargePoint,
 }
@@ -288,11 +308,11 @@ pub struct InjectedDenial {
     pub occurrence: u64,
 }
 
-/// One exact `{ counter: amount }` charge vector, in its definition-row order.
+/// One exact `{ counter: amount }` charge vector.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Charge {
     point: ChargePoint,
-    sizes: Vec<(LimitKind, u64)>,
+    sizes: Vec<(LimitKind, Integer)>,
     work_units: u64,
     result_units: u64,
 }
@@ -307,7 +327,12 @@ impl Charge {
         }
     }
 
-    pub(crate) fn size(mut self, kind: LimitKind, amount: u64) -> Self {
+    pub(crate) fn size(self, kind: LimitKind, amount: u64) -> Self {
+        self.exact_size(kind, Integer::from(amount))
+    }
+
+    /// A semantic-size amount that may exceed `u64::MAX`.
+    pub(crate) fn exact_size(mut self, kind: LimitKind, amount: Integer) -> Self {
         self.sizes.push((kind, amount));
         self
     }
@@ -368,7 +393,7 @@ impl Meter {
             .map_or(0, |(_, count)| *count)
     }
 
-    fn incomplete(&self, kind: LimitKind, next: u64, point: ChargePoint) -> Incomplete {
+    fn incomplete(&self, kind: LimitKind, next: Integer, point: ChargePoint) -> Incomplete {
         Incomplete {
             limit_kind: kind,
             limit: kind.limit(&self.limits),
@@ -378,70 +403,51 @@ impl Meter {
         }
     }
 
-    // SPEC-GAP(4): `value-accounting.md` lets NFR-071 deny "the exact next
-    // charge" but does not say which counter the resulting record names. This
-    // reports `work_units` (every charge adds one) with `next_charge = 1`.
-    fn injected_denial(&self, point: ChargePoint) -> Incomplete {
-        self.incomplete(LimitKind::WorkUnits, 1, point)
-    }
-
-    fn check_injected(&self, point: ChargePoint) -> Result<(), Incomplete> {
+    /// The qualification-seam record: as if the `work_units` limit were the
+    /// work already consumed, so `limit = consumed = w`.
+    fn check_injected(&self, point: ChargePoint, work_units: u64) -> Result<(), Incomplete> {
         match self.denial {
             Some(denial)
                 if denial.point == point
                     && self.occurrence(point).checked_add(1) == Some(denial.occurrence) =>
             {
-                Err(self.injected_denial(point))
+                let consumed = self.consumed(LimitKind::WorkUnits);
+                Err(Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: consumed,
+                    consumed,
+                    next_charge: Integer::from(work_units),
+                    charge_point: point,
+                })
             }
             _ => Ok(()),
         }
     }
 
-    fn check_size(
-        &self,
-        kind: LimitKind,
-        amount: u64,
-        point: ChargePoint,
-    ) -> Result<(), Incomplete> {
-        if amount > kind.limit(&self.limits) {
-            Err(self.incomplete(kind, amount, point))
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Check a leading prefix of a charge row without consuming anything.
-    ///
-    /// Used before an expansion whose remaining amounts can only be derived by
-    /// allocating it; the returned record equals the one the full charge would
-    /// return because the prefix counters are checked first.
-    pub(crate) fn precheck(
-        &self,
-        point: ChargePoint,
-        prefix: &[(LimitKind, u64)],
-    ) -> Result<(), Incomplete> {
-        self.check_injected(point)?;
-        prefix
-            .iter()
-            .try_for_each(|&(kind, amount)| self.check_size(kind, amount, point))
-    }
-
-    /// Atomically admit `charge` or return the first unavailable counter.
-    pub(crate) fn charge(&mut self, charge: Charge) -> Result<(), Incomplete> {
+    /// Atomically admit `charge` or return the first unavailable counter in
+    /// `ScalarLimitsV1` field order.
+    pub(crate) fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
-        self.check_injected(point)?;
-        for &(kind, amount) in &charge.sizes {
-            self.check_size(kind, amount, point)?;
+        self.check_injected(point, charge.work_units)?;
+        // Every semantic-size counter precedes `work_units` and `result_units`
+        // in field order.
+        charge.sizes.sort_by_key(|(kind, _)| kind.index());
+        let mut sizes = Vec::with_capacity(charge.sizes.len());
+        for (kind, amount) in charge.sizes {
+            match amount.to_u64() {
+                Some(amount) if amount <= kind.limit(&self.limits) => sizes.push((kind, amount)),
+                _ => return Err(self.incomplete(kind, amount, point)),
+            }
         }
         let cumulative = |kind: LimitKind, amount: u64| {
             self.consumed(kind)
                 .checked_add(amount)
                 .filter(|total| *total <= kind.limit(&self.limits))
-                .ok_or_else(|| self.incomplete(kind, amount, point))
+                .ok_or_else(|| self.incomplete(kind, Integer::from(amount), point))
         };
         let work = cumulative(LimitKind::WorkUnits, charge.work_units)?;
         let results = cumulative(LimitKind::ResultUnits, charge.result_units)?;
-        for (kind, amount) in charge.sizes {
+        for (kind, amount) in sizes {
             let slot = &mut self.consumed[kind.index()];
             *slot = (*slot).max(amount);
         }

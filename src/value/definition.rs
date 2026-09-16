@@ -15,7 +15,7 @@ use serde::Deserialize;
 use super::division::DivisionProfile;
 
 /// Exact bytes of `complete-value-lock.json` at QSpec
-/// `4780a9e6119bb86ffb1322fe0a141ef3905b11ef`.
+/// `5aa00f35056c65948de93ad339540974d35c368a`.
 pub const PINNED_LOCK_BYTES: &[u8] = include_bytes!(
     "../../resources/complete-value/quire-specification/proposals/quire-v1/definitions/complete-value-lock.json"
 );
@@ -179,6 +179,8 @@ impl CatalogRole {
 pub enum SelectionRefusalCode {
     /// `selection_unknown_trigger`.
     SelectionUnknownTrigger,
+    /// `selection_duplicate_trigger`.
+    SelectionDuplicateTrigger,
     /// `selection_unknown_role`.
     SelectionUnknownRole,
     /// `selection_duplicate_role`.
@@ -195,8 +197,9 @@ pub enum SelectionRefusalCode {
 
 impl SelectionRefusalCode {
     /// Every code in normative check order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::SelectionUnknownTrigger,
+        Self::SelectionDuplicateTrigger,
         Self::SelectionUnknownRole,
         Self::SelectionDuplicateRole,
         Self::SelectionRequiredMissing,
@@ -209,6 +212,7 @@ impl SelectionRefusalCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SelectionUnknownTrigger => "selection_unknown_trigger",
+            Self::SelectionDuplicateTrigger => "selection_duplicate_trigger",
             Self::SelectionUnknownRole => "selection_unknown_role",
             Self::SelectionDuplicateRole => "selection_duplicate_role",
             Self::SelectionRequiredMissing => "selection_required_missing",
@@ -430,9 +434,8 @@ impl DefinitionLock {
 
     /// Admit one package's selection given its trigger and role spellings.
     ///
-    /// Checks run in the normative order and report the first failure. Trigger
-    /// spellings are a set: a repeated known trigger is not a refusal because
-    /// the closed code vocabulary names no duplicate-trigger condition.
+    /// Checks run in the normative order and report the first failure: every
+    /// trigger spelling is resolved before a repeated trigger refuses.
     pub fn admit_selection(
         &self,
         triggers: &[&str],
@@ -557,14 +560,18 @@ impl DefinitionLock {
     }
 }
 
-// SPEC-GAP(3): the closed selection refusal vocabulary has no code for a
-// repeated trigger. Triggers are read as a set, so a repeat is absorbed.
 fn trigger_set(codes: &[&str]) -> Result<BTreeSet<Trigger>, SelectionRefusalCode> {
-    codes
+    let parsed = codes
         .iter()
         .map(|code| Trigger::from_code(code))
-        .collect::<Option<BTreeSet<_>>>()
-        .ok_or(SelectionRefusalCode::SelectionUnknownTrigger)
+        .collect::<Option<Vec<_>>>()
+        .ok_or(SelectionRefusalCode::SelectionUnknownTrigger)?;
+    let triggers: BTreeSet<_> = parsed.iter().copied().collect();
+    if triggers.len() == parsed.len() {
+        Ok(triggers)
+    } else {
+        Err(SelectionRefusalCode::SelectionDuplicateTrigger)
+    }
 }
 
 /// An admitted package selection.

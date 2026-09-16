@@ -16,23 +16,27 @@ const DEFINITIONS: &str =
     "resources/complete-value/quire-specification/proposals/quire-v1/definitions";
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
-/// `4780a9e6119bb86ffb1322fe0a141ef3905b11ef` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 7] = [
+/// `5aa00f35056c65948de93ad339540974d35c368a` with `git show`.
+const PINNED_NON_CATALOG: [(&str, &str); 8] = [
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
-        "540f24f93960554688b4b5744430aa0ee7754de87666072eb5e9977149583fe2",
+        "87b60efd54f2883fb2458d76e02921e119640c987515f435f09bb840384da117",
     ),
     (
         "proposals/quire-v1/definitions/complete-value-selection-vectors.json",
-        "e83beeda5410b5ee7747f234b88b87ee808f2d7cbbd03cdccda04d9b39102d6e",
+        "16b9774a05da385a838d89daba939f8b594493fc670148a6e7d24423ddaea282",
     ),
     (
         "spec/test-cases/TC-185-exact-decimal-semantics.md",
-        "46c9bc11ba4175381ce38ee9df4da65e02c5c8e803bba9831e64965b830fd889",
+        "b822e091441b59fc6bd4993b8112aefa51ef12d2d4499cca8c4d99a7c124e3d1",
     ),
     (
         "spec/test-cases/TC-192-integer-division-profiles.md",
-        "cc02d8de679b9239a6426d47c72da61f23d6fa97685c673cd72b91f8081c8dd6",
+        "e7e636a17d943f600ea7f707a4af377d954942c491561b984f3696535e11c1cf",
+    ),
+    (
+        "spec/test-cases/TC-187-quantity-and-unit-conversion.md",
+        "73ef551a68fc90472149f923a378fe027585806df8fd63c04da9bab2be5c3628",
     ),
     (
         "spec/test-cases/TC-186-text-and-enum-identity-semantics.md",
@@ -256,6 +260,9 @@ fn canonical_package_selection_vectors_admit_and_refuse_exactly() {
             "unicode-missing-for-text-bearing",
             "always-role-missing",
             "unknown-trigger",
+            "duplicate-trigger",
+            "unknown-trigger-before-duplicate-trigger",
+            "duplicate-trigger-before-unknown-role",
             "unknown-role",
             "duplicate-role",
         ])

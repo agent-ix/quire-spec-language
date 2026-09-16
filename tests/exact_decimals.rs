@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-185 exact decimal semantics over the real `value` boundary.
 //!
-//! Vectors D01–D09 are transcribed from the vendored TC-185 procedure pinned by
+//! Vectors D01–D19 are transcribed from the vendored TC-185 procedure pinned by
 //! `tests/complete_value_lock.rs`. The generated oracle uses independent `i128`
 //! rational arithmetic; no floating-point value appears in either side.
 
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
-    evaluate_decimal, ChargePoint, Decimal, DecimalOperation, DecimalResult, DecimalTarget,
-    Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome, Refusal,
+    evaluate_decimal, ChargePoint, Decimal, DecimalOperation, DecimalResult, DecimalType, IllTyped,
+    IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     RoundingMode, ScalarLimits, Undefined,
 };
 
@@ -41,7 +41,7 @@ fn pair(decimal: &Decimal) -> ((i128, u32), (i128, u32)) {
     )
 }
 
-fn run(operation: DecimalOperation<'_>, target: &DecimalTarget) -> Outcome<DecimalResult> {
+fn run(operation: DecimalOperation<'_>, target: &DecimalType) -> Outcome<DecimalResult> {
     evaluate_decimal(operation, target, &mut Meter::new(UNLIMITED))
 }
 
@@ -52,8 +52,14 @@ fn completed(outcome: Outcome<DecimalResult>) -> DecimalResult {
     }
 }
 
-fn domain(lower: i64, upper: i64) -> IntegerInterval {
-    IntegerInterval::new(Integer::from(lower), Integer::from(upper)).unwrap()
+/// `Decimal[lower,upper;0,scale;mode]`.
+fn target(lower: i64, upper: i64, scale: u64, mode: RoundingMode) -> DecimalType {
+    DecimalType::new(Integer::from(lower), Integer::from(upper), 0, scale, mode).unwrap()
+}
+
+/// `Decimal[-1000,1000;0,scale;mode]`.
+fn wide(scale: u64, mode: RoundingMode) -> DecimalType {
+    target(-1000, 1000, scale, mode)
 }
 
 #[trace("TC-185", "FR-140-AC-1")]
@@ -68,10 +74,9 @@ fn d01_equal_values_retain_distinct_representations() {
     for source in [&a, &b] {
         let result = completed(run(
             DecimalOperation::Round(source),
-            &DecimalTarget::new(2, RoundingMode::Exact),
+            &wide(2, RoundingMode::Exact),
         ));
-        assert_eq!(pair(result.value()).1, (1, 0));
-        assert_eq!(result.value().representation(), source.representation());
+        assert_eq!(pair(result.value()), ((100, 2), (1, 0)));
         assert!(result.loss().is_none());
     }
 }
@@ -82,14 +87,14 @@ fn d02_d04_exact_arithmetic_has_no_loss_in_every_mode() {
     for mode in RoundingMode::ALL {
         let sum = completed(run(
             DecimalOperation::Add(&dec(125, 2), &dec(75, 2)),
-            &DecimalTarget::new(2, mode),
+            &wide(2, mode),
         ));
         assert_eq!(pair(sum.value()), ((200, 2), (2, 0)));
         assert!(sum.loss().is_none());
 
         let quotient = completed(run(
             DecimalOperation::Divide(&dec(1, 0), &dec(8, 0)),
-            &DecimalTarget::new(3, mode),
+            &wide(3, mode),
         ));
         assert_eq!(pair(quotient.value()), ((125, 3), (125, 3)));
         assert!(quotient.loss().is_none());
@@ -106,7 +111,7 @@ fn d03_every_mode_rounds_both_signed_halves_with_a_typed_loss() {
         (RoundingMode::NearestEven, 2, -2),
         (RoundingMode::NearestAway, 3, -3),
     ];
-    let target = |mode| DecimalTarget::new(0, mode);
+    let target = |mode| wide(0, mode);
     for coefficient in [25, -25] {
         assert_eq!(
             run(
@@ -144,13 +149,13 @@ fn d05_recurring_quotient_refuses_exact_and_records_nearest_even_loss() {
     assert_eq!(
         run(
             DecimalOperation::Divide(&one, &three),
-            &DecimalTarget::new(2, RoundingMode::Exact)
+            &wide(2, RoundingMode::Exact)
         ),
         Outcome::Refused(Refusal::InexactDecimal)
     );
     let result = completed(run(
         DecimalOperation::Divide(&one, &three),
-        &DecimalTarget::new(2, RoundingMode::NearestEven),
+        &wide(2, RoundingMode::NearestEven),
     ));
     assert_eq!(pair(result.value()).0, (33, 2));
     let loss = result.loss().unwrap();
@@ -172,10 +177,7 @@ fn d06_d08_zero_divisors_are_undefined_and_domains_refuse() {
     for zero in [dec(0, 0), dec(0, 3)] {
         for mode in RoundingMode::ALL {
             assert_eq!(
-                run(
-                    DecimalOperation::Divide(&dec(1, 0), &zero),
-                    &DecimalTarget::new(2, mode)
-                ),
+                run(DecimalOperation::Divide(&dec(1, 0), &zero), &wide(2, mode)),
                 Outcome::Undefined(Undefined::DivisionByZero)
             );
         }
@@ -183,15 +185,14 @@ fn d06_d08_zero_divisors_are_undefined_and_domains_refuse() {
     assert_eq!(
         run(
             DecimalOperation::Round(&dec(25, 1)),
-            &DecimalTarget::new(0, RoundingMode::NearestAway)
-                .with_coefficient_domain(domain(-2, 2))
+            &target(-2, 2, 0, RoundingMode::NearestAway)
         ),
         Outcome::Refused(Refusal::DecimalOutOfDomain)
     );
     let admit = |coefficient| {
         run(
             DecimalOperation::Round(&dec(coefficient, 0)),
-            &DecimalTarget::new(0, RoundingMode::Exact).with_coefficient_domain(domain(-2, 2)),
+            &target(-2, 2, 0, RoundingMode::Exact),
         )
     };
     for endpoint in [-2, 2] {
@@ -224,7 +225,7 @@ const D09: ScalarLimits = ScalarLimits {
 fn d05(meter: &mut Meter) -> Outcome<DecimalResult> {
     evaluate_decimal(
         DecimalOperation::Divide(&dec(1, 0), &dec(3, 0)),
-        &DecimalTarget::new(2, RoundingMode::NearestEven),
+        &wide(2, RoundingMode::NearestEven),
         meter,
     )
 }
@@ -258,7 +259,7 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
             limit_kind: LimitKind::WorkUnits,
             limit: 4,
             consumed: 4,
-            next_charge: 1,
+            next_charge: Integer::from(1_i64),
             charge_point: ChargePoint::DecimalResultRetain,
         })
     );
@@ -278,44 +279,37 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
         integer_bits: 6,
         ..D09
     };
-    assert!(matches!(
+    assert_eq!(
         d05(&mut Meter::new(narrow_bits)),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::IntegerBits,
-            next_charge: 7,
+            limit: 6,
+            consumed: 2,
+            next_charge: Integer::from(7_i64),
             charge_point: ChargePoint::DecimalScaleExpansion,
-            ..
         })
-    ));
+    );
     let narrow_shift = ScalarLimits {
         scale_expansion: 1,
         ..D09
     };
-    assert!(matches!(
+    assert_eq!(
         d05(&mut Meter::new(narrow_shift)),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::ScaleExpansion,
-            next_charge: 2,
+            limit: 1,
+            consumed: 0,
+            next_charge: Integer::from(2_i64),
             charge_point: ChargePoint::DecimalScaleExpansion,
-            ..
         })
-    ));
+    );
 
-    for point in meter.admitted_charges() {
+    for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
         let mut denied = Meter::new(D09).with_injected_denial(InjectedDenial {
             point: *point,
             occurrence: 1,
         });
-        match d05(&mut denied) {
-            Outcome::Incomplete(record) => {
-                assert_eq!(record.charge_point, *point);
-                assert_eq!(
-                    (record.limit_kind, record.next_charge),
-                    (LimitKind::WorkUnits, 1)
-                );
-            }
-            other => panic!("{point:?}: {other:?}"),
-        }
+        assert_eq!(d05(&mut denied), work_denied(work, *point));
         assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
     }
 
@@ -324,6 +318,326 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
         pair(completed(d05(&mut Meter::new(D09))).value()).0,
         (33, 2)
     );
+}
+
+/// The injected-denial record after `work` admitted work units.
+fn work_denied<T>(work: u64, point: ChargePoint) -> Outcome<T> {
+    Outcome::Incomplete(Incomplete {
+        limit_kind: LimitKind::WorkUnits,
+        limit: work,
+        consumed: work,
+        next_charge: Integer::from(1_i64),
+        charge_point: point,
+    })
+}
+
+fn declared(lower: i64, upper: i64, min: u64, max: u64) -> Result<DecimalType, IllTyped> {
+    DecimalType::new(
+        Integer::from(lower),
+        Integer::from(upper),
+        min,
+        max,
+        RoundingMode::Exact,
+    )
+}
+
+#[trace("TC-185", "FR-140-AC-5")]
+#[test]
+fn d10_malformed_decimal_types_are_ill_typed() {
+    let malformed = Err(IllTyped {
+        cause: IllTypedCause::MalformedDecimalType,
+    });
+    assert_eq!(declared(3, 2, 0, 0), malformed);
+    assert_eq!(declared(0, 9, 2, 1), malformed);
+    assert_eq!(declared(0, 9, 0, 4_294_967_296), malformed);
+    assert!(declared(2, 2, 1, 1).is_ok());
+    assert!(declared(0, 9, 0, 4_294_967_295).is_ok());
+}
+
+#[trace("TC-185", "FR-140-AC-5")]
+#[test]
+fn d11_membership_lifts_to_the_minimum_scale() {
+    let wide_type = declared(0, 10_000, 2, 2).unwrap();
+    for member in [dec(1, 0), dec(11, 1), dec(1000, 3), dec(9999, 2)] {
+        assert!(wide_type.contains(&member), "{member:?}");
+    }
+    let narrow = declared(0, 9999, 2, 2).unwrap();
+    assert!(!narrow.contains(&dec(100, 0)));
+    assert!(narrow.contains(&dec(9999, 2)));
+    assert!(!declared(-9, 9, 0, 2).unwrap().contains(&dec(1, 3)));
+    // Equal values always have equal membership.
+    for (a, b) in [
+        (dec(1, 0), dec(1000, 3)),
+        (dec(100, 0), dec(10_000, 2)),
+        (dec(1, 3), dec(10, 4)),
+    ] {
+        for decimal_type in [&wide_type, &narrow] {
+            assert_eq!(decimal_type.contains(&a), decimal_type.contains(&b));
+        }
+    }
+}
+
+#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-5")]
+#[test]
+fn d12_a_rounded_coefficient_outside_the_domain_is_never_re_rounded() {
+    let (one, three) = (dec(1, 0), dec(3, 0));
+    let result = completed(run(
+        DecimalOperation::Divide(&one, &three),
+        &wide(2, RoundingMode::NearestEven),
+    ));
+    assert_eq!(pair(result.value()).0, (33, 2));
+    let loss = result.loss().unwrap();
+    assert_eq!(
+        (int(loss.exact_numerator()), int(loss.exact_denominator())),
+        (1, 3)
+    );
+    assert_eq!(
+        run(
+            DecimalOperation::Divide(&one, &three),
+            &target(-10, 10, 2, RoundingMode::NearestEven)
+        ),
+        Outcome::Refused(Refusal::DecimalOutOfDomain)
+    );
+}
+
+const D13: ScalarLimits = ScalarLimits {
+    integer_bits: 9,
+    decimal_digits: 3,
+    scale_expansion: 0,
+    text_input_bytes: 0,
+    text_scalars: 0,
+    normalized_scalars: 0,
+    unit_edges: 0,
+    value_occurrences: 2,
+    work_units: 4,
+    result_units: 1,
+};
+
+#[trace("TC-185", "FR-140-AC-2", "FR-140-AC-6")]
+#[test]
+fn d13_discarded_zero_digits_are_not_a_rounding_step() {
+    let (a, b) = (dec(150, 2), dec(2, 0));
+    for mode in [RoundingMode::TowardZero, RoundingMode::Exact] {
+        let decimal_type = target(-9, 9, 0, mode);
+        let run = |limits| {
+            evaluate_decimal(
+                DecimalOperation::Multiply(&a, &b),
+                &decimal_type,
+                &mut Meter::new(limits),
+            )
+        };
+        let mut meter = Meter::new(D13);
+        let result = completed(evaluate_decimal(
+            DecimalOperation::Multiply(&a, &b),
+            &decimal_type,
+            &mut meter,
+        ));
+        assert_eq!(pair(result.value()).0, (3, 0), "{mode:?}");
+        assert!(result.loss().is_none());
+        assert_eq!(
+            meter.admitted_charges(),
+            [
+                ChargePoint::DecimalOperands,
+                ChargePoint::DecimalScaleExpansion,
+                ChargePoint::DecimalArithmetic,
+                ChargePoint::DecimalResultRetain,
+            ]
+        );
+        assert_eq!(
+            run(ScalarLimits {
+                work_units: 3,
+                ..D13
+            }),
+            work_denied(3, ChargePoint::DecimalResultRetain)
+        );
+        assert_eq!(
+            run(ScalarLimits {
+                integer_bits: 8,
+                ..D13
+            }),
+            Outcome::Incomplete(Incomplete {
+                limit_kind: LimitKind::IntegerBits,
+                limit: 8,
+                consumed: 8,
+                next_charge: Integer::from(9_i64),
+                charge_point: ChargePoint::DecimalArithmetic,
+            })
+        );
+    }
+}
+
+#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-6")]
+#[test]
+fn d14_strict_exact_refuses_before_rounding() {
+    let run = |work_units| {
+        let mut meter = Meter::new(ScalarLimits { work_units, ..D09 });
+        let outcome = evaluate_decimal(
+            DecimalOperation::Divide(&dec(1, 0), &dec(3, 0)),
+            &wide(2, RoundingMode::Exact),
+            &mut meter,
+        );
+        (outcome, meter.admitted_charges().to_vec())
+    };
+    let (outcome, charges) = run(3);
+    assert_eq!(outcome, Outcome::Refused(Refusal::InexactDecimal));
+    assert_eq!(
+        charges,
+        [
+            ChargePoint::DecimalOperands,
+            ChargePoint::DecimalScaleExpansion,
+            ChargePoint::DecimalArithmetic,
+        ]
+    );
+    assert_eq!(run(2).0, work_denied(2, ChargePoint::DecimalArithmetic));
+}
+
+#[trace("TC-185", "FR-140-AC-5", "FR-140-AC-6")]
+#[test]
+fn d15_zero_divisor_is_undefined_after_the_operands_charge() {
+    let run = |work_units| {
+        let mut meter = Meter::new(ScalarLimits { work_units, ..D09 });
+        let outcome = evaluate_decimal(
+            DecimalOperation::Divide(&dec(1, 0), &dec(0, 3)),
+            &wide(2, RoundingMode::NearestEven),
+            &mut meter,
+        );
+        (outcome, meter.admitted_charges().to_vec())
+    };
+    assert_eq!(
+        run(1),
+        (
+            Outcome::Undefined(Undefined::DivisionByZero),
+            vec![ChargePoint::DecimalOperands]
+        )
+    );
+    assert_eq!(run(0).0, work_denied(0, ChargePoint::DecimalOperands));
+}
+
+#[trace("TC-185", "FR-140-AC-5", "FR-140-AC-6")]
+#[test]
+fn d16_membership_refusal_follows_rounding_and_precedes_retention() {
+    let limits = ScalarLimits {
+        integer_bits: 5,
+        decimal_digits: 2,
+        scale_expansion: 0,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 1,
+        work_units: 4,
+        result_units: 0,
+    };
+    let run = |limits| {
+        let mut meter = Meter::new(limits);
+        let outcome = evaluate_decimal(
+            DecimalOperation::Round(&dec(25, 1)),
+            &target(-2, 2, 0, RoundingMode::NearestAway),
+            &mut meter,
+        );
+        (outcome, meter.admitted_charges().to_vec())
+    };
+    let (outcome, charges) = run(limits);
+    assert_eq!(outcome, Outcome::Refused(Refusal::DecimalOutOfDomain));
+    assert_eq!(
+        charges,
+        [
+            ChargePoint::DecimalOperands,
+            ChargePoint::DecimalScaleExpansion,
+            ChargePoint::DecimalArithmetic,
+            ChargePoint::DecimalRounding,
+        ]
+    );
+    assert_eq!(
+        run(ScalarLimits {
+            work_units: 3,
+            ..limits
+        })
+        .0,
+        work_denied(3, ChargePoint::DecimalRounding)
+    );
+}
+
+#[trace("TC-185", "FR-140-AC-2", "FR-140-AC-6")]
+#[test]
+fn d17_scale_expansion_uses_the_retained_representation() {
+    let limits = ScalarLimits {
+        integer_bits: 7,
+        decimal_digits: 3,
+        scale_expansion: 1,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 2,
+        work_units: 4,
+        result_units: 1,
+    };
+    let result = completed(evaluate_decimal(
+        DecimalOperation::Divide(&dec(100, 2), &dec(1, 0)),
+        &wide(2, RoundingMode::Exact),
+        &mut Meter::new(limits),
+    ));
+    assert_eq!(pair(result.value()), ((100, 2), (1, 0)));
+    assert!(result.loss().is_none());
+}
+
+#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-6")]
+#[test]
+fn d18_division_expands_the_divisor_side() {
+    let limits = ScalarLimits {
+        integer_bits: 11,
+        decimal_digits: 4,
+        scale_expansion: 2,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 2,
+        work_units: 5,
+        result_units: 1,
+    };
+    let run = |limits| {
+        evaluate_decimal(
+            DecimalOperation::Divide(&dec(1234, 3), &dec(2, 0)),
+            &wide(1, RoundingMode::NearestEven),
+            &mut Meter::new(limits),
+        )
+    };
+    let result = completed(run(limits));
+    assert_eq!(pair(result.value()).0, (6, 1));
+    let loss = result.loss().unwrap();
+    assert_eq!(
+        (
+            int(loss.exact_numerator()),
+            int(loss.exact_denominator()),
+            int(loss.rounded_coefficient()),
+            loss.rounded_scale(),
+            loss.mode()
+        ),
+        (617, 1000, 6, 1, RoundingMode::NearestEven)
+    );
+    assert_eq!(
+        run(ScalarLimits {
+            scale_expansion: 1,
+            ..limits
+        }),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::ScaleExpansion,
+            limit: 1,
+            consumed: 0,
+            next_charge: Integer::from(2_i64),
+            charge_point: ChargePoint::DecimalScaleExpansion,
+        })
+    );
+}
+
+#[trace("TC-185", "FR-140-AC-5")]
+#[test]
+fn d19_membership_at_the_largest_scale_never_materializes_the_lift() {
+    let decimal_type = declared(0, 10, 4_294_967_295, 4_294_967_295).unwrap();
+    assert!(decimal_type.contains(&dec(0, 0)));
+    assert!(!decimal_type.contains(&dec(1, 0)));
 }
 
 // ---- generated vectors -----------------------------------------------------
@@ -472,10 +786,9 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
             for (operation, exact) in operations {
                 for scale in 0..3 {
                     for mode in RoundingMode::ALL {
-                        let target = DecimalTarget::new(scale, mode)
-                            .with_coefficient_domain(domain(-BOUND, BOUND));
+                        let decimal_type = target(-BOUND, BOUND, u64::from(scale), mode);
                         let mut meter = Meter::new(UNLIMITED);
-                        let outcome = evaluate_decimal(operation, &target, &mut meter);
+                        let outcome = evaluate_decimal(operation, &decimal_type, &mut meter);
                         let case = format!("{operation:?} scale {scale} {mode:?}");
                         match (oracle(exact, scale, mode, i128::from(BOUND)), &outcome) {
                             (
@@ -492,7 +805,11 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                             (Expected::Value { value, loss }, Outcome::Completed(result)) => {
                                 checked[3] += 1;
                                 assert_eq!(rational(result.value()), value, "{case}");
-                                assert!(result.value().representation().scale() <= scale, "{case}");
+                                assert_eq!(
+                                    result.value().representation().scale(),
+                                    scale,
+                                    "{case}"
+                                );
                                 let actual = result.loss().map(|loss| {
                                     assert_eq!(loss.mode(), mode, "{case}");
                                     assert_eq!(loss.rounded_scale(), scale, "{case}");
@@ -506,16 +823,17 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                             }
                             (_, other) => panic!("{case}: oracle disagrees with {other:?}"),
                         }
-                        for point in meter.admitted_charges() {
+                        for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
                             let mut denied =
                                 Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
                                     point: *point,
                                     occurrence: 1,
                                 });
-                            match evaluate_decimal(operation, &target, &mut denied) {
-                                Outcome::Incomplete(record) if record.charge_point == *point => {}
-                                other => panic!("{case} denied at {point:?}: {other:?}"),
-                            }
+                            assert_eq!(
+                                evaluate_decimal(operation, &decimal_type, &mut denied),
+                                work_denied(work, *point),
+                                "{case}"
+                            );
                             assert_eq!(denied.consumed(LimitKind::ResultUnits), 0, "{case}");
                         }
                     }

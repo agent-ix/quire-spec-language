@@ -19,6 +19,9 @@
     {"name": "unicode-missing-for-text-bearing", "triggers": ["text_bearing"], "additional_roles": [], "omitted_always_roles": [], "expected_code": "selection_trigger_unsatisfied"},
     {"name": "always-role-missing", "triggers": [], "additional_roles": [], "omitted_always_roles": ["accounting"], "expected_code": "selection_required_missing"},
     {"name": "unknown-trigger", "triggers": ["host_float"], "additional_roles": [], "omitted_always_roles": [], "expected_code": "selection_unknown_trigger"},
+    {"name": "duplicate-trigger", "triggers": ["text_bearing", "text_bearing"], "additional_roles": ["text_profile"], "omitted_always_roles": [], "expected_code": "selection_duplicate_trigger"},
+    {"name": "unknown-trigger-before-duplicate-trigger", "triggers": ["text_bearing", "text_bearing", "host_float"], "additional_roles": ["text_profile"], "omitted_always_roles": [], "expected_code": "selection_unknown_trigger"},
+    {"name": "duplicate-trigger-before-unknown-role", "triggers": ["ieee_operation", "ieee_operation"], "additional_roles": ["ieee_profile", "installed_unicode"], "omitted_always_roles": [], "expected_code": "selection_duplicate_trigger"},
     {"name": "unknown-role", "triggers": [], "additional_roles": ["installed_unicode"], "omitted_always_roles": [], "expected_code": "selection_unknown_role"},
     {"name": "duplicate-role", "triggers": ["text_bearing"], "additional_roles": ["text_profile", "text_profile"], "omitted_always_roles": [], "expected_code": "selection_duplicate_role"}
   ]

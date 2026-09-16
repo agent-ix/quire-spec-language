@@ -14,7 +14,7 @@
       "identity": "quire.rule.shared-grammar/v1",
       "revision": "1-draft.1",
       "path": "../shared-grammar.md",
-      "sha256": "d7eaa70ee6e17c90eee7e5b86f65c5578cc1cb4cff80d29416e48a0fff045397"
+      "sha256": "377be4cd1a635c32e8d67a05ea299ea635c675acdb74a1c0c87093d1040e5cdf"
     },
     {
       "identity": "quire.rule.ad-005/v1",
@@ -26,7 +26,7 @@
       "identity": "quire.rule.fr-140/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-140-evaluate-exact-decimals.md",
-      "sha256": "dfc61877050771003a50562655c9ba88492e97b1d7ca6d82e54ec13e457d5f3b"
+      "sha256": "b9b079afa8e16e11c850937b60e7c887c71de51342a9eb083cee178bf8fd1e3e"
     },
     {
       "identity": "quire.rule.fr-141/v1",
@@ -44,7 +44,7 @@
       "identity": "quire.rule.fr-147/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/expressions/FR-147-evaluate-integer-division-domains.md",
-      "sha256": "022420436cc548455c23e9ae538344642d8e1ff2e778306ddaba9e97fcdda029"
+      "sha256": "ca1551c16ecd8ed607dd3925a01db2af944bc82decbff1c4bb6b2ec717cdb2c8"
     },
     {
       "identity": "quire.rule.fr-148/v1",

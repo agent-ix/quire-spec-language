@@ -346,7 +346,10 @@ collection-call = ('map' | 'collect' | 'filter' | 'flatMap'),
 
 `null`, `none`, collection constructors, record constructors and bit-level
 float constructors are disjoint forms; no empty spelling aliases
-another kind. Decimal source is exact coefficient/scale syntax. IEEE source is
+another kind. Decimal source is exact coefficient/scale syntax. In
+`Decimal[lo, hi; smin, smax; mode]` the signed pair is the inclusive membership
+coefficient bound and the unsigned pair is the inclusive membership scale bound;
+FR-140 owns their well-formedness and value-only membership. IEEE source is
 bit-level so signed zero and NaN payload identity survive parsing. Human decimal
 float conversion is an explicit library function under a selected rounding
 profile, not a literal shortcut.
