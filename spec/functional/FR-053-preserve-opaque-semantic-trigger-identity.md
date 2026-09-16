@@ -35,7 +35,8 @@ separate selected origin identity and is never encoded as an empty trigger.
 One versioned native-temporal request/result pair and constructor-private views
 whose trigger accessor returns the byte-exact selected identity and whose
 activation accessors retain the checked activation state, selected trigger
-captures, and exact evaluation anchor. The views return one typed refusal
+captures, exact evaluation anchor, admitted progress and closure axes,
+execution state, and completeness evidence. The views return one typed refusal
 without a partial request/result or a string fallback.
 
 ## Behavior
@@ -59,12 +60,15 @@ FR-300. QProtocol compares the retained bytes to QObs's authority-qualified
 subject and binds the selected activation site; this compiler does not import
 QObs Rust types or reconstruct a protocol obligation.
 
-The version-two request view SHALL expose only the selected trigger's immutable
-captures and the exact evaluation anchor already admitted into the canonical
-request. The version-two result view SHALL expose only the checked activation
-state already admitted by strict result reading. Those accessors carry no
-QProtocol control handle, QObs subject, obligation identity, or construction
-operation; QProtocol alone joins the owner facts into the FR-300 binding.
+The version-two request view SHALL expose the selected trigger's immutable
+captures, exact evaluation anchor, both progress and closure axes, execution
+state, and completeness authority, state, and fact population already admitted
+into the canonical request. Evidence-bearing accessors SHALL borrow the exact
+retained evidence rather than parse or reconstruct it. The version-two result
+view SHALL expose only the checked activation state already admitted by strict
+result reading. Those accessors carry no QProtocol control handle, QObs subject,
+obligation identity, or construction operation; QProtocol alone joins the owner
+facts into the FR-300 binding.
 
 ## Acceptance Criteria
 
@@ -75,7 +79,7 @@ operation; QProtocol alone joins the owner facts into the FR-300 binding.
 | FR-053-AC-3 | Empty, malformed, noncanonical or cross-version trigger encodings refuse with no partial view, Boolean truth or textual fallback. | Test (TC-141) |
 | FR-053-AC-4 | A timestamp, receipt, display name, payload, capture, static binding coordinate or declaration-table position cannot substitute for the supplied trigger bytes. | Test (TC-141) |
 | FR-053-AC-5 | The v1 reader rejects v2 contracts and v2 rejects v1 textual-instance documents without translation. | Test (TC-141) |
-| FR-053-AC-6 | A strictly read v2 request exposes its admitted trigger captures and evaluation anchor, and its corresponding strictly read v2 result exposes the checked activation state; neither view can expose a caller-authored obligation or QObs subject. | Test (TC-141) |
+| FR-053-AC-6 | A strictly read v2 request exposes its admitted trigger captures, evaluation anchor, both progress and closure axes, execution state, and completeness evidence as exact typed views, and its corresponding strictly read v2 result exposes the checked activation state; neither view can expose a caller-authored obligation or QObs subject. | Test (TC-141) |
 
 ## Dependencies
 

@@ -144,6 +144,36 @@ impl ValidatedRequest {
             .expect("v2 validated requests retain exactly one trigger")
             .captures()
     }
+
+    /// Returns the admitted decision-progress evidence and watermark.
+    pub fn decision_progress(&self) -> request::ProgressView<'_> {
+        self.inner.decision_progress()
+    }
+
+    /// Returns the admitted decision-closure evidence and state.
+    pub fn decision_closure(&self) -> request::ClosureView<'_> {
+        self.inner.decision_closure()
+    }
+
+    /// Returns the admitted surrounding-progress evidence and watermark.
+    pub fn surrounding_progress(&self) -> request::ProgressView<'_> {
+        self.inner.surrounding_progress()
+    }
+
+    /// Returns the admitted surrounding-closure evidence and state.
+    pub fn surrounding_closure(&self) -> request::ClosureView<'_> {
+        self.inner.surrounding_closure()
+    }
+
+    /// Returns the admitted execution state.
+    pub fn execution(&self) -> temporal::Execution {
+        self.inner.execution()
+    }
+
+    /// Returns the admitted completeness authority, state, and fact population.
+    pub fn completeness(&self) -> request::CompletenessView<'_> {
+        self.inner.completeness()
+    }
 }
 
 #[derive(Clone, Debug)]
