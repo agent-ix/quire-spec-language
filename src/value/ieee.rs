@@ -607,10 +607,8 @@ impl DefinitionLock {
             [definition] => definition.clone(),
             [_, _, ..] => return Err(invalid_package(PackageCause::ConflictingDefinition)),
         };
-        // SPEC-GAP(ieee-6): TC-193 names only `invalid_package` for a user
-        // declaration bound to a reserved intrinsic identity; the closed I04
-        // cause vocabulary has no reserved-identity tag, so the closest
-        // `conflicting-definition` is reported.
+        // FR-148: a user declaration bound to a reserved intrinsic identity is
+        // `invalid_package` with cause `conflicting-definition`.
         if declarations
             .iter()
             .any(|declared| ieee_intrinsic_identities().any(|reserved| reserved == *declared))
@@ -658,10 +656,8 @@ pub fn compare_ieee<'a>(
     meter: &mut Meter,
 ) -> Result<Outcome<bool>, IllTyped> {
     let (left, right) = (ieee_operand(left)?, ieee_operand(right)?);
-    // SPEC-GAP(ieee-1): FR-148 says `bitIdentical` "requires the same width"
-    // and TC-193 F05 says bit identity "follows width plus bits", while F06
-    // makes cross-width comparison ill-typed. All three intrinsics are read as
-    // ill-typed across widths, so no Boolean ever depends on a width mismatch.
+    // FR-148: every comparison whose IEEE operands differ in width is
+    // `ill_typed` before any charge.
     let width = same_width(left, &[right])?;
     Ok(Outcome::from_stop(compare(
         comparison, left, right, width, meter,
@@ -747,11 +743,9 @@ fn to_exact(
     domain: &RationalDomain,
     meter: &mut Meter,
 ) -> Result<IeeeExact, Stop> {
-    // SPEC-GAP(ieee-5): `value-accounting.md` names no conversion charges.
-    // Conversions use the IEEE family as unary operations: `ieee.operands`
-    // at the source width (`maxparts` for an exact source), and for a finite
-    // rounding conversion `ieee.exact-intermediate` and `ieee.round` at the
-    // target width, then `ieee.result-retain`.
+    // `value-accounting.md`: `ieee.operands` at the source width, then for a
+    // finite value `ieee.exact-intermediate` at the result's `maxparts`, then
+    // uncharged `Rational[..]` membership, then `ieee.result-retain`.
     charge_operands(meter, value.width, 1)?;
     let exact = match decode(value) {
         Class::Nan { .. } | Class::Infinite { .. } => {
@@ -1265,9 +1259,8 @@ fn finish_rounding(
 ) -> Result<IeeeResult, Stop> {
     charge_width(meter, ChargePoint::IeeeRound, width)?;
     let (bits, flags) = round(width.format(), exact, rounding);
-    // SPEC-GAP(ieee-3): FR-148 does not place the strict-`exact` refusal among
-    // the IEEE charges. Representability is decided by the rounding step, so
-    // the refusal follows `ieee.round` and precedes `ieee.result-retain`.
+    // `value-accounting.md`: strict `exact` refuses after `ieee.round` and
+    // before `ieee.result-retain`.
     if rounding == RoundingMode::Exact && !flags.is_empty() {
         return Err(Stop::Refused(Refusal::IeeeNotExact { would_be: flags }));
     }
@@ -1284,11 +1277,8 @@ enum Plan {
     Finite(FiniteOperation),
 }
 
-// SPEC-GAP(ieee-2): `value-accounting.md` classifies results "determined by
-// NaN, infinity, signed-zero or invalid/divide-by-zero classification" but also
-// charges "finite add, subtract, multiply, divide and FMA". A zero operand is
-// finite, so an operation whose operands are all finite (zeros included) and
-// that is neither invalid nor divide-by-zero takes the finite path and charges
+// `value-accounting.md`: an operation whose operands are all finite, zeros of
+// either sign included, and that is neither invalid nor divide-by-zero charges
 // `ieee.exact-intermediate` and `ieee.round`.
 enum FiniteOperation {
     Add(Operand, Operand),
@@ -1713,9 +1703,7 @@ fn round(format: Format, exact: Exact, rounding: RoundingMode) -> (u64, IeeeFlag
             approximation,
         } => (negative, approximation),
     };
-    // SPEC-GAP(ieee-4): FR-148 refuses a strict-`exact` result "with its
-    // would-be flags" without naming the direction those flags assume; overflow
-    // and tininess depend on it. Would-be flags use nearest-even.
+    // FR-148-AC-8: strict `exact` reports `nearest-even` would-be flags.
     let direction = match rounding {
         RoundingMode::Exact => RoundingMode::NearestEven,
         other => other,
@@ -1783,10 +1771,9 @@ fn convert_width(
             negative,
             signaling,
         } => {
-            // SPEC-GAP(ieee-7): FR-148 names explicit cross-width conversion
-            // but no NaN payload mapping. The payload is the integer below the
-            // quiet bit; it is kept unchanged, and a payload the target cannot
-            // hold is refused instead of truncated.
+            // FR-148: the payload is the integer below the quiet bit, kept
+            // unchanged; one not smaller than the target's quiet bit is refused
+            // with no flags, before the NaN is consumed.
             let payload = value.bits & (source.quiet_bit() - 1);
             if payload >= format.quiet_bit() {
                 return Err(Stop::Refused(Refusal::IeeeNanPayloadNotRepresentable));

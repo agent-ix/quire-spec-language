@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-193 IEEE exceptional and rounding profiles over the real `value` boundary.
 //!
-//! Vectors F01–F19 are transcribed from the vendored TC-193 procedure pinned by
+//! Vectors F01–F31 are transcribed from the vendored TC-193 procedure pinned by
 //! `tests/complete_value_lock.rs`. The generated class matrix uses an
 //! independent oracle: exact `BigInt` rationals and a binary search over the
 //! ordered bit patterns of each width, with rounding, overflow and
@@ -209,15 +209,10 @@ fn assert_denied<T: std::fmt::Debug>(outcome: Outcome<T>, point: ChargePoint, co
 
 // ---- coverage ----------------------------------------------------------------
 
-/// TC-193 vectors from the QSpec #68 IEEE amendment, not yet in the pinned
-/// vendored procedure.
-const AMENDED_VECTORS: [&str; 12] = [
-    "F20", "F21", "F22", "F23", "F24", "F25", "F26", "F27", "F28", "F29", "F30", "F31",
-];
-
-const COVERED_VECTORS: [&str; 21] = [
+const COVERED_VECTORS: [&str; 33] = [
     "F01", "F02", "F02b", "F03", "F04", "F04b", "F05", "F06", "F07", "F08", "F09", "F10", "F11",
-    "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19",
+    "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
+    "F25", "F26", "F27", "F28", "F29", "F30", "F31",
 ];
 
 #[trace("TC-193")]
@@ -235,14 +230,6 @@ fn every_tabled_tc193_vector_has_a_test() {
         .collect();
     let covered: BTreeSet<String> = COVERED_VECTORS.iter().map(|id| (*id).to_owned()).collect();
     assert_eq!(tabled, covered);
-    // The QSpec #68 amendment vectors are tested ahead of the repin; once the
-    // vendored procedure carries them they move into `COVERED_VECTORS`.
-    for id in AMENDED_VECTORS {
-        assert!(
-            !tabled.contains(id),
-            "{id} is now vendored; move it to COVERED_VECTORS"
-        );
-    }
     assert!(procedure.contains(IEEE_DEFINITION));
 }
 
@@ -1810,7 +1797,7 @@ fn generated_signed_zero_and_directed_overflow_rules_hold_for_every_direction() 
     }
 }
 
-// ---- QSpec #68 amendment vectors ---------------------------------------------------------
+// ---- charge-position, signed-zero and conversion vectors ---------------------------------
 
 /// `I(i,o,w,r)` from TC-193 F20-F31.
 fn limits(
