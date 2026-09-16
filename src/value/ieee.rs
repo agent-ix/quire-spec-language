@@ -614,9 +614,9 @@ pub fn ieee_to_exact(
 fn to_exact(value: IeeeValue, meter: &mut Meter) -> Result<IeeeExact, Stop> {
     // SPEC-GAP(ieee-5): `value-accounting.md` names no conversion charges.
     // Conversions use the IEEE family as unary operations: `ieee.operands`
-    // at the source width, and for a rounding conversion
-    // `ieee.exact-intermediate`, `ieee.round` and `ieee.result-retain` at
-    // the target width.
+    // at the source width (`maxparts` for an exact source), and for a finite
+    // rounding conversion `ieee.exact-intermediate` and `ieee.round` at the
+    // target width, then `ieee.result-retain`.
     charge_operands(meter, value.width, 1)?;
     let exact = match decode(value) {
         Class::Nan { .. } | Class::Infinite { .. } => {
@@ -653,7 +653,9 @@ fn from_exact(
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Result<IeeeResult, Stop> {
-    charge_operands(meter, width, 1)?;
+    // The exact operand is measured by `maxparts`; the intermediate and the
+    // rounding are charged at the target width.
+    charge_operand_bits(meter, value.max_part_bits(), 1)?;
     charge_width(meter, ChargePoint::IeeeExactIntermediate, width)?;
     let negative = value.numerator().is_negative();
     let magnitude = value.numerator().as_big().magnitude().clone();
@@ -844,15 +846,13 @@ struct Finite {
 impl Finite {
     fn to_rational(self) -> Rational {
         let magnitude = BigInt::from(self.significand);
+        let signed = if self.negative { -magnitude } else { magnitude };
         let shift = self.exponent.unsigned_abs();
-        let (numerator, denominator) = if self.exponent >= 0 {
-            (magnitude << shift, BigInt::one())
+        if self.exponent >= 0 {
+            Rational::from_integer(Integer::from_big(signed << shift))
         } else {
-            (magnitude, BigInt::one() << shift)
-        };
-        let numerator = if self.negative { -numerator } else { numerator };
-        Rational::new(Integer::from_big(numerator), Integer::from_big(denominator))
-            .unwrap_or_else(|_| Rational::from_integer(Integer::zero()))
+            Rational::from_integer(Integer::from_big(signed)).divided_by_power_of_two(shift)
+        }
     }
 }
 
@@ -867,9 +867,13 @@ enum Class {
 fn decode(value: IeeeValue) -> Class {
     let format = value.width.format();
     let negative = value.bits & format.sign_mask() != 0;
-    let biased = (value.bits >> format.fraction_bits) & format.exponent_ones();
+    // The mask leaves at most eleven bits, so the low two bytes hold the whole
+    // field and the projection to `u16` is exact.
+    let [.., high, low] =
+        ((value.bits >> format.fraction_bits) & format.exponent_ones()).to_be_bytes();
+    let biased = u16::from_be_bytes([high, low]);
     let fraction = value.bits & format.fraction_mask();
-    if biased == format.exponent_ones() {
+    if u64::from(biased) == format.exponent_ones() {
         if fraction == 0 {
             Class::Infinite { negative }
         } else {
@@ -892,8 +896,7 @@ fn decode(value: IeeeValue) -> Class {
         Class::Finite(Finite {
             negative,
             significand: fraction | (1_u64 << format.fraction_bits),
-            // `biased` is masked to at most eleven bits.
-            exponent: i64::try_from(biased).unwrap_or(i64::MAX) - format.bias() - format.fraction(),
+            exponent: i64::from(biased) - format.bias() - format.fraction(),
         })
     }
 }
@@ -915,9 +918,13 @@ fn width_bits(width: IeeeWidth) -> u64 {
 }
 
 fn charge_operands(meter: &mut Meter, width: IeeeWidth, arity: u64) -> Result<(), Stop> {
+    charge_operand_bits(meter, width_bits(width), arity)
+}
+
+fn charge_operand_bits(meter: &mut Meter, integer_bits: u64, arity: u64) -> Result<(), Stop> {
     meter.charge(
         Charge::new(ChargePoint::IeeeOperands)
-            .size(LimitKind::IntegerBits, width_bits(width))
+            .size(LimitKind::IntegerBits, integer_bits)
             .size(LimitKind::ValueOccurrences, arity),
     )?;
     Ok(())
@@ -1214,16 +1221,74 @@ enum Exact {
     },
 }
 
-/// `(q + f) × 2^exponent` with `f = 0` exactly when `sticky` is false and
-/// `0 < f < 1` otherwise, where `log2` is the floor of the real's base-two
-/// logarithm. Construction guarantees `q ≥ 2^(p+1)` or
-/// `exponent ≤ quantum_min - 2`, so every rounding position used below has at
-/// least one bit of `q` beneath it.
+/// A positive real `x` held two guard bits below its rounding quantum:
+/// `x = (q + f) × 2^(quantum - 2)` with `f = 0` exactly when `sticky` is false
+/// and `0 < f < 1` otherwise.
+///
+/// `quantum = max(log2 - p, quantum_min)` is the exponent of the least
+/// significant retained bit; only its non-negative offset
+/// `index = quantum - quantum_min` is kept, with `log2 = floor(log2(x))` for
+/// tininess. Every
+/// value is built by [`Approximation::on_grid`], which establishes
+/// `q < 2^(p+3)`.
 struct Approximation {
-    q: BigUint,
-    exponent: i64,
+    q: u64,
     sticky: bool,
+    index: u64,
     log2: i64,
+}
+
+/// How many guard bits beneath a rounding position are discarded.
+#[derive(Clone, Copy)]
+enum Guard {
+    /// Round at `quantum - 1` (the unbounded-exponent position of a real just
+    /// below `2^emin`).
+    One,
+    /// Round at `quantum`.
+    Two,
+}
+
+impl Guard {
+    fn shift(self) -> u32 {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+        }
+    }
+
+    fn half(self) -> u64 {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+        }
+    }
+}
+
+impl Approximation {
+    /// Place the real with `floor(log2(x)) = log2` on its rounding grid.
+    ///
+    /// `scaled(target)` must return `floor(x / 2^target)` and whether that
+    /// quotient is exact.
+    fn on_grid(format: Format, log2: i64, scaled: impl FnOnce(i64) -> (BigUint, bool)) -> Self {
+        let above = log2 - format.fraction() - format.quantum_min();
+        let (quantum, index) = if above > 0 {
+            (log2 - format.fraction(), above.unsigned_abs())
+        } else {
+            (format.quantum_min(), 0)
+        };
+        let (q, exact) = scaled(quantum - 2);
+        // Proof that `q` fits: `x < 2^(log2 + 1)`, and both branches above
+        // give `quantum ≥ log2 - p` (the first with equality, the second
+        // because `above ≤ 0`). So `q ≤ x / 2^(quantum - 2) < 2^(p + 3)`,
+        // and `p ≤ 52` bounds it by `2^55`.
+        let q = u64::try_from(q).expect("q < 2^(p+3) by the grid choice above");
+        Self {
+            q,
+            sticky: !exact,
+            index,
+            log2,
+        }
+    }
 }
 
 fn signed_dyadic(operand: Operand) -> (BigInt, i64) {
@@ -1243,8 +1308,9 @@ fn signed_dyadic(operand: Operand) -> (BigInt, i64) {
     }
 }
 
-fn bit_length(value: &BigUint) -> i64 {
-    i64::try_from(value.bits()).unwrap_or(i64::MAX)
+/// Bit length of a `u64`, in the signed exponent domain.
+fn bit_length(value: u64) -> i64 {
+    i64::from(u64::BITS - value.leading_zeros())
 }
 
 impl FiniteOperation {
@@ -1341,41 +1407,69 @@ fn real_from(format: Format, negative: bool, value: BigInt, exponent: i64) -> Ex
 }
 
 /// Approximate the positive real `numerator / denominator × 2^exponent`.
+///
+/// Bit lengths of arbitrary exact inputs are compared in `i128`, where they
+/// cannot overflow. A real whose logarithm lies outside the format's rounding
+/// range is replaced by a representative with the identical rounded result:
+/// beyond `2^(emax+2)` every direction overflows exactly as for `2^(emax+2)`
+/// plus a sticky fraction, and below `2^(quantum_min-2)` every direction
+/// rounds exactly as for a sticky fraction of that quantum.
 fn approximate(
     numerator: &BigUint,
     denominator: &BigUint,
     exponent: i64,
     format: Format,
 ) -> Approximation {
-    let difference = bit_length(numerator) - bit_length(denominator);
+    let difference = i128::from(numerator.bits()) - i128::from(denominator.bits());
     let shift = difference.unsigned_abs();
     let at_least = if difference >= 0 {
         *numerator >= denominator << shift
     } else {
         numerator << shift >= *denominator
     };
-    let log2 = if at_least { difference } else { difference - 1 } + exponent;
-    let target = (log2 - format.fraction() - 2).max(format.quantum_min() - 2);
-    let scale = exponent - target;
-    let (scaled_numerator, scaled_denominator) = if scale >= 0 {
-        (numerator << scale.unsigned_abs(), denominator.clone())
-    } else {
-        (numerator.clone(), denominator << scale.unsigned_abs())
-    };
-    let (q, remainder) = scaled_numerator.div_rem(&scaled_denominator);
-    Approximation {
-        q,
-        exponent: target,
-        sticky: !remainder.is_zero(),
-        log2,
+    let log2 = if at_least { difference } else { difference - 1 } + i128::from(exponent);
+    let (least, greatest) = (format.quantum_min() - 3, format.emax() + 2);
+    match i64::try_from(log2) {
+        Ok(log2) if log2 > least && log2 < greatest => {
+            Approximation::on_grid(format, log2, |target| {
+                let scale = exponent - target;
+                let (scaled_numerator, scaled_denominator) = if scale >= 0 {
+                    (numerator << scale.unsigned_abs(), denominator.clone())
+                } else {
+                    (numerator.clone(), denominator << scale.unsigned_abs())
+                };
+                let (q, remainder) = scaled_numerator.div_rem(&scaled_denominator);
+                (q, remainder.is_zero())
+            })
+        }
+        Ok(log2) if log2 <= least => tiny(format),
+        Ok(_) => huge(format),
+        Err(_) if log2 < 0 => tiny(format),
+        Err(_) => huge(format),
     }
+}
+
+/// A sticky fraction of `2^(quantum_min - 2)`: rounds like any smaller real.
+fn tiny(format: Format) -> Approximation {
+    Approximation::on_grid(format, format.quantum_min() - 3, |_| {
+        (BigUint::zero(), false)
+    })
+}
+
+/// `2^(emax+2)` plus a sticky fraction: overflows like any larger real.
+fn huge(format: Format) -> Approximation {
+    Approximation::on_grid(format, format.emax() + 2, |_| {
+        (BigUint::one() << (format.fraction_bits + 2), false)
+    })
 }
 
 fn integer_square_root(value: &BigUint) -> BigUint {
     if value.is_zero() {
         return BigUint::zero();
     }
-    let mut estimate = BigUint::one() << (value.bits().saturating_add(1) / 2);
+    // `value < 2^bits`, so `2^(bits/2 + 1)` is above its square root and
+    // Newton's iteration descends to the floor.
+    let mut estimate = BigUint::one() << (value.bits() / 2 + 1);
     loop {
         let next = (&estimate + value / &estimate) >> 1_u32;
         if next >= estimate {
@@ -1385,53 +1479,56 @@ fn integer_square_root(value: &BigUint) -> BigUint {
     }
 }
 
+/// Approximate `sqrt(significand × 2^exponent)` of a positive finite operand.
+///
+/// For `y` in `[2^L, 2^(L+1))` the root's logarithm floor is `floor(L/2)`, and
+/// `floor(sqrt(y)) = isqrt(floor(y))`, so the quotient needs only integers.
 fn square_root(format: Format, operand: Finite) -> Approximation {
-    let (mut radicand, mut exponent) = (BigUint::from(operand.significand), operand.exponent);
-    if exponent.rem_euclid(2) != 0 {
-        radicand <<= 1_u32;
-        exponent -= 1;
-    }
-    let wanted = 2 * (format.fraction() + 3);
-    let extra = ((wanted - bit_length(&radicand)).max(0) + 1) / 2;
-    let scaled = radicand << (2 * extra).unsigned_abs();
-    let q = integer_square_root(&scaled);
-    let sticky = &q * &q != scaled;
-    let exponent = exponent.div_euclid(2) - extra;
-    Approximation {
-        log2: bit_length(&q) - 1 + exponent,
-        q,
-        exponent,
-        sticky,
-    }
+    let radicand = BigUint::from(operand.significand);
+    let log2 = (bit_length(operand.significand) - 1 + operand.exponent).div_euclid(2);
+    Approximation::on_grid(format, log2, |target| {
+        // `root / 2^target = sqrt(radicand × 2^(exponent - 2·target))`.
+        let scale = operand.exponent - 2 * target;
+        let shift = scale.unsigned_abs();
+        let (whole, dropped) = if scale >= 0 {
+            (&radicand << shift, false)
+        } else {
+            let whole = &radicand >> shift;
+            let dropped = &whole << shift != radicand;
+            (whole, dropped)
+        };
+        let q = integer_square_root(&whole);
+        let exact = !dropped && &q * &q == whole;
+        (q, exact)
+    })
 }
 
 /// Round `approximation` onto the grid `2^quantum` under a rounding
 /// direction; returns the integer multiple and whether anything was discarded.
 fn round_at(
     approximation: &Approximation,
-    quantum: i64,
+    guard: Guard,
     negative: bool,
     direction: RoundingMode,
-) -> (BigUint, bool) {
-    let shift = (quantum - approximation.exponent).max(1).unsigned_abs();
-    let kept = &approximation.q >> shift;
-    let remainder = &approximation.q - (&kept << shift);
-    let half = BigUint::one() << (shift - 1);
-    let position = match remainder.cmp(&half) {
+) -> (u64, bool) {
+    let kept = approximation.q >> guard.shift();
+    let remainder = approximation.q - (kept << guard.shift());
+    let position = match remainder.cmp(&guard.half()) {
         Ordering::Equal if approximation.sticky => Ordering::Greater,
         ordering => ordering,
     };
-    let inexact = !remainder.is_zero() || approximation.sticky;
+    let inexact = remainder != 0 || approximation.sticky;
     let up = match direction {
         RoundingMode::Exact | RoundingMode::NearestEven => {
-            position == Ordering::Greater || (position == Ordering::Equal && kept.is_odd())
+            position == Ordering::Greater || (position == Ordering::Equal && kept % 2 == 1)
         }
         RoundingMode::NearestAway => position != Ordering::Less,
         RoundingMode::TowardZero => false,
         RoundingMode::TowardPositive => inexact && !negative,
         RoundingMode::TowardNegative => inexact && negative,
     };
-    (if up { kept + 1_u32 } else { kept }, inexact)
+    // `kept < 2^(p+1)` because `q < 2^(p+3)`, so the increment cannot wrap.
+    (if up { kept + 1 } else { kept }, inexact)
 }
 
 /// Round once and encode, with the fresh flag set.
@@ -1454,17 +1551,19 @@ fn round(format: Format, exact: Exact, rounding: RoundingMode) -> (u64, IeeeFlag
     };
     let precision = format.fraction();
     let log2 = approximation.log2;
-    let mut quantum = (log2 - precision).max(format.quantum_min());
-    let (mut kept, inexact) = round_at(&approximation, quantum, negative, direction);
-    if bit_length(&kept) > precision + 1 {
+    let mut index = approximation.index;
+    let (mut kept, inexact) = round_at(&approximation, Guard::Two, negative, direction);
+    if bit_length(kept) > precision + 1 {
         kept >>= 1_u32;
-        quantum += 1;
+        index += 1;
     }
     let mut flags = IeeeFlags::EMPTY;
     if inexact {
         flags = flags.with(IeeeFlag::Inexact);
     }
-    if bit_length(&kept) == precision + 1 && quantum + precision > format.emax() {
+    // A normal result's biased exponent is `index + 1`; the all-ones field is
+    // reserved, so reaching it overflows.
+    if bit_length(kept) == precision + 1 && index + 1 >= format.exponent_ones() {
         let to_infinity = match direction {
             RoundingMode::Exact | RoundingMode::NearestEven | RoundingMode::NearestAway => true,
             RoundingMode::TowardZero => false,
@@ -1480,23 +1579,19 @@ fn round(format: Format, exact: Exact, rounding: RoundingMode) -> (u64, IeeeFlag
     }
     // Tininess after rounding: the result rounded with an unbounded exponent
     // range lies strictly below the least normal magnitude `2^emin`.
+    // When `log2 = emin - 1` the grid quantum is `quantum_min`, one above that
+    // unbounded position, so one guard bit is discarded.
     let tiny = log2 < format.emin()
         && !(log2 + 1 == format.emin()
-            && bit_length(&round_at(&approximation, log2 - precision, negative, direction).0)
+            && bit_length(round_at(&approximation, Guard::One, negative, direction).0)
                 > precision + 1);
     if tiny && inexact {
         flags = flags.with(IeeeFlag::Underflow);
     }
-    let magnitude = kept.iter_u64_digits().next().unwrap_or(0);
-    let bits = if bit_length(&kept) <= precision {
-        // Subnormal or zero: `quantum` is the least quantum.
-        format.sign(negative) | magnitude
-    } else {
-        let biased = (quantum + precision + format.bias()).unsigned_abs();
-        format.sign(negative)
-            | (biased << format.fraction_bits)
-            | (magnitude & format.fraction_mask())
-    };
+    // A normal `kept` carries the implicit leading bit `2^p`, which adds the
+    // final `1` to the biased exponent `index + 1`. A subnormal `kept` below
+    // `2^p` only occurs at `index = 0` and encodes with a zero exponent field.
+    let bits = format.sign(negative) | ((index << format.fraction_bits) + kept);
     (bits, flags)
 }
 
