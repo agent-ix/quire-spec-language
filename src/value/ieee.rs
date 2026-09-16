@@ -20,14 +20,14 @@ use num_traits::{One, Zero};
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{IllTyped, IllTypedCause};
-use super::decimal::RoundingMode;
+use super::decimal::{Decimal, DecimalTarget, RoundingMode};
 use super::definition::{
     CatalogRole, DefinitionLock, DefinitionReference, PackageCause, PackageRefusal,
     PackageRefusalCode,
 };
-use super::integer::Integer;
+use super::integer::{Integer, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::Rational;
+use super::rational::{Rational, RationalDomain};
 
 /// The IEEE profile definition identity.
 pub const IEEE_DEFINITION: &str = "quire.value.ieee754-2019-default/v1";
@@ -221,26 +221,105 @@ impl FromIterator<IeeeFlag> for IeeeFlags {
     }
 }
 
-/// An arithmetic operation over same-width operands.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IeeeOperation {
-    /// `a + b`.
-    Add(IeeeValue, IeeeValue),
-    /// `a - b`.
-    Subtract(IeeeValue, IeeeValue),
-    /// `a * b`.
-    Multiply(IeeeValue, IeeeValue),
-    /// `a / b`.
-    Divide(IeeeValue, IeeeValue),
-    /// `quire::value::ieee::sqrt(a)`.
-    SquareRoot(IeeeValue),
-    /// `quire::value::ieee::fma(a, b, c)`: `a * b + c` with one rounding.
-    FusedMultiplyAdd(IeeeValue, IeeeValue, IeeeValue),
+/// An exact integer, rational or decimal scalar where IEEE values meet exact
+/// values: an explicit conversion source, or an operand type checking refuses.
+#[derive(Clone, Copy, Debug)]
+pub enum ExactScalar<'a> {
+    /// An exact integer.
+    Integer(&'a Integer),
+    /// An exact rational.
+    Rational(&'a Rational),
+    /// An exact decimal with its retained representation.
+    Decimal(&'a Decimal),
 }
 
-impl IeeeOperation {
+impl<'a> From<&'a Integer> for ExactScalar<'a> {
+    fn from(value: &'a Integer) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl<'a> From<&'a Rational> for ExactScalar<'a> {
+    fn from(value: &'a Rational) -> Self {
+        Self::Rational(value)
+    }
+}
+
+impl<'a> From<&'a Decimal> for ExactScalar<'a> {
+    fn from(value: &'a Decimal) -> Self {
+        Self::Decimal(value)
+    }
+}
+
+impl ExactScalar<'_> {
+    /// `ieee.operands` size of the source: `bits(n)`, `maxparts`, or
+    /// `max(bits(coefficient), bits(10^scale))` of the retained decimal.
+    fn operand_bits(self) -> u64 {
+        match self {
+            Self::Integer(value) => value.magnitude_bits(),
+            Self::Rational(value) => value.max_part_bits(),
+            Self::Decimal(value) => {
+                let retained = value.representation();
+                retained
+                    .coefficient()
+                    .magnitude_bits()
+                    .max(Integer::power_of_ten(u64::from(retained.scale())).magnitude_bits())
+            }
+        }
+    }
+
+    fn exact_value(self) -> Rational {
+        match self {
+            Self::Integer(value) => Rational::from_integer(value.clone()),
+            Self::Rational(value) => value.clone(),
+            Self::Decimal(value) => value.representation().to_rational(),
+        }
+    }
+}
+
+/// An operand as written at an IEEE operation or comparison. Only
+/// [`IeeeOperand::Ieee`] operands of one width type-check.
+#[derive(Clone, Copy, Debug)]
+pub enum IeeeOperand<'a> {
+    /// An IEEE value.
+    Ieee(IeeeValue),
+    /// An exact value; mixing it with IEEE operands is `ill_typed`.
+    Exact(ExactScalar<'a>),
+}
+
+impl From<IeeeValue> for IeeeOperand<'_> {
+    fn from(value: IeeeValue) -> Self {
+        Self::Ieee(value)
+    }
+}
+
+impl<'a> From<ExactScalar<'a>> for IeeeOperand<'a> {
+    fn from(value: ExactScalar<'a>) -> Self {
+        Self::Exact(value)
+    }
+}
+
+/// An arithmetic operation. Operands default to [`IeeeValue`]; any operand
+/// convertible to [`IeeeOperand`] is accepted and type-checked.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IeeeOperation<O = IeeeValue> {
+    /// `a + b`.
+    Add(O, O),
+    /// `a - b`.
+    Subtract(O, O),
+    /// `a * b`.
+    Multiply(O, O),
+    /// `a / b`.
+    Divide(O, O),
+    /// `quire::value::ieee::sqrt(a)`.
+    SquareRoot(O),
+    /// `quire::value::ieee::fma(a, b, c)`: `a * b + c` with one rounding.
+    FusedMultiplyAdd(O, O, O),
+}
+
+impl<O> IeeeOperation<O> {
     /// The operation's kind.
-    pub fn kind(self) -> IeeeOperationKind {
+    pub fn kind(&self) -> IeeeOperationKind {
         match self {
             Self::Add(..) => IeeeOperationKind::Add,
             Self::Subtract(..) => IeeeOperationKind::Subtract,
@@ -251,6 +330,29 @@ impl IeeeOperation {
         }
     }
 
+    fn try_map<P, E>(self, mut f: impl FnMut(O) -> Result<P, E>) -> Result<IeeeOperation<P>, E> {
+        Ok(match self {
+            Self::Add(a, b) => IeeeOperation::Add(f(a)?, f(b)?),
+            Self::Subtract(a, b) => IeeeOperation::Subtract(f(a)?, f(b)?),
+            Self::Multiply(a, b) => IeeeOperation::Multiply(f(a)?, f(b)?),
+            Self::Divide(a, b) => IeeeOperation::Divide(f(a)?, f(b)?),
+            Self::SquareRoot(a) => IeeeOperation::SquareRoot(f(a)?),
+            Self::FusedMultiplyAdd(a, b, c) => IeeeOperation::FusedMultiplyAdd(f(a)?, f(b)?, f(c)?),
+        })
+    }
+}
+
+/// The IEEE value of a written operand; an exact operand is `ill_typed`.
+fn ieee_operand<'a>(operand: impl Into<IeeeOperand<'a>>) -> Result<IeeeValue, IllTyped> {
+    match operand.into() {
+        IeeeOperand::Ieee(value) => Ok(value),
+        IeeeOperand::Exact(_) => Err(IllTyped {
+            cause: IllTypedCause::IeeeWithExactOperand,
+        }),
+    }
+}
+
+impl IeeeOperation {
     fn arity(self) -> u64 {
         match self {
             Self::Add(..) | Self::Subtract(..) | Self::Multiply(..) | Self::Divide(..) => 2,
@@ -528,15 +630,17 @@ fn invalid_package(cause: PackageCause) -> PackageRefusal {
 
 /// Evaluate one arithmetic operation under `rounding`.
 ///
-/// Operands of different widths are ill-typed and consume nothing. Otherwise the
-/// result is completed bits and flags, a strict-`exact` refusal carrying only
-/// the would-be flags, or incomplete with no bits or flags.
-pub fn evaluate_ieee(
+/// Operands of different widths, or an exact operand, are ill-typed and
+/// consume nothing. Otherwise the result is completed bits and flags, a
+/// strict-`exact` refusal carrying only the would-be flags, or incomplete with
+/// no bits or flags.
+pub fn evaluate_ieee<'a, O: Into<IeeeOperand<'a>>>(
     _profile: &AdmittedIeeeProfile,
-    operation: IeeeOperation,
+    operation: IeeeOperation<O>,
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Result<Outcome<IeeeResult>, IllTyped> {
+    let operation = operation.try_map(ieee_operand)?;
     let (first, rest) = operation.operands();
     let width = same_width(first, &rest)?;
     Ok(Outcome::from_stop(arithmetic(
@@ -544,15 +648,16 @@ pub fn evaluate_ieee(
     )))
 }
 
-/// Evaluate one comparison intrinsic. Cross-width operands are ill-typed and
-/// consume nothing.
-pub fn compare_ieee(
+/// Evaluate one comparison intrinsic. Cross-width or exact operands are
+/// ill-typed and consume nothing.
+pub fn compare_ieee<'a>(
     _profile: &AdmittedIeeeProfile,
     comparison: IeeeComparison,
-    left: IeeeValue,
-    right: IeeeValue,
+    left: impl Into<IeeeOperand<'a>>,
+    right: impl Into<IeeeOperand<'a>>,
     meter: &mut Meter,
 ) -> Result<Outcome<bool>, IllTyped> {
+    let (left, right) = (ieee_operand(left)?, ieee_operand(right)?);
     // SPEC-GAP(ieee-1): FR-148 says `bitIdentical` "requires the same width"
     // and TC-193 F05 says bit identity "follows width plus bits", while F06
     // makes cross-width comparison ill-typed. All three intrinsics are read as
@@ -601,17 +706,47 @@ pub fn convert_ieee_width(
     Outcome::from_stop(convert_width(value, target, rounding, meter))
 }
 
-/// Explicitly convert a finite IEEE value to its exact rational. NaN and the
-/// infinities have no exact value and are undefined.
+/// The type an explicit IEEE-to-exact conversion names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IeeeExactTarget<'a> {
+    /// A grammar-named `Rational[lo, hi; dmin, dmax]`, the only defined target.
+    Rational(&'a RationalDomain),
+    /// A `Decimal[..]` type; a direct conversion is ill-typed.
+    Decimal(&'a DecimalTarget),
+    /// The unbounded `Integer`; a direct conversion is ill-typed.
+    Integer,
+    /// A bounded `Int[..]`; a direct conversion is ill-typed.
+    BoundedInteger(&'a IntegerInterval),
+}
+
+/// Explicitly convert a finite IEEE value to a `Rational[..]` target. NaN and
+/// the infinities have no exact value and are undefined; an exact value
+/// outside the target domain is refused before it is retained. A direct
+/// `Decimal`, `Integer` or `Int[..]` target is ill-typed with no charge.
 pub fn ieee_to_exact(
     _profile: &AdmittedIeeeProfile,
     value: IeeeValue,
+    target: IeeeExactTarget<'_>,
     meter: &mut Meter,
-) -> Outcome<IeeeExact> {
-    Outcome::from_stop(to_exact(value, meter))
+) -> Result<Outcome<IeeeExact>, IllTyped> {
+    let domain = match target {
+        IeeeExactTarget::Rational(domain) => domain,
+        IeeeExactTarget::Decimal(_)
+        | IeeeExactTarget::Integer
+        | IeeeExactTarget::BoundedInteger(_) => {
+            return Err(IllTyped {
+                cause: IllTypedCause::IeeeToNonRationalExact,
+            })
+        }
+    };
+    Ok(Outcome::from_stop(to_exact(value, domain, meter)))
 }
 
-fn to_exact(value: IeeeValue, meter: &mut Meter) -> Result<IeeeExact, Stop> {
+fn to_exact(
+    value: IeeeValue,
+    domain: &RationalDomain,
+    meter: &mut Meter,
+) -> Result<IeeeExact, Stop> {
     // SPEC-GAP(ieee-5): `value-accounting.md` names no conversion charges.
     // Conversions use the IEEE family as unary operations: `ieee.operands`
     // at the source width (`maxparts` for an exact source), and for a finite
@@ -622,41 +757,55 @@ fn to_exact(value: IeeeValue, meter: &mut Meter) -> Result<IeeeExact, Stop> {
         Class::Nan { .. } | Class::Infinite { .. } => {
             return Err(Stop::Undefined(Undefined::IeeeNotFinite))
         }
-        Class::Zero { negative } => IeeeExact {
-            value: Rational::from_integer(Integer::zero()),
-            discarded_negative_zero: negative,
-        },
-        Class::Finite(finite) => IeeeExact {
-            value: finite.to_rational(),
-            discarded_negative_zero: false,
-        },
+        Class::Zero { negative } => {
+            // `maxparts(0/1) = 1`.
+            charge_exact_result(meter, 1)?;
+            IeeeExact {
+                value: Rational::from_integer(Integer::zero()),
+                discarded_negative_zero: negative,
+            }
+        }
+        Class::Finite(finite) => {
+            charge_exact_result(meter, finite.max_part_bits())?;
+            IeeeExact {
+                value: finite.to_rational(),
+                discarded_negative_zero: false,
+            }
+        }
     };
+    // Membership charges nothing and refuses before the result is retained.
+    if !domain.contains(&exact.value) {
+        return Err(Stop::Refused(Refusal::IeeeRationalOutOfDomain));
+    }
     charge_result(meter)?;
     Ok(exact)
 }
 
-/// Explicitly convert an exact rational to `width` under `rounding`, reporting
-/// loss through the IEEE flags; strict `exact` refuses any loss.
-pub fn exact_to_ieee(
+/// Explicitly convert an exact integer, rational or decimal to `width` under
+/// `rounding`, reporting loss through the IEEE flags; strict `exact` refuses
+/// any loss.
+pub fn exact_to_ieee<'a>(
     _profile: &AdmittedIeeeProfile,
-    value: &Rational,
+    source: impl Into<ExactScalar<'a>>,
     width: IeeeWidth,
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Outcome<IeeeResult> {
-    Outcome::from_stop(from_exact(value, width, rounding, meter))
+    Outcome::from_stop(from_exact(source.into(), width, rounding, meter))
 }
 
 fn from_exact(
-    value: &Rational,
+    source: ExactScalar<'_>,
     width: IeeeWidth,
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Result<IeeeResult, Stop> {
-    // The exact operand is measured by `maxparts`; the intermediate and the
-    // rounding are charged at the target width.
-    charge_operand_bits(meter, value.max_part_bits(), 1)?;
+    // The source is measured on its own kind, a decimal on its retained
+    // representation; the intermediate and the rounding are charged at the
+    // target width.
+    charge_operand_bits(meter, source.operand_bits(), 1)?;
     charge_width(meter, ChargePoint::IeeeExactIntermediate, width)?;
+    let value = &source.exact_value();
     let negative = value.numerator().is_negative();
     let magnitude = value.numerator().as_big().magnitude().clone();
     let exact = if magnitude.is_zero() {
@@ -844,6 +993,21 @@ struct Finite {
 }
 
 impl Finite {
+    /// `maxparts` of the reduced exact value, computed from the decoded fields
+    /// without materializing it: `odd × 2^e` with `odd` odd has parts
+    /// `(odd << e, 1)` for `e ≥ 0` and `(odd, 2^-e)` otherwise.
+    fn max_part_bits(self) -> u64 {
+        let zeros = self.significand.trailing_zeros();
+        let odd = self.significand >> zeros;
+        let odd_bits = u64::from(u64::BITS - odd.leading_zeros());
+        let exponent = self.exponent + i64::from(zeros);
+        if exponent >= 0 {
+            odd_bits + exponent.unsigned_abs()
+        } else {
+            odd_bits.max(exponent.unsigned_abs() + 1)
+        }
+    }
+
     fn to_rational(self) -> Rational {
         let magnitude = BigInt::from(self.significand);
         let signed = if self.negative { -magnitude } else { magnitude };
@@ -932,6 +1096,13 @@ fn charge_operand_bits(meter: &mut Meter, integer_bits: u64, arity: u64) -> Resu
 
 fn charge_width(meter: &mut Meter, point: ChargePoint, width: IeeeWidth) -> Result<(), Stop> {
     meter.charge(Charge::new(point).size(LimitKind::IntegerBits, width_bits(width)))?;
+    Ok(())
+}
+
+fn charge_exact_result(meter: &mut Meter, max_part_bits: u64) -> Result<(), Stop> {
+    meter.charge(
+        Charge::new(ChargePoint::IeeeExactIntermediate).size(LimitKind::IntegerBits, max_part_bits),
+    )?;
     Ok(())
 }
 

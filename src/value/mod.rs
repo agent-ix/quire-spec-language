@@ -52,17 +52,17 @@ pub use enumeration::{
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, IeeeBackendCapabilities, IeeeComparison,
-    IeeeDisposition, IeeeExact, IeeeFlag, IeeeFlags, IeeeItemRequirement, IeeeOperation,
-    IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth,
-    IEEE_DEFINITION,
+    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
+    IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeFlags,
+    IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance, IeeeResult,
+    IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
 };
 pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
     OutOfDomain,
 };
 pub use outcome::{Outcome, Refusal, Undefined};
-pub use rational::{Rational, ZeroDenominator};
+pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use text::{
     admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,
     Text, TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION,

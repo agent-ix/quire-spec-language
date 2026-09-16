@@ -82,4 +82,10 @@ pub enum IllTypedCause {
     /// IEEE operands have different widths and no explicit width conversion
     /// was selected.
     DistinctIeeeWidths,
+    /// An IEEE operation or comparison mixes an IEEE operand with an exact
+    /// integer, rational or decimal operand.
+    IeeeWithExactOperand,
+    /// An IEEE value is converted directly to `Decimal`, `Integer` or
+    /// `Int[..]`; only a `Rational[..]` target is defined.
+    IeeeToNonRationalExact,
 }
