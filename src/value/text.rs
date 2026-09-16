@@ -340,10 +340,7 @@ pub fn compare_text(
 }
 
 fn admit(payload: &TextPayload, text_type: &TextType, meter: &mut Meter) -> Result<Text, Stop> {
-    let [retained] = prepare(text_type.profile, [payload], meter)?;
-    if !text_type.admits(&retained) {
-        return Err(Stop::Refused(Refusal::TextLengthOutOfDomain));
-    }
+    let [retained] = prepare(text_type.profile, [payload], Some(text_type), meter)?;
     meter.charge(Charge::new(ChargePoint::TextResultRetain).results(1))?;
     Ok(Text {
         text_type: *text_type,
@@ -358,7 +355,7 @@ fn compare(
     payloads: [&TextPayload; 2],
     meter: &mut Meter,
 ) -> Result<bool, Stop> {
-    let [left, right] = prepare(profile, payloads, meter)?;
+    let [left, right] = prepare(profile, payloads, None, meter)?;
     let ordering = profile.order(&left, &right);
     meter.charge(Charge::new(ChargePoint::TextResultRetain).results(1))?;
     Ok(operator.holds(ordering))
@@ -367,9 +364,18 @@ fn compare(
 /// Charge `text.input-bytes` and `text.decode-scalars`, then (for a normalizing
 /// profile) `text.normalize-input` and one `text.normalize-output` before each
 /// emitted scalar across all operands.
+///
+/// An admission's length bound refuses as soon as its profile length is
+/// known: after `text.input-bytes` for `binary-utf8`, after
+/// `text.decode-scalars` for `unicode-scalars`, and after every
+/// `text.normalize-output` for a normalizing profile; always before
+/// `text.result-retain`.
+// SPEC-GAP(18): the pinned FR-141 does not place the length refusal against
+// the text charges; this placement is the QSpec PR #72 review ruling.
 fn prepare<const N: usize>(
     profile: TextProfile,
     payloads: [&TextPayload; N],
+    bound: Option<&TextType>,
     meter: &mut Meter,
 ) -> Result<[String; N], Stop> {
     let sum = |measure: fn(&str) -> usize| {
@@ -377,6 +383,7 @@ fn prepare<const N: usize>(
             total.saturating_add(u64::try_from(measure(payload.as_str())).unwrap_or(u64::MAX))
         })
     };
+    let inputs = payloads.map(TextPayload::as_str);
     meter.charge(
         Charge::new(ChargePoint::TextInputBytes)
             .size(LimitKind::TextInputBytes, sum(str::len))
@@ -385,6 +392,9 @@ fn prepare<const N: usize>(
                 u64::try_from(N).unwrap_or(u64::MAX),
             ),
     )?;
+    if profile == TextProfile::BinaryUtf8 {
+        check_length(bound, &inputs)?;
+    }
     meter.charge(
         Charge::new(ChargePoint::TextDecodeScalars)
             .size(LimitKind::TextScalars, sum(|text| text.chars().count())),
@@ -393,13 +403,16 @@ fn prepare<const N: usize>(
     // non-normalizing `unicode-scalars` and `binary-utf8` profiles charge
     // `text.normalize-input`/`text.normalize-output`. They charge neither.
     let Some(form) = profile.normalization() else {
-        return Ok(payloads.map(|payload| payload.as_str().to_owned()));
+        if profile == TextProfile::UnicodeScalars {
+            check_length(bound, &inputs)?;
+        }
+        return Ok(inputs.map(str::to_owned));
     };
     meter.charge(Charge::new(ChargePoint::TextNormalizeInput))?;
     let mut emitted = 0_u64;
     let mut sequences = payloads.map(|_| String::new());
-    for (payload, sequence) in payloads.iter().zip(sequences.iter_mut()) {
-        for scalar in form.apply(payload.as_str()) {
+    for (input, sequence) in inputs.iter().zip(sequences.iter_mut()) {
+        for scalar in form.apply(input) {
             emitted = emitted.saturating_add(1);
             meter.charge(
                 Charge::new(ChargePoint::TextNormalizeOutput)
@@ -408,5 +421,16 @@ fn prepare<const N: usize>(
             sequence.push(scalar);
         }
     }
+    check_length(bound, &sequences.each_ref().map(String::as_str))?;
     Ok(sequences)
+}
+
+/// Refuse a retained sequence outside an admission's declared length bounds.
+fn check_length(bound: Option<&TextType>, sequences: &[&str]) -> Result<(), Stop> {
+    match bound {
+        Some(text_type) if !sequences.iter().all(|sequence| text_type.admits(sequence)) => {
+            Err(Stop::Refused(Refusal::TextLengthOutOfDomain))
+        }
+        _ => Ok(()),
+    }
 }

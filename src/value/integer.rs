@@ -5,6 +5,7 @@
 //! [`IntegerInterval`] is an explicit admission that either returns a
 //! [`BoundedInteger`] or refuses.
 
+use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
 use std::str::FromStr;
@@ -159,6 +160,69 @@ impl Integer {
         }
     }
 
+    /// Compare `|factor| × |base|^exponent` with `|other| × 2^shift` for a
+    /// nonnegative `exponent` and a signed `shift`, without materializing the
+    /// power.
+    ///
+    /// Unequal bit lengths decide at once. Otherwise the power is bracketed as
+    /// in [`Integer::power_product_bits`] and the precision doubles until the
+    /// bracket excludes the other side or collapses to the exact value.
+    pub(crate) fn compare_power_product(
+        factor: &Self,
+        base: &Self,
+        exponent: &Self,
+        other: &Self,
+        shift: &Self,
+    ) -> Ordering {
+        let left_zero = factor.is_zero() || base.is_zero() && !exponent.is_zero();
+        match (left_zero, other.is_zero()) {
+            (true, true) => return Ordering::Equal,
+            (true, false) => return Ordering::Less,
+            (false, true) => return Ordering::Greater,
+            (false, false) => {}
+        }
+        let left_bits = Self::power_product_bits(factor, base, exponent);
+        let right_bits = Self(BigInt::from(other.0.bits()) + &shift.0);
+        if left_bits != right_bits {
+            return left_bits.cmp(&right_bits);
+        }
+        let other = other.0.magnitude();
+        let mut precision = 64_u64;
+        loop {
+            let (low, high, low_shift) = bracket(
+                factor.0.magnitude(),
+                base.0.magnitude(),
+                exponent.0.magnitude(),
+                precision,
+            );
+            // Equal bit lengths keep `|low_shift - shift|` within the bit
+            // lengths of `high` and `other`, so the aligned sides are small.
+            let gap = BigInt::from(low_shift) - &shift.0;
+            let Ok(distance) = u64::try_from(gap.magnitude()) else {
+                return Ordering::Equal;
+            };
+            let aligned = |mantissa: &BigUint| {
+                if gap.is_negative() {
+                    (mantissa.clone(), other << distance)
+                } else {
+                    (mantissa << distance, other.clone())
+                }
+            };
+            let (high_side, other_side) = aligned(&high);
+            if high_side < other_side {
+                return Ordering::Less;
+            }
+            let (low_side, other_side) = aligned(&low);
+            if low_side > other_side {
+                return Ordering::Greater;
+            }
+            if low == high {
+                return low_side.cmp(&other_side);
+            }
+            precision = precision.saturating_mul(2);
+        }
+    }
+
     /// `2^exponent`.
     fn power_of_two(exponent: u32) -> Self {
         Self(BigInt::one() << exponent)
@@ -173,6 +237,22 @@ fn bracket_bits(
     exponent: &BigUint,
     precision: u64,
 ) -> (BigUint, BigUint) {
+    let (low, high, shift) = bracket(factor, base, exponent, precision);
+    (
+        BigUint::from(low.bits()) + &shift,
+        BigUint::from(high.bits()) + shift,
+    )
+}
+
+/// `(low, high, shift)` with `low × 2^shift <= factor × base^exponent <=
+/// high × 2^shift`, the power's mantissas kept to at most `precision` bits.
+/// With no truncation `low == high` is the exact value and `shift` is zero.
+fn bracket(
+    factor: &BigUint,
+    base: &BigUint,
+    exponent: &BigUint,
+    precision: u64,
+) -> (BigUint, BigUint, BigUint) {
     let mut low = BigUint::one();
     let mut high = BigUint::one();
     let mut shift = BigUint::zero();
@@ -197,10 +277,7 @@ fn bracket_bits(
     }
     low *= factor;
     high *= factor;
-    (
-        BigUint::from(low.bits()) + &shift,
-        BigUint::from(high.bits()) + shift,
-    )
+    (low, high, shift)
 }
 
 impl From<i64> for Integer {
