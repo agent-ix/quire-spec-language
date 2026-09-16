@@ -972,6 +972,9 @@ dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
  "logos",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
  "quire-contract-codegen",
  "quire-contract-ir",
  "quire-contract-model",
@@ -982,6 +985,7 @@ dependencies = [
  "syn 2.0.119",
  "tempfile",
  "thiserror",
+ "unicode-normalization",
 ]
 
 [[package]]
