@@ -81,6 +81,14 @@ pub enum IllTypedCause {
     DistinctEnumDeclarations,
     /// An ordering operator was applied to an unordered enumeration.
     UnorderedEnumOrdering,
+    /// Quantity operands, or a conversion's source and target, have
+    /// incompatible dimensions.
+    IncompatibleDimensions,
+    /// Arithmetic was applied to a unit whose composed root offset is nonzero.
+    AffineUnitArithmetic,
+    /// Addition, subtraction or comparison of operands in different units;
+    /// conversion never occurs implicitly.
+    DistinctUnits,
     /// A `Decimal[lo, hi; smin, smax; mode]` declaration has `lo > hi`,
     /// `smin > smax` or `smax > u32::MAX`.
     MalformedDecimalType,

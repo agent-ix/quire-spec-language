@@ -2,7 +2,7 @@
 //! TC-186 text profiles and declaration-qualified enum identity over the real
 //! `value` boundary.
 //!
-//! T01–T12 are transcribed from the vendored TC-186 procedure. Every enum node
+//! T01–T15 are transcribed from the vendored TC-186 procedure. Every enum node
 //! key is a fixture-supplied value: the pinned `node-identity-vectors.json`
 //! digests, or keys from this file's independent RFC 8785 canonicalizer, which
 //! is first shown to reproduce every pinned vector digest.
@@ -1129,5 +1129,160 @@ fn generated_enums_follow_declaration_identity_and_order() {
                 );
             }
         }
+    }
+}
+
+// ---- QSpec #68 amendment 2 (pending re-vendor) --------------------------------
+
+#[trace("TC-186", "FR-141-AC-4")]
+#[test]
+fn t13_scalar_length_is_measured_after_normalization() {
+    let one_scalar = admit(E_COMBINING, &text_type(1, 1, Nfc))
+        .completed()
+        .unwrap();
+    assert_eq!(one_scalar.length(), 1);
+    for profile in [Nfd, UnicodeScalars] {
+        assert!(
+            matches!(
+                admit(E_COMBINING, &text_type(1, 1, profile)),
+                Outcome::Refused(Refusal::TextLengthOutOfDomain)
+            ),
+            "{profile:?}"
+        );
+    }
+    let decomposed = admit(E_ACUTE, &text_type(2, 2, Nfd)).completed().unwrap();
+    assert_eq!(decomposed.length(), 2);
+    assert_eq!(decomposed.retained(), E_COMBINING);
+}
+
+#[trace("TC-186", "FR-141-AC-3", "FR-141-AC-6")]
+#[test]
+fn length_refusal_follows_the_last_charge_that_measures_the_length() {
+    use ChargePoint::{TextDecodeScalars, TextInputBytes, TextNormalizeInput, TextNormalizeOutput};
+    let cases: [(&str, TextProfile, &[ChargePoint]); 3] = [
+        (
+            E_COMBINING,
+            Nfd,
+            &[
+                TextInputBytes,
+                TextDecodeScalars,
+                TextNormalizeInput,
+                TextNormalizeOutput,
+                TextNormalizeOutput,
+            ],
+        ),
+        (
+            E_COMBINING,
+            UnicodeScalars,
+            &[TextInputBytes, TextDecodeScalars],
+        ),
+        (E_ACUTE, BinaryUtf8, &[TextInputBytes]),
+    ];
+    for (text, profile, charges) in cases {
+        let mut meter = Meter::new(UNLIMITED);
+        assert!(
+            matches!(
+                admit_text(&runtime(text), &text_type(1, 1, profile), &mut meter),
+                Outcome::Refused(Refusal::TextLengthOutOfDomain)
+            ),
+            "{profile:?}"
+        );
+        assert_eq!(meter.admitted_charges(), charges, "{profile:?}");
+    }
+}
+
+const T14: ScalarLimits = ScalarLimits {
+    integer_bits: 0,
+    decimal_digits: 0,
+    scale_expansion: 0,
+    text_input_bytes: 5,
+    text_scalars: 3,
+    normalized_scalars: 0,
+    unit_edges: 0,
+    value_occurrences: 2,
+    work_units: 3,
+    result_units: 1,
+};
+
+#[trace("TC-186", "FR-141-AC-4", "FR-141-AC-6")]
+#[test]
+fn t14_non_normalizing_profiles_charge_no_normalization() {
+    for profile in [UnicodeScalars, BinaryUtf8] {
+        let (left, right) = (value(E_ACUTE, profile), value(E_COMBINING, profile));
+        let mut meter = Meter::new(T14);
+        assert_eq!(
+            compare_text(Equal, &left, &right, &mut meter).unwrap(),
+            Outcome::Completed(false),
+            "{profile:?}"
+        );
+        assert_eq!(
+            meter.admitted_charges(),
+            [
+                ChargePoint::TextInputBytes,
+                ChargePoint::TextDecodeScalars,
+                ChargePoint::TextResultRetain,
+            ],
+            "{profile:?}"
+        );
+        assert_eq!(meter.consumed(LimitKind::NormalizedScalars), 0);
+        assert_eq!(
+            compare_text(
+                Equal,
+                &left,
+                &right,
+                &mut Meter::new(ScalarLimits {
+                    work_units: 2,
+                    ..T14
+                })
+            )
+            .unwrap(),
+            Outcome::Incomplete(Incomplete {
+                limit_kind: LimitKind::WorkUnits,
+                limit: 2,
+                consumed: 2,
+                next_charge: Integer::from(1_i64),
+                charge_point: ChargePoint::TextResultRetain,
+            }),
+            "{profile:?}"
+        );
+    }
+}
+
+const ZERO: ScalarLimits = ScalarLimits {
+    integer_bits: 0,
+    decimal_digits: 0,
+    scale_expansion: 0,
+    text_input_bytes: 0,
+    text_scalars: 0,
+    normalized_scalars: 0,
+    unit_edges: 0,
+    value_occurrences: 0,
+    work_units: 0,
+    result_units: 0,
+};
+
+#[trace("TC-186", "FR-141-AC-3", "FR-141-AC-5")]
+#[test]
+fn t15_enum_type_refusals_precede_every_charge() {
+    let unordered = fixture_declaration(["Example", "Status"], false, &["DONE", "READY"]);
+    let (ready, done) = (member(&unordered, "READY"), member(&unordered, "DONE"));
+    let enum_a = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
+    let enum_b = fixture_declaration(["Example", "Phase"], true, &["READY", "DONE"]);
+    let (ready_a, ready_b) = (member(&enum_a, "READY"), member(&enum_b, "READY"));
+    for (operator, left, right, cause) in [
+        (Less, &ready, &done, IllTypedCause::UnorderedEnumOrdering),
+        (
+            Equal,
+            &ready_a,
+            &ready_b,
+            IllTypedCause::DistinctEnumDeclarations,
+        ),
+    ] {
+        let mut meter = Meter::new(ZERO);
+        assert_eq!(
+            compare_enum(operator, left, right, &mut meter),
+            Err(IllTyped { cause })
+        );
+        assert!(meter.admitted_charges().is_empty());
     }
 }

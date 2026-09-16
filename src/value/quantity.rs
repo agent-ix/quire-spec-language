@@ -3,9 +3,12 @@
 //! affine conversion through the canonical root and the named `unit.*`
 //! charges of `quire.value.accounting/v1`.
 
+use std::cmp::Ordering;
+
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
-use super::decimal::{DecimalResult, DecimalType};
-use super::integer::Integer;
+use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
+use super::decimal::{DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
+use super::integer::{BoundedInteger, Integer, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge};
@@ -27,6 +30,22 @@ impl QuantityUnit {
         match self {
             Self::Declared(unit) => unit.dimension(),
             Self::Compound(unit) => unit.dimension(),
+        }
+    }
+
+    /// Whether quantities in `self` and `other` share one dimension.
+    // SPEC-GAP(14): FR-142 defines conversion only within one dimension
+    // node's unit graph. Two declared units are compatible exactly when they
+    // share one nominal dimension node; equal base-dimension maps are not
+    // enough. Normalized base-dimension maps are compared only when a
+    // compound unit is involved, which then composes through each side's
+    // canonical root as if those roots were coherent.
+    fn is_compatible(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Declared(left), Self::Declared(right)) => {
+                left.dimension_node() == right.dimension_node()
+            }
+            _ => self.dimension() == other.dimension(),
         }
     }
 
@@ -97,6 +116,16 @@ pub enum QuantityTarget {
     Exact,
     /// An FR-140 decimal type with its rounding and membership.
     Decimal(DecimalType),
+    /// An integer domain, placed as a decimal target of scale zero under
+    /// `rounding` and then admitted by integer-domain membership.
+    // SPEC-GAP(17): the integer-target ruling does not name a rounding
+    // spelling. The target carries one, as a scale-zero decimal target does.
+    Integer {
+        /// The inclusive integer domain.
+        domain: IntegerInterval,
+        /// The rounding spelling of the scale-zero placement.
+        rounding: RoundingMode,
+    },
 }
 
 /// A converted value in its target representation.
@@ -106,6 +135,13 @@ pub enum ConvertedValue {
     Exact(Rational),
     /// The FR-140 decimal result with any loss record.
     Decimal(DecimalResult),
+    /// The admitted integer with any scale-zero loss record.
+    Integer {
+        /// The integer-domain member.
+        value: BoundedInteger,
+        /// The loss record when a rounding step occurred.
+        loss: Option<DecimalLoss>,
+    },
 }
 
 /// A completed explicit conversion with its provenance.
@@ -140,18 +176,68 @@ impl Conversion {
 }
 
 /// Evaluate a quantity operation under `quire.value.accounting/v1`.
-pub fn evaluate_quantity(operation: QuantityOperation<'_>, meter: &mut Meter) -> Outcome<Quantity> {
-    Outcome::from_stop(evaluate(operation, meter))
+/// Incompatible dimensions, affine-unit arithmetic and distinct units are
+/// ill-typed and consume nothing.
+pub fn evaluate_quantity(
+    operation: QuantityOperation<'_>,
+    meter: &mut Meter,
+) -> Result<Outcome<Quantity>, IllTyped> {
+    type_check(operation)?;
+    Ok(Outcome::from_stop(evaluate(operation, meter)))
 }
 
 /// Explicitly convert `source` into `unit` with the `target` representation.
+/// Incompatible dimensions are ill-typed and consume nothing.
 pub fn convert_quantity(
     source: &Quantity,
     unit: &QuantityUnit,
     target: &QuantityTarget,
     meter: &mut Meter,
-) -> Outcome<Conversion> {
-    Outcome::from_stop(convert(source, unit, target, meter))
+) -> Result<Outcome<Conversion>, IllTyped> {
+    if !source.unit.is_compatible(unit) {
+        return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
+    }
+    let target = match target {
+        QuantityTarget::Exact => Target::Exact,
+        QuantityTarget::Decimal(decimal) => Target::Decimal(decimal.clone()),
+        QuantityTarget::Integer { domain, rounding } => Target::Integer {
+            placement: DecimalType::new(
+                domain.lower().clone(),
+                domain.upper().clone(),
+                0,
+                0,
+                *rounding,
+            )?,
+            domain,
+        },
+    };
+    Ok(Outcome::from_stop(convert(source, unit, &target, meter)))
+}
+
+/// Compare two quantities of the identical unit under
+/// `quire.value.accounting/v1` by their exact values mapped to the canonical
+/// root, so affine units and negative composed scales compare by root value.
+/// Operands of different dimensions or units are ill-typed and consume
+/// nothing.
+pub fn compare_quantity(
+    operator: ComparisonOperator,
+    left: &Quantity,
+    right: &Quantity,
+    meter: &mut Meter,
+) -> Result<Outcome<bool>, IllTyped> {
+    if !left.unit.is_compatible(&right.unit) {
+        return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
+    }
+    if left.unit != right.unit {
+        return Err(ill_typed(IllTypedCause::DistinctUnits));
+    }
+    Ok(Outcome::from_stop(
+        compare(left, right, meter).map(|ordering| operator.holds(ordering)),
+    ))
+}
+
+fn ill_typed(cause: IllTypedCause) -> IllTyped {
+    IllTyped { cause }
 }
 
 /// One `unit.identity-read` per operand, each sized over the operands read so
@@ -211,10 +297,11 @@ fn to_root(unit: &QuantityUnit) -> Vec<(&UnitEdge, Direction)> {
 }
 
 /// `unit.target-domain` with zero amounts for an unbounded rational result.
-// SPEC-GAP(11): the unit family lists `unit.target-domain` for every unit
-// operation but sizes it only for a conversion target. Quantity arithmetic,
-// whose result is an unbounded exact rational, also charges it, with zero
-// size amounts.
+// SPEC-GAP(11): the pinned `value-accounting.md` lists `unit.target-domain`
+// for every unit operation and sizes it as "zero for an unbounded rational
+// target", without saying whether quantity arithmetic has a target. Quantity
+// arithmetic and exact conversion charge it with no size amount; the result's
+// size is already charged by its final `unit.rational-arithmetic` event.
 fn charge_rational_target(meter: &mut Meter) -> Result<(), Stop> {
     meter
         .charge(Charge::new(ChargePoint::UnitTargetDomain))
@@ -232,47 +319,52 @@ fn charge_retain(meter: &mut Meter) -> Result<(), Stop> {
         .map_err(Stop::from)
 }
 
-/// Refuse an operation whose operands cannot combine.
-// SPEC-GAP(12): TC-187 says incompatible dimensions refuse "before
-// arithmetic" and FR-142 says affine arithmetic refuses "at the operator",
-// without placing either against `unit.identity-read`. Operand identities are
-// read (and charged) first; every refusal and an undefined zero divisor or
-// zero base under a negative power are then decided before any edge or
-// rational event.
-fn check_operands(operation: QuantityOperation<'_>) -> Result<(), Stop> {
-    let refuse = |refusal| Err(Stop::Refused(refusal));
+/// The type-time refusals of an operation, in cause order: incompatible
+/// dimensions, affine-unit arithmetic, distinct units.
+fn type_check(operation: QuantityOperation<'_>) -> Result<(), IllTyped> {
     match operation {
         QuantityOperation::Add(a, b) | QuantityOperation::Subtract(a, b) => {
-            if a.unit.dimension() != b.unit.dimension() {
-                return refuse(Refusal::IncompatibleDimensions);
+            if !a.unit.is_compatible(&b.unit) {
+                return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
             }
             if a.unit.is_affine() || b.unit.is_affine() {
-                return refuse(Refusal::AffineUnitArithmetic);
+                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
             }
             if a.unit != b.unit {
-                return refuse(Refusal::DistinctUnits);
+                return Err(ill_typed(IllTypedCause::DistinctUnits));
             }
-            Ok(())
         }
         QuantityOperation::Multiply(a, b) | QuantityOperation::Divide(a, b) => {
             if a.unit.is_affine() || b.unit.is_affine() {
-                return refuse(Refusal::AffineUnitArithmetic);
+                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
             }
-            if matches!(operation, QuantityOperation::Divide(..)) && b.value.is_zero() {
-                return Err(Stop::Undefined(Undefined::DivisionByZero));
-            }
-            Ok(())
         }
-        QuantityOperation::Power(a, exponent) => {
+        QuantityOperation::Power(a, _) => {
             if a.unit.is_affine() {
-                return refuse(Refusal::AffineUnitArithmetic);
+                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
             }
-            if a.value.is_zero() && exponent.is_negative() {
-                return Err(Stop::Undefined(Undefined::DivisionByZero));
-            }
-            Ok(())
         }
     }
+    Ok(())
+}
+
+/// The uncharged runtime checks after the identity reads.
+// SPEC-GAP(12): the pinned FR-142 does not place its checks against
+// `unit.identity-read`. Only a zero divisor and a zero base under a negative
+// exponent remain runtime checks; each is `undefined(division_by_zero)` after
+// the operand identity reads and before any edge or rational event.
+fn check_undefined(operation: QuantityOperation<'_>) -> Result<(), Stop> {
+    let undefined = match operation {
+        QuantityOperation::Divide(_, divisor) => divisor.value.is_zero(),
+        QuantityOperation::Power(base, exponent) => base.value.is_zero() && exponent.is_negative(),
+        QuantityOperation::Add(..)
+        | QuantityOperation::Subtract(..)
+        | QuantityOperation::Multiply(..) => false,
+    };
+    if undefined {
+        return Err(Stop::Undefined(Undefined::DivisionByZero));
+    }
+    Ok(())
 }
 
 fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quantity, Stop> {
@@ -284,7 +376,7 @@ fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quant
         QuantityOperation::Power(a, _) => vec![a],
     };
     read_identities(&operands, meter)?;
-    check_operands(operation)?;
+    check_undefined(operation)?;
     let result = match operation {
         QuantityOperation::Add(a, b) => Quantity {
             value: rational_event(a.value.add(&b.value), meter)?,
@@ -360,8 +452,10 @@ fn events(
 
 /// Charge the powered result's exact size before computing it. `None` is a
 /// zero base under a negative exponent.
-// SPEC-GAP(13): FR-142 does not define `0^0` for integer power. It is the
-// exact value one, as `Rational::pow` computes.
+// SPEC-GAP(13): FR-142 does not define integer power at a zero base. `0^0`
+// is the exact value one, as `Rational::pow` computes; a zero base under a
+// negative exponent is `undefined(division_by_zero)`, decided in
+// `check_undefined` before any edge or event.
 fn power(base: &Rational, exponent: &Integer, meter: &mut Meter) -> Result<Option<Rational>, Stop> {
     // For reduced `n/d`, `(n/d)^e` is reduced with parts `|n|^|e|` and
     // `d^|e|` (swapped for a negative exponent), so its `maxparts` is
@@ -374,21 +468,24 @@ fn power(base: &Rational, exponent: &Integer, meter: &mut Meter) -> Result<Optio
     Ok(base.pow(exponent))
 }
 
+/// A conversion target resolved at type-check time.
+enum Target<'a> {
+    Exact,
+    Decimal(DecimalType),
+    Integer {
+        placement: DecimalType,
+        domain: &'a IntegerInterval,
+    },
+}
+
+/// `source → root → target` in full, with no shortcut and no operation event.
 fn convert(
     source: &Quantity,
     unit: &QuantityUnit,
-    target: &QuantityTarget,
+    target: &Target<'_>,
     meter: &mut Meter,
 ) -> Result<Conversion, Stop> {
     read_identities(&[source], meter)?;
-    // SPEC-GAP(14): FR-142 defines conversion only within one dimension
-    // node's unit graph. A conversion between a declared unit and a compound
-    // unit, or between units of distinct dimension nodes, is admitted when
-    // their normalized dimension maps are equal, and composes through each
-    // side's canonical root as if those roots were coherent.
-    if source.unit.dimension() != unit.dimension() {
-        return Err(Stop::Refused(Refusal::IncompatibleDimensions));
-    }
     let source_edges = to_root(&source.unit);
     let target_edges: Vec<_> = unit
         .path()
@@ -400,26 +497,24 @@ fn convert(
     let canonical = events(&source.value, &source_edges, meter)?;
     let exact = events(&canonical, &target_edges, meter)?;
     let value = match target {
-        QuantityTarget::Exact => {
+        Target::Exact => {
             charge_rational_target(meter)?;
             charge_retain(meter)?;
             ConvertedValue::Exact(exact)
         }
-        QuantityTarget::Decimal(decimal) => {
-            // SPEC-GAP(15): the unit family does not place FR-140 rounding
-            // against `unit.target-domain`. Strict `exact` refuses before the
-            // charge, which is sized on the placed coefficient `v × 10^T`;
-            // membership refuses after it and before `unit.result-retain`.
-            let placed = decimal.place(&exact).map_err(Stop::Refused)?;
-            let (bits, digits) = placed.retained_sizes(decimal);
-            meter.charge(
-                Charge::new(ChargePoint::UnitTargetDomain)
-                    .exact_size(LimitKind::IntegerBits, bits)
-                    .size(LimitKind::DecimalDigits, digits),
-            )?;
+        Target::Decimal(decimal) => {
+            let placed = place(&exact, decimal, meter)?;
             placed.check_membership(decimal).map_err(Stop::Refused)?;
             charge_retain(meter)?;
             ConvertedValue::Decimal(placed.retain(decimal))
+        }
+        Target::Integer { placement, domain } => {
+            let (coefficient, loss) = place(&exact, placement, meter)?.into_integer();
+            let value = domain
+                .admit(coefficient)
+                .map_err(|_| Stop::Refused(Refusal::IntegerOutOfDomain))?;
+            charge_retain(meter)?;
+            ConvertedValue::Integer { value, loss }
         }
     };
     Ok(Conversion {
@@ -428,4 +523,38 @@ fn convert(
         value,
         unit: unit.clone(),
     })
+}
+
+/// Place `exact` at the decimal target's scale and charge
+/// `unit.target-domain` with the retained sizes before materializing it.
+// SPEC-GAP(15): the pinned unit family does not place FR-140 rounding against
+// `unit.target-domain`. Strict `exact` refuses before the charge, which is
+// sized analytically on the retained coefficient `v × 10^T`; the coefficient
+// is materialized after it, and membership refuses after it and before
+// `unit.result-retain`.
+fn place(exact: &Rational, decimal: &DecimalType, meter: &mut Meter) -> Result<Placed, Stop> {
+    let placement = decimal.placement(exact).map_err(Stop::Refused)?;
+    let (bits, digits) = placement.retained_sizes();
+    meter.charge(
+        Charge::new(ChargePoint::UnitTargetDomain)
+            .exact_size(LimitKind::IntegerBits, bits.clone())
+            .exact_size(LimitKind::DecimalDigits, digits.clone()),
+    )?;
+    placement.materialize(decimal).map_err(Stop::Refused)
+}
+
+// SPEC-GAP(16): FR-142 and the pinned `value-accounting.md` give no quantity
+// comparison schedule. Equality and ordering share one: two
+// `unit.identity-read`s, one `unit.edge` per edge of the left then the right
+// root path, the two `unit.rational-arithmetic` events of each edge in that
+// order, no operation event and no `unit.target-domain`, then
+// `unit.result-retain`.
+fn compare(left: &Quantity, right: &Quantity, meter: &mut Meter) -> Result<Ordering, Stop> {
+    read_identities(&[left, right], meter)?;
+    let (left_edges, right_edges) = (to_root(&left.unit), to_root(&right.unit));
+    charge_edges(left_edges.len() + right_edges.len(), meter)?;
+    let left = events(&left.value, &left_edges, meter)?;
+    let right = events(&right.value, &right_edges, meter)?;
+    charge_retain(meter)?;
+    Ok(left.cmp(&right))
 }
