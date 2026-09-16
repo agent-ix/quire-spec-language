@@ -468,6 +468,11 @@ impl TypeEnvironment {
         self.composites.get(&key)
     }
 
+    /// Every admitted record and tuple declaration in key order.
+    pub(crate) fn composites(&self) -> impl Iterator<Item = &CompositeDeclaration> {
+        self.composites.values()
+    }
+
     /// The admitted object type with this key.
     pub fn object_type(&self, key: NodeKey) -> Option<&ObjectTypeDeclaration> {
         self.object_types.get(&key)
@@ -867,7 +872,7 @@ fn admitted(value_type: &ValueType, outcome: Outcome<Value>) -> Result<Value, St
 }
 
 /// Charge `composite.result-retain` with `occ(result)`, then expose it.
-fn retain_composite(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
+pub(crate) fn retain_composite(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     let occ = value.occ();
     meter.charge(
         Charge::new(ChargePoint::CompositeResultRetain)

@@ -153,6 +153,11 @@ impl ObjectEnvironment {
         Ok(environment)
     }
 
+    /// Whether the referenced object is in the environment.
+    pub fn contains(&self, reference: &ObjectReference) -> bool {
+        self.objects.contains_key(reference)
+    }
+
     /// The named attribute slot of the referenced object.
     pub fn attribute(
         &self,

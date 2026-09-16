@@ -4,9 +4,8 @@
 //!
 //! Declaration node keys are opaque producer-assigned fixture keys; the
 //! declarations that intentionally share names and shapes get distinct keys.
-//! R02's alias row, R03, R04, R08, R09's `convert` row and R11 need the FR-146
-//! checker, the FR-307 package boundary or the parser
-//! (`Remaining work: #119`).
+//! R04 needs the source parser and R03's library-import row needs the FR-307
+//! package boundary (`Remaining work: #119`).
 
 use std::cell::Cell;
 
@@ -675,5 +674,392 @@ fn malformed_declarations_refuse_at_admission() {
         let refused = TypeEnvironment::new(declarations, []).unwrap_err();
         assert_eq!(refused.code(), "invalid_semantic_graph");
         assert_eq!(refused, expected);
+    }
+}
+
+/// Rows that need the FR-146 checker and evaluator boundary.
+mod checked {
+    use super::*;
+    use quire_spec_language::value::{
+        BinaryOperator, BoundViolation, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
+        CheckedPackage, CheckingLimits, Expression, FieldInitializer, FunctionDeclaration,
+        InputRefusal, Obligation, PackageDeclarations, Refusal,
+    };
+
+    fn name(spelling: &str) -> Expression {
+        Expression::Name(spelling.to_owned())
+    }
+
+    fn literal(value: i64) -> Expression {
+        Expression::Integer(Integer::from(value))
+    }
+
+    fn binary(operator: BinaryOperator, left: Expression, right: Expression) -> Expression {
+        Expression::Binary {
+            operator,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    fn project(operand: Expression, spelling: &str) -> Expression {
+        Expression::Field {
+            operand: Box::new(operand),
+            field: spelling.to_owned(),
+        }
+    }
+
+    fn call(target: &str) -> Expression {
+        Expression::Call {
+            name: target.to_owned(),
+            arguments: Vec::new(),
+        }
+    }
+
+    fn function(
+        spelling: &str,
+        parameters: &[(&str, ValueType)],
+        body: Expression,
+    ) -> FunctionDeclaration {
+        FunctionDeclaration {
+            name: spelling.to_owned(),
+            parameters: owned(parameters),
+            result: ValueType::Integer,
+            measure: None,
+            body,
+        }
+    }
+
+    fn owned(parameters: &[(&str, ValueType)]) -> Vec<(String, ValueType)> {
+        parameters
+            .iter()
+            .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+            .collect()
+    }
+
+    fn package(
+        types: TypeEnvironment,
+        aliases: Vec<(String, ValueType)>,
+        functions: Vec<FunctionDeclaration>,
+    ) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+        PackageDeclarations {
+            types,
+            aliases,
+            functions,
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+    }
+
+    fn check(
+        package: &CheckedPackage,
+        parameters: &[(&str, ValueType)],
+        expression: &Expression,
+        mode: CheckMode,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        package.check_expression(
+            owned(parameters),
+            expression,
+            None,
+            mode,
+            CheckingLimits::default(),
+        )
+    }
+
+    fn evaluate(
+        package: &CheckedPackage,
+        checked: &CheckedExpression,
+        arguments: Vec<Value>,
+        limits: ScalarLimits,
+    ) -> (Outcome<Value>, Meter) {
+        let mut meter = Meter::new(limits);
+        let evaluation = package
+            .evaluate(
+                checked,
+                arguments,
+                &ObjectEnvironment::default(),
+                &mut meter,
+            )
+            .unwrap();
+        (evaluation.outcome, meter)
+    }
+
+    fn cause(result: Result<CheckedExpression, CheckRefusal>) -> CheckCause {
+        match result {
+            Err(refusal) => refusal.cause,
+            Ok(_) => panic!("a refusal, not a checked expression"),
+        }
+    }
+
+    fn mismatch() -> CheckCause {
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    }
+
+    fn assert_completed(outcome: &Outcome<Value>, expected: Value) {
+        assert_eq!(
+            format!("{outcome:?}"),
+            format!("{:?}", Outcome::Completed(expected))
+        );
+    }
+
+    #[trace("TC-188", "FR-143-AC-2")]
+    #[trace("TC-188", "FR-143-AC-6")]
+    #[test]
+    fn r02_an_alias_creates_no_declaration_identity() {
+        let x = || vec![field("x", ValueType::Integer, Presence::Required)];
+        let types = TypeEnvironment::new([record("A", x()), record("B", x())], []).unwrap();
+        let package = package(
+            types.clone(),
+            vec![("C".to_owned(), composite("A"))],
+            Vec::new(),
+        )
+        .unwrap();
+        let parameters = [("a", composite("A")), ("b", composite("B"))];
+        let equal = |left, right| binary(BinaryOperator::Equal, left, right);
+        assert_eq!(
+            cause(check(
+                &package,
+                &parameters,
+                &equal(name("a"), name("b")),
+                CheckMode::Kernel
+            )),
+            mismatch()
+        );
+
+        let aliased = Expression::Record {
+            name: "C".to_owned(),
+            fields: vec![("x".to_owned(), FieldInitializer::Value(literal(1)))],
+        };
+        let checked = check(
+            &package,
+            &parameters,
+            &equal(aliased, name("a")),
+            CheckMode::Kernel,
+        )
+        .unwrap();
+        let value = |declaration| {
+            types
+                .record(key(declaration), vec![("x", FieldValue::Present(int(1)))])
+                .unwrap()
+        };
+        let (outcome, _) = evaluate(&package, &checked, vec![value("A"), value("B")], UNLIMITED);
+        assert_completed(&outcome, Value::Boolean(true));
+    }
+
+    #[trace("TC-188", "FR-143-AC-6")]
+    #[trace("TC-188", "FR-143-AC-9")]
+    #[test]
+    fn r03_declaration_keys_of_another_package_refuse_at_checking_and_input() {
+        let r = |label| {
+            TypeEnvironment::new(
+                [record(
+                    label,
+                    vec![field("x", ValueType::Integer, Presence::Required)],
+                )],
+                [],
+            )
+            .unwrap()
+        };
+        let (p_types, q_types) = (r("P::R"), r("Q::R"));
+        let p = package(
+            p_types,
+            Vec::new(),
+            vec![function("id", &[("r", composite("P::R"))], literal(1))],
+        )
+        .unwrap();
+        assert_eq!(
+            cause(check(
+                &p,
+                &[("a", composite("P::R")), ("b", composite("Q::R"))],
+                &binary(BinaryOperator::Equal, name("a"), name("b")),
+                CheckMode::Kernel,
+            )),
+            mismatch()
+        );
+
+        let foreign = q_types
+            .record(key("Q::R"), vec![("x", FieldValue::Present(int(1)))])
+            .unwrap();
+        let mut meter = Meter::new(UNLIMITED);
+        let refused = p
+            .call(
+                "id",
+                vec![foreign],
+                &ObjectEnvironment::default(),
+                &mut meter,
+            )
+            .unwrap_err();
+        assert_eq!(refused, InputRefusal::WrongValueKind { parameter: 0 });
+        assert_eq!(refused.code().as_str(), "invalid_runtime_input");
+        assert_eq!(refused.cause(), "wrong-value-kind");
+        assert!(meter.admitted_charges().is_empty());
+    }
+
+    #[trace("TC-188", "FR-143-AC-8")]
+    #[test]
+    fn r08_field_a_stops_construction_before_field_b_is_evaluated() {
+        let set = ValueType::collection(CollectionType::new(
+            CollectionKind::Set,
+            ValueType::Integer,
+            CardinalityBound::new(0, 1).unwrap(),
+        ));
+        let types = TypeEnvironment::new(
+            [record(
+                "Two",
+                vec![
+                    field("a", set.clone(), Presence::Required),
+                    field("b", ValueType::Integer, Presence::Required),
+                ],
+            )],
+            [],
+        )
+        .unwrap();
+        let package = package(
+            types,
+            Vec::new(),
+            vec![
+                function("f", &[], literal(1)),
+                function("g", &[], call("f")),
+            ],
+        )
+        .unwrap();
+        let q_type = sequence_of(ValueType::Integer, 0, 2);
+        let construction = Expression::Record {
+            name: "Two".to_owned(),
+            fields: vec![
+                ("b".to_owned(), FieldInitializer::Value(call("g"))),
+                (
+                    "a".to_owned(),
+                    FieldInitializer::Value(Expression::Convert {
+                        target: set.clone(),
+                        operand: Box::new(name("q")),
+                    }),
+                ),
+            ],
+        };
+        let checked = check(
+            &package,
+            &[("q", q_type.clone())],
+            &construction,
+            CheckMode::Linked,
+        )
+        .unwrap();
+        let ValueType::Collection(q_collection) = &q_type else {
+            panic!("a collection type");
+        };
+        let q = quire_spec_language::value::form_collection(
+            q_collection,
+            vec![int(1), int(2)],
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap()
+        .completed()
+        .unwrap();
+        let (outcome, meter) = evaluate(
+            &package,
+            &checked,
+            vec![q],
+            ScalarLimits {
+                work_units: 6,
+                ..UNLIMITED
+            },
+        );
+        let ValueType::Collection(set_type) = &set else {
+            panic!("a collection type");
+        };
+        assert_eq!(
+            format!("{outcome:?}"),
+            format!(
+                "{:?}",
+                Outcome::<Value>::Refused(Refusal::CardinalityOutOfBound {
+                    violation: BoundViolation::AboveMaximum,
+                    kind: CollectionKind::Set,
+                    bound: set_type.bound(),
+                    count: 2,
+                })
+            )
+        );
+        assert_eq!(
+            meter.admitted_charges(),
+            [
+                ChargePoint::CollectionVisit,
+                ChargePoint::CollectionVisit,
+                ChargePoint::CollectionMemberWalk,
+                ChargePoint::CollectionMemberTest,
+                ChargePoint::CollectionBound,
+            ]
+        );
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 6);
+        assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
+    }
+
+    #[trace("TC-188", "FR-143-AC-9")]
+    #[test]
+    fn r09_no_source_form_converts_into_a_reference() {
+        let package = package(node_environment(), Vec::new(), Vec::new()).unwrap();
+        let conversion = Expression::Convert {
+            target: ValueType::Reference(key("M::Node")),
+            operand: Box::new(literal(1)),
+        };
+        assert_eq!(
+            cause(check(&package, &[], &conversion, CheckMode::Kernel)),
+            mismatch()
+        );
+    }
+
+    #[trace("TC-188", "FR-143-AC-10")]
+    #[test]
+    fn r11_optional_field_projections_need_present_or_value() {
+        let x = [("x", composite("P"))];
+        let b = || project(name("x"), "b");
+        let body = |body| package(p_environment(), Vec::new(), vec![function("f", &x, body)]);
+        body(Expression::If {
+            condition: Box::new(Expression::Present(Box::new(b()))),
+            then: Box::new(Expression::Value(Box::new(b()))),
+            otherwise: Box::new(literal(0)),
+        })
+        .unwrap();
+        let only = |result: Result<CheckedPackage, Vec<CheckRefusal>>| match result {
+            Err(refusals) => match refusals.as_slice() {
+                [refusal] => refusal.cause.clone(),
+                other => panic!("one refusal, not {other:?}"),
+            },
+            Ok(_) => panic!("a refusal, not an admitted package"),
+        };
+        let unguarded = only(body(Expression::Value(Box::new(b()))));
+        assert_eq!(unguarded, CheckCause::Unproved(Obligation::Presence));
+        assert_eq!(unguarded.code().as_str(), "undefined_expression");
+        assert_eq!(unguarded.cause(), Some("unproved-presence"));
+        assert_eq!(
+            only(body(binary(BinaryOperator::Add, b(), literal(1)))),
+            mismatch()
+        );
+        body(binary(
+            BinaryOperator::Add,
+            project(name("x"), "a"),
+            literal(1),
+        ))
+        .unwrap();
+
+        let package = package(p_environment(), Vec::new(), Vec::new()).unwrap();
+        let checked = check(
+            &package,
+            &x,
+            &Expression::Present(Box::new(b())),
+            CheckMode::Linked,
+        )
+        .unwrap();
+        let env = p_environment();
+        for (slot, expected) in [
+            (None, false),
+            (Some(FieldValue::Null), false),
+            (Some(FieldValue::Present(int(2))), true),
+        ] {
+            let mut fields = vec![("a", FieldValue::Present(int(1)))];
+            fields.extend(slot.map(|slot| ("b", slot)));
+            let value = env.record(key("P"), fields).unwrap();
+            let (outcome, _) = evaluate(&package, &checked, vec![value], UNLIMITED);
+            assert_completed(&outcome, Value::Boolean(expected));
+        }
     }
 }

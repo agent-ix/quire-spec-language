@@ -107,6 +107,9 @@ pub enum IllTypedCause {
     /// FR-272 `operator-ineligible`: the operator is not defined for the
     /// operand type, such as `=` on an IEEE-bearing type.
     OperatorIneligible,
+    /// FR-272 `ambiguous-literal`: a collection or `rational` literal has no
+    /// unique expected type.
+    AmbiguousLiteral,
 }
 
 impl IllTypedCause {
@@ -116,6 +119,7 @@ impl IllTypedCause {
         match self {
             Self::TypeMismatch => Some("type-mismatch"),
             Self::OperatorIneligible => Some("operator-ineligible"),
+            Self::AmbiguousLiteral => Some("ambiguous-literal"),
             Self::DistinctTextProfiles
             | Self::DistinctEnumDeclarations
             | Self::UnorderedEnumOrdering

@@ -60,6 +60,12 @@ pub enum Undefined {
     DivisionByZero,
     /// An IEEE NaN or infinity has no exact value.
     IeeeNotFinite,
+    /// FR-145: `reduce` over an empty collection has no value. Only direct
+    /// kernel evaluation of an unlinked expression can meet it.
+    EmptyReduction,
+    /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
+    /// expression can meet it.
+    NoneValue,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.

@@ -226,7 +226,7 @@ pub(crate) fn form(
 ) -> Result<Value, Stop> {
     let kind = collection_type.kind;
     let occurrence_count = length_amount(occurrences.len());
-    let mut elements = if kind == CollectionKind::Sequence {
+    let elements = if kind == CollectionKind::Sequence {
         occurrences
     } else {
         coalesce(kind, occurrences, meter)?
@@ -236,6 +236,29 @@ pub(crate) fn form(
     } else {
         occurrence_count
     };
+    bound_and_retain(collection_type, elements, count, meter)
+}
+
+/// Form a collection from occurrences that are already distinct members (for
+/// a set or ordered set) or grouped equal occurrences (for a bag), so no
+/// membership comparison is charged: `collection.bound`, the bound check,
+/// canonical order and `collection.result-retain`.
+pub(crate) fn form_grouped(
+    collection_type: &CollectionType,
+    elements: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Value, Stop> {
+    let count = length_amount(elements.len());
+    bound_and_retain(collection_type, elements, count, meter)
+}
+
+fn bound_and_retain(
+    collection_type: &CollectionType,
+    mut elements: Vec<Value>,
+    count: u64,
+    meter: &mut Meter,
+) -> Result<Value, Stop> {
+    let kind = collection_type.kind;
     meter.charge(
         Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
     )?;

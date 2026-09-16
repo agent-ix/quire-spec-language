@@ -420,7 +420,7 @@ fn integer_source_admits(lower: &Integer, upper: &Integer, target: &ValueType) -
 }
 
 /// The comparison value of one operand after its admitted conversion.
-fn operand_value(
+pub(crate) fn operand_value(
     operand: &EqualityOperand,
     value: &Value,
     meter: &mut Meter,

@@ -37,6 +37,7 @@ mod definition;
 mod division;
 mod enumeration;
 mod equality;
+mod expression;
 mod ieee;
 mod integer;
 mod key;
@@ -82,6 +83,13 @@ pub use enumeration::{
 pub use equality::{
     admits_equality_conversion, plan_equality, CheckedEquality, EqualityOperand, EqualityOperator,
     EqualityPlan, EqualitySchedule,
+};
+pub use expression::{
+    Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal,
+    CheckedExpression, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
+    CollectionLoss, CollectionProperty, DepthAboveMaximum, EnumBinding, Evaluation, Expression,
+    FieldInitializer, FunctionDeclaration, InputRefusal, Location, MeasureObligation, Obligation,
+    Origin, PackageDeclarations, ProvedInterval, UnsupportedForm, MAX_CHECKING_DEPTH,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,

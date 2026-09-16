@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-189 collection kind algebra over the real `value` boundary (FR-144).
-//!
-//! C05, C06's query rows, C11's `convert` row and C12 need the FR-146 query
-//! and literal-typing evaluator (`Remaining work: #119`).
 
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
@@ -518,4 +515,455 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
         refused.component,
         quire_spec_language::value::Component::Element(1)
     );
+}
+
+/// Rows that need the FR-145/FR-146 checker and evaluator boundary.
+mod checked {
+    use super::*;
+    use quire_spec_language::value::{
+        BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
+        CheckedPackage, CheckingLimits, EnumBinding, EnumDeclaration, EnumDeclarationPreimage,
+        EnumMemberPreimage, Expression, NodeOwner, ObjectEnvironment, OwnerSelection, OwnerSubject,
+        PackageDeclarations, SemanticGraphCause, NODE_KEY_DOMAIN,
+    };
+    use serde_json::json;
+
+    fn name(spelling: &str) -> Expression {
+        Expression::Name(spelling.to_owned())
+    }
+
+    fn literal(value: i64) -> Expression {
+        Expression::Integer(Integer::from(value))
+    }
+
+    fn equal(left: Expression, right: Expression) -> Expression {
+        Expression::Binary {
+            operator: BinaryOperator::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    fn literal_collection(kind: CollectionKind, values: &[i64]) -> Expression {
+        Expression::Collection {
+            kind,
+            elements: values.iter().copied().map(literal).collect(),
+        }
+    }
+
+    fn exists(source: &str, body: Expression) -> Expression {
+        Expression::Query {
+            query: BinderQuery::Exists,
+            binder: "x".to_owned(),
+            source: Box::new(name(source)),
+            body: Box::new(body),
+        }
+    }
+
+    fn package(declarations: PackageDeclarations) -> CheckedPackage {
+        declarations.check(CheckingLimits::default()).unwrap()
+    }
+
+    fn check(
+        package: &CheckedPackage,
+        parameters: &[(&str, ValueType)],
+        expression: &Expression,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        package.check_expression(
+            parameters
+                .iter()
+                .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+                .collect(),
+            expression,
+            None,
+            CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+    }
+
+    fn ill_typed(
+        package: &CheckedPackage,
+        parameters: &[(&str, ValueType)],
+        expression: &Expression,
+    ) -> IllTypedCause {
+        match check(package, parameters, expression).map(|_| ()) {
+            Err(CheckRefusal {
+                cause: CheckCause::IllTyped(cause),
+                ..
+            }) => cause,
+            other => panic!("an ill_typed refusal, not {other:?}"),
+        }
+    }
+
+    /// The completed value and the admitted charges of one evaluation.
+    fn evaluate(
+        package: &CheckedPackage,
+        parameters: &[(&str, ValueType)],
+        expression: &Expression,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+    ) -> (Value, Vec<ChargePoint>) {
+        let checked = check(package, parameters, expression).unwrap();
+        let mut meter = Meter::new(UNLIMITED);
+        let evaluation = package
+            .evaluate(&checked, arguments, objects, &mut meter)
+            .unwrap();
+        match evaluation.outcome {
+            Outcome::Completed(value) => (value, meter.admitted_charges().to_vec()),
+            other => panic!("a completed value, not {other:?}"),
+        }
+    }
+
+    fn visits(charges: &[ChargePoint]) -> usize {
+        charges
+            .iter()
+            .filter(|charge| **charge == ChargePoint::CollectionVisit)
+            .count()
+    }
+
+    fn jcs(value: &serde_json::Value) -> String {
+        match value {
+            serde_json::Value::Array(items) => {
+                format!("[{}]", items.iter().map(jcs).collect::<Vec<_>>().join(","))
+            }
+            serde_json::Value::Object(members) => {
+                let mut entries: Vec<_> = members.iter().collect();
+                entries.sort_by(|(a, _), (b, _)| a.encode_utf16().cmp(b.encode_utf16()));
+                let body: Vec<_> = entries
+                    .into_iter()
+                    .map(|(key, item)| {
+                        format!("{}:{}", serde_json::Value::from(key.as_str()), jcs(item))
+                    })
+                    .collect();
+                format!("{{{}}}", body.join(","))
+            }
+            other => other.to_string(),
+        }
+    }
+
+    fn preimage_key(preimage: &serde_json::Value) -> NodeKey {
+        key_of_bytes(jcs(preimage).as_bytes())
+    }
+
+    fn key_of_bytes(bytes: &[u8]) -> NodeKey {
+        let digest: String = Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        NodeKey::from_hex(&digest).unwrap()
+    }
+
+    fn owners() -> OwnerSelection {
+        OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+            authority: "agent-ix".into(),
+            identity: "example-model".into(),
+        })])
+    }
+
+    fn declaration_preimage(label: &str, ordered: bool, members: &[&str]) -> serde_json::Value {
+        json!({
+            "version": "quire.enum-declaration-node/v1",
+            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
+            "qualified_declaration": ["Example", label],
+            "ordered": ordered,
+            "members": members,
+        })
+    }
+
+    fn admit(label: &str, ordered: bool, members: &[&str]) -> EnumBinding {
+        let preimage = declaration_preimage(label, ordered, members);
+        let declaration = EnumDeclaration::admit(
+            EnumDeclarationPreimage::from_json(preimage.clone()).unwrap(),
+            preimage_key(&preimage),
+            &owners(),
+        )
+        .unwrap();
+        let members = members
+            .iter()
+            .map(|case| {
+                let member = json!({
+                    "version": "quire.enum-member-node/v1",
+                    "declaration_node_id": {
+                        "domain": NODE_KEY_DOMAIN,
+                        "digest": declaration.key().to_string(),
+                    },
+                    "case": case,
+                });
+                declaration
+                    .admit_member(
+                        &EnumMemberPreimage::from_json(member.clone()).unwrap(),
+                        preimage_key(&member),
+                    )
+                    .unwrap()
+            })
+            .collect();
+        EnumBinding {
+            name: label.to_owned(),
+            declaration,
+            members,
+        }
+    }
+
+    fn member(binding: &EnumBinding, case: &str) -> Value {
+        Value::Enum(
+            binding
+                .members
+                .iter()
+                .find(|member| member.case() == case)
+                .cloned()
+                .unwrap(),
+        )
+    }
+
+    fn formed(value_type: &CollectionType, values: Vec<Value>) -> Value {
+        quire_spec_language::value::form_collection(value_type, values, &mut Meter::new(UNLIMITED))
+            .unwrap()
+            .completed()
+            .unwrap()
+    }
+
+    #[trace("TC-189", "FR-144-AC-7")]
+    #[trace("TC-189", "FR-144-AC-9")]
+    #[test]
+    fn c05_enum_keys_order_unordered_members_by_identifier_bytes() {
+        let color = admit("Color", false, &["blue", "green", "red"]);
+        let level = admit("Level", true, &["high", "low"]);
+        let colors = collection_type(
+            CollectionKind::Set,
+            ValueType::Enum(color.declaration.key()),
+            0,
+            3,
+        );
+        let levels = collection_type(
+            CollectionKind::Set,
+            ValueType::Enum(level.declaration.key()),
+            0,
+            2,
+        );
+        let package = package(PackageDeclarations {
+            enums: vec![color.clone(), level.clone()],
+            ..PackageDeclarations::default()
+        });
+        let c = formed(
+            &colors,
+            vec![
+                member(&color, "red"),
+                member(&color, "blue"),
+                member(&color, "green"),
+            ],
+        );
+        let l = formed(&levels, vec![member(&level, "low"), member(&level, "high")]);
+        let parameters = [
+            ("c", ValueType::collection(colors)),
+            ("l", ValueType::collection(levels)),
+        ];
+        for (source, case, expected_visits) in [
+            ("c", "Color::blue", 1),
+            ("c", "Color::red", 3),
+            ("l", "Level::high", 1),
+        ] {
+            let (value, charges) = evaluate(
+                &package,
+                &parameters,
+                &exists(source, equal(name("x"), name(case))),
+                vec![c.clone(), l.clone()],
+                &ObjectEnvironment::default(),
+            );
+            assert_eq!(format!("{value:?}"), format!("{:?}", Value::Boolean(true)));
+            assert_eq!(visits(&charges), expected_visits, "{case}");
+        }
+
+        // Reordering the source cases leaves one admitted declaration: an
+        // unordered declaration node retains its members sorted, so a
+        // declaration position never reaches the key.
+        let reordered = declaration_preimage("Color", false, &["green", "red", "blue"]);
+        assert_eq!(
+            EnumDeclaration::admit(
+                EnumDeclarationPreimage::from_json(reordered.clone()).unwrap(),
+                preimage_key(&reordered),
+                &owners(),
+            )
+            .unwrap_err()
+            .cause,
+            SemanticGraphCause::UnsortedUnorderedMembers
+        );
+
+        assert_eq!(
+            ill_typed(
+                &package,
+                &[],
+                &Expression::Binary {
+                    operator: BinaryOperator::Less,
+                    left: Box::new(name("Color::red")),
+                    right: Box::new(name("Color::blue")),
+                },
+            ),
+            IllTypedCause::OperatorIneligible
+        );
+    }
+
+    #[trace("TC-189", "FR-144-AC-6")]
+    #[test]
+    fn c06_reference_keyed_holder_sets_answer_every_query_form() {
+        let types = holder_environment();
+        let package = package(PackageDeclarations {
+            types: types.clone(),
+            ..PackageDeclarations::default()
+        });
+        let holder_type = ValueType::Composite(key("Holder"));
+        let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);
+        let (h1, h2) = (holder(&types, "u1", "h1"), holder(&types, "u1", "h2"));
+        let hs = formed(&holders, vec![h2.clone(), h1.clone()]);
+        let objects = ObjectEnvironment::new(
+            &types,
+            ["h1", "h2"].map(|identity| {
+                (
+                    ObjectReference::new(
+                        UniverseIdentity::new(b"u1").unwrap(),
+                        key("M::Obj"),
+                        ObjectIdentity::new(identity.as_bytes()).unwrap(),
+                    ),
+                    Vec::new(),
+                )
+            }),
+        )
+        .unwrap();
+        let parameters = [("hs", ValueType::collection(holders)), ("h1", holder_type)];
+        let run = |expression: Expression| {
+            evaluate(
+                &package,
+                &parameters,
+                &expression,
+                vec![hs.clone(), h1.clone()],
+                &objects,
+            )
+            .0
+        };
+        let ordered = format!("{:?}", [h1.clone(), h2.clone()]);
+        let mapped = run(Expression::Query {
+            query: BinderQuery::Map,
+            binder: "x".to_owned(),
+            source: Box::new(name("hs")),
+            body: Box::new(name("x")),
+        });
+        assert_eq!(format!("{:?}", elements(&mapped)), ordered);
+        let converted = run(Expression::Convert {
+            target: ValueType::collection(collection_type(
+                CollectionKind::Sequence,
+                ValueType::Composite(key("Holder")),
+                0,
+                2,
+            )),
+            operand: Box::new(name("hs")),
+        });
+        let Value::Collection(sequence) = &converted else {
+            panic!("a collection");
+        };
+        assert_eq!(sequence.collection_type().kind(), CollectionKind::Sequence);
+        assert_eq!(format!("{:?}", sequence.elements()), ordered);
+        assert_eq!(
+            format!("{:?}", run(Expression::Size(Box::new(name("hs"))))),
+            format!("{:?}", int(2))
+        );
+        for expression in [
+            Expression::Contains {
+                collection: Box::new(name("hs")),
+                item: Box::new(name("h1")),
+            },
+            equal(name("hs"), name("hs")),
+        ] {
+            assert_eq!(
+                format!("{:?}", run(expression)),
+                format!("{:?}", Value::Boolean(true))
+            );
+        }
+    }
+
+    #[trace("TC-189", "FR-144-AC-9")]
+    #[test]
+    fn c11_converting_to_the_other_bound_admits_equality_without_loss() {
+        let package = package(PackageDeclarations::default());
+        let x_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 2);
+        let s_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 3);
+        let parameters = [
+            ("x", ValueType::collection(x_type.clone())),
+            ("s", ValueType::collection(s_type.clone())),
+        ];
+        assert_eq!(
+            ill_typed(&package, &parameters, &equal(name("x"), name("s"))),
+            IllTypedCause::TypeMismatch
+        );
+        let widened = Expression::Let {
+            name: "y".to_owned(),
+            value: Box::new(Expression::Convert {
+                target: ValueType::collection(s_type.clone()),
+                operand: Box::new(name("x")),
+            }),
+            body: Box::new(equal(name("y"), name("s"))),
+        };
+        let checked = check(&package, &parameters, &widened).unwrap();
+        let losses = checked.losses();
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].discarded.is_empty());
+        let (value, _) = evaluate(
+            &package,
+            &parameters,
+            &widened,
+            vec![
+                formed(&x_type, values(&[1, 2])),
+                formed(&s_type, values(&[1, 2])),
+            ],
+            &ObjectEnvironment::default(),
+        );
+        assert_eq!(format!("{value:?}"), format!("{:?}", Value::Boolean(true)));
+    }
+
+    #[trace("TC-189", "FR-144-AC-10")]
+    #[test]
+    fn c12_collection_literals_take_their_unique_expected_type() {
+        let package = package(PackageDeclarations::default());
+        let set = || literal_collection(CollectionKind::Set, &[2, 1]);
+        assert_eq!(
+            ill_typed(
+                &package,
+                &[],
+                &equal(literal_collection(CollectionKind::Set, &[1, 2]), set()),
+            ),
+            IllTypedCause::AmbiguousLiteral
+        );
+        assert_eq!(
+            ill_typed(
+                &package,
+                &[],
+                &Expression::Let {
+                    name: "z".to_owned(),
+                    value: Box::new(literal_collection(CollectionKind::Set, &[1])),
+                    body: Box::new(Expression::Size(Box::new(name("z")))),
+                },
+            ),
+            IllTypedCause::AmbiguousLiteral
+        );
+
+        let s_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 2);
+        let parameters = [("s", ValueType::collection(s_type.clone()))];
+        let (value, _) = evaluate(
+            &package,
+            &parameters,
+            &equal(name("s"), set()),
+            vec![formed(&s_type, values(&[1, 2]))],
+            &ObjectEnvironment::default(),
+        );
+        assert_eq!(format!("{value:?}"), format!("{:?}", Value::Boolean(true)));
+        assert_eq!(
+            ill_typed(
+                &package,
+                &parameters,
+                &equal(
+                    name("s"),
+                    literal_collection(CollectionKind::Sequence, &[1, 2])
+                ),
+            ),
+            IllTypedCause::TypeMismatch
+        );
+    }
 }
