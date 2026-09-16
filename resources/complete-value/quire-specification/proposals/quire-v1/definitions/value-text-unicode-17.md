@@ -24,7 +24,9 @@ vendoring tables. Implementations may encode the verified tables differently
 only when every Unicode scalar sequence produces the same normalization result
 and the complete `NormalizationTest.txt` corpus passes. `unicode-scalars` and
 `binary-utf8` select FR-141's non-normalizing relations but retain this
-definition when a package also uses a normalization profile.
+definition when a package also uses a normalization profile. Under `nfc`,
+`nfd`, `nfkc` and `nfkd`, text length is the scalar count of the sequence
+normalized by this definition, not of the input sequence.
 
 This is a leaf semantic-profile definition selected alongside
 `quire.value.complete/v1`; it has no reverse dependency on that root.

@@ -19,7 +19,7 @@
     {
       "role": "accounting",
       "artifact_path": "value-accounting.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"2f35c7e50942bea4189e8ab74c6276e512ea78928427c988b1a62d7d41d1eb16"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"3345bd8092c817fd60bf8ad734d7eedeb0a988fa7e39862fb98cdb63d8b8c72b"}
     },
     {
       "role": "compound_unit",
@@ -39,12 +39,12 @@
     {
       "role": "rule_manifest",
       "artifact_path": "value-complete-rules.json",
-      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"9bfe96e28765a852092f612f3fb8cb726437ec0958d6fc5c9e054c61091fe2f7"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"c300d83959253ee4cca0f0c37cfdb931ab4e6b29b3004d7119f7d532093e894c"}
     },
     {
       "role": "text_profile",
       "artifact_path": "value-text-unicode-17.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"9c791cbf96222fab0efa4f2ba08359437ba5a78deecf3f2bc6378b27eb544cae"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"cd4a985a0d7d2f2b3d3625caee3787832c00c5244e805fb49e1c2c7075b9de5e"}
     },
     {
       "role": "ieee_profile",
@@ -89,12 +89,12 @@
     {
       "role": "rule_fr_141",
       "artifact_path": "../../../spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-141/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"ba44ae74932845c4bc2a5ed06709f24d6732cd6f19f2d81db92d037ed96faa05"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-141/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"5438519ea6d13e5df8947d13d5c257b46de1aed0c621295f1df76fa97e160785"}
     },
     {
       "role": "rule_fr_142",
       "artifact_path": "../../../spec/functional/type-model/FR-142-evaluate-quantities-and-units.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-142/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"382a7fc52dc56d0b19ee73fe016a6639b28e84f61063ba38477f52cebd063d92"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-142/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"7eb40d7fbaea7ac5e28720ccb2bbc08595f84028bbcdcaa8998e72538a806a05"}
     },
     {
       "role": "rule_fr_147",
@@ -109,7 +109,7 @@
     {
       "role": "rule_fr_149",
       "artifact_path": "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-149/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"352a8bc3c60f1e9013d6d65cc822bb591955342e484233a31ad87b4876056825"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-149/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"ab5e57ea2d2af16e4b61c26214e46201956ac0f5d670e7b530683635f67db801"}
     }
   ],
   "package_selection": {

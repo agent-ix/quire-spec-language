@@ -403,11 +403,8 @@ impl Unit {
     }
 
     /// Whether this unit is affine: a nonzero-offset point unit that admits
-    /// only conversion and comparison.
-    // SPEC-GAP(9): FR-142 calls "a nonzero-offset unit" affine without saying
-    // whether the declared edge offset or the composed canonical offset
-    // decides it. The composed mapping decides, so a zero-offset unit that
-    // targets an affine unit is itself affine.
+    /// only conversion and comparison. The composed canonical offset
+    /// decides, so a zero-offset unit that targets an affine unit is affine.
     pub fn is_affine(&self) -> bool {
         !self.canonical.offset.is_zero()
     }

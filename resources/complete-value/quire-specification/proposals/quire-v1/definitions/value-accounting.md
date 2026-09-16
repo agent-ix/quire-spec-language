@@ -63,7 +63,7 @@ rational's numerator and positive denominator.
 | each `unit.identity-read` | `value_occurrences=number of quantity operands read so far`, `integer_bits=maxparts` over their exact rational values |
 | kth `unit.edge` | `unit_edges=k` across all source/target root paths |
 | each `unit.rational-arithmetic` | `integer_bits=maxparts` over the exact rational result of the scheduled operation |
-| `unit.target-domain` | the target decimal/integer semantic-size amounts, or zero for an unbounded rational target |
+| `unit.target-domain` | for a decimal target, `integer_bits` and `decimal_digits` of the retained coefficient; for an integer target, only `integer_bits=bits(rounded integer)`; zero for an unbounded rational target |
 | `unit.result-retain` | `value_occurrences=occ(result)`, `result_units += occ(result)` |
 | `integer-division.operands` | `integer_bits=max(bits(a),bits(b))`, `value_occurrences=2` |
 | `integer-division.arithmetic` | `integer_bits=max(bits(a),bits(b),bits(q),bits(r))` |
@@ -101,6 +101,65 @@ edge, two rational events, target admission and result retention: six work
 units. Equality preflight is only an availability check: the subsequent pair
 and result-retention charges are the sole mutations for those reserved units,
 so E21 consumes exactly `1 + 17 + 1 = 19` work units and one result unit.
+
+Text applicability is profile-dependent. `nfc`, `nfd`, `nfkc` and `nfkd`
+charge every text row in order. The non-normalizing `unicode-scalars` and
+`binary-utf8` profiles charge only `text.input-bytes`, `text.decode-scalars`
+and `text.result-retain`; they charge no `text.normalize-input` or
+`text.normalize-output` point and leave `normalized_scalars` unchanged. The
+length-bound refusal of an admission follows the charge that measures the
+bounded length: after the last `text.normalize-output` for a normalizing profile, after
+`text.decode-scalars` for `unicode-scalars` and after `text.input-bytes` for
+`binary-utf8`; it always precedes `text.result-retain`, and an exhausted counter
+at an earlier charge returns incomplete instead. An
+unordered-enumeration ordering request or cross-declaration enum comparison is
+refused by type checking before any `enum.*` charge.
+
+Every unit operation follows one schedule. Incompatible dimensions,
+affine-unit arithmetic and distinct units where the identical unit is required
+are FR-142 type-time `ill_typed` refusals and make no charge. Evaluation charges
+one `unit.identity-read` per operand in operand order. It then decides the
+runtime conditions in order, first match wins, without a charge: a zero divisor,
+then a zero base under a negative integer exponent; each is undefined. It then
+charges one `unit.edge` for every edge the operation traverses, all before any
+rational event: conversion traverses the full source-to-root path and then the
+full root-to-target path with no common-ancestor shortcut, and a compound side
+contributes no edge; multiplication, division, integer power, equality and
+ordering traverse the left and then the right operand's root path; addition and
+subtraction of the identical unit traverse no edge. It then schedules the two
+rational events of each edge in that same order, followed by the operation's
+own event; conversion, equality and ordering have no own event. It then charges
+`unit.target-domain`, except for equality and ordering, and finally
+`unit.result-retain`. Every quantity addition, subtraction, multiplication,
+division and integer power, and every conversion to an exact rational target,
+has an unbounded exact rational result, so its `unit.target-domain` charges no
+size counter: that result's size is already charged by its final
+`unit.rational-arithmetic` event, or by the identity read for a conversion
+without edges. For a decimal target, FR-140's rounding step and the bits and
+digits of the retained coefficient `v × 10^T` (rounded when a rounding step
+occurs) are decided analytically, without materializing that coefficient;
+strict `exact` at a rounding step refuses before `unit.target-domain`; that
+charge carries those `integer_bits` and `decimal_digits` amounts; the
+coefficient is materialized only after it; and FR-140 membership, which charges
+nothing, refuses after it and before `unit.result-retain`. An integer target is
+a decimal target at scale zero: its rounding step, strict `exact` refusal and
+`unit.target-domain` sizing occur at the same positions, except that its
+`unit.target-domain` carries only `integer_bits = bits(rounded integer)` and no
+`decimal_digits` amount, and integer-domain
+membership, which charges nothing, refuses after `unit.target-domain` and
+before `unit.result-retain`. Decimal and integer targets charge no `decimal.*`
+or `integer-*` point.
+
+A top-level quantity `==`, `!=`, `<`, `<=`, `>` or `>=` expression between two
+operands of the identical unit uses that schedule with no operation event and
+no `unit.target-domain`, then `unit.result-retain` with `occ(result) = 1`, and
+compares exact root values; it charges no `equality.*` point. A quantity leaf
+inside an FR-149 equality plan is instead compared by exact value in its
+identical unit and charges only its planned `equality.pair`, like every other
+scalar leaf, with no `unit.*` read, edge or event. The FR-142 order among the
+static quantity refusals is informative only: every static cause returns the
+same `refused { code: ill_typed }` with no charge, so the order has no
+observable outcome difference.
 
 IEEE applicability is also representation-independent. Equality, `totalOrder`
 and bit identity charge only `ieee.operands` and `ieee.result-retain`. An

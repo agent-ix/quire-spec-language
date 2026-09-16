@@ -45,13 +45,23 @@ compares the admitted UTF-8 payload bytes. A source string's payload is the
 canonical UTF-8 encoding of its decoded scalar sequence, so raw `é` and
 `\u00e9` have one binary value while their different source spellings remain
 provenance. A runtime text input supplies its validated payload bytes directly.
-Length is scalar count for the first five profiles
-and byte count for `binary-utf8`. Ordering is lexicographic over normalized
+Length is the scalar count of the retained sequence under the selected
+profile, which is the normalized sequence for `nfc`, `nfd`, `nfkc` and `nfkd`
+and the decoded sequence for `unicode-scalars`, and the payload byte count for
+`binary-utf8`; declared text bounds apply to that length. Every applicable
+text charge up to the bound check is made first, so an exhausted counter returns
+incomplete before any bound refusal: under `nfc`, `nfd`, `nfkc` and `nfkd` the
+length-bound refusal follows every `text.normalize-output` charge, under
+`unicode-scalars` it follows `text.decode-scalars`, and under `binary-utf8` it
+follows `text.input-bytes`; in each case it precedes `text.result-retain`. Ordering is lexicographic over normalized
 scalar values or unsigned bytes respectively. No locale, case folding,
 collation table or grapheme segmentation is implicit.
 
 An enumeration value is (`declaration identity`, `member identity`). Unordered
-enumerations admit only equality/inequality. An `ordered enum` additionally
+enumerations admit only equality/inequality. An ordering request on an
+unordered enumeration, or any comparison of members of different declarations,
+is refused by type checking with `refused { code: ill_typed }` before any
+evaluation or `enum.*` charge. An `ordered enum` additionally
 uses declaration order for comparison; insertion or reordering therefore
 creates a new declaration revision. Optional display strings never participate
 in equality or ordering.
@@ -86,10 +96,10 @@ incomplete, not a truncated string.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-141-AC-1 | Canonically equivalent text compares according to the selected normalization profile and distinct text remains distinct. | Test (TC-186) |
-| FR-141-AC-2 | Equal member spellings from different enum declarations are not equal. | Test (TC-186) |
+| FR-141-AC-2 | Comparing members of different enum declarations refuses `ill_typed`; equal member spellings are never equal across declarations. | Test (TC-186) |
 | FR-141-AC-3 | Missing text bounds, invalid scalars, unordered enum ordering or an enum node whose content does not match its normative key preimage refuses. | Test (TC-186) |
-| FR-141-AC-4 | Each text profile applies its exact length and lexicographic comparison domain; equal display text under different profiles remains differently typed. | Test (TC-186) |
-| FR-141-AC-5 | An unordered enumeration comparison other than equality refuses, while an ordered enumeration follows declaration order only. | Test (TC-186) |
+| FR-141-AC-4 | Each text profile applies its exact length and lexicographic comparison domain, with scalar length measured after the profile's normalization and the length-bound refusal after that profile's last size charge and before `text.result-retain`; equal display text under different profiles remains differently typed. | Test (TC-186) |
+| FR-141-AC-5 | An unordered enumeration comparison other than equality, or any cross-declaration enumeration comparison, refuses with `ill_typed` before any charge, while an ordered enumeration follows declaration order only. | Test (TC-186) |
 | FR-141-AC-6 | Exact-bound accounting succeeds and denial of a named next text or enum charge returns incomplete without a truncated value or Boolean. | Test (TC-186) |
 
 ## Dependencies
