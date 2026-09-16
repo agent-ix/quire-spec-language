@@ -6,6 +6,8 @@
 //! rational arithmetic; no floating-point value appears in either side.
 
 use ix_trace_rs::trace;
+use num_bigint::BigInt;
+use num_traits::Pow;
 use quire_spec_language::value::{
     evaluate_decimal, ChargePoint, Decimal, DecimalOperation, DecimalResult, DecimalType, IllTyped,
     IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
@@ -746,6 +748,51 @@ fn working_scales_above_the_target_never_materialize_the_excess_power() {
     assert_eq!(int(loss.exact_numerator()), -3);
     assert_eq!(int(loss.rounded_coefficient()), 0);
     assert_eq!(loss.mode(), RoundingMode::NearestEven);
+}
+
+fn big(value: &BigInt) -> Integer {
+    value.to_string().parse().unwrap()
+}
+
+#[trace("TC-185", "FR-140-AC-3")]
+#[test]
+fn loss_records_strip_large_powers_of_five_exactly() {
+    // `Round(v × 10^-s)` toward zero into `Decimal[-v,v;0,0]` records the
+    // reduced `v / 10^s`.
+    let loss_of = |coefficient: &BigInt, scale: u32| {
+        let decimal_type = DecimalType::new(
+            big(&-coefficient),
+            big(coefficient),
+            0,
+            0,
+            RoundingMode::TowardZero,
+        )
+        .unwrap();
+        let source = Decimal::new(big(coefficient), scale);
+        let result = completed(run(DecimalOperation::Round(&source), &decimal_type));
+        let loss = result
+            .loss()
+            .expect("a nonzero discarded digit records a loss");
+        (loss.exact_numerator().clone(), loss.exact_denominator())
+    };
+    let pow = |base: u32, exponent: u32| BigInt::from(base).pow(exponent);
+    let large = pow(5, 4096) * 7;
+    // 5^4096 × 7 / 10^5000 = 7 / (2^5000 × 5^904).
+    assert_eq!(
+        loss_of(&large, 5000),
+        (Integer::from(7_i64), big(&(pow(2, 5000) * pow(5, 904))))
+    );
+    // The scale caps stripping: 5^4096 × 7 / 10^100 = 5^3996 × 7 / 2^100.
+    assert_eq!(
+        loss_of(&large, 100),
+        (big(&(pow(5, 3996) * 7)), big(&pow(2, 100)))
+    );
+    for (coefficient, numerator, denominator) in [(1, 1_i64, 1000_i64), (5, 1, 200), (75, 3, 40)] {
+        assert_eq!(
+            loss_of(&BigInt::from(coefficient), 3),
+            (Integer::from(numerator), Integer::from(denominator))
+        );
+    }
 }
 
 // ---- generated vectors -----------------------------------------------------
