@@ -6,6 +6,7 @@
 //! so they have no variant here.
 
 use super::accounting::Incomplete;
+use super::ieee::IeeeFlags;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +48,8 @@ impl<T> Outcome<T> {
 pub enum Undefined {
     /// A divisor is (normalized) zero.
     DivisionByZero,
+    /// An IEEE NaN or infinity has no exact value.
+    IeeeNotFinite,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
@@ -71,6 +74,34 @@ pub enum Refusal {
     TextLengthOutOfDomain,
     /// An exact conversion result is outside the target integer domain.
     IntegerOutOfDomain,
+    /// Strict IEEE `exact` found an inexact, overflowing or tiny-and-inexact
+    /// result; only its would-be flags are reported, never rounded bits.
+    IeeeNotExact {
+        /// The flags the rounded result would have raised.
+        would_be: IeeeFlags,
+    },
+    /// A NaN payload does not fit the explicit conversion's target width.
+    IeeeNanPayloadNotRepresentable,
+    /// An exact rational converted from an IEEE value is outside the
+    /// `Rational[..]` target domain.
+    IeeeRationalOutOfDomain,
+}
+
+impl Refusal {
+    /// The closed `refused { code }` spelling, where the language defines one.
+    pub fn code(self) -> Option<&'static str> {
+        match self {
+            Self::IeeeNanPayloadNotRepresentable => Some("ieee_nan_payload_not_representable"),
+            Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
+            Self::InexactDecimal
+            | Self::DecimalOutOfDomain
+            | Self::DivisionPairOutOfDomain { .. }
+            | Self::ModuloOutOfDomain
+            | Self::TextLengthOutOfDomain
+            | Self::IntegerOutOfDomain
+            | Self::IeeeNotExact { .. } => None,
+        }
+    }
 }
 
 /// Internal early-exit carrier converted into [`Outcome`].

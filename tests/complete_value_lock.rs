@@ -16,11 +16,11 @@ const DEFINITIONS: &str =
     "resources/complete-value/quire-specification/proposals/quire-v1/definitions";
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
-/// `7f9315774833c20fcfbcf425ffeb8e2619d1b84c` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 8] = [
+/// `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` with `git show`.
+const PINNED_NON_CATALOG: [(&str, &str); 9] = [
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
-        "b58856eab42def693ba6539a9295596f1fc6f1014bab134c7cc9bf5adc27e005",
+        "8bb7238b7e811aa810b07b49466693c5ee7d5d39fc6858b88d0740526de27370",
     ),
     (
         "proposals/quire-v1/definitions/complete-value-selection-vectors.json",
@@ -49,6 +49,10 @@ const PINNED_NON_CATALOG: [(&str, &str); 8] = [
     (
         "proposals/checked-package-v2/node-identity-preimage.schema.json",
         "978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501",
+    ),
+    (
+        "spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",
+        "708cb6e97b88a00ea3636bf2d9594a3174ab9bfb495699dc71681d5f3aeda868",
     ),
 ];
 

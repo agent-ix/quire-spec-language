@@ -15,7 +15,7 @@ use serde::Deserialize;
 use super::division::DivisionProfile;
 
 /// Exact bytes of `complete-value-lock.json` at QSpec
-/// `7f9315774833c20fcfbcf425ffeb8e2619d1b84c`.
+/// `a25c93c875231664d90f5d4b3f2ac51f1dc77a75`.
 pub const PINNED_LOCK_BYTES: &[u8] = include_bytes!(
     "../../resources/complete-value/quire-specification/proposals/quire-v1/definitions/complete-value-lock.json"
 );

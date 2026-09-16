@@ -435,3 +435,15 @@ impl IntegerDomain {
         }
     }
 }
+
+impl Integer {
+    /// Wrap an arbitrary-precision integer (IEEE exact conversions).
+    pub(crate) fn from_big(value: BigInt) -> Self {
+        Self(value)
+    }
+
+    /// The arbitrary-precision integer (IEEE exact conversions).
+    pub(crate) fn as_big(&self) -> &BigInt {
+        &self.0
+    }
+}
