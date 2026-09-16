@@ -19,11 +19,15 @@ Construct event-triggered requests with valid UTF-8 and non-UTF-8 trigger byte
 populations. Produce, evaluate and strict-read each v2 request/result. Mutate
 one byte, exchange request/result triggers, alter a correction trigger, empty
 the value, replace its canonical binary encoding, and offer v1 documents to v2
-and v2 documents to v1. Attempt substitutions using every non-identity field
-the current v1 API exposed.
+and v2 documents to v1. Compare the strict request view's decision and
+surrounding progress, decision and surrounding closure, execution, and
+completeness reference, state, and fact population with the exact admitted
+inputs. Attempt substitutions using every non-identity field the current v1 API
+exposed.
 
 ## Expected Results
 
 Only byte-exact v2 trigger values round-trip. Every mutation changes identity
 or refuses at the source boundary. Neither reader translates versions, invents
-a string nor returns partial temporal truth.
+a string nor returns partial temporal truth. Every typed axis and completeness
+view retains the exact evidence reference and value admitted into the request.
