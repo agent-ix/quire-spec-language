@@ -14,7 +14,7 @@ use std::str::Chars;
 
 use unicode_normalization::{Decompositions, Recompositions, UnicodeNormalization};
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
+use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::outcome::{Outcome, Refusal, Stop};
 
@@ -101,7 +101,7 @@ impl TextProfile {
                 retained.chars().count()
             }
         };
-        u64::try_from(count).unwrap_or(u64::MAX)
+        length_amount(count)
     }
 
     fn order(self, left: &str, right: &str) -> Ordering {
@@ -375,17 +375,18 @@ fn prepare<const N: usize>(
 ) -> Result<[String; N], Stop> {
     let sum = |measure: fn(&str) -> usize| {
         payloads.iter().fold(0_u64, |total, payload| {
-            total.saturating_add(u64::try_from(measure(payload.as_str())).unwrap_or(u64::MAX))
+            // Each length is at most `isize::MAX`, so the few payloads of one
+            // operation sum far below `u64::MAX`.
+            total
+                .checked_add(length_amount(measure(payload.as_str())))
+                .expect("the payload lengths of one text operation sum within u64")
         })
     };
     let inputs = payloads.map(TextPayload::as_str);
     meter.charge(
         Charge::new(ChargePoint::TextInputBytes)
             .size(LimitKind::TextInputBytes, sum(str::len))
-            .size(
-                LimitKind::ValueOccurrences,
-                u64::try_from(N).unwrap_or(u64::MAX),
-            ),
+            .size(LimitKind::ValueOccurrences, length_amount(N)),
     )?;
     if profile == TextProfile::BinaryUtf8 {
         check_length(bound, &inputs)?;

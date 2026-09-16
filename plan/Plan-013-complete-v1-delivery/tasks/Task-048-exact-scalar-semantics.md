@@ -29,9 +29,9 @@ binary32/binary64 profiles.
 
 ## Subtasks
 
-- [ ] Write TC-185–187 and TC-192–193 as deterministic property/vector tests.
-- [ ] Implement types, conversions, equality, division and exceptional-value matrices.
-- [ ] Preserve undefined, refused and incomplete outcomes without narrowing or float substitution.
+- [x] Write TC-185–187 and TC-192–193 as deterministic property/vector tests.
+- [x] Implement types, conversions, equality, division and exceptional-value matrices.
+- [x] Preserve undefined, refused and incomplete outcomes without narrowing or float substitution.
 - [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-049.
 
 ## Deliverables
