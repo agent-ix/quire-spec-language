@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::{fmt, str::FromStr};
 
 /// SHA-256 value with canonical lowercase, algorithm-prefixed text encoding.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ByteDigest([u8; 32]);
 
 impl ByteDigest {

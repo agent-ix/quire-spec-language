@@ -47,7 +47,9 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-153, type: references }
   - { target: ix://agent-ix/quire-specification/FR-180, type: references }
   - { target: ix://agent-ix/quire-specification/FR-181, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-270, type: references }
   - { target: ix://agent-ix/quire-specification/FR-271, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-272, type: references }
   - { target: ix://agent-ix/quire-specification/FR-300, type: references }
   - { target: ix://agent-ix/quire-specification/FR-301, type: references }
   - { target: ix://agent-ix/quire-specification/FR-302, type: references }
@@ -78,8 +80,10 @@ evidence state.
 
 - [x] **FR-055 / IT-011 / QSL #116:** install the frozen contract, exact allocation,
   evidence reconciliation and serial issue graph.
-- [ ] **AD-003, FR-131–134, FR-302/303 and FR-339:** complete source packages,
-  grammar, identities, lossless CST and incremental source tooling in QSL #117.
+- [ ] **AD-003, FR-131/134, FR-302/303 and FR-339:** complete source packages,
+  grammar, identities, lossless CST and incremental source tooling foundations
+  in QSL #117. FR-132/133 and the authority-bound diagnostic/semantic repeats
+  remain in QSL #123.
 - [ ] **AD-005, FR-140–149:** complete exact scalar, composite, collection and
   pure-expression semantics in QSL #118 and #119.
 - [ ] **AD-006, FR-150–153:** complete immutable model graph, lookup,
@@ -136,10 +140,14 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 
 ### Source/package and tooling (#117)
 
-- [ ] **TC-180–184:** profile accounting, recursion-profile interaction,
-  canonical manifest, extension compatibility and source-locus preservation.
-- [ ] **TC-220–223:** lifecycle-stage intake, CLI dispositions, lossless CST and
-  formatter/editor incremental parity.
+- [x] **TC-180/184:** profile accounting and source-locus preservation. TC-181
+  remains with Task-049; TC-182/183 remain with Task-054 because manifest and
+  extension compatibility consume the final checked semantic package.
+- [x] **TC-222:** lossless CST identity and exact round-trip in QSL #117.
+  QSL #117 also supplies formatter/editor reparse, exact-token, limit, parity
+  and refusal foundations; Task-054 supplies the unforgeable checked-package
+  integration and runs concrete TC-223.
+  TC-220/221 remain with Task-052.
 
 ### Scalar/type semantics (#118)
 
@@ -169,12 +177,16 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 
 - [ ] **TC-220/221 and TC-225/226:** API/CLI parity, plugin containment and exact
   native/AOT/JIT/cache parity.
+- [ ] **TC-180 backend-install repeat:** complement Task-047's authority-free
+  parser type proof with a before/after installation-state integration vector.
 
 ### WASM and qualification
 
 - [ ] **TC-228 / WASM #6:** native/WASM accepted-value, refusal and limit parity.
-- [ ] **TC-230/231, IT-070/071/076 / QSL #123:** failure-stage and complete
-  attributable qualification over all Agent-A rows and exact dependency pins.
+- [ ] **TC-047, TC-182/183, TC-230/231, IT-070/071/076 / QSL #123:**
+  authority-bound diagnostic catalog/causes, canonical manifest and extension
+  compatibility, failure-stage and complete attributable qualification over all
+  Agent-A rows and exact dependency pins.
 
 ## Atomic capability allocation
 
@@ -193,11 +205,11 @@ concrete evidence owner; task files may require additional boundary cases.
 | V1-SRC-007 | FR-134 | QSL #117 | TC-184 | QSL #123 |
 | V1-SRC-008 | FR-002 | QSL #117 | TC-231 | QSL #123 |
 | V1-SRC-009 | FR-002 | QSL #117 | TC-231 | QSL #123 |
-| V1-SRC-010 | FR-132 | QSL #117 | TC-182 | QSL #123 |
-| V1-SRC-011 | FR-132 | QSL #117 | TC-182 | QSL #123 |
+| V1-SRC-010 | FR-132 | QSL #123 | TC-182 | QSL #123 |
+| V1-SRC-011 | FR-132 | QSL #123 | TC-182 | QSL #123 |
 | V1-SRC-012 | FR-016 | QSL #117 | TC-231 | QSL #123 |
-| V1-SRC-013 | FR-132 | QSL #117 | TC-182 | QSL #123 |
-| V1-SRC-014 | FR-133 | QSL #117 | TC-183 | QSL #123 |
+| V1-SRC-013 | FR-132 | QSL #123 | TC-182 | QSL #123 |
+| V1-SRC-014 | FR-133 | QSL #123 | TC-183 | QSL #123 |
 | V1-SRC-015 | FR-001 | QSL #117 | TC-231 | QSL #123 |
 | V1-TYPE-001 | FR-002 | QSL #118 | TC-231 | QSL #123 |
 | V1-TYPE-002 | FR-005 | QSL #118 | TC-231 | QSL #123 |
@@ -252,7 +264,7 @@ concrete evidence owner; task files may require additional boundary cases.
 | V1-EXPR-020 | FR-012 | QSL #120 | TC-231 | QSL #123 |
 | V1-EXPR-021 | FR-006 | QSL #120 | TC-231 | QSL #123 |
 | V1-EXPR-022 | FR-013 | QSL #120 | TC-231 | QSL #123 |
-| V1-EXPR-023 | FR-271 | QSL #117 | TC-230 | QSL #123 |
+| V1-EXPR-023 | FR-271 | QSL #123 | TC-047 | QSL #123 |
 | V1-EXPR-024 | FR-019 | QSL #119 | TC-231 | QSL #123 |
 | V1-EXPR-025 | FR-019 | QSL #119 | TC-231 | QSL #123 |
 | V1-EXPR-026 | FR-007 | QSL #119 | TC-231 | QSL #123 |
@@ -294,14 +306,14 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
 | Task-046 | A00 | FR-055, IT-011 | TC-144 | done |
-| Task-047 | A01 | FR-131–134, FR-302/303, FR-339 | TC-180–184, TC-220–223 | not_started |
+| Task-047 | A01 | FR-131/134, FR-302/303, FR-339 | TC-180/184, TC-222 | done |
 | Task-048 | A02 | FR-140–142, FR-147–149 | TC-185–187, TC-192–194 | not_started |
 | Task-049 | A03 | FR-143–146, FR-149, FR-307 | TC-188–191, TC-194, TC-227 | not_started |
 | Task-050 | A04 | FR-150–153 | TC-195–198 | not_started |
 | Task-051 | A05 | FR-180/181 | TC-209/210 | not_started |
-| Task-052 | A06 | FR-300/301/305/306 | TC-220/221/225/226 | not_started |
+| Task-052 | A06 | FR-300/301/305/306, FR-339 | TC-180, TC-220/221/225/226 | not_started |
 | Task-053 | A07 | FR-308 | TC-228 | not_started |
-| Task-054 | A08 | FR-311/336, TM-009 | TC-230/231, IT-070/071/076 | not_started |
+| Task-054 | A08 | FR-132/133, FR-270–272, FR-303, FR-311/336, TM-009 | TC-047, TC-182/183, TC-223, TC-230/231, IT-070/071/076 | not_started |
 
 ## Coordination Rules
 

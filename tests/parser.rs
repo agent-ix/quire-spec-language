@@ -59,6 +59,39 @@ fn precedence_and_associativity() {
     }
 }
 
+#[trace("TC-012", "FR-002-AC-2")]
+#[test]
+fn complete_compound_words_do_not_change_historical_tokenization() {
+    let parsed = unit("toward-zero = 0");
+    let (left, _) = binary(&parsed, parsed.clauses()[0].expression, B::Equal);
+    binary(&parsed, left, B::Subtract);
+
+    for spelling in [
+        "helper",
+        "rec",
+        "set",
+        "bag",
+        "Set",
+        "Bag",
+        "OrderedSet",
+        "collect",
+        "flatten",
+        "cast",
+        "tuple",
+        "Tuple",
+        "Decimal",
+        "Rational",
+        "allInstances",
+    ] {
+        let unsupported = read(document(spelling).as_bytes(), Limits::default()).unwrap_err();
+        assert_eq!(
+            unsupported.code,
+            Code::UnsupportedConstruct,
+            "historical unsupported token {spelling} changed classification"
+        );
+    }
+}
+
 #[trace("TC-012", "FR-002-AC-5")]
 #[test]
 fn grouping_and_identifier_spans_are_original_bytes() {
@@ -201,6 +234,9 @@ fn malformed_and_unsupported_are_distinct_and_located() {
         "\"\\é\"",
         "\"unterminated",
         "true @ false",
+        "true ^ false",
+        "self'",
+        "0x7fc00001",
         "true\rfalse",
         "a < < b",
         "true false",
