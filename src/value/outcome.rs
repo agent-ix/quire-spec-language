@@ -80,6 +80,25 @@ pub enum Refusal {
     },
     /// A NaN payload does not fit the explicit conversion's target width.
     IeeeNanPayloadNotRepresentable,
+    /// An exact rational converted from an IEEE value is outside the
+    /// `Rational[..]` target domain.
+    IeeeRationalOutOfDomain,
+}
+
+impl Refusal {
+    /// The closed `refused { code }` spelling, where the language defines one.
+    pub fn code(self) -> Option<&'static str> {
+        match self {
+            Self::IeeeNanPayloadNotRepresentable => Some("ieee_nan_payload_not_representable"),
+            Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
+            Self::InexactDecimal
+            | Self::DecimalOutOfDomain
+            | Self::DivisionPairOutOfDomain { .. }
+            | Self::ModuloOutOfDomain
+            | Self::TextLengthOutOfDomain
+            | Self::IeeeNotExact { .. } => None,
+        }
+    }
 }
 
 /// Internal early-exit carrier converted into [`Outcome`].

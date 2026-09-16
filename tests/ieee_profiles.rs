@@ -18,12 +18,13 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, DefinitionLock,
-    IeeeBackendCapabilities, IeeeComparison, IeeeDisposition, IeeeFlag, IeeeFlags,
-    IeeeItemRequirement, IeeeOperation, IeeeOperationKind, IeeeResult, IeeeUnsupportedCause,
-    IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind,
-    Meter, Outcome, PackageCause, PackageRefusalCode, Rational, Refusal, RoundingMode,
-    ScalarLimits, Undefined, IEEE_DEFINITION,
+    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal,
+    DecimalTarget, DefinitionLock, ExactScalar, IeeeBackendCapabilities, IeeeComparison,
+    IeeeDisposition, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeItemRequirement,
+    IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeResult, IeeeUnsupportedCause, IeeeValue,
+    IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer, IntegerInterval,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain, Refusal,
+    RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -85,6 +86,46 @@ const FINITE_CHARGES: [ChargePoint; 4] = [
 
 const CLASSIFIED_CHARGES: [ChargePoint; 2] =
     [ChargePoint::IeeeOperands, ChargePoint::IeeeResultRetain];
+
+/// A finite IEEE-to-exact conversion's charges.
+const TO_EXACT_CHARGES: [ChargePoint; 3] = [
+    ChargePoint::IeeeOperands,
+    ChargePoint::IeeeExactIntermediate,
+    ChargePoint::IeeeResultRetain,
+];
+
+fn big(value: &BigInt) -> Integer {
+    value.to_string().parse().unwrap()
+}
+
+/// `Rational[lo, hi; dmin, dmax]`.
+fn rational_type(lo: &BigInt, hi: &BigInt, dmin: &BigInt, dmax: &BigInt) -> RationalDomain {
+    RationalDomain::new(
+        IntegerInterval::new(big(lo), big(hi)).unwrap(),
+        IntegerInterval::new(big(dmin), big(dmax)).unwrap(),
+    )
+    .unwrap()
+}
+
+/// A `Rational[..]` type holding every finite binary32 and binary64 value.
+fn every_finite_ieee() -> RationalDomain {
+    let numerator = BigInt::one() << 1024_u32;
+    rational_type(
+        &-numerator.clone(),
+        &numerator,
+        &BigInt::one(),
+        &(BigInt::one() << 1074_u32),
+    )
+}
+
+fn to_rational(value: IeeeValue, domain: &RationalDomain, meter: &mut Meter) -> Outcome<IeeeExact> {
+    ieee_to_exact(profile(), value, IeeeExactTarget::Rational(domain), meter)
+        .expect("a Rational[..] target is well-typed")
+}
+
+fn ratio(numerator: i64, denominator: i64) -> Rational {
+    Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
+}
 
 fn profile() -> &'static AdmittedIeeeProfile {
     static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
@@ -170,7 +211,9 @@ fn assert_denied<T: std::fmt::Debug>(outcome: Outcome<T>, point: ChargePoint, co
 
 /// TC-193 vectors from the QSpec #68 IEEE amendment, not yet in the pinned
 /// vendored procedure.
-const AMENDED_VECTORS: [&str; 6] = ["F20", "F21", "F22", "F23", "F24", "F25"];
+const AMENDED_VECTORS: [&str; 12] = [
+    "F20", "F21", "F22", "F23", "F24", "F25", "F26", "F27", "F28", "F29", "F30", "F31",
+];
 
 const COVERED_VECTORS: [&str; 21] = [
     "F01", "F02", "F02b", "F03", "F04", "F04b", "F05", "F06", "F07", "F08", "F09", "F10", "F11",
@@ -718,7 +761,7 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
 
 // ---- admission and negotiation -------------------------------------------------------
 
-#[trace("TC-193", "FR-148-AC-3")]
+#[trace("TC-193", "FR-148-AC-3", "FR-148-AC-10")]
 #[test]
 fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings() {
     let lock = DefinitionLock::pinned().unwrap();
@@ -790,8 +833,11 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
             .admit_ieee_profile(std::slice::from_ref(&reference), &[identity])
             .unwrap_err();
         assert_eq!(
-            refusal.code,
-            PackageRefusalCode::InvalidPackage,
+            (refusal.code, refusal.cause),
+            (
+                PackageRefusalCode::InvalidPackage,
+                PackageCause::ConflictingDefinition
+            ),
             "{identity}"
         );
     }
@@ -991,7 +1037,8 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
         Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable)
     );
 
-    let to_exact = |value| ieee_to_exact(profile(), value, &mut Meter::new(UNLIMITED));
+    let every = every_finite_ieee();
+    let to_exact = |value| to_rational(value, &every, &mut Meter::new(UNLIMITED));
     let half = to_exact(f32v(0xbf00_0000)).completed().unwrap();
     assert_eq!(
         half.value(),
@@ -1078,7 +1125,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
         for bits in spec.classes() {
             let value = spec.value(bits);
             let mut meter = Meter::new(UNLIMITED);
-            let exact = match ieee_to_exact(profile(), value, &mut meter) {
+            let exact = match to_rational(value, &every, &mut meter) {
                 Outcome::Completed(exact) => exact,
                 Outcome::Undefined(Undefined::IeeeNotFinite) => {
                     assert!(matches!(
@@ -1089,7 +1136,14 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
                 }
                 other => panic!("{bits:#x}: {other:?}"),
             };
-            assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+            assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+            // The exact-intermediate is sized analytically as the result's
+            // `maxparts`; consumption records the largest charge.
+            assert_eq!(
+                meter.consumed(LimitKind::IntegerBits),
+                u64::from(width.bits()).max(exact.value().max_part_bits()),
+                "{bits:#x}"
+            );
             let mut meter = Meter::new(UNLIMITED);
             let back = done(exact_to_ieee(
                 profile(),
@@ -1123,9 +1177,9 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
                 );
                 assert_denied(widened, point, index as u64);
             }
-            for (index, point) in CLASSIFIED_CHARGES.into_iter().enumerate() {
+            for (index, point) in TO_EXACT_CHARGES.into_iter().enumerate() {
                 assert_denied(
-                    ieee_to_exact(profile(), value, &mut injected(point)),
+                    to_rational(value, &every, &mut injected(point)),
                     point,
                     index as u64,
                 );
@@ -1758,7 +1812,7 @@ fn generated_signed_zero_and_directed_overflow_rules_hold_for_every_direction() 
 
 // ---- QSpec #68 amendment vectors ---------------------------------------------------------
 
-/// `I(i,o,w,r)` from TC-193 F20-F25.
+/// `I(i,o,w,r)` from TC-193 F20-F31.
 fn limits(
     integer_bits: u64,
     value_occurrences: u64,
@@ -1809,6 +1863,80 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         );
         assert!(meter.admitted_charges().is_empty());
         assert!(LimitKind::ALL.iter().all(|kind| meter.consumed(*kind) == 0));
+    }
+
+    let one = Integer::from(1_i64);
+    let wide = f64v(0x3ff0_0000_0000_0000);
+    let digits = IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64)).unwrap();
+    let decimal = DecimalTarget::new(0, RoundingMode::NearestEven).with_coefficient_domain(digits);
+    let bit = IntegerInterval::new(Integer::from(0_i64), Integer::from(1_i64)).unwrap();
+    for (attempt, cause) in [
+        (
+            evaluate_ieee(
+                profile(),
+                IeeeOperation::Add(f32v(0x3f80_0000), wide),
+                RoundingMode::NearestEven,
+                &mut Meter::new(limits(0, 0, 0, 0)),
+            )
+            .map(|_| ()),
+            IllTypedCause::DistinctIeeeWidths,
+        ),
+        (
+            evaluate_ieee(
+                profile(),
+                IeeeOperation::Add(
+                    IeeeOperand::Ieee(f32v(0x3f80_0000)),
+                    IeeeOperand::Exact(ExactScalar::from(&one)),
+                ),
+                RoundingMode::NearestEven,
+                &mut Meter::new(limits(0, 0, 0, 0)),
+            )
+            .map(|_| ()),
+            IllTypedCause::IeeeWithExactOperand,
+        ),
+        (
+            compare_ieee(
+                profile(),
+                IeeeComparison::NumericEqual,
+                f32v(0x3f80_0000),
+                ExactScalar::from(&one),
+                &mut Meter::new(limits(0, 0, 0, 0)),
+            )
+            .map(|_| ()),
+            IllTypedCause::IeeeWithExactOperand,
+        ),
+        (
+            ieee_to_exact(
+                profile(),
+                f32v(0x3f80_0000),
+                IeeeExactTarget::Decimal(&decimal),
+                &mut Meter::new(limits(0, 0, 0, 0)),
+            )
+            .map(|_| ()),
+            IllTypedCause::IeeeToNonRationalExact,
+        ),
+        (
+            ieee_to_exact(
+                profile(),
+                f32v(0x3f80_0000),
+                IeeeExactTarget::BoundedInteger(&bit),
+                &mut Meter::new(limits(0, 0, 0, 0)),
+            )
+            .map(|_| ()),
+            IllTypedCause::IeeeToNonRationalExact,
+        ),
+        (
+            ieee_to_exact(
+                profile(),
+                f32v(0x3f80_0000),
+                IeeeExactTarget::Integer,
+                &mut Meter::new(limits(0, 0, 0, 0)),
+            )
+            .map(|_| ()),
+            IllTypedCause::IeeeToNonRationalExact,
+        ),
+    ] {
+        assert_eq!(attempt, Err(IllTyped { cause }));
     }
 }
 
@@ -1986,18 +2114,18 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
         ))
     );
 
-    let mut meter = Meter::new(limits(32, 1, 2, 1));
-    let half = ieee_to_exact(profile(), f32v(0x3f00_0000), &mut meter)
+    let int = BigInt::from;
+    let unit_halves = rational_type(&int(0), &int(1), &int(1), &int(2));
+    let mut meter = Meter::new(limits(32, 1, 3, 1));
+    let half = to_rational(f32v(0x3f00_0000), &unit_halves, &mut meter)
         .completed()
         .unwrap();
-    assert_eq!(
-        half.value(),
-        &Rational::new(Integer::from(1_i64), Integer::from(2_i64)).unwrap()
-    );
-    assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+    assert_eq!(half.value(), &ratio(1, 2));
+    assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+    assert_eq!(half.value().max_part_bits(), 2);
     let mut meter = Meter::new(limits(32, 1, 2, 1));
     assert_eq!(
-        ieee_to_exact(profile(), f32v(0x7fc0_0000), &mut meter),
+        to_rational(f32v(0x7fc0_0000), &unit_halves, &mut meter),
         Outcome::Undefined(Undefined::IeeeNotFinite)
     );
     assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
@@ -2071,5 +2199,410 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
             1,
             ChargePoint::IeeeOperands
         ))
+    );
+    assert_eq!(
+        Refusal::IeeeNanPayloadNotRepresentable.code(),
+        Some("ieee_nan_payload_not_representable")
+    );
+
+    // A signaling source is refused before the NaN is consumed, so no
+    // `invalid` flag exists to report.
+    let mut meter = Meter::new(limits(64, 1, 1, 0));
+    assert_eq!(
+        convert_ieee_width(
+            profile(),
+            f64v(0x7ff0_0000_0040_0000),
+            IeeeWidth::Binary32,
+            even,
+            &mut meter
+        ),
+        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable)
+    );
+    assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
+}
+
+#[trace("TC-193", "FR-148-AC-8", "FR-148-AC-9")]
+#[test]
+fn f26_zero_signs_survive_width_conversion_sums_and_differences() {
+    let even = RoundingMode::NearestEven;
+    let mut meter = Meter::new(limits(64, 1, 4, 1));
+    assert_eq!(
+        bits_flags(convert_ieee_width(
+            profile(),
+            f32v(0x8000_0000),
+            IeeeWidth::Binary64,
+            even,
+            &mut meter
+        )),
+        (0x8000_0000_0000_0000, IeeeFlags::EMPTY)
+    );
+    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(
+        convert_ieee_width(
+            profile(),
+            f32v(0x8000_0000),
+            IeeeWidth::Binary64,
+            even,
+            &mut Meter::new(limits(64, 1, 3, 1))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            3,
+            3,
+            1,
+            ChargePoint::IeeeResultRetain
+        ))
+    );
+
+    let (negative_zero, positive_zero) = (f32v(0x8000_0000), f32v(0x0000_0000));
+    let (one, minus_one) = (f32v(0x3f80_0000), f32v(0xbf80_0000));
+    for mode in DIRECTIONS.into_iter().chain([RoundingMode::Exact]) {
+        let cancelled = if mode == RoundingMode::TowardNegative {
+            0x8000_0000
+        } else {
+            0x0000_0000
+        };
+        for (operation, expected) in [
+            (
+                IeeeOperation::Add(negative_zero, negative_zero),
+                0x8000_0000,
+            ),
+            (IeeeOperation::Add(one, minus_one), cancelled),
+            (
+                IeeeOperation::Subtract(negative_zero, positive_zero),
+                0x8000_0000,
+            ),
+            (
+                IeeeOperation::Subtract(positive_zero, positive_zero),
+                cancelled,
+            ),
+            (IeeeOperation::Subtract(one, one), cancelled),
+        ] {
+            assert_eq!(
+                bits_flags(eval(operation, mode)),
+                (expected, IeeeFlags::EMPTY),
+                "{operation:?} {mode:?}"
+            );
+        }
+    }
+}
+
+#[trace("TC-193", "FR-148-AC-8")]
+#[test]
+fn fused_multiply_add_exact_zero_takes_the_sum_sign_rule() {
+    // FR-148: `fma(x, y, z)` applies the sum rule to `x × y`, signed by the
+    // exclusive or of the signs of `x` and `y`, and `z`.
+    let (negative_zero, positive_zero) = (f32v(0x8000_0000), f32v(0x0000_0000));
+    let (one, minus_one) = (f32v(0x3f80_0000), f32v(0xbf80_0000));
+    for mode in DIRECTIONS.into_iter().chain([RoundingMode::Exact]) {
+        let opposite = if mode == RoundingMode::TowardNegative {
+            0x8000_0000
+        } else {
+            0x0000_0000
+        };
+        for (operands, expected) in [
+            ((negative_zero, one, negative_zero), 0x8000_0000),
+            ((negative_zero, minus_one, positive_zero), 0x0000_0000),
+            ((positive_zero, minus_one, negative_zero), 0x8000_0000),
+            ((negative_zero, one, positive_zero), opposite),
+            ((positive_zero, one, negative_zero), opposite),
+            ((one, one, minus_one), opposite),
+            ((minus_one, one, one), opposite),
+        ] {
+            let (x, y, z) = operands;
+            assert_eq!(
+                bits_flags(eval(IeeeOperation::FusedMultiplyAdd(x, y, z), mode)),
+                (expected, IeeeFlags::EMPTY),
+                "{operands:?} {mode:?}"
+            );
+        }
+    }
+}
+
+#[trace("TC-193", "FR-148-AC-9")]
+#[test]
+fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() {
+    let int = BigInt::from;
+    let smallest = BigInt::one() << 1074_u32;
+    let tiny_type = rational_type(&int(0), &int(1), &int(1), &smallest);
+    let mut meter = Meter::new(limits(1075, 1, 3, 1));
+    let tiny = to_rational(f64v(0x0000_0000_0000_0001), &tiny_type, &mut meter)
+        .completed()
+        .unwrap();
+    assert_eq!(
+        tiny.value(),
+        &Rational::new(Integer::from(1_i64), big(&smallest)).unwrap()
+    );
+    assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+    assert_eq!(
+        to_rational(
+            f64v(0x0000_0000_0000_0001),
+            &tiny_type,
+            &mut Meter::new(limits(1074, 1, 3, 1))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::IntegerBits,
+            1074,
+            64,
+            1075,
+            ChargePoint::IeeeExactIntermediate
+        ))
+    );
+
+    let zero_type = rational_type(&int(0), &int(0), &int(1), &int(1));
+    let mut meter = Meter::new(limits(32, 1, 3, 1));
+    let zero = to_rational(f32v(0x8000_0000), &zero_type, &mut meter)
+        .completed()
+        .unwrap();
+    assert_eq!(zero.value(), &ratio(0, 1));
+    assert!(zero.discarded_negative_zero());
+    assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+    assert_eq!(
+        to_rational(
+            f32v(0x8000_0000),
+            &zero_type,
+            &mut Meter::new(limits(32, 1, 2, 1))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            2,
+            2,
+            1,
+            ChargePoint::IeeeResultRetain
+        ))
+    );
+
+    let unit_halves = rational_type(&int(0), &int(1), &int(1), &int(2));
+    let mut meter = Meter::new(limits(32, 1, 1, 0));
+    assert_eq!(
+        to_rational(f32v(0x7f80_0000), &unit_halves, &mut meter),
+        Outcome::Undefined(Undefined::IeeeNotFinite)
+    );
+    assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
+    assert_eq!(
+        to_rational(
+            f32v(0x7f80_0000),
+            &unit_halves,
+            &mut Meter::new(limits(32, 1, 0, 0))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            0,
+            0,
+            1,
+            ChargePoint::IeeeOperands
+        ))
+    );
+
+    let integers = rational_type(&int(0), &int(1), &int(1), &int(1));
+    let mut meter = Meter::new(limits(32, 1, 2, 0));
+    assert_eq!(
+        to_rational(f32v(0x3f00_0000), &integers, &mut meter),
+        Outcome::Refused(Refusal::IeeeRationalOutOfDomain)
+    );
+    assert_eq!(meter.admitted_charges(), &TO_EXACT_CHARGES[..2]);
+    assert_eq!(
+        Refusal::IeeeRationalOutOfDomain.code(),
+        Some("ieee_rational_out_of_domain")
+    );
+    assert_eq!(
+        to_rational(
+            f32v(0x3f00_0000),
+            &integers,
+            &mut Meter::new(limits(32, 1, 1, 0))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            1,
+            1,
+            1,
+            ChargePoint::IeeeExactIntermediate
+        ))
+    );
+}
+
+#[trace("TC-193", "FR-148-AC-9")]
+#[test]
+fn f28_decimal_source_is_sized_by_its_retained_representation() {
+    let decimal = Decimal::new(Integer::from(100_i64), 2);
+    let even = RoundingMode::NearestEven;
+    let mut meter = Meter::new(limits(32, 1, 4, 1));
+    assert_eq!(
+        bits_flags(exact_to_ieee(
+            profile(),
+            &decimal,
+            IeeeWidth::Binary32,
+            even,
+            &mut meter
+        )),
+        (0x3f80_0000, IeeeFlags::EMPTY)
+    );
+    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(
+        exact_to_ieee(
+            profile(),
+            &decimal,
+            IeeeWidth::Binary32,
+            even,
+            &mut Meter::new(limits(6, 1, 4, 1))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::IntegerBits,
+            6,
+            0,
+            7,
+            ChargePoint::IeeeOperands
+        ))
+    );
+}
+
+#[trace("TC-193", "FR-148-AC-8")]
+#[test]
+fn f29_strict_exact_near_extremes_reports_only_inexact() {
+    let inexact = flags(&[IeeeFlag::Inexact]);
+    for (operation, expected) in [
+        (
+            IeeeOperation::Add(f32v(0x7f7f_ffff), f32v(0x7280_0000)),
+            0x7f7f_ffff,
+        ),
+        (
+            IeeeOperation::Multiply(f32v(0x007f_ffff), f32v(0x3f80_0001)),
+            0x0080_0000,
+        ),
+    ] {
+        assert_eq!(
+            bits_flags(eval(operation, RoundingMode::NearestEven)),
+            (expected, inexact),
+            "{operation:?}"
+        );
+        assert_eq!(
+            eval(operation, RoundingMode::Exact),
+            Outcome::Refused(Refusal::IeeeNotExact { would_be: inexact }),
+            "{operation:?}"
+        );
+    }
+}
+
+#[trace("TC-193", "FR-148-AC-8")]
+#[test]
+fn f30_square_root_of_negative_zero_is_negative_zero() {
+    let root = IeeeOperation::SquareRoot(f32v(0x8000_0000));
+    let even = RoundingMode::NearestEven;
+    let mut meter = Meter::new(limits(32, 1, 4, 1));
+    assert_eq!(
+        bits_flags(eval_with(root, even, &mut meter)),
+        (0x8000_0000, IeeeFlags::EMPTY)
+    );
+    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(
+        eval_with(root, even, &mut Meter::new(limits(32, 1, 3, 1))),
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            3,
+            3,
+            1,
+            ChargePoint::IeeeResultRetain
+        ))
+    );
+}
+
+#[trace("TC-193", "FR-148-AC-9")]
+#[test]
+fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
+    let narrow = |bits, mode, meter: &mut Meter| {
+        convert_ieee_width(profile(), f64v(bits), IeeeWidth::Binary32, mode, meter)
+    };
+    let even = RoundingMode::NearestEven;
+    let retain_denied = |work| {
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            work,
+            work,
+            1,
+            ChargePoint::IeeeResultRetain,
+        ))
+    };
+
+    let mut meter = Meter::new(limits(64, 1, 2, 1));
+    assert_eq!(
+        bits_flags(narrow(0xfff0_0000_0000_0000, even, &mut meter)),
+        (0xff80_0000, IeeeFlags::EMPTY)
+    );
+    assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+    assert_eq!(
+        narrow(
+            0xfff0_0000_0000_0000,
+            even,
+            &mut Meter::new(limits(64, 1, 1, 1))
+        ),
+        retain_denied(1)
+    );
+
+    let inexact = flags(&[IeeeFlag::Inexact]);
+    let tenth = 0x3fb9_9999_9999_999a;
+    let mut meter = Meter::new(limits(64, 1, 4, 1));
+    assert_eq!(
+        bits_flags(narrow(tenth, even, &mut meter)),
+        (0x3dcc_cccd, inexact)
+    );
+    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    let mut meter = Meter::new(limits(64, 1, 3, 1));
+    assert_eq!(
+        narrow(tenth, RoundingMode::Exact, &mut meter),
+        Outcome::Refused(Refusal::IeeeNotExact { would_be: inexact })
+    );
+    assert_eq!(meter.admitted_charges(), &FINITE_CHARGES[..3]);
+    assert_eq!(
+        narrow(
+            tenth,
+            RoundingMode::Exact,
+            &mut Meter::new(limits(64, 1, 2, 1))
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::WorkUnits,
+            2,
+            2,
+            1,
+            ChargePoint::IeeeRound
+        ))
+    );
+
+    assert_eq!(
+        bits_flags(narrow(
+            0x47ef_ffff_e000_0000,
+            even,
+            &mut Meter::new(limits(64, 1, 4, 1))
+        )),
+        (0x7f7f_ffff, IeeeFlags::EMPTY)
+    );
+    let halfway = 0x47ef_ffff_f000_0000;
+    assert_eq!(
+        bits_flags(narrow(halfway, even, &mut Meter::new(limits(64, 1, 4, 1)))),
+        (0x7f80_0000, flags(&[IeeeFlag::Overflow, IeeeFlag::Inexact]))
+    );
+    assert_eq!(
+        narrow(halfway, even, &mut Meter::new(limits(64, 1, 3, 1))),
+        retain_denied(3)
+    );
+    assert_eq!(
+        bits_flags(narrow(
+            halfway,
+            RoundingMode::TowardZero,
+            &mut Meter::new(limits(64, 1, 4, 1))
+        )),
+        (0x7f7f_ffff, inexact)
+    );
+
+    let smallest = 0x0000_0000_0000_0001;
+    assert_eq!(
+        bits_flags(narrow(smallest, even, &mut Meter::new(limits(64, 1, 4, 1)))),
+        (
+            0x0000_0000,
+            flags(&[IeeeFlag::Underflow, IeeeFlag::Inexact])
+        )
+    );
+    assert_eq!(
+        narrow(smallest, even, &mut Meter::new(limits(64, 1, 3, 1))),
+        retain_denied(3)
     );
 }
