@@ -79,4 +79,7 @@ pub enum IllTypedCause {
     DistinctEnumDeclarations,
     /// An ordering operator was applied to an unordered enumeration.
     UnorderedEnumOrdering,
+    /// IEEE operands have different widths and no explicit width conversion
+    /// was selected.
+    DistinctIeeeWidths,
 }

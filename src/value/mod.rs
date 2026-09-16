@@ -14,6 +14,9 @@
 //!    and [`Incomplete`] reasons;
 //! 4. `quire.value.accounting/v1` metering through [`Meter`].
 //!
+//! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
+//! operate on exact bit patterns with soft-float arithmetic over big integers.
+//!
 //! Profile selection and misuse are refused at semantic admission by
 //! [`DefinitionLock`]. No host floating-point arithmetic or narrowing integer
 //! conversion is used by any semantic path.
@@ -24,6 +27,7 @@ mod decimal;
 mod definition;
 mod division;
 mod enumeration;
+mod ieee;
 mod integer;
 mod outcome;
 mod rational;
@@ -45,6 +49,13 @@ pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
     SemanticGraphCause, NODE_KEY_DOMAIN,
+};
+pub use ieee::{
+    compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
+    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, IeeeBackendCapabilities, IeeeComparison,
+    IeeeDisposition, IeeeExact, IeeeFlag, IeeeFlags, IeeeItemRequirement, IeeeOperation,
+    IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth,
+    IEEE_DEFINITION,
 };
 pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
