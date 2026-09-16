@@ -1,5 +1,20 @@
 # quire-spec-language
 
+`complete` exposes the edition `1-draft` authoring boundary. Its declarative
+grammar table and one bounded interpreter produce a byte-exact CST with typed
+token kinds, named production nodes and a separate recovery stream. The module
+also provides revision-checked incremental edits, deterministic formatting and
+editor snapshots, the closed 176-capability complete bundle, canonical package
+identity and located diagnostics over the crate's existing code type. These APIs
+establish source and package admission only; the authority-bound diagnostic
+catalog and typed causes, checked extension compatibility, checked-package
+manifests, later checking, runtime and backend stages remain separate typed
+operations.
+Public source/editor calls receive only an exact-reference `ProfileCatalog`.
+Typed definition/model construction additionally requires a constructor-private
+`ReaderAuthority`; Task-054 owns issuance from the concrete checked reader, so
+raw bytes or caller-asserted capabilities cannot mint package authority here.
+
 `parse_native` and `parse_native_source` select the authored edition and return
 either a historical unit or a typed, source-located `1-draft` syntax unit.
 The composed path extends the existing Logos recognizer and Pratt parser across

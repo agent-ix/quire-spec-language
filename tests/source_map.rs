@@ -85,7 +85,7 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
     }
 }
 
-#[trace("TC-014", "FR-004-AC-1")]
+#[trace("TC-014", "TC-184", "FR-004-AC-1", "FR-134-AC-1")]
 #[test]
 fn verbatim_mapping_retains_original_utf8_crlf_locations() {
     let original = source("original", "header😀\r\nα + β\r\nfooter");
@@ -118,7 +118,7 @@ fn verbatim_mapping_retains_original_utf8_crlf_locations() {
     assert_eq!(mapped[0].start.byte, original.text().find('β').unwrap());
 }
 
-#[trace("TC-014", "FR-004-AC-1", "FR-004-AC-4")]
+#[trace("TC-014", "TC-184", "FR-004-AC-1", "FR-004-AC-4", "FR-134-AC-2")]
 #[test]
 fn layout_mapping_returns_discontiguous_exact_regions() {
     let original = source("original", "head😀\r\n  α <= 2\r\n\tβ\r\nend");
@@ -173,7 +173,7 @@ fn layout_mapping_returns_discontiguous_exact_regions() {
     assert!(error.is_incomplete());
 }
 
-#[trace("TC-014", "FR-004-AC-2")]
+#[trace("TC-014", "TC-184", "FR-004-AC-2", "FR-134-AC-3")]
 #[test]
 fn omitted_keywords_internal_whitespace_and_newlines_refuse() {
     for (original, body, segments) in [
@@ -206,7 +206,7 @@ fn omitted_keywords_internal_whitespace_and_newlines_refuse() {
     }
 }
 
-#[trace("TC-014", "FR-004-AC-3")]
+#[trace("TC-014", "TC-184", "FR-004-AC-3", "FR-134-AC-3")]
 #[test]
 fn original_and_body_identity_revision_and_bytes_must_match() {
     let body = source("body", "abc");

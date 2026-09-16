@@ -46,6 +46,22 @@ pub(crate) fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, B
                 },
             )
         })?;
+        // These lexical forms exist only in the separately selected complete
+        // grammar. The historical/composed recognizer must retain its prior
+        // invalid-syntax result rather than reclassifying them as unsupported.
+        if matches!(
+            kind,
+            Kind::Caret | Kind::Question | Kind::Apostrophe | Kind::Hex(_)
+        ) {
+            return Err(error(
+                source,
+                Code::InvalidSyntax,
+                Phase::Lex,
+                span.start,
+                span.end,
+                "unexpected source character",
+            ));
+        }
         if kind == Kind::Comment {
             continue;
         }

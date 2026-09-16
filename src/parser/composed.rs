@@ -41,11 +41,20 @@ impl Parser {
             ));
         }
         self.composed = true;
-        // Old profile refusals are not reserved words in the composed edition.
+        // Complete-facet and old profile refusals are not reserved words in the
+        // composed base grammar. The complete parser keeps its own selected
+        // reservation set over these same recognized tokens.
         for token in &mut self.tokens {
-            if token.kind == K::Unsupported {
-                token.kind =
-                    K::Identifier(self.source.slice(token.span).expect("token span").into());
+            let spelling = self.source.slice(token.span).expect("token span");
+            token.kind = token.kind.clone().composed_base(spelling);
+            if token.kind == K::Unsupported
+                && spelling.bytes().enumerate().all(|(index, byte)| {
+                    byte == b'_'
+                        || byte.is_ascii_alphabetic()
+                        || (index > 0 && byte.is_ascii_digit())
+                })
+            {
+                token.kind = K::Identifier(spelling.into());
             }
         }
         self.expect(K::Semicolon)?;
