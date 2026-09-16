@@ -4,7 +4,7 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use super::integer::Integer;
+use super::integer::{Integer, IntegerInterval};
 
 /// A reduced rational: positive denominator, `gcd(numerator, denominator) = 1`,
 /// and zero is exactly `0/1`. Construction is the only way to obtain one.
@@ -139,6 +139,13 @@ impl Rational {
         }
     }
 
+    /// The exact value `self / 2^exponent` (IEEE exact conversions). Total: the
+    /// power-of-two denominator is never zero.
+    pub(crate) fn divided_by_power_of_two(&self, exponent: u64) -> Self {
+        let power = Integer::from_big(num_bigint::BigInt::from(1_u8) << exponent);
+        Self::reduce(self.numerator.clone(), self.denominator.mul(&power))
+    }
+
     /// `maxparts(r)` from `quire.value.accounting/v1`.
     pub fn max_part_bits(&self) -> u64 {
         self.numerator
@@ -165,5 +172,51 @@ impl PartialOrd for Rational {
 impl fmt::Display for Rational {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{}/{}", self.numerator, self.denominator)
+    }
+}
+
+/// A grammar-named `Rational[lo, hi; dmin, dmax]` domain: the reduced
+/// numerator lies in `[lo, hi]` and the positive denominator in
+/// `[dmin, dmax]`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RationalDomain {
+    numerator: IntegerInterval,
+    denominator: IntegerInterval,
+}
+
+/// A rational domain's denominator interval admits a denominator below one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("rational denominator bound below one")]
+pub struct NonPositiveDenominatorBound;
+
+impl RationalDomain {
+    /// Construct the domain, refusing a denominator interval that reaches
+    /// below one, since a reduced denominator is always positive.
+    pub fn new(
+        numerator: IntegerInterval,
+        denominator: IntegerInterval,
+    ) -> Result<Self, NonPositiveDenominatorBound> {
+        if denominator.lower() < &Integer::one() {
+            return Err(NonPositiveDenominatorBound);
+        }
+        Ok(Self {
+            numerator,
+            denominator,
+        })
+    }
+
+    /// The reduced-numerator interval.
+    pub fn numerator(&self) -> &IntegerInterval {
+        &self.numerator
+    }
+
+    /// The positive-denominator interval.
+    pub fn denominator(&self) -> &IntegerInterval {
+        &self.denominator
+    }
+
+    /// Whether the reduced `value` is a member.
+    pub fn contains(&self, value: &Rational) -> bool {
+        self.numerator.contains(value.numerator()) && self.denominator.contains(value.denominator())
     }
 }

@@ -15,6 +15,9 @@
 //!    and [`Incomplete`] reasons;
 //! 4. `quire.value.accounting/v1` metering through [`Meter`].
 //!
+//! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
+//! operate on exact bit patterns with soft-float arithmetic over big integers.
+//!
 //! Profile selection and misuse are refused at semantic admission by
 //! [`DefinitionLock`]. No host floating-point arithmetic or narrowing integer
 //! conversion is used by any semantic path.
@@ -25,6 +28,7 @@ mod decimal;
 mod definition;
 mod division;
 mod enumeration;
+mod ieee;
 mod integer;
 mod node;
 mod outcome;
@@ -48,6 +52,13 @@ pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
+pub use ieee::{
+    compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
+    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
+    IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeFlags,
+    IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance, IeeeResult,
+    IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+};
 pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
     OutOfDomain,
@@ -61,7 +72,7 @@ pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,
 };
-pub use rational::{Rational, ZeroDenominator};
+pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use text::{
     admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,
     Text, TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION,

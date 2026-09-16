@@ -2,7 +2,7 @@
 
 The files below `quire-specification/` are unmodified bytes of
 [agent-ix/quire-specification](https://github.com/agent-ix/quire-specification)
-at merged revision `7f9315774833c20fcfbcf425ffeb8e2619d1b84c` (QSpec PR #72, amending QSpec #68),
+at merged revision `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` (QSpec PR #73, amending QSpec #68),
 copied with `git show <revision>:<path>` at their repository-relative paths so
 the lock's relative `artifact_path` values resolve unchanged. QSL #118 /
 Plan-013 Task-048 consumes them.
@@ -11,7 +11,7 @@ Plan-013 Task-048 consumes them.
 artifact digest; `tests/complete_value_lock.rs` recomputes each vendored
 artifact's raw-byte SHA-256 against that lock. The lock itself, the selection
 vectors, the checked-package-v2 node-identity vectors and preimage schema, and
-the TC-185/TC-186/TC-187/TC-192 procedures are not in the catalog, so the same
+the TC-185/TC-186/TC-187/TC-192/TC-193 procedures are not in the catalog, so the same
 test pins their SHA-256 values as read from the pinned revision.
 
 FR-142 dimensions, units and quantities (TC-187) read the checked-package-v2
@@ -35,3 +35,7 @@ its [license decision](https://github.com/agent-ix/quire-specification/blob/main
 This private snapshot applies no new license to those documents, and the
 compiler's AGPL license does not relicense them. A changed interpretation
 requires re-vendoring from a newer merged revision, never editing these bytes.
+
+FR-148 IEEE profiles (TC-193) read the `quire.value.ieee754-2019-default/v1`
+definition, the FR-148 rule and the TC-193 procedure; `tests/ieee_profiles.rs`
+reads the procedure's vector ids.
