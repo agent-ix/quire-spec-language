@@ -457,6 +457,12 @@ impl DefinitionCatalog {
             .keys()
             .any(|definition| definition.identity == identity)
     }
+
+    fn contains_version(&self, identity: &str, version: &str) -> bool {
+        self.definitions
+            .keys()
+            .any(|definition| definition.identity == identity && definition.version == version)
+    }
 }
 
 /// Exact profile-selection inventory used by public syntax and editor APIs.
@@ -847,6 +853,8 @@ pub struct PackageRefusal {
     pub span: Span,
     /// Typed corrective cause.
     pub cause: PackageError,
+    /// Closed catalogued cause tag, admitted by the catalog for `code`.
+    pub cause_tag: super::CompleteCause,
 }
 
 /// Resolve exact source selections into a dependency-closed complete bundle.
@@ -859,14 +867,22 @@ pub fn resolve_source_package(
     let limits = limits.bounded();
     let refusal = |code, span, cause| refusal(parsed.as_ref(), code, span, cause);
     if !parsed.is_admissible() {
-        return Err(refusal(
-            super::CompleteCode::InvalidSyntax,
-            Span {
-                start: 0,
-                end: parsed.source().text().len(),
-            },
+        let whole = Span {
+            start: 0,
+            end: parsed.source().text().len(),
+        };
+        // The source's first diagnostic classifies it; an inadmissible source
+        // without one broke the parser's established invariant.
+        let mut refused = refusal(
+            super::CompleteCode::RuntimeInvariant,
+            whole,
             PackageError::InvalidSource,
-        ));
+        );
+        if let Some(first) = parsed.diagnostics().first() {
+            refused.code = first.code;
+            refused.cause_tag = first.cause;
+        }
+        return Err(refused);
     }
     let selections = parsed.selections();
     for (namespace, aliases) in [
@@ -997,6 +1013,15 @@ pub fn resolve_source_package(
     for (selected, span, profile) in &roots {
         if catalog.exact(selected).is_none() {
             let (code, cause) = if catalog.contains_identity(&selected.identity) {
+                if catalog.contains_version(&selected.identity, &selected.version) {
+                    let mut stale = refusal(
+                        super::CompleteCode::StaleDependency,
+                        *span,
+                        PackageError::StaleDefinition((*selected).clone()),
+                    );
+                    stale.cause_tag = super::CompleteCause::ByteDigestMismatch;
+                    return Err(stale);
+                }
                 (
                     super::CompleteCode::StaleDependency,
                     PackageError::StaleDefinition((*selected).clone()),
@@ -1259,7 +1284,41 @@ fn refusal(
         code,
         authority: Box::new(source_authority(parsed)),
         span,
+        cause_tag: cause_tag(code, &cause),
         cause,
+    }
+}
+
+/// The catalogued cause tag of a package-graph refusal. A stale definition is
+/// tagged at its call site, which knows whether the version or only the digest
+/// differs; here it is the version.
+fn cause_tag(code: super::CompleteCode, cause: &PackageError) -> super::CompleteCause {
+    use super::CompleteCause as Tag;
+    match cause {
+        PackageError::InvalidSource => Tag::EstablishedInvariantBroken,
+        PackageError::InvalidDefinitionIdentity
+        | PackageError::InvalidDefinitionVersion
+        | PackageError::InvalidDefinitionDigest(_)
+        | PackageError::InvalidDefinitionArtifactBytes
+        | PackageError::InvalidModelIdentity
+        | PackageError::InvalidModelVersion
+        | PackageError::InvalidModelDigest(_)
+        | PackageError::InvalidModelArtifactBytes => Tag::InvalidValue,
+        PackageError::DuplicateDefinition | PackageError::DuplicateModel => Tag::DuplicateMember,
+        PackageError::MissingDefinition(_) if code == super::CompleteCode::UnknownProfile => {
+            Tag::UnsupportedSelection
+        }
+        PackageError::MissingDefinition(_) => Tag::MissingSelection,
+        PackageError::StaleDefinition(_) => Tag::RevisionMismatch,
+        PackageError::MissingModel(_) | PackageError::StaleModel(_) => Tag::WrongModelSelection,
+        PackageError::ConflictingModels(_) => Tag::ConflictingBinding,
+        PackageError::ConflictingDefinitions(_) => Tag::ConflictingAuthority,
+        PackageError::DuplicateAlias { .. } => Tag::AmbiguousName,
+        PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
+        PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
+        PackageError::UnknownCapability(_) => Tag::UnknownFeature,
+        PackageError::CanonicalSize | PackageError::ResourceLimit => Tag::InsufficientNextCharge,
+        PackageError::MissingFacet(_) => Tag::FeatureSetMismatch,
     }
 }
 

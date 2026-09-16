@@ -30,6 +30,31 @@ pub enum CompleteCause {
     ByteDigestMismatch,
     /// `resource_exhausted`: the next charge exceeds its limit.
     InsufficientNextCharge,
+    /// `missing_import`: no known definition has the selected identity.
+    MissingSelection,
+    /// `ambiguous_declaration`: one alias is declared twice in a namespace.
+    AmbiguousName,
+    /// `ambiguous_declaration`: one definition identity is selected at two
+    /// distinct exact selections.
+    ConflictingAuthority,
+    /// `invalid_package`: a catalog holds one exact selection twice.
+    DuplicateMember,
+    /// `invalid_package`: a definition or model member is malformed.
+    InvalidValue,
+    /// `invalid_package`: the definition dependency graph has a cycle.
+    DefinitionCycle,
+    /// `invalid_package`: the resolved closure lacks a required facet.
+    FeatureSetMismatch,
+    /// `unknown_required_feature`: a capability name outside the inventory.
+    UnknownFeature,
+    /// `unknown_required_feature`: a known capability the closure does not
+    /// provide.
+    UnsupportedFeature,
+    /// `invalid_model_binding`: the selected compiled model is absent or stale.
+    WrongModelSelection,
+    /// `invalid_model_binding`: one model identity is selected twice with
+    /// distinct exact selections.
+    ConflictingBinding,
     /// `cancelled`: the caller cancelled the request.
     CallerCancelled,
     /// `invalid_projection_correspondence`: a derived artifact lost its exact
@@ -79,6 +104,17 @@ impl CompleteCause {
             Self::RevisionMismatch => "revision-mismatch",
             Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::InsufficientNextCharge => "insufficient-next-charge",
+            Self::MissingSelection => "missing-selection",
+            Self::AmbiguousName => "ambiguous-name",
+            Self::ConflictingAuthority => "conflicting-authority",
+            Self::DuplicateMember => "duplicate-member",
+            Self::InvalidValue => "invalid-value",
+            Self::DefinitionCycle => "definition-cycle",
+            Self::FeatureSetMismatch => "feature-set-mismatch",
+            Self::UnknownFeature => "unknown-feature",
+            Self::UnsupportedFeature => "unsupported-feature",
+            Self::WrongModelSelection => "wrong-model-selection",
+            Self::ConflictingBinding => "conflicting-binding",
             Self::CallerCancelled => "caller-cancelled",
             Self::CorrespondenceLoss => "correspondence-loss",
             Self::EstablishedInvariantBroken => "established-invariant-broken",
@@ -104,6 +140,20 @@ impl CompleteCause {
                 CompleteCode::StaleDependency | CompleteCode::SourceDigestMismatch
             ),
             Self::InsufficientNextCharge => code == CompleteCode::ResourceExhausted,
+            Self::MissingSelection => code == CompleteCode::MissingImport,
+            Self::AmbiguousName | Self::ConflictingAuthority => {
+                code == CompleteCode::AmbiguousDeclaration
+            }
+            Self::DuplicateMember
+            | Self::InvalidValue
+            | Self::DefinitionCycle
+            | Self::FeatureSetMismatch => code == CompleteCode::InvalidPackage,
+            Self::UnknownFeature | Self::UnsupportedFeature => {
+                code == CompleteCode::UnknownRequiredFeature
+            }
+            Self::WrongModelSelection | Self::ConflictingBinding => {
+                code == CompleteCode::InvalidModelBinding
+            }
             Self::CallerCancelled => code == CompleteCode::Cancelled,
             Self::CorrespondenceLoss => code == CompleteCode::InvalidProjectionCorrespondence,
             Self::EstablishedInvariantBroken => code == CompleteCode::RuntimeInvariant,
