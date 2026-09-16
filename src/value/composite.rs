@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use super::collection::{CollectionKind, CollectionValue};
+use super::collection::{CardinalityViolation, CollectionKind, CollectionValue};
 use super::decimal::{Decimal, DecimalType};
 use super::enumeration::EnumValue;
 use super::integer::Integer;
@@ -398,6 +398,8 @@ pub enum ConstructionCause {
     NullNotAdmitted,
     /// A value that is not a member of the declared type.
     TypeMismatch,
+    /// A collection's declared cardinality bound is missing or violated.
+    Cardinality(CardinalityViolation),
 }
 
 /// A typed construction refusal at its originating component.

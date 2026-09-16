@@ -6,6 +6,7 @@
 //! so they have no variant here.
 
 use super::accounting::Incomplete;
+use super::collection::CardinalityViolation;
 use super::ieee::IeeeFlags;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
@@ -50,6 +51,8 @@ pub enum Undefined {
     DivisionByZero,
     /// An IEEE NaN or infinity has no exact value.
     IeeeNotFinite,
+    /// A sequence or set reduction has no occurrence.
+    EmptyReduction,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
@@ -85,6 +88,14 @@ pub enum Refusal {
     /// An exact rational converted from an IEEE value is outside the
     /// `Rational[..]` target domain.
     IeeeRationalOutOfDomain,
+    /// A collection result violates its declared cardinality bound, or no
+    /// bound was declared.
+    Cardinality(CardinalityViolation),
+    /// A bag or ordered-set reduction has no occurrence.
+    EmptyReduction,
+    /// A collection function returned a value outside its declared result
+    /// type.
+    FunctionResultOutsideType,
 }
 
 impl Refusal {
@@ -99,7 +110,10 @@ impl Refusal {
             | Self::ModuloOutOfDomain
             | Self::TextLengthOutOfDomain
             | Self::IntegerOutOfDomain
-            | Self::IeeeNotExact { .. } => None,
+            | Self::IeeeNotExact { .. }
+            | Self::Cardinality(_)
+            | Self::EmptyReduction
+            | Self::FunctionResultOutsideType => None,
         }
     }
 }

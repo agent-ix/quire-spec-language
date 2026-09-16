@@ -192,8 +192,10 @@ enum Membership {
 
 /// What a value pair descends into.
 enum Shape<'a> {
-    /// A terminal leaf comparison.
+    /// A scalar leaf comparison.
     Leaf(bool),
+    /// A non-descending structural state comparison (see [`terminal`]).
+    Terminal(bool),
     /// Declaration/index-order subpairs.
     Positional(Vec<Pair<'a>>),
     /// The full left-by-right element cross-product, row-major.
@@ -248,15 +250,6 @@ fn decide_membership(membership: Membership, rows: usize, columns: usize, matrix
 
 /// The subpairs of one value pair. Operands of different declared types are
 /// ill-typed.
-// SPEC-GAP(119-3): FR-149 does not state how a structural mismatch within one
-// declared type is planned: a different variant constructor, sequence length,
-// option state, or absent/null/present slot state. Each is one terminal
-// (unequal) pair with no subpairs; two absent or two null slots are one
-// terminal equal pair.
-// SPEC-GAP(119-4): FR-149 lets a set or bag "with a total canonical element
-// key" use that key but does not say which element types have one or how a
-// keyed plan is counted. Every set and bag uses the full cross-product plan,
-// over bag occurrences; unequal cardinalities still plan the full product.
 fn shape<'a>(left: &'a Value, right: &'a Value) -> Result<Shape<'a>, IllTyped> {
     let leaf = |equal| Ok(Shape::Leaf(equal));
     match (left, right) {
@@ -271,12 +264,12 @@ fn shape<'a>(left: &'a Value, right: &'a Value) -> Result<Shape<'a>, IllTyped> {
         (Value::Reference(l), Value::Reference(r)) => leaf(l.identity() == r.identity()),
         (Value::Option(l), Value::Option(r)) => match (l.payload(), r.payload()) {
             (Some(l), Some(r)) => Ok(Shape::Positional(vec![Pair::Values(l, r)])),
-            (None, None) => leaf(true),
-            (Some(_), None) | (None, Some(_)) => leaf(false),
+            (None, None) => Ok(Shape::Terminal(true)),
+            (Some(_), None) | (None, Some(_)) => Ok(Shape::Terminal(false)),
         },
         (Value::Composite(l), Value::Composite(r)) => {
             if l.constructor() != r.constructor() || l.slots().len() != r.slots().len() {
-                return leaf(false);
+                return Ok(Shape::Terminal(false));
             }
             let pairs = l
                 .slots()
@@ -297,7 +290,7 @@ fn shape<'a>(left: &'a Value, right: &'a Value) -> Result<Shape<'a>, IllTyped> {
             let membership = match l.kind() {
                 CollectionKind::Sequence | CollectionKind::OrderedSet => {
                     if l.elements().len() != r.elements().len() {
-                        return leaf(false);
+                        return Ok(Shape::Terminal(false));
                     }
                     let pairs = l
                         .elements()
@@ -310,11 +303,7 @@ fn shape<'a>(left: &'a Value, right: &'a Value) -> Result<Shape<'a>, IllTyped> {
                 CollectionKind::Set => Membership::Set,
                 CollectionKind::Bag => Membership::Bag,
             };
-            Ok(Shape::CrossProduct {
-                membership,
-                left: l.elements(),
-                right: r.elements(),
-            })
+            Ok(membership_plan(membership, l.elements(), r.elements()))
         }
         (
             Value::Boolean(_)
@@ -443,7 +432,7 @@ fn traverse(left: &Value, right: &Value) -> Result<Analysis, IllTyped> {
         };
         let (left, right) = match pair {
             Pair::Terminal(equal) => {
-                top.absorb(&leaf(equal));
+                top.absorb(&terminal(equal));
                 continue;
             }
             Pair::Values(left, right) => (left, right),
@@ -455,6 +444,7 @@ fn traverse(left: &Value, right: &Value) -> Result<Analysis, IllTyped> {
         }
         match shape(left, right)? {
             Shape::Leaf(equal) => top.absorb(&leaf(equal)),
+            Shape::Terminal(equal) => top.absorb(&terminal(equal)),
             Shape::Positional(pairs) => stack.push(Frame::new(key, Combine::Positional, pairs)),
             Shape::CrossProduct {
                 membership,
@@ -474,6 +464,32 @@ fn traverse(left: &Value, right: &Value) -> Result<Analysis, IllTyped> {
                 stack.push(Frame::new(key, combine, pairs));
             }
         }
+    }
+}
+
+/// The planned events of a structural state pair that does not descend: two
+/// absent or two null slots (equal), or a different constructor, ordered
+/// length, option state or slot state (unequal).
+// SPEC-GAP(119-3): FR-149 does not state how such a pair is planned. It is one
+// pair event with no subpairs. This is the only place that decides it.
+fn terminal(equal: bool) -> Analysis {
+    Analysis {
+        pairs: Integer::one(),
+        equal,
+    }
+}
+
+/// The plan of a set or bag pair.
+// SPEC-GAP(119-4): FR-149 lets a set or bag "with a total canonical element
+// key" use that key but does not say how a keyed plan is counted. Every set
+// and bag uses the full cross-product over stored occurrences, even for
+// unequal cardinalities. This is the only place that decides it; which element
+// types have a total key is decided by `collection::has_total_key`.
+fn membership_plan<'a>(membership: Membership, left: &'a [Value], right: &'a [Value]) -> Shape<'a> {
+    Shape::CrossProduct {
+        membership,
+        left,
+        right,
     }
 }
 

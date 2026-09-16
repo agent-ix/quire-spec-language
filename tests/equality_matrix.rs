@@ -10,14 +10,15 @@
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
     admit_text, convert_for_equality, convert_quantity, evaluate_equality, plan_equality,
-    ChargePoint, CollectionKind, CollectionValue, CompositeDeclaration, CompositeShape,
-    ConstructorDeclaration, ConvertedValue, Decimal, DecimalType, DimensionPreimage,
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue, FieldDeclaration,
-    FieldExpression, FieldValue, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer,
-    LimitKind, Meter, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    OptionValue, Outcome, OwnerSelection, OwnerSubject, Presence, Quantity, QuantityTarget,
-    QuantityUnit, Rational, Refusal, RoundingMode, ScalarLimits, Text, TextPayload, TextProfile,
-    TextType, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, Value, ValueType,
+    CardinalityBound, ChargePoint, CollectionKind, CollectionValue, CompositeDeclaration,
+    CompositeShape, ConstructorDeclaration, ConvertedValue, Decimal, DecimalType,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
+    FieldDeclaration, FieldExpression, FieldValue, IllTyped, IllTypedCause, Incomplete,
+    InjectedDenial, Integer, LimitKind, Meter, NodeKey, NodeOwner, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, OptionValue, Outcome, OwnerSelection, OwnerSubject, Presence,
+    Quantity, QuantityTarget, QuantityUnit, Rational, Refusal, RoundingMode, ScalarLimits, Text,
+    TextPayload, TextProfile, TextType, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, Value,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -246,10 +247,15 @@ fn assert_disjoint(left: &Value) {
     );
 }
 
+fn bound() -> Option<CardinalityBound> {
+    Some(CardinalityBound::new(0, u64::MAX).unwrap())
+}
+
 fn collection(kind: CollectionKind, elements: &[i64]) -> Value {
     CollectionValue::construct(
         kind,
         ValueType::Integer,
+        bound(),
         elements.iter().map(|value| int(*value)).collect(),
     )
     .unwrap()
@@ -553,6 +559,7 @@ fn assert_wrong_collection_kind(left: &Value, elements: &[i64]) {
     let rationals = CollectionValue::construct(
         pairs_kind(left).unwrap(),
         ValueType::Rational,
+        bound(),
         vec![rational(1, 1)],
     )
     .unwrap();
@@ -862,6 +869,7 @@ fn e22_unkeyed_sets_and_bags_use_the_full_cross_product() {
         CollectionValue::construct(
             kind,
             ValueType::Composite(key("Inner")),
+            bound(),
             values.iter().map(|v| element(*v)).collect(),
         )
         .unwrap()

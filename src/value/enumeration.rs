@@ -251,6 +251,11 @@ impl EnumValue {
     pub fn member(&self) -> NodeKey {
         self.member
     }
+
+    /// Zero-based declaration position of the member.
+    pub(crate) fn position(&self) -> usize {
+        self.position
+    }
 }
 
 /// Compare two enum values. Members of different declarations, and ordering

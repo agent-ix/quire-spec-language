@@ -13,7 +13,9 @@
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after the type-checking [`IllTyped`] refusal;
 //! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
 //!    [`TypeEnvironment`], and the FR-149 equality matrix
-//!    [`evaluate_equality`] (QSL #119);
+//!    [`evaluate_equality`], FR-144 bounded [`CollectionValue`]s and the
+//!    FR-145 collection queries [`map`], [`filter`], [`flatten`], [`count`],
+//!    [`fold`], [`reduce`] and [`convert`] (QSL #119);
 //! 4. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
 //! 5. `quire.value.accounting/v1` metering through [`Meter`].
@@ -27,6 +29,7 @@
 
 mod accounting;
 mod collection;
+mod collection_query;
 mod comparison;
 mod composite;
 mod containment;
@@ -46,7 +49,14 @@ mod text;
 mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
-pub use collection::{CollectionKind, CollectionValue};
+pub use collection::{
+    CanonicalCollection, CanonicalEntry, CardinalityBound, CardinalityViolation, CollectionKind,
+    CollectionValue, EmptyCardinalityBound, NoTotalElementKey,
+};
+pub use collection_query::{
+    convert, count, filter, flatten, fold, map, reduce, AlgebraicProperties, CollectionConversion,
+    CollectionLoss, FoldFunction, ValueFunction,
+};
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use composite::{
     Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,

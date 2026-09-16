@@ -110,4 +110,22 @@ pub enum IllTypedCause {
     /// No explicitly declared lossless conversion reaches the requested
     /// comparison type.
     NoLosslessConversion,
+    /// A collection function or query value is not of the source element
+    /// type, or a reduction's accumulator is not the element type.
+    FunctionParameterType,
+    /// A filter predicate does not return `Boolean`.
+    PredicateNotBoolean,
+    /// A fold identity is not a member of the accumulator type.
+    FoldIdentityType,
+    /// A set or bag fold or reduction uses a function not declared both
+    /// commutative and associative.
+    UnorderedFoldRequiresCommutativeAssociative,
+    /// A collection conversion discards a property that was not accepted.
+    UnacceptedCollectionLoss,
+    /// Ordering an unordered collection needs a total element key the element
+    /// type does not supply.
+    NoTotalElementKey,
+    /// The flatten source's elements are not collections, or the
+    /// outer/inner kind combination is not defined.
+    UnsupportedFlattenSource,
 }

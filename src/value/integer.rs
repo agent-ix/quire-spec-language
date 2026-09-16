@@ -309,6 +309,12 @@ impl From<i128> for Integer {
     }
 }
 
+impl From<usize> for Integer {
+    fn from(value: usize) -> Self {
+        Self(BigInt::from(value))
+    }
+}
+
 impl From<u64> for Integer {
     fn from(value: u64) -> Self {
         Self(BigInt::from(value))

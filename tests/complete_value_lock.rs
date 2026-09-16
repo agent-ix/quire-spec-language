@@ -17,7 +17,23 @@ const DEFINITIONS: &str =
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
 /// `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 12] = [
+const PINNED_NON_CATALOG: [(&str, &str); 16] = [
+    (
+        "spec/functional/type-model/FR-144-preserve-complete-collection-algebra.md",
+        "b91b9aa993cb9cd8d012c62992a55b443b21e6b5f63a3148c3be2598c980d617",
+    ),
+    (
+        "spec/functional/expressions/FR-145-convert-and-query-collections.md",
+        "c80ee468d367226ccd23c62771ff01832bfa9c96ff548b8dbd6da57144ce3598",
+    ),
+    (
+        "spec/test-cases/TC-189-collection-kind-algebra.md",
+        "68a8c5a9fc20fc5dab3e38e47da5ce213b3db95dc6c3d6e1fcf16eefe11a44b1",
+    ),
+    (
+        "spec/test-cases/TC-190-collection-query-and-conversion-algebra.md",
+        "dddee2684124ce434316732da3724e03948e39d9bcb7a7c34c2f88f952b6161b",
+    ),
     (
         "spec/functional/type-model/FR-143-evaluate-record-tuple-recursive-values.md",
         "1eb49d817aadd722770f0fc57c2db5b1c9f831bddfc0ea52ba0d64d790066744",
