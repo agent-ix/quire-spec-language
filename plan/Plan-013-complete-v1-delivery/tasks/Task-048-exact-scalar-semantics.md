@@ -2,7 +2,7 @@
 id: Task-048
 title: "Implement exact scalar, numeric, text, enum and unit semantics"
 type: Task
-status: in_progress
+status: done
 track: A02
 priority: P0
 relationships:
@@ -32,7 +32,7 @@ binary32/binary64 profiles.
 - [x] Write TC-185–187 and TC-192–193 as deterministic property/vector tests.
 - [x] Implement types, conversions, equality, division and exceptional-value matrices.
 - [x] Preserve undefined, refused and incomplete outcomes without narrowing or float substitution.
-- [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-049.
+- [x] Pass local Rust gates and PR-time Rust/gap review; merge before Task-049.
 
 ## Deliverables
 
