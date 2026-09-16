@@ -1383,15 +1383,8 @@ fn activation_captures_are_immutable_identity_inputs_and_bounded() {
     );
 }
 
-#[trace(
-    "TC-141",
-    "FR-053-AC-1",
-    "FR-053-AC-2",
-    "FR-053-AC-3",
-    "FR-053-AC-4",
-    "FR-053-AC-5",
-    "FR-053-AC-6"
-)]
+#[trace("TC-141", "FR-053-AC-1", "FR-053-AC-2", "FR-053-AC-3")]
+#[trace("FR-053-AC-4", "FR-053-AC-5", "FR-053-AC-6")]
 #[test]
 fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_documents() {
     with_package(
@@ -1400,9 +1393,22 @@ fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_docu
         |package, declaration| {
             let subject = checked_subject(package, declaration);
             let leaf = leaf(package, declaration);
+            let mut first_input = input_v2(leaf, vec![0, 0xff, b'/', 0x80]);
+            first_input.decision_progress.watermark = 17;
+            first_input.decision_closure.state = temporal::Closure::Open;
+            first_input.surrounding_progress.watermark = 23;
+            first_input.surrounding_closure.state = temporal::Closure::Closed;
+            first_input.execution = temporal::Execution::Failed;
+            first_input.completeness.state = temporal::Completeness::Incomplete;
+            let expected_decision_progress = first_input.decision_progress.clone();
+            let expected_decision_closure = first_input.decision_closure.clone();
+            let expected_surrounding_progress = first_input.surrounding_progress.clone();
+            let expected_surrounding_closure = first_input.surrounding_closure.clone();
+            let expected_execution = first_input.execution;
+            let expected_completeness = first_input.completeness.clone();
             let first = temporal_v2::produce(
                 &subject,
-                input_v2(leaf, vec![0, 0xff, b'/', 0x80]),
+                first_input.clone(),
                 native_temporal::Limits::default(),
             )
             .into_result()
@@ -1419,6 +1425,161 @@ fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_docu
             assert_eq!(request.semantic_trigger(), &[0, 0xff, b'/', 0x80]);
             assert_eq!(request.evaluation_anchor(), "origin");
             assert!(request.activation_captures().next().is_none());
+            assert_eq!(
+                request.decision_progress().reference(),
+                &expected_decision_progress.reference
+            );
+            assert_eq!(
+                request.decision_progress().watermark(),
+                expected_decision_progress.watermark
+            );
+            assert_eq!(
+                request.decision_closure().reference(),
+                &expected_decision_closure.reference
+            );
+            assert_eq!(
+                request.decision_closure().state(),
+                expected_decision_closure.state
+            );
+            assert_eq!(
+                request.surrounding_progress().reference(),
+                &expected_surrounding_progress.reference
+            );
+            assert_eq!(
+                request.surrounding_progress().watermark(),
+                expected_surrounding_progress.watermark
+            );
+            assert_eq!(
+                request.surrounding_closure().reference(),
+                &expected_surrounding_closure.reference
+            );
+            assert_eq!(
+                request.surrounding_closure().state(),
+                expected_surrounding_closure.state
+            );
+            assert_eq!(request.execution(), expected_execution);
+            assert_eq!(
+                request.completeness().reference(),
+                &expected_completeness.reference
+            );
+            assert_eq!(request.completeness().state(), expected_completeness.state);
+            assert_eq!(
+                request.completeness().facts().collect::<Vec<_>>(),
+                expected_completeness.facts.iter().collect::<Vec<_>>()
+            );
+
+            let mut changed_axis_inputs = Vec::new();
+            let mut changed = first_input.clone();
+            changed.decision_progress.watermark = 19;
+            changed_axis_inputs.push((
+                changed,
+                19,
+                temporal::Closure::Open,
+                23,
+                temporal::Closure::Closed,
+                temporal::Execution::Failed,
+                temporal::Completeness::Incomplete,
+            ));
+            let mut changed = first_input.clone();
+            changed.decision_closure.state = temporal::Closure::Closed;
+            changed_axis_inputs.push((
+                changed,
+                17,
+                temporal::Closure::Closed,
+                23,
+                temporal::Closure::Closed,
+                temporal::Execution::Failed,
+                temporal::Completeness::Incomplete,
+            ));
+            let mut changed = first_input.clone();
+            changed.surrounding_progress.watermark = 29;
+            changed_axis_inputs.push((
+                changed,
+                17,
+                temporal::Closure::Open,
+                29,
+                temporal::Closure::Closed,
+                temporal::Execution::Failed,
+                temporal::Completeness::Incomplete,
+            ));
+            let mut changed = first_input.clone();
+            changed.surrounding_closure.state = temporal::Closure::Open;
+            changed_axis_inputs.push((
+                changed,
+                17,
+                temporal::Closure::Open,
+                23,
+                temporal::Closure::Open,
+                temporal::Execution::Failed,
+                temporal::Completeness::Incomplete,
+            ));
+            let mut changed = first_input.clone();
+            changed.execution = temporal::Execution::Completed;
+            changed_axis_inputs.push((
+                changed,
+                17,
+                temporal::Closure::Open,
+                23,
+                temporal::Closure::Closed,
+                temporal::Execution::Completed,
+                temporal::Completeness::Incomplete,
+            ));
+            let mut changed = first_input;
+            changed.completeness.state = temporal::Completeness::Complete;
+            changed_axis_inputs.push((
+                changed,
+                17,
+                temporal::Closure::Open,
+                23,
+                temporal::Closure::Closed,
+                temporal::Execution::Failed,
+                temporal::Completeness::Complete,
+            ));
+
+            let mut axis_identities = vec![first.identity().to_owned()];
+            for (
+                changed,
+                decision_watermark,
+                decision_closure,
+                surrounding_watermark,
+                surrounding_closure,
+                execution,
+                completeness,
+            ) in changed_axis_inputs
+            {
+                let changed_document =
+                    temporal_v2::produce(&subject, changed, native_temporal::Limits::default())
+                        .into_result()
+                        .expect("one changed axis produces a distinct v2 request");
+                assert_ne!(changed_document.identity(), first.identity());
+                let changed_request = temporal_v2::read(
+                    changed_document.bytes(),
+                    &subject,
+                    native_temporal::Limits::default(),
+                )
+                .into_result()
+                .expect("strict-read one changed v2 request axis");
+                assert_eq!(
+                    changed_request.decision_progress().watermark(),
+                    decision_watermark
+                );
+                assert_eq!(changed_request.decision_closure().state(), decision_closure);
+                assert_eq!(
+                    changed_request.surrounding_progress().watermark(),
+                    surrounding_watermark
+                );
+                assert_eq!(
+                    changed_request.surrounding_closure().state(),
+                    surrounding_closure
+                );
+                assert_eq!(changed_request.execution(), execution);
+                assert_eq!(changed_request.completeness().state(), completeness);
+                axis_identities.push(changed_document.identity().to_owned());
+            }
+            axis_identities.sort();
+            axis_identities.dedup();
+            assert_eq!(axis_identities.len(), 7);
+
             let output = temporal_v2::evaluate(
                 &request,
                 temporal_v2::Relation::Original,
