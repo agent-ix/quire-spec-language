@@ -76,6 +76,18 @@ impl Rational {
         }
     }
 
+    /// The exact value `self / 2^exponent` (IEEE exact conversions). Total: the
+    /// power-of-two denominator is never zero.
+    pub(crate) fn divided_by_power_of_two(&self, exponent: u64) -> Self {
+        let power = Integer::from_big(num_bigint::BigInt::from(1_u8) << exponent);
+        let denominator = self.denominator.mul(&power);
+        let divisor = self.numerator.gcd(&denominator);
+        Self {
+            numerator: self.numerator.exact_div(&divisor),
+            denominator: denominator.exact_div(&divisor),
+        }
+    }
+
     /// `maxparts(r)` from `quire.value.accounting/v1`.
     pub fn max_part_bits(&self) -> u64 {
         self.numerator
