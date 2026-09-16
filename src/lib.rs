@@ -12,6 +12,7 @@ mod runtime_test_setup;
 
 pub mod checking;
 pub mod command;
+pub mod complete;
 pub mod diagnostic;
 pub mod digest;
 pub mod formal_source;
