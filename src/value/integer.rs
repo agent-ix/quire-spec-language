@@ -9,7 +9,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint};
 use num_integer::Integer as _;
 use num_traits::{One, Signed, Zero};
 
@@ -50,6 +50,21 @@ impl Integer {
         let length = self.0.magnitude().to_str_radix(10).len();
         // A `usize` length always fits `u64` on every supported target.
         u64::try_from(length).unwrap_or(u64::MAX)
+    }
+
+    /// The value as a `u64`, if it is one.
+    pub fn to_u64(&self) -> Option<u64> {
+        u64::try_from(&self.0).ok()
+    }
+
+    /// The magnitude `|self|`.
+    pub(crate) fn abs(&self) -> Self {
+        Self(self.0.abs())
+    }
+
+    /// `self^|exponent|`. Callers bound the result size before calling.
+    pub(crate) fn pow(&self, exponent: &Self) -> Self {
+        Self(num_traits::Pow::pow(&self.0, exponent.0.magnitude()))
     }
 
     /// Whether this integer is even.
@@ -111,10 +126,81 @@ impl Integer {
         Self(result)
     }
 
+    /// `bits(|factor| × |base|^exponent)` for a nonnegative `exponent`, derived
+    /// without materializing the power.
+    ///
+    /// A power-of-two base is exact by shifting. Otherwise the power is bracketed
+    /// by truncated lower and upper `P`-bit mantissas under a shared binary
+    /// exponent, and `P` doubles until both brackets have one bit length. The
+    /// product is then not a power of two, so a finite precision separates it
+    /// from the nearest power of two and the loop terminates.
+    pub(crate) fn power_product_bits(factor: &Self, base: &Self, exponent: &Self) -> Self {
+        let factor = factor.0.magnitude();
+        let base = base.0.magnitude();
+        let exponent = exponent.0.magnitude();
+        let factor_bits = BigUint::from(factor.bits().max(1));
+        if factor.is_zero() || base.is_zero() && !exponent.is_zero() {
+            return Self::one();
+        }
+        if exponent.is_zero() || base.is_one() {
+            return Self(BigInt::from(factor_bits));
+        }
+        if base.count_ones() == 1 {
+            let shift = BigUint::from(base.bits() - 1);
+            return Self(BigInt::from(factor_bits + shift * exponent));
+        }
+        let mut precision = 64_u64;
+        loop {
+            let (low, high) = bracket_bits(factor, base, exponent, precision);
+            if low == high {
+                return Self(BigInt::from(low));
+            }
+            precision = precision.saturating_mul(2);
+        }
+    }
+
     /// `2^exponent`.
     fn power_of_two(exponent: u32) -> Self {
         Self(BigInt::one() << exponent)
     }
+}
+
+/// Bit lengths of a lower and upper bound of `factor × base^exponent`, each kept
+/// to at most `precision` mantissa bits.
+fn bracket_bits(
+    factor: &BigUint,
+    base: &BigUint,
+    exponent: &BigUint,
+    precision: u64,
+) -> (BigUint, BigUint) {
+    let mut low = BigUint::one();
+    let mut high = BigUint::one();
+    let mut shift = BigUint::zero();
+    let truncate = |low: &mut BigUint, high: &mut BigUint, shift: &mut BigUint| {
+        let excess = high.bits().saturating_sub(precision);
+        if excess > 0 {
+            *low >>= excess;
+            *high = (&*high + ((BigUint::one() << excess) - 1_u8)) >> excess;
+            *shift += excess;
+        }
+    };
+    for bit in (0..exponent.bits()).rev() {
+        low = &low * &low;
+        high = &high * &high;
+        shift = &shift << 1_u8;
+        truncate(&mut low, &mut high, &mut shift);
+        if exponent.bit(bit) {
+            low *= base;
+            high *= base;
+            truncate(&mut low, &mut high, &mut shift);
+        }
+    }
+    low *= factor;
+    high *= factor;
+    (
+        BigUint::from(low.bits()) + &shift,
+        BigUint::from(high.bits()) + shift,
+    )
 }
 
 impl From<i64> for Integer {

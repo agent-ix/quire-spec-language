@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-192 integer division profiles over the real `value` boundary.
 //!
-//! The signed table and DIV-01–DIV-09 are transcribed from the vendored TC-192
+//! The signed table and DIV-01–DIV-13 are transcribed from the vendored TC-192
 //! procedure pinned by `tests/complete_value_lock.rs`; every DefinitionRef is
 //! taken from the pinned lock rather than authored here.
 
@@ -287,7 +287,7 @@ fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
             limit_kind: LimitKind::WorkUnits,
             limit: 3,
             consumed: 3,
-            next_charge: 1,
+            next_charge: big(1),
             charge_point: ChargePoint::IntegerDivisionResultPair,
         })
     );
@@ -300,22 +300,181 @@ fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
             limit_kind: LimitKind::ResultUnits,
             limit: 1,
             consumed: 0,
-            next_charge: 2,
+            next_charge: big(2),
             charge_point: ChargePoint::IntegerDivisionResultPair,
         })
     );
-    for point in meter.admitted_charges() {
+    for (work, point) in (0_u64..).zip(meter.admitted_charges()) {
         let mut denied = Meter::new(DIV_08).with_injected_denial(InjectedDenial {
             point: *point,
             occurrence: 1,
         });
-        assert!(matches!(
-            div_08(&mut denied),
-            Outcome::Incomplete(Incomplete { charge_point, limit_kind: LimitKind::WorkUnits, next_charge: 1, .. })
-                if charge_point == *point
-        ));
+        assert_eq!(div_08(&mut denied), work_denied(work, *point));
         assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
     }
+}
+
+/// The injected-denial record after `work` admitted work units.
+fn work_denied<T>(work: u64, point: ChargePoint) -> Outcome<T> {
+    Outcome::Incomplete(Incomplete {
+        limit_kind: LimitKind::WorkUnits,
+        limit: work,
+        consumed: work,
+        next_charge: big(1),
+        charge_point: point,
+    })
+}
+
+const DIV_10: ScalarLimits = ScalarLimits {
+    result_units: 1,
+    ..DIV_08
+};
+
+fn mod_10(domain: &IntegerDomain, meter: &mut Meter) -> Outcome<Integer> {
+    modulo(&big(-7), &big(3), domain, meter)
+}
+
+#[trace("TC-192", "FR-147-AC-5", "FR-147-AC-6")]
+#[test]
+fn div_10_mod_charges_only_the_integer_modulus_points() {
+    let mut meter = Meter::new(DIV_10);
+    assert_eq!(
+        mod_10(&IntegerDomain::Mathematical, &mut meter).completed(),
+        Some(big(2))
+    );
+    let points = [
+        ChargePoint::IntegerModulusOperands,
+        ChargePoint::IntegerModulusArithmetic,
+        ChargePoint::IntegerModulusDomain,
+        ChargePoint::IntegerModulusResultRetain,
+    ];
+    assert_eq!(meter.admitted_charges(), points);
+    for (work, point) in (0_u64..).zip(points) {
+        let mut denied = Meter::new(DIV_10).with_injected_denial(InjectedDenial {
+            point,
+            occurrence: 1,
+        });
+        assert_eq!(
+            mod_10(&IntegerDomain::Mathematical, &mut denied),
+            work_denied(work, point)
+        );
+        assert_eq!(denied.consumed(LimitKind::ResultUnits), 0);
+    }
+}
+
+#[trace("TC-192", "FR-147-AC-2", "FR-147-AC-6")]
+#[test]
+fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
+    let one = |limits: ScalarLimits| ScalarLimits {
+        work_units: 1,
+        ..limits
+    };
+    let mut meter = Meter::new(one(DIV_08));
+    assert_eq!(
+        divide(
+            &admitted(DivisionProfile::Truncating),
+            &big(7),
+            &big(0),
+            &IntegerDomain::Mathematical,
+            &mut meter
+        ),
+        Outcome::Undefined(Undefined::DivisionByZero)
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [ChargePoint::IntegerDivisionOperands]
+    );
+    let mut meter = Meter::new(one(DIV_10));
+    assert_eq!(
+        modulo(&big(7), &big(0), &IntegerDomain::Mathematical, &mut meter),
+        Outcome::Undefined(Undefined::DivisionByZero)
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [ChargePoint::IntegerModulusOperands]
+    );
+
+    let zero = |limits: ScalarLimits| ScalarLimits {
+        work_units: 0,
+        ..limits
+    };
+    assert_eq!(
+        divide(
+            &admitted(DivisionProfile::Truncating),
+            &big(7),
+            &big(0),
+            &IntegerDomain::Mathematical,
+            &mut Meter::new(zero(DIV_08))
+        ),
+        work_denied(0, ChargePoint::IntegerDivisionOperands)
+    );
+    assert_eq!(
+        modulo(
+            &big(7),
+            &big(0),
+            &IntegerDomain::Mathematical,
+            &mut Meter::new(zero(DIV_10))
+        ),
+        work_denied(0, ChargePoint::IntegerModulusOperands)
+    );
+}
+
+#[trace("TC-192", "FR-147-AC-5", "FR-147-AC-6")]
+#[test]
+fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
+    let unit_interval = IntegerDomain::Bounded(IntegerInterval::new(big(0), big(1)).unwrap());
+    let limits = ScalarLimits {
+        result_units: 0,
+        ..DIV_10
+    };
+    let mut meter = Meter::new(limits);
+    assert_eq!(
+        mod_10(&unit_interval, &mut meter),
+        Outcome::Refused(Refusal::ModuloOutOfDomain)
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [
+            ChargePoint::IntegerModulusOperands,
+            ChargePoint::IntegerModulusArithmetic,
+            ChargePoint::IntegerModulusDomain,
+        ]
+    );
+    assert_eq!(
+        mod_10(
+            &unit_interval,
+            &mut Meter::new(ScalarLimits {
+                work_units: 2,
+                ..limits
+            })
+        ),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::WorkUnits,
+            limit: 2,
+            consumed: 2,
+            next_charge: big(1),
+            charge_point: ChargePoint::IntegerModulusDomain,
+        })
+    );
+}
+
+#[trace("TC-192", "FR-147-AC-6")]
+#[test]
+fn div_13_the_first_short_counter_in_field_order_is_reported() {
+    assert_eq!(
+        div_08(&mut Meter::new(ScalarLimits {
+            integer_bits: 2,
+            work_units: 0,
+            ..DIV_08
+        })),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::IntegerBits,
+            limit: 2,
+            consumed: 0,
+            next_charge: big(3),
+            charge_point: ChargePoint::IntegerDivisionOperands,
+        })
+    );
 }
 
 #[trace("TC-192")]

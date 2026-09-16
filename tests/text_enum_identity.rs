@@ -15,10 +15,10 @@ use quire_spec_language::complete;
 use quire_spec_language::value::{
     admit_text, compare_enum, compare_text, ChargePoint, ComparisonOperator, EmptyTextBounds,
     EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, InvalidSemanticGraph, InvalidUtf8, LimitKind, Meter,
-    NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Refusal, ScalarLimits,
-    SemanticGraphCause, Text, TextPayload, TextProfile, TextProvenance, TextType, NODE_KEY_DOMAIN,
-    UNICODE_TEXT_DEFINITION,
+    IllTypedCause, Incomplete, InjectedDenial, Integer, InvalidSemanticGraph, InvalidUtf8,
+    LimitKind, Meter, NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Refusal,
+    ScalarLimits, SemanticGraphCause, Text, TextPayload, TextProfile, TextProvenance, TextType,
+    NODE_KEY_DOMAIN, UNICODE_TEXT_DEFINITION,
 };
 use quire_spec_language::{Code, Limits, SourceIdentity};
 use serde_json::{json, Value};
@@ -288,7 +288,7 @@ fn t11_text_accounting_exact_bounds_and_named_denials() {
             limit_kind: LimitKind::WorkUnits,
             limit: 5,
             consumed: 5,
-            next_charge: 1,
+            next_charge: Integer::from(1_i64),
             charge_point: ChargePoint::TextResultRetain,
         })
     );
@@ -301,7 +301,7 @@ fn t11_text_accounting_exact_bounds_and_named_denials() {
             limit_kind: LimitKind::NormalizedScalars,
             limit: 1,
             consumed: 1,
-            next_charge: 2,
+            next_charge: Integer::from(2_i64),
             charge_point: ChargePoint::TextNormalizeOutput,
         })
     );
@@ -495,7 +495,7 @@ fn enum_compared(
 
 const ENUM_DECLARATION_VECTORS: [&str; 2] = ["enum-status", "enum-color-unordered"];
 const ENUM_MEMBER_VECTORS: [&str; 1] = ["enum-status-ready"];
-/// Dimension and unit identities belong to TC-187 and are not consumed here.
+/// Dimension and unit identities are consumed by `tests/quantities.rs` (TC-187).
 const TC_187_VECTORS: [&str; 11] = [
     "dimension-length",
     "unit-metre",
@@ -891,7 +891,7 @@ fn enum_accounting_exact_bounds_and_named_denials() {
             limit_kind: LimitKind::WorkUnits,
             limit: 2,
             consumed: 2,
-            next_charge: 1,
+            next_charge: Integer::from(1_i64),
             charge_point: ChargePoint::EnumResultRetain,
         })
     );
@@ -904,7 +904,7 @@ fn enum_accounting_exact_bounds_and_named_denials() {
             limit_kind: LimitKind::ValueOccurrences,
             limit: 1,
             consumed: 1,
-            next_charge: 2,
+            next_charge: Integer::from(2_i64),
             charge_point: ChargePoint::EnumIdentityRead,
         })
     );

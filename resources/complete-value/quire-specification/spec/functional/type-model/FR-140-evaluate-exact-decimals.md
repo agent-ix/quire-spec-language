@@ -32,8 +32,10 @@ outputs.
 Literal spelling determines an exact coefficient/scale before normalization.
 Equality compares mathematical values; declared representation constraints
 remain validation conditions. Arithmetic derives exact intermediate scales and
-requires an explicit rounding rule only when the result type cannot represent
-the exact value. No binary float is used as an intermediate.
+requires a non-`exact` rounding mode only at a rounding step, when the exact
+value is not an integer multiple of `10^-T` for target scale `T`; a value
+outside the declared range refuses under every mode. No binary float is used as
+an intermediate.
 
 An omitted rounding spelling selects strict `exact`. A successful rounded
 operation carries `DecimalLoss { exact_numerator, exact_denominator,
@@ -41,6 +43,9 @@ rounded_coefficient, rounded_scale, mode }`; the exact rational difference is
 therefore reconstructable and a message string is never the loss authority.
 The exact rational is canonical: its denominator is positive, numerator and
 denominator have greatest common divisor one, and zero is exactly `0/1`.
+`exact_numerator/exact_denominator` is the exact mathematical value of the
+operation before rounding, independent of the target scale; it is neither the
+discarded difference nor a scaled coefficient-space intermediate.
 Strict `exact`, division by zero, domain refusal and resource exhaustion carry
 no decimal value and remain distinct outcomes.
 
@@ -52,21 +57,57 @@ zeros while `scale > 0`; every zero normalizes to (`0`, `0`). Equality and
 ordering use normalized mathematical values. Source and result provenance retain
 the pre-normalized coefficient/scale.
 
-Addition/subtraction align to the greater operand scale using exact powers of
+In `Decimal[lo, hi; smin, smax; mode]`, `lo` and `hi` are the inclusive
+coefficient bounds, `smin` and `smax` are the inclusive scale bounds and `mode`
+is the optional rounding spelling. The type is well formed only when
+`lo <= hi`, `smin <= smax` and `smax <= u32::MAX`; any other declaration refuses
+type checking with `refused { code: ill_typed }`. For a value `v` with
+normalized representation (`c`, `s`), the membership scale is
+`s* = max(s, smin)` and the membership coefficient is the exact integer
+`c* = v × 10^s*`; `v` is a member exactly when `s* <= smax` and
+`lo <= c* <= hi`. Membership is therefore a function of the mathematical value
+only: equal values have equal membership, and a pre-normalized coefficient or
+scale never decides it. This differs from `Rational` bounds, which check the
+normalized numerator and denominator, because a decimal scale is
+representational: `Decimal[0,10000;2,2]` admits `1` and `1.1` as `1.00` and
+`1.10`. Membership is decided without materializing `c*` (for example by
+comparing digit counts and exact magnitudes), makes no accounting charge and is
+total for every well-formed `smin` and `smax` up to `u32::MAX`. The target
+scale of a result is `smax`.
+
+Each operand's retained representation is its literal coefficient/scale as
+written or, for a computed result, (`v × 10^T`, `T`) at that result's target
+scale `T`; operations and accounting use retained representations, never a
+normalized form. Addition/subtraction align to the greater operand scale using exact powers of
 ten. Multiplication multiplies coefficients and adds scales. Unary negation
-negates the coefficient. Division first forms the exact rational quotient and
-is defined only when the divisor is nonzero and the result is finite-decimal in
-the target scale, or when the target selects one of `toward-zero`,
-`toward-positive`, `toward-negative`, `nearest-even` or `nearest-away`.
-`exact` refuses any discarded nonzero digit. Nearest modes compare twice the
-discarded magnitude to one target unit; ties choose an even coefficient or the
-greater absolute coefficient respectively. Every result is checked against the
-declared coefficient and scale bounds after rounding and normalization.
+negates the coefficient. Division by a divisor whose normalized coefficient is
+zero is undefined. Otherwise division into target scale `T` forms the exact
+rational `N/D`, where `N = dividend coefficient × 10^max(0, T + divisor scale -
+dividend scale)` and `D = divisor coefficient × 10^max(0, dividend scale -
+divisor scale - T)`; `N/D` is the exact quotient in units of `10^-T`.
+A rounding step occurs exactly when the exact mathematical result is not an
+integer multiple of `10^-T`, that is, when at least one discarded digit is
+nonzero; discarded digits that are all zero are not a rounding step, select no
+rounding mode and produce no `DecimalLoss`. At a rounding step, `exact`
+refuses, while `toward-zero`, `toward-positive`, `toward-negative`,
+`nearest-even` and `nearest-away` produce a coefficient at scale `T`. Nearest
+modes compare twice the discarded magnitude to one target unit; ties choose an
+even coefficient or the greater absolute coefficient respectively. Every result
+is kept at its retained representation (`v × 10^T`, `T`) after any rounding
+step and then checked for membership by value; a
+nonmember refuses with no value and is never re-rounded to a coarser scale,
+clamped or widened.
 
 Under `quire.value.accounting/v1`, the evaluator charges the named decimal
 points and counters before a power-of-ten expansion, coefficient operation or
 result retention. The first unavailable charge returns incomplete accounting
-without attempting a smaller or floating approximation.
+without attempting a smaller or floating approximation. The zero-divisor
+undefined check follows `decimal.operands` and precedes
+`decimal.scale-expansion`; strict `exact` refusal at a rounding step follows
+`decimal.arithmetic` and precedes `decimal.rounding`; membership refusal
+follows `decimal.rounding`, or `decimal.arithmetic` when no rounding step
+occurs, and precedes `decimal.result-retain`. Undefined and refused outcomes
+make no later charge.
 
 ## Acceptance Criteria
 
@@ -74,10 +115,10 @@ without attempting a smaller or floating approximation.
 | --- | --- | --- |
 | FR-140-AC-1 | `1.0` and `1.00` compare mathematically equal while retaining their declared representation provenance. | Test (TC-185) |
 | FR-140-AC-2 | Exact representable arithmetic returns the mathematical result without rounding. | Test (TC-185) |
-| FR-140-AC-3 | An unrepresentable result without a selected rounding rule refuses; an explicit rule returns the rounded value plus a canonical-rational loss record. | Test (TC-185) |
+| FR-140-AC-3 | A result that is not an integer multiple of `10^-T` refuses under `exact`, while a non-`exact` mode returns the rounded value plus a canonical-rational loss record; a result outside the declared range refuses under every mode. | Test (TC-185) |
 | FR-140-AC-4 | The six rounding modes produce their declared result on positive and negative half-way values and `exact` refuses every nonzero discarded digit. | Test (TC-185) |
-| FR-140-AC-5 | Division by zero is undefined, while a normalized coefficient/scale outside the target domain is refused; neither produces a value or uses a floating intermediate. | Test (TC-185) |
-| FR-140-AC-6 | Exact-bound accounting succeeds and denial of a named next decimal charge returns incomplete without a value or an implementation-specific retry. | Test (TC-185) |
+| FR-140-AC-5 | Division by zero is undefined, while a value whose membership coefficient `c*` or membership scale `s*` is outside the target domain is refused; neither produces a value or uses a floating intermediate. A declaration with `lo > hi`, `smin > smax` or `smax > u32::MAX` refuses type checking with `ill_typed`. Membership charges nothing and is total up to scale `u32::MAX`. | Test (TC-185) |
+| FR-140-AC-6 | Exact-bound accounting succeeds and denial of a named next decimal charge returns incomplete without a value or an implementation-specific retry; zero-divisor, strict-`exact` and membership outcomes occur at their defined charge positions, and all-zero discarded digits make no `decimal.rounding` charge. | Test (TC-185) |
 
 ## Dependencies
 

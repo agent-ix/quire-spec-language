@@ -65,7 +65,8 @@ roles once each, includes every `always` role, and selects each conditional
 role exactly when its trigger is present and exactly one alternative exactly
 when the alternative trigger is present. A refused selection reports the first
 failing check in this order, using the closed codes
-`selection_unknown_trigger`, `selection_unknown_role`,
+`selection_unknown_trigger`, `selection_duplicate_trigger`,
+`selection_unknown_role`,
 `selection_duplicate_role`, `selection_required_missing`,
 `selection_alternative_conflict`, `selection_trigger_unsatisfied` and
 `selection_untriggered_profile`. The canonical accepted and refused selections

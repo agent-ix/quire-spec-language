@@ -2,7 +2,7 @@
 
 The files below `quire-specification/` are unmodified bytes of
 [agent-ix/quire-specification](https://github.com/agent-ix/quire-specification)
-at merged revision `4780a9e6119bb86ffb1322fe0a141ef3905b11ef` (QSpec #68),
+at merged revision `5aa00f35056c65948de93ad339540974d35c368a` (QSpec PR #71, amending QSpec #68),
 copied with `git show <revision>:<path>` at their repository-relative paths so
 the lock's relative `artifact_path` values resolve unchanged. QSL #118 /
 Plan-013 Task-048 consumes them.
@@ -11,8 +11,14 @@ Plan-013 Task-048 consumes them.
 artifact digest; `tests/complete_value_lock.rs` recomputes each vendored
 artifact's raw-byte SHA-256 against that lock. The lock itself, the selection
 vectors, the checked-package-v2 node-identity vectors and preimage schema, and
-the TC-185/TC-186/TC-192 procedures are not in the catalog, so the same
+the TC-185/TC-186/TC-187/TC-192 procedures are not in the catalog, so the same
 test pins their SHA-256 values as read from the pinned revision.
+
+FR-142 dimensions, units and quantities (TC-187) read the checked-package-v2
+dimension/unit node vectors and schema, and the `quire.value.compound-unit/v1`
+definition, schema and vectors. The compound-unit files are catalog artifacts,
+so their digests come from the lock. TC-233 is not vendored: it qualifies the
+published compound-unit artifacts themselves rather than this implementation.
 
 `unicode-17.0.0/` holds the six Unicode-hosted artifacts that
 `value-text-unicode-17.md` names, downloaded unmodified from their

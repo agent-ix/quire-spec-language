@@ -66,6 +66,12 @@ returns the per-item `requires-bound` negotiation disposition without narrowing
 mathematical integers. That provider disposition is not an evaluator outcome.
 Evaluation uses the named integer-division charges and counters from
 `quire.value.accounting/v1`; it never publishes only one member of the pair.
+`mod` is a single-result operation charged at exactly
+`integer-modulus.operands`, `integer-modulus.arithmetic`,
+`integer-modulus.domain` and `integer-modulus.result-retain`, in that order,
+with the measures defined by `quire.value.accounting/v1`. For `div`/`rem` and
+`mod`, the zero-divisor undefined check follows the operands charge and
+precedes the arithmetic charge; an undefined outcome makes no later charge.
 
 ## Acceptance Criteria
 
@@ -75,8 +81,8 @@ Evaluation uses the named integer-division charges and counters from
 | FR-147-AC-2 | Division by zero is undefined and produces no numeric value. | Test (TC-192) |
 | FR-147-AC-3 | I13 negotiation for a finite backend lacking a complete derived domain returns `requires-bound` instead of invoking evaluation or narrowing mathematical integers. | Test (TC-192) |
 | FR-147-AC-4 | Positive and negative dividend/divisor vectors distinguish truncating, floor and Euclidean results while preserving `a = b*q + r`. | Test (TC-192) |
-| FR-147-AC-5 | `mod` returns the Euclidean remainder independently of the selected `div`/`rem` law; an attempted explicit non-Euclidean `mod` selection is refused, while every zero divisor is undefined, without emitting a quotient or remainder. | Test (TC-192) |
-| FR-147-AC-6 | Exact-bound accounting succeeds and denial of a named next integer-division charge returns incomplete without either quotient or remainder. | Test (TC-192) |
+| FR-147-AC-5 | `mod` returns the Euclidean remainder independently of the selected `div`/`rem` law; an attempted explicit non-Euclidean `mod` selection is refused, while every zero divisor, including `mod`'s, is undefined after the operands charge and before the arithmetic charge, without emitting a quotient or remainder. `mod` exact-bound accounting consumes its four named `integer-modulus` charges, and denial of any of them returns incomplete without a remainder. | Test (TC-192) |
+| FR-147-AC-6 | Exact-bound accounting succeeds and denial of a named next integer-division charge returns incomplete without either quotient or remainder; a zero divisor is undefined after the operands charge and before the arithmetic charge. | Test (TC-192) |
 
 ## Dependencies
 

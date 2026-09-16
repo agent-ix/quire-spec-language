@@ -57,6 +57,8 @@ impl ComparisonOperator {
 }
 
 /// The type-checking refusal `refused { code: ill_typed }`.
+///
+/// It is also the refusal of a malformed declared type.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 #[error("ill_typed: {cause:?}")]
 pub struct IllTyped {
@@ -79,4 +81,7 @@ pub enum IllTypedCause {
     DistinctEnumDeclarations,
     /// An ordering operator was applied to an unordered enumeration.
     UnorderedEnumOrdering,
+    /// A `Decimal[lo, hi; smin, smax; mode]` declaration has `lo > hi`,
+    /// `smin > smax` or `smax > u32::MAX`.
+    MalformedDecimalType,
 }
