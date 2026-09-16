@@ -735,8 +735,8 @@ fn compound_identity<'a>(
             .collect(),
         version: COMPOUND_UNIT_DOMAIN,
     };
-    // A struct of strings and vectors always serializes.
-    let bytes = serde_json::to_vec(&preimage).unwrap_or_default();
+    let bytes = serde_json::to_vec(&preimage)
+        .expect("a struct of strings, vectors and a constant always serializes to JSON");
     CompoundUnitIdentity(Sha256::digest(bytes).into())
 }
 

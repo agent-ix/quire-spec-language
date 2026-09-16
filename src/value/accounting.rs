@@ -11,6 +11,15 @@ use serde::{Deserialize, Serialize};
 
 use super::integer::Integer;
 
+/// A `usize` length or count as an accounting amount.
+///
+/// Every supported target has pointers of at most 64 bits, so an in-memory
+/// length always fits `u64`; a wider target would violate that invariant.
+pub(crate) fn length_amount(length: usize) -> u64 {
+    u64::try_from(length)
+        .expect("in-memory lengths fit u64 on targets with pointers of at most 64 bits")
+}
+
 /// `ScalarLimitsV1`. Every member is required; zero is a real limit.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

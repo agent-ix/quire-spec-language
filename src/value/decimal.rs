@@ -7,7 +7,7 @@
 
 use std::cmp::Ordering;
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
+use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{IllTyped, IllTypedCause};
 use super::integer::Integer;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
@@ -100,10 +100,28 @@ impl Decimal {
 
     /// Mathematical ordering. This is the unmetered scalar primitive consumed
     /// by the metered equality matrix; it is not itself an evaluator result.
+    ///
+    /// Signs decide first; equal signs compare the magnitudes aligned to the
+    /// larger scale without materializing a power of ten larger than the
+    /// operands (see [`compare_shifted`]).
     pub fn compare(&self, other: &Self) -> Ordering {
-        self.normalized
-            .to_rational()
-            .cmp(&other.normalized.to_rational())
+        let (left, right) = (&self.normalized, &other.normalized);
+        let (left_scale, right_scale) = (u64::from(left.scale), u64::from(right.scale));
+        // `l / 10^ls` against `r / 10^rs`, both sides multiplied by `10^max(ls, rs)`.
+        if left_scale >= right_scale {
+            compare_shifted(
+                &right.coefficient,
+                left_scale - right_scale,
+                &left.coefficient,
+            )
+            .reverse()
+        } else {
+            compare_shifted(
+                &left.coefficient,
+                right_scale - left_scale,
+                &right.coefficient,
+            )
+        }
     }
 
     /// Mathematical equality over normalized values.
@@ -163,25 +181,93 @@ impl RoundingMode {
 /// rounded_scale, mode }`. The exact value is a canonical rational.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DecimalLoss {
-    exact: Rational,
+    exact: ExactLossValue,
     rounded: DecimalRepresentation,
     mode: RoundingMode,
+}
+
+/// The reduced exact value `numerator / (cofactor × 2^twos × 5^fives)` with
+/// `cofactor` positive and coprime to ten.
+///
+/// The factored denominator is canonical, so structural equality is value
+/// equality. Evaluation never charges the power of ten a working scale adds
+/// to the denominator, so it keeps that power as exponents; only the
+/// consumer-side accessors materialize it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ExactLossValue {
+    numerator: Integer,
+    cofactor: Integer,
+    twos: u64,
+    fives: u64,
+}
+
+impl ExactLossValue {
+    /// The canonical form of `value / 10^ten_exponent` for a reduced `value`.
+    fn scaled(value: &Rational, ten_exponent: u64) -> Self {
+        if value.is_zero() {
+            return Self {
+                numerator: Integer::zero(),
+                cofactor: Integer::one(),
+                twos: 0,
+                fives: 0,
+            };
+        }
+        // Cancel the common twos and fives of the numerator and `10^e`; a
+        // reduced denominator shares no factor with the numerator.
+        let (numerator, cancelled_twos) = value.numerator().split_factor_two(ten_exponent);
+        let (numerator, cancelled_fives) = split_factor_five(&numerator, ten_exponent);
+        let (cofactor, denominator_twos) = value.denominator().split_factor_two(u64::MAX);
+        let (cofactor, denominator_fives) = split_factor_five(&cofactor, u64::MAX);
+        // Each count is an in-memory bit length or a `u64` scale, so the sums
+        // stay far below `u64::MAX`.
+        Self {
+            numerator,
+            cofactor,
+            twos: denominator_twos + (ten_exponent - cancelled_twos),
+            fives: denominator_fives + (ten_exponent - cancelled_fives),
+        }
+    }
+}
+
+/// `(value / 5^k, k)` for the greatest `k <= limit` with `5^k | value`, for a
+/// nonzero `value`.
+fn split_factor_five(value: &Integer, limit: u64) -> (Integer, u64) {
+    let five = Integer::from(5_i64);
+    let mut remaining = value.clone();
+    let mut count = 0;
+    while count < limit {
+        let (quotient, remainder) = remaining.div_rem_truncating(&five);
+        if !remainder.is_zero() {
+            break;
+        }
+        remaining = quotient;
+        count += 1;
+    }
+    (remaining, count)
 }
 
 impl DecimalLoss {
     /// Reduced exact numerator.
     pub fn exact_numerator(&self) -> &Integer {
-        self.exact.numerator()
+        &self.exact.numerator
     }
 
-    /// Reduced positive exact denominator.
-    pub fn exact_denominator(&self) -> &Integer {
-        self.exact.denominator()
+    /// Reduced positive exact denominator. This unmetered accessor
+    /// materializes the denominator, including any power of ten contributed by
+    /// a large working scale.
+    pub fn exact_denominator(&self) -> Integer {
+        let fives = Integer::from(5_i64).pow(&Integer::from(self.exact.fives));
+        self.exact
+            .cofactor
+            .mul(&fives)
+            .shifted_left(self.exact.twos)
     }
 
-    /// The exact mathematical value.
-    pub fn exact(&self) -> &Rational {
-        &self.exact
+    /// The exact mathematical value, materialized as for
+    /// [`DecimalLoss::exact_denominator`].
+    pub fn exact(&self) -> Rational {
+        Rational::new(self.exact.numerator.clone(), self.exact_denominator())
+            .expect("a loss denominator is a product of positive factors")
     }
 
     /// Pre-normalized rounded coefficient.
@@ -485,7 +571,7 @@ fn evaluate(
     meter: &mut Meter,
 ) -> Result<DecimalResult, Stop> {
     let inputs = operands(operation);
-    let count = u64::try_from(inputs.len()).unwrap_or(u64::MAX);
+    let count = length_amount(inputs.len());
     meter.charge(
         Charge::new(ChargePoint::DecimalOperands)
             .size(
@@ -520,9 +606,7 @@ fn evaluate(
     }
     meter.charge(expansion)?;
 
-    // The exact intermediate `numerator/denominator` in units of
-    // `10^-working_scale`.
-    let (intermediate, working_scale) = match plan {
+    let intermediate = match plan {
         Plan::Combine {
             combine,
             left,
@@ -535,15 +619,14 @@ fn evaluate(
                 Combine::Subtract => a.sub(&b),
                 Combine::Multiply => a.mul(&b),
             };
-            (Rational::from_integer(value), scale)
+            Intermediate::Scaled { value, scale }
         }
         Plan::Divide {
             numerator,
             denominator,
-        } => (
+        } => Intermediate::Quotient(
             Rational::new(expand_one(numerator), expand_one(denominator))
                 .map_err(|_| Stop::Undefined(Undefined::DivisionByZero))?,
-            target_scale,
         ),
         Plan::Unary {
             negate,
@@ -555,22 +638,17 @@ fn evaluate(
             } else {
                 operand.clone()
             };
-            (Rational::from_integer(value), scale)
+            Intermediate::Scaled { value, scale }
         }
     };
+    let (bits, digits) = intermediate.sizes();
     meter.charge(
         Charge::new(ChargePoint::DecimalArithmetic)
-            .size(LimitKind::IntegerBits, intermediate.max_part_bits())
-            .size(
-                LimitKind::DecimalDigits,
-                intermediate
-                    .numerator()
-                    .decimal_digits()
-                    .max(intermediate.denominator().decimal_digits()),
-            ),
+            .size(LimitKind::IntegerBits, bits)
+            .size(LimitKind::DecimalDigits, digits),
     )?;
 
-    let placed = match in_target_units(&intermediate, working_scale, target.max_scale()) {
+    let placed = match in_target_units(&intermediate, target.max_scale()) {
         TargetUnits::Exact { coefficient, scale } => Placed {
             coefficient,
             scale,
@@ -578,6 +656,7 @@ fn evaluate(
         },
         TargetUnits::RoundingStep(units) => {
             let mode = target.rounding();
+            // Strict `exact` refuses here, before any charge or loss record.
             let rounded = round(&units, mode).ok_or(Stop::Refused(Refusal::InexactDecimal))?;
             meter.charge(
                 Charge::new(ChargePoint::DecimalRounding)
@@ -586,7 +665,7 @@ fn evaluate(
             )?;
             Placed {
                 loss: Some(DecimalLoss {
-                    exact: intermediate.divided_by_power_of_ten(working_scale),
+                    exact: intermediate.exact_loss_value(target.max_scale()),
                     rounded: DecimalRepresentation::new(rounded.clone(), target.max_scale()),
                     mode,
                 }),
@@ -679,7 +758,7 @@ impl DecimalType {
         let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
         Ok(Placed {
             loss: Some(DecimalLoss {
-                exact: value.clone(),
+                exact: ExactLossValue::scaled(value, 0),
                 rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
                 mode: self.rounding,
             }),
@@ -842,31 +921,102 @@ fn reject_zero_divisor(operation: DecimalOperation<'_>) -> Result<(), Stop> {
     Ok(())
 }
 
+/// The exact `decimal.arithmetic` intermediate.
+enum Intermediate {
+    /// The integer `value` in units of `10^-scale`.
+    Scaled { value: Integer, scale: u64 },
+    /// The reduced FR-140 `N/D`, already in units of `10^-T`.
+    Quotient(Rational),
+}
+
+impl Intermediate {
+    /// `(maxparts, max(digits(numerator), digits(denominator)))`. A scaled
+    /// integer's denominator `1` never exceeds its numerator's sizes.
+    fn sizes(&self) -> (u64, u64) {
+        match self {
+            Self::Scaled { value, .. } => (value.magnitude_bits(), value.decimal_digits()),
+            Self::Quotient(value) => (
+                value.max_part_bits(),
+                value
+                    .numerator()
+                    .decimal_digits()
+                    .max(value.denominator().decimal_digits()),
+            ),
+        }
+    }
+
+    /// The loss record's exact value, keeping the working-scale power of ten
+    /// factored.
+    fn exact_loss_value(&self, target_scale: u32) -> ExactLossValue {
+        match self {
+            Self::Scaled { value, scale } => {
+                ExactLossValue::scaled(&Rational::from_integer(value.clone()), *scale)
+            }
+            Self::Quotient(value) => ExactLossValue::scaled(value, u64::from(target_scale)),
+        }
+    }
+}
+
 /// Whether the exact result is an integer multiple of `10^-T`.
 enum TargetUnits {
     /// The exact value `coefficient × 10^-scale` with `scale <= T`.
     Exact { coefficient: Integer, scale: u32 },
-    /// A rounding step over this non-integer value in units of `10^-T`.
+    /// A rounding step over a non-integer value in units of `10^-T`, or over a
+    /// proxy that every rounding mode rounds to the same integer.
     RoundingStep(Rational),
 }
 
-/// `intermediate` is in units of `10^-working_scale`; a division intermediate
-/// is already in target units.
-fn in_target_units(intermediate: &Rational, working_scale: u64, target_scale: u32) -> TargetUnits {
-    let (units, scale) = match u32::try_from(working_scale) {
-        Ok(scale) if scale <= target_scale => (intermediate.clone(), scale),
-        _ => (
-            intermediate.divided_by_power_of_ten(working_scale - u64::from(target_scale)),
-            target_scale,
-        ),
+/// Place `intermediate` into units of `10^-T` without materializing a power of
+/// ten larger than the charged intermediate.
+///
+/// For a scaled `v` with `k = scale - T > 0`, `v` is divided by `10^k` only
+/// when `k <= digits(v)`, where the power is at most `10 × |v|`. Otherwise
+/// `0 < |v| < 10^(k-1)`, so `v / 10^k` is a non-integer strictly inside
+/// `(-1/10, 1/10)`; `sign(v) / 10` lies in the same interval on the same side
+/// of zero, and every rounding mode rounds both to the same integer.
+fn in_target_units(intermediate: &Intermediate, target_scale: u32) -> TargetUnits {
+    let (value, scale) = match intermediate {
+        Intermediate::Quotient(quotient) if quotient.is_integer() => {
+            return TargetUnits::Exact {
+                coefficient: quotient.numerator().clone(),
+                scale: target_scale,
+            }
+        }
+        Intermediate::Quotient(quotient) => return TargetUnits::RoundingStep(quotient.clone()),
+        Intermediate::Scaled { value, scale } => (value, *scale),
     };
-    if units.is_integer() {
+    let excess = match u32::try_from(scale) {
+        Ok(scale) if scale <= target_scale => {
+            return TargetUnits::Exact {
+                coefficient: value.clone(),
+                scale,
+            }
+        }
+        _ => scale - u64::from(target_scale),
+    };
+    if value.is_zero() {
+        return TargetUnits::Exact {
+            coefficient: Integer::zero(),
+            scale: target_scale,
+        };
+    }
+    if excess > value.decimal_digits() {
+        let sign = if value.is_negative() { -1_i64 } else { 1 };
+        let proxy = Rational::new(Integer::from(sign), Integer::from(10_i64))
+            .expect("ten is a nonzero denominator");
+        return TargetUnits::RoundingStep(proxy);
+    }
+    let power = Integer::power_of_ten(excess);
+    let (quotient, remainder) = value.div_rem_truncating(&power);
+    if remainder.is_zero() {
         TargetUnits::Exact {
-            coefficient: units.numerator().clone(),
-            scale,
+            coefficient: quotient,
+            scale: target_scale,
         }
     } else {
-        TargetUnits::RoundingStep(units)
+        TargetUnits::RoundingStep(
+            Rational::new(value.clone(), power).expect("a power of ten is nonzero"),
+        )
     }
 }
 

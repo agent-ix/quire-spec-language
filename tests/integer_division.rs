@@ -9,8 +9,9 @@ use std::num::NonZeroU32;
 
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
-    divide, modulo, AdmittedIntegerDivision, CatalogRole, ChargePoint, DefinitionLock,
-    DefinitionReference, DivisionProfile, Incomplete, InjectedDenial, Integer, IntegerDomain,
+    divide, modulo, negotiate_integer_division, AdmittedIntegerDivision, CatalogRole, ChargePoint,
+    DefinitionLock, DefinitionReference, DivisionProfile, Incomplete, InjectedDenial, Integer,
+    IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition, IntegerDomain,
     IntegerInterval, LimitKind, Meter, Outcome, PackageCause, PackageRefusal, PackageRefusalCode,
     QuotientRemainder, Refusal, ScalarLimits, Undefined,
 };
@@ -236,6 +237,51 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
             ));
         }
     }
+}
+
+#[trace("TC-192", "FR-147-AC-3")]
+#[test]
+fn div_07_finite_consumers_missing_any_bound_require_one_before_evaluation() {
+    let signed = || {
+        Some(IntegerInterval::signed_twos_complement(
+            NonZeroU32::new(64).unwrap(),
+        ))
+    };
+    let complete = IntegerDivisionBounds {
+        operand: signed(),
+        intermediate: signed(),
+        result: signed(),
+    };
+    let without = |missing: fn(&mut IntegerDivisionBounds)| {
+        let mut bounds = complete.clone();
+        missing(&mut bounds);
+        IntegerDivisionConsumer::Finite(bounds)
+    };
+    // Negotiation takes no operands, law or meter, so it cannot evaluate.
+    for request in [
+        without(|bounds| bounds.operand = None),
+        without(|bounds| bounds.intermediate = None),
+        without(|bounds| bounds.result = None),
+    ] {
+        assert_eq!(
+            negotiate_integer_division(std::slice::from_ref(&request)),
+            [IntegerDivisionDisposition::RequiresBound]
+        );
+    }
+    // Dispositions are per item: siblings with complete bounds or a
+    // mathematical consumer stay supported.
+    assert_eq!(
+        negotiate_integer_division(&[
+            IntegerDivisionConsumer::Finite(complete.clone()),
+            without(|bounds| bounds.result = None),
+            IntegerDivisionConsumer::Mathematical,
+        ]),
+        [
+            IntegerDivisionDisposition::Supported,
+            IntegerDivisionDisposition::RequiresBound,
+            IntegerDivisionDisposition::Supported,
+        ]
+    );
 }
 
 const DIV_08: ScalarLimits = ScalarLimits {

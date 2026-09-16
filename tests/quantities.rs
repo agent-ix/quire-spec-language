@@ -883,8 +883,8 @@ fn u07_lossy_decimal_conversion_reports_or_refuses() {
     assert_eq!(result.value().representation().scale(), 2);
     let loss = result.loss().unwrap();
     assert_eq!(
-        (loss.exact_numerator(), loss.exact_denominator()),
-        (&int(127), &int(5000))
+        (loss.exact_numerator().clone(), loss.exact_denominator()),
+        (int(127), int(5000))
     );
     assert_eq!(
         (
@@ -1821,7 +1821,7 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4")]
+#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4", "FR-142-AC-10")]
 #[test]
 fn u22_declared_conversion_requires_one_dimension_node() {
     let x = extended();
@@ -1916,7 +1916,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
+#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7", "FR-142-AC-9")]
 #[test]
 fn u23_comparison_uses_root_values_of_the_identical_unit() {
     let x = extended();
@@ -2012,7 +2012,7 @@ fn u24_identical_unit_addition_traverses_no_edge() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4")]
+#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4", "FR-142-AC-10")]
 #[test]
 fn u25_compound_pivot_between_nominal_dimensions() {
     let x = extended();
@@ -2223,8 +2223,8 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
     assert_eq!(value.value(), &int(2));
     let loss = loss.unwrap();
     assert_eq!(
-        (loss.exact_numerator(), loss.exact_denominator()),
-        (&int(5), &int(2))
+        (loss.exact_numerator().clone(), loss.exact_denominator()),
+        (int(5), int(2))
     );
     assert_eq!(
         (loss.rounded_coefficient(), loss.rounded_scale()),

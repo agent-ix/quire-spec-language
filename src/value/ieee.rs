@@ -260,10 +260,15 @@ impl ExactScalar<'_> {
             Self::Rational(value) => value.max_part_bits(),
             Self::Decimal(value) => {
                 let retained = value.representation();
-                retained
-                    .coefficient()
-                    .magnitude_bits()
-                    .max(Integer::power_of_ten(u64::from(retained.scale())).magnitude_bits())
+                // `bits(10^scale)` with `scale <= u32::MAX` is below `2^35`.
+                let power_bits = Integer::power_product_bits(
+                    &Integer::one(),
+                    &Integer::from(10_i64),
+                    &Integer::from(u64::from(retained.scale())),
+                )
+                .to_u64()
+                .expect("bits(10^scale) of a u32 scale fits u64");
+                retained.coefficient().magnitude_bits().max(power_bits)
             }
         }
     }
