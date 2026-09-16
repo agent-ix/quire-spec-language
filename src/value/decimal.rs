@@ -8,7 +8,8 @@
 use std::cmp::Ordering;
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
-use super::integer::{Integer, IntegerInterval};
+use super::comparison::{IllTyped, IllTypedCause};
+use super::integer::Integer;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
 
@@ -199,39 +200,63 @@ impl DecimalLoss {
     }
 }
 
-/// The finite target of a decimal operation: the scale results are rounded to,
-/// the rounding spelling and an optional inclusive normalized-coefficient
-/// domain.
-// SPEC-GAP(1): `shared-grammar.md:275` gives `Decimal[lo,hi; uint,uint; mode]`
-// but does not define the second `uint` pair. This target models an explicit
-// result scale plus a coefficient interval; `admits_coefficient` is the single
-// domain decision.
+/// A well-formed `Decimal[lo, hi; smin, smax; mode]` type: inclusive
+/// membership coefficient and scale bounds plus the rounding spelling. Its
+/// target scale is `smax`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DecimalTarget {
-    scale: u32,
+pub struct DecimalType {
+    lower: Integer,
+    upper: Integer,
+    min_scale: u32,
+    max_scale: u32,
     rounding: RoundingMode,
-    coefficient: Option<IntegerInterval>,
 }
 
-impl DecimalTarget {
-    /// A target with an unbounded coefficient.
-    pub fn new(scale: u32, rounding: RoundingMode) -> Self {
-        Self {
-            scale,
-            rounding,
-            coefficient: None,
+impl DecimalType {
+    /// Type-check a declaration; `lo > hi`, `smin > smax` or
+    /// `smax > u32::MAX` is `ill_typed`.
+    pub fn new(
+        lower: Integer,
+        upper: Integer,
+        min_scale: u64,
+        max_scale: u64,
+        rounding: RoundingMode,
+    ) -> Result<Self, IllTyped> {
+        let malformed = IllTyped {
+            cause: IllTypedCause::MalformedDecimalType,
+        };
+        let max_scale = u32::try_from(max_scale).map_err(|_| malformed)?;
+        let min_scale = u32::try_from(min_scale).map_err(|_| malformed)?;
+        if lower > upper || min_scale > max_scale {
+            return Err(malformed);
         }
+        Ok(Self {
+            lower,
+            upper,
+            min_scale,
+            max_scale,
+            rounding,
+        })
     }
 
-    /// Bound the normalized coefficient to `domain`.
-    pub fn with_coefficient_domain(mut self, domain: IntegerInterval) -> Self {
-        self.coefficient = Some(domain);
-        self
+    /// Inclusive lower membership coefficient `lo`.
+    pub fn lower(&self) -> &Integer {
+        &self.lower
     }
 
-    /// Maximum result scale.
-    pub fn scale(&self) -> u32 {
-        self.scale
+    /// Inclusive upper membership coefficient `hi`.
+    pub fn upper(&self) -> &Integer {
+        &self.upper
+    }
+
+    /// Inclusive minimum membership scale `smin`.
+    pub fn min_scale(&self) -> u32 {
+        self.min_scale
+    }
+
+    /// Inclusive maximum membership scale `smax`, also the target scale.
+    pub fn max_scale(&self) -> u32 {
+        self.max_scale
     }
 
     /// Selected rounding spelling.
@@ -239,17 +264,53 @@ impl DecimalTarget {
         self.rounding
     }
 
-    /// Inclusive normalized-coefficient domain, if bounded.
-    pub fn coefficient_domain(&self) -> Option<&IntegerInterval> {
-        self.coefficient.as_ref()
+    /// FR-140 value-only membership. With normalized (`c`, `s`), the value is a
+    /// member exactly when `s* = max(s, smin) <= smax` and
+    /// `lo <= c × 10^(s* - s) <= hi`. The lifted coefficient is never
+    /// materialized and no charge is made.
+    pub fn contains(&self, value: &Decimal) -> bool {
+        let normalized = value.normalized();
+        let scale = normalized.scale().max(self.min_scale);
+        if scale > self.max_scale {
+            return false;
+        }
+        let shift = u64::from(scale - normalized.scale());
+        let coefficient = normalized.coefficient();
+        compare_shifted(coefficient, shift, &self.lower).is_ge()
+            && compare_shifted(coefficient, shift, &self.upper).is_le()
     }
+}
 
-    /// SPEC-GAP(1): domain membership is decided on the normalized
-    /// coefficient only.
-    fn admits_coefficient(&self, value: &Decimal) -> bool {
-        self.coefficient
-            .as_ref()
-            .is_none_or(|domain| domain.contains(value.normalized().coefficient()))
+/// Compare `value × 10^shift` with `bound` without materializing the power.
+fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
+    let sign = |integer: &Integer| {
+        if integer.is_zero() {
+            Ordering::Equal
+        } else if integer.is_negative() {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }
+    };
+    match sign(value).cmp(&sign(bound)) {
+        Ordering::Equal if value.is_zero() => Ordering::Equal,
+        Ordering::Equal => {
+            let magnitude = shifted_digits(value, shift)
+                .cmp(&bound.decimal_digits())
+                .then_with(|| {
+                    // Equal digit counts bound `shift` by the materialized bound.
+                    value
+                        .abs()
+                        .mul(&Integer::power_of_ten(shift))
+                        .cmp(&bound.abs())
+                });
+            if value.is_negative() {
+                magnitude.reverse()
+            } else {
+                magnitude
+            }
+        }
+        unequal => unequal,
     }
 }
 
@@ -266,7 +327,7 @@ pub enum DecimalOperation<'a> {
     Negate(&'a Decimal),
     /// `a / b`.
     Divide(&'a Decimal, &'a Decimal),
-    /// Admit `a` into the target, rounding if required.
+    /// Explicit conversion of `a` into the target type.
     Round(&'a Decimal),
 }
 
@@ -287,12 +348,12 @@ impl PartialEq for DecimalResult {
 impl Eq for DecimalResult {}
 
 impl DecimalResult {
-    /// The result, retaining its pre-normalized rounded representation.
+    /// The result, retaining its representation (`v × 10^T`, `T`).
     pub fn value(&self) -> &Decimal {
         &self.value
     }
 
-    /// The loss record when a nonzero digit was discarded.
+    /// The loss record when a rounding step occurred.
     pub fn loss(&self) -> Option<&DecimalLoss> {
         self.loss.as_ref()
     }
@@ -301,48 +362,126 @@ impl DecimalResult {
 /// Evaluate `operation` into `target` under `quire.value.accounting/v1`.
 pub fn evaluate_decimal(
     operation: DecimalOperation<'_>,
-    target: &DecimalTarget,
+    target: &DecimalType,
     meter: &mut Meter,
 ) -> Outcome<DecimalResult> {
     Outcome::from_stop(evaluate(operation, target, meter))
 }
 
-/// How the exact intermediate combines its expanded coefficients.
+/// One retained coefficient multiplied by `10^shift`.
+type Shifted<'a> = (&'a Integer, u64);
+
+/// The retained-representation plan of an operation.
+enum Plan<'a> {
+    /// `left ± right` or `left × right` at `scale`.
+    Combine {
+        combine: Combine,
+        left: Shifted<'a>,
+        right: Shifted<'a>,
+        scale: u64,
+    },
+    /// `N/D` already in units of `10^-T`.
+    Divide {
+        numerator: Shifted<'a>,
+        denominator: Shifted<'a>,
+    },
+    /// Negation or conversion of one coefficient at `scale`.
+    Unary {
+        negate: bool,
+        operand: &'a Integer,
+        scale: u64,
+    },
+}
+
 #[derive(Clone, Copy)]
 enum Combine {
     Add,
     Subtract,
     Multiply,
-    Divide,
 }
 
-/// One expanded coefficient: the operand coefficient and its left shift.
-type Shifted<'a> = (&'a Integer, u64);
-
-/// The shape of an operation before any power of ten is allocated.
-enum Plan<'a> {
-    Binary {
-        combine: Combine,
-        left: Shifted<'a>,
-        right: Shifted<'a>,
-    },
-    Unary {
-        negate: bool,
-        operand: &'a Integer,
-    },
+fn expanded_side(sides: [Shifted<'_>; 2]) -> (u64, Option<Shifted<'_>>) {
+    let side = sides.into_iter().find(|(_, shift)| *shift > 0);
+    (side.map_or(0, |(_, shift)| shift), side)
 }
 
-/// The exact intermediate `numerator/denominator` in coefficient units of
-/// `scale`.
-struct Working {
-    numerator: Integer,
-    denominator: Integer,
-    scale: u32,
+fn retained_parts(value: &Decimal) -> Shifted<'_> {
+    let representation = &value.representation;
+    (
+        representation.coefficient(),
+        u64::from(representation.scale()),
+    )
+}
+
+impl<'a> Plan<'a> {
+    /// The `decimal.scale-expansion` shift and the expanded coefficient, if any.
+    fn expansion(&self) -> (u64, Option<Shifted<'a>>) {
+        let expanded = expanded_side;
+        match self {
+            Self::Combine {
+                combine: Combine::Multiply,
+                ..
+            }
+            | Self::Unary { .. } => (0, None),
+            Self::Combine { left, right, .. } => expanded([*left, *right]),
+            Self::Divide {
+                numerator,
+                denominator,
+            } => expanded([*numerator, *denominator]),
+        }
+    }
+}
+
+fn plan(operation: DecimalOperation<'_>, target_scale: u64) -> Plan<'_> {
+    let parts = retained_parts;
+    match operation {
+        DecimalOperation::Add(a, b) | DecimalOperation::Subtract(a, b) => {
+            let ((ca, sa), (cb, sb)) = (parts(a), parts(b));
+            let scale = sa.max(sb);
+            let combine = if matches!(operation, DecimalOperation::Add(..)) {
+                Combine::Add
+            } else {
+                Combine::Subtract
+            };
+            Plan::Combine {
+                combine,
+                left: (ca, scale - sa),
+                right: (cb, scale - sb),
+                scale,
+            }
+        }
+        DecimalOperation::Multiply(a, b) => {
+            let ((ca, sa), (cb, sb)) = (parts(a), parts(b));
+            Plan::Combine {
+                combine: Combine::Multiply,
+                left: (ca, 0),
+                right: (cb, 0),
+                scale: sa + sb,
+            }
+        }
+        DecimalOperation::Divide(a, b) => {
+            // N = ca × 10^max(0, T + sb - sa), D = cb × 10^max(0, sa - sb - T).
+            let ((ca, sa), (cb, sb)) = (parts(a), parts(b));
+            let up = target_scale + sb;
+            Plan::Divide {
+                numerator: (ca, up.saturating_sub(sa)),
+                denominator: (cb, sa.saturating_sub(up)),
+            }
+        }
+        DecimalOperation::Negate(a) | DecimalOperation::Round(a) => {
+            let (coefficient, scale) = parts(a);
+            Plan::Unary {
+                negate: matches!(operation, DecimalOperation::Negate(_)),
+                operand: coefficient,
+                scale,
+            }
+        }
+    }
 }
 
 fn evaluate(
     operation: DecimalOperation<'_>,
-    target: &DecimalTarget,
+    target: &DecimalType,
     meter: &mut Meter,
 ) -> Result<DecimalResult, Stop> {
     let inputs = operands(operation);
@@ -367,56 +506,202 @@ fn evaluate(
             )
             .size(LimitKind::ValueOccurrences, count),
     )?;
-    // SPEC-GAP(5): the definition does not place the zero-divisor decision
-    // among the named charges; it is taken after `decimal.operands`.
     reject_zero_divisor(operation)?;
 
-    let working = expand(operation, target.scale(), meter)?;
-    let exact = Rational::new(working.numerator, working.denominator)
-        .map_err(|_| Stop::Undefined(Undefined::DivisionByZero))?;
+    let target_scale = u64::from(target.max_scale());
+    let plan = plan(operation, target_scale);
+    let (shift, expanded) = plan.expansion();
+    let mut expansion =
+        Charge::new(ChargePoint::DecimalScaleExpansion).size(LimitKind::ScaleExpansion, shift);
+    if let Some((coefficient, shift)) = expanded {
+        expansion = expansion
+            .exact_size(LimitKind::IntegerBits, shifted_bits(coefficient, shift))
+            .size(LimitKind::DecimalDigits, shifted_digits(coefficient, shift));
+    }
+    meter.charge(expansion)?;
+
+    // The exact intermediate `numerator/denominator` in units of
+    // `10^-working_scale`.
+    let (intermediate, working_scale) = match plan {
+        Plan::Combine {
+            combine,
+            left,
+            right,
+            scale,
+        } => {
+            let (a, b) = (expand_one(left), expand_one(right));
+            let value = match combine {
+                Combine::Add => a.add(&b),
+                Combine::Subtract => a.sub(&b),
+                Combine::Multiply => a.mul(&b),
+            };
+            (Rational::from_integer(value), scale)
+        }
+        Plan::Divide {
+            numerator,
+            denominator,
+        } => (
+            Rational::new(expand_one(numerator), expand_one(denominator))
+                .map_err(|_| Stop::Undefined(Undefined::DivisionByZero))?,
+            target_scale,
+        ),
+        Plan::Unary {
+            negate,
+            operand,
+            scale,
+        } => {
+            let value = if negate {
+                operand.neg()
+            } else {
+                operand.clone()
+            };
+            (Rational::from_integer(value), scale)
+        }
+    };
     meter.charge(
         Charge::new(ChargePoint::DecimalArithmetic)
-            .size(LimitKind::IntegerBits, exact.max_part_bits())
+            .size(LimitKind::IntegerBits, intermediate.max_part_bits())
             .size(
                 LimitKind::DecimalDigits,
-                exact
+                intermediate
                     .numerator()
                     .decimal_digits()
-                    .max(exact.denominator().decimal_digits()),
+                    .max(intermediate.denominator().decimal_digits()),
             ),
     )?;
 
-    let (coefficient, loss) = if !rounding_step_occurs(&exact) {
-        (exact.numerator().clone(), None)
-    } else {
-        let mode = target.rounding();
-        let rounded = round(&exact, mode).ok_or(Stop::Refused(Refusal::InexactDecimal))?;
-        meter.charge(
-            Charge::new(ChargePoint::DecimalRounding)
-                .size(LimitKind::IntegerBits, rounded.magnitude_bits())
-                .size(LimitKind::DecimalDigits, rounded.decimal_digits()),
-        )?;
-        let loss = DecimalLoss {
-            exact: exact.divided_by_power_of_ten(u64::from(working.scale)),
-            rounded: DecimalRepresentation::new(rounded.clone(), working.scale),
-            mode,
-        };
-        (rounded, Some(loss))
+    let placed = match in_target_units(&intermediate, working_scale, target.max_scale()) {
+        TargetUnits::Exact { coefficient, scale } => Placed {
+            coefficient,
+            scale,
+            loss: None,
+        },
+        TargetUnits::RoundingStep(units) => {
+            let mode = target.rounding();
+            let rounded = round(&units, mode).ok_or(Stop::Refused(Refusal::InexactDecimal))?;
+            meter.charge(
+                Charge::new(ChargePoint::DecimalRounding)
+                    .size(LimitKind::IntegerBits, rounded.magnitude_bits())
+                    .size(LimitKind::DecimalDigits, rounded.decimal_digits()),
+            )?;
+            Placed {
+                loss: Some(DecimalLoss {
+                    exact: intermediate.divided_by_power_of_ten(working_scale),
+                    rounded: DecimalRepresentation::new(rounded.clone(), target.max_scale()),
+                    mode,
+                }),
+                coefficient: rounded,
+                scale: target.max_scale(),
+            }
+        }
     };
-
-    let value = Decimal::new(coefficient, working.scale);
-    if !target.admits_coefficient(&value) {
-        return Err(Stop::Refused(Refusal::DecimalOutOfDomain));
-    }
-    let retained = value.representation().coefficient();
+    placed.check_membership(target).map_err(Stop::Refused)?;
+    let (bits, digits) = placed.retained_sizes(target);
     meter.charge(
         Charge::new(ChargePoint::DecimalResultRetain)
-            .size(LimitKind::IntegerBits, retained.magnitude_bits())
-            .size(LimitKind::DecimalDigits, retained.decimal_digits())
+            .exact_size(LimitKind::IntegerBits, bits)
+            .size(LimitKind::DecimalDigits, digits)
             .size(LimitKind::ValueOccurrences, 1)
             .results(1),
     )?;
-    Ok(DecimalResult { value, loss })
+    Ok(placed.retain(target))
+}
+
+/// An exact rational placed at a target's maximum scale `T`, before target
+/// membership and retention.
+pub(crate) struct Placed {
+    coefficient: Integer,
+    scale: u32,
+    loss: Option<DecimalLoss>,
+}
+
+impl DecimalType {
+    /// Place `value` at `T` under the target rounding mode; strict `exact`
+    /// refuses a nonzero discarded digit.
+    pub(crate) fn place(&self, value: &Rational) -> Result<Placed, Refusal> {
+        let (numerator, denominator) = (value.numerator(), value.denominator());
+        let terminating = terminating_scale(denominator)
+            .and_then(|scale| u32::try_from(scale).ok())
+            .filter(|scale| *scale <= self.max_scale);
+        match terminating {
+            Some(scale) => {
+                // `n/d = n × (10^k / d) × 10^-k`; `10^k` has at most `k` more
+                // bits than `d` has twos and fives.
+                let factor = Integer::power_of_ten(u64::from(scale)).exact_div(denominator);
+                Ok(Placed {
+                    coefficient: numerator.mul(&factor),
+                    scale,
+                    loss: None,
+                })
+            }
+            None => {
+                let units = Rational::from_integer(
+                    numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
+                )
+                // A reduced denominator is positive, so the division exists.
+                .div(&Rational::from_integer(denominator.clone()))
+                .ok_or(Refusal::InexactDecimal)?;
+                let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
+                Ok(Placed {
+                    loss: Some(DecimalLoss {
+                        exact: value.clone(),
+                        rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
+                        mode: self.rounding,
+                    }),
+                    coefficient: rounded,
+                    scale: self.max_scale,
+                })
+            }
+        }
+    }
+}
+
+/// The least `k` with `denominator | 10^k`, or `None` when the positive
+/// `denominator` has a prime factor other than two or five.
+fn terminating_scale(denominator: &Integer) -> Option<u64> {
+    let mut remaining = denominator.clone();
+    let mut counts = [0_u64; 2];
+    for (count, prime) in counts.iter_mut().zip([2_i64, 5]) {
+        let prime = Integer::from(prime);
+        loop {
+            let (quotient, remainder) = remaining.div_mod_floor(&prime);
+            if !remainder.is_zero() {
+                break;
+            }
+            remaining = quotient;
+            *count += 1;
+        }
+    }
+    (remaining == Integer::one()).then(|| counts[0].max(counts[1]))
+}
+
+impl Placed {
+    /// `(integer_bits, decimal_digits)` of the retained coefficient `v × 10^T`.
+    pub(crate) fn retained_sizes(&self, target: &DecimalType) -> (Integer, u64) {
+        let lift = u64::from(target.max_scale) - u64::from(self.scale);
+        (
+            shifted_bits(&self.coefficient, lift),
+            shifted_digits(&self.coefficient, lift),
+        )
+    }
+
+    /// Refuse a value outside the target's declared membership.
+    pub(crate) fn check_membership(&self, target: &DecimalType) -> Result<(), Refusal> {
+        if target.contains(&Decimal::new(self.coefficient.clone(), self.scale)) {
+            Ok(())
+        } else {
+            Err(Refusal::DecimalOutOfDomain)
+        }
+    }
+
+    /// The completed result retaining `(v × 10^T, T)`.
+    pub(crate) fn retain(self, target: &DecimalType) -> DecimalResult {
+        let lift = u64::from(target.max_scale) - u64::from(self.scale);
+        DecimalResult {
+            value: Decimal::new(expand_one((&self.coefficient, lift)), target.max_scale),
+            loss: self.loss,
+        }
+    }
 }
 
 fn reject_zero_divisor(operation: DecimalOperation<'_>) -> Result<(), Stop> {
@@ -428,161 +713,54 @@ fn reject_zero_divisor(operation: DecimalOperation<'_>) -> Result<(), Stop> {
     Ok(())
 }
 
-// SPEC-GAP(5): "omitted when no rounding step occurs" does not say whether a
-// target-scale admission that discards only zero digits is a rounding step.
-// A step occurs only when the exact intermediate is not an integer in target
-// units, i.e. a nonzero digit would be discarded.
-fn rounding_step_occurs(exact: &Rational) -> bool {
-    !exact.is_integer()
+/// Whether the exact result is an integer multiple of `10^-T`.
+enum TargetUnits {
+    /// The exact value `coefficient × 10^-scale` with `scale <= T`.
+    Exact { coefficient: Integer, scale: u32 },
+    /// A rounding step over this non-integer value in units of `10^-T`.
+    RoundingStep(Rational),
 }
 
-/// Plan the operation and its working scale without allocating a power of ten.
-fn plan(operation: DecimalOperation<'_>, target_scale: u64) -> (Plan<'_>, u64) {
-    let binary = |combine, left, right| Plan::Binary {
-        combine,
-        left,
-        right,
+/// `intermediate` is in units of `10^-working_scale`; a division intermediate
+/// is already in target units.
+fn in_target_units(intermediate: &Rational, working_scale: u64, target_scale: u32) -> TargetUnits {
+    let (units, scale) = match u32::try_from(working_scale) {
+        Ok(scale) if scale <= target_scale => (intermediate.clone(), scale),
+        _ => (
+            intermediate.divided_by_power_of_ten(working_scale - u64::from(target_scale)),
+            target_scale,
+        ),
     };
-    match operation {
-        DecimalOperation::Add(a, b) | DecimalOperation::Subtract(a, b) => {
-            let (a, b) = (a.representation(), b.representation());
-            let w = u64::from(a.scale().max(b.scale()));
-            let combine = if matches!(operation, DecimalOperation::Add(..)) {
-                Combine::Add
-            } else {
-                Combine::Subtract
-            };
-            (
-                binary(
-                    combine,
-                    (a.coefficient(), w - u64::from(a.scale())),
-                    (b.coefficient(), w - u64::from(b.scale())),
-                ),
-                w,
-            )
+    if units.is_integer() {
+        TargetUnits::Exact {
+            coefficient: units.numerator().clone(),
+            scale,
         }
-        DecimalOperation::Multiply(a, b) => {
-            let (a, b) = (a.representation(), b.representation());
-            (
-                binary(
-                    Combine::Multiply,
-                    (a.coefficient(), 0),
-                    (b.coefficient(), 0),
-                ),
-                u64::from(a.scale()) + u64::from(b.scale()),
-            )
-        }
-        DecimalOperation::Divide(a, b) => {
-            // a/b in target units: c_a * 10^(t + s_b - s_a) / c_b.
-            let (a, b) = (a.representation(), b.representation());
-            let up = target_scale + u64::from(b.scale());
-            let down = u64::from(a.scale());
-            (
-                binary(
-                    Combine::Divide,
-                    (a.coefficient(), up.saturating_sub(down)),
-                    (b.coefficient(), down.saturating_sub(up)),
-                ),
-                target_scale,
-            )
-        }
-        DecimalOperation::Negate(a) => (
-            Plan::Unary {
-                negate: true,
-                operand: a.representation().coefficient(),
-            },
-            u64::from(a.representation().scale()),
-        ),
-        DecimalOperation::Round(a) => (
-            Plan::Unary {
-                negate: false,
-                operand: a.representation().coefficient(),
-            },
-            u64::from(a.representation().scale()),
-        ),
+    } else {
+        TargetUnits::RoundingStep(units)
     }
 }
 
 fn expand_one((coefficient, shift): Shifted<'_>) -> Integer {
-    coefficient.mul(&Integer::power_of_ten(shift))
-}
-
-/// Align, combine and (for working scales above the target) express the exact
-/// result in target coefficient units. `decimal.scale-expansion` is checked
-/// before any power of ten is allocated and charged before combination.
-fn expand(
-    operation: DecimalOperation<'_>,
-    target_scale: u32,
-    meter: &mut Meter,
-) -> Result<Working, Stop> {
-    let t = u64::from(target_scale);
-    let (plan, working_scale) = plan(operation, t);
-    let downward = working_scale.saturating_sub(t);
-    let shifted: Vec<Shifted<'_>> = match &plan {
-        Plan::Binary { left, right, .. } => vec![*left, *right],
-        Plan::Unary { operand, .. } => vec![(*operand, 0)],
-    };
-    let shift = max_of(shifted.iter().map(|(_, left)| *left)).max(downward);
-    let digits = max_of(
-        shifted
-            .iter()
-            .map(|(coefficient, left)| digits_after_shift(coefficient, *left)),
-    );
-    meter.precheck(
-        ChargePoint::DecimalScaleExpansion,
-        &[(LimitKind::ScaleExpansion, shift)],
-    )?;
-    let (numerator, denominator) = match plan {
-        Plan::Binary {
-            combine,
-            left,
-            right,
-        } => {
-            let (a, b) = (expand_one(left), expand_one(right));
-            let bits = a.magnitude_bits().max(b.magnitude_bits());
-            meter.charge(expansion_charge(shift, bits, digits))?;
-            match combine {
-                Combine::Add => (a.add(&b), Integer::one()),
-                Combine::Subtract => (a.sub(&b), Integer::one()),
-                Combine::Multiply => (a.mul(&b), Integer::one()),
-                Combine::Divide => (a, b),
-            }
-        }
-        Plan::Unary { negate, operand } => {
-            let bits = operand.magnitude_bits();
-            meter.charge(expansion_charge(shift, bits, digits))?;
-            let value = if negate {
-                operand.neg()
-            } else {
-                operand.clone()
-            };
-            (value, Integer::one())
-        }
-    };
-    let (denominator, scale) = if downward > 0 {
-        (
-            denominator.mul(&Integer::power_of_ten(downward)),
-            target_scale,
-        )
+    if shift == 0 {
+        coefficient.clone()
     } else {
-        // Without a downward shift the working scale is at most the target.
-        (
-            denominator,
-            u32::try_from(working_scale).unwrap_or(target_scale),
-        )
-    };
-    Ok(Working {
-        numerator,
-        denominator,
-        scale,
-    })
+        coefficient.mul(&Integer::power_of_ten(shift))
+    }
 }
 
-fn expansion_charge(shift: u64, bits: u64, digits: u64) -> Charge {
-    Charge::new(ChargePoint::DecimalScaleExpansion)
-        .size(LimitKind::ScaleExpansion, shift)
-        .size(LimitKind::IntegerBits, bits)
-        .size(LimitKind::DecimalDigits, digits)
+/// `bits(c × 10^shift)`, derived without allocating the power of ten.
+fn shifted_bits(value: &Integer, shift: u64) -> Integer {
+    Integer::power_product_bits(value, &Integer::from(10_i64), &Integer::from(shift))
+}
+
+/// `digits(c × 10^shift)`, derived without allocating the power of ten.
+fn shifted_digits(value: &Integer, shift: u64) -> u64 {
+    if value.is_zero() {
+        1
+    } else {
+        value.decimal_digits().saturating_add(shift)
+    }
 }
 
 /// Round a non-integer reduced rational to an integer, or `None` for `exact`.
@@ -629,13 +807,4 @@ fn operands(operation: DecimalOperation<'_>) -> Vec<&DecimalRepresentation> {
 
 fn max_of(values: impl Iterator<Item = u64>) -> u64 {
     values.max().unwrap_or(0)
-}
-
-/// `digits(c × 10^shift)`, derived without allocating the power of ten.
-fn digits_after_shift(value: &Integer, shift: u64) -> u64 {
-    if value.is_zero() {
-        1
-    } else {
-        value.decimal_digits().saturating_add(shift)
-    }
 }

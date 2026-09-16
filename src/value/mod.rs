@@ -6,10 +6,11 @@
 //! widens nor reuses. Layers:
 //!
 //! 1. typed values: [`Integer`], [`IntegerInterval`]/[`BoundedInteger`],
-//!    [`Rational`], [`Decimal`], [`Text`] and [`EnumValue`];
+//!    [`Rational`], [`Decimal`], [`Text`], [`EnumValue`] and FR-142
+//!    [`Quantity`] over an admitted [`UnitGraph`];
 //! 2. explicit operation tables: [`evaluate_decimal`] (FR-140), [`divide`] and
 //!    [`modulo`] (FR-147), [`admit_text`], [`compare_text`] and [`compare_enum`]
-//!    (FR-141), after the type-checking [`IllTyped`] refusal;
+//!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after the type-checking [`IllTyped`] refusal;
 //! 3. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
 //! 4. `quire.value.accounting/v1` metering through [`Meter`].
@@ -25,15 +26,18 @@ mod definition;
 mod division;
 mod enumeration;
 mod integer;
+mod node;
 mod outcome;
+mod quantity;
 mod rational;
 mod text;
+mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use decimal::{
     evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult,
-    DecimalTarget, RoundingMode,
+    DecimalType, RoundingMode,
 };
 pub use definition::{
     AdmittedIntegerDivision, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
@@ -43,17 +47,28 @@ pub use definition::{
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
-    InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
-    SemanticGraphCause, NODE_KEY_DOMAIN,
 };
 pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
     OutOfDomain,
 };
+pub use node::{
+    InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
+    SemanticGraphCause, NODE_KEY_DOMAIN,
+};
 pub use outcome::{Outcome, Refusal, Undefined};
+pub use quantity::{
+    convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity, QuantityOperation,
+    QuantityTarget, QuantityUnit,
+};
 pub use rational::{Rational, ZeroDenominator};
 pub use text::{
     admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,
     Text, TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION,
     UNICODE_VERSION,
+};
+pub use unit::{
+    CompoundUnit, CompoundUnitCause, CompoundUnitIdentity, CompoundUnitPreimage, Dimension,
+    DimensionPreimage, InvalidCompoundUnit, Unit, UnitEdge, UnitGraph, UnitPreimage,
+    COMPOUND_UNIT_DOMAIN,
 };

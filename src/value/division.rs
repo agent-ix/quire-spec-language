@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-147 integer division: the three `div`/`rem` laws, independent Euclidean
-//! `mod`, atomic pair admission and the named integer-division charges.
+//! `mod`, atomic pair admission and the named integer-division and
+//! integer-modulus charges.
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::definition::AdmittedIntegerDivision;
@@ -81,94 +82,102 @@ pub fn divide(
         dividend,
         divisor,
         domain,
-        Exposure::Pair,
         meter,
     ))
 }
 
 /// Evaluate `mod`: always the Euclidean remainder, independent of any selected
-/// `div`/`rem` law.
+/// `div`/`rem` law, charged only at the four `integer-modulus.*` points.
 pub fn modulo(
     dividend: &Integer,
     divisor: &Integer,
     domain: &IntegerDomain,
     meter: &mut Meter,
 ) -> Outcome<Integer> {
-    // SPEC-GAP(2): FR-147 and `value-accounting.md` define no `mod` charge
-    // schedule. `mod` reuses the four `integer-division.*` charges, including
-    // the two-unit `result-pair`, through this single call.
-    Outcome::from_stop(
-        paired(
-            DivisionProfile::Euclidean,
-            dividend,
-            divisor,
-            domain,
-            Exposure::Remainder,
-            meter,
-        )
-        .map(|pair| pair.remainder),
-    )
+    Outcome::from_stop(euclidean_remainder(dividend, divisor, domain, meter))
 }
 
-/// Which members an operation exposes and therefore must admit.
-#[derive(Clone, Copy)]
-enum Exposure {
-    Pair,
-    Remainder,
+fn operand_bits(dividend: &Integer, divisor: &Integer) -> u64 {
+    dividend.magnitude_bits().max(divisor.magnitude_bits())
 }
 
-/// Charge, compute and admit the pair. Membership of every exposed member is
-/// decided before the atomic `integer-division.result-pair` retention.
+fn arithmetic_bits(values: [&Integer; 4]) -> u64 {
+    values
+        .into_iter()
+        .map(Integer::magnitude_bits)
+        .max()
+        .unwrap_or(1)
+}
+
+fn reject_zero_divisor(divisor: &Integer) -> Result<(), Stop> {
+    if divisor.is_zero() {
+        Err(Stop::Undefined(Undefined::DivisionByZero))
+    } else {
+        Ok(())
+    }
+}
+
+/// Charge, compute and admit the pair. Membership of both members is decided
+/// after `integer-division.domain-pair` and before the atomic retention.
 fn paired(
     profile: DivisionProfile,
     dividend: &Integer,
     divisor: &Integer,
     domain: &IntegerDomain,
-    exposure: Exposure,
     meter: &mut Meter,
 ) -> Result<QuotientRemainder, Stop> {
     meter.charge(
         Charge::new(ChargePoint::IntegerDivisionOperands)
-            .size(
-                LimitKind::IntegerBits,
-                dividend.magnitude_bits().max(divisor.magnitude_bits()),
-            )
+            .size(LimitKind::IntegerBits, operand_bits(dividend, divisor))
             .size(LimitKind::ValueOccurrences, 2),
     )?;
-    if divisor.is_zero() {
-        return Err(Stop::Undefined(Undefined::DivisionByZero));
-    }
+    reject_zero_divisor(divisor)?;
     let (quotient, remainder) = profile.apply(dividend, divisor);
-    meter.charge(
-        Charge::new(ChargePoint::IntegerDivisionArithmetic).size(
-            LimitKind::IntegerBits,
-            [dividend, divisor, &quotient, &remainder]
-                .into_iter()
-                .map(Integer::magnitude_bits)
-                .max()
-                .unwrap_or(1),
-        ),
-    )?;
+    meter.charge(Charge::new(ChargePoint::IntegerDivisionArithmetic).size(
+        LimitKind::IntegerBits,
+        arithmetic_bits([dividend, divisor, &quotient, &remainder]),
+    ))?;
     meter.charge(
         Charge::new(ChargePoint::IntegerDivisionDomainPair).size(LimitKind::ValueOccurrences, 2),
     )?;
     let quotient_admitted = domain.contains(&quotient);
     let remainder_admitted = domain.contains(&remainder);
-    match exposure {
-        Exposure::Pair if !(quotient_admitted && remainder_admitted) => {
-            return Err(Stop::Refused(Refusal::DivisionPairOutOfDomain {
-                quotient_admitted,
-                remainder_admitted,
-            }));
-        }
-        Exposure::Remainder if !remainder_admitted => {
-            return Err(Stop::Refused(Refusal::ModuloOutOfDomain));
-        }
-        Exposure::Pair | Exposure::Remainder => {}
+    if !(quotient_admitted && remainder_admitted) {
+        return Err(Stop::Refused(Refusal::DivisionPairOutOfDomain {
+            quotient_admitted,
+            remainder_admitted,
+        }));
     }
     meter.charge(Charge::new(ChargePoint::IntegerDivisionResultPair).results(2))?;
     Ok(QuotientRemainder {
         quotient,
         remainder,
     })
+}
+
+fn euclidean_remainder(
+    dividend: &Integer,
+    divisor: &Integer,
+    domain: &IntegerDomain,
+    meter: &mut Meter,
+) -> Result<Integer, Stop> {
+    meter.charge(
+        Charge::new(ChargePoint::IntegerModulusOperands)
+            .size(LimitKind::IntegerBits, operand_bits(dividend, divisor))
+            .size(LimitKind::ValueOccurrences, 2),
+    )?;
+    reject_zero_divisor(divisor)?;
+    let (quotient, remainder) = DivisionProfile::Euclidean.apply(dividend, divisor);
+    meter.charge(Charge::new(ChargePoint::IntegerModulusArithmetic).size(
+        LimitKind::IntegerBits,
+        arithmetic_bits([dividend, divisor, &quotient, &remainder]),
+    ))?;
+    meter.charge(
+        Charge::new(ChargePoint::IntegerModulusDomain).size(LimitKind::ValueOccurrences, 1),
+    )?;
+    if !domain.contains(&remainder) {
+        return Err(Stop::Refused(Refusal::ModuloOutOfDomain));
+    }
+    meter.charge(Charge::new(ChargePoint::IntegerModulusResultRetain).results(1))?;
+    Ok(remainder)
 }
