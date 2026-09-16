@@ -46,10 +46,10 @@ const PINNED_NON_CATALOG: [(&str, &str); 8] = [
         "proposals/checked-package-v2/node-identity-preimage.schema.json",
         "978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501",
     ),
-    // Byte-identical at QSpec 5aa00f35056c65948de93ad339540974d35c368a.
+    // Read from QSpec a25c93c875231664d90f5d4b3f2ac51f1dc77a75 (QSpec PR #73).
     (
         "spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",
-        "3f30f345a6ca38d84557c7629ecdec83e7fce261699f5e9e081d72a3a1cf9655",
+        "708cb6e97b88a00ea3636bf2d9594a3174ab9bfb495699dc71681d5f3aeda868",
     ),
 ];
 
