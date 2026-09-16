@@ -9,3 +9,4 @@ description: "Chronological Plan-011 lifecycle events."
 
 * **2026-09-14** — Plan created from accepted FR-053 and TC-141. Task-039 owns the complete serial v2 native-temporal identity slice.
 * **2026-09-14** — Task-039 implementation and focused TC-141 control pass locally; full Rust gates and PR-time review remain before completion.
+* **2026-09-15** — Issue #126 restores typed v2 request access to the exact admitted temporal axes, execution state, and completeness evidence required by downstream correlation.
