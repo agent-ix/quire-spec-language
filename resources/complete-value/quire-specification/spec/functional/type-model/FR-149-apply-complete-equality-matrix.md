@@ -52,7 +52,7 @@ implicit conversion or local-name equality creates a common type.
 | --- | --- |
 | Boolean | identical truth value |
 | Integer, rational and decimal | exact mathematical value after an explicitly declared lossless common-type conversion |
-| Quantity | identical dimension and exact equality after explicit conversion to the selected canonical unit |
+| Quantity | identical unit and exact value equality; a top-level quantity equality expression uses the FR-142 root-value comparison schedule, while a quantity leaf inside a composite equality plan compares by exact value in its identical unit and charges only its `equality.pair`; distinct units require an explicit prior FR-142 conversion |
 | Text | the FR-141 relation under the same pinned profile: normalized scalar sequence for scalar profiles and original UTF-8 bytes for `binary-utf8` |
 | Enumeration | the same qualified enumeration declaration and identical case; different declarations have no implicit common type |
 | Presence, absence and null | same declared type and state; two absent values are equal, two explicit null values are equal, and two present values recursively compare their payload; absent and explicit null are distinct |

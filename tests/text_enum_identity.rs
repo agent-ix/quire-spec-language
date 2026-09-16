@@ -1155,14 +1155,51 @@ fn t13_scalar_length_is_measured_after_normalization() {
     assert_eq!(decomposed.retained(), E_COMBINING);
 }
 
+const T16: ScalarLimits = ScalarLimits {
+    integer_bits: 0,
+    decimal_digits: 0,
+    scale_expansion: 0,
+    text_input_bytes: 3,
+    text_scalars: 2,
+    normalized_scalars: 2,
+    unit_edges: 0,
+    value_occurrences: 1,
+    work_units: 5,
+    result_units: 1,
+};
+
+/// A T16 admission: text, profile, the refusing limits and their charges, then
+/// the denying limits and their record.
+type T16Case = (
+    &'static str,
+    TextProfile,
+    ScalarLimits,
+    &'static [ChargePoint],
+    ScalarLimits,
+    Incomplete,
+);
+
 #[trace("TC-186", "FR-141-AC-3", "FR-141-AC-6")]
 #[test]
-fn length_refusal_follows_the_last_charge_that_measures_the_length() {
+fn t16_length_refusal_follows_the_last_charge_that_measures_the_length() {
     use ChargePoint::{TextDecodeScalars, TextInputBytes, TextNormalizeInput, TextNormalizeOutput};
-    let cases: [(&str, TextProfile, &[ChargePoint]); 3] = [
+    let scalars_only = ScalarLimits {
+        normalized_scalars: 0,
+        work_units: 2,
+        ..T16
+    };
+    let bytes_only = ScalarLimits {
+        text_input_bytes: 2,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        work_units: 1,
+        ..T16
+    };
+    let cases: [T16Case; 3] = [
         (
             E_COMBINING,
             Nfd,
+            T16,
             &[
                 TextInputBytes,
                 TextDecodeScalars,
@@ -1170,24 +1207,71 @@ fn length_refusal_follows_the_last_charge_that_measures_the_length() {
                 TextNormalizeOutput,
                 TextNormalizeOutput,
             ],
+            ScalarLimits {
+                normalized_scalars: 1,
+                ..T16
+            },
+            Incomplete {
+                limit_kind: LimitKind::NormalizedScalars,
+                limit: 1,
+                consumed: 1,
+                next_charge: Integer::from(2_u64),
+                charge_point: TextNormalizeOutput,
+            },
         ),
         (
             E_COMBINING,
             UnicodeScalars,
+            scalars_only,
             &[TextInputBytes, TextDecodeScalars],
+            ScalarLimits {
+                text_scalars: 1,
+                ..scalars_only
+            },
+            Incomplete {
+                limit_kind: LimitKind::TextScalars,
+                limit: 1,
+                consumed: 0,
+                next_charge: Integer::from(2_u64),
+                charge_point: TextDecodeScalars,
+            },
         ),
-        (E_ACUTE, BinaryUtf8, &[TextInputBytes]),
+        (
+            E_ACUTE,
+            BinaryUtf8,
+            bytes_only,
+            &[TextInputBytes],
+            ScalarLimits {
+                text_input_bytes: 1,
+                ..bytes_only
+            },
+            Incomplete {
+                limit_kind: LimitKind::TextInputBytes,
+                limit: 1,
+                consumed: 0,
+                next_charge: Integer::from(2_u64),
+                charge_point: TextInputBytes,
+            },
+        ),
     ];
-    for (text, profile, charges) in cases {
-        let mut meter = Meter::new(UNLIMITED);
+    for (text, profile, refused, charges, denied, incomplete) in cases {
+        let bound = text_type(1, 1, profile);
+        let mut meter = Meter::new(refused);
         assert!(
             matches!(
-                admit_text(&runtime(text), &text_type(1, 1, profile), &mut meter),
+                admit_text(&runtime(text), &bound, &mut meter),
                 Outcome::Refused(Refusal::TextLengthOutOfDomain)
             ),
             "{profile:?}"
         );
         assert_eq!(meter.admitted_charges(), charges, "{profile:?}");
+        assert!(
+            matches!(
+                admit_text(&runtime(text), &bound, &mut Meter::new(denied)),
+                Outcome::Incomplete(record) if record == incomplete
+            ),
+            "{profile:?}"
+        );
     }
 }
 
