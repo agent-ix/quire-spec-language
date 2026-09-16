@@ -5,8 +5,8 @@
 //! `TypeEnvironment::check_equality` and then evaluated over completed values.
 //! Unit and enum node keys come from an independent RFC 8785 canonicalizer;
 //! composite and object-type keys are opaque producer-assigned fixture keys.
-//! E20's source-order row and E26's `let`-bound row need the FR-146 expression
-//! evaluator (`Remaining work: #119`).
+//! E20's source-order row and E26's `let`-bound rows run through the FR-146
+//! expression checker and evaluator, as do the scalar operator rows.
 
 use std::cell::Cell;
 use std::sync::OnceLock;
@@ -20,13 +20,14 @@ use quire_spec_language::value::{
     ConstructionCause, ConstructionRefusal, Decimal, DecimalType, DefinitionLock,
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
-    FieldValue, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, LocatedLoss,
-    Meter, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
-    PackageDeclarations, Presence, Quantity, QuantityUnit, Rational, RationalDomain, Refusal,
-    RoundingMode, ScalarLimits, Text, TextPayload, TextProfile, TextType, TypeEnvironment,
-    Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss, ValueType,
+    FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeExactLoss, IeeeFlag,
+    IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer,
+    IntegerInterval, LimitKind, LocatedLoss, Meter, NodeKey, NodeOwner, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Outcome,
+    OwnerSelection, OwnerSubject, PackageDeclarations, Presence, Quantity, QuantityUnit, Rational,
+    RationalDomain, Refusal, RoundingMode, ScalarLimits, Text, TextPayload, TextProfile, TextType,
+    TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -2098,5 +2099,163 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
     assert_eq!(
         cause(&plain_package(), &operation(BinaryOperator::Add, "f", "g")),
         CheckCause::IeeeProfileNotAdmitted
+    );
+}
+
+fn record(name: &str, fields: Vec<(&str, Expression)>) -> Expression {
+    Expression::Record {
+        name: name.to_owned(),
+        fields: fields
+            .into_iter()
+            .map(|(field, value)| (field.to_owned(), FieldInitializer::Value(value)))
+            .collect(),
+    }
+}
+
+fn plus_one(spelling: &str) -> Expression {
+    Expression::Binary {
+        operator: BinaryOperator::Add,
+        left: Box::new(operand(spelling)),
+        right: Box::new(Expression::Integer(integer(1))),
+    }
+}
+
+#[trace("TC-194", "FR-149-AC-7")]
+#[test]
+fn e20_source_order_row_evaluates_fields_in_declaration_order() {
+    let types = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("Two"),
+            "Two",
+            CompositeShape::Record(vec![
+                FieldDeclaration::new("a", ValueType::Integer, Presence::Required),
+                FieldDeclaration::new("b", ValueType::Integer, Presence::Required),
+            ]),
+        )],
+        [],
+    )
+    .unwrap();
+    let package = PackageDeclarations {
+        types,
+        functions: vec![FunctionDeclaration {
+            name: "pick".to_owned(),
+            parameters: vec![("n".to_owned(), int_type(0, 1))],
+            result: ValueType::Integer,
+            measure: None,
+            body: operand("n"),
+        }],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .unwrap();
+    let parameters = [("p", ValueType::Integer)];
+    // `eA = pick(p)` refuses its `Int[0,1]` argument before `function.call`;
+    // `eB = p + 1` charges and is incomplete under the zero tuple.
+    let e_a = || Expression::Call {
+        name: "pick".to_owned(),
+        arguments: vec![operand("p")],
+    };
+    let right = || record("Two", vec![("a", plus_one("p")), ("b", plus_one("p"))]);
+    let compare = |left: Expression| Expression::Binary {
+        operator: BinaryOperator::Equal,
+        left: Box::new(left),
+        right: Box::new(right()),
+    };
+
+    let (refused, meter) = run_in(
+        &package,
+        &parameters,
+        &compare(record("Two", vec![("b", plus_one("p")), ("a", e_a())])),
+        None,
+        vec![int(5)],
+        ZERO,
+    );
+    assert!(matches!(
+        refused.outcome,
+        Outcome::Refused(Refusal::IntegerOutOfDomain)
+    ));
+    assert!(meter.admitted_charges().is_empty());
+
+    let (incomplete, _) = run_in(
+        &package,
+        &parameters,
+        &compare(record(
+            "Two",
+            vec![("b", plus_one("p")), ("a", operand("p"))],
+        )),
+        None,
+        vec![int(5)],
+        ZERO,
+    );
+    assert!(matches!(
+        incomplete.outcome,
+        Outcome::Incomplete(Incomplete {
+            charge_point: ChargePoint::IntegerArithmeticOperands,
+            ..
+        })
+    ));
+}
+
+#[trace("TC-194", "FR-149-AC-10")]
+#[test]
+fn e26_let_bound_conversions_are_ordinary_conversions() {
+    let package = plain_package();
+    let let_equal = |target: ValueType| Expression::Let {
+        name: "x".to_owned(),
+        value: Box::new(Expression::Convert {
+            target,
+            operand: Box::new(operand("e")),
+        }),
+        body: Box::new(operation(BinaryOperator::Equal, "x", "d")),
+    };
+
+    let whole = [("e", decimal_type(0, 9, 0, 0)), ("d", int_type(0, 9))];
+    let (evaluation, _) = run_in(
+        &package,
+        &whole,
+        &let_equal(int_type(0, 9)),
+        None,
+        vec![decimal(3, 0), int(3)],
+        UNLIMITED,
+    );
+    completed_as(&evaluation, &Value::Boolean(true));
+    assert!(evaluation.losses.is_empty());
+
+    // E04's `r` and `d`: no equality conversion, but an ordinary FR-140 one.
+    let target = decimal_type_mode(0, 100, 2, 2, RoundingMode::NearestEven);
+    let thirds = [("e", rational_type(0, 1, 1, 3)), ("d", target.clone())];
+    let (evaluation, _) = run_in(
+        &package,
+        &thirds,
+        &let_equal(target.clone()),
+        None,
+        vec![rational(1, 3), decimal(33, 2)],
+        UNLIMITED,
+    );
+    completed_as(&evaluation, &Value::Boolean(true));
+    match evaluation.losses.as_slice() {
+        [LocatedLoss {
+            location,
+            loss: ValueLoss::Decimal(_),
+        }] => assert_eq!(location.path, vec![0]),
+        other => panic!("one decimal loss, not {other:?}"),
+    }
+    let direct = Expression::Binary {
+        operator: BinaryOperator::Equal,
+        left: Box::new(Expression::Convert {
+            target,
+            operand: Box::new(operand("e")),
+        }),
+        right: Box::new(operand("d")),
+    };
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &thirds,
+            &direct,
+            None,
+            CheckMode::Kernel
+        )),
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
 }

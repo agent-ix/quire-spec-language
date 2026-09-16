@@ -4,22 +4,26 @@
 //!
 //! Declaration node keys are opaque producer-assigned fixture keys; the
 //! declarations that intentionally share names and shapes get distinct keys.
-//! R04 needs the source parser and R03's library-import row needs the FR-307
-//! package boundary (`Remaining work: #119`).
+//! R04 runs through the complete-source parser and R03's library-import row
+//! through FR-307 library resolution.
 
 use std::cell::Cell;
 
 use ix_trace_rs::trace;
+use quire_spec_language::complete::{self, CompleteCause, CompleteCode};
 use quire_spec_language::value::{
-    CardinalityBound, ChargePoint, CollectionKind, CollectionType, Component, CompositeDeclaration,
-    CompositeShape, ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand,
-    EqualityOperator, FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode,
-    GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, Incomplete, Integer,
-    InvalidDeclaration, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectEnvironmentCause,
-    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
-    Outcome, Presence, RecursionEdges, ScalarLimits, TypeEnvironment, UniverseIdentity, Value,
-    ValueGraph, ValueType,
+    resolve_libraries, CardinalityBound, ChargePoint, CollectionKind, CollectionType, Component,
+    CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal, DeclarationCause,
+    EqualityOperand, EqualityOperator, ExportIdentity, FieldDeclaration, FieldExpression,
+    FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, IllTyped,
+    IllTypedCause, ImportDeclaration, Incomplete, Integer, InvalidDeclaration, LibraryName,
+    LibraryPackage, LimitKind, Meter, NameReference, NodeKey, ObjectEnvironment,
+    ObjectEnvironmentCause, ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, OptionValue, Outcome, PackageId, Presence, RecursionEdges, ScalarLimits,
+    TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
 };
+use quire_spec_language::{Limits, SourceIdentity};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -1061,5 +1065,159 @@ mod checked {
             let (outcome, _) = evaluate(&package, &checked, vec![value], UNLIMITED);
             assert_completed(&outcome, Value::Boolean(expected));
         }
+    }
+}
+
+#[trace("TC-188", "FR-143-AC-10")]
+#[test]
+fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
+    let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";
+    let parsed = complete::parse(
+        SourceIdentity {
+            identity: "test:tc-188".into(),
+            revision: "1".into(),
+        },
+        "tc-188.native",
+        text.as_bytes(),
+        Limits::default(),
+    )
+    .unwrap();
+    assert!(!parsed.is_admissible());
+    let diagnostic = &parsed.diagnostics()[0];
+    assert_eq!(
+        (diagnostic.code, diagnostic.cause),
+        (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
+    );
+    assert_eq!(diagnostic.span.start.byte, text.find("variant").unwrap());
+}
+
+mod library_import {
+    use super::*;
+
+    fn hex(label: &str) -> String {
+        Sha256::digest(label.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    /// The JCS `quire.checked-package-id/v2` preimage of `label`, whose one
+    /// projection node declares `R` when `exports` is set.
+    fn preimage(label: &str, exports: bool) -> Box<[u8]> {
+        let reference = json!({"digest": hex(label), "domain": "quire.checked-semantic-node/v1"});
+        let mut node = json!({
+            "body": {"members": [], "term": "aggregate"},
+            "dependencies": [],
+            "node_id": reference,
+            "node_tag": "composite_type",
+            "schema_version": "quire.checked-semantic-graph/v2",
+            "semantic_form": "record",
+            "semantic_type": reference,
+        });
+        if exports {
+            node["nominal_identity_preimage"] = json!({"qualified_declaration": ["R"]});
+        }
+        let value = json!({
+            "definition_selections": [],
+            "dependency_selections": [],
+            "edition": {"role": "edition"},
+            "identity_projection": [node],
+            "model_selections": [],
+            "profile_selections": [],
+            "required_features": ["quire.value.complete/v1"],
+            "version": "quire.checked-package-id/v2",
+        });
+        serde_json::to_vec(&value).unwrap().into_boxed_slice()
+    }
+
+    fn name(library: &str) -> LibraryName {
+        LibraryName::new(vec![library.to_owned()]).unwrap()
+    }
+
+    fn package(library: &str, imports: &[&str], exports: bool) -> LibraryPackage {
+        let bytes = preimage(library, exports);
+        LibraryPackage {
+            library: name(library),
+            version: "1".to_owned(),
+            package_id: PackageId::of_preimage(&bytes),
+            identity_preimage: bytes,
+            imports: imports
+                .iter()
+                .map(|imported| ImportDeclaration {
+                    library: name(imported),
+                    version: "1".to_owned(),
+                    package_id: PackageId::of_preimage(&preimage(imported, *imported == "L")),
+                    qualifier: Some(imported.to_lowercase()),
+                })
+                .collect(),
+            exports: if exports {
+                vec!["R".to_owned()]
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    #[trace("TC-188", "FR-143-AC-6")]
+    #[test]
+    fn r03_one_library_export_reached_by_two_paths_is_one_declaration() {
+        let root = package("P", &["A", "B"], false);
+        let supplied = [
+            package("A", &["L"], false),
+            package("B", &["L"], false),
+            package("L", &[], true),
+        ];
+        let lock = resolve_libraries(&root, &supplied).unwrap();
+        let reference = NameReference::Qualified {
+            qualifier: "l".to_owned(),
+            name: "R".to_owned(),
+        };
+        let [through_a, through_b]: [ExportIdentity; 2] =
+            ["A", "B"].map(|user| lock.resolve_name(&name(user), &reference).unwrap());
+        assert_eq!(through_a, through_b);
+        assert_eq!(through_a.node, NodeKey::from_hex(&hex("L")).unwrap());
+
+        let types = |declaration: NodeKey| {
+            TypeEnvironment::new(
+                [CompositeDeclaration::new(
+                    declaration,
+                    "R",
+                    CompositeShape::Record(vec![FieldDeclaration::new(
+                        "x",
+                        ValueType::Integer,
+                        Presence::Required,
+                    )]),
+                )],
+                [],
+            )
+            .unwrap()
+        };
+        let env = types(through_a.node);
+        let value = |env: &TypeEnvironment, declaration: NodeKey| {
+            env.record(
+                declaration,
+                vec![(
+                    "x",
+                    FieldValue::Present(Value::Integer(Integer::from(1_i64))),
+                )],
+            )
+            .unwrap()
+        };
+        let r_type = ValueType::Composite(through_b.node);
+        let checked = env
+            .check_equality(
+                EqualityOperator::Equal,
+                EqualityOperand::typed(ValueType::Composite(through_a.node)),
+                EqualityOperand::typed(r_type),
+            )
+            .unwrap();
+        assert_eq!(
+            checked.evaluate(
+                &value(&env, through_a.node),
+                &value(&types(through_b.node), through_b.node),
+                &mut Meter::new(UNLIMITED)
+            ),
+            Outcome::Completed(true)
+        );
     }
 }
