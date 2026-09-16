@@ -19,10 +19,14 @@ quire-extraction = ["dep:quire-rs"]
 [dependencies]
 quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "8b8020e665c61a11bc74f3f23b84617c80c0c442", optional = true, default-features = false }
 logos = "=0.16.1"
+num-bigint = "=0.4.8"
+num-integer = "=0.1.47"
+num-traits = "=0.2.19"
 serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
 sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
+unicode-normalization = "=0.1.25"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
 agent-ix-baseline-producer = { git = "https://github.com/agent-ix/filament-core-data", rev = "404288282402d60de007295ccbafa960532b955e" }
 

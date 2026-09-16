@@ -1,0 +1,62 @@
+{
+  "definition_identity": "quire.value.complete.rules/v1",
+  "revision": "1-draft.1",
+  "digest_domain": "quire.definition.bytes/v1",
+  "required_by": "quire.value.complete/v1@1-draft.1",
+  "rules": [
+    {
+      "identity": "quire.rule.package-contract/v1",
+      "revision": "1-draft.1",
+      "path": "../package-contract.md",
+      "sha256": "050dccec6e669da5013de4b0dee1206915ce1cba1ca1c416582f0f7f2a97eb82"
+    },
+    {
+      "identity": "quire.rule.shared-grammar/v1",
+      "revision": "1-draft.1",
+      "path": "../shared-grammar.md",
+      "sha256": "377be4cd1a635c32e8d67a05ea299ea635c675acdb74a1c0c87093d1040e5cdf"
+    },
+    {
+      "identity": "quire.rule.ad-005/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/assurance/AD-005-complete-value-expression-system.md",
+      "sha256": "9b1c9d215fe3545215583484e067fcad15008eb4123d23685af2ae4ac9b2c447"
+    },
+    {
+      "identity": "quire.rule.fr-140/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/type-model/FR-140-evaluate-exact-decimals.md",
+      "sha256": "b9b079afa8e16e11c850937b60e7c887c71de51342a9eb083cee178bf8fd1e3e"
+    },
+    {
+      "identity": "quire.rule.fr-141/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md",
+      "sha256": "5438519ea6d13e5df8947d13d5c257b46de1aed0c621295f1df76fa97e160785"
+    },
+    {
+      "identity": "quire.rule.fr-142/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/type-model/FR-142-evaluate-quantities-and-units.md",
+      "sha256": "7eb40d7fbaea7ac5e28720ccb2bbc08595f84028bbcdcaa8998e72538a806a05"
+    },
+    {
+      "identity": "quire.rule.fr-147/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/expressions/FR-147-evaluate-integer-division-domains.md",
+      "sha256": "ca1551c16ecd8ed607dd3925a01db2af944bc82decbff1c4bb6b2ec717cdb2c8"
+    },
+    {
+      "identity": "quire.rule.fr-148/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/expressions/FR-148-evaluate-ieee-floating-profiles.md",
+      "sha256": "012e66aa399d4f63bbf75962b27d2f522243e652b3d6c0ac72bcb3466c0f0931"
+    },
+    {
+      "identity": "quire.rule.fr-149/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
+      "sha256": "ab5e57ea2d2af16e4b61c26214e46201956ac0f5d670e7b530683635f67db801"
+    }
+  ]
+}
