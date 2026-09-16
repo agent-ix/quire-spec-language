@@ -73,9 +73,9 @@ rational's numerator and positive denominator.
 | `integer-modulus.arithmetic` | `integer_bits=max(bits(a),bits(b),bits(q),bits(r))` for the Euclidean quotient `q` and remainder `r` |
 | `integer-modulus.domain` | `value_occurrences=1` |
 | `integer-modulus.result-retain` | `result_units += 1` |
-| `ieee.operands` | `integer_bits=selected width`, `value_occurrences=arity` |
-| `ieee.exact-intermediate` | `integer_bits=selected width`; this is the fixed semantic allowance for one exact-real operation at binary32/binary64, not a claim that an irrational square root is materialized as a rational |
-| `ieee.round` | `integer_bits=selected width` |
+| `ieee.operands` | `integer_bits=selected width`, `value_occurrences=arity`; for conversions, the source width or the exact source size in the IEEE conversion paragraph |
+| `ieee.exact-intermediate` | `integer_bits=selected width`, or for conversions the target width or IEEE-to-exact `maxparts` in the IEEE conversion paragraph; this is the fixed semantic allowance for one exact-real operation at binary32/binary64, not a claim that an irrational square root is materialized as a rational |
+| `ieee.round` | `integer_bits=selected width`, or the target width for conversions |
 | `ieee.result-retain` | `result_units += 1` for bits/flags or Boolean |
 | `equality.plan` | `value_occurrences=exact total planned pair events`; without changing consumed counters, atomically require remaining capacity for `pair_events + 2` work units and one result unit, then consume the plan's one work unit |
 | each `equality.pair` | no size-counter change; `work_units += 1` |
@@ -162,19 +162,51 @@ same `refused { code: ill_typed }` with no charge, so the order has no
 observable outcome difference.
 
 IEEE applicability is also representation-independent. Equality, `totalOrder`
-and bit identity charge only `ieee.operands` and `ieee.result-retain`. An
-arithmetic operation whose result is determined by NaN, infinity, signed-zero
-or invalid/divide-by-zero classification likewise charges only those two
-points; it constructs no finite exact real and performs no rounding. Finite
-add, subtract, multiply, divide and FMA, plus square root of a finite
-nonnegative operand, additionally charge `ieee.exact-intermediate` and
-`ieee.round` in that order. This applies even when the exact real is irrational
-or the rounded result is exact. The fixed width amount is total for every path
-and prevents an implementation's rational, symbolic-root or hardware
-representation from changing accounting. A negative finite square root follows
-the classified-invalid path. Thus a comparison or classified exceptional
-operation consumes two work units, while a finite arithmetic operation consumes
-four.
+and bit identity charge only `ieee.operands` and `ieee.result-retain`; every
+IEEE operation or comparison with mixed widths or an exact operand is a
+type-time `ill_typed` refusal with no charge. An arithmetic operation charges
+only those two points exactly when a NaN operand, an infinite operand, an
+invalid operation or a division by zero determines its result; it constructs no
+finite exact real and performs no rounding. Every other add, subtract, multiply,
+divide and FMA, whose operands are all finite with zeros of either sign
+included, plus square root of a finite operand that is a zero of either sign or
+positive, additionally charges `ieee.exact-intermediate` and `ieee.round` in
+that order. A negative nonzero finite square-root operand follows the
+classified-invalid path. Strict `exact` refuses after `ieee.round` and before
+`ieee.result-retain`, because inexactness at an IEEE width is decided by that
+fixed-width rounding step; decimal and unit targets decide inexactness
+analytically before their sizing charge. This applies even when the exact real
+is irrational or the rounded result is exact. The fixed width amount is total
+for every path and prevents an implementation's rational, symbolic-root or
+hardware representation from changing accounting. Thus a comparison or
+classified exceptional operation consumes two work units, while a finite
+arithmetic operation consumes four.
+
+Explicit IEEE conversions reuse the four IEEE points with arity one. A width
+conversion charges `ieee.operands` with `integer_bits=source width`. For a NaN
+source it then decides the payload refusal, which makes no charge, and for a NaN
+or infinite source it then charges only `ieee.result-retain`. For a finite
+source, zeros included, it charges `ieee.exact-intermediate` and `ieee.round`
+with `integer_bits=target width`, then decides any strict `exact` refusal, then
+charges `ieee.result-retain`. An IEEE-to-exact conversion charges
+`ieee.operands` with `integer_bits=source width`; a NaN or infinity is then
+undefined; a finite value, either zero included, then charges
+`ieee.exact-intermediate` with `integer_bits=maxparts` of the exact result
+rational, sized analytically from the decoded exponent and mantissa before the
+rational is materialized, then decides `Rational[..]` target membership at
+evaluation, exempt from FR-044's static result-bound proof, which makes no
+charge and returns `refused { code: ieee_rational_out_of_domain }` for a
+non-member before `ieee.result-retain`, then `ieee.result-retain`. FR-148
+defines no conversion from an IEEE value to `Decimal`, `Integer` or `Int[..]`; a
+direct IEEE conversion to those types is refused `ill_typed` with no charge, and
+an IEEE value reaches exact arithmetic only as `Rational[..]`. Conversion of a
+`Rational[..]` quantity into a decimal or integer target remains governed by
+FR-142 and is unaffected. An exact-to-IEEE conversion charges `ieee.operands`
+with `integer_bits` measured on the source: `bits(n)` for an integer `n`,
+`maxparts` for a rational, and `max(bits(coefficient), bits(10^scale))` of the
+retained representation for a decimal; it then charges `ieee.exact-intermediate`
+and `ieee.round` with `integer_bits=target width`, then decides any strict
+`exact` refusal, then charges `ieee.result-retain`.
 
 Decimal accounting is independent of implementation storage but not of
 retained scale. Every decimal amount is measured on each operand's retained

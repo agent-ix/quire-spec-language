@@ -19,7 +19,7 @@
     {
       "role": "accounting",
       "artifact_path": "value-accounting.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"3345bd8092c817fd60bf8ad734d7eedeb0a988fa7e39862fb98cdb63d8b8c72b"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"64ffb448f7b80b50dbf08e660709117480eeb7a64aeb566b2912e78c224533e1"}
     },
     {
       "role": "compound_unit",
@@ -39,7 +39,7 @@
     {
       "role": "rule_manifest",
       "artifact_path": "value-complete-rules.json",
-      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"c300d83959253ee4cca0f0c37cfdb931ab4e6b29b3004d7119f7d532093e894c"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"c0fa6d01ad42155c21a1cbdae8852c7b6eea8bc839648730ba6a2179af6a3af8"}
     },
     {
       "role": "text_profile",
@@ -49,7 +49,7 @@
     {
       "role": "ieee_profile",
       "artifact_path": "value-ieee754-2019-default.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.ieee754-2019-default/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"5ab13a105bc65deb1e14376c449c0a5d20d2c029a703bae4b8efee9498e014dd"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.ieee754-2019-default/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"3e9736fb8e1637b554385192de34547bafc073e90b4b85256c824be31e0aa6e5"}
     },
     {
       "role": "integer_division_euclidean",
@@ -104,7 +104,7 @@
     {
       "role": "rule_fr_148",
       "artifact_path": "../../../spec/functional/expressions/FR-148-evaluate-ieee-floating-profiles.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-148/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"9b35d584e9529acbb86ee783e237d0cb362a330f5a898f9e195aa1ee2704082c"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-148/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"012e66aa399d4f63bbf75962b27d2f522243e652b3d6c0ac72bcb3466c0f0931"}
     },
     {
       "role": "rule_fr_149",
