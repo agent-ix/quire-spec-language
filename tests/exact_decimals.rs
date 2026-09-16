@@ -738,15 +738,80 @@ fn d21_decimal_ordering_measures_the_retained_representation() {
     assert_eq!(consumed, [7, 3, 0, 2, 1, 0]);
 }
 
-/// The ordered identifiers of the value families of the vendored charge-point
-/// table. The model reference, graph, lookup, population and dispatch rows
-/// belong to the FR-150–FR-153 model domain, which this evaluator does not
-/// implement.
+const VALUE_ACCOUNTING: &str = include_str!(
+    "../resources/complete-value/quire-specification/proposals/quire-v1/definitions/value-accounting.md"
+);
+
+/// Charge-point families of the FR-150–FR-153 model domain, deferred to #120.
+const DEFERRED_FAMILIES: [&str; 9] = [
+    "model",
+    "graph",
+    "lookup",
+    "population",
+    "dispatch",
+    "normalize",
+    "systems",
+    "conformance",
+    "binding",
+];
+
+/// Every deferred charge point the vendored document names, in ascending order.
+const DEFERRED_POINTS: [&str; 27] = [
+    "binding.member",
+    "binding.subset-value",
+    "conformance.axis",
+    "dispatch.candidate",
+    "dispatch.dominance",
+    "dispatch.select",
+    "dispatch.subtype",
+    "graph.edge",
+    "graph.expand",
+    "graph.result-retain",
+    "lookup.key",
+    "lookup.result-retain",
+    "model.deref",
+    "model.navigate",
+    "normalize.conflict-check",
+    "normalize.cycle-check",
+    "normalize.declaration",
+    "normalize.fact",
+    "normalize.hash",
+    "normalize.record",
+    "normalize.redefinition-check",
+    "normalize.unsupplied-item",
+    "population.visit",
+    "systems.allocation",
+    "systems.connection-condition",
+    "systems.kind",
+    "systems.resolve",
+];
+
+/// The backticked `family.point` codes of `text`, in order of appearance.
+fn charge_point_codes(text: &str) -> Vec<String> {
+    text.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|code| {
+            code.split_once('.').is_some_and(|(family, point)| {
+                family.len() > 1
+                    && !point.contains('.')
+                    && code
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c == '.' || c == '-')
+            })
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+fn is_deferred(code: &str) -> bool {
+    code.split_once('.')
+        .is_some_and(|(family, _)| DEFERRED_FAMILIES.contains(&family))
+}
+
+/// The charge points of the vendored operation-family table, in table order.
 fn vendored_charge_points() -> Vec<String> {
-    let text = include_str!(
-        "../resources/complete-value/quire-specification/proposals/quire-v1/definitions/value-accounting.md"
-    );
-    let table = text
+    let table = VALUE_ACCOUNTING
         .split("| Operation family | Ordered charge points |")
         .nth(1)
         .unwrap()
@@ -756,22 +821,7 @@ fn vendored_charge_points() -> Vec<String> {
     table
         .lines()
         .skip(2)
-        .take_while(|row| !row.starts_with("| model reference |"))
-        .flat_map(|row| {
-            let points = row.rsplit('|').nth(1).unwrap();
-            points
-                .split('`')
-                .skip(1)
-                .step_by(2)
-                .filter(|code| {
-                    code.contains('.')
-                        && code
-                            .chars()
-                            .all(|c| c.is_ascii_lowercase() || c == '.' || c == '-')
-                })
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
+        .flat_map(|row| charge_point_codes(row.rsplit('|').nth(1).unwrap()))
         .collect()
 }
 
@@ -782,10 +832,28 @@ fn every_vendored_charge_point_is_named_in_table_order() {
         .iter()
         .map(|point| point.as_str().to_owned())
         .collect();
-    assert_eq!(named, vendored_charge_points());
+    let mut value_points = Vec::new();
+    for code in vendored_charge_points() {
+        if !is_deferred(&code) && !value_points.contains(&code) {
+            value_points.push(code);
+        }
+    }
+    assert_eq!(named, value_points);
     for point in ChargePoint::ALL {
         assert_eq!(ChargePoint::from_code(point.as_str()), Some(point));
     }
+
+    let mut deferred: Vec<String> = charge_point_codes(VALUE_ACCOUNTING)
+        .into_iter()
+        .filter(|code| !named.contains(code))
+        .collect();
+    deferred.sort();
+    deferred.dedup();
+    assert_eq!(deferred, DEFERRED_POINTS);
+    assert!(DEFERRED_POINTS.iter().all(|code| is_deferred(code)));
+    assert!(DEFERRED_POINTS
+        .iter()
+        .all(|code| ChargePoint::from_code(code).is_none()));
 }
 
 #[trace("TC-185", "FR-140-AC-1")]
