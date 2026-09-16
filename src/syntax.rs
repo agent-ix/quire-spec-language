@@ -18,7 +18,8 @@ pub const PROFILE: &str = "state-finite/0-draft";
 pub struct Limits {
     /// Inclusive input-content ceiling, clamped to 1 MiB.
     pub source_bytes: usize,
-    /// Maximum non-comment tokens, clamped to 100,000.
+    /// Historical parsing: maximum non-comment tokens. Complete parsing:
+    /// maximum retained CST leaves. Clamped to 100,000.
     pub tokens: usize,
     /// Maximum syntax nodes, clamped to 50,000. The historical path counts
     /// expressions; the composed path also counts declarations, parameters,
