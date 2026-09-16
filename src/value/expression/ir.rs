@@ -4,10 +4,11 @@
 
 use super::super::collection::{CollectionKind, CollectionType};
 use super::super::composite::{Value, ValueType};
+use super::super::decimal::DecimalType;
 use super::super::equality::{CheckedEquality, EqualityOperand, EqualityOperator};
 use super::super::integer::IntegerInterval;
 use super::super::node::NodeKey;
-use super::super::numeric::OrderingOperator;
+use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::rational::RationalDomain;
 use super::refusal::Location;
 
@@ -38,13 +39,17 @@ pub(crate) enum Arithmetic {
     Multiply,
 }
 
-/// Which exact numbers an ordering compares.
+/// Which values an ordering compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OrderedKind {
     Integers,
     Rationals,
     Decimals,
     Enums,
+    /// Text of one profile, by the FR-141 profile order.
+    Texts,
+    /// Quantities of the identical unit, by FR-142 root value.
+    Quantities,
 }
 
 /// One record slot in declaration order.
@@ -63,6 +68,8 @@ pub(crate) enum Visit {
     Forall,
     Exists,
     Count,
+    /// `sum<N>` over integer summands.
+    Sum,
 }
 
 /// A collection property a kind conversion can discard.
@@ -144,6 +151,32 @@ pub(crate) enum NodeKind {
         right: Box<Node>,
         domain: RationalDomain,
     },
+    /// FR-044 `Rational[..]` arithmetic into `domain`.
+    Rational {
+        operator: ArithmeticOperator,
+        left: Box<Node>,
+        right: Box<Node>,
+        domain: RationalDomain,
+    },
+    /// Unary `-` of a `Rational[..]` into `domain`.
+    RationalNegate(Box<Node>, RationalDomain),
+    /// FR-140 decimal arithmetic into `target`.
+    Decimal {
+        operator: ArithmeticOperator,
+        left: Box<Node>,
+        right: Box<Node>,
+        target: DecimalType,
+    },
+    /// Unary `-` of a decimal into `target`.
+    DecimalNegate(Box<Node>, DecimalType),
+    /// FR-148 IEEE arithmetic of one width under the omitted, strict `exact`
+    /// rounding spelling.
+    Ieee(ArithmeticOperator, Box<Node>, Box<Node>),
+    /// FR-142 quantity arithmetic; the result unit is the node type's.
+    Quantity(ArithmeticOperator, Box<Node>, Box<Node>),
+    /// An ordinary FR-140 conversion of a rational or decimal into `target`,
+    /// with its loss record.
+    ConvertDecimal(Box<Node>, DecimalType),
     Order(OrderingOperator, OrderedKind, Box<Node>, Box<Node>),
     Equality(EqualityOperator, Box<CheckedEquality>, Box<Node>, Box<Node>),
     Connective(Connective, Box<Node>, Box<Node>),
@@ -220,6 +253,9 @@ impl Node {
             | NodeKind::ConvertCollection { operand, .. }
             | NodeKind::ConvertScalar(_, operand)
             | NodeKind::IeeeToRational(operand, _)
+            | NodeKind::RationalNegate(operand, _)
+            | NodeKind::DecimalNegate(operand, _)
+            | NodeKind::ConvertDecimal(operand, _)
             | NodeKind::Flatten(operand)
             | NodeKind::Size(operand) => vec![operand],
             NodeKind::Let { value, body, .. } => vec![value, body],
@@ -230,6 +266,10 @@ impl Node {
             } => vec![condition, then, otherwise],
             NodeKind::Arithmetic(_, left, right)
             | NodeKind::Divide { left, right, .. }
+            | NodeKind::Rational { left, right, .. }
+            | NodeKind::Decimal { left, right, .. }
+            | NodeKind::Ieee(_, left, right)
+            | NodeKind::Quantity(_, left, right)
             | NodeKind::Order(_, _, left, right)
             | NodeKind::Equality(_, _, left, right)
             | NodeKind::Connective(_, left, right)

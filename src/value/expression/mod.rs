@@ -26,11 +26,11 @@ use ir::Node;
 pub use check::{
     CheckingLimits, DepthAboveMaximum, EnumBinding, PackageDeclarations, MAX_CHECKING_DEPTH,
 };
-pub use evaluate::Evaluation;
+pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use ir::{CollectionLoss, CollectionProperty};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval, UnsupportedForm,
+    Obligation, Origin, ProvedInterval,
 };
 pub use syntax::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,

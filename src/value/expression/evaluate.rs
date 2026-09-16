@@ -16,19 +16,26 @@ use super::super::comparison::ComparisonOperator;
 use super::super::composite::{
     retain_composite, CompositeShape, FieldValue, OptionValue, Value, ValueType,
 };
+use super::super::decimal::{
+    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalType, RoundingMode,
+};
 use super::super::enumeration::compare_enum;
 use super::super::equality::operand_value;
-use super::super::ieee::{ieee_to_exact, IeeeExactTarget};
-use super::super::integer::Integer;
+use super::super::ieee::{
+    evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
+};
+use super::super::integer::{Integer, IntegerInterval};
 use super::super::key::compare_keys;
 use super::super::numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    retain_boolean, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
-    RationalArithmetic,
+    retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
+    OrderingOperator, RationalArithmetic,
 };
 use super::super::outcome::{Outcome, Refusal, Stop, Undefined};
+use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperation};
 use super::super::rational::Rational;
 use super::super::reference::ObjectEnvironment;
+use super::super::text::compare_text;
 use super::check::Scope;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::refusal::Location;
@@ -41,12 +48,44 @@ pub struct Evaluation {
     pub outcome: Outcome<Value>,
     /// Where a non-completed outcome originated; `None` when completed.
     pub location: Option<Location>,
+    /// The loss records of the operations a completed evaluation performed,
+    /// in evaluation order; empty unless completed.
+    pub losses: Vec<LocatedLoss>,
+}
+
+/// Information one completed operation discarded.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValueLoss {
+    /// A rounded decimal operation or conversion (FR-140).
+    Decimal(DecimalLoss),
+    /// An IEEE-to-exact conversion (FR-148).
+    IeeeExact(IeeeExactLoss),
+    /// The non-empty flag set an IEEE operation raised (FR-148).
+    IeeeFlags(IeeeFlags),
+}
+
+/// A loss record and the expression that produced it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocatedLoss {
+    /// The producing expression.
+    pub location: Location,
+    /// What was discarded.
+    pub loss: ValueLoss,
 }
 
 /// The body a call runs.
 pub(crate) struct Callable<'a> {
     pub(crate) body: &'a Node,
     pub(crate) slots: usize,
+}
+
+fn comparison(operator: OrderingOperator) -> ComparisonOperator {
+    match operator {
+        OrderingOperator::Less => ComparisonOperator::Less,
+        OrderingOperator::LessOrEqual => ComparisonOperator::LessOrEqual,
+        OrderingOperator::Greater => ComparisonOperator::Greater,
+        OrderingOperator::GreaterOrEqual => ComparisonOperator::GreaterOrEqual,
+    }
 }
 
 fn invariant() -> Stop {
@@ -66,6 +105,14 @@ fn charge_visit(meter: &mut Meter) -> Result<(), Stop> {
 /// One `collection.element` before a literal element.
 fn charge_element(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionElement))?)
+}
+
+/// The declared `Int` domain of a `sum`; `None` for `Integer`.
+fn sum_domain(value_type: &ValueType) -> Option<&IntegerInterval> {
+    match value_type {
+        ValueType::Int(domain) => Some(domain),
+        _ => None,
+    }
 }
 
 /// A scalar retain: `collection.result-retain` with one result unit.
@@ -117,6 +164,7 @@ pub(crate) struct Machine<'a, 'm> {
     values: Vec<Value>,
     frames: Vec<Vec<Option<Value>>>,
     tasks: Vec<Task<'a>>,
+    losses: Vec<LocatedLoss>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -134,6 +182,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             values: Vec::new(),
             frames: Vec::new(),
             tasks: Vec::new(),
+            losses: Vec::new(),
         }
     }
 
@@ -175,6 +224,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             (Some(value), true) => Evaluation {
                 outcome: Outcome::Completed(value),
                 location: None,
+                losses: self.losses,
             },
             _ => Self::stopped(invariant(), &root.location),
         }
@@ -184,6 +234,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Evaluation {
             outcome: Outcome::from_stop(Err(stop)),
             location: Some(location.clone()),
+            losses: Vec::new(),
         }
     }
 
@@ -215,6 +266,41 @@ impl<'a, 'm> Machine<'a, 'm> {
             Value::Collection(collection) => Ok(collection),
             _ => Err(invariant()),
         }
+    }
+
+    fn pop_rational(&mut self) -> Result<Rational, Stop> {
+        match self.pop()? {
+            Value::Rational(value) => Ok(value),
+            _ => Err(invariant()),
+        }
+    }
+
+    fn pop_decimal(&mut self) -> Result<Decimal, Stop> {
+        match self.pop()? {
+            Value::Decimal(value) => Ok(value),
+            _ => Err(invariant()),
+        }
+    }
+
+    fn record(&mut self, node: &Node, loss: ValueLoss) {
+        self.losses.push(LocatedLoss {
+            location: node.location.clone(),
+            loss,
+        });
+    }
+
+    /// Evaluate a decimal operation into `target`, recording its loss.
+    fn decimal(
+        &mut self,
+        node: &Node,
+        operation: DecimalOperation<'_>,
+        target: &DecimalType,
+    ) -> Result<Value, Stop> {
+        let result = evaluate_decimal(operation, target, self.meter).into_stop()?;
+        if let Some(loss) = result.loss() {
+            self.record(node, ValueLoss::Decimal(loss.clone()));
+        }
+        Ok(Value::Decimal(result.value().clone()))
     }
 
     fn slot(&mut self, slot: Slot) -> Result<&mut Option<Value>, Stop> {
@@ -388,6 +474,101 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .into_stop()?,
                 )
             }
+            NodeKind::Rational {
+                operator, domain, ..
+            } => {
+                let right = self.pop_rational()?;
+                let left = self.pop_rational()?;
+                let operation = match operator {
+                    ArithmeticOperator::Add => RationalArithmetic::Add(&left, &right),
+                    ArithmeticOperator::Subtract => RationalArithmetic::Subtract(&left, &right),
+                    ArithmeticOperator::Multiply => RationalArithmetic::Multiply(&left, &right),
+                    ArithmeticOperator::Divide => RationalArithmetic::Divide(&left, &right),
+                };
+                Value::Rational(
+                    evaluate_rational_arithmetic(operation, Some(domain), self.meter)
+                        .into_stop()?,
+                )
+            }
+            NodeKind::RationalNegate(_, domain) => {
+                let operand = self.pop_rational()?;
+                Value::Rational(
+                    evaluate_rational_arithmetic(
+                        RationalArithmetic::Negate(&operand),
+                        Some(domain),
+                        self.meter,
+                    )
+                    .into_stop()?,
+                )
+            }
+            NodeKind::Decimal {
+                operator, target, ..
+            } => {
+                let right = self.pop_decimal()?;
+                let left = self.pop_decimal()?;
+                let operation = match operator {
+                    ArithmeticOperator::Add => DecimalOperation::Add(&left, &right),
+                    ArithmeticOperator::Subtract => DecimalOperation::Subtract(&left, &right),
+                    ArithmeticOperator::Multiply => DecimalOperation::Multiply(&left, &right),
+                    ArithmeticOperator::Divide => DecimalOperation::Divide(&left, &right),
+                };
+                self.decimal(node, operation, target)?
+            }
+            NodeKind::DecimalNegate(_, target) => {
+                let operand = self.pop_decimal()?;
+                self.decimal(node, DecimalOperation::Negate(&operand), target)?
+            }
+            NodeKind::ConvertDecimal(_, target) => match self.pop()? {
+                Value::Decimal(source) => {
+                    self.decimal(node, DecimalOperation::Round(&source), target)?
+                }
+                Value::Rational(source) => {
+                    let numerator = Decimal::new(source.numerator().clone(), 0);
+                    let denominator = Decimal::new(source.denominator().clone(), 0);
+                    self.decimal(
+                        node,
+                        DecimalOperation::Divide(&numerator, &denominator),
+                        target,
+                    )?
+                }
+                _ => return Err(invariant()),
+            },
+            NodeKind::Ieee(operator, _, _) => {
+                let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
+                    return Err(invariant());
+                };
+                let operation = match operator {
+                    ArithmeticOperator::Add => IeeeOperation::Add(left, right),
+                    ArithmeticOperator::Subtract => IeeeOperation::Subtract(left, right),
+                    ArithmeticOperator::Multiply => IeeeOperation::Multiply(left, right),
+                    ArithmeticOperator::Divide => IeeeOperation::Divide(left, right),
+                };
+                let profile = self.scope.ieee_profile.as_ref().ok_or_else(invariant)?;
+                let result = evaluate_ieee(profile, operation, RoundingMode::Exact, self.meter)
+                    .map_err(|_| invariant())?
+                    .into_stop()?;
+                if result.flags() != IeeeFlags::EMPTY {
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()));
+                }
+                Value::Float(result.value())
+            }
+            NodeKind::Quantity(operator, _, _) => {
+                let (Value::Quantity(right), Value::Quantity(left)) = (self.pop()?, self.pop()?)
+                else {
+                    return Err(invariant());
+                };
+                let operation = match operator {
+                    ArithmeticOperator::Add => QuantityOperation::Add(&left, &right),
+                    ArithmeticOperator::Subtract => QuantityOperation::Subtract(&left, &right),
+                    ArithmeticOperator::Multiply => QuantityOperation::Multiply(&left, &right),
+                    ArithmeticOperator::Divide => QuantityOperation::Divide(&left, &right),
+                };
+                Value::Quantity(
+                    evaluate_quantity(operation, self.meter)
+                        .map_err(|_| invariant())?
+                        .into_stop()?,
+                )
+            }
             NodeKind::Order(operator, kind, _, _) => {
                 let right = self.pop()?;
                 let left = self.pop()?;
@@ -544,6 +725,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 )
                 .map_err(|_| invariant())?
                 .into_stop()?;
+                if let Some(loss) = exact.loss() {
+                    self.record(node, ValueLoss::IeeeExact(loss));
+                }
                 Value::Rational(exact.value().clone())
             }
             NodeKind::Query { .. } | NodeKind::Fold { .. } => {
@@ -632,13 +816,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                 OrderedOperands::Decimals(l, r)
             }
             (OrderedKind::Enums, Value::Enum(l), Value::Enum(r)) => {
-                let operator = match operator {
-                    OrderingOperator::Less => ComparisonOperator::Less,
-                    OrderingOperator::LessOrEqual => ComparisonOperator::LessOrEqual,
-                    OrderingOperator::Greater => ComparisonOperator::Greater,
-                    OrderingOperator::GreaterOrEqual => ComparisonOperator::GreaterOrEqual,
-                };
-                return compare_enum(operator, l, r, self.meter)
+                return compare_enum(comparison(operator), l, r, self.meter)
+                    .map_err(|_| invariant())?
+                    .into_stop();
+            }
+            (OrderedKind::Texts, Value::Text(l), Value::Text(r)) => {
+                return compare_text(comparison(operator), l, r, self.meter)
+                    .map_err(|_| invariant())?
+                    .into_stop();
+            }
+            (OrderedKind::Quantities, Value::Quantity(l), Value::Quantity(r)) => {
+                return compare_quantity(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
                     .into_stop();
             }
@@ -707,6 +895,20 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     (Visit::Forall, Value::Boolean(holds)) => !holds,
                     (Visit::Exists, Value::Boolean(holds)) => holds,
+                    (Visit::Sum, Value::Integer(summand)) => {
+                        iteration.accumulator =
+                            Some(Value::Integer(match iteration.accumulator.take() {
+                                None => summand,
+                                Some(Value::Integer(total)) => evaluate_integer_arithmetic(
+                                    IntegerArithmetic::Add(&total, &summand),
+                                    sum_domain(&node.value_type),
+                                    self.meter,
+                                )
+                                .into_stop()?,
+                                Some(_) => return Err(invariant()),
+                            }));
+                        false
+                    }
                     (Visit::Count, Value::Boolean(holds)) => {
                         if holds {
                             iteration.count = iteration.count.add(&Integer::one());
@@ -779,6 +981,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 Visit::Forall => retain_scalar(Value::Boolean(true), self.meter)?,
                 Visit::Exists => retain_scalar(Value::Boolean(false), self.meter)?,
+                Visit::Sum => {
+                    let total = match iteration.accumulator {
+                        None => Integer::zero(),
+                        Some(Value::Integer(total)) => total,
+                        Some(_) => return Err(invariant()),
+                    };
+                    if sum_domain(&node.value_type).is_some_and(|domain| !domain.contains(&total)) {
+                        return Err(Stop::Refused(Refusal::IntegerOutOfDomain));
+                    }
+                    retain_scalar(Value::Integer(total), self.meter)?
+                }
                 Visit::Count => {
                     if let ValueType::Int(domain) = &node.value_type {
                         if !domain.contains(&iteration.count) {

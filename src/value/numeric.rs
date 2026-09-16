@@ -14,6 +14,15 @@ use super::integer::{Integer, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
 
+/// A binary `+`, `-`, `*` or `/` before its operand values exist.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ArithmeticOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
 /// A numeric ordering operator. Equality has its own FR-149 schedule.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OrderingOperator {

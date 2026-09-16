@@ -203,6 +203,17 @@ pub enum Expression {
         /// The predicate.
         predicate: Box<Expression>,
     },
+    /// `sum<N>(x in c: e)`.
+    Sum {
+        /// The qualified name of the result type `N`.
+        result_type: String,
+        /// The binder name.
+        binder: String,
+        /// The collection operand.
+        source: Box<Expression>,
+        /// The summand.
+        summand: Box<Expression>,
+    },
     /// `size(c)`.
     Size(Box<Expression>),
     /// `contains(c, v)`.
@@ -258,6 +269,9 @@ impl Expression {
             Self::Count {
                 source, predicate, ..
             } => vec![source, predicate],
+            Self::Sum {
+                source, summand, ..
+            } => vec![source, summand],
             Self::Contains { collection, item } => vec![collection, item],
         }
     }

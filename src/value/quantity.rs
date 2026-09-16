@@ -229,12 +229,7 @@ pub fn compare_quantity(
     right: &Quantity,
     meter: &mut Meter,
 ) -> Result<Outcome<bool>, IllTyped> {
-    if !left.unit.has_dimension_of(&right.unit) {
-        return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
-    }
-    if left.unit != right.unit {
-        return Err(ill_typed(IllTypedCause::DistinctUnits));
-    }
+    check_comparable(&left.unit, &right.unit)?;
     Ok(Outcome::from_stop(
         compare(left, right, meter).map(|ordering| operator.holds(ordering)),
     ))
@@ -326,28 +321,76 @@ fn charge_retain(meter: &mut Meter) -> Result<(), Stop> {
 /// The type-time refusals of an operation, in cause order: incompatible
 /// dimensions, affine-unit arithmetic, distinct units.
 fn type_check(operation: QuantityOperation<'_>) -> Result<(), IllTyped> {
-    match operation {
-        QuantityOperation::Add(a, b) | QuantityOperation::Subtract(a, b) => {
-            if !a.unit.has_dimension_of(&b.unit) {
-                return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
-            }
-            if a.unit.is_affine() || b.unit.is_affine() {
-                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
-            }
-            if a.unit != b.unit {
-                return Err(ill_typed(IllTypedCause::DistinctUnits));
-            }
-        }
-        QuantityOperation::Multiply(a, b) | QuantityOperation::Divide(a, b) => {
-            if a.unit.is_affine() || b.unit.is_affine() {
-                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
-            }
-        }
+    let (unit_operation, a, b) = match operation {
+        QuantityOperation::Add(a, b) => (UnitOperation::Add, a, b),
+        QuantityOperation::Subtract(a, b) => (UnitOperation::Subtract, a, b),
+        QuantityOperation::Multiply(a, b) => (UnitOperation::Multiply, a, b),
+        QuantityOperation::Divide(a, b) => (UnitOperation::Divide, a, b),
         QuantityOperation::Power(a, _) => {
             if a.unit.is_affine() {
                 return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
             }
+            return Ok(());
         }
+    };
+    result_unit(unit_operation, &a.unit, &b.unit).map(|_| ())
+}
+
+/// A binary quantity operation, before its operand values exist.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UnitOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+/// The static result unit of `left op right`, or its type-time refusal in
+/// cause order: incompatible dimensions, affine-unit arithmetic, distinct
+/// units. Addition and subtraction keep the identical unit; multiplication
+/// and division form the canonical compound unit.
+pub(crate) fn result_unit(
+    operation: UnitOperation,
+    left: &QuantityUnit,
+    right: &QuantityUnit,
+) -> Result<QuantityUnit, IllTyped> {
+    match operation {
+        UnitOperation::Add | UnitOperation::Subtract => {
+            if !left.has_dimension_of(right) {
+                return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
+            }
+            if left.is_affine() || right.is_affine() {
+                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
+            }
+            if left != right {
+                return Err(ill_typed(IllTypedCause::DistinctUnits));
+            }
+            Ok(left.clone())
+        }
+        UnitOperation::Multiply | UnitOperation::Divide => {
+            if left.is_affine() || right.is_affine() {
+                return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
+            }
+            let (left, right) = (left.canonical_compound(), right.canonical_compound());
+            Ok(QuantityUnit::Compound(
+                if operation == UnitOperation::Multiply {
+                    left.multiply(&right)
+                } else {
+                    left.divide(&right)
+                },
+            ))
+        }
+    }
+}
+
+/// Whether quantities in `left` and `right` may be compared: equal dimensions,
+/// then the identical unit.
+pub(crate) fn check_comparable(left: &QuantityUnit, right: &QuantityUnit) -> Result<(), IllTyped> {
+    if !left.has_dimension_of(right) {
+        return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
+    }
+    if left != right {
+        return Err(ill_typed(IllTypedCause::DistinctUnits));
     }
     Ok(())
 }

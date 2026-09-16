@@ -14,17 +14,19 @@ use std::sync::OnceLock;
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
-    AdmittedIeeeProfile, CardinalityBound, CatalogRole, ChargePoint, CheckedEquality,
+    AdmittedIeeeProfile, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
+    CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage, CheckingLimits,
     CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
     ConstructionCause, ConstructionRefusal, Decimal, DecimalType, DefinitionLock,
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
-    EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression, FieldValue,
-    IeeeComparison, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial,
-    Integer, IntegerInterval, LimitKind, Meter, NodeKey, NodeOwner, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, OwnerSelection,
-    OwnerSubject, Presence, Quantity, QuantityUnit, Rational, RationalDomain, Refusal,
+    EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
+    FieldValue, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped,
+    IllTypedCause, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, LocatedLoss,
+    Meter, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
+    PackageDeclarations, Presence, Quantity, QuantityUnit, Rational, RationalDomain, Refusal,
     RoundingMode, ScalarLimits, Text, TextPayload, TextProfile, TextType, TypeEnvironment,
-    Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueType,
+    Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -1657,5 +1659,444 @@ fn e_construction_refusals_are_located() {
             component: Component::Field("v".into()),
             cause: ConstructionCause::TypeMismatch,
         }
+    );
+}
+
+// ---- scalar operators through the expression checker and evaluator ----------
+
+fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
+    PackageDeclarations {
+        types,
+        ieee_profile: ieee.then(|| profile().clone()),
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .unwrap()
+}
+
+fn plain_package() -> CheckedPackage {
+    expression_package(TypeEnvironment::default(), false)
+}
+
+fn operand(spelling: &str) -> Expression {
+    Expression::Name(spelling.to_owned())
+}
+
+fn operation(operator: BinaryOperator, left: &str, right: &str) -> Expression {
+    Expression::Binary {
+        operator,
+        left: Box::new(operand(left)),
+        right: Box::new(operand(right)),
+    }
+}
+
+fn negation(spelling: &str) -> Expression {
+    Expression::Negate(Box::new(operand(spelling)))
+}
+
+fn check_in(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    expected: Option<&ValueType>,
+    mode: CheckMode,
+) -> Result<CheckedExpression, CheckRefusal> {
+    let parameters = parameters
+        .iter()
+        .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+        .collect();
+    package.check_expression(
+        parameters,
+        expression,
+        expected,
+        mode,
+        CheckingLimits::default(),
+    )
+}
+
+/// The cause of a checking refusal.
+fn refused(result: Result<CheckedExpression, CheckRefusal>) -> CheckCause {
+    match result {
+        Err(refusal) => refusal.cause,
+        Ok(_) => panic!("a checking refusal"),
+    }
+}
+
+fn run_in(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    expected: Option<&ValueType>,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+) -> (Evaluation, Meter) {
+    let checked = check_in(package, parameters, expression, expected, CheckMode::Kernel).unwrap();
+    let mut meter = Meter::new(limits);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            arguments,
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap();
+    (evaluation, meter)
+}
+
+fn completed_as(evaluation: &Evaluation, expected: &Value) {
+    assert_eq!(
+        format!("{:?}", evaluation.outcome),
+        format!("{:?}", Outcome::Completed(expected.clone()))
+    );
+}
+
+#[trace("TC-191", "FR-146-AC-6")]
+#[test]
+fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations() {
+    let package = plain_package();
+    let parameters = [
+        ("a", rational_type(0, 3, 1, 2)),
+        ("b", rational_type(-2, 2, 1, 3)),
+    ];
+    let arguments = || vec![rational(3, 2), rational(-1, 3)];
+    let rows = [
+        (operation(BinaryOperator::Add, "a", "b"), rational(7, 6)),
+        (
+            operation(BinaryOperator::Subtract, "a", "b"),
+            rational(11, 6),
+        ),
+        (
+            operation(BinaryOperator::Multiply, "a", "b"),
+            rational(-1, 2),
+        ),
+        (negation("a"), rational(-3, 2)),
+    ];
+    for (expression, expected) in &rows {
+        let (evaluation, meter) = run_in(
+            &package,
+            &parameters,
+            expression,
+            None,
+            arguments(),
+            UNLIMITED,
+        );
+        completed_as(&evaluation, expected);
+        assert_eq!(
+            meter.admitted_charges().first(),
+            Some(&ChargePoint::RationalArithmeticOperands)
+        );
+        check_in(&package, &parameters, expression, None, CheckMode::Linked).unwrap();
+    }
+
+    // `a + b` has numerator `[0,9] + [-4,4]` over `[1,6]`, outside `[0,3]/[1,6]`.
+    let narrow = rational_type(0, 3, 1, 6);
+    let sum = operation(BinaryOperator::Add, "a", "b");
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &parameters,
+            &sum,
+            Some(&narrow),
+            CheckMode::Linked
+        )),
+        CheckCause::Unproved(Obligation::RationalRange)
+    );
+    let (evaluation, _) = run_in(
+        &package,
+        &parameters,
+        &sum,
+        Some(&narrow),
+        arguments(),
+        UNLIMITED,
+    );
+    assert!(matches!(
+        evaluation.outcome,
+        Outcome::Refused(Refusal::RationalOutOfDomain)
+    ));
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &parameters,
+            &operation(BinaryOperator::Divide, "a", "b"),
+            Some(&rational_type(-100, 100, 1, 100)),
+            CheckMode::Linked
+        )),
+        CheckCause::Unproved(Obligation::Nonzero)
+    );
+}
+
+#[trace("TC-185", "FR-140-AC-3")]
+#[test]
+fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
+    let package = plain_package();
+    let parameters = [
+        ("p", decimal_type(0, 100, 0, 0)),
+        ("q", decimal_type(1, 9, 0, 0)),
+    ];
+    let target = decimal_type_mode(0, 10_000, 2, 2, RoundingMode::NearestEven);
+    let quotient = operation(BinaryOperator::Divide, "p", "q");
+    let (evaluation, _) = run_in(
+        &package,
+        &parameters,
+        &quotient,
+        Some(&target),
+        vec![decimal(1, 0), decimal(3, 0)],
+        UNLIMITED,
+    );
+    completed_as(&evaluation, &decimal(33, 2));
+    assert_eq!(evaluation.losses.len(), 1);
+    assert!(matches!(evaluation.losses[0].loss, ValueLoss::Decimal(_)));
+    assert_eq!(evaluation.losses[0].location.path, Vec::<usize>::new());
+    check_in(
+        &package,
+        &parameters,
+        &quotient,
+        Some(&target),
+        CheckMode::Linked,
+    )
+    .unwrap();
+
+    let (exact, _) = run_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Add, "p", "q"),
+        Some(&target),
+        vec![decimal(1, 0), decimal(3, 0)],
+        UNLIMITED,
+    );
+    completed_as(&exact, &decimal(400, 2));
+    assert!(exact.losses.is_empty());
+
+    let zero_divisor = [
+        ("p", decimal_type(0, 100, 0, 0)),
+        ("q", decimal_type(0, 9, 0, 0)),
+    ];
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &zero_divisor,
+            &quotient,
+            Some(&target),
+            CheckMode::Linked
+        )),
+        CheckCause::Unproved(Obligation::Nonzero)
+    );
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &parameters,
+            &quotient,
+            None,
+            CheckMode::Kernel
+        )),
+        CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)
+    );
+}
+
+#[trace("TC-186", "FR-141-AC-4")]
+#[test]
+fn x03_text_orders_lexicographically_within_one_profile() {
+    let package = plain_package();
+    let nfc = ValueType::Text(text_type(TextProfile::Nfc));
+    let binary = ValueType::Text(text_type(TextProfile::BinaryUtf8));
+    let less = operation(BinaryOperator::Less, "s", "t");
+    let (evaluation, meter) = run_in(
+        &package,
+        &[("s", nfc.clone()), ("t", nfc.clone())],
+        &less,
+        None,
+        vec![text("a", TextProfile::Nfc), text("b", TextProfile::Nfc)],
+        UNLIMITED,
+    );
+    completed_as(&evaluation, &Value::Boolean(true));
+    assert!(!meter.admitted_charges().is_empty());
+    assert_eq!(
+        refused(check_in(
+            &package,
+            &[("s", nfc), ("t", binary)],
+            &less,
+            None,
+            CheckMode::Kernel
+        )),
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
+#[trace("TC-187", "FR-142-AC-9")]
+#[trace("TC-187", "FR-142-AC-2")]
+#[test]
+fn x04_quantities_order_and_add_only_in_one_unit() {
+    let package = plain_package();
+    let units = units();
+    let whole = |value: i64| Rational::from_integer(integer(value));
+    let metres = ValueType::Quantity(units.m.clone());
+    let metre = |value| Value::Quantity(Quantity::new(whole(value), units.m.clone()));
+    let parameters = [
+        ("x", metres.clone()),
+        ("y", metres.clone()),
+        ("c", ValueType::Quantity(units.cm.clone())),
+        ("s", ValueType::Quantity(units.s.clone())),
+    ];
+    let arguments = || {
+        vec![
+            metre(1),
+            metre(2),
+            Value::Quantity(Quantity::new(whole(1), units.cm.clone())),
+            Value::Quantity(Quantity::new(whole(1), units.s.clone())),
+        ]
+    };
+    let (ordered, _) = run_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Less, "x", "y"),
+        None,
+        arguments(),
+        UNLIMITED,
+    );
+    completed_as(&ordered, &Value::Boolean(true));
+    let (added, _) = run_in(
+        &package,
+        &parameters,
+        &operation(BinaryOperator::Add, "x", "y"),
+        None,
+        arguments(),
+        UNLIMITED,
+    );
+    completed_as(&added, &metre(3));
+
+    let cause = |expression: &Expression| {
+        refused(check_in(
+            &package,
+            &parameters,
+            expression,
+            None,
+            CheckMode::Kernel,
+        ))
+    };
+    // Checking reports the kernel's distinct-units and incompatible-dimensions
+    // causes under their FR-272 tag, `type-mismatch`.
+    for operator in [BinaryOperator::Less, BinaryOperator::Add] {
+        for other in ["c", "s"] {
+            assert_eq!(
+                cause(&operation(operator, "x", other)),
+                CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+            );
+        }
+    }
+    assert_eq!(
+        cause(&negation("x")),
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
+}
+
+#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-6")]
+#[test]
+fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
+    let package = expression_package(TypeEnvironment::default(), true);
+    let double = ValueType::Float(IeeeWidth::Binary64);
+    let parameters = [
+        ("f", double.clone()),
+        ("g", double.clone()),
+        ("h", ValueType::Float(IeeeWidth::Binary32)),
+        ("i", ValueType::Integer),
+    ];
+    let one = IeeeValue::binary64(0x3ff0_0000_0000_0000);
+    let three = IeeeValue::binary64(0x4008_0000_0000_0000);
+    let arguments = |left, right| {
+        vec![
+            Value::Float(left),
+            Value::Float(right),
+            Value::Float(IeeeValue::binary32(0)),
+            int(0),
+        ]
+    };
+    let divide = operation(BinaryOperator::Divide, "f", "g");
+    // An omitted rounding spelling is strict `exact`: `1 / 3` refuses.
+    let (inexact, _) = run_in(
+        &package,
+        &parameters,
+        &divide,
+        None,
+        arguments(one, three),
+        UNLIMITED,
+    );
+    assert!(matches!(
+        inexact.outcome,
+        Outcome::Refused(Refusal::IeeeNotExact { .. })
+    ));
+    assert!(inexact.losses.is_empty());
+    let (infinite, _) = run_in(
+        &package,
+        &parameters,
+        &divide,
+        None,
+        arguments(one, IeeeValue::binary64(0)),
+        UNLIMITED,
+    );
+    completed_as(
+        &infinite,
+        &Value::Float(IeeeValue::binary64(0x7ff0_0000_0000_0000)),
+    );
+    match infinite.losses.as_slice() {
+        [LocatedLoss {
+            loss: ValueLoss::IeeeFlags(flags),
+            ..
+        }] => assert!(flags.contains(IeeeFlag::DivideByZero)),
+        other => panic!("one flag record, not {other:?}"),
+    }
+
+    let negative_zero = IeeeValue::binary64(0x8000_0000_0000_0000);
+    let (exact, _) = run_in(
+        &package,
+        &parameters,
+        &Expression::Convert {
+            target: rational_type(0, 0, 1, 1),
+            operand: Box::new(operand("f")),
+        },
+        None,
+        arguments(negative_zero, three),
+        UNLIMITED,
+    );
+    completed_as(&exact, &rational(0, 1));
+    assert!(matches!(
+        exact.losses.as_slice(),
+        [LocatedLoss {
+            loss: ValueLoss::IeeeExact(IeeeExactLoss::NegativeZeroSign),
+            ..
+        }]
+    ));
+
+    let cause = |package: &CheckedPackage, expression: &Expression| {
+        refused(check_in(
+            package,
+            &parameters,
+            expression,
+            None,
+            CheckMode::Kernel,
+        ))
+    };
+    let ill = |cause| CheckCause::IllTyped(cause);
+    assert_eq!(
+        cause(&package, &operation(BinaryOperator::Less, "f", "g")),
+        ill(IllTypedCause::OperatorIneligible)
+    );
+    assert_eq!(
+        cause(&package, &negation("f")),
+        ill(IllTypedCause::OperatorIneligible)
+    );
+    assert_eq!(
+        cause(&package, &operation(BinaryOperator::Add, "f", "h")),
+        ill(IllTypedCause::TypeMismatch)
+    );
+    for operator in [BinaryOperator::Add, BinaryOperator::Less] {
+        assert_eq!(
+            cause(&package, &operation(operator, "f", "i")),
+            ill(IllTypedCause::TypeMismatch)
+        );
+    }
+    assert_eq!(
+        cause(&plain_package(), &operation(BinaryOperator::Add, "f", "g")),
+        CheckCause::IeeeProfileNotAdmitted
     );
 }

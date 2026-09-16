@@ -97,8 +97,7 @@ impl Source {
         bytes: &[u8],
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
-        Self::read_typed(identity, path, bytes, byte_limit)
-            .map_err(|refusal| refusal.diagnostic)
+        Self::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| refusal.diagnostic)
     }
 
     /// [`Self::read`] with the refusal's typed cause retained.

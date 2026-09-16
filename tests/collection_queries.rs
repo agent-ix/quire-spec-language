@@ -131,6 +131,7 @@ fn aliases() -> Vec<(String, ValueType)> {
         ("Total".to_owned(), ValueType::Integer),
         ("Small".to_owned(), int_type(0, 30)),
         ("Flag".to_owned(), ValueType::Boolean),
+        ("Tiny".to_owned(), int_type(0, 5)),
     ]
 }
 
@@ -903,5 +904,119 @@ fn q11_fold_charges_visit_step_and_one_accumulator_retain() {
     assert_eq!(
         format!("{:?}", limited.outcome),
         incomplete(8, 1, ChargePoint::CollectionResultRetain)
+    );
+}
+
+fn sum(result_type: &str, source: &str, summand: Expression) -> Expression {
+    Expression::Sum {
+        result_type: result_type.to_owned(),
+        binder: "x".to_owned(),
+        source: Box::new(name(source)),
+        summand: Box::new(summand),
+    }
+}
+
+fn check_linked(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+) -> Result<quire_spec_language::value::CheckedExpression, CheckRefusal> {
+    let parameters = parameters
+        .iter()
+        .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+        .collect();
+    package.check_expression(
+        parameters,
+        expression,
+        None,
+        CheckMode::Linked,
+        CheckingLimits::default(),
+    )
+}
+
+#[trace("TC-190", "FR-145-AC-8")]
+#[test]
+fn q12_sum_charges_visits_additions_and_one_scalar_retain() {
+    let package = plain();
+    let sequence = of(CollectionKind::Sequence, int_type(0, 2), 0, 3);
+    let parameters = [("q", sequence.clone())];
+    let total = sum("Total", "q", name("x"));
+    let result = run(
+        &package,
+        &parameters,
+        &total,
+        vec![collection(&sequence, ints(&[1, 2]))],
+        UNLIMITED,
+    );
+    assert_eq!(format!("{:?}", completed(&result)), format!("{:?}", int(3)));
+    // Two visits, one integer addition, then the scalar retain.
+    assert_eq!((result.work, result.results), (6, 2));
+
+    let empty = run(
+        &package,
+        &parameters,
+        &total,
+        vec![collection(&sequence, Vec::new())],
+        UNLIMITED,
+    );
+    assert_eq!(format!("{:?}", completed(&empty)), format!("{:?}", int(0)));
+    assert_eq!((empty.work, empty.results), (1, 1));
+
+    let limited = run(
+        &package,
+        &parameters,
+        &total,
+        vec![collection(&sequence, ints(&[1, 2]))],
+        work_limit(5),
+    );
+    assert_eq!(
+        format!("{:?}", limited.outcome),
+        incomplete(5, 1, ChargePoint::CollectionResultRetain)
+    );
+}
+
+#[trace("TC-190", "FR-145-AC-6")]
+#[test]
+fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
+    let package = plain();
+    for kind in [CollectionKind::Sequence, CollectionKind::Bag] {
+        let natural = [("q", of(kind, int_type(0, 2), 0, 3))];
+        check_linked(&package, &natural, &sum("Small", "q", name("x"))).unwrap();
+        check_linked(&package, &natural, &sum("Tiny", "q", name("x"))).unwrap_err();
+
+        // A negative summand makes a prefix of `-3` reachable in some order.
+        let signed = [("q", of(kind, int_type(-1, 2), 0, 3))];
+        assert_eq!(
+            check_linked(&package, &signed, &sum("Small", "q", name("x")))
+                .unwrap_err()
+                .cause,
+            CheckCause::Unproved(Obligation::Range {
+                required: Box::new(ProvedInterval {
+                    lower: Some(Integer::from(0_i64)),
+                    upper: Some(Integer::from(30_i64)),
+                }),
+                proved: Box::new(ProvedInterval {
+                    lower: Some(Integer::from(-3_i64)),
+                    upper: Some(Integer::from(6_i64)),
+                }),
+            })
+        );
+    }
+
+    let sequence = of(CollectionKind::Sequence, int_type(0, 2), 0, 3);
+    let over = run(
+        &package,
+        &[("q", sequence.clone())],
+        &sum("Tiny", "q", name("x")),
+        vec![collection(&sequence, ints(&[2, 2, 2]))],
+        UNLIMITED,
+    );
+    assert!(matches!(
+        over.outcome,
+        Outcome::Refused(Refusal::IntegerOutOfDomain)
+    ));
+    assert_eq!(
+        ill_typed(&package, &[("q", sequence)], &sum("Flag", "q", name("x"))),
+        IllTypedCause::TypeMismatch
     );
 }

@@ -11,16 +11,17 @@
 use super::super::collection::{CardinalityBound, CollectionKind, CollectionType};
 use super::super::comparison::IllTypedCause;
 use super::super::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
+use super::super::decimal::DecimalType;
 use super::super::enumeration::{EnumDeclaration, EnumValue};
 use super::super::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
 use super::super::ieee::AdmittedIeeeProfile;
 use super::super::integer::Integer;
-use super::super::numeric::OrderingOperator;
+use super::super::numeric::{ArithmeticOperator, OrderingOperator};
+use super::super::quantity::{check_comparable, result_unit, UnitOperation};
 use super::super::rational::Rational;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
-    UnsupportedForm,
 };
 use super::syntax::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
@@ -171,25 +172,6 @@ fn node(kind: NodeKind, value_type: ValueType, location: &Location) -> Node {
 
 fn is_integer(value_type: &ValueType) -> bool {
     matches!(value_type, ValueType::Integer | ValueType::Int(_))
-}
-
-/// The numeric family of a type, for telling unsupported arithmetic from a
-/// type mismatch.
-fn numeric_family(value_type: &ValueType) -> Option<u8> {
-    match value_type {
-        ValueType::Integer | ValueType::Int(_) => Some(0),
-        ValueType::Rational(_) => Some(1),
-        ValueType::Decimal(_) => Some(2),
-        ValueType::Float(_) => Some(3),
-        ValueType::Quantity(_) => Some(4),
-        ValueType::Boolean
-        | ValueType::Text(_)
-        | ValueType::Enum(_)
-        | ValueType::Option(_)
-        | ValueType::Composite(_)
-        | ValueType::Collection(_)
-        | ValueType::Reference(_) => None,
-    }
 }
 
 /// Whether an expression takes its type from its context.
@@ -534,21 +516,7 @@ impl<'a> Typer<'a> {
                 left,
                 right,
             } => self.binary(*operator, left, right, hint, location),
-            Expression::Negate(operand) => {
-                let operand = self.infer(operand, None, &location.child(0))?;
-                match numeric_family(&operand.value_type) {
-                    Some(0) => Ok(node(
-                        NodeKind::Negate(Box::new(operand)),
-                        ValueType::Integer,
-                        location,
-                    )),
-                    Some(_) => Err(refuse(
-                        location,
-                        CheckCause::Unsupported(UnsupportedForm::NonIntegerArithmetic),
-                    )),
-                    None => Err(mismatch(location)),
-                }
-            }
+            Expression::Negate(operand) => self.negate(operand, hint, location),
             Expression::Not(operand) => {
                 let operand = self.check_as(operand, &ValueType::Boolean, &location.child(0))?;
                 Ok(node(
@@ -637,6 +605,35 @@ impl<'a> Typer<'a> {
                         slot,
                         source: Box::new(source),
                         body: Box::new(predicate),
+                    },
+                    value_type,
+                    location,
+                ))
+            }
+            Expression::Sum {
+                result_type,
+                binder,
+                source,
+                summand,
+            } => {
+                let value_type = self.type_named(result_type, location)?;
+                if !is_integer(&value_type) {
+                    return Err(mismatch(location));
+                }
+                let source = self.infer(source, None, &location.child(0))?;
+                let element = self.element_type(&source)?;
+                let slot = self.bind(binder, element, location)?;
+                let summand = self.infer(summand, None, &location.child(1))?;
+                self.unbind(1);
+                if !is_integer(&summand.value_type) {
+                    return Err(mismatch(&summand.location));
+                }
+                Ok(node(
+                    NodeKind::Query {
+                        visit: Visit::Sum,
+                        slot,
+                        source: Box::new(source),
+                        body: Box::new(summand),
                     },
                     value_type,
                     location,
@@ -763,57 +760,17 @@ impl<'a> Typer<'a> {
     ) -> Result<Node, CheckRefusal> {
         let (left_location, right_location) = (location.child(0), location.child(1));
         match operator {
-            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
-                let left = self.infer(left, None, &left_location)?;
-                let right = self.infer(right, None, &right_location)?;
-                let arithmetic = match operator {
-                    BinaryOperator::Add => Arithmetic::Add,
-                    BinaryOperator::Subtract => Arithmetic::Subtract,
-                    _ => Arithmetic::Multiply,
+            BinaryOperator::Add
+            | BinaryOperator::Subtract
+            | BinaryOperator::Multiply
+            | BinaryOperator::Divide => {
+                let operator = match operator {
+                    BinaryOperator::Add => ArithmeticOperator::Add,
+                    BinaryOperator::Subtract => ArithmeticOperator::Subtract,
+                    BinaryOperator::Multiply => ArithmeticOperator::Multiply,
+                    _ => ArithmeticOperator::Divide,
                 };
-                match (
-                    numeric_family(&left.value_type),
-                    numeric_family(&right.value_type),
-                ) {
-                    (Some(0), Some(0)) => Ok(node(
-                        NodeKind::Arithmetic(arithmetic, Box::new(left), Box::new(right)),
-                        ValueType::Integer,
-                        location,
-                    )),
-                    (Some(l), Some(r)) if l == r => Err(refuse(
-                        location,
-                        CheckCause::Unsupported(UnsupportedForm::NonIntegerArithmetic),
-                    )),
-                    _ => Err(mismatch(location)),
-                }
-            }
-            BinaryOperator::Divide => {
-                let left = self.infer(left, None, &left_location)?;
-                let right = self.infer(right, None, &right_location)?;
-                match (
-                    numeric_family(&left.value_type),
-                    numeric_family(&right.value_type),
-                    hint,
-                ) {
-                    (Some(0), Some(0), Some(ValueType::Rational(domain))) => Ok(node(
-                        NodeKind::Divide {
-                            left: Box::new(left),
-                            right: Box::new(right),
-                            domain: domain.clone(),
-                        },
-                        ValueType::Rational(domain.clone()),
-                        location,
-                    )),
-                    (Some(0), Some(0), None) => Err(CheckRefusal::ill_typed(
-                        location,
-                        IllTypedCause::AmbiguousLiteral,
-                    )),
-                    (Some(l), Some(r), _) if l == r && l != 0 => Err(refuse(
-                        location,
-                        CheckCause::Unsupported(UnsupportedForm::NonIntegerArithmetic),
-                    )),
-                    _ => Err(mismatch(location)),
-                }
+                self.arithmetic(operator, left, right, hint, location)
             }
             BinaryOperator::Equal | BinaryOperator::NotEqual => {
                 let operator = if operator == BinaryOperator::Equal {
@@ -967,15 +924,21 @@ impl<'a> Typer<'a> {
                 }
                 OrderedKind::Enums
             }
-            (ValueType::Float(_), ValueType::Float(_))
-            | (ValueType::Quantity(_), ValueType::Quantity(_))
-            | (ValueType::Text(_), ValueType::Text(_)) => {
-                return Err(refuse(
-                    location,
-                    CheckCause::Unsupported(UnsupportedForm::Ordering),
-                ))
+            (ValueType::Text(l), ValueType::Text(r)) => {
+                if l.profile() != r.profile() {
+                    return Err(mismatch(location));
+                }
+                OrderedKind::Texts
             }
-            (ValueType::Boolean, ValueType::Boolean)
+            (ValueType::Quantity(l), ValueType::Quantity(r)) => {
+                check_comparable(l, r)
+                    .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+                OrderedKind::Quantities
+            }
+            // FR-148 selects IEEE ordering only through the `totalOrder`
+            // intrinsic; the grammar's orderings select none.
+            (ValueType::Float(_), ValueType::Float(_))
+            | (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))
             | (ValueType::Collection(_), ValueType::Collection(_))
@@ -989,6 +952,172 @@ impl<'a> Typer<'a> {
             ValueType::Boolean,
             location,
         ))
+    }
+
+    /// `left op right` for `+`, `-`, `*` and `/`. Both operands are of one
+    /// numeric family; mixing families needs an explicit conversion.
+    fn arithmetic(
+        &mut self,
+        operator: ArithmeticOperator,
+        left: &Expression,
+        right: &Expression,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let ((left, ()), (right, ())) =
+            self.peer_operands(left, right, location, |typer, expression, peer, at| {
+                let typed = typer.infer(expression, peer, at)?;
+                let value_type = typed.value_type.clone();
+                Ok((typed, (), value_type))
+            })?;
+        let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
+        let (left_box, right_box) = (Box::new(left), Box::new(right));
+        let (kind, value_type) = match (&left_type, &right_type, operator) {
+            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => match hint {
+                Some(ValueType::Rational(domain)) => (
+                    NodeKind::Divide {
+                        left: left_box,
+                        right: right_box,
+                        domain: domain.clone(),
+                    },
+                    ValueType::Rational(domain.clone()),
+                ),
+                Some(_) => return Err(mismatch(location)),
+                None => {
+                    return Err(CheckRefusal::ill_typed(
+                        location,
+                        IllTypedCause::AmbiguousLiteral,
+                    ))
+                }
+            },
+            (l, r, _) if is_integer(l) && is_integer(r) => {
+                let integer = match operator {
+                    ArithmeticOperator::Add => Arithmetic::Add,
+                    ArithmeticOperator::Subtract => Arithmetic::Subtract,
+                    _ => Arithmetic::Multiply,
+                };
+                (
+                    NodeKind::Arithmetic(integer, left_box, right_box),
+                    ValueType::Integer,
+                )
+            }
+            (ValueType::Rational(l), ValueType::Rational(r), _) => {
+                let domain = match hint {
+                    Some(ValueType::Rational(expected)) => expected.clone(),
+                    _ => l.result_of(operator, r),
+                };
+                (
+                    NodeKind::Rational {
+                        operator,
+                        left: left_box,
+                        right: right_box,
+                        domain: domain.clone(),
+                    },
+                    ValueType::Rational(domain),
+                )
+            }
+            (ValueType::Decimal(_), ValueType::Decimal(_), _) => {
+                let target = match hint {
+                    Some(ValueType::Decimal(target)) => target.clone(),
+                    Some(_) => return Err(mismatch(location)),
+                    None => {
+                        return Err(CheckRefusal::ill_typed(
+                            location,
+                            IllTypedCause::AmbiguousLiteral,
+                        ))
+                    }
+                };
+                (
+                    NodeKind::Decimal {
+                        operator,
+                        left: left_box,
+                        right: right_box,
+                        target: target.clone(),
+                    },
+                    ValueType::Decimal(target),
+                )
+            }
+            (ValueType::Float(l), ValueType::Float(r), _) => {
+                if l != r {
+                    return Err(mismatch(location));
+                }
+                if self.scope.ieee_profile.is_none() {
+                    return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
+                }
+                (
+                    NodeKind::Ieee(operator, left_box, right_box),
+                    ValueType::Float(*l),
+                )
+            }
+            (ValueType::Quantity(l), ValueType::Quantity(r), _) => {
+                let operation = match operator {
+                    ArithmeticOperator::Add => UnitOperation::Add,
+                    ArithmeticOperator::Subtract => UnitOperation::Subtract,
+                    ArithmeticOperator::Multiply => UnitOperation::Multiply,
+                    ArithmeticOperator::Divide => UnitOperation::Divide,
+                };
+                let unit = result_unit(operation, l, r)
+                    .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+                (
+                    NodeKind::Quantity(operator, left_box, right_box),
+                    ValueType::Quantity(unit),
+                )
+            }
+            _ => return Err(mismatch(location)),
+        };
+        Ok(node(kind, value_type, location))
+    }
+
+    /// Unary `-`: integers, rationals and decimals. FR-148 and FR-142 define
+    /// no negation of an IEEE value or a quantity.
+    fn negate(
+        &mut self,
+        operand: &Expression,
+        hint: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let operand = self.infer(operand, None, &location.child(0))?;
+        let (kind, value_type) = match &operand.value_type {
+            ValueType::Integer | ValueType::Int(_) => {
+                (NodeKind::Negate(Box::new(operand)), ValueType::Integer)
+            }
+            ValueType::Rational(domain) => {
+                let domain = match hint {
+                    Some(ValueType::Rational(expected)) => expected.clone(),
+                    _ => domain.negated(),
+                };
+                (
+                    NodeKind::RationalNegate(Box::new(operand), domain.clone()),
+                    ValueType::Rational(domain),
+                )
+            }
+            ValueType::Decimal(source) => {
+                let target = match hint {
+                    Some(ValueType::Decimal(expected)) => expected.clone(),
+                    _ => DecimalType::new(
+                        source.upper().neg(),
+                        source.lower().neg(),
+                        u64::from(source.min_scale()),
+                        u64::from(source.max_scale()),
+                        source.rounding(),
+                    )
+                    .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?,
+                };
+                (
+                    NodeKind::DecimalNegate(Box::new(operand), target.clone()),
+                    ValueType::Decimal(target),
+                )
+            }
+            ValueType::Float(_) | ValueType::Quantity(_) => return Err(ineligible(location)),
+            ValueType::Boolean
+            | ValueType::Text(_)
+            | ValueType::Enum(_)
+            | ValueType::Option(_)
+            | ValueType::Composite(_)
+            | ValueType::Collection(_)
+            | ValueType::Reference(_) => return Err(mismatch(location)),
+        };
+        Ok(node(kind, value_type, location))
     }
 
     fn field(
@@ -1286,6 +1415,15 @@ impl<'a> Typer<'a> {
                 }
                 Ok(node(
                     NodeKind::IeeeToRational(Box::new(operand), domain.clone()),
+                    target.clone(),
+                    location,
+                ))
+            }
+            (ValueType::Rational(_) | ValueType::Decimal(_), ValueType::Decimal(decimal))
+                if !admits_equality_conversion(&operand.value_type, target) =>
+            {
+                Ok(node(
+                    NodeKind::ConvertDecimal(Box::new(operand), decimal.clone()),
                     target.clone(),
                     location,
                 ))

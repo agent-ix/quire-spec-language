@@ -314,6 +314,15 @@ impl IntegerInterval {
         Ok(Self { lower, upper })
     }
 
+    /// The smallest interval containing both `a` and `b`, in either order.
+    pub(crate) fn spanning(a: Integer, b: Integer) -> Self {
+        if a <= b {
+            Self { lower: a, upper: b }
+        } else {
+            Self { lower: b, upper: a }
+        }
+    }
+
     /// The two's-complement signed domain of `width` bits,
     /// `[-(2^(width-1)), 2^(width-1) - 1]`.
     pub fn signed_twos_complement(width: NonZeroU32) -> Self {

@@ -14,8 +14,9 @@ use super::super::collection::CollectionType;
 use super::super::composite::{Value, ValueType};
 use super::super::equality::EqualityOperator;
 use super::super::integer::{Integer, IntegerInterval};
+use super::super::numeric::ArithmeticOperator;
 use super::super::numeric::OrderingOperator;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, Slot};
+use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, Slot, Visit};
 use super::refusal::{CheckCause, CheckRefusal, Location, Obligation, ProvedInterval};
 
 /// One step of a stable path.
@@ -252,6 +253,48 @@ fn cardinality(collection: &CollectionType) -> Interval {
         lower: End::Finite(Integer::from(bound.minimum())),
         upper: End::Finite(Integer::from(bound.maximum())),
     }
+}
+
+/// The interval of every accumulated prefix of a `sum` over `size`
+/// summands each in `summand`, in every visit order: the empty prefix when
+/// the source may be empty, and every prefix of `k` summands for
+/// `1 <= k <= max`, whose sum lies in `[k * lower, k * upper]`.
+fn prefix_sums(summand: &Interval, size: &Interval) -> Interval {
+    let zero = End::Finite(Integer::zero());
+    let one = End::Finite(Integer::one());
+    let longest = size.upper.clone();
+    let shortest = if size.lower <= zero {
+        zero.clone()
+    } else {
+        one.clone()
+    };
+    if longest < one {
+        return Interval::point(&Integer::zero());
+    }
+    let reach = |end: &End| {
+        let candidates = [shortest.mul(end), one.mul(end), longest.mul(end)];
+        let lower = candidates
+            .iter()
+            .min()
+            .cloned()
+            .unwrap_or(End::NegativeInfinity);
+        let upper = candidates
+            .iter()
+            .max()
+            .cloned()
+            .unwrap_or(End::PositiveInfinity);
+        (lower, upper)
+    };
+    let (low_lower, low_upper) = reach(&summand.lower);
+    let (high_lower, high_upper) = reach(&summand.upper);
+    let mut proved = Interval {
+        lower: low_lower.min(high_lower),
+        upper: low_upper.max(high_upper),
+    };
+    if shortest == zero {
+        proved = proved.hull(&Interval::point(&Integer::zero()));
+    }
+    proved
 }
 
 /// Join two outcomes of a branch point: keep common interval subjects as
@@ -680,6 +723,91 @@ impl Definedness {
                     Ok(())
                 } else {
                     Err(Self::refuse(node, Obligation::RationalRange))
+                }
+            }
+            NodeKind::Rational {
+                operator,
+                left,
+                right,
+                domain,
+            } => {
+                self.walk(left, facts)?;
+                self.walk(right, facts)?;
+                let (ValueType::Rational(left), ValueType::Rational(right)) =
+                    (&left.value_type, &right.value_type)
+                else {
+                    return Err(Self::refuse(node, Obligation::RationalRange));
+                };
+                if *operator == ArithmeticOperator::Divide && !right.excludes_zero() {
+                    return Err(Self::refuse(node, Obligation::Nonzero));
+                }
+                if domain.contains_domain(&left.result_of(*operator, right)) {
+                    Ok(())
+                } else {
+                    Err(Self::refuse(node, Obligation::RationalRange))
+                }
+            }
+            NodeKind::RationalNegate(operand, domain) => {
+                self.walk(operand, facts)?;
+                match &operand.value_type {
+                    ValueType::Rational(source) if domain.contains_domain(&source.negated()) => {
+                        Ok(())
+                    }
+                    _ => Err(Self::refuse(node, Obligation::RationalRange)),
+                }
+            }
+            NodeKind::Decimal {
+                operator: ArithmeticOperator::Divide,
+                left,
+                right,
+                ..
+            } => {
+                self.walk(left, facts)?;
+                self.walk(right, facts)?;
+                let zero = Integer::zero();
+                match &right.value_type {
+                    ValueType::Decimal(divisor)
+                        if divisor.lower() > &zero || divisor.upper() < &zero =>
+                    {
+                        Ok(())
+                    }
+                    _ => Err(Self::refuse(node, Obligation::Nonzero)),
+                }
+            }
+            // A quantity carries no declared value interval and no guard form
+            // proves one nonzero.
+            NodeKind::Quantity(ArithmeticOperator::Divide, left, right) => {
+                self.walk(left, facts)?;
+                self.walk(right, facts)?;
+                Err(Self::refuse(node, Obligation::Nonzero))
+            }
+            NodeKind::Query {
+                visit: Visit::Sum,
+                source,
+                body,
+                ..
+            } => {
+                self.walk(source, facts)?;
+                self.walk(body, facts)?;
+                let ValueType::Int(domain) = &node.value_type else {
+                    return Ok(());
+                };
+                let size = match &source.value_type {
+                    ValueType::Collection(collection) => cardinality(collection),
+                    _ => Interval::unbounded(),
+                };
+                let proved = prefix_sums(&self.interval(body, facts), &size);
+                let required = Interval::of_domain(domain);
+                if proved.within(&required) {
+                    Ok(())
+                } else {
+                    Err(Self::refuse(
+                        node,
+                        Obligation::Range {
+                            required: Box::new(required.proved()),
+                            proved: Box::new(proved.proved()),
+                        },
+                    ))
                 }
             }
             NodeKind::Value(operand) => {

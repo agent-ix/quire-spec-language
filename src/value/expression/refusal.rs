@@ -165,24 +165,12 @@ pub enum CheckCause {
         /// The declared limit.
         limit: u64,
     },
-    /// An IEEE conversion in a package with no admitted IEEE profile:
+    /// An IEEE conversion or arithmetic in a package with no admitted IEEE
+    /// profile:
     /// `invalid_package`.
     IeeeProfileNotAdmitted,
     /// A derived collection bound exceeds the representable cardinality range.
     UnrepresentableBound,
-    /// A well-formed form this checker does not implement:
-    /// `unsupported_construct`.
-    Unsupported(UnsupportedForm),
-}
-
-/// A well-formed Complete-V1 form outside this checker's implemented subset.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum UnsupportedForm {
-    /// Arithmetic on `Rational`, `Decimal`, IEEE or quantity operands.
-    NonIntegerArithmetic,
-    /// Ordering on operands other than integers, rationals, decimals and
-    /// ordered enums.
-    Ordering,
 }
 
 impl CheckCause {
@@ -195,7 +183,7 @@ impl CheckCause {
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::ResourceExhausted { .. } => Code::ResourceExhausted,
             Self::IeeeProfileNotAdmitted => Code::InvalidPackage,
-            Self::UnrepresentableBound | Self::Unsupported(_) => Code::UnsupportedConstruct,
+            Self::UnrepresentableBound => Code::UnsupportedConstruct,
         }
     }
 
@@ -214,9 +202,7 @@ impl CheckCause {
             ) => Some("unproved-range"),
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
             Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
-            Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::Unsupported(_) => {
-                None
-            }
+            Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound => None,
         }
     }
 }
