@@ -17,7 +17,23 @@ const DEFINITIONS: &str =
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
 /// `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 16] = [
+const PINNED_NON_CATALOG: [(&str, &str); 20] = [
+    (
+        "spec/functional/expressions/FR-146-check-total-pure-functions.md",
+        "36a2cf73a8385e7cf219a6290710b415d2999b3737dbdb1e9db63c4ea22c9acc",
+    ),
+    (
+        "spec/functional/tooling/FR-307-package-reusable-semantic-libraries.md",
+        "a758b2b0a6f2ad5749a902e45e67b727f989553dcb76c6a15951b36e17624fdf",
+    ),
+    (
+        "spec/test-cases/TC-191-total-pure-function-checking.md",
+        "423fd06a5642d7e9fc6b11621cc8fb228d9a2f3e166044fa3c05c92dc5d01545",
+    ),
+    (
+        "spec/test-cases/TC-227-reusable-semantic-library-resolution.md",
+        "f7d3f4a370aea7c9b7dffb70cb748ce1ac6b2a6e26c108b0c396fbd86f1ad61d",
+    ),
     (
         "spec/functional/type-model/FR-144-preserve-complete-collection-algebra.md",
         "b91b9aa993cb9cd8d012c62992a55b443b21e6b5f63a3148c3be2598c980d617",

@@ -205,6 +205,8 @@ pub enum ChargePoint {
     EqualityPair,
     /// `equality.result-retain`.
     EqualityResultRetain,
+    /// `function.call`: one checked function call (see [`Meter::charge_call`]).
+    FunctionCall,
 }
 
 impl ChargePoint {
@@ -279,6 +281,7 @@ impl ChargePoint {
             Self::EqualityPlan => "equality.plan",
             Self::EqualityPair => "equality.pair",
             Self::EqualityResultRetain => "equality.result-retain",
+            Self::FunctionCall => "function.call",
         }
     }
 
@@ -464,6 +467,17 @@ impl Meter {
         self.consumed[LimitKind::ResultUnits.index()] = results;
         self.admit(point);
         Ok(())
+    }
+
+    /// One checked function call: one work unit.
+    // SPEC-GAP(119-18): the vendored `quire.value.accounting/v1` names no
+    // function-call charge point; QSpec PR #74 (unmerged) adds `function.call`
+    // as one `work_units` unit before binding a call's evaluated arguments.
+    // That row is applied here, but the point stays out of `ChargePoint::ALL`
+    // and is never resolved from a code until the vendored table carries it.
+    // This is the only place that decides the fuel charge.
+    pub(crate) fn charge_call(&mut self) -> Result<(), Incomplete> {
+        self.charge(Charge::new(ChargePoint::FunctionCall))
     }
 
     fn admit(&mut self, point: ChargePoint) {

@@ -15,7 +15,9 @@
 //!    [`TypeEnvironment`], and the FR-149 equality matrix
 //!    [`evaluate_equality`], FR-144 bounded [`CollectionValue`]s and the
 //!    FR-145 collection queries [`map`], [`filter`], [`flatten`], [`count`],
-//!    [`fold`], [`reduce`] and [`convert`] (QSL #119);
+//!    [`fold`], [`reduce`] and [`convert`], FR-146 total pure functions
+//!    [`check_functions`] and FR-307 library resolution
+//!    [`resolve_libraries`] (QSL #119);
 //! 4. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
 //! 5. `quire.value.accounting/v1` metering through [`Meter`].
@@ -38,8 +40,10 @@ mod definition;
 mod division;
 mod enumeration;
 mod equality;
+mod function;
 mod ieee;
 mod integer;
+mod library;
 mod node;
 mod outcome;
 mod quantity;
@@ -82,6 +86,13 @@ pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
 pub use equality::{convert_for_equality, evaluate_equality, plan_equality, EqualityPlan};
+pub use function::{
+    check_functions, ArithmeticOperator, CallRefusal, CheckedFoldFunction, CheckedFunction,
+    CheckedFunctions, CheckedValueFunction, DecreaseObligation, DischargedPrecondition, Effect,
+    ElementRelation, Expression, FunctionCause, FunctionDeclaration, FunctionLimits,
+    FunctionRefusal, IntegerComparison, Location, MeasureElement, ParameterDeclaration, PathStep,
+    Precondition, PreconditionEvidence, Termination,
+};
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
@@ -92,6 +103,11 @@ pub use ieee::{
 pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
     OutOfDomain,
+};
+pub use library::{
+    check_migration, resolve_libraries, Export, ExportIdentity, ImportDeclaration, ImportPath,
+    InvalidLibraryName, LibraryLock, LibraryMigration, LibraryName, LibraryPackage, LibraryRefusal,
+    MigrationRefusal, NameReference, NameRefusal, PackageId, Selection,
 };
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,

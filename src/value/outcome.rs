@@ -96,6 +96,11 @@ pub enum Refusal {
     /// A collection function returned a value outside its declared result
     /// type.
     FunctionResultOutsideType,
+    /// A function was applied to an argument outside its parameter type.
+    FunctionArgumentOutsideType,
+    /// A checked-program invariant failed during evaluation; unreachable for
+    /// an admitted program.
+    CheckedInvariant,
 }
 
 impl Refusal {
@@ -113,7 +118,9 @@ impl Refusal {
             | Self::IeeeNotExact { .. }
             | Self::Cardinality(_)
             | Self::EmptyReduction
-            | Self::FunctionResultOutsideType => None,
+            | Self::FunctionResultOutsideType
+            | Self::FunctionArgumentOutsideType
+            | Self::CheckedInvariant => None,
         }
     }
 }
