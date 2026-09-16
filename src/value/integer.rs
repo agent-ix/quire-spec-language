@@ -14,6 +14,8 @@ use num_bigint::{BigInt, BigUint};
 use num_integer::Integer as _;
 use num_traits::{One, Signed, Zero};
 
+use super::accounting::length_amount;
+
 /// An exact, arbitrary-precision mathematical integer.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Integer(BigInt);
@@ -48,9 +50,7 @@ impl Integer {
     /// `digits(x)` from `quire.value.accounting/v1`: the base-ten magnitude
     /// digit count, where zero has one digit.
     pub fn decimal_digits(&self) -> u64 {
-        let length = self.0.magnitude().to_str_radix(10).len();
-        // A `usize` length always fits `u64` on every supported target.
-        u64::try_from(length).unwrap_or(u64::MAX)
+        length_amount(self.0.magnitude().to_str_radix(10).len())
     }
 
     /// The value as a `u64`, if it is one.
@@ -66,6 +66,23 @@ impl Integer {
     /// `self^|exponent|`. Callers bound the result size before calling.
     pub(crate) fn pow(&self, exponent: &Self) -> Self {
         Self(num_traits::Pow::pow(&self.0, exponent.0.magnitude()))
+    }
+
+    /// `(self / 2^k, k)` for the greatest `k <= limit` with `2^k | self`.
+    /// Zero has no greatest such `k` and is returned with `k = 0`.
+    pub(crate) fn split_factor_two(&self, limit: u64) -> (Self, u64) {
+        match self.0.trailing_zeros() {
+            None => (self.clone(), 0),
+            Some(zeros) => {
+                let shift = zeros.min(limit);
+                (Self(&self.0 >> shift), shift)
+            }
+        }
+    }
+
+    /// `self × 2^shift`. Callers bound the result size before calling.
+    pub(crate) fn shifted_left(&self, shift: u64) -> Self {
+        Self(&self.0 << shift)
     }
 
     /// Whether this integer is even.
@@ -198,9 +215,9 @@ impl Integer {
             // Equal bit lengths keep `|low_shift - shift|` within the bit
             // lengths of `high` and `other`, so the aligned sides are small.
             let gap = BigInt::from(low_shift) - &shift.0;
-            let Ok(distance) = u64::try_from(gap.magnitude()) else {
-                return Ordering::Equal;
-            };
+            let distance = u64::try_from(gap.magnitude()).expect(
+                "equal bit lengths bound the alignment gap by in-memory mantissa bit lengths",
+            );
             let aligned = |mantissa: &BigUint| {
                 if gap.is_negative() {
                     (mantissa.clone(), other << distance)

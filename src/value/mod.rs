@@ -48,7 +48,10 @@ pub use definition::{
     DefinitionReference, DefinitionRevision, LockError, PackageCause, PackageRefusal,
     PackageRefusalCode, SelectionRefusalCode, Trigger, PINNED_LOCK_BYTES,
 };
-pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
+pub use division::{
+    divide, modulo, negotiate_integer_division, DivisionProfile, IntegerDivisionBounds,
+    IntegerDivisionConsumer, IntegerDivisionDisposition, QuotientRemainder,
+};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };

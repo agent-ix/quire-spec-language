@@ -134,7 +134,7 @@ fn d03_every_mode_rounds_both_signed_halves_with_a_typed_loss() {
             );
             let loss = result.loss().expect("rounded result carries loss");
             assert_eq!(int(loss.exact_numerator()), exact_numerator);
-            assert_eq!(int(loss.exact_denominator()), 2);
+            assert_eq!(int(&loss.exact_denominator()), 2);
             assert_eq!(int(loss.rounded_coefficient()), expected);
             assert_eq!(loss.rounded_scale(), 0);
             assert_eq!(loss.mode(), mode);
@@ -162,7 +162,7 @@ fn d05_recurring_quotient_refuses_exact_and_records_nearest_even_loss() {
     assert_eq!(
         (
             int(loss.exact_numerator()),
-            int(loss.exact_denominator()),
+            int(&loss.exact_denominator()),
             int(loss.rounded_coefficient()),
             loss.rounded_scale(),
             loss.mode()
@@ -388,7 +388,7 @@ fn d12_a_rounded_coefficient_outside_the_domain_is_never_re_rounded() {
     assert_eq!(pair(result.value()).0, (33, 2));
     let loss = result.loss().unwrap();
     assert_eq!(
-        (int(loss.exact_numerator()), int(loss.exact_denominator())),
+        (int(loss.exact_numerator()), int(&loss.exact_denominator())),
         (1, 3)
     );
     assert_eq!(
@@ -610,7 +610,7 @@ fn d18_division_expands_the_divisor_side() {
     assert_eq!(
         (
             int(loss.exact_numerator()),
-            int(loss.exact_denominator()),
+            int(&loss.exact_denominator()),
             int(loss.rounded_coefficient()),
             loss.rounded_scale(),
             loss.mode()
@@ -638,6 +638,114 @@ fn d19_membership_at_the_largest_scale_never_materializes_the_lift() {
     let decimal_type = declared(0, 10, 4_294_967_295, 4_294_967_295).unwrap();
     assert!(decimal_type.contains(&dec(0, 0)));
     assert!(!decimal_type.contains(&dec(1, 0)));
+}
+
+#[trace("TC-185", "FR-140-AC-1")]
+#[test]
+fn comparison_decides_extreme_scales_by_sign_and_aligned_magnitude() {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let smallest = dec(1, u32::MAX);
+    let cases = [
+        (smallest.clone(), dec(0, 0), Greater),
+        (dec(-1, u32::MAX), dec(0, 0), Less),
+        (dec(0, u32::MAX), dec(0, 0), Equal),
+        (smallest.clone(), dec(1, u32::MAX - 1), Less),
+        (dec(10, u32::MAX), dec(1, u32::MAX - 1), Equal),
+        (dec(11, u32::MAX), dec(1, u32::MAX - 1), Greater),
+        (dec(-5, u32::MAX), dec(-1, u32::MAX - 1), Greater),
+        (smallest.clone(), dec(-1, 0), Greater),
+        (dec(999, 3), dec(1, 0), Less),
+        (dec(1001, 3), dec(1, 0), Greater),
+        (dec(-1001, 3), dec(-1, 0), Less),
+        (dec(10, 1), dec(1, 0), Equal),
+        (dec(12_345, 4), dec(12_346, 4), Less),
+    ];
+    for (left, right, expected) in cases {
+        assert_eq!(left.compare(&right), expected, "{left:?} vs {right:?}");
+        assert_eq!(
+            right.compare(&left),
+            expected.reverse(),
+            "{right:?} vs {left:?}"
+        );
+    }
+}
+
+const TIGHT: ScalarLimits = ScalarLimits {
+    integer_bits: 3,
+    decimal_digits: 1,
+    scale_expansion: 0,
+    text_input_bytes: 0,
+    text_scalars: 0,
+    normalized_scalars: 0,
+    unit_edges: 0,
+    value_occurrences: 2,
+    work_units: 5,
+    result_units: 0,
+};
+
+#[trace("TC-185", "FR-140-AC-6")]
+#[test]
+fn working_scales_above_the_target_never_materialize_the_excess_power() {
+    let arithmetic = [
+        ChargePoint::DecimalOperands,
+        ChargePoint::DecimalScaleExpansion,
+        ChargePoint::DecimalArithmetic,
+    ];
+    let mut meter = Meter::new(UNLIMITED);
+    assert_eq!(
+        evaluate_decimal(
+            DecimalOperation::Round(&dec(1, u32::MAX)),
+            &target(0, 10, 0, RoundingMode::Exact),
+            &mut meter
+        ),
+        Outcome::Refused(Refusal::InexactDecimal)
+    );
+    assert_eq!(meter.admitted_charges(), arithmetic);
+
+    // Working scale 2 × u32::MAX: -6 × 10^-8589934590.
+    let (left, right) = (dec(3, u32::MAX), dec(-2, u32::MAX));
+    let product = DecimalOperation::Multiply(&left, &right);
+    let mut meter = Meter::new(TIGHT);
+    assert_eq!(
+        evaluate_decimal(product, &target(0, 10, 0, RoundingMode::Exact), &mut meter),
+        Outcome::Refused(Refusal::InexactDecimal)
+    );
+    assert_eq!(meter.admitted_charges(), arithmetic);
+    assert_eq!(
+        evaluate_decimal(
+            product,
+            &target(0, 10, 0, RoundingMode::TowardNegative),
+            &mut Meter::new(TIGHT)
+        ),
+        Outcome::Refused(Refusal::DecimalOutOfDomain)
+    );
+    let mut meter = Meter::new(TIGHT);
+    assert_eq!(
+        evaluate_decimal(
+            product,
+            &target(0, 10, 0, RoundingMode::NearestEven),
+            &mut meter
+        ),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::ResultUnits,
+            limit: 0,
+            consumed: 0,
+            next_charge: 1_u64.into(),
+            charge_point: ChargePoint::DecimalResultRetain,
+        })
+    );
+    assert_eq!(meter.consumed(LimitKind::IntegerBits), 3);
+
+    // The loss record keeps the working-scale power factored; only the
+    // explicit denominator accessor would materialize it.
+    let result = completed(run(product, &target(0, 10, 0, RoundingMode::NearestEven)));
+    assert_eq!(pair(result.value()), ((0, 0), (0, 0)));
+    let loss = result
+        .loss()
+        .expect("a nonzero discarded digit records a loss");
+    assert_eq!(int(loss.exact_numerator()), -3);
+    assert_eq!(int(loss.rounded_coefficient()), 0);
+    assert_eq!(loss.mode(), RoundingMode::NearestEven);
 }
 
 // ---- generated vectors -----------------------------------------------------
@@ -815,7 +923,7 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                                     assert_eq!(loss.rounded_scale(), scale, "{case}");
                                     (
                                         int(loss.exact_numerator()),
-                                        int(loss.exact_denominator()),
+                                        int(&loss.exact_denominator()),
                                         int(loss.rounded_coefficient()),
                                     )
                                 });

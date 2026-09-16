@@ -1834,6 +1834,31 @@ fn incomplete(
     }
 }
 
+#[trace("TC-193", "FR-148-AC-7")]
+#[test]
+fn a_largest_scale_decimal_source_is_sized_without_materializing_its_power() {
+    // bits(10^4294967295) = floor(4294967295 × log2(10)) + 1.
+    let source = Decimal::new(Integer::from(1_i64), u32::MAX);
+    let mut meter = Meter::new(limits(64, 1, 4, 1));
+    assert_eq!(
+        exact_to_ieee(
+            profile(),
+            &source,
+            IeeeWidth::Binary64,
+            RoundingMode::NearestEven,
+            &mut meter
+        ),
+        Outcome::Incomplete(incomplete(
+            LimitKind::IntegerBits,
+            64,
+            0,
+            14_267_572_524,
+            ChargePoint::IeeeOperands
+        ))
+    );
+    assert!(meter.admitted_charges().is_empty());
+}
+
 #[trace("TC-193", "FR-148-AC-8")]
 #[test]
 fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
