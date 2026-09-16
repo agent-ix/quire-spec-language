@@ -1400,13 +1400,17 @@ fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_docu
         |package, declaration| {
             let subject = checked_subject(package, declaration);
             let leaf = leaf(package, declaration);
-            let first = temporal_v2::produce(
-                &subject,
-                input_v2(leaf, vec![0, 0xff, b'/', 0x80]),
-                native_temporal::Limits::default(),
-            )
-            .into_result()
-            .expect("produce v2 request");
+            let first_input = input_v2(leaf, vec![0, 0xff, b'/', 0x80]);
+            let expected_decision_progress = first_input.decision_progress.clone();
+            let expected_decision_closure = first_input.decision_closure.clone();
+            let expected_surrounding_progress = first_input.surrounding_progress.clone();
+            let expected_surrounding_closure = first_input.surrounding_closure.clone();
+            let expected_execution = first_input.execution;
+            let expected_completeness = first_input.completeness.clone();
+            let first =
+                temporal_v2::produce(&subject, first_input, native_temporal::Limits::default())
+                    .into_result()
+                    .expect("produce v2 request");
             assert_schema(
                 temporal_v2::REQUEST_SCHEMA_BYTES,
                 temporal_v2::REQUEST_SCHEMA_SHA256,
@@ -1419,6 +1423,48 @@ fn opaque_trigger_v2_round_trips_and_rejects_substitution_and_cross_version_docu
             assert_eq!(request.semantic_trigger(), &[0, 0xff, b'/', 0x80]);
             assert_eq!(request.evaluation_anchor(), "origin");
             assert!(request.activation_captures().next().is_none());
+            assert_eq!(
+                request.decision_progress().reference(),
+                &expected_decision_progress.reference
+            );
+            assert_eq!(
+                request.decision_progress().watermark(),
+                expected_decision_progress.watermark
+            );
+            assert_eq!(
+                request.decision_closure().reference(),
+                &expected_decision_closure.reference
+            );
+            assert_eq!(
+                request.decision_closure().state(),
+                expected_decision_closure.state
+            );
+            assert_eq!(
+                request.surrounding_progress().reference(),
+                &expected_surrounding_progress.reference
+            );
+            assert_eq!(
+                request.surrounding_progress().watermark(),
+                expected_surrounding_progress.watermark
+            );
+            assert_eq!(
+                request.surrounding_closure().reference(),
+                &expected_surrounding_closure.reference
+            );
+            assert_eq!(
+                request.surrounding_closure().state(),
+                expected_surrounding_closure.state
+            );
+            assert_eq!(request.execution(), expected_execution);
+            assert_eq!(
+                request.completeness().reference(),
+                &expected_completeness.reference
+            );
+            assert_eq!(request.completeness().state(), expected_completeness.state);
+            assert_eq!(
+                request.completeness().facts().collect::<Vec<_>>(),
+                expected_completeness.facts.iter().collect::<Vec<_>>()
+            );
             let output = temporal_v2::evaluate(
                 &request,
                 temporal_v2::Relation::Original,
