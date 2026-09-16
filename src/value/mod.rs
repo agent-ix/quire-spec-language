@@ -104,8 +104,8 @@ pub use integer::{
 };
 pub use library::{
     check_migration, resolve_libraries, Export, ExportIdentity, ImportDeclaration, ImportPath,
-    InvalidLibraryName, LibraryLock, LibraryMigration, LibraryName, LibraryPackage, LibraryRefusal,
-    MigrationRefusal, NameReference, NameRefusal, PackageId, Selection,
+    InvalidLibraryName, LibraryCause, LibraryLock, LibraryMigration, LibraryName, LibraryPackage,
+    LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause, PACKAGE_ID_PATH,
 };
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,

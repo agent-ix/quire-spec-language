@@ -3,18 +3,21 @@
 //! `package_id`, transitive closure into a lock with one selection per library
 //! identity, diamond unification, cycle refusal, qualified name resolution and
 //! identity-preserving migration.
+//!
+//! A package's `quire.package.semantic/v2` `package_id` is the SHA-256 of the
+//! RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity preimage.
+//! [`LibraryPackage`] carries those bytes as produced by the CheckedPackage V2
+//! writer, and resolution recomputes every `package_id` from them before any
+//! import is followed. This layer hashes the preimage but does not read it: its
+//! export node keys are supplied with the package, and its local declarations
+//! are exactly its exports.
 
 use std::collections::BTreeMap;
 
+use sha2::{Digest, Sha256};
+
 use super::node::{is_qualified_name, NodeKey};
 use crate::diagnostic::Code;
-
-// SPEC-GAP(119-21): CheckedPackage V2 and its `quire.package.semantic/v2`
-// `package_id` are not available to this value layer. A library package is
-// the typed [`LibraryPackage`] below: its `package_id` is supplied (never
-// computed or checked against content here), its library package key is that
-// `package_id`, its export node keys are supplied opaquely, and its local
-// declarations are exactly its exports.
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -45,6 +48,14 @@ impl LibraryName {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PackageId(pub [u8; 32]);
 
+impl PackageId {
+    /// The `package_id` of identity preimage `preimage`: SHA-256 of its exact
+    /// RFC 8785 JCS bytes.
+    pub fn of_preimage(preimage: &[u8]) -> Self {
+        Self(Sha256::digest(preimage).into())
+    }
+}
+
 /// `import "L" version "v" digest "d" as a;`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImportDeclaration {
@@ -74,8 +85,11 @@ pub struct LibraryPackage {
     pub library: LibraryName,
     /// Version string.
     pub version: String,
-    /// Its `package_id`.
+    /// Its claimed `package_id`.
     pub package_id: PackageId,
+    /// The RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity
+    /// preimage, from which `package_id` is recomputed.
+    pub identity_preimage: Box<[u8]>,
     /// Imports in declaration order.
     pub imports: Vec<ImportDeclaration>,
     /// Exported declarations.
@@ -103,14 +117,69 @@ pub struct Selection {
 /// A dependency path of library identities, importer first.
 pub type ImportPath = Vec<LibraryName>;
 
+/// The closed FR-272 cause of a library or name refusal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum LibraryCause {
+    /// A supplied library has the imported `package_id` but another version.
+    RevisionMismatch,
+    /// No supplied library of the imported identity has the imported
+    /// `package_id`.
+    ByteDigestMismatch,
+    /// No library of the imported identity is supplied.
+    MissingSelection,
+    /// A name has no declaration in scope.
+    MissingName,
+    /// Two imports bind one qualifier.
+    AmbiguousName,
+    /// Two dependency paths reach one library with different selections.
+    ConflictingDefinition,
+    /// The import graph has a cycle.
+    DefinitionCycle,
+    /// A member value is invalid at its member path.
+    InvalidValue,
+}
+
+impl LibraryCause {
+    /// The cause tag.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RevisionMismatch => "revision-mismatch",
+            Self::ByteDigestMismatch => "byte-digest-mismatch",
+            Self::MissingSelection => "missing-selection",
+            Self::MissingName => "missing-name",
+            Self::AmbiguousName => "ambiguous-name",
+            Self::ConflictingDefinition => "conflicting-definition",
+            Self::DefinitionCycle => "definition-cycle",
+            Self::InvalidValue => "invalid-value",
+        }
+    }
+}
+
+/// How a supplied library differs from its import.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum StaleCause {
+    /// The `package_id` matches and the version differs.
+    RevisionMismatch,
+    /// The `package_id` differs.
+    ByteDigestMismatch,
+}
+
+/// The member path of a refused `package_id`.
+pub const PACKAGE_ID_PATH: &str = "/package_id";
+
 /// Why a package's import closure is refused.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum LibraryRefusal {
-    /// An import has no `as` qualifier.
-    #[error("import without a qualifier")]
-    MissingQualifier {
-        /// Importer path, then the imported library.
-        path: ImportPath,
+    /// A package's `package_id` is not the digest of its identity preimage,
+    /// refused at [`PACKAGE_ID_PATH`] before resolution.
+    #[error("package_id differs from its identity preimage digest")]
+    PackageIdMismatch {
+        /// The package's identity.
+        library: LibraryName,
+        /// Its claimed `package_id`.
+        claimed: PackageId,
+        /// The recomputed `package_id`.
+        recomputed: PackageId,
     },
     /// An `as` qualifier is not an identifier.
     #[error("invalid import qualifier")]
@@ -130,7 +199,7 @@ pub enum LibraryRefusal {
     /// The import graph has a cycle.
     #[error("import cycle")]
     ImportCycle {
-        /// The cycle, first and last equal.
+        /// The cycle's dependency edges, first and last equal.
         cycle: ImportPath,
     },
     /// A supplied library's identity, version or `package_id` differs from
@@ -141,6 +210,8 @@ pub enum LibraryRefusal {
         path: ImportPath,
         /// The import.
         import: ImportDeclaration,
+        /// Which selection differs.
+        cause: StaleCause,
     },
     /// No library with the imported identity or `package_id` is supplied.
     #[error("missing import")]
@@ -148,7 +219,8 @@ pub enum LibraryRefusal {
         /// Importer path, then the imported library.
         path: ImportPath,
     },
-    /// Two different supplied packages claim one `package_id`.
+    /// Two different supplied packages share one identity preimage, refused
+    /// at [`PACKAGE_ID_PATH`].
     #[error("duplicate package_id")]
     DuplicatePackageId(PackageId),
 }
@@ -159,12 +231,58 @@ impl LibraryRefusal {
         match self {
             Self::StaleDependency { .. } => Code::StaleDependency,
             Self::MissingImport { .. } => Code::MissingImport,
-            Self::MissingQualifier { .. }
+            Self::PackageIdMismatch { .. }
+            | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
-            | Self::ImportCycle { .. }
-            | Self::DuplicatePackageId(_) => Code::InvalidPackage,
+            | Self::ImportCycle { .. } => Code::InvalidPackage,
         }
+    }
+
+    /// The FR-272 cause.
+    pub fn cause(&self) -> LibraryCause {
+        match self {
+            Self::PackageIdMismatch { .. }
+            | Self::DuplicatePackageId(_)
+            | Self::InvalidQualifier { .. } => LibraryCause::InvalidValue,
+            Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
+            Self::ImportCycle { .. } => LibraryCause::DefinitionCycle,
+            Self::StaleDependency {
+                cause: StaleCause::RevisionMismatch,
+                ..
+            } => LibraryCause::RevisionMismatch,
+            Self::StaleDependency {
+                cause: StaleCause::ByteDigestMismatch,
+                ..
+            } => LibraryCause::ByteDigestMismatch,
+            Self::MissingImport { .. } => LibraryCause::MissingSelection,
+        }
+    }
+
+    /// The refused member path, for a refusal located at one.
+    pub fn member_path(&self) -> Option<&'static str> {
+        match self {
+            Self::PackageIdMismatch { .. } | Self::DuplicatePackageId(_) => Some(PACKAGE_ID_PATH),
+            Self::InvalidQualifier { .. }
+            | Self::ConflictingDefinition { .. }
+            | Self::ImportCycle { .. }
+            | Self::StaleDependency { .. }
+            | Self::MissingImport { .. } => None,
+        }
+    }
+}
+
+/// Recompute `package`'s `package_id` from its identity preimage.
+fn verify_package_id(package: &LibraryPackage) -> Result<(), LibraryRefusal> {
+    let recomputed = PackageId::of_preimage(&package.identity_preimage);
+    if recomputed == package.package_id {
+        Ok(())
+    } else {
+        Err(LibraryRefusal::PackageIdMismatch {
+            library: package.library.clone(),
+            claimed: package.package_id,
+            recomputed,
+        })
     }
 }
 
@@ -183,13 +301,16 @@ struct Pending<'a> {
 }
 
 /// Resolve the transitive import closure of `root` over `supplied` libraries
-/// in declaration order.
+/// in declaration order, after recomputing the root's and every supplied
+/// library's `package_id`.
 pub fn resolve_libraries(
     root: &LibraryPackage,
     supplied: &[LibraryPackage],
 ) -> Result<LibraryLock, LibraryRefusal> {
+    verify_package_id(root)?;
     let mut by_id: BTreeMap<PackageId, &LibraryPackage> = BTreeMap::new();
     for package in supplied {
+        verify_package_id(package)?;
         match by_id.get(&package.package_id) {
             Some(existing) if *existing != package => {
                 return Err(LibraryRefusal::DuplicatePackageId(package.package_id));
@@ -214,12 +335,11 @@ pub fn resolve_libraries(
         top.next = top.next.saturating_add(1);
         let mut path = top.path.clone();
         path.push(import.library.clone());
-        match &import.qualifier {
-            None => return Err(LibraryRefusal::MissingQualifier { path }),
-            Some(qualifier) if !is_qualified_name(std::slice::from_ref(qualifier)) => {
+        // An import without `as` still selects and verifies its library.
+        if let Some(qualifier) = &import.qualifier {
+            if !is_qualified_name(std::slice::from_ref(qualifier)) {
                 return Err(LibraryRefusal::InvalidQualifier { path });
             }
-            Some(_) => {}
         }
         if let Some(start) = top
             .path
@@ -243,17 +363,23 @@ pub fn resolve_libraries(
             package.library == import.library && package.version == import.version
         });
         let Some(package) = found else {
-            let stale = by_id.contains_key(&import.package_id)
-                || supplied
-                    .iter()
-                    .any(|package| package.library == import.library);
-            return Err(if stale {
-                LibraryRefusal::StaleDependency {
-                    path,
-                    import: import.clone(),
-                }
+            let same_id = by_id
+                .get(&import.package_id)
+                .is_some_and(|package| package.library == import.library);
+            let same_identity = supplied
+                .iter()
+                .any(|package| package.library == import.library);
+            let cause = if same_id {
+                StaleCause::RevisionMismatch
+            } else if same_identity || by_id.contains_key(&import.package_id) {
+                StaleCause::ByteDigestMismatch
             } else {
-                LibraryRefusal::MissingImport { path }
+                return Err(LibraryRefusal::MissingImport { path });
+            };
+            return Err(LibraryRefusal::StaleDependency {
+                path,
+                import: import.clone(),
+                cause,
             });
         };
         selected.insert(import.library.clone(), (package.clone(), path.clone()));
@@ -286,7 +412,8 @@ pub enum NameReference {
 /// Why a name use does not resolve.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum NameRefusal {
-    /// No local declaration, import qualifier or export matches.
+    /// No local declaration, import qualifier or export matches. A library
+    /// name is never a qualifier.
     #[error("missing declaration")]
     MissingDeclaration(NameReference),
     /// Two imports bind the qualifier.
@@ -305,6 +432,14 @@ impl NameRefusal {
         match self {
             Self::MissingDeclaration(_) => Code::MissingDeclaration,
             Self::AmbiguousDeclaration { .. } => Code::AmbiguousDeclaration,
+        }
+    }
+
+    /// The FR-272 cause.
+    pub fn cause(&self) -> LibraryCause {
+        match self {
+            Self::MissingDeclaration(_) => LibraryCause::MissingName,
+            Self::AmbiguousDeclaration { .. } => LibraryCause::AmbiguousName,
         }
     }
 }
@@ -388,46 +523,35 @@ impl LibraryLock {
     }
 }
 
-/// Why a migration is refused.
-// SPEC-GAP(119-22): FR-307 requires a migrated library or importer to be a new
-// package with a new `package_id` but names no refusal for one that reuses
-// it. Reuse refuses as `invalid_package`, and no correspondence record is
-// produced beyond the two package identities.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-pub enum MigrationRefusal {
-    /// The successor reuses the migrated `package_id`.
-    #[error("migration reuses the package_id")]
-    PackageIdReused,
-}
-
-impl MigrationRefusal {
-    /// The refusal code.
-    pub fn code(self) -> Code {
-        match self {
-            Self::PackageIdReused => Code::InvalidPackage,
-        }
-    }
-}
-
 /// A checked migration from one package to its successor. Evidence keyed by
 /// either identity keeps its key.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct LibraryMigration {
-    /// The migrated package's identity, unchanged.
-    pub from: (LibraryName, PackageId),
-    /// The successor's identity.
-    pub to: (LibraryName, PackageId),
+pub enum LibraryMigration {
+    /// The successor's identity preimage is unchanged, so it is the identical
+    /// package and identity rather than a migration.
+    Unchanged,
+    /// A new package with a new `package_id`.
+    Migrated {
+        /// The migrated package's identity, unchanged.
+        from: (LibraryName, PackageId),
+        /// The successor's identity.
+        to: (LibraryName, PackageId),
+    },
 }
 
-/// Check that `to` is a new package succeeding `from`.
+/// Check `to` as the successor of `from`, recomputing both `package_id`s. A
+/// successor that reuses its source's `package_id` with a different preimage
+/// is refused at `/package_id`.
 pub fn check_migration(
     from: &LibraryPackage,
     to: &LibraryPackage,
-) -> Result<LibraryMigration, MigrationRefusal> {
+) -> Result<LibraryMigration, LibraryRefusal> {
+    verify_package_id(from)?;
+    verify_package_id(to)?;
     if from.package_id == to.package_id {
-        return Err(MigrationRefusal::PackageIdReused);
+        return Ok(LibraryMigration::Unchanged);
     }
-    Ok(LibraryMigration {
+    Ok(LibraryMigration::Migrated {
         from: (from.library.clone(), from.package_id),
         to: (to.library.clone(), to.package_id),
     })
