@@ -17,7 +17,7 @@ const DEFINITIONS: &str =
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
 /// `4780a9e6119bb86ffb1322fe0a141ef3905b11ef` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 7] = [
+const PINNED_NON_CATALOG: [(&str, &str); 8] = [
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
         "540f24f93960554688b4b5744430aa0ee7754de87666072eb5e9977149583fe2",
@@ -45,6 +45,11 @@ const PINNED_NON_CATALOG: [(&str, &str); 7] = [
     (
         "proposals/checked-package-v2/node-identity-preimage.schema.json",
         "978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501",
+    ),
+    // Byte-identical at QSpec 5aa00f35056c65948de93ad339540974d35c368a.
+    (
+        "spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",
+        "3f30f345a6ca38d84557c7629ecdec83e7fce261699f5e9e081d72a3a1cf9655",
     ),
 ];
 

@@ -6,6 +6,7 @@
 //! so they have no variant here.
 
 use super::accounting::Incomplete;
+use super::ieee::IeeeFlags;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +48,8 @@ impl<T> Outcome<T> {
 pub enum Undefined {
     /// A divisor is (normalized) zero.
     DivisionByZero,
+    /// An IEEE NaN or infinity has no exact value.
+    IeeeNotFinite,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
@@ -69,6 +72,14 @@ pub enum Refusal {
     /// The profile length (scalars, or bytes for `binary-utf8`) is outside the
     /// declared `Text[min,max; profile]` bounds.
     TextLengthOutOfDomain,
+    /// Strict IEEE `exact` found an inexact, overflowing or tiny-and-inexact
+    /// result; only its would-be flags are reported, never rounded bits.
+    IeeeNotExact {
+        /// The flags the rounded result would have raised.
+        would_be: IeeeFlags,
+    },
+    /// A NaN payload does not fit the explicit conversion's target width.
+    IeeeNanPayloadNotRepresentable,
 }
 
 /// Internal early-exit carrier converted into [`Outcome`].
