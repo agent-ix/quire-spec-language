@@ -75,8 +75,12 @@ pub enum Refusal {
     /// The profile length (scalars, or bytes for `binary-utf8`) is outside the
     /// declared `Text[min,max; profile]` bounds.
     TextLengthOutOfDomain,
-    /// An exact conversion result is outside the target integer domain.
+    /// An exact conversion or arithmetic result is outside the target integer
+    /// domain.
     IntegerOutOfDomain,
+    /// An exact rational arithmetic result is outside its `Rational[..]`
+    /// result domain.
+    RationalOutOfDomain,
     /// Strict IEEE `exact` found an inexact, overflowing or tiny-and-inexact
     /// result; only its would-be flags are reported, never rounded bits.
     IeeeNotExact {
@@ -115,6 +119,7 @@ impl Refusal {
             | Self::ModuloOutOfDomain
             | Self::TextLengthOutOfDomain
             | Self::IntegerOutOfDomain
+            | Self::RationalOutOfDomain
             | Self::IeeeNotExact { .. }
             | Self::Cardinality(_)
             | Self::EmptyReduction

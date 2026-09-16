@@ -9,9 +9,9 @@ use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::Pow;
 use quire_spec_language::value::{
-    evaluate_decimal, ChargePoint, Decimal, DecimalOperation, DecimalResult, DecimalType, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
-    RoundingMode, ScalarLimits, Undefined,
+    evaluate_decimal, order_numbers, ChargePoint, Decimal, DecimalOperation, DecimalResult,
+    DecimalType, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter,
+    OrderedOperands, OrderingOperator, Outcome, Refusal, RoundingMode, ScalarLimits, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -640,6 +640,146 @@ fn d19_membership_at_the_largest_scale_never_materializes_the_lift() {
     let decimal_type = declared(0, 10, 4_294_967_295, 4_294_967_295).unwrap();
     assert!(decimal_type.contains(&dec(0, 0)));
     assert!(!decimal_type.contains(&dec(1, 0)));
+}
+
+/// `ScalarLimitsV1` of D20/D21 with the text and unit counters at zero.
+fn ordering_limits(integer_bits: u64, decimal_digits: u64, scale_expansion: u64) -> ScalarLimits {
+    ScalarLimits {
+        integer_bits,
+        decimal_digits,
+        scale_expansion,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 2,
+        work_units: 3,
+        result_units: 1,
+    }
+}
+
+/// Order `left < right` and report the outcome, admitted points and the
+/// consumed `[integer_bits, decimal_digits, scale_expansion,
+/// value_occurrences, work_units, result_units]`.
+fn order_less(
+    left: &Decimal,
+    right: &Decimal,
+    limits: ScalarLimits,
+) -> (Outcome<bool>, Vec<ChargePoint>, [u64; 6]) {
+    let mut meter = Meter::new(limits);
+    let outcome = order_numbers(
+        OrderingOperator::Less,
+        OrderedOperands::Decimals(left, right),
+        &mut meter,
+    );
+    let consumed = [
+        LimitKind::IntegerBits,
+        LimitKind::DecimalDigits,
+        LimitKind::ScaleExpansion,
+        LimitKind::ValueOccurrences,
+        LimitKind::WorkUnits,
+        LimitKind::ResultUnits,
+    ]
+    .map(|kind| meter.consumed(kind));
+    (outcome, meter.admitted_charges().to_vec(), consumed)
+}
+
+const ORDERING: [ChargePoint; 3] = [
+    ChargePoint::OrderingOperands,
+    ChargePoint::OrderingArithmetic,
+    ChargePoint::OrderingResultRetain,
+];
+
+fn bits_denied(limit: u64, next: u64) -> Outcome<bool> {
+    Outcome::Incomplete(Incomplete {
+        limit_kind: LimitKind::IntegerBits,
+        limit,
+        consumed: limit,
+        next_charge: Integer::from(next),
+        charge_point: ChargePoint::OrderingArithmetic,
+    })
+}
+
+#[trace("TC-185", "FR-140-AC-1", "FR-140-AC-6")]
+#[test]
+fn d20_decimal_ordering_charges_the_aligned_coefficients() {
+    let (left, right) = (dec(15, 1), dec(2, 0));
+    assert_eq!(
+        order_less(&left, &right, ordering_limits(5, 2, 1)),
+        (
+            Outcome::Completed(true),
+            ORDERING.to_vec(),
+            [5, 2, 1, 2, 3, 1]
+        )
+    );
+    let (outcome, admitted, consumed) = order_less(&left, &right, ordering_limits(4, 2, 1));
+    assert_eq!(outcome, bits_denied(4, 5));
+    assert_eq!(admitted, [ChargePoint::OrderingOperands]);
+    assert_eq!(consumed, [4, 2, 0, 2, 1, 0]);
+}
+
+#[trace("TC-185", "FR-140-AC-1", "FR-140-AC-6")]
+#[test]
+fn d21_decimal_ordering_measures_the_retained_representation() {
+    let (left, right) = (dec(100, 2), dec(2, 0));
+    assert_eq!(
+        order_less(&left, &right, ordering_limits(8, 3, 2)),
+        (
+            Outcome::Completed(true),
+            ORDERING.to_vec(),
+            [8, 3, 2, 2, 3, 1]
+        )
+    );
+    let (outcome, admitted, consumed) = order_less(&left, &right, ordering_limits(7, 3, 2));
+    assert_eq!(outcome, bits_denied(7, 8));
+    assert_eq!(admitted, [ChargePoint::OrderingOperands]);
+    assert_eq!(consumed, [7, 3, 0, 2, 1, 0]);
+}
+
+/// The ordered identifiers of the vendored charge-point table.
+fn vendored_charge_points() -> Vec<String> {
+    let text = include_str!(
+        "../resources/complete-value/quire-specification/proposals/quire-v1/definitions/value-accounting.md"
+    );
+    let table = text
+        .split("| Operation family | Ordered charge points |")
+        .nth(1)
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    table
+        .lines()
+        .skip(2)
+        .flat_map(|row| {
+            let points = row.rsplit('|').nth(1).unwrap();
+            points
+                .split('`')
+                .skip(1)
+                .step_by(2)
+                .filter(|code| {
+                    code.contains('.')
+                        && code
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c == '.' || c == '-')
+                })
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[trace("TC-185", "FR-140-AC-6")]
+#[test]
+fn every_vendored_charge_point_is_named_in_table_order() {
+    let named: Vec<String> = ChargePoint::ALL
+        .iter()
+        .map(|point| point.as_str().to_owned())
+        .collect();
+    assert_eq!(named, vendored_charge_points());
+    for point in ChargePoint::ALL {
+        assert_eq!(ChargePoint::from_code(point.as_str()), Some(point));
+    }
 }
 
 #[trace("TC-185", "FR-140-AC-1")]

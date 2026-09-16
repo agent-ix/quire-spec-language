@@ -1053,12 +1053,12 @@ fn expand_one((coefficient, shift): Shifted<'_>) -> Integer {
 }
 
 /// `bits(c × 10^shift)`, derived without allocating the power of ten.
-fn shifted_bits(value: &Integer, shift: u64) -> Integer {
+pub(crate) fn shifted_bits(value: &Integer, shift: u64) -> Integer {
     Integer::power_product_bits(value, &Integer::from(10_i64), &Integer::from(shift))
 }
 
 /// `digits(c × 10^shift)`, derived without allocating the power of ten.
-fn shifted_digits(value: &Integer, shift: u64) -> u64 {
+pub(crate) fn shifted_digits(value: &Integer, shift: u64) -> u64 {
     if value.is_zero() {
         1
     } else {

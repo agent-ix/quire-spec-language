@@ -45,6 +45,7 @@ mod ieee;
 mod integer;
 mod library;
 mod node;
+mod numeric;
 mod outcome;
 mod quantity;
 mod rational;
@@ -112,6 +113,10 @@ pub use library::{
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
     SemanticGraphCause, NODE_KEY_DOMAIN,
+};
+pub use numeric::{
+    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
+    BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
 pub use outcome::{Outcome, Refusal, Undefined};
 pub use quantity::{

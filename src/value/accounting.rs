@@ -199,19 +199,57 @@ pub enum ChargePoint {
     IeeeRound,
     /// `ieee.result-retain`.
     IeeeResultRetain,
+    /// `equality.plan-form`.
+    EqualityPlanForm,
     /// `equality.plan`.
     EqualityPlan,
     /// `equality.pair`.
     EqualityPair,
     /// `equality.result-retain`.
     EqualityResultRetain,
-    /// `function.call`: one checked function call (see [`Meter::charge_call`]).
+    /// `function.call`: one checked function call.
     FunctionCall,
+    /// `collection.element`.
+    CollectionElement,
+    /// `collection.visit`.
+    CollectionVisit,
+    /// `collection.member-walk`.
+    CollectionMemberWalk,
+    /// `collection.member-test`.
+    CollectionMemberTest,
+    /// `collection.bound`.
+    CollectionBound,
+    /// `collection.result-retain`.
+    CollectionResultRetain,
+    /// `composite.result-retain`.
+    CompositeResultRetain,
+    /// `integer-arithmetic.operands`.
+    IntegerArithmeticOperands,
+    /// `integer-arithmetic.arithmetic`.
+    IntegerArithmeticArithmetic,
+    /// `integer-arithmetic.result-retain`.
+    IntegerArithmeticResultRetain,
+    /// `rational-arithmetic.operands`.
+    RationalArithmeticOperands,
+    /// `rational-arithmetic.arithmetic`.
+    RationalArithmeticArithmetic,
+    /// `rational-arithmetic.normalize`.
+    RationalArithmeticNormalize,
+    /// `rational-arithmetic.result-retain`.
+    RationalArithmeticResultRetain,
+    /// `ordering.operands`.
+    OrderingOperands,
+    /// `ordering.arithmetic`.
+    OrderingArithmetic,
+    /// `ordering.result-retain`.
+    OrderingResultRetain,
+    /// `boolean.result-retain`.
+    BooleanResultRetain,
 }
 
 impl ChargePoint {
     /// Every named point, grouped by family in normative order.
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 52] = [
         Self::DecimalOperands,
         Self::DecimalScaleExpansion,
         Self::DecimalArithmetic,
@@ -241,9 +279,29 @@ impl ChargePoint {
         Self::IeeeExactIntermediate,
         Self::IeeeRound,
         Self::IeeeResultRetain,
+        Self::EqualityPlanForm,
         Self::EqualityPlan,
         Self::EqualityPair,
         Self::EqualityResultRetain,
+        Self::FunctionCall,
+        Self::CollectionElement,
+        Self::CollectionVisit,
+        Self::CollectionMemberWalk,
+        Self::CollectionMemberTest,
+        Self::CollectionBound,
+        Self::CollectionResultRetain,
+        Self::CompositeResultRetain,
+        Self::IntegerArithmeticOperands,
+        Self::IntegerArithmeticArithmetic,
+        Self::IntegerArithmeticResultRetain,
+        Self::RationalArithmeticOperands,
+        Self::RationalArithmeticArithmetic,
+        Self::RationalArithmeticNormalize,
+        Self::RationalArithmeticResultRetain,
+        Self::OrderingOperands,
+        Self::OrderingArithmetic,
+        Self::OrderingResultRetain,
+        Self::BooleanResultRetain,
     ];
 
     /// Normative identifier.
@@ -278,10 +336,29 @@ impl ChargePoint {
             Self::IeeeExactIntermediate => "ieee.exact-intermediate",
             Self::IeeeRound => "ieee.round",
             Self::IeeeResultRetain => "ieee.result-retain",
+            Self::EqualityPlanForm => "equality.plan-form",
             Self::EqualityPlan => "equality.plan",
             Self::EqualityPair => "equality.pair",
             Self::EqualityResultRetain => "equality.result-retain",
             Self::FunctionCall => "function.call",
+            Self::CollectionElement => "collection.element",
+            Self::CollectionVisit => "collection.visit",
+            Self::CollectionMemberWalk => "collection.member-walk",
+            Self::CollectionMemberTest => "collection.member-test",
+            Self::CollectionBound => "collection.bound",
+            Self::CollectionResultRetain => "collection.result-retain",
+            Self::CompositeResultRetain => "composite.result-retain",
+            Self::IntegerArithmeticOperands => "integer-arithmetic.operands",
+            Self::IntegerArithmeticArithmetic => "integer-arithmetic.arithmetic",
+            Self::IntegerArithmeticResultRetain => "integer-arithmetic.result-retain",
+            Self::RationalArithmeticOperands => "rational-arithmetic.operands",
+            Self::RationalArithmeticArithmetic => "rational-arithmetic.arithmetic",
+            Self::RationalArithmeticNormalize => "rational-arithmetic.normalize",
+            Self::RationalArithmeticResultRetain => "rational-arithmetic.result-retain",
+            Self::OrderingOperands => "ordering.operands",
+            Self::OrderingArithmetic => "ordering.arithmetic",
+            Self::OrderingResultRetain => "ordering.result-retain",
+            Self::BooleanResultRetain => "boolean.result-retain",
         }
     }
 
@@ -325,8 +402,8 @@ pub struct InjectedDenial {
 pub(crate) struct Charge {
     point: ChargePoint,
     sizes: Vec<(LimitKind, Integer)>,
-    work_units: u64,
-    result_units: u64,
+    work_units: Integer,
+    result_units: Integer,
 }
 
 impl Charge {
@@ -334,8 +411,8 @@ impl Charge {
         Self {
             point,
             sizes: Vec::new(),
-            work_units: 1,
-            result_units: 0,
+            work_units: Integer::one(),
+            result_units: Integer::zero(),
         }
     }
 
@@ -349,7 +426,12 @@ impl Charge {
         self
     }
 
-    pub(crate) fn results(mut self, amount: u64) -> Self {
+    pub(crate) fn results(self, amount: u64) -> Self {
+        self.exact_results(Integer::from(amount))
+    }
+
+    /// A `result_units` addition that may exceed `u64::MAX`.
+    pub(crate) fn exact_results(mut self, amount: Integer) -> Self {
         self.result_units = amount;
         self
     }
@@ -440,7 +522,7 @@ impl Meter {
     /// `ScalarLimitsV1` field order.
     pub(crate) fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
-        self.check_injected(point, Integer::from(charge.work_units))?;
+        self.check_injected(point, charge.work_units.clone())?;
         // Every semantic-size counter precedes `work_units` and `result_units`
         // in field order.
         charge.sizes.sort_by_key(|(kind, _)| kind.index());
@@ -451,11 +533,12 @@ impl Meter {
                 _ => return Err(self.incomplete(kind, amount, point)),
             }
         }
-        let cumulative = |kind: LimitKind, amount: u64| {
-            self.consumed(kind)
-                .checked_add(amount)
+        let cumulative = |kind: LimitKind, amount: Integer| {
+            amount
+                .to_u64()
+                .and_then(|addition| self.consumed(kind).checked_add(addition))
                 .filter(|total| *total <= kind.limit(&self.limits))
-                .ok_or_else(|| self.incomplete(kind, Integer::from(amount), point))
+                .ok_or_else(|| self.incomplete(kind, amount, point))
         };
         let work = cumulative(LimitKind::WorkUnits, charge.work_units)?;
         let results = cumulative(LimitKind::ResultUnits, charge.result_units)?;
@@ -469,13 +552,8 @@ impl Meter {
         Ok(())
     }
 
-    /// One checked function call: one work unit.
-    // SPEC-GAP(119-18): the vendored `quire.value.accounting/v1` names no
-    // function-call charge point; QSpec PR #74 (unmerged) adds `function.call`
-    // as one `work_units` unit before binding a call's evaluated arguments.
-    // That row is applied here, but the point stays out of `ChargePoint::ALL`
-    // and is never resolved from a code until the vendored table carries it.
-    // This is the only place that decides the fuel charge.
+    /// One checked function call: one work unit, after the arguments are
+    /// evaluated and before they are bound.
     pub(crate) fn charge_call(&mut self) -> Result<(), Incomplete> {
         self.charge(Charge::new(ChargePoint::FunctionCall))
     }
