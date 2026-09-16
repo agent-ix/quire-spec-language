@@ -72,7 +72,8 @@ pub enum PreimageDefect {
         /// The node's index in `identity_projection`.
         index: usize,
     },
-    /// An exported name is declared by no projection node.
+    /// An exported name is declared by no type, constant or function node of
+    /// the projection.
     UndeclaredExport(String),
 }
 
@@ -90,7 +91,11 @@ pub enum NodeDefect {
     NodeId,
     /// `schema_version` is not `quire.checked-semantic-graph/v2`.
     SchemaVersion,
-    /// A nominal `qualified_declaration` is not a non-empty identifier array.
+    /// `node_tag` is not a V2 semantic graph node tag.
+    NodeTag,
+    /// A nominal `qualified_declaration` is not a non-empty identifier array,
+    /// a declaration `binding` name is not a `::`-separated qualified
+    /// identifier, or the two spell different names.
     Declaration,
 }
 
@@ -138,10 +143,44 @@ fn node_key(value: &Value) -> Option<NodeKey> {
     NodeKey::from_hex(object.get("digest")?.as_str()?)
 }
 
-fn declaration(node: &Map<String, Value>) -> Result<Option<String>, NodeDefect> {
-    let Some(nominal) = node.get("nominal_identity_preimage") else {
-        return Ok(None);
-    };
+/// The node tags of the V2 semantic graph.
+const NODE_TAGS: [&str; 13] = [
+    "scalar_type",
+    "composite_type",
+    "bounded_domain",
+    "value",
+    "expression",
+    "function",
+    "model",
+    "relation",
+    "state",
+    "temporal",
+    "protocol",
+    "claim",
+    "correspondence",
+];
+
+/// The node tags whose nodes are exportable declarations: types, constants
+/// and functions.
+const DECLARATION_TAGS: [&str; 5] = [
+    "scalar_type",
+    "composite_type",
+    "bounded_domain",
+    "value",
+    "function",
+];
+
+fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
+    if is_qualified_name(&segments) {
+        Ok(segments.join("::"))
+    } else {
+        Err(NodeDefect::Declaration)
+    }
+}
+
+/// The `qualified_declaration` of a nominal identity preimage, when the
+/// preimage form carries one (an enum member does not).
+fn nominal_declaration(nominal: &Value) -> Result<Option<String>, NodeDefect> {
     let Some(segments) = nominal
         .as_object()
         .ok_or(NodeDefect::Declaration)?
@@ -149,17 +188,57 @@ fn declaration(node: &Map<String, Value>) -> Result<Option<String>, NodeDefect> 
     else {
         return Ok(None);
     };
-    let segments: Vec<String> = segments
+    let segments = segments
         .as_array()
         .ok_or(NodeDefect::Declaration)?
         .iter()
         .map(|segment| segment.as_str().map(str::to_owned))
-        .collect::<Option<_>>()
+        .collect::<Option<Vec<_>>>()
         .ok_or(NodeDefect::Declaration)?;
-    if !is_qualified_name(&segments) {
-        return Err(NodeDefect::Declaration);
+    qualified(segments).map(Some)
+}
+
+/// The declared name of a type, constant or function node whose body is a
+/// `binding` term, spelled with `::`.
+fn bound_declaration(tag: &str, body: &Value) -> Result<Option<String>, NodeDefect> {
+    let Some(body) = body.as_object() else {
+        return Ok(None);
+    };
+    if body.get("term").and_then(Value::as_str) != Some("binding")
+        || !DECLARATION_TAGS.contains(&tag)
+    {
+        return Ok(None);
     }
-    Ok(Some(segments.join("::")))
+    let name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or(NodeDefect::Declaration)?;
+    qualified(name.split("::").map(str::to_owned).collect()).map(Some)
+}
+
+/// The qualified declaration a projection node carries: the nominal
+/// preimage's `qualified_declaration` for enum, dimension and unit nodes, or
+/// the `binding` body name for every other type, constant and function node.
+/// A node carrying both must spell one name.
+fn declaration(node: &Map<String, Value>) -> Result<Option<String>, NodeDefect> {
+    let tag = node
+        .get("node_tag")
+        .and_then(Value::as_str)
+        .filter(|tag| NODE_TAGS.contains(tag))
+        .ok_or(NodeDefect::NodeTag)?;
+    let nominal = node
+        .get("nominal_identity_preimage")
+        .map(nominal_declaration)
+        .transpose()?
+        .flatten();
+    let bound = match node.get("body") {
+        Some(body) => bound_declaration(tag, body)?,
+        None => None,
+    };
+    match (nominal, bound) {
+        (Some(nominal), Some(bound)) if nominal != bound => Err(NodeDefect::Declaration),
+        (nominal, bound) => Ok(nominal.or(bound)),
+    }
 }
 
 fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect> {

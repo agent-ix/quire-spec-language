@@ -9,9 +9,11 @@
 //! [`LibraryPackage`] carries those bytes as produced by the CheckedPackage V2
 //! writer. Resolution recomputes every `package_id` from them and validates the
 //! preimage structurally before any import is followed. Each export node key is
-//! the `node_id` of the `identity_projection` node whose nominal
-//! `qualified_declaration` spells the exported name; a package's local
-//! declarations are exactly its exports.
+//! the `node_id` of the `identity_projection` type, constant or function node
+//! that declares the exported name: through its nominal
+//! `qualified_declaration` for enum, dimension and unit nodes, or through its
+//! `binding` body name otherwise. An export no such node declares is refused;
+//! a package's local declarations are exactly its exports.
 
 use std::collections::BTreeMap;
 
