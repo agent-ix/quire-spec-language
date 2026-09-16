@@ -4,8 +4,7 @@
 //!
 //! Each fixture package's identity preimage is a structurally valid
 //! `quire.checked-package-id/v2` JCS object whose `identity_projection` holds
-//! one nominal node per export (L09 adds function, type and constant nodes
-//! declared by `binding` bodies), and its `package_id` is the SHA-256 of those
+//! one nominal node per export, and its `package_id` is the SHA-256 of those
 //! bytes. Export node keys are derived from the projection nodes.
 
 use std::collections::BTreeMap;
@@ -553,7 +552,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     let mut spaced = jcs(&valid).into_vec();
     spaced.insert(1, b' ');
 
-    let cases: [MalformedCase; 9] = [
+    let cases: [MalformedCase; 8] = [
         (jcs(&wrong_version), &["R"], PreimageDefect::Version),
         (
             jcs(&missing_member),
@@ -587,11 +586,6 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
             spaced.into_boxed_slice(),
             &["R"],
             PreimageDefect::NonCanonical,
-        ),
-        (
-            jcs(&valid),
-            &["S"],
-            PreimageDefect::UndeclaredExport("S".to_owned()),
         ),
     ];
     let importer = over_l("P", "1", id("L@1"));
@@ -672,8 +666,8 @@ fn l01_export_node_keys_derive_from_a_checked_package_v2_identity_projection() {
 }
 
 /// A projection node with digest `hex(label)` of `node_tag`/`semantic_form`
-/// whose body binds `name`.
-fn bound_node(label: &str, tag: &str, form: &str, name: &str) -> Value {
+/// with no nominal identity preimage, whose body binds `name`.
+fn unnamed_node(label: &str, tag: &str, form: &str, name: &str) -> Value {
     let reference = json!({"digest": hex(label), "domain": "quire.checked-semantic-node/v1"});
     json!({
         "body": {
@@ -701,115 +695,78 @@ fn ascending(mut nodes: Vec<Value>) -> Vec<Value> {
 
 #[trace("TC-227", "FR-307-AC-1")]
 #[test]
-fn l09_functions_types_and_constants_export_from_their_projection_nodes() {
+fn l09_only_a_nominal_qualified_declaration_names_an_export() {
     let nodes = ascending(vec![
         projection_node("K::Status", Some("Status")),
-        bound_node("K::Pair", "composite_type", "record", "Pair"),
-        bound_node("K::Small", "bounded_domain", "integer_range", "Small"),
-        bound_node("K::limit", "value", "literal", "limit"),
-        bound_node("K::twice", "function", "pure_function", "twice"),
-        bound_node("K::local", "expression", "let", "local"),
+        unnamed_node("K::Pair", "composite_type", "record", "Pair"),
+        unnamed_node("K::limit", "value", "literal", "limit"),
+        unnamed_node("K::twice", "function", "pure_function", "twice"),
     ]);
     let bytes = jcs(&preimage_value(nodes.clone()));
-    let exports = ["Status", "Pair", "Small", "limit", "twice"];
-    let library = LibraryPackage {
-        library: name("K"),
-        version: "1".to_owned(),
-        package_id: PackageId::of_preimage(&bytes),
-        identity_preimage: bytes.clone(),
-        imports: Vec::new(),
-        exports: exports.iter().map(|export| (*export).to_owned()).collect(),
-    };
-    let root = package(
-        "P",
-        "1",
-        "P@1",
-        vec![import("K", "1", library.package_id, Some("k"))],
-    );
-    let lock = resolve_libraries(&root, std::slice::from_ref(&library)).unwrap();
-    for export in exports {
-        assert_eq!(
-            lock.resolve_name(&name("P"), &qualified("k", export)),
-            Ok(ExportIdentity {
-                package: library.package_id,
-                node: node(&format!("K::{export}")),
-            }),
-            "{export}"
-        );
-    }
-
-    let refuse = |bytes: Box<[u8]>, export: &str, defect: PreimageDefect| {
-        let supplied = LibraryPackage {
+    let supply = |bytes: Box<[u8]>, export: &str| {
+        let library = LibraryPackage {
+            library: name("K"),
+            version: "1".to_owned(),
             package_id: PackageId::of_preimage(&bytes),
             identity_preimage: bytes,
+            imports: Vec::new(),
             exports: vec![export.to_owned()],
-            ..library.clone()
         };
-        let importer = package(
+        let root = package(
             "P",
             "1",
             "P@1",
-            vec![import("K", "1", supplied.package_id, Some("k"))],
+            vec![import("K", "1", library.package_id, Some("k"))],
         );
+        (root, library)
+    };
+
+    let (root, library) = supply(bytes.clone(), "Status");
+    let lock = resolve_libraries(&root, std::slice::from_ref(&library)).unwrap();
+    assert_eq!(
+        lock.resolve_name(&name("P"), &qualified("k", "Status")),
+        Ok(ExportIdentity {
+            package: library.package_id,
+            node: node("K::Status"),
+        })
+    );
+
+    // A type, constant or function node without a nominal
+    // `qualified_declaration` has no explicit name, and neither has a name
+    // no node carries: none is guessed from a binding body.
+    for export in ["Pair", "limit", "twice", "absent"] {
+        let (root, library) = supply(bytes.clone(), export);
+        let expected = LibraryRefusal::UnsupportedExport {
+            library: name("K"),
+            export: export.to_owned(),
+        };
+        assert_eq!(expected.member_path(), None);
         assert_library_refusal(
-            resolve_libraries(&importer, &[supplied]),
-            &LibraryRefusal::InvalidPreimage {
-                library: name("K"),
-                defect,
-            },
-            Code::InvalidPackage,
-            LibraryCause::InvalidValue,
+            resolve_libraries(&root, &[library]),
+            &expected,
+            Code::UnsupportedConstruct,
+            LibraryCause::DeclarationForm,
         );
-    };
-    // A name no projection node declares, and a name bound only by an
-    // expression node, are both undeclared exports.
-    for export in ["absent", "local"] {
-        refuse(
-            bytes.clone(),
-            export,
-            PreimageDefect::UndeclaredExport(export.to_owned()),
-        );
+        assert_eq!(LibraryCause::DeclarationForm.as_str(), "declaration-form");
     }
-    let index_of = |label: &str| {
-        nodes
-            .iter()
-            .position(|node| node["node_id"]["digest"] == json!(hex(label)))
-            .unwrap()
-    };
-    let malformed = |label: &str, edit: &dyn Fn(&mut Value)| {
-        let mut edited = nodes.clone();
-        edit(&mut edited[index_of(label)]);
-        jcs(&preimage_value(edited))
-    };
-    let node_defect = |label: &str, defect: NodeDefect| PreimageDefect::Node {
-        index: index_of(label),
-        defect,
-    };
-    refuse(
-        malformed("K::twice", &|node| {
-            node["body"]["name"] = json!("not a name")
-        }),
-        "twice",
-        node_defect("K::twice", NodeDefect::Declaration),
-    );
-    refuse(
-        malformed("K::Status", &|node| {
-            node["body"] = json!({"name": "Other", "term": "binding", "value": {"members": [], "term": "aggregate"}});
-        }),
-        "Status",
-        node_defect("K::Status", NodeDefect::Declaration),
-    );
-    refuse(
-        malformed("K::limit", &|node| node["node_tag"] = json!("constant")),
-        "limit",
-        node_defect("K::limit", NodeDefect::NodeTag),
-    );
-    let mut duplicate = nodes.clone();
-    duplicate[index_of("K::limit")]["body"]["name"] = json!("twice");
-    let later = index_of("K::limit").max(index_of("K::twice"));
-    refuse(
-        jcs(&preimage_value(duplicate)),
-        "twice",
-        PreimageDefect::DuplicateDeclaration { index: later },
+
+    let index = nodes
+        .iter()
+        .position(|node| node["node_id"]["digest"] == json!(hex("K::limit")))
+        .unwrap();
+    let mut unknown_tag = nodes.clone();
+    unknown_tag[index]["node_tag"] = json!("constant");
+    let (root, library) = supply(jcs(&preimage_value(unknown_tag)), "Status");
+    assert_library_refusal(
+        resolve_libraries(&root, &[library]),
+        &LibraryRefusal::InvalidPreimage {
+            library: name("K"),
+            defect: PreimageDefect::Node {
+                index,
+                defect: NodeDefect::NodeTag,
+            },
+        },
+        Code::InvalidPackage,
+        LibraryCause::InvalidValue,
     );
 }

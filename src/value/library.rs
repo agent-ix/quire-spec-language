@@ -9,18 +9,18 @@
 //! [`LibraryPackage`] carries those bytes as produced by the CheckedPackage V2
 //! writer. Resolution recomputes every `package_id` from them and validates the
 //! preimage structurally before any import is followed. Each export node key is
-//! the `node_id` of the `identity_projection` type, constant or function node
-//! that declares the exported name: through its nominal
-//! `qualified_declaration` for enum, dimension and unit nodes, or through its
-//! `binding` body name otherwise. An export no such node declares is refused;
-//! a package's local declarations are exactly its exports.
+//! the `node_id` of the `identity_projection` node whose nominal
+//! `qualified_declaration` spells the exported name. QSpec 7d7943a gives no
+//! other node an explicit declared name, so an export no nominal declaration
+//! spells is `unsupported_construct` with cause `declaration-form`, never a
+//! guessed node. A package's local declarations are exactly its exports.
 
 use std::collections::BTreeMap;
 
 use sha2::{Digest, Sha256};
 
 use super::node::{is_qualified_name, NodeKey};
-use super::package_identity::{project_exports, PreimageDefect, ProjectedDeclarations};
+use super::package_identity::{project_declarations, PreimageDefect, ProjectedDeclarations};
 use crate::diagnostic::Code;
 
 /// A qualified library identity.
@@ -133,6 +133,8 @@ pub enum LibraryCause {
     DefinitionCycle,
     /// A member value is invalid at its member path.
     InvalidValue,
+    /// A declaration form the selected profile does not support.
+    DeclarationForm,
 }
 
 impl LibraryCause {
@@ -147,6 +149,7 @@ impl LibraryCause {
             Self::ConflictingDefinition => "conflicting-definition",
             Self::DefinitionCycle => "definition-cycle",
             Self::InvalidValue => "invalid-value",
+            Self::DeclarationForm => "declaration-form",
         }
     }
 }
@@ -179,15 +182,24 @@ pub enum LibraryRefusal {
         /// The recomputed `package_id`.
         recomputed: PackageId,
     },
-    /// A package's identity preimage is structurally malformed or declares
-    /// none of an export, refused at [`IDENTITY_PREIMAGE_PATH`] before
-    /// resolution.
+    /// A package's identity preimage is structurally malformed, refused at
+    /// [`IDENTITY_PREIMAGE_PATH`] before resolution.
     #[error("malformed identity preimage")]
     InvalidPreimage {
         /// The package's identity.
         library: LibraryName,
         /// What is malformed.
         defect: PreimageDefect,
+    },
+    /// An export is not spelled by a nominal `qualified_declaration` in the
+    /// package's identity projection, so no explicit declaration names its
+    /// node.
+    #[error("unsupported export declaration form")]
+    UnsupportedExport {
+        /// The package's identity.
+        library: LibraryName,
+        /// The exported name.
+        export: String,
     },
     /// An `as` qualifier is not an identifier.
     #[error("invalid import qualifier")]
@@ -245,6 +257,7 @@ impl LibraryRefusal {
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. } => Code::InvalidPackage,
+            Self::UnsupportedExport { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -255,6 +268,7 @@ impl LibraryRefusal {
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. } => LibraryCause::InvalidValue,
+            Self::UnsupportedExport { .. } => LibraryCause::DeclarationForm,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
             Self::ImportCycle { .. } => LibraryCause::DefinitionCycle,
             Self::StaleDependency {
@@ -275,6 +289,7 @@ impl LibraryRefusal {
             Self::PackageIdMismatch { .. } | Self::DuplicatePackageId(_) => Some(PACKAGE_ID_PATH),
             Self::InvalidPreimage { .. } => Some(IDENTITY_PREIMAGE_PATH),
             Self::InvalidQualifier { .. }
+            | Self::UnsupportedExport { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. }
             | Self::StaleDependency { .. }
@@ -294,12 +309,16 @@ fn verify_package(package: &LibraryPackage) -> Result<ProjectedDeclarations, Lib
             recomputed,
         });
     }
-    project_exports(&package.identity_preimage, &package.exports).map_err(|defect| {
-        LibraryRefusal::InvalidPreimage {
+    project_declarations(&package.identity_preimage)
+        .map_err(|defect| LibraryRefusal::InvalidPreimage {
             library: package.library.clone(),
             defect,
-        }
-    })
+        })?
+        .select(&package.exports)
+        .map_err(|export| LibraryRefusal::UnsupportedExport {
+            library: package.library.clone(),
+            export: export.to_owned(),
+        })
 }
 
 /// One selected package with its derived export node keys and the first

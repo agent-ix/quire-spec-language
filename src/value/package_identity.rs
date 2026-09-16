@@ -72,9 +72,6 @@ pub enum PreimageDefect {
         /// The node's index in `identity_projection`.
         index: usize,
     },
-    /// An exported name is declared by no type, constant or function node of
-    /// the projection.
-    UndeclaredExport(String),
 }
 
 /// Why one projection node is malformed.
@@ -93,13 +90,11 @@ pub enum NodeDefect {
     SchemaVersion,
     /// `node_tag` is not a V2 semantic graph node tag.
     NodeTag,
-    /// A nominal `qualified_declaration` is not a non-empty identifier array,
-    /// a declaration `binding` name is not a `::`-separated qualified
-    /// identifier, or the two spell different names.
+    /// A nominal `qualified_declaration` is not a non-empty identifier array.
     Declaration,
 }
 
-/// The validated export node keys of one identity preimage, by qualified
+/// The validated node keys of one identity preimage, by nominal qualified
 /// declaration spelled with `::`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProjectedDeclarations(BTreeMap<String, NodeKey>);
@@ -108,6 +103,20 @@ impl ProjectedDeclarations {
     /// The node key declaring `name`.
     pub(crate) fn node(&self, name: &str) -> Option<NodeKey> {
         self.0.get(name).copied()
+    }
+
+    /// The declarations of `exports` only, or the first export no nominal
+    /// declaration spells.
+    pub(crate) fn select<'a>(&self, exports: &'a [String]) -> Result<Self, &'a str> {
+        exports
+            .iter()
+            .map(|name| {
+                self.node(name)
+                    .map(|key| (name.clone(), key))
+                    .ok_or(name.as_str())
+            })
+            .collect::<Result<_, _>>()
+            .map(Self)
     }
 }
 
@@ -160,16 +169,6 @@ const NODE_TAGS: [&str; 13] = [
     "correspondence",
 ];
 
-/// The node tags whose nodes are exportable declarations: types, constants
-/// and functions.
-const DECLARATION_TAGS: [&str; 5] = [
-    "scalar_type",
-    "composite_type",
-    "bounded_domain",
-    "value",
-    "function",
-];
-
 fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
     if is_qualified_name(&segments) {
         Ok(segments.join("::"))
@@ -198,47 +197,19 @@ fn nominal_declaration(nominal: &Value) -> Result<Option<String>, NodeDefect> {
     qualified(segments).map(Some)
 }
 
-/// The declared name of a type, constant or function node whose body is a
-/// `binding` term, spelled with `::`.
-fn bound_declaration(tag: &str, body: &Value) -> Result<Option<String>, NodeDefect> {
-    let Some(body) = body.as_object() else {
-        return Ok(None);
-    };
-    if body.get("term").and_then(Value::as_str) != Some("binding")
-        || !DECLARATION_TAGS.contains(&tag)
-    {
-        return Ok(None);
-    }
-    let name = body
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or(NodeDefect::Declaration)?;
-    qualified(name.split("::").map(str::to_owned).collect()).map(Some)
-}
-
-/// The qualified declaration a projection node carries: the nominal
-/// preimage's `qualified_declaration` for enum, dimension and unit nodes, or
-/// the `binding` body name for every other type, constant and function node.
-/// A node carrying both must spell one name.
+/// The nominal `qualified_declaration` a projection node carries. Complete V1
+/// at this pin names no other node, so only enum, dimension and unit nodes
+/// declare an exportable name.
 fn declaration(node: &Map<String, Value>) -> Result<Option<String>, NodeDefect> {
-    let tag = node
-        .get("node_tag")
+    node.get("node_tag")
         .and_then(Value::as_str)
         .filter(|tag| NODE_TAGS.contains(tag))
         .ok_or(NodeDefect::NodeTag)?;
-    let nominal = node
+    Ok(node
         .get("nominal_identity_preimage")
         .map(nominal_declaration)
         .transpose()?
-        .flatten();
-    let bound = match node.get("body") {
-        Some(body) => bound_declaration(tag, body)?,
-        None => None,
-    };
-    match (nominal, bound) {
-        (Some(nominal), Some(bound)) if nominal != bound => Err(NodeDefect::Declaration),
-        (nominal, bound) => Ok(nominal.or(bound)),
-    }
+        .flatten())
 }
 
 fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect> {
@@ -258,11 +229,8 @@ fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect
 }
 
 /// Validate `bytes` as an identity preimage and derive the node key of each
-/// name in `exports` from its `identity_projection`.
-pub(crate) fn project_exports(
-    bytes: &[u8],
-    exports: &[String],
-) -> Result<ProjectedDeclarations, PreimageDefect> {
+/// nominal declaration in its `identity_projection`.
+pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
     let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
         MemberDefect::NotObject => PreimageDefect::NotObject,
@@ -304,13 +272,5 @@ pub(crate) fn project_exports(
             }
         }
     }
-    let mut exported = BTreeMap::new();
-    for name in exports {
-        let key = declarations
-            .get(name)
-            .copied()
-            .ok_or_else(|| PreimageDefect::UndeclaredExport(name.clone()))?;
-        exported.insert(name.clone(), key);
-    }
-    Ok(ProjectedDeclarations(exported))
+    Ok(ProjectedDeclarations(declarations))
 }
