@@ -30,11 +30,10 @@ This private snapshot applies no new license to those documents, and the
 compiler's AGPL license does not relicense them. A changed interpretation
 requires re-vendoring from a newer merged revision, never editing these bytes.
 
-The FR-148 IEEE inputs were checked against merged QSpec revision
-`5aa00f35056c65948de93ad339540974d35c368a` (QSpec #71): the vendored
-`value-ieee754-2019-default.md` and `FR-148-evaluate-ieee-floating-profiles.md`
-bytes are identical there, and that revision's lock keeps the same
-`ieee_profile` and `rule_fr_148` digests. The TC-193 procedure
-`spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md` was copied
-with `git show 5aa00f3:<path>` and is byte-identical at `4780a9e`; the same lock
-test pins its SHA-256, and `tests/ieee_profiles.rs` reads its vector ids.
+The FR-148 IEEE inputs, `FR-148-evaluate-ieee-floating-profiles.md`,
+`value-ieee754-2019-default.md`, `value-accounting.md`,
+`value-complete-rules.json`, `complete-value-lock.json` and the TC-193 procedure
+`spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md`, were copied
+with `git show a25c93c875231664d90f5d4b3f2ac51f1dc77a75:<path>` (the QSpec PR
+#73 merge); the lock test pins the TC-193 SHA-256, and
+`tests/ieee_profiles.rs` reads its vector ids.

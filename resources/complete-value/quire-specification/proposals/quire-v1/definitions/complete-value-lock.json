@@ -4,7 +4,7 @@
   "digest_domain": "quire.definition.bytes/v1",
   "language_edition": "1-draft",
   "trigger_vocabulary": ["ieee_operation", "integer_div_rem", "text_bearing"],
-  "selection_refusal_codes": ["selection_alternative_conflict", "selection_duplicate_role", "selection_required_missing", "selection_trigger_unsatisfied", "selection_unknown_role", "selection_unknown_trigger", "selection_untriggered_profile"],
+  "selection_refusal_codes": ["selection_alternative_conflict", "selection_duplicate_role", "selection_duplicate_trigger", "selection_required_missing", "selection_trigger_unsatisfied", "selection_unknown_role", "selection_unknown_trigger", "selection_untriggered_profile"],
   "qualification_catalog": [
     {
       "role": "edition",
@@ -14,12 +14,12 @@
     {
       "role": "root",
       "artifact_path": "value-complete.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.complete/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"0602d6f86e780eefc0629ffa7d96eebab3ed06a39e3d31660a204916d27002d9"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.complete/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"608bb4ebe0cdd9eb2313421c3130abe19a497de7e4dee9e17d7ba610e90f6ec2"}
     },
     {
       "role": "accounting",
       "artifact_path": "value-accounting.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"4156115fffc587145d2b1bb599feca7117e60c72fc940e67d341e6166cbe157c"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.accounting/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"64ffb448f7b80b50dbf08e660709117480eeb7a64aeb566b2912e78c224533e1"}
     },
     {
       "role": "compound_unit",
@@ -39,17 +39,17 @@
     {
       "role": "rule_manifest",
       "artifact_path": "value-complete-rules.json",
-      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"5f5007c7bc4a2ef52f6d80d2f83a2373b5af90028be4a9ad2b1cb502d98491ae"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.complete.rules/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"c0fa6d01ad42155c21a1cbdae8852c7b6eea8bc839648730ba6a2179af6a3af8"}
     },
     {
       "role": "text_profile",
       "artifact_path": "value-text-unicode-17.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"9c791cbf96222fab0efa4f2ba08359437ba5a78deecf3f2bc6378b27eb544cae"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"cd4a985a0d7d2f2b3d3625caee3787832c00c5244e805fb49e1c2c7075b9de5e"}
     },
     {
       "role": "ieee_profile",
       "artifact_path": "value-ieee754-2019-default.md",
-      "definition": {"authority":"agent-ix","identity":"quire.value.ieee754-2019-default/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"5ab13a105bc65deb1e14376c449c0a5d20d2c029a703bae4b8efee9498e014dd"}
+      "definition": {"authority":"agent-ix","identity":"quire.value.ieee754-2019-default/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"3e9736fb8e1637b554385192de34547bafc073e90b4b85256c824be31e0aa6e5"}
     },
     {
       "role": "integer_division_euclidean",
@@ -74,7 +74,7 @@
     {
       "role": "rule_shared_grammar",
       "artifact_path": "../shared-grammar.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.shared-grammar/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"d7eaa70ee6e17c90eee7e5b86f65c5578cc1cb4cff80d29416e48a0fff045397"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.shared-grammar/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"377be4cd1a635c32e8d67a05ea299ea635c675acdb74a1c0c87093d1040e5cdf"}
     },
     {
       "role": "rule_ad_005",
@@ -84,32 +84,32 @@
     {
       "role": "rule_fr_140",
       "artifact_path": "../../../spec/functional/type-model/FR-140-evaluate-exact-decimals.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-140/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"dfc61877050771003a50562655c9ba88492e97b1d7ca6d82e54ec13e457d5f3b"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-140/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"b9b079afa8e16e11c850937b60e7c887c71de51342a9eb083cee178bf8fd1e3e"}
     },
     {
       "role": "rule_fr_141",
       "artifact_path": "../../../spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-141/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"ba44ae74932845c4bc2a5ed06709f24d6732cd6f19f2d81db92d037ed96faa05"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-141/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"5438519ea6d13e5df8947d13d5c257b46de1aed0c621295f1df76fa97e160785"}
     },
     {
       "role": "rule_fr_142",
       "artifact_path": "../../../spec/functional/type-model/FR-142-evaluate-quantities-and-units.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-142/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"382a7fc52dc56d0b19ee73fe016a6639b28e84f61063ba38477f52cebd063d92"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-142/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"7eb40d7fbaea7ac5e28720ccb2bbc08595f84028bbcdcaa8998e72538a806a05"}
     },
     {
       "role": "rule_fr_147",
       "artifact_path": "../../../spec/functional/expressions/FR-147-evaluate-integer-division-domains.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-147/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"022420436cc548455c23e9ae538344642d8e1ff2e778306ddaba9e97fcdda029"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-147/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"ca1551c16ecd8ed607dd3925a01db2af944bc82decbff1c4bb6b2ec717cdb2c8"}
     },
     {
       "role": "rule_fr_148",
       "artifact_path": "../../../spec/functional/expressions/FR-148-evaluate-ieee-floating-profiles.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-148/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"9b35d584e9529acbb86ee783e237d0cb362a330f5a898f9e195aa1ee2704082c"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-148/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"012e66aa399d4f63bbf75962b27d2f522243e652b3d6c0ac72bcb3466c0f0931"}
     },
     {
       "role": "rule_fr_149",
       "artifact_path": "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
-      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-149/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"352a8bc3c60f1e9013d6d65cc822bb591955342e484233a31ad87b4876056825"}
+      "definition": {"authority":"agent-ix","identity":"quire.rule.fr-149/v1","revision":{"namespace":"quire-draft","value":"1-draft.1"},"digest_domain":"quire.definition.bytes/v1","digest":"ab5e57ea2d2af16e4b61c26214e46201956ac0f5d670e7b530683635f67db801"}
     }
   ],
   "package_selection": {
