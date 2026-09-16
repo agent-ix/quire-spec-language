@@ -33,19 +33,22 @@ impl QuantityUnit {
         }
     }
 
-    /// Whether quantities in `self` and `other` share one dimension.
-    // SPEC-GAP(14): FR-142 defines conversion only within one dimension
-    // node's unit graph. Two declared units are compatible exactly when they
-    // share one nominal dimension node; equal base-dimension maps are not
-    // enough. Normalized base-dimension maps are compared only when a
-    // compound unit is involved, which then composes through each side's
-    // canonical root as if those roots were coherent.
-    fn is_compatible(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Declared(left), Self::Declared(right)) => {
-                left.dimension_node() == right.dimension_node()
+    /// Whether an operation requiring equal dimensions admits `self` and
+    /// `other`: their normalized base-dimension maps are equal.
+    fn has_dimension_of(&self, other: &Self) -> bool {
+        self.dimension() == other.dimension()
+    }
+
+    /// Whether direct conversion from `self` into `target` is admitted. Two
+    /// declared units need one dimension node, so equal base-dimension maps
+    /// under distinct nodes (torque and energy) are not enough; a compound
+    /// side compares base-dimension maps.
+    fn converts_to(&self, target: &Self) -> bool {
+        match (self, target) {
+            (Self::Declared(source), Self::Declared(target)) => {
+                source.dimension_node() == target.dimension_node()
             }
-            _ => self.dimension() == other.dimension(),
+            _ => self.has_dimension_of(target),
         }
     }
 
@@ -118,8 +121,6 @@ pub enum QuantityTarget {
     Decimal(DecimalType),
     /// An integer domain, placed as a decimal target of scale zero under
     /// `rounding` and then admitted by integer-domain membership.
-    // SPEC-GAP(17): the integer-target ruling does not name a rounding
-    // spelling. The target carries one, as a scale-zero decimal target does.
     Integer {
         /// The inclusive integer domain.
         domain: IntegerInterval,
@@ -194,7 +195,7 @@ pub fn convert_quantity(
     target: &QuantityTarget,
     meter: &mut Meter,
 ) -> Result<Outcome<Conversion>, IllTyped> {
-    if !source.unit.is_compatible(unit) {
+    if !source.unit.converts_to(unit) {
         return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
     }
     let target = match target {
@@ -225,7 +226,7 @@ pub fn compare_quantity(
     right: &Quantity,
     meter: &mut Meter,
 ) -> Result<Outcome<bool>, IllTyped> {
-    if !left.unit.is_compatible(&right.unit) {
+    if !left.unit.has_dimension_of(&right.unit) {
         return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
     }
     if left.unit != right.unit {
@@ -273,14 +274,8 @@ enum Direction {
     Reverse,
 }
 
-/// Charge one `unit.edge` per traversed edge, numbered across every source
-/// and target root path of the operation.
-// SPEC-GAP(10): `value-accounting.md` orders the unit family as
-// `unit.identity-read`, "one `unit.edge` before each source/target edge",
-// `unit.rational-arithmetic`, without saying whether each edge's two events
-// follow its own edge charge or all edge charges precede all events. Every
-// edge of the operation is charged first, in table order, before any rational
-// event.
+/// Charge one `unit.edge` per traversed edge, numbered across every root path
+/// of the operation; every edge is charged before any rational event.
 fn charge_edges(count: usize, meter: &mut Meter) -> Result<(), Stop> {
     for edge in (1_u64..).take(count) {
         meter.charge(Charge::new(ChargePoint::UnitEdge).size(LimitKind::UnitEdges, edge))?;
@@ -296,12 +291,9 @@ fn to_root(unit: &QuantityUnit) -> Vec<(&UnitEdge, Direction)> {
         .collect()
 }
 
-/// `unit.target-domain` with zero amounts for an unbounded rational result.
-// SPEC-GAP(11): the pinned `value-accounting.md` lists `unit.target-domain`
-// for every unit operation and sizes it as "zero for an unbounded rational
-// target", without saying whether quantity arithmetic has a target. Quantity
-// arithmetic and exact conversion charge it with no size amount; the result's
-// size is already charged by its final `unit.rational-arithmetic` event.
+/// `unit.target-domain` with no size amount for an unbounded exact rational
+/// result, whose size its last rational event or identity read already
+/// charged.
 fn charge_rational_target(meter: &mut Meter) -> Result<(), Stop> {
     meter
         .charge(Charge::new(ChargePoint::UnitTargetDomain))
@@ -324,7 +316,7 @@ fn charge_retain(meter: &mut Meter) -> Result<(), Stop> {
 fn type_check(operation: QuantityOperation<'_>) -> Result<(), IllTyped> {
     match operation {
         QuantityOperation::Add(a, b) | QuantityOperation::Subtract(a, b) => {
-            if !a.unit.is_compatible(&b.unit) {
+            if !a.unit.has_dimension_of(&b.unit) {
                 return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
             }
             if a.unit.is_affine() || b.unit.is_affine() {
@@ -348,11 +340,8 @@ fn type_check(operation: QuantityOperation<'_>) -> Result<(), IllTyped> {
     Ok(())
 }
 
-/// The uncharged runtime checks after the identity reads.
-// SPEC-GAP(12): the pinned FR-142 does not place its checks against
-// `unit.identity-read`. Only a zero divisor and a zero base under a negative
-// exponent remain runtime checks; each is `undefined(division_by_zero)` after
-// the operand identity reads and before any edge or rational event.
+/// The uncharged runtime conditions after the identity reads, first match
+/// wins: a zero divisor, then a zero base under a negative exponent.
 fn check_undefined(operation: QuantityOperation<'_>) -> Result<(), Stop> {
     let undefined = match operation {
         QuantityOperation::Divide(_, divisor) => divisor.value.is_zero(),
@@ -450,12 +439,9 @@ fn events(
     Ok(current)
 }
 
-/// Charge the powered result's exact size before computing it. `None` is a
-/// zero base under a negative exponent.
-// SPEC-GAP(13): FR-142 does not define integer power at a zero base. `0^0`
-// is the exact value one, as `Rational::pow` computes; a zero base under a
-// negative exponent is `undefined(division_by_zero)`, decided in
-// `check_undefined` before any edge or event.
+/// Charge the powered result's exact size before computing it. `0^0` is one;
+/// `None` is a zero base under a negative exponent, which `check_undefined`
+/// has already refused.
 fn power(base: &Rational, exponent: &Integer, meter: &mut Meter) -> Result<Option<Rational>, Stop> {
     // For reduced `n/d`, `(n/d)^e` is reduced with parts `|n|^|e|` and
     // `d^|e|` (swapped for a negative exponent), so its `maxparts` is
@@ -503,13 +489,14 @@ fn convert(
             ConvertedValue::Exact(exact)
         }
         Target::Decimal(decimal) => {
-            let placed = place(&exact, decimal, meter)?;
+            let placed = place(&exact, decimal, Retained::Decimal, meter)?;
             placed.check_membership(decimal).map_err(Stop::Refused)?;
             charge_retain(meter)?;
             ConvertedValue::Decimal(placed.retain(decimal))
         }
         Target::Integer { placement, domain } => {
-            let (coefficient, loss) = place(&exact, placement, meter)?.into_integer();
+            let (coefficient, loss) =
+                place(&exact, placement, Retained::Integer, meter)?.into_integer();
             let value = domain
                 .admit(coefficient)
                 .map_err(|_| Stop::Refused(Refusal::IntegerOutOfDomain))?;
@@ -525,30 +512,38 @@ fn convert(
     })
 }
 
+/// The representation a placed coefficient is retained as, which selects the
+/// size amounts of its `unit.target-domain` charge.
+#[derive(Clone, Copy)]
+enum Retained {
+    /// A decimal: `integer_bits` and `decimal_digits` of the coefficient.
+    Decimal,
+    /// An integer: `integer_bits` of the rounded integer only.
+    Integer,
+}
+
 /// Place `exact` at the decimal target's scale and charge
-/// `unit.target-domain` with the retained sizes before materializing it.
-// SPEC-GAP(15): the pinned unit family does not place FR-140 rounding against
-// `unit.target-domain`. Strict `exact` refuses before the charge, which is
-// sized analytically on the retained coefficient `v × 10^T`; the coefficient
-// is materialized after it, and membership refuses after it and before
-// `unit.result-retain`.
-fn place(exact: &Rational, decimal: &DecimalType, meter: &mut Meter) -> Result<Placed, Stop> {
+/// `unit.target-domain` with the analytically sized retained coefficient
+/// before materializing it. Strict `exact` refuses before the charge.
+fn place(
+    exact: &Rational,
+    decimal: &DecimalType,
+    retained: Retained,
+    meter: &mut Meter,
+) -> Result<Placed, Stop> {
     let placement = decimal.placement(exact).map_err(Stop::Refused)?;
     let (bits, digits) = placement.retained_sizes();
-    meter.charge(
-        Charge::new(ChargePoint::UnitTargetDomain)
-            .exact_size(LimitKind::IntegerBits, bits.clone())
-            .exact_size(LimitKind::DecimalDigits, digits.clone()),
-    )?;
+    let charge =
+        Charge::new(ChargePoint::UnitTargetDomain).exact_size(LimitKind::IntegerBits, bits.clone());
+    meter.charge(match retained {
+        Retained::Decimal => charge.exact_size(LimitKind::DecimalDigits, digits.clone()),
+        Retained::Integer => charge,
+    })?;
     placement.materialize(decimal).map_err(Stop::Refused)
 }
 
-// SPEC-GAP(16): FR-142 and the pinned `value-accounting.md` give no quantity
-// comparison schedule. Equality and ordering share one: two
-// `unit.identity-read`s, one `unit.edge` per edge of the left then the right
-// root path, the two `unit.rational-arithmetic` events of each edge in that
-// order, no operation event and no `unit.target-domain`, then
-// `unit.result-retain`.
+/// The top-level equality and ordering schedule: both root paths, left then
+/// right, with no operation event and no `unit.target-domain`.
 fn compare(left: &Quantity, right: &Quantity, meter: &mut Meter) -> Result<Ordering, Stop> {
     read_identities(&[left, right], meter)?;
     let (left_edges, right_edges) = (to_root(&left.unit), to_root(&right.unit));

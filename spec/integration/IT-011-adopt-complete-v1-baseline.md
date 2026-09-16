@@ -36,14 +36,14 @@ relationships:
 
 Verify that QSL adopts, without redefining, the accepted complete-V1 architecture,
 requirements, interfaces, capability inventory and test allocation from
-`quire-specification` revision `5aa00f35056c65948de93ad339540974d35c368a`. The adoption must preserve existing
+`quire-specification` revision `7f9315774833c20fcfbcf425ffeb8e2619d1b84c`. The adoption must preserve existing
 QSL evidence while exposing every missing or partial capability as scheduled
 work rather than a deferral or an inferred completion.
 
 ## Target Integration
 
 The integration boundary is the accepted QSpec complete-V1 contract at
-`5aa00f35056c65948de93ad339540974d35c368a` and the QSL repository-local Plan-013 delivery graph. QSpec owns
+`7f9315774833c20fcfbcf425ffeb8e2619d1b84c` and the QSL repository-local Plan-013 delivery graph. QSpec owns
 AD-003, AD-005, AD-006, AD-008, the applicable FR-131 through FR-153,
 FR-180/181, FR-300 through FR-309 and FR-339 contracts, interfaces I01 through
 I05 and I17 through I19, and TM-009. QSL owns its implementation and local
@@ -53,7 +53,7 @@ evidence; this artifact does not copy or amend the central semantics.
 
 QSpec Plan-008 Task-010 is complete and QSpec PR #64 is merged at
 `5a5f0d5f7598fccafcc2a4ddb84c2241a617274e`. The reviewed semantic baseline is
-commit `5aa00f35056c65948de93ad339540974d35c368a`, the QSpec PR #71 merge that amended the QSpec #68
+commit `7f9315774833c20fcfbcf425ffeb8e2619d1b84c`, the QSpec PR #72 merge that amended the QSpec #68
 complete scalar contracts over the PR #64 baseline. QSL issue #116 and downstream issues #117 through #123, plus
 `quire-wasm` #6, are open. QSL main is the evidence baseline for reconciliation.
 
@@ -68,7 +68,7 @@ complete scalar contracts over the PR #64 baseline. QSL issue #116 and downstrea
 
 ## Test Procedure
 
-1. Select QSpec `5aa00f35056c65948de93ad339540974d35c368a` and compare Plan-013's normative references with the
+1. Select QSpec `7f9315774833c20fcfbcf425ffeb8e2619d1b84c` and compare Plan-013's normative references with the
    accepted architecture, requirement, interface and matrix set.
    - IT-011-SC-01: every reference resolves to the frozen baseline or its merged
      container, and no local artifact changes the referenced meaning.

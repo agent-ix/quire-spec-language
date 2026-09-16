@@ -1469,7 +1469,7 @@ fn work_denied(limit: u64, point: ChargePoint) -> Incomplete {
 }
 
 /// The TC-187 fixture extended with `M`/`kg`, `Torque`/`N_m`, `Energy`/`J`,
-/// `Area`/`m2`, `u1`, `u2`, `u3` and `rev`.
+/// `Area`/`m2`, `u1`, `u2`, `u3`, `rev` and `cm2`.
 struct Extended {
     base: Fixture,
     graph: UnitGraph,
@@ -1481,6 +1481,7 @@ struct Extended {
     u2: NodeKey,
     u3: NodeKey,
     rev: NodeKey,
+    cm2: NodeKey,
 }
 
 impl Extended {
@@ -1528,6 +1529,7 @@ fn extended() -> Extended {
         ("-1", "1"),
         ("0", "1"),
     ));
+    let cm2 = nodes.unit(unit_json("cm2", area, Some(m2), ("1", "10000"), ("0", "1")));
     let graph = nodes.admit().unwrap();
     assert_eq!(graph.dimension(torque), graph.dimension(energy));
     Extended {
@@ -1541,36 +1543,39 @@ fn extended() -> Extended {
         u2,
         u3,
         rev,
+        cm2,
     }
 }
 
 #[trace("TC-187", "FR-142-AC-2", "FR-142-AC-7")]
 #[test]
-fn u14_type_time_refusals_precede_every_charge_in_cause_order() {
+fn u14_static_refusals_precede_every_charge() {
     let f = fixture();
-    let (metre, second) = (f.quantity(whole(1), f.m), f.quantity(whole(1), f.s));
-    let (celsius, kelvin) = (
-        f.quantity(whole(1), f.deg_c),
-        f.quantity(whole(1), f.kelvin),
-    );
-    let (centimetre, fahrenheit) = (f.quantity(whole(1), f.cm), f.quantity(whole(1), f.deg_f));
+    let q = |value, key| f.quantity(whole(value), key);
+    let (metre, second, centimetre) = (q(1, f.m), q(1, f.s), q(1, f.cm));
+    let (celsius, zero_celsius) = (q(1, f.deg_c), q(0, f.deg_c));
+    // The static order among the causes is informative; this evaluator checks
+    // incompatible dimensions, then affine arithmetic, then distinct units.
     let cases = [
-        // Incompatible dimensions precede affine arithmetic.
-        (
-            QuantityOperation::Add(&fahrenheit, &metre),
-            IllTypedCause::IncompatibleDimensions,
-        ),
         (
             QuantityOperation::Add(&metre, &second),
             IllTypedCause::IncompatibleDimensions,
         ),
-        // Affine arithmetic precedes distinct units.
         (
-            QuantityOperation::Subtract(&kelvin, &celsius),
+            QuantityOperation::Add(&celsius, &second),
+            IllTypedCause::IncompatibleDimensions,
+        ),
+        (
+            QuantityOperation::Add(&celsius, &celsius),
+            IllTypedCause::AffineUnitArithmetic,
+        ),
+        // Refused statically as affine, never reaching the zero divisor.
+        (
+            QuantityOperation::Divide(&celsius, &zero_celsius),
             IllTypedCause::AffineUnitArithmetic,
         ),
         (
-            QuantityOperation::Add(&metre, &centimetre),
+            QuantityOperation::Add(&centimetre, &metre),
             IllTypedCause::DistinctUnits,
         ),
     ];
@@ -1593,24 +1598,6 @@ fn u14_type_time_refusals_precede_every_charge_in_cause_order() {
         typed(IllTypedCause::IncompatibleDimensions)
     );
     assert!(meter.admitted_charges().is_empty());
-    // The runtime undefined checks follow the identity reads.
-    let zero = f.quantity(whole(0), f.m);
-    let mut meter = limits(1, 0, 0, 2, 2, 0);
-    assert_eq!(
-        evaluated(QuantityOperation::Divide(&metre, &zero), &mut meter),
-        Outcome::Undefined(Undefined::DivisionByZero)
-    );
-    assert_eq!(
-        meter.admitted_charges(),
-        [ChargePoint::UnitIdentityRead, ChargePoint::UnitIdentityRead]
-    );
-    assert_eq!(
-        evaluated(
-            QuantityOperation::Divide(&metre, &zero),
-            &mut limits(1, 0, 0, 2, 1, 0)
-        ),
-        Outcome::Incomplete(work_denied(1, ChargePoint::UnitIdentityRead))
-    );
 }
 
 #[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
@@ -1669,6 +1656,15 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
     assert!(!meter
         .admitted_charges()
         .contains(&ChargePoint::UnitTargetDomain));
+    assert_eq!(
+        converted(
+            &inch,
+            &f.unit(f.m),
+            &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
+            &mut limits(13, 1, 1, 1, 4, 1)
+        ),
+        Outcome::Refused(Refusal::InexactDecimal)
+    );
     let nearest = decimal_type(-1000, 1000, 2, RoundingMode::NearestEven);
     let Outcome::Completed(ConvertedValue::Decimal(result)) = converted(
         &inch,
@@ -1767,27 +1763,25 @@ fn u19_rational_target_charges_one_work_unit_and_no_size() {
 fn u20_affinity_is_the_composed_offset() {
     let x = extended();
     let q = |value, key| x.quantity(whole(value), key);
+    let mut meter = limits(0, 0, 0, 0, 0, 0);
     assert_eq!(
-        evaluate_quantity(
-            QuantityOperation::Add(&q(1, x.u1), &q(2, x.u1)),
-            &mut unlimited()
-        ),
+        evaluate_quantity(QuantityOperation::Add(&q(1, x.u1), &q(2, x.u1)), &mut meter),
         typed(IllTypedCause::AffineUnitArithmetic)
-    );
-    assert_eq!(
-        evaluated(
-            QuantityOperation::Add(&q(1, x.u2), &q(2, x.u2)),
-            &mut unlimited()
-        ),
-        Outcome::Completed(q(3, x.u2))
     );
     assert_eq!(
         evaluate_quantity(
             QuantityOperation::Multiply(&q(1, x.u3), &q(1, x.base.m)),
-            &mut unlimited()
+            &mut meter
         ),
         typed(IllTypedCause::AffineUnitArithmetic)
     );
+    assert!(meter.admitted_charges().is_empty());
+    let mut meter = limits(2, 0, 0, 2, 5, 1);
+    assert_eq!(
+        evaluated(QuantityOperation::Add(&q(1, x.u2), &q(2, x.u2)), &mut meter),
+        Outcome::Completed(q(3, x.u2))
+    );
+    assert!(!meter.admitted_charges().contains(&ChargePoint::UnitEdge));
 }
 
 #[trace("TC-187", "FR-142-AC-6", "FR-142-AC-7")]
@@ -1832,34 +1826,70 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
 fn u22_declared_conversion_requires_one_dimension_node() {
     let x = extended();
     let one_n_m = x.quantity(whole(1), x.n_m);
+    let mut meter = limits(0, 0, 0, 0, 0, 0);
     assert_eq!(
         convert_quantity(
             &one_n_m,
             &x.unit(x.joule),
             &QuantityTarget::Exact,
-            &mut unlimited()
+            &mut meter
         ),
         typed(IllTypedCause::IncompatibleDimensions)
     );
+    assert!(meter.admitted_charges().is_empty());
     assert_eq!(
         evaluate_quantity(
             QuantityOperation::Add(&one_n_m, &x.quantity(whole(1), x.joule)),
             &mut unlimited()
         ),
-        typed(IllTypedCause::IncompatibleDimensions)
+        // The nominal rule guards only direct conversion; addition compares
+        // base-dimension maps, then requires the identical unit.
+        typed(IllTypedCause::DistinctUnits)
     );
     let square = exact(evaluated(
         QuantityOperation::Power(&x.quantity(whole(2), x.base.m), &int(2)),
         &mut unlimited(),
     ));
+    let mut meter = limits(3, 0, 0, 1, 3, 1);
     assert_eq!(
-        converted(
-            &square,
-            &x.unit(x.m2),
-            &QuantityTarget::Exact,
-            &mut unlimited()
-        ),
+        converted(&square, &x.unit(x.m2), &QuantityTarget::Exact, &mut meter),
         Outcome::Completed(ConvertedValue::Exact(whole(4)))
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [
+            ChargePoint::UnitIdentityRead,
+            ChargePoint::UnitTargetDomain,
+            ChargePoint::UnitResultRetain,
+        ]
+    );
+    let to_cm2 =
+        |meter: &mut Meter| converted(&square, &x.unit(x.cm2), &QuantityTarget::Exact, meter);
+    let mut meter = limits(16, 0, 1, 1, 6, 1);
+    assert_eq!(
+        to_cm2(&mut meter),
+        Outcome::Completed(ConvertedValue::Exact(whole(40_000)))
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [
+            ChargePoint::UnitIdentityRead,
+            ChargePoint::UnitEdge,
+            ChargePoint::UnitRationalArithmetic,
+            ChargePoint::UnitRationalArithmetic,
+            ChargePoint::UnitTargetDomain,
+            ChargePoint::UnitResultRetain,
+        ]
+    );
+    assert_eq!(
+        to_cm2(&mut limits(15, 0, 1, 1, 6, 1)),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::IntegerBits,
+            limit: 15,
+            consumed: 3,
+            next_charge: int(16),
+            charge_point: ChargePoint::UnitRationalArithmetic,
+        })
     );
     // Nominal identity guards only direct declared-to-declared conversion: a
     // pivot through the coherent compound unit is admitted.
@@ -1943,20 +1973,220 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
             "{operator:?}"
         );
     }
-    let mut meter = Meter::new(ScalarLimits {
-        work_units: 0,
-        ..UNLIMITED
-    });
     assert_eq!(
-        compare_quantity(
-            ComparisonOperator::Equal,
-            &q(0, x.base.deg_c),
-            &q(32, x.base.deg_f),
+        compare_quantity(ComparisonOperator::Equal, &one, &one, &mut unlimited()),
+        Ok(Outcome::Completed(true))
+    );
+    let (zero_c, thirty_two_f) = (q(0, x.base.deg_c), q(32, x.base.deg_f));
+    let mut meter = limits(0, 0, 0, 0, 0, 0);
+    for operator in [ComparisonOperator::Less, ComparisonOperator::Equal] {
+        assert_eq!(
+            compare_quantity(operator, &zero_c, &thirty_two_f, &mut meter),
+            typed(IllTypedCause::DistinctUnits)
+        );
+    }
+    assert!(meter.admitted_charges().is_empty());
+}
+
+#[trace("TC-187", "FR-142-AC-1", "FR-142-AC-7")]
+#[test]
+fn u24_identical_unit_addition_traverses_no_edge() {
+    let f = fixture();
+    let mut meter = limits(2, 0, 0, 2, 5, 1);
+    assert_eq!(
+        evaluated(
+            QuantityOperation::Add(&f.quantity(whole(1), f.cm), &f.quantity(whole(2), f.cm)),
             &mut meter
         ),
-        typed(IllTypedCause::DistinctUnits)
+        Outcome::Completed(f.quantity(whole(3), f.cm))
     );
-    assert!(meter.admitted_charges().is_empty());
+    assert_eq!(
+        meter.admitted_charges(),
+        [
+            ChargePoint::UnitIdentityRead,
+            ChargePoint::UnitIdentityRead,
+            ChargePoint::UnitRationalArithmetic,
+            ChargePoint::UnitTargetDomain,
+            ChargePoint::UnitResultRetain,
+        ]
+    );
+}
+
+#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4")]
+#[test]
+fn u25_compound_pivot_between_nominal_dimensions() {
+    let x = extended();
+    let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
+    terms.sort_by_key(|(key, _)| *key);
+    let compound = QuantityUnit::Compound(x.graph.compound_unit(&compound(&terms)).unwrap());
+    let no_edge = [
+        ChargePoint::UnitIdentityRead,
+        ChargePoint::UnitTargetDomain,
+        ChargePoint::UnitResultRetain,
+    ];
+    let mut meter = limits(1, 0, 0, 1, 3, 1);
+    let Outcome::Completed(ConvertedValue::Exact(pivot)) = converted(
+        &x.quantity(whole(1), x.n_m),
+        &compound,
+        &QuantityTarget::Exact,
+        &mut meter,
+    ) else {
+        panic!("N_m to the compound unit did not complete");
+    };
+    assert_eq!(meter.admitted_charges(), no_edge);
+    let mut meter = limits(1, 0, 0, 1, 3, 1);
+    assert_eq!(
+        converted(
+            &Quantity::new(pivot, compound),
+            &x.unit(x.joule),
+            &QuantityTarget::Exact,
+            &mut meter
+        ),
+        Outcome::Completed(ConvertedValue::Exact(whole(1)))
+    );
+    assert_eq!(meter.admitted_charges(), no_edge);
+}
+
+#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
+#[test]
+fn u26_conversion_has_no_common_ancestor_shortcut() {
+    let x = extended();
+    let one = x.quantity(whole(1), x.u2);
+    let run = |meter: &mut Meter| converted(&one, &x.unit(x.u1), &QuantityTarget::Exact, meter);
+    let mut meter = limits(4, 0, 3, 1, 12, 1);
+    assert_eq!(
+        run(&mut meter),
+        Outcome::Completed(ConvertedValue::Exact(whole(-9)))
+    );
+    let mut expected = vec![ChargePoint::UnitIdentityRead];
+    expected.extend([ChargePoint::UnitEdge; 3]);
+    expected.extend([ChargePoint::UnitRationalArithmetic; 6]);
+    expected.extend([ChargePoint::UnitTargetDomain, ChargePoint::UnitResultRetain]);
+    assert_eq!(meter.admitted_charges(), expected);
+    assert_eq!(
+        run(&mut limits(4, 0, 2, 1, 12, 1)),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::UnitEdges,
+            limit: 2,
+            consumed: 2,
+            next_charge: int(3),
+            charge_point: ChargePoint::UnitEdge,
+        })
+    );
+}
+
+#[trace("TC-187", "FR-142-AC-6", "FR-142-AC-7")]
+#[test]
+fn u27_zero_divisor_is_undefined_after_the_reads() {
+    let f = fixture();
+    let (one, zero) = (f.quantity(whole(1), f.cm), f.quantity(whole(0), f.cm));
+    let operation = QuantityOperation::Divide(&one, &zero);
+    let mut meter = limits(1, 0, 0, 2, 2, 0);
+    assert_eq!(
+        evaluated(operation, &mut meter),
+        Outcome::Undefined(Undefined::DivisionByZero)
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [ChargePoint::UnitIdentityRead, ChargePoint::UnitIdentityRead]
+    );
+    assert_eq!(
+        evaluated(operation, &mut limits(1, 0, 0, 2, 1, 0)),
+        Outcome::Incomplete(work_denied(1, ChargePoint::UnitIdentityRead))
+    );
+}
+
+#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
+#[test]
+fn u28_multiplication_charges_left_then_right_then_the_product() {
+    let f = fixture();
+    let (cm, inch) = (f.quantity(whole(1), f.cm), f.quantity(whole(1), f.inch));
+    let operation = QuantityOperation::Multiply(&cm, &inch);
+    let mut meter = limits(19, 0, 2, 2, 11, 1);
+    let product = exact(evaluated(operation, &mut meter));
+    assert_eq!(product.value(), &ratio(127, 500_000));
+    assert_eq!(product.unit(), &compound_unit(&f, &[(f.m, "2")]));
+    let mut expected = vec![ChargePoint::UnitIdentityRead; 2];
+    expected.extend([ChargePoint::UnitEdge; 2]);
+    expected.extend([ChargePoint::UnitRationalArithmetic; 5]);
+    expected.extend([ChargePoint::UnitTargetDomain, ChargePoint::UnitResultRetain]);
+    assert_eq!(meter.admitted_charges(), expected);
+    let bits_denied = |limit: u64, consumed: u64| {
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::IntegerBits,
+            limit,
+            consumed,
+            next_charge: Integer::from(limit + 1),
+            charge_point: ChargePoint::UnitRationalArithmetic,
+        })
+    };
+    assert_eq!(
+        evaluated(operation, &mut limits(12, 0, 2, 2, 11, 1)),
+        bits_denied(12, 7)
+    );
+    assert_eq!(
+        evaluated(operation, &mut limits(18, 0, 2, 2, 11, 1)),
+        bits_denied(18, 13)
+    );
+}
+
+#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[test]
+fn u29_integer_target_charges_integer_bits_only() {
+    let f = fixture();
+    let inch = f.quantity(whole(1), f.inch);
+    let run = |source: &Quantity, rounding, meter: &mut Meter| {
+        converted(
+            source,
+            &f.unit(f.m),
+            &integer_target(-2, 2, rounding),
+            meter,
+        )
+    };
+    let mut meter = limits(13, 0, 1, 1, 4, 1);
+    assert_eq!(
+        run(&inch, RoundingMode::Exact, &mut meter),
+        Outcome::Refused(Refusal::InexactDecimal)
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [
+            ChargePoint::UnitIdentityRead,
+            ChargePoint::UnitEdge,
+            ChargePoint::UnitRationalArithmetic,
+            ChargePoint::UnitRationalArithmetic,
+        ]
+    );
+    assert_eq!(
+        run(
+            &inch,
+            RoundingMode::NearestEven,
+            &mut limits(13, 0, 1, 1, 4, 1)
+        ),
+        Outcome::Incomplete(work_denied(4, ChargePoint::UnitTargetDomain))
+    );
+    let Outcome::Completed(ConvertedValue::Integer { value, .. }) = run(
+        &inch,
+        RoundingMode::NearestEven,
+        &mut limits(13, 0, 1, 1, 6, 1),
+    ) else {
+        panic!("nearest-even did not complete");
+    };
+    assert_eq!(value.value(), &int(0));
+    let three = f.quantity(whole(3), f.m);
+    let mut meter = limits(2, 0, 0, 1, 2, 0);
+    assert_eq!(
+        run(&three, RoundingMode::Exact, &mut meter),
+        Outcome::Refused(Refusal::IntegerOutOfDomain)
+    );
+    assert_eq!(
+        meter.admitted_charges(),
+        [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain]
+    );
+    assert_eq!(
+        run(&three, RoundingMode::Exact, &mut limits(2, 0, 0, 1, 1, 0)),
+        Outcome::Incomplete(work_denied(1, ChargePoint::UnitTargetDomain))
+    );
 }
 
 fn integer_target(lower: i64, upper: i64, rounding: RoundingMode) -> QuantityTarget {
@@ -2011,7 +2241,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
             ChargePoint::UnitResultRetain,
         ]
     );
-    assert_eq!(meter.consumed(LimitKind::DecimalDigits), 1);
+    assert_eq!(meter.consumed(LimitKind::DecimalDigits), 0);
 
     let exact_three = f.quantity(whole(300), f.cm);
     let mut meter = unlimited();

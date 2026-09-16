@@ -16,11 +16,11 @@ const DEFINITIONS: &str =
     "resources/complete-value/quire-specification/proposals/quire-v1/definitions";
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
-/// `5aa00f35056c65948de93ad339540974d35c368a` with `git show`.
+/// `7f9315774833c20fcfbcf425ffeb8e2619d1b84c` with `git show`.
 const PINNED_NON_CATALOG: [(&str, &str); 8] = [
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
-        "87b60efd54f2883fb2458d76e02921e119640c987515f435f09bb840384da117",
+        "b58856eab42def693ba6539a9295596f1fc6f1014bab134c7cc9bf5adc27e005",
     ),
     (
         "proposals/quire-v1/definitions/complete-value-selection-vectors.json",
@@ -36,11 +36,11 @@ const PINNED_NON_CATALOG: [(&str, &str); 8] = [
     ),
     (
         "spec/test-cases/TC-187-quantity-and-unit-conversion.md",
-        "73ef551a68fc90472149f923a378fe027585806df8fd63c04da9bab2be5c3628",
+        "f0bad365a11e8e19eeb2da6b8d67d078997f65c857770bacba1cd66a1b7211f5",
     ),
     (
         "spec/test-cases/TC-186-text-and-enum-identity-semantics.md",
-        "ec66db8182cb304dcb907a5dda536ce5fe437608f57713ebcea7ff3572de041e",
+        "e8e0c72a476d66777c18fdcab1f4537ffa3d66f50aaedf1c1bb9db8da196494f",
     ),
     (
         "proposals/checked-package-v2/node-identity-vectors.json",

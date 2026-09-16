@@ -93,10 +93,7 @@ impl TextProfile {
     }
 
     /// Profile length of a retained sequence: bytes for `binary-utf8`, scalars
-    /// otherwise.
-    // SPEC-GAP(6): FR-141 says "length is scalar count" without saying whether
-    // it is counted before or after normalization. It is counted on the
-    // retained (normalized) sequence.
+    /// otherwise, counted on the retained (normalized) sequence.
     fn length(self, retained: &str) -> u64 {
         let count = match self {
             Self::BinaryUtf8 => retained.len(),
@@ -370,8 +367,6 @@ fn compare(
 /// `text.decode-scalars` for `unicode-scalars`, and after every
 /// `text.normalize-output` for a normalizing profile; always before
 /// `text.result-retain`.
-// SPEC-GAP(18): the pinned FR-141 does not place the length refusal against
-// the text charges; this placement is the QSpec PR #72 review ruling.
 fn prepare<const N: usize>(
     profile: TextProfile,
     payloads: [&TextPayload; N],
@@ -399,9 +394,7 @@ fn prepare<const N: usize>(
         Charge::new(ChargePoint::TextDecodeScalars)
             .size(LimitKind::TextScalars, sum(|text| text.chars().count())),
     )?;
-    // SPEC-GAP(7): `value-accounting.md` does not say whether the
-    // non-normalizing `unicode-scalars` and `binary-utf8` profiles charge
-    // `text.normalize-input`/`text.normalize-output`. They charge neither.
+    // Non-normalizing profiles charge no `text.normalize-*` point.
     let Some(form) = profile.normalization() else {
         if profile == TextProfile::UnicodeScalars {
             check_length(bound, &inputs)?;

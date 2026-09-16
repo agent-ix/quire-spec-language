@@ -128,7 +128,7 @@ fn complete_v1_plan_allocates_every_agent_a_capability_once() {
 #[trace("TC-144", "FR-055-AC-4", "FR-055-AC-5")]
 #[test]
 fn complete_v1_plan_preserves_the_serial_campaign_and_delivery_constraints() {
-    assert!(PLAN.contains("5aa00f35056c65948de93ad339540974d35c368a"));
+    assert!(PLAN.contains("7f9315774833c20fcfbcf425ffeb8e2619d1b84c"));
     assert!(PLAN.contains("18 complete, 36 partial and 29 missing"));
     assert!(PLAN.contains("16 complete, 38 partial and 29 missing"));
     assert!(PLAN.contains("Rust only"));

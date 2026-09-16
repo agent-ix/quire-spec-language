@@ -255,8 +255,6 @@ impl EnumValue {
 
 /// Compare two enum values. Members of different declarations, and ordering
 /// requests over an unordered declaration, are ill-typed and consume nothing.
-// SPEC-GAP(8): FR-141-AC-5 says an unordered ordering request "refuses" without
-// naming the code; it is reported as the type-checking `ill_typed`.
 pub fn compare_enum(
     operator: ComparisonOperator,
     left: &EnumValue,
