@@ -625,7 +625,7 @@ fn evaluate(
         Charge::new(ChargePoint::DecimalScaleExpansion).size(LimitKind::ScaleExpansion, shift);
     if let Some((coefficient, shift)) = expanded {
         expansion = expansion
-            .exact_size(LimitKind::IntegerBits, shifted_bits(coefficient, shift))
+            .exact_size(LimitKind::IntegerBits, alignment_bits(coefficient, shift))
             .size(LimitKind::DecimalDigits, shifted_digits(coefficient, shift));
     }
     meter.charge(expansion)?;
@@ -1055,6 +1055,13 @@ fn expand_one((coefficient, shift): Shifted<'_>) -> Integer {
 /// `bits(c × 10^shift)`, derived without allocating the power of ten.
 pub(crate) fn shifted_bits(value: &Integer, shift: u64) -> Integer {
     Integer::power_product_bits(value, &Integer::from(10_i64), &Integer::from(shift))
+}
+
+/// The `integer_bits` amount of aligning coefficient `c` by `k` decimal
+/// places (`decimal.scale-expansion`, `ordering.arithmetic`): `bits(c × 10^k)`.
+/// Every alignment charge routes through this one function.
+pub(crate) fn alignment_bits(coefficient: &Integer, shift: u64) -> Integer {
+    shifted_bits(coefficient, shift)
 }
 
 /// `digits(c × 10^shift)`, derived without allocating the power of ten.

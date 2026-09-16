@@ -17,7 +17,7 @@ use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
 use super::decimal::{
-    compare_shifted, evaluate_decimal, shifted_bits, shifted_digits, Decimal, DecimalOperation,
+    alignment_bits, compare_shifted, evaluate_decimal, shifted_digits, Decimal, DecimalOperation,
     DecimalType,
 };
 use super::enumeration::compare_enum;
@@ -500,7 +500,7 @@ fn integer_to_decimal(
             .size(LimitKind::DecimalDigits, value.decimal_digits())
             .size(LimitKind::ValueOccurrences, 1),
     )?;
-    let (bits, digits) = (shifted_bits(value, scale), shifted_digits(value, scale));
+    let (bits, digits) = (alignment_bits(value, scale), shifted_digits(value, scale));
     for point in [
         ChargePoint::DecimalScaleExpansion,
         ChargePoint::DecimalArithmetic,
@@ -541,7 +541,10 @@ fn decimal_to_rational(value: &Decimal, meter: &mut Meter) -> Result<Value, Stop
     meter.charge(
         Charge::new(ChargePoint::DecimalScaleExpansion)
             .size(LimitKind::ScaleExpansion, scale)
-            .exact_size(LimitKind::IntegerBits, shifted_bits(&Integer::one(), scale)),
+            .exact_size(
+                LimitKind::IntegerBits,
+                alignment_bits(&Integer::one(), scale),
+            ),
     )?;
     let rational = representation.to_rational();
     let maxparts = rational.max_part_bits();
