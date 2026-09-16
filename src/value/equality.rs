@@ -1,501 +1,564 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The FR-149 complete typed equality matrix.
 //!
-//! [`evaluate_equality`] first type-checks the operands: without a common
-//! declared type it returns [`IllTyped`] and consumes nothing. A top-level
-//! text, enum or quantity equality delegates to its FR-141/FR-142 comparison
-//! schedule. Every other equality computes its complete [`EqualityPlan`],
-//! reserves it through `equality.plan`, charges one `equality.pair` per planned
-//! occurrence-path pair and retains one Boolean result.
+//! [`TypeEnvironment::check_equality`] is the static stage: it admits each
+//! `convert<T>(e)` operand only through the closed equality-conversion table,
+//! refuses `=` on any IEEE-bearing type as `operator-ineligible`, and selects
+//! one schedule from the common type. [`CheckedEquality::evaluate`] then runs
+//! any conversion charges in operand order and the selected schedule: FR-141
+//! text, FR-141 enum or FR-142 quantity comparison for those top-level types,
+//! and otherwise `equality.plan-form`, `equality.plan`, one `equality.pair`
+//! per planned occurrence-path pair and `equality.result-retain`.
 //!
-//! Traversal is iterative, so value depth never reaches the host stack.
-//! Planning and deciding memoize immutable shared subvalues; that optimization
-//! never changes the plan, because the plan counts occurrence-path pairs of the
-//! value trees.
+//! Plan formation is iterative, so value depth never reaches the host stack,
+//! and it walks the occurrence tree, so DAG sharing never changes the plan.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use super::accounting::{Charge, ChargePoint, Meter};
-use super::collection::CollectionKind;
+use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
-use super::composite::{FieldValue, Value, ValueType};
+use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
+use super::decimal::{
+    compare_shifted, evaluate_decimal, shifted_bits, shifted_digits, Decimal, DecimalOperation,
+    DecimalType,
+};
 use super::enumeration::compare_enum;
 use super::integer::Integer;
-use super::outcome::{Outcome, Stop};
-use super::quantity::compare_quantity;
+use super::outcome::{Outcome, Refusal, Stop};
+use super::quantity::{
+    compare_quantity, convert_quantity, ConvertedValue, Quantity, QuantityTarget,
+};
 use super::rational::Rational;
 use super::text::compare_text;
 
-/// The complete occurrence-pair plan of one equality evaluation.
+/// The grammar's equality operators.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EqualityOperator {
+    /// `=`.
+    Equal,
+    /// `!=`: the same schedule, retaining the negated Boolean.
+    NotEqual,
+}
+
+impl EqualityOperator {
+    fn comparison(self) -> ComparisonOperator {
+        match self {
+            Self::Equal => ComparisonOperator::Equal,
+            Self::NotEqual => ComparisonOperator::NotEqual,
+        }
+    }
+}
+
+/// The static type of one equality operand.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EqualityOperand {
+    source: ValueType,
+    target: Option<ValueType>,
+}
+
+impl EqualityOperand {
+    /// An operand `e` of static type `source`.
+    pub fn typed(source: ValueType) -> Self {
+        Self {
+            source,
+            target: None,
+        }
+    }
+
+    /// An operand `convert<target>(e)` for `e` of static type `source`.
+    pub fn converted(source: ValueType, target: ValueType) -> Self {
+        Self {
+            source,
+            target: Some(target),
+        }
+    }
+
+    /// The comparison type.
+    fn comparison_type(&self) -> &ValueType {
+        self.target.as_ref().unwrap_or(&self.source)
+    }
+}
+
+/// The schedule FR-149 selects from the common type.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EqualitySchedule {
+    /// A top-level text pair: the FR-141 text schedule.
+    Text,
+    /// A top-level enumeration pair: `enum.*`.
+    Enum,
+    /// A top-level quantity pair: the FR-142 comparison schedule.
+    Quantity,
+    /// Every other common type: the occurrence-pair plan.
+    Plan,
+}
+
+/// A type-checked equality expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedEquality {
+    operator: EqualityOperator,
+    left: EqualityOperand,
+    right: EqualityOperand,
+    schedule: EqualitySchedule,
+}
+
+impl TypeEnvironment {
+    /// Type-check `left op right`. Every refusal is made before any charge.
+    pub fn check_equality(
+        &self,
+        operator: EqualityOperator,
+        left: EqualityOperand,
+        right: EqualityOperand,
+    ) -> Result<CheckedEquality, IllTyped> {
+        let ill_typed = |cause| Err(IllTyped { cause });
+        for operand in [&left, &right] {
+            if let Some(target) = &operand.target {
+                if !admits_equality_conversion(&operand.source, target) {
+                    return ill_typed(IllTypedCause::TypeMismatch);
+                }
+            }
+        }
+        let (left_type, right_type) = (left.comparison_type(), right.comparison_type());
+        if self.contains_ieee(left_type) || self.contains_ieee(right_type) {
+            return ill_typed(IllTypedCause::OperatorIneligible);
+        }
+        let schedule = match (left_type, right_type) {
+            (ValueType::Text(l), ValueType::Text(r)) if l.profile() != r.profile() => {
+                return ill_typed(IllTypedCause::DistinctTextProfiles)
+            }
+            (ValueType::Text(_), ValueType::Text(_)) => EqualitySchedule::Text,
+            (ValueType::Enum(l), ValueType::Enum(r)) if l != r => {
+                return ill_typed(IllTypedCause::DistinctEnumDeclarations)
+            }
+            (ValueType::Enum(_), ValueType::Enum(_)) => EqualitySchedule::Enum,
+            (ValueType::Quantity(l), ValueType::Quantity(r)) if !l.has_dimension_of(r) => {
+                return ill_typed(IllTypedCause::IncompatibleDimensions)
+            }
+            (ValueType::Quantity(l), ValueType::Quantity(r)) if l != r => {
+                return ill_typed(IllTypedCause::DistinctUnits)
+            }
+            (ValueType::Quantity(_), ValueType::Quantity(_)) => EqualitySchedule::Quantity,
+            (l, r) if l == r => EqualitySchedule::Plan,
+            _ => return ill_typed(IllTypedCause::TypeMismatch),
+        };
+        Ok(CheckedEquality {
+            operator,
+            left,
+            right,
+            schedule,
+        })
+    }
+}
+
+impl CheckedEquality {
+    /// The selected schedule.
+    pub fn schedule(&self) -> EqualitySchedule {
+        self.schedule
+    }
+
+    /// Evaluate over the two completed operand values, left conversion first.
+    /// Neither source value is changed.
+    pub fn evaluate(&self, left: &Value, right: &Value, meter: &mut Meter) -> Outcome<bool> {
+        Outcome::from_stop(self.run(left, right, meter))
+    }
+
+    fn run(&self, left: &Value, right: &Value, meter: &mut Meter) -> Result<bool, Stop> {
+        let left = operand_value(&self.left, left, meter)?;
+        let right = operand_value(&self.right, right, meter)?;
+        let operator = self.operator.comparison();
+        let scheduled = match (self.schedule, &left, &right) {
+            (EqualitySchedule::Text, Value::Text(l), Value::Text(r)) => {
+                compare_text(operator, l, r, meter)
+            }
+            (EqualitySchedule::Enum, Value::Enum(l), Value::Enum(r)) => {
+                compare_enum(operator, l, r, meter)
+            }
+            (EqualitySchedule::Quantity, Value::Quantity(l), Value::Quantity(r)) => {
+                compare_quantity(operator, l, r, meter)
+            }
+            (EqualitySchedule::Plan, _, _) => {
+                let equal = planned_equality(&left, &right, meter)?;
+                return Ok(equal == (self.operator == EqualityOperator::Equal));
+            }
+            (
+                EqualitySchedule::Text | EqualitySchedule::Enum | EqualitySchedule::Quantity,
+                _,
+                _,
+            ) => return Err(invariant()),
+        };
+        scheduled.map_err(|_| invariant())?.into_stop()
+    }
+}
+
+fn invariant() -> Stop {
+    Stop::Refused(Refusal::CheckedInvariant)
+}
+
+/// The complete occurrence-pair plan of one planned equality.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct EqualityPlan {
     pair_events: Integer,
 }
 
 impl EqualityPlan {
-    /// The exact number of planned `equality.pair` events. The reservation
-    /// is `pair_events + 2` work units and one result unit.
+    /// The exact number of planned `equality.pair` events.
     pub fn pair_events(&self) -> &Integer {
         &self.pair_events
     }
 }
 
-/// Evaluate `left == right` under FR-149.
-pub fn evaluate_equality(
-    left: &Value,
-    right: &Value,
-    meter: &mut Meter,
-) -> Result<Outcome<bool>, IllTyped> {
-    match (left, right) {
-        (Value::Text(left), Value::Text(right)) => {
-            compare_text(ComparisonOperator::Equal, left, right, meter)
-        }
-        (Value::Enum(left), Value::Enum(right)) => {
-            compare_enum(ComparisonOperator::Equal, left, right, meter)
-        }
-        (Value::Quantity(left), Value::Quantity(right)) => {
-            compare_quantity(ComparisonOperator::Equal, left, right, meter)
-        }
-        _ => {
-            let (plan, equal) = analyze(left, right)?;
-            Ok(Outcome::from_stop(evaluate_plan(&plan, equal, meter)))
-        }
-    }
+/// Form the plan of two completed operands of one type, without charge. A
+/// reference pair of different universes refuses with `foreign_reference`.
+pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, Refusal> {
+    plan_pairs(left, right).map(|plan| EqualityPlan {
+        pair_events: plan.pairs,
+    })
 }
 
-/// The complete plan of a planned equality, after the static type check.
-// SPEC-GAP(119-1): FR-149 plans records, tuples, options and collections but
-// does not say whether a top-level Boolean, integer, rational or decimal
-// equality is planned. It is: a one-pair plan, since these rows have no other
-// named schedule.
-pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, IllTyped> {
-    analyze(left, right).map(|(plan, _)| plan)
-}
-
-/// The plan and the relation's Boolean. Deciding before the reservation is
-/// unobservable: no Boolean exists unless every planned charge is admitted.
-fn analyze(left: &Value, right: &Value) -> Result<(EqualityPlan, bool), IllTyped> {
-    check_common_type(left, right)?;
-    let Analysis { pairs, equal } = traverse(left, right)?;
-    Ok((EqualityPlan { pair_events: pairs }, equal))
-}
-
-/// Explicitly convert `value` to the comparison type `target`. Only a declared
-/// lossless conversion exists; any other request is ill-typed. The source
-/// value is not changed.
-// SPEC-GAP(119-2): FR-149 requires "an explicitly declared lossless
-// common-type conversion" without listing the declared conversions. The
-// declared lossless conversions are identity and Integer or Decimal to
-// Rational; a conversion to Decimal or Integer is lossy for some member of the
-// source type and is therefore never declared, even for a representable value.
-pub fn convert_for_equality(value: &Value, target: &ValueType) -> Result<Value, IllTyped> {
-    match (value, target) {
-        (Value::Integer(integer), ValueType::Rational) => {
-            Ok(Value::Rational(Rational::from_integer(integer.clone())))
-        }
-        (Value::Decimal(decimal), ValueType::Rational) => {
-            Ok(Value::Rational(decimal.normalized().to_rational()))
-        }
-        (value, target) if target.admits(value) => Ok(value.clone()),
-        _ => Err(IllTyped {
-            cause: IllTypedCause::NoLosslessConversion,
-        }),
-    }
-}
-
-/// The unmetered relation, for callers that normalize values of one declared
-/// type (set uniqueness). Operands of different types are unequal here.
-pub(crate) fn decide_equal(left: &Value, right: &Value) -> bool {
-    matches!(traverse(left, right), Ok(Analysis { equal: true, .. }))
-}
-
-fn evaluate_plan(plan: &EqualityPlan, equal: bool, meter: &mut Meter) -> Result<bool, Stop> {
-    meter.charge_plan(&plan.pair_events)?;
-    let mut remaining = plan.pair_events.clone();
+/// The equality schedule over completed operands of one type.
+fn planned_equality(left: &Value, right: &Value, meter: &mut Meter) -> Result<bool, Stop> {
+    let (left_occ, right_occ) = (left.occ(), right.occ());
+    meter.charge(
+        Charge::new(ChargePoint::EqualityPlanForm)
+            .exact_size(
+                LimitKind::ValueOccurrences,
+                left_occ.clone().max(right_occ.clone()),
+            )
+            .work(left_occ.add(&right_occ)),
+    )?;
+    let plan = plan_pairs(left, right).map_err(Stop::Refused)?;
+    meter.charge_plan(&plan.pairs)?;
+    let mut remaining = plan.pairs;
     while !remaining.is_zero() {
         meter.charge(Charge::new(ChargePoint::EqualityPair))?;
         remaining = remaining.sub(&Integer::one());
     }
     meter.charge(Charge::new(ChargePoint::EqualityResultRetain).results(1))?;
-    Ok(equal)
+    Ok(plan.equal)
 }
 
-fn ill_typed<T>(cause: IllTypedCause) -> Result<T, IllTyped> {
-    Err(IllTyped { cause })
+/// A formed plan: its pair count and the relation's Boolean.
+pub(crate) struct PlannedPairs {
+    pub(crate) pairs: Integer,
+    pub(crate) equal: bool,
 }
 
-fn check_common_type(left: &Value, right: &Value) -> Result<(), IllTyped> {
-    match (left, right) {
-        (Value::Boolean(_), Value::Boolean(_))
-        | (Value::Integer(_), Value::Integer(_))
-        | (Value::Rational(_), Value::Rational(_))
-        | (Value::Decimal(_), Value::Decimal(_)) => Ok(()),
-        (Value::Quantity(l), Value::Quantity(r)) if !l.unit().has_dimension_of(r.unit()) => {
-            ill_typed(IllTypedCause::IncompatibleDimensions)
-        }
-        (Value::Quantity(l), Value::Quantity(r)) if l.unit() != r.unit() => {
-            ill_typed(IllTypedCause::DistinctUnits)
-        }
-        (Value::Text(l), Value::Text(r)) if l.text_type().profile() != r.text_type().profile() => {
-            ill_typed(IllTypedCause::DistinctTextProfiles)
-        }
-        (Value::Enum(l), Value::Enum(r)) if l.declaration() != r.declaration() => {
-            ill_typed(IllTypedCause::DistinctEnumDeclarations)
-        }
-        (Value::Quantity(_), Value::Quantity(_))
-        | (Value::Text(_), Value::Text(_))
-        | (Value::Enum(_), Value::Enum(_)) => Ok(()),
-        (Value::Option(l), Value::Option(r)) if l.payload_type() == r.payload_type() => Ok(()),
-        (Value::Collection(l), Value::Collection(r))
-            if l.kind() == r.kind() && l.element_type() == r.element_type() =>
-        {
-            Ok(())
-        }
-        (Value::Composite(l), Value::Composite(r)) if l.declaration() == r.declaration() => Ok(()),
-        (Value::Reference(l), Value::Reference(r)) if l.object_type() == r.object_type() => Ok(()),
-        (Value::Composite(_), Value::Composite(_)) | (Value::Reference(_), Value::Reference(_)) => {
-            ill_typed(IllTypedCause::DistinctDeclarations)
-        }
-        (
-            Value::Boolean(_)
-            | Value::Integer(_)
-            | Value::Rational(_)
-            | Value::Decimal(_)
-            | Value::Quantity(_)
-            | Value::Text(_)
-            | Value::Enum(_)
-            | Value::Option(_)
-            | Value::Composite(_)
-            | Value::Collection(_)
-            | Value::Reference(_),
-            _,
-        ) => ill_typed(IllTypedCause::DistinctValueTypes),
-    }
-}
-
-/// One planned occurrence-path pair.
-#[derive(Clone, Copy)]
+/// One node of the occurrence-pair tree still to be formed.
 enum Pair<'a> {
-    /// Two values of one declared type.
     Values(&'a Value, &'a Value),
-    /// Two slot states that are not both present: terminal.
-    Terminal(bool),
+    Slots(&'a FieldValue, &'a FieldValue),
 }
 
-/// Whether a multiset relation compares members or multiplicities.
-#[derive(Clone, Copy)]
-enum Membership {
-    Set,
-    Bag,
-}
-
-/// What a value pair descends into.
-enum Shape<'a> {
-    /// A scalar leaf comparison.
-    Leaf(bool),
-    /// A non-descending structural state comparison (see [`terminal`]).
-    Terminal(bool),
-    /// Declaration/index-order subpairs.
-    Positional(Vec<Pair<'a>>),
-    /// The full left-by-right element cross-product, row-major.
-    CrossProduct {
-        membership: Membership,
-        left: &'a [Value],
-        right: &'a [Value],
-    },
-}
-
-/// The planned pair events and Boolean of one pair and its subpairs.
-#[derive(Clone)]
-struct Analysis {
-    pairs: Integer,
-    equal: bool,
-}
-
-/// Decide a set or bag relation from its row-major `rows × columns` pair
-/// matrix, without early exit.
-fn decide_membership(membership: Membership, rows: usize, columns: usize, matrix: &[bool]) -> bool {
-    if rows != columns {
-        return false;
-    }
-    let row = |index: usize| {
-        matrix
-            .get(index.saturating_mul(columns)..)
-            .unwrap_or_default()
-            .iter()
-            .take(columns)
-    };
-    let row_count = |index: usize| row(index).filter(|equal| **equal).count();
-    let column_count = |column: usize| {
-        (0..rows)
-            .filter(|index| row(*index).nth(column).copied().unwrap_or(false))
-            .count()
-    };
-    match membership {
-        Membership::Set => {
-            (0..rows).all(|index| row_count(index) > 0)
-                && (0..columns).all(|column| column_count(column) > 0)
-        }
-        Membership::Bag => (0..rows).all(|index| {
-            let count = row_count(index);
-            count > 0
-                && row(index)
-                    .enumerate()
-                    .filter(|(_, equal)| **equal)
-                    .all(|(column, _)| column_count(column) == count)
-        }),
-    }
-}
-
-/// The subpairs of one value pair. Operands of different declared types are
-/// ill-typed.
-fn shape<'a>(left: &'a Value, right: &'a Value) -> Result<Shape<'a>, IllTyped> {
-    let leaf = |equal| Ok(Shape::Leaf(equal));
-    match (left, right) {
-        (Value::Boolean(l), Value::Boolean(r)) => leaf(l == r),
-        (Value::Integer(l), Value::Integer(r)) => leaf(l == r),
-        (Value::Rational(l), Value::Rational(r)) => leaf(l == r),
-        (Value::Decimal(l), Value::Decimal(r)) => leaf(l.numerically_equal(r)),
-        // One declared type fixes one unit (FR-149 N1: value only).
-        (Value::Quantity(l), Value::Quantity(r)) => leaf(l.value() == r.value()),
-        (Value::Text(l), Value::Text(r)) => leaf(l.retained() == r.retained()),
-        (Value::Enum(l), Value::Enum(r)) => leaf(l.member() == r.member()),
-        (Value::Reference(l), Value::Reference(r)) => leaf(l.identity() == r.identity()),
-        (Value::Option(l), Value::Option(r)) => match (l.payload(), r.payload()) {
-            (Some(l), Some(r)) => Ok(Shape::Positional(vec![Pair::Values(l, r)])),
-            (None, None) => Ok(Shape::Terminal(true)),
-            (Some(_), None) | (None, Some(_)) => Ok(Shape::Terminal(false)),
-        },
-        (Value::Composite(l), Value::Composite(r)) => {
-            if l.constructor() != r.constructor() || l.slots().len() != r.slots().len() {
-                return Ok(Shape::Terminal(false));
-            }
-            let pairs = l
-                .slots()
-                .iter()
-                .zip(r.slots())
-                .map(|slots| match slots {
-                    (FieldValue::Present(l), FieldValue::Present(r)) => Pair::Values(l, r),
-                    (FieldValue::Absent, FieldValue::Absent)
-                    | (FieldValue::Null, FieldValue::Null) => Pair::Terminal(true),
-                    (FieldValue::Present(_) | FieldValue::Absent | FieldValue::Null, _) => {
-                        Pair::Terminal(false)
-                    }
-                })
-                .collect();
-            Ok(Shape::Positional(pairs))
-        }
-        (Value::Collection(l), Value::Collection(r)) => {
-            let membership = match l.kind() {
-                CollectionKind::Sequence | CollectionKind::OrderedSet => {
-                    if l.elements().len() != r.elements().len() {
-                        return Ok(Shape::Terminal(false));
-                    }
-                    let pairs = l
-                        .elements()
-                        .iter()
-                        .zip(r.elements())
-                        .map(|(l, r)| Pair::Values(l, r))
-                        .collect();
-                    return Ok(Shape::Positional(pairs));
-                }
-                CollectionKind::Set => Membership::Set,
-                CollectionKind::Bag => Membership::Bag,
-            };
-            Ok(membership_plan(membership, l.elements(), r.elements()))
-        }
-        (
-            Value::Boolean(_)
-            | Value::Integer(_)
-            | Value::Rational(_)
-            | Value::Decimal(_)
-            | Value::Quantity(_)
-            | Value::Text(_)
-            | Value::Enum(_)
-            | Value::Reference(_)
-            | Value::Option(_)
-            | Value::Composite(_)
-            | Value::Collection(_),
-            _,
-        ) => ill_typed(IllTypedCause::DistinctValueTypes),
-    }
-}
-
-type MemoKey = (*const (), *const ());
-
-/// The identity of a shared immutable pair, for memoization only.
-fn memo_key(left: &Value, right: &Value) -> Option<MemoKey> {
-    fn address(value: &Value) -> Option<*const ()> {
-        match value {
-            Value::Option(node) => Some(Arc::as_ptr(node).cast()),
-            Value::Composite(node) => Some(Arc::as_ptr(node).cast()),
-            Value::Collection(node) => Some(Arc::as_ptr(node).cast()),
-            Value::Boolean(_)
-            | Value::Integer(_)
-            | Value::Rational(_)
-            | Value::Decimal(_)
-            | Value::Quantity(_)
-            | Value::Text(_)
-            | Value::Enum(_)
-            | Value::Reference(_) => None,
-        }
-    }
-    Some((address(left)?, address(right)?))
-}
-
-/// How a frame combines its subpair results.
-enum Combine {
-    /// The synthetic root: exactly the one top-level pair.
-    Root,
-    /// One pair event over positional subpairs.
-    Positional,
-    /// One pair event over a row-major cross-product matrix.
-    CrossProduct {
-        membership: Membership,
-        rows: usize,
-        columns: usize,
-        matrix: Vec<bool>,
-    },
-}
-
-/// One pair awaiting its subpairs.
-struct Frame<'a> {
-    key: Option<MemoKey>,
-    combine: Combine,
-    pending: std::vec::IntoIter<Pair<'a>>,
-    pairs: Integer,
-    equal: bool,
-}
-
-impl<'a> Frame<'a> {
-    fn new(key: Option<MemoKey>, combine: Combine, pending: Vec<Pair<'a>>) -> Self {
-        let pairs = match combine {
-            Combine::Root => Integer::zero(),
-            Combine::Positional | Combine::CrossProduct { .. } => Integer::one(),
-        };
-        Self {
-            key,
-            combine,
-            pending: pending.into_iter(),
-            pairs,
-            equal: true,
-        }
-    }
-
-    fn absorb(&mut self, child: &Analysis) {
-        self.pairs = self.pairs.add(&child.pairs);
-        match &mut self.combine {
-            Combine::Root | Combine::Positional => self.equal = self.equal && child.equal,
-            Combine::CrossProduct { matrix, .. } => matrix.push(child.equal),
-        }
-    }
-
-    fn finish(self) -> (Option<MemoKey>, Analysis) {
-        let equal = match &self.combine {
-            Combine::Root | Combine::Positional => self.equal,
-            Combine::CrossProduct {
-                membership,
-                rows,
-                columns,
-                matrix,
-            } => decide_membership(*membership, *rows, *columns, matrix),
-        };
-        (
-            self.key,
-            Analysis {
-                pairs: self.pairs,
-                equal,
-            },
-        )
-    }
-}
-
-/// Plan and decide every occurrence-path pair of `left == right` in
-/// declaration/index depth-first order without host recursion.
-fn traverse(left: &Value, right: &Value) -> Result<Analysis, IllTyped> {
-    let mut memo: HashMap<MemoKey, Analysis> = HashMap::new();
-    let mut root = Frame::new(None, Combine::Root, vec![Pair::Values(left, right)]);
-    let mut stack: Vec<Frame<'_>> = Vec::new();
-    loop {
-        let top = stack.last_mut().unwrap_or(&mut root);
-        let Some(pair) = top.pending.next() else {
-            let Some(done) = stack.pop() else {
-                return Ok(root.finish().1);
-            };
-            let (key, analysis) = done.finish();
-            if let Some(key) = key {
-                memo.insert(key, analysis.clone());
-            }
-            stack.last_mut().unwrap_or(&mut root).absorb(&analysis);
-            continue;
-        };
+/// Walk the FR-149 occurrence-pair tree of two values of one type. Operands
+/// that are not of one type, which a checked program never produces, refuse
+/// with the checked invariant.
+pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Refusal> {
+    let mut pairs = Integer::zero();
+    let mut equal = true;
+    let mut pending = vec![Pair::Values(left, right)];
+    while let Some(pair) = pending.pop() {
+        pairs = pairs.add(&Integer::one());
         let (left, right) = match pair {
-            Pair::Terminal(equal) => {
-                top.absorb(&terminal(equal));
+            Pair::Slots(FieldValue::Present(left), FieldValue::Present(right)) => (left, right),
+            Pair::Slots(FieldValue::Absent, FieldValue::Absent)
+            | Pair::Slots(FieldValue::Null, FieldValue::Null) => continue,
+            Pair::Slots(FieldValue::Present(_) | FieldValue::Absent | FieldValue::Null, _) => {
+                equal = false;
                 continue;
             }
             Pair::Values(left, right) => (left, right),
         };
-        let key = memo_key(left, right);
-        if let Some(done) = key.and_then(|key| memo.get(&key)) {
-            top.absorb(done);
-            continue;
+        let leaf = match (left, right) {
+            (Value::Boolean(l), Value::Boolean(r)) => l == r,
+            (Value::Integer(l), Value::Integer(r)) => l == r,
+            (Value::Rational(l), Value::Rational(r)) => l == r,
+            (Value::Decimal(l), Value::Decimal(r)) => l.numerically_equal(r),
+            (Value::Quantity(l), Value::Quantity(r)) if l.unit() == r.unit() => {
+                l.value() == r.value()
+            }
+            (Value::Text(l), Value::Text(r))
+                if l.text_type().profile() == r.text_type().profile() =>
+            {
+                l.retained() == r.retained()
+            }
+            (Value::Enum(l), Value::Enum(r)) if l.declaration() == r.declaration() => {
+                l.member() == r.member()
+            }
+            (Value::Reference(l), Value::Reference(r)) => {
+                if l.universe() != r.universe() {
+                    return Err(Refusal::ForeignReference);
+                }
+                l == r
+            }
+            (Value::Option(l), Value::Option(r)) => match (l.payload(), r.payload()) {
+                (Some(l), Some(r)) => {
+                    pending.push(Pair::Values(l, r));
+                    continue;
+                }
+                (l, r) => l.is_some() == r.is_some(),
+            },
+            (Value::Composite(l), Value::Composite(r))
+                if l.declaration() == r.declaration() && l.slots().len() == r.slots().len() =>
+            {
+                let slots = l.slots().iter().zip(r.slots()).rev();
+                pending.extend(slots.map(|(l, r)| Pair::Slots(l, r)));
+                continue;
+            }
+            (Value::Collection(l), Value::Collection(r)) => {
+                let kind = l.collection_type().kind();
+                if kind != r.collection_type().kind() {
+                    return Err(Refusal::CheckedInvariant);
+                }
+                let (l, r) = (l.elements(), r.elements());
+                // A set's member count and a bag's occurrence count are the
+                // stored lengths; the other kinds compare lengths directly.
+                if l.len() != r.len() {
+                    false
+                } else {
+                    let ranks = l.iter().zip(r).rev();
+                    pending.extend(ranks.map(|(l, r)| Pair::Values(l, r)));
+                    continue;
+                }
+            }
+            (
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Rational(_)
+                | Value::Decimal(_)
+                | Value::Float(_)
+                | Value::Quantity(_)
+                | Value::Text(_)
+                | Value::Enum(_)
+                | Value::Reference(_)
+                | Value::Option(_)
+                | Value::Composite(_)
+                | Value::Collection(_),
+                _,
+            ) => return Err(Refusal::CheckedInvariant),
+        };
+        equal = equal && leaf;
+    }
+    Ok(PlannedPairs { pairs, equal })
+}
+
+/// Whether (`source`, `target`) is a row of the closed FR-149
+/// equality-conversion table, decided from declared bounds alone.
+pub fn admits_equality_conversion(source: &ValueType, target: &ValueType) -> bool {
+    match (source, target) {
+        (source, target) if source == target => true,
+        (ValueType::Int(interval), target) => {
+            integer_source_admits(interval.lower(), interval.upper(), target)
         }
-        match shape(left, right)? {
-            Shape::Leaf(equal) => top.absorb(&leaf(equal)),
-            Shape::Terminal(equal) => top.absorb(&terminal(equal)),
-            Shape::Positional(pairs) => stack.push(Frame::new(key, Combine::Positional, pairs)),
-            Shape::CrossProduct {
-                membership,
-                left,
-                right,
-            } => {
-                let pairs = left
-                    .iter()
-                    .flat_map(|l| right.iter().map(move |r| Pair::Values(l, r)))
-                    .collect();
-                let combine = Combine::CrossProduct {
-                    membership,
-                    rows: left.len(),
-                    columns: right.len(),
-                    matrix: Vec::new(),
-                };
-                stack.push(Frame::new(key, combine, pairs));
+        (ValueType::Rational(from), ValueType::Rational(to)) => {
+            to.numerator().lower() <= from.numerator().lower()
+                && from.numerator().upper() <= to.numerator().upper()
+                && to.denominator().lower() <= from.denominator().lower()
+                && from.denominator().upper() <= to.denominator().upper()
+        }
+        (
+            ValueType::Rational(from),
+            target @ (ValueType::Integer | ValueType::Int(_) | ValueType::Decimal(_)),
+        ) if from.denominator().upper() == &Integer::one() => {
+            integer_source_admits(from.numerator().lower(), from.numerator().upper(), target)
+        }
+        (ValueType::Decimal(from), ValueType::Rational(to)) => {
+            let zero = Integer::zero();
+            to.numerator().lower() <= from.lower().min(&zero)
+                && from.upper().max(&zero) <= to.numerator().upper()
+                && to.denominator().lower() <= &Integer::one()
+                && compare_shifted(
+                    &Integer::one(),
+                    u64::from(from.max_scale()),
+                    to.denominator().upper(),
+                )
+                .is_le()
+        }
+        (ValueType::Decimal(from), ValueType::Decimal(to)) => {
+            let zero = Integer::zero();
+            to.min_scale() <= from.min_scale()
+                && from.max_scale() <= to.max_scale()
+                && if to.min_scale() == from.min_scale() {
+                    to.lower() <= from.lower() && from.upper() <= to.upper()
+                } else {
+                    to.lower() <= from.lower().min(&zero) && from.upper().max(&zero) <= to.upper()
+                }
+        }
+        (ValueType::Decimal(from), target @ (ValueType::Integer | ValueType::Int(_)))
+            if from.max_scale() == 0 =>
+        {
+            integer_source_admits(from.lower(), from.upper(), target)
+        }
+        (ValueType::Quantity(from), ValueType::Quantity(to)) => from.converts_to(to),
+        _ => false,
+    }
+}
+
+/// The rows for a source `Int[lo, hi]`.
+fn integer_source_admits(lower: &Integer, upper: &Integer, target: &ValueType) -> bool {
+    match target {
+        ValueType::Integer => true,
+        ValueType::Int(to) => to.lower() <= lower && upper <= to.upper(),
+        ValueType::Rational(to) => {
+            let one = Integer::one();
+            to.numerator().lower() <= lower
+                && upper <= to.numerator().upper()
+                && to.denominator().lower() <= &one
+                && &one <= to.denominator().upper()
+        }
+        ValueType::Decimal(to) => {
+            let shift = u64::from(to.min_scale());
+            compare_shifted(lower, shift, to.lower()).is_ge()
+                && compare_shifted(upper, shift, to.upper()).is_le()
+        }
+        ValueType::Boolean
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::Text(_)
+        | ValueType::Enum(_)
+        | ValueType::Option(_)
+        | ValueType::Composite(_)
+        | ValueType::Collection(_)
+        | ValueType::Reference(_) => false,
+    }
+}
+
+/// The comparison value of one operand after its admitted conversion.
+fn operand_value(
+    operand: &EqualityOperand,
+    value: &Value,
+    meter: &mut Meter,
+) -> Result<Value, Stop> {
+    if !operand.source.admits(value) {
+        return Err(invariant());
+    }
+    let Some(target) = &operand.target else {
+        return Ok(value.clone());
+    };
+    let converted = match (&operand.source, target, value) {
+        (source, target, value) if source == target => value.clone(),
+        (_, ValueType::Integer | ValueType::Int(_), Value::Integer(_)) => value.clone(),
+        (_, ValueType::Rational(_), Value::Integer(integer)) => {
+            Value::Rational(Rational::from_integer(integer.clone()))
+        }
+        (_, ValueType::Rational(_), Value::Rational(_)) => value.clone(),
+        (_, ValueType::Integer | ValueType::Int(_), Value::Rational(rational))
+            if rational.is_integer() =>
+        {
+            Value::Integer(rational.numerator().clone())
+        }
+        (_, ValueType::Decimal(to), Value::Integer(integer)) => {
+            integer_to_decimal(integer, to, meter)?
+        }
+        (_, ValueType::Decimal(to), Value::Rational(rational)) if rational.is_integer() => {
+            integer_to_decimal(rational.numerator(), to, meter)?
+        }
+        (_, ValueType::Rational(_), Value::Decimal(decimal)) => {
+            decimal_to_rational(decimal, meter)?
+        }
+        (_, ValueType::Decimal(to), Value::Decimal(decimal)) => {
+            let result =
+                evaluate_decimal(DecimalOperation::Round(decimal), to, meter).into_stop()?;
+            Value::Decimal(result.value().clone())
+        }
+        (_, ValueType::Integer | ValueType::Int(_), Value::Decimal(decimal)) => {
+            let rational = decimal.normalized().to_rational();
+            if !rational.is_integer() {
+                return Err(invariant());
+            }
+            Value::Integer(rational.numerator().clone())
+        }
+        (_, ValueType::Quantity(unit), Value::Quantity(quantity)) => {
+            let conversion = convert_quantity(quantity, unit, &QuantityTarget::Exact, meter)
+                .map_err(|_| invariant())?
+                .into_stop()?;
+            match conversion.value() {
+                ConvertedValue::Exact(exact) => {
+                    Value::Quantity(Quantity::new(exact.clone(), unit.clone()))
+                }
+                ConvertedValue::Decimal(_) | ConvertedValue::Integer { .. } => {
+                    return Err(invariant())
+                }
             }
         }
+        _ => return Err(invariant()),
+    };
+    if target.admits(&converted) {
+        Ok(converted)
+    } else {
+        Err(invariant())
     }
 }
 
-/// The planned events of a structural state pair that does not descend: two
-/// absent or two null slots (equal), or a different constructor, ordered
-/// length, option state or slot state (unequal).
-// SPEC-GAP(119-3): FR-149 does not state how such a pair is planned. It is one
-// pair event with no subpairs. This is the only place that decides it.
-fn terminal(equal: bool) -> Analysis {
-    Analysis {
-        pairs: Integer::one(),
-        equal,
+/// `Int[..]` or `Rational[..;d,1]` integer `n` into `Decimal[c1,c2;s1,s2]`,
+/// retained as `(n × 10^s1, s1)`.
+fn integer_to_decimal(
+    value: &Integer,
+    target: &DecimalType,
+    meter: &mut Meter,
+) -> Result<Value, Stop> {
+    let scale = u64::from(target.min_scale());
+    meter.charge(
+        Charge::new(ChargePoint::DecimalOperands)
+            .size(LimitKind::IntegerBits, value.magnitude_bits())
+            .size(LimitKind::DecimalDigits, value.decimal_digits())
+            .size(LimitKind::ValueOccurrences, 1),
+    )?;
+    let (bits, digits) = (shifted_bits(value, scale), shifted_digits(value, scale));
+    for point in [
+        ChargePoint::DecimalScaleExpansion,
+        ChargePoint::DecimalArithmetic,
+    ] {
+        let mut charge = Charge::new(point)
+            .exact_size(LimitKind::IntegerBits, bits.clone())
+            .size(LimitKind::DecimalDigits, digits);
+        if point == ChargePoint::DecimalScaleExpansion {
+            charge = charge.size(LimitKind::ScaleExpansion, scale);
+        }
+        meter.charge(charge)?;
     }
+    meter.charge(
+        Charge::new(ChargePoint::DecimalResultRetain)
+            .exact_size(LimitKind::IntegerBits, bits)
+            .size(LimitKind::DecimalDigits, digits)
+            .size(LimitKind::ValueOccurrences, 1)
+            .results(1),
+    )?;
+    let coefficient = value.mul(&Integer::power_of_ten(scale));
+    Ok(Value::Decimal(Decimal::new(
+        coefficient,
+        target.min_scale(),
+    )))
 }
 
-/// The plan of a set or bag pair.
-// SPEC-GAP(119-4): FR-149 lets a set or bag "with a total canonical element
-// key" use that key but does not say how a keyed plan is counted. Every set
-// and bag uses the full cross-product over stored occurrences, even for
-// unequal cardinalities. This is the only place that decides it; which element
-// types have a total key is decided by `collection::has_total_key`.
-fn membership_plan<'a>(membership: Membership, left: &'a [Value], right: &'a [Value]) -> Shape<'a> {
-    Shape::CrossProduct {
-        membership,
-        left,
-        right,
-    }
-}
-
-fn leaf(equal: bool) -> Analysis {
-    Analysis {
-        pairs: Integer::one(),
-        equal,
-    }
+/// A `Decimal` `(c, s)` into an exact rational.
+fn decimal_to_rational(value: &Decimal, meter: &mut Meter) -> Result<Value, Stop> {
+    let representation = value.representation();
+    let coefficient = representation.coefficient();
+    let scale = u64::from(representation.scale());
+    meter.charge(
+        Charge::new(ChargePoint::DecimalOperands)
+            .size(LimitKind::IntegerBits, coefficient.magnitude_bits())
+            .size(LimitKind::DecimalDigits, coefficient.decimal_digits())
+            .size(LimitKind::ValueOccurrences, 1),
+    )?;
+    meter.charge(
+        Charge::new(ChargePoint::DecimalScaleExpansion)
+            .size(LimitKind::ScaleExpansion, scale)
+            .exact_size(LimitKind::IntegerBits, shifted_bits(&Integer::one(), scale)),
+    )?;
+    let rational = representation.to_rational();
+    let maxparts = rational.max_part_bits();
+    let digits = rational
+        .numerator()
+        .decimal_digits()
+        .max(rational.denominator().decimal_digits());
+    meter.charge(
+        Charge::new(ChargePoint::DecimalArithmetic)
+            .size(LimitKind::IntegerBits, maxparts)
+            .size(LimitKind::DecimalDigits, digits),
+    )?;
+    meter.charge(
+        Charge::new(ChargePoint::DecimalResultRetain)
+            .size(LimitKind::IntegerBits, maxparts)
+            .size(LimitKind::ValueOccurrences, 1)
+            .results(1),
+    )?;
+    Ok(Value::Rational(rational))
 }

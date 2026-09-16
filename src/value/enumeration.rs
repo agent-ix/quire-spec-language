@@ -228,17 +228,19 @@ impl EnumDeclaration {
             member: key,
             ordered: self.preimage.ordered,
             position,
+            case: preimage.case.as_str().into(),
         })
     }
 }
 
 /// An enumeration value: (declaration identity, member identity).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumValue {
     declaration: NodeKey,
     member: NodeKey,
     ordered: bool,
     position: usize,
+    case: Box<str>,
 }
 
 impl EnumValue {
@@ -255,6 +257,16 @@ impl EnumValue {
     /// Zero-based declaration position of the member.
     pub(crate) fn position(&self) -> usize {
         self.position
+    }
+
+    /// Whether the declaration is an `ordered enum`.
+    pub fn is_ordered(&self) -> bool {
+        self.ordered
+    }
+
+    /// The case identifier.
+    pub fn case(&self) -> &str {
+        &self.case
     }
 }
 

@@ -1,167 +1,198 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Typed `Reference<T>` values and closed object environments (FR-143).
 //!
-//! A reference is terminal: equality compares its qualified object identity
-//! and never inspects the referenced state. Cycles between objects are
-//! representable only through references resolved in an [`ObjectEnvironment`].
+//! A reference is terminal: its identity is the snapshot-supplied FR-009/FR-204
+//! triple (universe, object-type declaration identity, object identity), and
+//! equality never inspects the referenced state. No source form creates one.
+//! Cycles between objects are representable only through references resolved
+//! in an [`ObjectEnvironment`].
 
 use std::collections::BTreeMap;
 
-use super::composite::{FieldValue, Value};
-use super::node::{is_qualified_name, NodeKey};
+use super::composite::{
+    fill_slots, ConstructionRefusal, FieldValue, ObjectTypeDeclaration, TypeEnvironment, Value,
+};
+use super::node::NodeKey;
 
-/// A qualified object identity.
-// SPEC-GAP(119-7): FR-149 names "qualified object identity" but no source form
-// or canonical preimage for it. The identity here is a non-empty sequence of
-// identifier segments.
+/// A universe identity in its canonical identity bytes.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObjectIdentity(Box<[String]>);
+pub struct UniverseIdentity(Box<[u8]>);
 
-/// A malformed qualified object identity.
+/// A declared object identity in its canonical identity bytes.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ObjectIdentity(Box<[u8]>);
+
+/// An identity component with no canonical identity bytes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("an object identity is a non-empty sequence of identifiers")]
+#[error("an identity component has at least one canonical identity byte")]
 pub struct InvalidObjectIdentity;
 
-impl ObjectIdentity {
-    /// An identity from its qualified segments.
-    pub fn new(segments: Vec<String>) -> Result<Self, InvalidObjectIdentity> {
-        if is_qualified_name(&segments) {
-            Ok(Self(segments.into_boxed_slice()))
-        } else {
-            Err(InvalidObjectIdentity)
-        }
+fn identity_bytes(bytes: &[u8]) -> Result<Box<[u8]>, InvalidObjectIdentity> {
+    if bytes.is_empty() {
+        return Err(InvalidObjectIdentity);
+    }
+    Ok(bytes.into())
+}
+
+impl UniverseIdentity {
+    /// A universe from its canonical identity bytes.
+    pub fn new(bytes: &[u8]) -> Result<Self, InvalidObjectIdentity> {
+        identity_bytes(bytes).map(Self)
     }
 
-    /// The qualified segments.
-    pub fn segments(&self) -> &[String] {
+    /// The canonical identity bytes.
+    pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }
 
-/// A `Reference<T>` value: object state declaration `T` and object identity.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+impl ObjectIdentity {
+    /// An object identity from its canonical identity bytes.
+    pub fn new(bytes: &[u8]) -> Result<Self, InvalidObjectIdentity> {
+        identity_bytes(bytes).map(Self)
+    }
+
+    /// The canonical identity bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// A `Reference<T>` value: its identity triple.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObjectReference {
+    universe: UniverseIdentity,
     object_type: NodeKey,
     identity: ObjectIdentity,
 }
 
 impl ObjectReference {
-    /// A reference to `identity` whose state has declaration `object_type`.
-    pub fn new(object_type: NodeKey, identity: ObjectIdentity) -> Self {
+    /// The reference `(universe, object_type, identity)` supplied by a bound
+    /// model snapshot.
+    pub fn new(universe: UniverseIdentity, object_type: NodeKey, identity: ObjectIdentity) -> Self {
         Self {
+            universe,
             object_type,
             identity,
         }
     }
 
-    /// The referenced state declaration.
+    /// The universe identity.
+    pub fn universe(&self) -> &UniverseIdentity {
+        &self.universe
+    }
+
+    /// The object-type declaration identity.
     pub fn object_type(&self) -> NodeKey {
         self.object_type
     }
 
-    /// The qualified object identity.
+    /// The declared object identity.
     pub fn identity(&self) -> &ObjectIdentity {
         &self.identity
     }
 }
 
 /// Why an object environment is not closed.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("object environment refused at {identity:?}: {cause:?}")]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("object environment refused at {object:?}: {cause:?}")]
 pub struct ObjectEnvironmentRefusal {
     /// The object where the refusal originates.
-    pub identity: ObjectIdentity,
+    pub object: ObjectReference,
     /// The typed cause.
     pub cause: ObjectEnvironmentCause,
 }
 
 /// The typed cause of an [`ObjectEnvironmentRefusal`].
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ObjectEnvironmentCause {
-    /// Two objects share one identity.
-    DuplicateIdentity,
-    /// The state is not a composite value of the object's declaration.
-    StateTypeMismatch,
+    /// Two objects share one identity triple.
+    DuplicateObject,
+    /// The object type is not a model object type of the environment.
+    UnknownObjectType,
+    /// An attribute does not match its declaration.
+    Attribute(ConstructionRefusal),
     /// A contained reference names no object of the environment.
-    DanglingReference(ObjectIdentity),
-    /// A contained reference's type differs from its target object's type.
-    ReferenceTypeMismatch(ObjectIdentity),
+    DanglingReference(Box<ObjectReference>),
 }
 
-/// A closed object environment: every reference contained in any object state
-/// resolves to an object of the referenced declaration.
+/// A closed object environment: every reference held by any attribute
+/// resolves to an object of the environment.
 #[derive(Clone, Debug, Default)]
 pub struct ObjectEnvironment {
-    objects: BTreeMap<ObjectIdentity, (NodeKey, Value)>,
+    objects: BTreeMap<ObjectReference, Box<[FieldValue]>>,
 }
 
 impl ObjectEnvironment {
-    /// Admit `objects` as `(reference, state)` pairs.
-    pub fn new(
-        objects: impl IntoIterator<Item = (ObjectReference, Value)>,
+    /// Admit `objects` as `(reference, attributes)` pairs against the model
+    /// object types of `types`. An omitted `?` attribute is `absent`.
+    pub fn new<'n>(
+        types: &TypeEnvironment,
+        objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
     ) -> Result<Self, ObjectEnvironmentRefusal> {
         let mut admitted = BTreeMap::new();
-        for (reference, state) in objects {
+        for (reference, attributes) in objects {
             let refuse = |cause| ObjectEnvironmentRefusal {
-                identity: reference.identity.clone(),
+                object: reference.clone(),
                 cause,
             };
-            if !matches!(&state, Value::Composite(c) if c.declaration() == reference.object_type) {
-                return Err(refuse(ObjectEnvironmentCause::StateTypeMismatch));
+            let Some(declaration) = types.object_type(reference.object_type) else {
+                return Err(refuse(ObjectEnvironmentCause::UnknownObjectType));
+            };
+            let slots = fill_slots(declaration.attributes(), attributes)
+                .map_err(|refusal| refuse(ObjectEnvironmentCause::Attribute(refusal)))?;
+            if admitted.contains_key(&reference) {
+                return Err(refuse(ObjectEnvironmentCause::DuplicateObject));
             }
-            if admitted.contains_key(&reference.identity) {
-                return Err(refuse(ObjectEnvironmentCause::DuplicateIdentity));
-            }
-            admitted.insert(reference.identity, (reference.object_type, state));
+            admitted.insert(reference, slots);
         }
         let environment = Self { objects: admitted };
-        for (identity, (_, state)) in &environment.objects {
-            environment.check_closed(identity, state)?;
+        for (owner, slots) in &environment.objects {
+            environment.check_closed(owner, slots)?;
         }
         Ok(environment)
     }
 
-    /// The state of the referenced object.
-    pub fn resolve(&self, reference: &ObjectReference) -> Option<&Value> {
-        self.objects
-            .get(&reference.identity)
-            .filter(|(object_type, _)| *object_type == reference.object_type)
-            .map(|(_, state)| state)
+    /// The named attribute slot of the referenced object.
+    pub fn attribute(
+        &self,
+        types: &TypeEnvironment,
+        reference: &ObjectReference,
+        name: &str,
+    ) -> Option<&FieldValue> {
+        let declaration: &ObjectTypeDeclaration = types.object_type(reference.object_type)?;
+        let position = declaration
+            .attributes()
+            .iter()
+            .position(|attribute| attribute.name() == name)?;
+        self.objects.get(reference)?.get(position)
     }
 
     fn check_closed(
         &self,
-        owner: &ObjectIdentity,
-        state: &Value,
+        owner: &ObjectReference,
+        slots: &[FieldValue],
     ) -> Result<(), ObjectEnvironmentRefusal> {
-        let mut pending = vec![state];
+        let mut pending: Vec<&Value> = present(slots).collect();
         while let Some(value) = pending.pop() {
             match value {
-                Value::Reference(reference) => {
-                    let cause = match self.objects.get(&reference.identity) {
-                        None => ObjectEnvironmentCause::DanglingReference,
-                        Some((object_type, _)) if *object_type != reference.object_type => {
-                            ObjectEnvironmentCause::ReferenceTypeMismatch
-                        }
-                        Some(_) => continue,
-                    };
+                Value::Reference(reference) if !self.objects.contains_key(reference) => {
                     return Err(ObjectEnvironmentRefusal {
-                        identity: owner.clone(),
-                        cause: cause(reference.identity.clone()),
+                        object: owner.clone(),
+                        cause: ObjectEnvironmentCause::DanglingReference(Box::new(
+                            reference.clone(),
+                        )),
                     });
                 }
                 Value::Option(option) => pending.extend(option.payload()),
-                Value::Composite(composite) => {
-                    pending.extend(composite.slots().iter().filter_map(|slot| match slot {
-                        FieldValue::Present(value) => Some(value),
-                        FieldValue::Absent | FieldValue::Null => None,
-                    }));
-                }
+                Value::Composite(composite) => pending.extend(present(composite.slots())),
                 Value::Collection(collection) => pending.extend(collection.elements()),
-                Value::Boolean(_)
+                Value::Reference(_)
+                | Value::Boolean(_)
                 | Value::Integer(_)
                 | Value::Rational(_)
                 | Value::Decimal(_)
+                | Value::Float(_)
                 | Value::Quantity(_)
                 | Value::Text(_)
                 | Value::Enum(_) => {}
@@ -169,4 +200,11 @@ impl ObjectEnvironment {
         }
         Ok(())
     }
+}
+
+fn present(slots: &[FieldValue]) -> impl Iterator<Item = &Value> {
+    slots.iter().filter_map(|slot| match slot {
+        FieldValue::Present(value) => Some(value),
+        FieldValue::Absent | FieldValue::Null => None,
+    })
 }

@@ -392,7 +392,7 @@ impl DecimalType {
 }
 
 /// Compare `value × 10^shift` with `bound` without materializing the power.
-fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
+pub(crate) fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
     let sign = |integer: &Integer| {
         if integer.is_zero() {
             Ordering::Equal

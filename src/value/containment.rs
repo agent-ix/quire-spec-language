@@ -37,8 +37,8 @@ pub enum GraphNode {
     Record {
         /// The record declaration.
         declaration: NodeKey,
-        /// Supplied fields.
-        fields: Vec<(NodeKey, GraphSlot)>,
+        /// Supplied fields by name.
+        fields: Vec<(String, GraphSlot)>,
     },
     /// A tuple of `declaration`.
     Tuple {
@@ -47,23 +47,12 @@ pub enum GraphNode {
         /// Supplied positions.
         positions: Vec<GraphSlot>,
     },
-    /// One constructor of a variant `declaration`.
-    Variant {
-        /// The variant declaration.
-        declaration: NodeKey,
-        /// The constructor identity.
-        constructor: NodeKey,
-        /// Supplied fields.
-        fields: Vec<(NodeKey, GraphSlot)>,
-    },
 }
 
 impl GraphNode {
     fn children(&self) -> impl Iterator<Item = GraphNodeId> + '_ {
         let slots: Box<dyn Iterator<Item = &GraphSlot>> = match self {
-            Self::Record { fields, .. } | Self::Variant { fields, .. } => {
-                Box::new(fields.iter().map(|(_, slot)| slot))
-            }
+            Self::Record { fields, .. } => Box::new(fields.iter().map(|(_, slot)| slot)),
             Self::Tuple { positions, .. } => Box::new(positions.iter()),
         };
         slots.filter_map(|slot| match slot {
@@ -80,7 +69,7 @@ pub struct ValueGraph {
 }
 
 /// A graph construction refusal at its originating node.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("value graph refused at node {node:?}: {cause:?}")]
 pub struct GraphRefusal {
     /// The originating node.
@@ -90,7 +79,7 @@ pub struct GraphRefusal {
 }
 
 /// The typed cause of a [`GraphRefusal`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GraphCause {
     /// Two nodes share one name.
     DuplicateNode,
@@ -169,9 +158,9 @@ impl TypeEnvironment {
         })
     }
 
-    fn construct(
+    fn construct<'g>(
         &self,
-        node: &GraphNode,
+        node: &'g GraphNode,
         built: &BTreeMap<GraphNodeId, Value>,
     ) -> Result<Value, GraphCause> {
         let resolve = |slot: &GraphSlot| match slot {
@@ -183,10 +172,10 @@ impl TypeEnvironment {
             GraphSlot::Absent => Ok(FieldValue::Absent),
             GraphSlot::Null => Ok(FieldValue::Null),
         };
-        let fields = |fields: &[(NodeKey, GraphSlot)]| {
+        let fields = |fields: &'g [(String, GraphSlot)]| {
             fields
                 .iter()
-                .map(|(key, slot)| resolve(slot).map(|value| (*key, value)))
+                .map(|(name, slot)| resolve(slot).map(|value| (name.as_str(), value)))
                 .collect::<Result<Vec<_>, _>>()
         };
         let constructed = match node {
@@ -194,11 +183,6 @@ impl TypeEnvironment {
                 declaration,
                 fields: supplied,
             } => self.record(*declaration, fields(supplied)?),
-            GraphNode::Variant {
-                declaration,
-                constructor,
-                fields: supplied,
-            } => self.variant(*declaration, *constructor, fields(supplied)?),
             GraphNode::Tuple {
                 declaration,
                 positions,
@@ -210,8 +194,7 @@ impl TypeEnvironment {
                             values.push(value);
                             continue;
                         }
-                        FieldValue::Absent => ConstructionCause::AbsenceNotAdmitted,
-                        FieldValue::Null => ConstructionCause::NullNotAdmitted,
+                        FieldValue::Absent | FieldValue::Null => ConstructionCause::TypeMismatch,
                     };
                     return Err(GraphCause::Construction(ConstructionRefusal {
                         component: Component::Position(index),

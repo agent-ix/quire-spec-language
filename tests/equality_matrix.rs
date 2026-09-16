@@ -1,24 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-194 complete equality matrix over the real `value` boundary (FR-149).
 //!
-//! E01–E16 and E20–E24 are transcribed from the vendored TC-194 procedure.
-//! E17–E19 need the FR-148 IEEE module, which is not in this branch's base
-//! (`Remaining work: #118`). Unit and enum node keys come from an independent
-//! RFC 8785 canonicalizer; composite declaration keys are opaque fixture keys
-//! (SPEC-GAP(119-5)).
+//! Every equality is type-checked from the operands' declared types by
+//! `TypeEnvironment::check_equality` and then evaluated over completed values.
+//! Unit and enum node keys come from an independent RFC 8785 canonicalizer;
+//! composite and object-type keys are opaque producer-assigned fixture keys.
+//! E20's source-order row and E26's `let`-bound row need the FR-146 expression
+//! evaluator (`Remaining work: #119`).
+
+use std::cell::Cell;
+use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
-    admit_text, convert_for_equality, convert_quantity, evaluate_equality, plan_equality,
-    CardinalityBound, ChargePoint, CollectionKind, CollectionValue, CompositeDeclaration,
-    CompositeShape, ConstructorDeclaration, ConvertedValue, Decimal, DecimalType,
-    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
-    FieldDeclaration, FieldExpression, FieldValue, IllTyped, IllTypedCause, Incomplete,
-    InjectedDenial, Integer, LimitKind, Meter, NodeKey, NodeOwner, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, OptionValue, Outcome, OwnerSelection, OwnerSubject, Presence,
-    Quantity, QuantityTarget, QuantityUnit, Rational, Refusal, RoundingMode, ScalarLimits, Text,
-    TextPayload, TextProfile, TextType, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, Value,
-    ValueType,
+    admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
+    AdmittedIeeeProfile, CardinalityBound, CatalogRole, ChargePoint, CheckedEquality,
+    CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
+    ConstructionCause, ConstructionRefusal, Decimal, DecimalType, DefinitionLock,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression, FieldValue,
+    IeeeComparison, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial,
+    Integer, IntegerInterval, LimitKind, Meter, NodeKey, NodeOwner, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, OwnerSelection,
+    OwnerSubject, Presence, Quantity, QuantityUnit, Rational, RationalDomain, Refusal,
+    RoundingMode, ScalarLimits, Text, TextPayload, TextProfile, TextType, TypeEnvironment,
+    Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -82,7 +88,7 @@ fn fixture_key(preimage: &serde_json::Value) -> NodeKey {
     hex(jcs(preimage).as_bytes())
 }
 
-/// An opaque composite declaration, field or constructor key.
+/// An opaque producer-assigned declaration key.
 fn key(label: &str) -> NodeKey {
     hex(label.as_bytes())
 }
@@ -180,28 +186,65 @@ fn member(declaration: &EnumDeclaration, case: &str) -> Value {
         "case": case,
     });
     let key = fixture_key(&preimage);
-    let member: EnumValue = declaration
-        .admit_member(&EnumMemberPreimage::from_json(preimage).unwrap(), key)
-        .unwrap();
-    Value::Enum(member)
+    Value::Enum(
+        declaration
+            .admit_member(&EnumMemberPreimage::from_json(preimage).unwrap(), key)
+            .unwrap(),
+    )
+}
+
+fn integer(value: i64) -> Integer {
+    Integer::from(value)
 }
 
 fn int(value: i64) -> Value {
-    Value::Integer(Integer::from(value))
+    Value::Integer(integer(value))
+}
+
+fn interval(lower: i64, upper: i64) -> IntegerInterval {
+    IntegerInterval::new(integer(lower), integer(upper)).unwrap()
+}
+
+fn int_type(lower: i64, upper: i64) -> ValueType {
+    ValueType::Int(interval(lower, upper))
 }
 
 fn rational(numerator: i64, denominator: i64) -> Value {
-    Value::Rational(Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap())
+    Value::Rational(Rational::new(integer(numerator), integer(denominator)).unwrap())
+}
+
+fn rational_type(n1: i64, n2: i64, d1: i64, d2: i64) -> ValueType {
+    ValueType::Rational(RationalDomain::new(interval(n1, n2), interval(d1, d2)).unwrap())
 }
 
 fn decimal(coefficient: i64, scale: u32) -> Value {
-    Value::Decimal(Decimal::new(Integer::from(coefficient), scale))
+    Value::Decimal(Decimal::new(integer(coefficient), scale))
+}
+
+fn decimal_type(lower: i64, upper: i64, min_scale: u64, max_scale: u64) -> ValueType {
+    decimal_type_mode(lower, upper, min_scale, max_scale, RoundingMode::Exact)
+}
+
+fn decimal_type_mode(
+    lower: i64,
+    upper: i64,
+    min_scale: u64,
+    max_scale: u64,
+    mode: RoundingMode,
+) -> ValueType {
+    ValueType::Decimal(
+        DecimalType::new(integer(lower), integer(upper), min_scale, max_scale, mode).unwrap(),
+    )
+}
+
+fn text_type(profile: TextProfile) -> TextType {
+    TextType::new(0, 16, profile).unwrap()
 }
 
 fn text(payload: &str, profile: TextProfile) -> Value {
     let text: Text = admit_text(
         &TextPayload::from_utf8(payload.as_bytes()).unwrap(),
-        &TextType::new(0, 16, profile).unwrap(),
+        &text_type(profile),
         &mut Meter::new(UNLIMITED),
     )
     .completed()
@@ -209,8 +252,46 @@ fn text(payload: &str, profile: TextProfile) -> Value {
     Value::Text(text)
 }
 
-fn equal(left: &Value, right: &Value) -> Result<Outcome<bool>, IllTyped> {
-    evaluate_equality(left, right, &mut Meter::new(UNLIMITED))
+fn bound(minimum: u64, maximum: u64) -> CardinalityBound {
+    CardinalityBound::new(minimum, maximum).unwrap()
+}
+
+fn collection_type(kind: CollectionKind, element: ValueType, maximum: u64) -> CollectionType {
+    CollectionType::new(kind, element, bound(0, maximum))
+}
+
+/// A parameter value of `collection_type` holding `occurrences`.
+fn collection(collection_type: &CollectionType, occurrences: Vec<Value>) -> Value {
+    form_collection(collection_type, occurrences, &mut Meter::new(UNLIMITED))
+        .unwrap()
+        .completed()
+        .unwrap()
+}
+
+fn integers(values: &[i64]) -> Vec<Value> {
+    values.iter().copied().map(int).collect()
+}
+
+fn typed(value_type: &ValueType) -> EqualityOperand {
+    EqualityOperand::typed(value_type.clone())
+}
+
+fn check(
+    env: &TypeEnvironment,
+    left: &ValueType,
+    right: &ValueType,
+) -> Result<CheckedEquality, IllTyped> {
+    env.check_equality(EqualityOperator::Equal, typed(left), typed(right))
+}
+
+/// `left = right` for parameters of the declared types, under unlimited limits.
+fn equal(
+    env: &TypeEnvironment,
+    (left_type, left): (&ValueType, &Value),
+    (right_type, right): (&ValueType, &Value),
+) -> Result<Outcome<bool>, IllTyped> {
+    check(env, left_type, right_type)
+        .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
 }
 
 fn is(expected: bool) -> Result<Outcome<bool>, IllTyped> {
@@ -229,764 +310,1351 @@ fn pairs(left: &Value, right: &Value) -> u64 {
         .unwrap()
 }
 
+fn incomplete(
+    limit_kind: LimitKind,
+    limit: u64,
+    consumed: u64,
+    next_charge: i64,
+    charge_point: ChargePoint,
+) -> Outcome<bool> {
+    Outcome::Incomplete(Incomplete {
+        limit_kind,
+        limit,
+        consumed,
+        next_charge: integer(next_charge),
+        charge_point,
+    })
+}
+
 /// Every value-kind row also compares its left operand with a disjoint kind.
-fn assert_disjoint(left: &Value) {
+fn assert_disjoint(env: &TypeEnvironment, left: &ValueType) {
     let disjoint = match left {
-        Value::Boolean(_) => int(1),
-        _ => Value::Boolean(true),
+        ValueType::Boolean => ValueType::Integer,
+        _ => ValueType::Boolean,
     };
-    assert_eq!(
-        equal(left, &disjoint),
-        ill_typed(IllTypedCause::DistinctValueTypes),
-        "{left:?}"
-    );
-    assert_eq!(
-        equal(&disjoint, left),
-        ill_typed(IllTypedCause::DistinctValueTypes),
-        "{left:?}"
-    );
+    let mismatch = Err(IllTyped {
+        cause: IllTypedCause::TypeMismatch,
+    });
+    assert_eq!(check(env, left, &disjoint), mismatch, "{left:?}");
+    assert_eq!(check(env, &disjoint, left), mismatch, "{left:?}");
 }
 
-fn bound() -> Option<CardinalityBound> {
-    Some(CardinalityBound::new(0, u64::MAX).unwrap())
-}
-
-fn collection(kind: CollectionKind, elements: &[i64]) -> Value {
-    CollectionValue::construct(
-        kind,
-        ValueType::Integer,
-        bound(),
-        elements.iter().map(|value| int(*value)).collect(),
-    )
-    .unwrap()
-}
+const PLAN_SCHEDULE: [ChargePoint; 4] = [
+    ChargePoint::EqualityPlanForm,
+    ChargePoint::EqualityPlan,
+    ChargePoint::EqualityPair,
+    ChargePoint::EqualityResultRetain,
+];
 
 // ---- scalar rows -------------------------------------------------------------
 
-#[trace("TC-194", "FR-149-AC-1", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-1")]
+#[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e01_boolean_identical_truth_value() {
+    let env = TypeEnvironment::default();
+    let b = ValueType::Boolean;
     let t = Value::Boolean(true);
-    assert_eq!(equal(&t, &Value::Boolean(true)), is(true));
-    assert_eq!(equal(&t, &Value::Boolean(false)), is(false));
-    assert_disjoint(&t);
-}
-
-#[trace("TC-194", "FR-149-AC-3", "FR-149-AC-5")]
-#[test]
-fn e02_integers_and_explicit_lossless_rational_conversion() {
-    let one = int(1);
-    assert_eq!(equal(&one, &int(1)), is(true));
-    assert_eq!(equal(&one, &int(2)), is(false));
-    let converted = convert_for_equality(&one, &ValueType::Rational).unwrap();
-    assert_eq!(equal(&converted, &rational(1, 1)), is(true));
-    assert!(matches!(&one, Value::Integer(value) if *value == Integer::from(1_i64)));
+    assert_eq!(equal(&env, (&b, &t), (&b, &Value::Boolean(true))), is(true));
     assert_eq!(
-        equal(&one, &rational(1, 1)),
-        ill_typed(IllTypedCause::DistinctValueTypes)
+        equal(&env, (&b, &t), (&b, &Value::Boolean(false))),
+        is(false)
     );
-    assert_disjoint(&one);
-    assert_disjoint(&rational(1, 1));
-}
-
-#[trace("TC-194", "FR-149-AC-4", "FR-149-AC-5")]
-#[test]
-fn e03_decimals_compare_mathematically_and_convert_without_mutation() {
-    let left = decimal(10, 1);
-    assert_eq!(equal(&left, &decimal(100, 2)), is(true));
-    assert_eq!(equal(&left, &decimal(11, 1)), is(false));
-    let converted = convert_for_equality(&left, &ValueType::Rational).unwrap();
-    let one = rational(1, 1);
-    assert_eq!(equal(&converted, &one), is(true));
-    let Value::Decimal(source) = &left else {
-        panic!("the source stays a decimal");
-    };
-    assert_eq!(
-        source.representation().coefficient(),
-        &Integer::from(10_i64)
-    );
-    assert_eq!(source.representation().scale(), 1);
-    assert!(matches!(&one, Value::Rational(_)));
-    assert_disjoint(&left);
+    assert_disjoint(&env, &b);
 }
 
 #[trace("TC-194", "FR-149-AC-3")]
+#[trace("TC-194", "FR-149-AC-5")]
 #[test]
-fn e04_lossy_decimal_conversion_is_ill_typed_not_false() {
-    let third = rational(1, 3);
-    let target = DecimalType::new(
-        Integer::from(-100_i64),
-        Integer::from(100_i64),
-        0,
-        2,
-        RoundingMode::Exact,
-    )
-    .unwrap();
-    assert!(matches!(
-        convert_for_equality(&third, &ValueType::Decimal(target)),
-        Err(IllTyped {
-            cause: IllTypedCause::NoLosslessConversion
-        })
-    ));
+fn e02_integers_and_admitted_rational_conversion() {
+    let env = TypeEnvironment::default();
+    let i = ValueType::Integer;
+    assert_eq!(equal(&env, (&i, &int(1)), (&i, &int(1))), is(true));
+    assert_eq!(equal(&env, (&i, &int(1)), (&i, &int(2))), is(false));
+    let (small, ratio) = (int_type(0, 2), rational_type(0, 2, 1, 1));
+    let source = int(1);
+    let converted = env
+        .check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::converted(small.clone(), ratio.clone()),
+            typed(&ratio),
+        )
+        .unwrap();
+    let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
-        equal(&third, &decimal(33, 2)),
-        ill_typed(IllTypedCause::DistinctValueTypes)
+        converted.evaluate(&source, &rational(1, 1), &mut meter),
+        Outcome::Completed(true)
+    );
+    assert_eq!(meter.admitted_charges(), PLAN_SCHEDULE);
+    assert!(matches!(&source, Value::Integer(value) if *value == integer(1)));
+    assert_eq!(
+        equal(&env, (&small, &source), (&ratio, &rational(1, 1))),
+        ill_typed(IllTypedCause::TypeMismatch)
+    );
+    assert_disjoint(&env, &i);
+    assert_disjoint(&env, &ratio);
+}
+
+#[trace("TC-194", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-5")]
+#[test]
+fn e03_decimals_compare_mathematically_and_convert_without_mutation() {
+    let env = TypeEnvironment::default();
+    let d = decimal_type(0, 1000, 0, 2);
+    let left = decimal(10, 1);
+    assert_eq!(equal(&env, (&d, &left), (&d, &decimal(100, 2))), is(true));
+    assert_eq!(equal(&env, (&d, &left), (&d, &decimal(11, 1))), is(false));
+    let (source_type, target) = (decimal_type(0, 100, 0, 2), rational_type(0, 100, 1, 100));
+    let converted = env
+        .check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::converted(source_type, target.clone()),
+            typed(&target),
+        )
+        .unwrap();
+    let one = rational(1, 1);
+    assert_eq!(
+        converted.evaluate(&left, &one, &mut Meter::new(UNLIMITED)),
+        Outcome::Completed(true)
+    );
+    let Value::Decimal(source) = &left else {
+        panic!("the source stays a decimal");
+    };
+    assert_eq!(source.representation().coefficient(), &integer(10));
+    assert_eq!(source.representation().scale(), 1);
+    assert!(matches!(&one, Value::Rational(_)));
+    assert_disjoint(&env, &d);
+}
+
+#[trace("TC-194", "FR-149-AC-3")]
+#[trace("TC-194", "FR-149-AC-10")]
+#[test]
+fn e04_rational_with_denominator_above_one_has_no_decimal_equality_conversion() {
+    let env = TypeEnvironment::default();
+    let target = decimal_type_mode(0, 100, 2, 2, RoundingMode::NearestEven);
+    assert_eq!(
+        env.check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::converted(rational_type(0, 1, 1, 3), target.clone()),
+            typed(&target),
+        ),
+        Err(IllTyped {
+            cause: IllTypedCause::TypeMismatch
+        })
     );
 }
 
-#[trace("TC-194", "FR-149-AC-3", "FR-149-AC-5")]
+#[trace("TC-194", "FR-149-AC-3")]
+#[trace("TC-194", "FR-149-AC-5")]
 #[test]
 fn e05_quantities_after_explicit_canonical_unit_conversion() {
+    let env = TypeEnvironment::default();
     let units = units();
-    let whole = |value: i64| Rational::from_integer(Integer::from(value));
-    let centimetres = Quantity::new(whole(100), units.cm.clone());
-    let snapshot = centimetres.clone();
-    let conversion = convert_quantity(
-        &centimetres,
-        &units.m,
-        &QuantityTarget::Exact,
-        &mut Meter::new(UNLIMITED),
-    )
-    .unwrap()
-    .completed()
-    .unwrap();
-    let ConvertedValue::Exact(metres) = conversion.value() else {
-        panic!("an exact target converts exactly");
-    };
-    let converted = Value::Quantity(Quantity::new(metres.clone(), units.m.clone()));
+    let whole = |value: i64| Rational::from_integer(integer(value));
+    let (metres, centimetres, seconds) = (
+        ValueType::Quantity(units.m.clone()),
+        ValueType::Quantity(units.cm.clone()),
+        ValueType::Quantity(units.s.clone()),
+    );
+    let source = Quantity::new(whole(100), units.cm.clone());
+    let snapshot = source.clone();
     let one_metre = Value::Quantity(Quantity::new(whole(1), units.m.clone()));
-    assert_eq!(equal(&converted, &one_metre), is(true));
-    assert_eq!(centimetres, snapshot);
+    let converted = env
+        .check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::converted(centimetres.clone(), metres.clone()),
+            typed(&metres),
+        )
+        .unwrap();
+    let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
-        equal(&Value::Quantity(centimetres), &one_metre),
+        converted.evaluate(&Value::Quantity(source.clone()), &one_metre, &mut meter),
+        Outcome::Completed(true)
+    );
+    assert!(!meter
+        .admitted_charges()
+        .contains(&ChargePoint::EqualityPlan));
+    assert_eq!(source, snapshot);
+    assert_eq!(
+        equal(
+            &env,
+            (&centimetres, &Value::Quantity(source)),
+            (&metres, &one_metre)
+        ),
         ill_typed(IllTypedCause::DistinctUnits)
     );
     let one_second = Value::Quantity(Quantity::new(whole(1), units.s));
     assert_eq!(
-        equal(&one_metre, &one_second),
+        equal(&env, (&metres, &one_metre), (&seconds, &one_second)),
         ill_typed(IllTypedCause::IncompatibleDimensions)
     );
-    assert_disjoint(&one_metre);
+    assert_disjoint(&env, &metres);
 }
 
 #[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e06_text_under_one_pinned_profile() {
+    let env = TypeEnvironment::default();
+    let nfc = ValueType::Text(text_type(TextProfile::Nfc));
+    let binary = ValueType::Text(text_type(TextProfile::BinaryUtf8));
     let composed = text("\u{e9}", TextProfile::Nfc);
+    let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
-        equal(&composed, &text("e\u{301}", TextProfile::Nfc)),
-        is(true)
+        check(&env, &nfc, &nfc).unwrap().evaluate(
+            &composed,
+            &text("e\u{301}", TextProfile::Nfc),
+            &mut meter
+        ),
+        Outcome::Completed(true)
     );
+    assert!(!meter
+        .admitted_charges()
+        .contains(&ChargePoint::EqualityPlanForm));
     assert_eq!(
-        equal(&text("a", TextProfile::Nfc), &text("b", TextProfile::Nfc)),
+        equal(
+            &env,
+            (&nfc, &text("a", TextProfile::Nfc)),
+            (&nfc, &text("b", TextProfile::Nfc))
+        ),
         is(false)
     );
     assert_eq!(
-        equal(&composed, &text("\u{e9}", TextProfile::BinaryUtf8)),
+        equal(
+            &env,
+            (&nfc, &composed),
+            (&binary, &text("\u{e9}", TextProfile::BinaryUtf8))
+        ),
         ill_typed(IllTypedCause::DistinctTextProfiles)
     );
-    assert_disjoint(&composed);
+    assert_disjoint(&env, &nfc);
 }
 
-#[trace("TC-194", "FR-149-AC-3", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-3")]
+#[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e07_enumerations_by_declaration_node_and_case() {
-    let a = enum_declaration("EnumA");
-    let b = enum_declaration("EnumB");
+    let env = TypeEnvironment::default();
+    let (a, b) = (enum_declaration("EnumA"), enum_declaration("EnumB"));
+    let (a_type, b_type) = (ValueType::Enum(a.key()), ValueType::Enum(b.key()));
     let ready = member(&a, "READY");
-    assert_eq!(equal(&ready, &member(&a, "READY")), is(true));
-    assert_eq!(equal(&ready, &member(&a, "DONE")), is(false));
     assert_eq!(
-        equal(&ready, &member(&b, "READY")),
+        equal(&env, (&a_type, &ready), (&a_type, &member(&a, "READY"))),
+        is(true)
+    );
+    assert_eq!(
+        equal(&env, (&a_type, &ready), (&a_type, &member(&a, "DONE"))),
+        is(false)
+    );
+    assert_eq!(
+        equal(&env, (&a_type, &ready), (&b_type, &member(&b, "READY"))),
         ill_typed(IllTypedCause::DistinctEnumDeclarations)
     );
-    assert_disjoint(&ready);
+    assert_disjoint(&env, &a_type);
 }
 
 // ---- presence, composite and collection rows -------------------------------
 
-#[trace("TC-194", "FR-149-AC-4", "FR-149-AC-6")]
+#[trace("TC-194", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-6")]
 #[test]
 fn e08_options_compare_state_then_payload() {
+    let env = TypeEnvironment::default();
+    let option = ValueType::option(ValueType::Integer);
     let none = || OptionValue::none(ValueType::Integer);
     let present = |value| OptionValue::present(ValueType::Integer, int(value)).unwrap();
-    assert_eq!(equal(&none(), &none()), is(true));
-    assert_eq!(equal(&present(1), &present(1)), is(true));
-    assert_eq!(equal(&none(), &present(1)), is(false));
-    assert_eq!(equal(&present(1), &present(2)), is(false));
-    // SPEC-GAP(119-3): one pair per option state, plus the payload pair.
-    assert_eq!(pairs(&none(), &none()), 1);
-    assert_eq!(pairs(&present(1), &present(1)), 2);
-    assert_eq!(pairs(&none(), &present(1)), 1);
+    let eq = |left: &Value, right: &Value| equal(&env, (&option, left), (&option, right));
+    assert_eq!(eq(&none(), &none()), is(true));
+    assert_eq!(eq(&present(1), &present(1)), is(true));
+    assert_eq!(eq(&none(), &present(1)), is(false));
+    let rational_option = ValueType::option(ValueType::Rational(
+        RationalDomain::new(interval(0, 2), interval(1, 1)).unwrap(),
+    ));
     assert_eq!(
-        equal(
-            &present(1),
-            &OptionValue::present(ValueType::Rational, rational(1, 1)).unwrap()
-        ),
-        ill_typed(IllTypedCause::DistinctValueTypes)
+        check(&env, &option, &rational_option),
+        Err(IllTyped {
+            cause: IllTypedCause::TypeMismatch
+        })
     );
-    assert_disjoint(&none());
+    assert_disjoint(&env, &option);
 }
 
-#[trace("TC-194", "FR-149-AC-4", "FR-149-AC-6")]
+fn holder_environment() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("Holder"),
+            "Holder",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "value",
+                ValueType::Integer,
+                Presence::Optional,
+            )]),
+        )],
+        [],
+    )
+    .unwrap()
+}
+
+#[trace("TC-194", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-6")]
 #[test]
 fn e09_absence_and_null_stay_distinct() {
-    let env = TypeEnvironment::new([CompositeDeclaration::new(
-        key("Holder"),
-        CompositeShape::Record(vec![FieldDeclaration::new(
-            key("value"),
-            ValueType::Integer,
-            Presence::OptionalNullable,
-        )]),
-    )])
-    .unwrap();
-    let holder = |state| {
-        env.record(key("Holder"), vec![(key("value"), state)])
-            .unwrap()
-    };
+    let env = holder_environment();
+    let holder_type = ValueType::Composite(key("Holder"));
+    let holder = |state| env.record(key("Holder"), vec![("value", state)]).unwrap();
+    let eq = |left: &Value, right: &Value| equal(&env, (&holder_type, left), (&holder_type, right));
     let null = holder(FieldValue::Null);
-    assert_eq!(equal(&null, &holder(FieldValue::Null)), is(true));
+    assert_eq!(eq(&null, &holder(FieldValue::Null)), is(true));
     assert_eq!(
-        equal(&holder(FieldValue::Absent), &holder(FieldValue::Absent)),
+        eq(&holder(FieldValue::Absent), &holder(FieldValue::Absent)),
         is(true)
     );
-    assert_eq!(equal(&holder(FieldValue::Absent), &null), is(false));
+    assert_eq!(eq(&holder(FieldValue::Absent), &null), is(false));
+    assert_eq!(eq(&holder(FieldValue::Present(int(1))), &null), is(false));
     assert_eq!(
-        equal(&holder(FieldValue::Present(int(1))), &null),
-        is(false)
-    );
-    assert_eq!(
-        equal(
+        eq(
             &holder(FieldValue::Present(int(1))),
             &holder(FieldValue::Present(int(1)))
         ),
         is(true)
     );
     assert_eq!(pairs(&null, &holder(FieldValue::Absent)), 2);
-    assert_disjoint(&null);
+    assert_disjoint(&env, &holder_type);
 }
 
 fn record_environment() -> TypeEnvironment {
     let inner = CompositeShape::Record(vec![FieldDeclaration::new(
-        key("v"),
+        "v",
         ValueType::Integer,
         Presence::Required,
     )]);
-    let outer = |inner_key: &str| {
+    let outer = || {
         CompositeShape::Record(vec![
-            FieldDeclaration::new(key("id"), ValueType::Integer, Presence::Required),
+            FieldDeclaration::new("id", ValueType::Integer, Presence::Required),
             FieldDeclaration::new(
-                key("inner"),
-                ValueType::Composite(key(inner_key)),
+                "inner",
+                ValueType::Composite(key("Inner")),
                 Presence::Required,
             ),
         ])
     };
     let pair = || CompositeShape::Tuple(vec![ValueType::Integer, ValueType::Boolean]);
-    TypeEnvironment::new([
-        CompositeDeclaration::new(key("Inner"), inner),
-        CompositeDeclaration::new(key("record-A"), outer("Inner")),
-        CompositeDeclaration::new(key("record-B"), outer("Inner")),
-        CompositeDeclaration::new(key("tuple-A"), pair()),
-        CompositeDeclaration::new(key("tuple-B"), pair()),
-    ])
+    TypeEnvironment::new(
+        [
+            CompositeDeclaration::new(key("Inner"), "Inner", inner),
+            CompositeDeclaration::new(key("record-A"), "RecordA", outer()),
+            CompositeDeclaration::new(key("record-B"), "RecordB", outer()),
+            CompositeDeclaration::new(key("tuple-A"), "TupleA", pair()),
+            CompositeDeclaration::new(key("tuple-B"), "TupleB", pair()),
+        ],
+        [],
+    )
     .unwrap()
 }
 
 fn nested(env: &TypeEnvironment, declaration: &str, id: i64, v: i64) -> Value {
     let inner = env
-        .record(key("Inner"), vec![(key("v"), FieldValue::Present(int(v)))])
+        .record(key("Inner"), vec![("v", FieldValue::Present(int(v)))])
         .unwrap();
     env.record(
         key(declaration),
         vec![
-            (key("id"), FieldValue::Present(int(id))),
-            (key("inner"), FieldValue::Present(inner)),
+            ("id", FieldValue::Present(int(id))),
+            ("inner", FieldValue::Present(inner)),
         ],
     )
     .unwrap()
 }
 
-#[trace("TC-194", "FR-149-AC-2", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-2")]
+#[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e10_records_compare_structurally_within_one_declaration() {
     let env = record_environment();
+    let (a, b) = (
+        ValueType::Composite(key("record-A")),
+        ValueType::Composite(key("record-B")),
+    );
     let left = nested(&env, "record-A", 1, 2);
-    assert_eq!(equal(&left, &nested(&env, "record-A", 1, 2)), is(true));
-    assert_eq!(equal(&left, &nested(&env, "record-A", 1, 3)), is(false));
     assert_eq!(
-        equal(&left, &nested(&env, "record-B", 1, 2)),
-        ill_typed(IllTypedCause::DistinctDeclarations)
+        equal(&env, (&a, &left), (&a, &nested(&env, "record-A", 1, 2))),
+        is(true)
+    );
+    assert_eq!(
+        equal(&env, (&a, &left), (&a, &nested(&env, "record-A", 1, 3))),
+        is(false)
+    );
+    assert_eq!(
+        equal(&env, (&a, &left), (&b, &nested(&env, "record-B", 1, 2))),
+        ill_typed(IllTypedCause::TypeMismatch)
     );
     // `$`, `$.id`, `$.inner`, `$.inner.v`.
     assert_eq!(pairs(&left, &nested(&env, "record-A", 9, 9)), 4);
-    assert_disjoint(&left);
+    assert_disjoint(&env, &a);
 }
 
 #[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e11_tuples_compare_positionally_within_one_declaration() {
     let env = record_environment();
+    let (a, b) = (
+        ValueType::Composite(key("tuple-A")),
+        ValueType::Composite(key("tuple-B")),
+    );
     let tuple = |declaration: &str, first, second| {
         env.tuple(key(declaration), vec![int(first), Value::Boolean(second)])
             .unwrap()
     };
     let left = tuple("tuple-A", 1, true);
-    assert_eq!(equal(&left, &tuple("tuple-A", 1, true)), is(true));
-    assert_eq!(equal(&left, &tuple("tuple-A", 1, false)), is(false));
     assert_eq!(
-        equal(&left, &tuple("tuple-B", 1, true)),
-        ill_typed(IllTypedCause::DistinctDeclarations)
+        equal(&env, (&a, &left), (&a, &tuple("tuple-A", 1, true))),
+        is(true)
     );
-    assert_disjoint(&left);
+    assert_eq!(
+        equal(&env, (&a, &left), (&a, &tuple("tuple-A", 1, false))),
+        is(false)
+    );
+    assert_eq!(
+        equal(&env, (&a, &left), (&b, &tuple("tuple-B", 1, true))),
+        ill_typed(IllTypedCause::TypeMismatch)
+    );
+    assert_disjoint(&env, &a);
 }
 
-fn assert_wrong_collection_kind(left: &Value, elements: &[i64]) {
-    for kind in [
-        CollectionKind::Sequence,
-        CollectionKind::Set,
-        CollectionKind::Bag,
-        CollectionKind::OrderedSet,
-    ] {
-        let other = collection(kind, elements);
-        if pairs_kind(left) != Some(kind) {
+/// Equal, unequal and wrong-kind mutations of one collection row.
+fn collection_row(kind: CollectionKind, left: &[i64], equal_to: &[&[i64]], unequal_to: &[&[i64]]) {
+    let env = TypeEnvironment::default();
+    let declared = collection_type(kind, ValueType::Integer, 3);
+    let value_type = ValueType::collection(declared.clone());
+    let left = collection(&declared, integers(left));
+    for (rights, expected) in [(equal_to, true), (unequal_to, false)] {
+        for right in rights {
+            let right = collection(&declared, integers(right));
             assert_eq!(
-                equal(left, &other),
-                ill_typed(IllTypedCause::DistinctValueTypes)
+                equal(&env, (&value_type, &left), (&value_type, &right)),
+                is(expected),
+                "{kind:?} {right:?}"
             );
         }
     }
-    let rationals = CollectionValue::construct(
-        pairs_kind(left).unwrap(),
-        ValueType::Rational,
-        bound(),
-        vec![rational(1, 1)],
-    )
-    .unwrap();
-    assert_eq!(
-        equal(left, &rationals),
-        ill_typed(IllTypedCause::DistinctValueTypes)
-    );
-    assert_disjoint(left);
-}
-
-fn pairs_kind(value: &Value) -> Option<CollectionKind> {
-    match value {
-        Value::Collection(collection) => Some(collection.kind()),
-        _ => None,
+    for other in CollectionKind::ALL
+        .into_iter()
+        .filter(|other| *other != kind)
+    {
+        let other = ValueType::collection(collection_type(other, ValueType::Integer, 3));
+        assert_eq!(
+            check(&env, &value_type, &other),
+            Err(IllTyped {
+                cause: IllTypedCause::TypeMismatch
+            })
+        );
     }
+    let rationals = ValueType::collection(collection_type(kind, rational_type(0, 2, 1, 1), 3));
+    assert_eq!(
+        check(&env, &value_type, &rationals),
+        Err(IllTyped {
+            cause: IllTypedCause::TypeMismatch
+        })
+    );
+    assert_disjoint(&env, &value_type);
 }
 
 #[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e12_sequences_compare_by_index() {
-    let left = collection(CollectionKind::Sequence, &[1, 2]);
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Sequence, &[1, 2])),
-        is(true)
+    collection_row(
+        CollectionKind::Sequence,
+        &[1, 2],
+        &[&[1, 2]],
+        &[&[2, 1], &[1, 2, 2]],
     );
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Sequence, &[2, 1])),
-        is(false)
-    );
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Sequence, &[1, 2, 2])),
-        is(false)
-    );
-    assert_wrong_collection_kind(&left, &[1, 2]);
 }
 
-#[trace("TC-194", "FR-149-AC-4", "FR-149-AC-8")]
+#[trace("TC-194", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-8")]
 #[test]
 fn e13_sets_ignore_insertion_order() {
-    let left = collection(CollectionKind::Set, &[1, 2]);
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Set, &[2, 1])),
-        is(true)
+    collection_row(
+        CollectionKind::Set,
+        &[1, 2],
+        &[&[2, 1], &[2, 1, 2]],
+        &[&[1, 3]],
     );
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Set, &[1, 3])),
-        is(false)
-    );
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Set, &[2, 1, 2])),
-        is(true)
-    );
-    assert_wrong_collection_kind(&left, &[1, 2]);
 }
 
-#[trace("TC-194", "FR-149-AC-4", "FR-149-AC-8")]
+#[trace("TC-194", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-8")]
 #[test]
 fn e14_bags_compare_multiplicity() {
-    let left = collection(CollectionKind::Bag, &[1, 1, 2]);
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Bag, &[2, 1, 1])),
-        is(true)
+    collection_row(
+        CollectionKind::Bag,
+        &[1, 1, 2],
+        &[&[2, 1, 1]],
+        &[&[1, 2, 2], &[1, 2]],
     );
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Bag, &[1, 2, 2])),
-        is(false)
-    );
-    assert_eq!(
-        equal(&left, &collection(CollectionKind::Bag, &[1, 2])),
-        is(false)
-    );
-    assert_wrong_collection_kind(&left, &[1, 1, 2]);
 }
 
 #[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e15_ordered_sets_normalize_to_first_occurrence() {
-    let left = collection(CollectionKind::OrderedSet, &[1, 2, 1]);
+    collection_row(
+        CollectionKind::OrderedSet,
+        &[1, 2, 1],
+        &[&[1, 2]],
+        &[&[2, 1]],
+    );
+}
+
+fn object_environment() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("Holder"),
+            "Holder",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "r",
+                ValueType::Reference(key("M::Obj")),
+                Presence::Required,
+            )]),
+        )],
+        [ObjectTypeDeclaration::new(
+            key("M::Obj"),
+            "Obj",
+            vec![FieldDeclaration::new(
+                "balance",
+                ValueType::Integer,
+                Presence::Required,
+            )],
+        )],
+    )
+    .unwrap()
+}
+
+fn reference(universe: &str, identity: &str) -> ObjectReference {
+    ObjectReference::new(
+        UniverseIdentity::new(universe.as_bytes()).unwrap(),
+        key("M::Obj"),
+        ObjectIdentity::new(identity.as_bytes()).unwrap(),
+    )
+}
+
+#[trace("TC-194", "FR-149-AC-2")]
+#[trace("TC-194", "FR-149-AC-4")]
+#[trace("TC-194", "FR-149-AC-11")]
+#[test]
+fn e16_references_compare_identity_triple_only() {
+    let env = object_environment();
+    let state = |balance| vec![("balance", FieldValue::Present(int(balance)))];
+    let a = reference("u1", "a");
+    let before = ObjectEnvironment::new(&env, [(a.clone(), state(1))]).unwrap();
+    let after = ObjectEnvironment::new(
+        &env,
+        [(a.clone(), state(2)), (reference("u1", "b"), state(1))],
+    )
+    .unwrap();
+    let balance = |objects: &ObjectEnvironment| match objects.attribute(&env, &a, "balance") {
+        Some(FieldValue::Present(Value::Integer(value))) => value.clone(),
+        other => panic!("balance is a present integer, not {other:?}"),
+    };
+    assert_ne!(balance(&before), balance(&after));
+    let r = ValueType::Reference(key("M::Obj"));
+    let left = Value::Reference(a.clone());
     assert_eq!(
-        equal(&left, &collection(CollectionKind::OrderedSet, &[1, 2])),
+        equal(&env, (&r, &left), (&r, &Value::Reference(a))),
         is(true)
     );
     assert_eq!(
-        equal(&left, &collection(CollectionKind::OrderedSet, &[2, 1])),
+        equal(
+            &env,
+            (&r, &left),
+            (&r, &Value::Reference(reference("u1", "b")))
+        ),
         is(false)
     );
-    assert_wrong_collection_kind(&left, &[1, 2]);
+    let mut meter = Meter::new(UNLIMITED);
+    assert_eq!(
+        check(&env, &r, &r).unwrap().evaluate(
+            &left,
+            &Value::Reference(reference("u2", "a")),
+            &mut meter
+        ),
+        Outcome::Refused(Refusal::ForeignReference)
+    );
+    assert_eq!(Refusal::ForeignReference.code(), Some("foreign_reference"));
+    assert_eq!(meter.admitted_charges(), [ChargePoint::EqualityPlanForm]);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
+    assert_disjoint(&env, &r);
 }
 
-#[trace("TC-194", "FR-149-AC-2", "FR-149-AC-4")]
-#[test]
-fn e16_references_compare_qualified_identity_only() {
-    let env = TypeEnvironment::new([
-        CompositeDeclaration::new(
-            key("object-A"),
-            CompositeShape::Record(vec![FieldDeclaration::new(
-                key("balance"),
-                ValueType::Integer,
-                Presence::Required,
-            )]),
-        ),
-        CompositeDeclaration::new(key("object-B"), CompositeShape::Tuple(vec![])),
-    ])
-    .unwrap();
-    let identity = |name: &str| ObjectIdentity::new(vec!["accounts".into(), name.into()]).unwrap();
-    let reference =
-        |declaration: &str, name: &str| ObjectReference::new(key(declaration), identity(name));
-    let state = |balance| {
-        env.record(
-            key("object-A"),
-            vec![(key("balance"), FieldValue::Present(int(balance)))],
-        )
-        .unwrap()
+// ---- IEEE rows -------------------------------------------------------------
+
+fn profile() -> &'static AdmittedIeeeProfile {
+    static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
+    PROFILE.get_or_init(|| {
+        let lock = DefinitionLock::pinned().unwrap();
+        let reference = lock
+            .entry(CatalogRole::IeeeProfile)
+            .unwrap()
+            .definition
+            .clone();
+        lock.admit_ieee_profile(&[reference], &[]).unwrap()
+    })
+}
+
+/// Numeric equality, total-order equivalence (both directions) and bit
+/// identity.
+fn ieee_relations(left: IeeeValue, right: IeeeValue) -> [bool; 3] {
+    let compare = |comparison, a, b| {
+        compare_ieee(profile(), comparison, a, b, &mut Meter::new(UNLIMITED))
+            .unwrap()
+            .completed()
+            .unwrap()
     };
-    let before = ObjectEnvironment::new([(reference("object-A", "a"), state(1))]).unwrap();
-    let after = ObjectEnvironment::new([
-        (reference("object-A", "a"), state(2)),
-        (reference("object-A", "b"), state(1)),
-    ])
-    .unwrap();
-    let a = reference("object-A", "a");
-    assert!(before.resolve(&a).is_some() && after.resolve(&a).is_some());
-    let left = Value::Reference(a.clone());
-    assert_eq!(equal(&left, &Value::Reference(a)), is(true));
+    [
+        compare(IeeeComparison::NumericEqual, left, right),
+        compare(IeeeComparison::TotalOrder, left, right)
+            && compare(IeeeComparison::TotalOrder, right, left),
+        compare(IeeeComparison::BitIdentical, left, right),
+    ]
+}
+
+#[trace("TC-194", "FR-149-AC-1")]
+#[trace("TC-194", "FR-149-AC-4")]
+#[test]
+fn e17_signed_zeros_under_each_selected_ieee_relation() {
+    let (positive, negative) = (IeeeValue::binary32(0), IeeeValue::binary32(0x8000_0000));
+    assert_eq!(ieee_relations(positive, negative), [true, false, false]);
+}
+
+#[trace("TC-194", "FR-149-AC-1")]
+#[trace("TC-194", "FR-149-AC-4")]
+#[test]
+fn e18_quiet_nan_under_each_selected_ieee_relation() {
+    let nan = IeeeValue::binary32(0x7fc0_0001);
+    assert_eq!(ieee_relations(nan, nan), [false, true, true]);
+}
+
+#[trace("TC-194", "FR-149-AC-3")]
+#[trace("TC-194", "FR-149-AC-5")]
+#[test]
+fn e19_ieee_widths_need_explicit_conversion() {
+    let narrow = IeeeValue::binary32(0x3f80_0000);
+    let wide = IeeeValue::binary64(0x3ff0_0000_0000_0000);
     assert_eq!(
-        equal(&left, &Value::Reference(reference("object-A", "b"))),
-        is(false)
+        compare_ieee(
+            profile(),
+            IeeeComparison::NumericEqual,
+            narrow,
+            wide,
+            &mut Meter::new(UNLIMITED)
+        ),
+        Err(IllTyped {
+            cause: IllTypedCause::DistinctIeeeWidths
+        })
     );
-    assert_eq!(pairs(&left, &left), 1);
-    assert_eq!(
-        equal(&left, &Value::Reference(reference("object-B", "a"))),
-        ill_typed(IllTypedCause::DistinctDeclarations)
-    );
-    assert_disjoint(&left);
+    let converted = convert_ieee_width(
+        profile(),
+        narrow,
+        IeeeWidth::Binary64,
+        RoundingMode::Exact,
+        &mut Meter::new(UNLIMITED),
+    )
+    .completed()
+    .unwrap()
+    .value();
+    assert!(ieee_relations(converted, wide)[0]);
+    assert_eq!(narrow.width(), IeeeWidth::Binary32);
+    assert_eq!(wide.width(), IeeeWidth::Binary64);
 }
 
 // ---- dispositions and accounting -------------------------------------------
 
 #[trace("TC-194", "FR-149-AC-7")]
 #[test]
-fn e20_nested_construction_dispositions_propagate() {
+fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
     let env = record_environment();
-    let incomplete = Incomplete {
-        limit_kind: LimitKind::WorkUnits,
-        limit: 0,
-        consumed: 0,
-        next_charge: Integer::from(1_i64),
-        charge_point: ChargePoint::DecimalArithmetic,
-    };
     let stopped: [Outcome<Value>; 3] = [
         Outcome::Undefined(Undefined::DivisionByZero),
         Outcome::Refused(Refusal::InexactDecimal),
-        Outcome::Incomplete(incomplete),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::WorkUnits,
+            limit: 0,
+            consumed: 0,
+            next_charge: integer(1),
+            charge_point: ChargePoint::DecimalArithmetic,
+        }),
     ];
     for nested in stopped {
-        let expected: Outcome<Value> = match &nested {
-            Outcome::Undefined(reason) => Outcome::Undefined(*reason),
-            Outcome::Refused(reason) => Outcome::Refused(*reason),
-            Outcome::Incomplete(record) => Outcome::Incomplete(record.clone()),
-            Outcome::Completed(_) => unreachable!(),
-        };
-        for _outer in 0..2 {
-            let outcome = env
-                .evaluate_record(
-                    key("Inner"),
-                    vec![(key("v"), FieldExpression::Evaluated(nested.clone()))],
-                )
-                .unwrap();
-            assert_eq!(format!("{outcome:?}"), format!("{expected:?}"));
-            assert!(outcome.completed().is_none());
-        }
+        let mut meter = Meter::new(UNLIMITED);
+        let inner_ran = Cell::new(false);
+        let outer = env
+            .evaluate_record(
+                key("record-A"),
+                vec![
+                    (
+                        "inner",
+                        FieldExpression::Evaluate(Box::new(|meter: &mut Meter| {
+                            inner_ran.set(true);
+                            env.evaluate_record(
+                                key("Inner"),
+                                vec![(
+                                    "v",
+                                    FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
+                                        nested.clone()
+                                    })),
+                                )],
+                                meter,
+                            )
+                            .unwrap()
+                        })),
+                    ),
+                    (
+                        "id",
+                        FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
+                            Outcome::Refused(Refusal::CheckedInvariant)
+                        })),
+                    ),
+                ],
+                &mut meter,
+            )
+            .unwrap();
+        // `id` is declared first, so its refusal wins and `inner` never runs.
+        assert!(matches!(outer, Outcome::Refused(Refusal::CheckedInvariant)));
+        assert!(!inner_ran.get());
+        let only_inner = env
+            .evaluate_record(
+                key("record-A"),
+                vec![
+                    (
+                        "inner",
+                        FieldExpression::Evaluate(Box::new(|meter: &mut Meter| {
+                            env.evaluate_record(
+                                key("Inner"),
+                                vec![(
+                                    "v",
+                                    FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
+                                        nested.clone()
+                                    })),
+                                )],
+                                meter,
+                            )
+                            .unwrap()
+                        })),
+                    ),
+                    (
+                        "id",
+                        FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
+                            Outcome::Completed(int(1))
+                        })),
+                    ),
+                ],
+                &mut meter,
+            )
+            .unwrap();
+        assert_eq!(format!("{only_inner:?}"), format!("{nested:?}"));
+        assert!(meter.admitted_charges().is_empty());
     }
-    let completed = env
-        .evaluate_record(
-            key("Inner"),
-            vec![(
-                key("v"),
-                FieldExpression::Evaluated(Outcome::Completed(int(1))),
-            )],
-        )
-        .unwrap()
-        .completed()
-        .unwrap();
-    assert_eq!(equal(&completed, &nested_inner(&env, 1)), is(true));
-}
-
-fn nested_inner(env: &TypeEnvironment, v: i64) -> Value {
-    env.record(key("Inner"), vec![(key("v"), FieldValue::Present(int(v)))])
-        .unwrap()
 }
 
 fn list_environment() -> TypeEnvironment {
-    TypeEnvironment::new([CompositeDeclaration::new(
-        key("List"),
-        CompositeShape::Variant(vec![
-            ConstructorDeclaration::new(key("Nil"), vec![]),
-            ConstructorDeclaration::new(
-                key("Cons"),
-                vec![
-                    FieldDeclaration::new(key("head"), ValueType::Integer, Presence::Required),
-                    FieldDeclaration::new(
-                        key("tail"),
-                        ValueType::Composite(key("List")),
-                        Presence::Required,
-                    ),
-                ],
-            ),
-        ]),
-    )])
-    .unwrap()
-}
-
-fn nil(env: &TypeEnvironment) -> Value {
-    env.variant(key("List"), key("Nil"), vec![]).unwrap()
-}
-
-fn cons(env: &TypeEnvironment, head: i64, tail: Value) -> Value {
-    env.variant(
-        key("List"),
-        key("Cons"),
-        vec![
-            (key("head"), FieldValue::Present(int(head))),
-            (key("tail"), FieldValue::Present(tail)),
-        ],
+    TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("List"),
+            "List",
+            CompositeShape::Record(vec![
+                FieldDeclaration::new("head", ValueType::Integer, Presence::Required),
+                FieldDeclaration::new(
+                    "tail",
+                    ValueType::Composite(key("List")),
+                    Presence::Optional,
+                ),
+            ]),
+        )],
+        [],
     )
     .unwrap()
 }
 
-/// `[from..=8]` ending in `tail`.
-fn list_onto(env: &TypeEnvironment, from: i64, tail: Value) -> Value {
+/// `[from..=8]` ending in `tail`, or an absent tail.
+fn list_onto(env: &TypeEnvironment, from: i64, tail: Option<Value>) -> Value {
     (from..=8)
         .rev()
-        .fold(tail, |tail, head| cons(env, head, tail))
+        .fold(tail, |tail, head| {
+            let tail = tail.map_or(FieldValue::Absent, FieldValue::Present);
+            Some(
+                env.record(
+                    key("List"),
+                    vec![("head", FieldValue::Present(int(head))), ("tail", tail)],
+                )
+                .unwrap(),
+            )
+        })
+        .unwrap()
 }
 
 const E21: ScalarLimits = ScalarLimits {
     integer_bits: 4,
     value_occurrences: 17,
-    work_units: 19,
+    work_units: 51,
     result_units: 1,
     ..ZERO
 };
 
 fn e21_operands(env: &TypeEnvironment) -> [(Value, Value); 2] {
-    let duplicated = (list_onto(env, 1, nil(env)), list_onto(env, 1, nil(env)));
-    // Both operands share one immutable `[5..=8]` tail.
-    let shared_tail = list_onto(env, 5, nil(env));
-    let prefix = |tail: Value| (1..=4).rev().fold(tail, |tail, head| cons(env, head, tail));
-    let shared = (prefix(shared_tail.clone()), prefix(shared_tail));
-    [duplicated, shared]
+    let duplicated = (list_onto(env, 1, None), list_onto(env, 1, None));
+    let shared_tail = list_onto(env, 5, None);
+    let prefix = |tail: &Value| {
+        (1..=4).rev().fold(tail.clone(), |tail, head| {
+            env.record(
+                key("List"),
+                vec![
+                    ("head", FieldValue::Present(int(head))),
+                    ("tail", FieldValue::Present(tail)),
+                ],
+            )
+            .unwrap()
+        })
+    };
+    [duplicated, (prefix(&shared_tail), prefix(&shared_tail))]
 }
 
 #[trace("TC-194", "FR-149-AC-7")]
+#[trace("TC-194", "FR-149-AC-11")]
 #[test]
 fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
     let env = list_environment();
-    let mut expected_points = vec![ChargePoint::EqualityPlan];
+    let list = ValueType::Composite(key("List"));
+    let checked = check(&env, &list, &list).unwrap();
+    let mut expected_points = vec![ChargePoint::EqualityPlanForm, ChargePoint::EqualityPlan];
     expected_points.extend([ChargePoint::EqualityPair; 17]);
     expected_points.push(ChargePoint::EqualityResultRetain);
     for (left, right) in e21_operands(&env) {
+        assert_eq!(left.occ(), integer(16));
         assert_eq!(pairs(&left, &right), 17);
         let mut meter = Meter::new(E21);
-        assert_eq!(evaluate_equality(&left, &right, &mut meter), is(true));
+        assert_eq!(
+            checked.evaluate(&left, &right, &mut meter),
+            Outcome::Completed(true)
+        );
         assert_eq!(meter.admitted_charges(), expected_points.as_slice());
-        assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 51);
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 1);
         assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 17);
-        assert_eq!(meter.consumed(LimitKind::IntegerBits), 0);
 
         let denied = |point, occurrence| {
             Meter::new(E21).with_injected_denial(InjectedDenial { point, occurrence })
         };
         assert_eq!(
-            evaluate_equality(&left, &right, &mut denied(ChargePoint::EqualityPair, 17)),
-            Ok(Outcome::Incomplete(Incomplete {
-                limit_kind: LimitKind::WorkUnits,
-                limit: 17,
-                consumed: 17,
-                next_charge: Integer::from(1_i64),
-                charge_point: ChargePoint::EqualityPair,
-            }))
+            checked.evaluate(&left, &right, &mut denied(ChargePoint::EqualityPair, 17)),
+            incomplete(LimitKind::WorkUnits, 49, 49, 1, ChargePoint::EqualityPair)
         );
         assert_eq!(
-            evaluate_equality(
+            checked.evaluate(
                 &left,
                 &right,
                 &mut denied(ChargePoint::EqualityResultRetain, 1)
             ),
-            Ok(Outcome::Incomplete(Incomplete {
-                limit_kind: LimitKind::WorkUnits,
-                limit: 18,
-                consumed: 18,
-                next_charge: Integer::from(1_i64),
-                charge_point: ChargePoint::EqualityResultRetain,
-            }))
+            incomplete(
+                LimitKind::WorkUnits,
+                50,
+                50,
+                1,
+                ChargePoint::EqualityResultRetain
+            )
         );
     }
 }
 
 #[trace("TC-194", "FR-149-AC-8")]
+#[trace("TC-194", "FR-149-AC-11")]
 #[test]
-fn e22_unkeyed_sets_and_bags_use_the_full_cross_product() {
-    let env = record_environment();
-    // Record elements: equality without a total canonical serialization key.
-    let element = |v| nested_inner(&env, v);
-    let of = |kind, values: &[i64]| {
-        CollectionValue::construct(
-            kind,
-            ValueType::Composite(key("Inner")),
-            bound(),
-            values.iter().map(|v| element(*v)).collect(),
+fn e22_sets_and_bags_match_reference_holders_by_key_rank() {
+    let env = object_environment();
+    let holder_type = ValueType::Composite(key("Holder"));
+    let holder = |name: &str| {
+        env.record(
+            key("Holder"),
+            vec![(
+                "r",
+                FieldValue::Present(Value::Reference(reference("u1", name))),
+            )],
         )
         .unwrap()
     };
-    let run = |left: &Value, right: &Value| {
+    let (h1, h2, h3) = (holder("h1"), holder("h2"), holder("h3"));
+    let run = |value_type: &ValueType, left: &Value, right: &Value| {
         let mut meter = Meter::new(UNLIMITED);
-        let outcome = evaluate_equality(left, right, &mut meter);
-        (outcome, meter.consumed(LimitKind::WorkUnits))
+        let outcome = check(&env, value_type, value_type)
+            .unwrap()
+            .evaluate(left, right, &mut meter);
+        (
+            outcome,
+            pairs(left, right),
+            meter.consumed(LimitKind::WorkUnits),
+        )
     };
-    // 1 + 2 × 2 element pairs × 2 (`$[i,j]`, `$[i,j].v`) = 9 pairs, 11 work.
-    let set = of(CollectionKind::Set, &[1, 2]);
-    for (right, expected) in [(&[2, 1], true), (&[1, 2], true), (&[1, 3], false)] {
-        let right = of(CollectionKind::Set, right);
-        assert_eq!(pairs(&set, &right), 9);
-        assert_eq!(run(&set, &right), (is(expected), 11));
-        assert_eq!(run(&right, &set), (is(expected), 11));
-    }
-    // 1 + 3 × 3 × 2 = 19 pairs, 21 work, for every insertion order.
-    let bag = of(CollectionKind::Bag, &[1, 1, 2]);
+    let set_type = collection_type(CollectionKind::Set, holder_type.clone(), 2);
+    let set_value_type = ValueType::collection(set_type.clone());
+    let set =
+        |members: &[&Value]| collection(&set_type, members.iter().copied().cloned().collect());
+    let left = set(&[&h1, &h2]);
     for (right, expected) in [
-        (&[2, 1, 1], true),
-        (&[1, 2, 1], true),
-        (&[1, 2, 2], false),
-        (&[2, 2, 2], false),
+        (set(&[&h2, &h1]), true),
+        (set(&[&h1, &h2]), true),
+        (set(&[&h1, &h3]), false),
     ] {
-        let right = of(CollectionKind::Bag, right);
-        assert_eq!(pairs(&bag, &right), 19);
-        assert_eq!(run(&bag, &right), (is(expected), 21));
-        assert_eq!(run(&right, &bag), (is(expected), 21));
+        assert_eq!(
+            run(&set_value_type, &left, &right),
+            (Outcome::Completed(expected), 5, 17)
+        );
+        assert_eq!(
+            run(&set_value_type, &right, &left),
+            (Outcome::Completed(expected), 5, 17)
+        );
+    }
+    assert_eq!(
+        run(&set_value_type, &left, &set(&[&h1])),
+        (Outcome::Completed(false), 1, 11)
+    );
+    let bag_type = collection_type(CollectionKind::Bag, holder_type, 3);
+    let bag_value_type = ValueType::collection(bag_type.clone());
+    let bag =
+        |members: &[&Value]| collection(&bag_type, members.iter().copied().cloned().collect());
+    let left = bag(&[&h1, &h1, &h2]);
+    for (right, expected) in [
+        (bag(&[&h2, &h1, &h1]), true),
+        (bag(&[&h1, &h2, &h1]), true),
+        (bag(&[&h1, &h2, &h2]), false),
+        (bag(&[&h2, &h2, &h2]), false),
+    ] {
+        assert_eq!(
+            run(&bag_value_type, &left, &right),
+            (Outcome::Completed(expected), 7, 23)
+        );
+        assert_eq!(
+            run(&bag_value_type, &right, &left),
+            (Outcome::Completed(expected), 7, 23)
+        );
     }
 }
 
 #[trace("TC-194", "FR-149-AC-7")]
+#[trace("TC-194", "FR-149-AC-11")]
 #[test]
-fn e23_plan_reservation_refuses_before_any_counter_changes() {
+fn e23_plan_reservation_is_unavailable_after_plan_formation() {
     let env = list_environment();
+    let list = ValueType::Composite(key("List"));
     let [(left, right), _] = e21_operands(&env);
     let mut meter = Meter::new(ScalarLimits {
-        work_units: 18,
+        work_units: 50,
         ..E21
     });
     assert_eq!(
-        evaluate_equality(&left, &right, &mut meter),
-        Ok(Outcome::Incomplete(Incomplete {
-            limit_kind: LimitKind::WorkUnits,
-            limit: 18,
-            consumed: 0,
-            next_charge: Integer::from(19_i64),
-            charge_point: ChargePoint::EqualityPlan,
-        }))
+        check(&env, &list, &list)
+            .unwrap()
+            .evaluate(&left, &right, &mut meter),
+        incomplete(LimitKind::WorkUnits, 50, 32, 19, ChargePoint::EqualityPlan)
     );
-    assert!(meter.admitted_charges().is_empty());
-    for kind in LimitKind::ALL {
-        assert_eq!(meter.consumed(kind), 0, "{kind:?}");
-    }
+    assert_eq!(meter.admitted_charges(), [ChargePoint::EqualityPlanForm]);
+    assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
 }
 
 #[trace("TC-194", "FR-149-AC-7")]
+#[trace("TC-194", "FR-149-AC-11")]
 #[test]
 fn e24_quantity_leaf_charges_only_its_pair() {
     let units = units();
-    let env = TypeEnvironment::new([CompositeDeclaration::new(
-        key("Length"),
-        CompositeShape::Record(vec![FieldDeclaration::new(
-            key("d"),
-            ValueType::Quantity(units.cm.clone()),
-            Presence::Required,
-        )]),
-    )])
+    let env = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("Length"),
+            "Length",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "d",
+                ValueType::Quantity(units.cm.clone()),
+                Presence::Required,
+            )]),
+        )],
+        [],
+    )
     .unwrap();
+    let length = ValueType::Composite(key("Length"));
     let record = || {
-        let d = Quantity::new(
-            Rational::from_integer(Integer::from(1_i64)),
-            units.cm.clone(),
-        );
+        let d = Quantity::new(Rational::from_integer(integer(1)), units.cm.clone());
         env.record(
             key("Length"),
-            vec![(key("d"), FieldValue::Present(Value::Quantity(d)))],
+            vec![("d", FieldValue::Present(Value::Quantity(d)))],
         )
         .unwrap()
     };
+    let checked = check(&env, &length, &length).unwrap();
     let limits = ScalarLimits {
         value_occurrences: 2,
-        work_units: 4,
+        work_units: 8,
         result_units: 1,
         ..ZERO
     };
     let mut meter = Meter::new(limits);
     assert_eq!(
-        evaluate_equality(&record(), &record(), &mut meter),
-        is(true)
+        checked.evaluate(&record(), &record(), &mut meter),
+        Outcome::Completed(true)
     );
     assert_eq!(
         meter.admitted_charges(),
         [
+            ChargePoint::EqualityPlanForm,
             ChargePoint::EqualityPlan,
             ChargePoint::EqualityPair,
             ChargePoint::EqualityPair,
             ChargePoint::EqualityResultRetain,
         ]
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 4);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 8);
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 1);
+    assert_eq!(meter.consumed(LimitKind::UnitEdges), 0);
+    for (work, expected) in [
+        (
+            7,
+            incomplete(LimitKind::WorkUnits, 7, 4, 4, ChargePoint::EqualityPlan),
+        ),
+        (
+            3,
+            incomplete(LimitKind::WorkUnits, 3, 0, 4, ChargePoint::EqualityPlanForm),
+        ),
+    ] {
+        let mut short = Meter::new(ScalarLimits {
+            work_units: work,
+            ..limits
+        });
+        assert_eq!(checked.evaluate(&record(), &record(), &mut short), expected);
+    }
+}
 
+#[trace("TC-194", "FR-149-AC-9")]
+#[test]
+fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
+    let env = object_environment();
+    let limits = ScalarLimits {
+        value_occurrences: 1,
+        work_units: 5,
+        result_units: 1,
+        ..ZERO
+    };
+    let decimal_type = decimal_type(0, 100, 1, 2);
+    let reference_type = ValueType::Reference(key("M::Obj"));
+    let a = Value::Reference(reference("u1", "a"));
+    let rows: [(EqualityOperator, &ValueType, Value, Value, bool); 4] = [
+        (
+            EqualityOperator::Equal,
+            &ValueType::Boolean,
+            Value::Boolean(true),
+            Value::Boolean(true),
+            true,
+        ),
+        (
+            EqualityOperator::NotEqual,
+            &ValueType::Integer,
+            int(7),
+            int(7),
+            false,
+        ),
+        (
+            EqualityOperator::Equal,
+            &decimal_type,
+            decimal(10, 1),
+            decimal(100, 2),
+            true,
+        ),
+        (EqualityOperator::Equal, &reference_type, a.clone(), a, true),
+    ];
+    for (operator, value_type, left, right, expected) in rows {
+        let checked = env
+            .check_equality(operator, typed(value_type), typed(value_type))
+            .unwrap();
+        let mut meter = Meter::new(limits);
+        assert_eq!(
+            checked.evaluate(&left, &right, &mut meter),
+            Outcome::Completed(expected)
+        );
+        assert_eq!(meter.admitted_charges(), PLAN_SCHEDULE);
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 5);
+    }
+    let boolean = check(&env, &ValueType::Boolean, &ValueType::Boolean).unwrap();
+    for (work, expected) in [
+        (
+            4,
+            incomplete(LimitKind::WorkUnits, 4, 2, 3, ChargePoint::EqualityPlan),
+        ),
+        (
+            1,
+            incomplete(LimitKind::WorkUnits, 1, 0, 2, ChargePoint::EqualityPlanForm),
+        ),
+    ] {
+        let mut meter = Meter::new(ScalarLimits {
+            work_units: work,
+            ..limits
+        });
+        assert_eq!(
+            boolean.evaluate(&Value::Boolean(true), &Value::Boolean(true), &mut meter),
+            expected
+        );
+    }
+}
+
+#[trace("TC-194", "FR-149-AC-10")]
+#[test]
+fn e26_exactly_the_tabled_equality_conversions_are_admitted() {
+    let env = TypeEnvironment::default();
+    let d_200 = decimal_type(0, 200, 2, 2);
+    let rows: [(ValueType, ValueType, Value, Value, Option<bool>); 8] = [
+        (
+            int_type(0, 2),
+            d_200.clone(),
+            int(1),
+            decimal(100, 2),
+            Some(true),
+        ),
+        (
+            decimal_type(0, 9, 0, 0),
+            int_type(0, 9),
+            decimal(3, 0),
+            int(3),
+            Some(true),
+        ),
+        (
+            rational_type(0, 5, 1, 1),
+            int_type(0, 5),
+            rational(4, 1),
+            int(4),
+            Some(true),
+        ),
+        (
+            decimal_type(0, 9, 0, 1),
+            int_type(0, 9),
+            decimal(1, 0),
+            int(1),
+            None,
+        ),
+        (int_type(0, 300), d_200, int(1), decimal(100, 2), None),
+        (
+            ValueType::Integer,
+            rational_type(0, 2, 1, 1),
+            int(1),
+            rational(1, 1),
+            None,
+        ),
+        (
+            decimal_type(0, 100, 1, 2),
+            decimal_type(0, 100, 0, 2),
+            decimal(10, 1),
+            decimal(1, 0),
+            Some(true),
+        ),
+        (
+            decimal_type(0, 100, 0, 2),
+            decimal_type(0, 100, 1, 2),
+            decimal(1, 0),
+            decimal(10, 1),
+            None,
+        ),
+    ];
+    for (row, (source, target, left, right, expected)) in rows.into_iter().enumerate() {
+        let checked = env.check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::converted(source, target.clone()),
+            typed(&target),
+        );
+        match expected {
+            Some(expected) => assert_eq!(
+                checked
+                    .unwrap()
+                    .evaluate(&left, &right, &mut Meter::new(UNLIMITED)),
+                Outcome::Completed(expected),
+                "row {row}"
+            ),
+            None => assert_eq!(
+                checked,
+                Err(IllTyped {
+                    cause: IllTypedCause::TypeMismatch
+                }),
+                "row {row}"
+            ),
+        }
+    }
+}
+
+#[trace("TC-194", "FR-149-AC-11")]
+#[test]
+fn e27_structural_mismatch_and_cardinality_short_circuit_pair_counts() {
+    let env = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("R"),
+            "R",
+            CompositeShape::Record(vec![
+                FieldDeclaration::new("a", ValueType::Integer, Presence::Required),
+                FieldDeclaration::new("b", ValueType::Integer, Presence::Optional),
+            ]),
+        )],
+        [],
+    )
+    .unwrap();
+    let run = |value_type: &ValueType, left: &Value, right: &Value| {
+        let mut meter = Meter::new(UNLIMITED);
+        let outcome = check(&env, value_type, value_type)
+            .unwrap()
+            .evaluate(left, right, &mut meter);
+        (
+            outcome.completed().unwrap(),
+            pairs(left, right),
+            meter.consumed(LimitKind::WorkUnits),
+        )
+    };
+    let option = ValueType::option(ValueType::Integer);
+    let none = || OptionValue::none(ValueType::Integer);
+    let present = |value| OptionValue::present(ValueType::Integer, int(value)).unwrap();
+    assert_eq!(run(&option, &none(), &none()), (true, 1, 5));
+    assert_eq!(run(&option, &present(1), &present(2)), (false, 2, 8));
+    assert_eq!(run(&option, &none(), &present(1)), (false, 1, 6));
+
+    let r_type = ValueType::Composite(key("R"));
+    let r = |a, b| {
+        env.record(key("R"), vec![("a", FieldValue::Present(int(a))), ("b", b)])
+            .unwrap()
+    };
+    let absent = || FieldValue::Absent;
+    assert_eq!(run(&r_type, &r(1, absent()), &r(1, absent())), (true, 3, 9));
+    assert_eq!(
+        run(&r_type, &r(1, FieldValue::Null), &r(1, absent())),
+        (false, 3, 9)
+    );
+    assert_eq!(
+        run(
+            &r_type,
+            &r(1, FieldValue::Present(int(2))),
+            &r(2, FieldValue::Present(int(2)))
+        ),
+        (false, 3, 11)
+    );
+
+    let of = |kind| {
+        let declared = collection_type(kind, ValueType::Integer, 3);
+        let value_type = ValueType::collection(declared.clone());
+        (value_type, move |values: &[i64]| {
+            collection(&declared, integers(values))
+        })
+    };
+    let (sequence, seq) = of(CollectionKind::Sequence);
+    assert_eq!(
+        run(&sequence, &seq(&[1, 2]), &seq(&[1, 2, 3])),
+        (false, 1, 10)
+    );
+    assert_eq!(run(&sequence, &seq(&[1, 2]), &seq(&[1, 3])), (false, 3, 11));
+    let (set_type, set) = of(CollectionKind::Set);
+    assert_eq!(run(&set_type, &set(&[1, 2]), &set(&[2, 1])), (true, 3, 11));
+    assert_eq!(
+        run(&set_type, &set(&[1, 2]), &set(&[1, 2, 3])),
+        (false, 1, 10)
+    );
+    let (bag_type, bag) = of(CollectionKind::Bag);
+    assert_eq!(
+        run(&bag_type, &bag(&[1, 1, 2]), &bag(&[1, 2, 2])),
+        (false, 4, 14)
+    );
+}
+
+#[trace("TC-194", "FR-149-AC-9")]
+#[test]
+fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
+    let env = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            key("F"),
+            "F",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "x",
+                ValueType::Float(IeeeWidth::Binary32),
+                Presence::Required,
+            )]),
+        )],
+        [],
+    )
+    .unwrap();
+    let ineligible = IllTyped {
+        cause: IllTypedCause::OperatorIneligible,
+    };
+    for value_type in [
+        ValueType::Float(IeeeWidth::Binary32),
+        ValueType::Composite(key("F")),
+    ] {
+        assert_eq!(check(&env, &value_type, &value_type), Err(ineligible));
+    }
+    assert_eq!(ineligible.cause.tag(), Some("operator-ineligible"));
+    let set = ValueType::collection(collection_type(
+        CollectionKind::Set,
+        ValueType::Float(IeeeWidth::Binary64),
+        2,
+    ));
+    assert_eq!(env.check_type(&set), Err(ineligible));
+}
+
+#[trace("TC-194", "FR-149-AC-10")]
+#[test]
+fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
+    let env = TypeEnvironment::default();
+    let target = decimal_type(0, 200, 2, 2);
+    let checked = env
+        .check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::converted(int_type(0, 2), target.clone()),
+            typed(&target),
+        )
+        .unwrap();
+    let limits = ScalarLimits {
+        integer_bits: 7,
+        decimal_digits: 3,
+        scale_expansion: 2,
+        value_occurrences: 1,
+        work_units: 9,
+        result_units: 2,
+        ..ZERO
+    };
+    let mut meter = Meter::new(limits);
+    assert_eq!(
+        checked.evaluate(&int(1), &decimal(100, 2), &mut meter),
+        Outcome::Completed(true)
+    );
+    let mut expected = vec![
+        ChargePoint::DecimalOperands,
+        ChargePoint::DecimalScaleExpansion,
+        ChargePoint::DecimalArithmetic,
+        ChargePoint::DecimalResultRetain,
+    ];
+    expected.extend(PLAN_SCHEDULE);
+    assert_eq!(meter.admitted_charges(), expected.as_slice());
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 9);
+    assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
+    assert_eq!(meter.consumed(LimitKind::IntegerBits), 7);
+    assert_eq!(meter.consumed(LimitKind::DecimalDigits), 3);
+    assert_eq!(meter.consumed(LimitKind::ScaleExpansion), 2);
     let mut short = Meter::new(ScalarLimits {
-        work_units: 3,
+        work_units: 8,
         ..limits
     });
     assert_eq!(
-        evaluate_equality(&record(), &record(), &mut short),
-        Ok(Outcome::Incomplete(Incomplete {
-            limit_kind: LimitKind::WorkUnits,
-            limit: 3,
-            consumed: 0,
-            next_charge: Integer::from(4_i64),
-            charge_point: ChargePoint::EqualityPlan,
-        }))
+        checked.evaluate(&int(1), &decimal(100, 2), &mut short),
+        incomplete(LimitKind::WorkUnits, 8, 6, 3, ChargePoint::EqualityPlan)
     );
-    assert!(short.admitted_charges().is_empty());
+}
+
+#[trace("TC-194", "FR-149-AC-5")]
+#[test]
+fn e_construction_refusals_are_located() {
+    let env = record_environment();
+    assert_eq!(
+        env.record(
+            key("Inner"),
+            vec![("v", FieldValue::Present(Value::Boolean(true)))]
+        )
+        .unwrap_err(),
+        ConstructionRefusal {
+            component: Component::Field("v".into()),
+            cause: ConstructionCause::TypeMismatch,
+        }
+    );
 }

@@ -101,31 +101,31 @@ pub enum IllTypedCause {
     /// An IEEE value is converted directly to `Decimal`, `Integer` or
     /// `Int[..]`; only a `Rational[..]` target is defined.
     IeeeToNonRationalExact,
-    /// Equality operands are of different value kinds, or of option or
-    /// collection types with different declared payload/element types.
-    DistinctValueTypes,
-    /// Record, tuple, variant or reference operands name different
-    /// declarations; equal shapes never create a common type.
-    DistinctDeclarations,
-    /// No explicitly declared lossless conversion reaches the requested
-    /// comparison type.
-    NoLosslessConversion,
-    /// A collection function or query value is not of the source element
-    /// type, or a reduction's accumulator is not the element type.
-    FunctionParameterType,
-    /// A filter predicate does not return `Boolean`.
-    PredicateNotBoolean,
-    /// A fold identity is not a member of the accumulator type.
-    FoldIdentityType,
-    /// A set or bag fold or reduction uses a function not declared both
-    /// commutative and associative.
-    UnorderedFoldRequiresCommutativeAssociative,
-    /// A collection conversion discards a property that was not accepted.
-    UnacceptedCollectionLoss,
-    /// Ordering an unordered collection needs a total element key the element
-    /// type does not supply.
-    NoTotalElementKey,
-    /// The flatten source's elements are not collections, or the
-    /// outer/inner kind combination is not defined.
-    UnsupportedFlattenSource,
+    /// FR-272 `type-mismatch`: the operands or a value and its expected
+    /// position have no common declared type and no admitted conversion.
+    TypeMismatch,
+    /// FR-272 `operator-ineligible`: the operator is not defined for the
+    /// operand type, such as `=` on an IEEE-bearing type.
+    OperatorIneligible,
+}
+
+impl IllTypedCause {
+    /// The closed FR-272 `cause` tag, for the causes the complete-V1 cause
+    /// table names.
+    pub fn tag(self) -> Option<&'static str> {
+        match self {
+            Self::TypeMismatch => Some("type-mismatch"),
+            Self::OperatorIneligible => Some("operator-ineligible"),
+            Self::DistinctTextProfiles
+            | Self::DistinctEnumDeclarations
+            | Self::UnorderedEnumOrdering
+            | Self::IncompatibleDimensions
+            | Self::AffineUnitArithmetic
+            | Self::DistinctUnits
+            | Self::MalformedDecimalType
+            | Self::DistinctIeeeWidths
+            | Self::IeeeWithExactOperand
+            | Self::IeeeToNonRationalExact => None,
+        }
+    }
 }

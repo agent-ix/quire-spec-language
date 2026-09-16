@@ -43,7 +43,7 @@ impl QuantityUnit {
     /// declared units need one dimension node, so equal base-dimension maps
     /// under distinct nodes (torque and energy) are not enough; a compound
     /// side compares base-dimension maps.
-    fn converts_to(&self, target: &Self) -> bool {
+    pub(crate) fn converts_to(&self, target: &Self) -> bool {
         match (self, target) {
             (Self::Declared(source), Self::Declared(target)) => {
                 source.dimension_node() == target.dimension_node()

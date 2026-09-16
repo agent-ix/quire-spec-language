@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-144 collection kinds: bounded construction, the type-owned total element
-//! key and the canonical representation.
+//! FR-144 collection kinds: bounded, metered construction and the canonical
+//! order.
 //!
-//! Every materialization checks the declared inclusive cardinality bound
-//! before a member is retained. The FR-145 queries over these values live in
-//! `collection_query`.
+//! A collection type `K<T>[min, max]` includes its bound. Construction charges
+//! the `quire.value.accounting/v1` collection family: one `collection.element`
+//! before each element expression; for a set, bag or ordered set, one
+//! `collection.member-walk` and `collection.member-test` per membership
+//! comparison against the members retained so far, in retention order and
+//! stopping at the first equal member; `collection.bound` before the
+//! uncharged bound check; then `collection.result-retain`. A set or bag stores
+//! its occurrences in ascending canonical-key order (a bag listing each
+//! occurrence), which is its canonical representation and visiting order.
 
+use std::cell::Cell;
+use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::composite::{Component, ConstructionCause, ConstructionRefusal, Value, ValueType};
-use super::equality::decide_equal;
+use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
+use super::composite::{
+    Component, ConstructionCause, ConstructionRefusal, Deferred, Value, ValueType,
+};
+use super::equality::plan_pairs;
 use super::integer::Integer;
-use super::rational::Rational;
-
-// SPEC-GAP(119-9): `quire.value.accounting/v1` names no collection
-// construction, traversal, membership or retain charge point, so collection
-// construction and queries charge nothing themselves: materialization is
-// bounded only by the declared cardinality bound, and only caller-supplied
-// functions receive the meter. The membership decisions inside construction
-// and `count` use the unmetered FR-149 relation.
+use super::key::compare_keys;
+use super::outcome::{BoundViolation, Outcome, Refusal, Stop};
 
 /// A collection kind.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -48,12 +53,8 @@ impl CollectionKind {
     }
 }
 
-/// An inclusive declared cardinality bound `minimum..maximum`. It counts
+/// An inclusive declared cardinality bound `[minimum, maximum]`. It counts
 /// occurrences for sequences and bags and members for sets and ordered sets.
-// SPEC-GAP(119-11): FR-144 lists the bound as a construction input but does
-// not say whether it is part of the collection type's identity. It is not:
-// `ValueType::Collection` carries only kind and element type, and the bound is
-// checked at each materialization.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CardinalityBound {
     minimum: u64,
@@ -62,7 +63,7 @@ pub struct CardinalityBound {
 
 /// A cardinality bound with `minimum > maximum`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("empty cardinality bound {minimum}..{maximum}")]
+#[error("empty cardinality bound [{minimum}, {maximum}]")]
 pub struct EmptyCardinalityBound {
     /// The declared minimum.
     pub minimum: u64,
@@ -71,7 +72,7 @@ pub struct EmptyCardinalityBound {
 }
 
 impl CardinalityBound {
-    /// The inclusive bound `minimum..maximum`.
+    /// The inclusive bound `[minimum, maximum]`.
     pub fn new(minimum: u64, maximum: u64) -> Result<Self, EmptyCardinalityBound> {
         if minimum > maximum {
             return Err(EmptyCardinalityBound { minimum, maximum });
@@ -88,298 +89,250 @@ impl CardinalityBound {
     pub fn maximum(self) -> u64 {
         self.maximum
     }
+
+    fn violation(self, count: u64) -> Option<BoundViolation> {
+        if count < self.minimum {
+            Some(BoundViolation::BelowMinimum)
+        } else if count > self.maximum {
+            Some(BoundViolation::AboveMaximum)
+        } else {
+            None
+        }
+    }
 }
 
-/// Why a materialization violates its cardinality bound.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum CardinalityViolation {
-    /// No bound was declared.
-    Missing,
-    /// One more occurrence or member than `maximum` was about to be retained.
-    AboveMaximum {
-        /// The declared maximum.
-        maximum: u64,
-    },
-    /// Fewer than `minimum` occurrences or members remained.
-    BelowMinimum {
-        /// The declared minimum.
-        minimum: u64,
-        /// The counted occurrences or members.
-        counted: u64,
-    },
-}
-
-/// A count as `u64`. Saturation is exact for every bound comparison because no
-/// bound exceeds `u64::MAX`.
-fn count(length: usize) -> u64 {
-    u64::try_from(length).unwrap_or(u64::MAX)
-}
-
-/// Bounded materialization of one collection. Nothing is retained past the
-/// declared maximum and no value escapes a refused build.
-pub(crate) struct CollectionBuilder {
+/// A collection type `K<T>[min, max]`. Two collection types are the same type
+/// exactly when kind, element type and bound are all equal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollectionType {
     kind: CollectionKind,
-    element_type: ValueType,
+    element: ValueType,
     bound: CardinalityBound,
-    kept: Vec<Value>,
 }
 
-impl CollectionBuilder {
-    /// Start a build of at most `occurrences` supplied occurrences. A sequence
-    /// or bag whose occurrence count already exceeds the maximum refuses
-    /// before anything is allocated.
-    pub(crate) fn start(
-        kind: CollectionKind,
-        element_type: ValueType,
-        bound: Option<CardinalityBound>,
-        occurrences: usize,
-    ) -> Result<Self, CardinalityViolation> {
-        let bound = bound.ok_or(CardinalityViolation::Missing)?;
-        if !kind.is_unique() && count(occurrences) > bound.maximum {
-            return Err(CardinalityViolation::AboveMaximum {
-                maximum: bound.maximum,
-            });
-        }
-        let capacity = usize::try_from(bound.maximum)
-            .unwrap_or(usize::MAX)
-            .min(occurrences);
-        Ok(Self {
+impl CollectionType {
+    /// `kind<element>[bound]`. Whether a set, bag or ordered-set element type
+    /// admits `=` is decided by
+    /// [`TypeEnvironment::check_type`](super::TypeEnvironment::check_type).
+    pub fn new(kind: CollectionKind, element: ValueType, bound: CardinalityBound) -> Self {
+        Self {
             kind,
-            element_type,
+            element,
             bound,
-            kept: Vec::with_capacity(capacity),
-        })
+        }
     }
 
-    /// Add one occurrence of the element type. A set or ordered set drops an
-    /// occurrence equal to a retained member.
-    pub(crate) fn push(&mut self, occurrence: Value) -> Result<(), CardinalityViolation> {
-        if self.kind.is_unique() && self.kept.iter().any(|kept| decide_equal(kept, &occurrence)) {
-            return Ok(());
-        }
-        if count(self.kept.len()) >= self.bound.maximum {
-            return Err(CardinalityViolation::AboveMaximum {
-                maximum: self.bound.maximum,
-            });
-        }
-        self.kept.push(occurrence);
-        Ok(())
-    }
-
-    /// The collection, if the minimum is met.
-    pub(crate) fn finish(self) -> Result<Value, CardinalityViolation> {
-        let counted = count(self.kept.len());
-        if counted < self.bound.minimum {
-            return Err(CardinalityViolation::BelowMinimum {
-                minimum: self.bound.minimum,
-                counted,
-            });
-        }
-        Ok(Value::Collection(Arc::new(CollectionValue {
-            kind: self.kind,
-            element_type: self.element_type,
-            elements: self.kept.into_boxed_slice(),
-        })))
-    }
-}
-
-/// A collection of one declared element type.
-#[derive(Clone, Debug)]
-pub struct CollectionValue {
-    kind: CollectionKind,
-    element_type: ValueType,
-    elements: Box<[Value]>,
-}
-
-impl CollectionValue {
-    /// A collection of `kind` over `element_type` from occurrences in
-    /// insertion order, within the declared inclusive `bound`. A set or
-    /// ordered set keeps each member's first occurrence under the FR-149
-    /// equality relation of `element_type`. A missing or violated bound
-    /// refuses with no partial collection.
-    pub fn construct(
-        kind: CollectionKind,
-        element_type: ValueType,
-        bound: Option<CardinalityBound>,
-        occurrences: Vec<Value>,
-    ) -> Result<Value, ConstructionRefusal> {
-        if let Some(index) = occurrences
-            .iter()
-            .position(|occurrence| !element_type.admits(occurrence))
-        {
-            return Err(ConstructionRefusal {
-                component: Component::Element(index),
-                cause: ConstructionCause::TypeMismatch,
-            });
-        }
-        let cardinality = |violation| ConstructionRefusal {
-            component: Component::Value,
-            cause: ConstructionCause::Cardinality(violation),
-        };
-        let mut builder = CollectionBuilder::start(kind, element_type, bound, occurrences.len())
-            .map_err(cardinality)?;
-        for occurrence in occurrences {
-            builder.push(occurrence).map_err(cardinality)?;
-        }
-        builder.finish().map_err(cardinality)
-    }
-
-    /// The collection kind.
+    /// The kind.
     pub fn kind(&self) -> CollectionKind {
         self.kind
     }
 
-    /// The declared element type.
-    pub fn element_type(&self) -> &ValueType {
-        &self.element_type
+    /// The element type.
+    pub fn element(&self) -> &ValueType {
+        &self.element
     }
 
-    /// Retained occurrences (members for a set or ordered set) in insertion
-    /// order. For a set or bag this order is not semantic.
+    /// The declared bound.
+    pub fn bound(&self) -> CardinalityBound {
+        self.bound
+    }
+}
+
+/// A completed collection value.
+#[derive(Clone, Debug)]
+pub struct CollectionValue {
+    collection_type: CollectionType,
+    elements: Box<[Value]>,
+    occ: Integer,
+}
+
+impl CollectionValue {
+    /// The declared collection type.
+    pub fn collection_type(&self) -> &CollectionType {
+        &self.collection_type
+    }
+
+    /// The canonical representation: occurrence order for a sequence,
+    /// first-occurrence member order for an ordered set, ascending canonical
+    /// key for a set, and ascending key listing each occurrence for a bag.
     pub fn elements(&self) -> &[Value] {
         &self.elements
     }
 
-    /// The FR-144 canonical representation: occurrence order for a sequence
-    /// or ordered set; ascending total element key for a set; ascending key
-    /// with multiplicity for a bag. A set or bag whose element type has no
-    /// total key refuses.
-    // SPEC-GAP(119-15): FR-144 names "canonical bytes" but no encoding for a
-    // collection, so the canonical representation is returned as typed
-    // entries rather than bytes.
-    pub fn canonical_form(&self) -> Result<CanonicalCollection, NoTotalElementKey> {
-        let single = |value: &Value| CanonicalEntry {
-            value: value.clone(),
-            multiplicity: Integer::one(),
-        };
-        let entries = if self.kind.is_ordered() {
-            self.elements.iter().map(single).collect()
-        } else {
-            let mut entries: Vec<CanonicalEntry> = Vec::new();
-            for (_, value) in keyed_ascending(&self.element_type, &self.elements)? {
-                match entries.last_mut() {
-                    Some(last) if decide_equal(&last.value, value) => {
-                        last.multiplicity = last.multiplicity.add(&Integer::one());
-                    }
-                    Some(_) | None => entries.push(single(value)),
+    /// `occ` of the collection.
+    pub(crate) fn occ(&self) -> &Integer {
+        &self.occ
+    }
+}
+
+/// Evaluate a collection constructor expression `K[e1, ..., en]` checked
+/// against `collection_type`. Each element charges `collection.element` and
+/// then runs; the first element that does not complete becomes the outcome and
+/// no later element runs.
+pub fn construct_collection(
+    collection_type: &CollectionType,
+    elements: Vec<Deferred<'_>>,
+    meter: &mut Meter,
+) -> Outcome<Value> {
+    Outcome::from_stop(construct(collection_type, elements, meter))
+}
+
+fn construct(
+    collection_type: &CollectionType,
+    elements: Vec<Deferred<'_>>,
+    meter: &mut Meter,
+) -> Result<Value, Stop> {
+    let mut occurrences = Vec::with_capacity(elements.len());
+    for element in elements {
+        meter.charge(Charge::new(ChargePoint::CollectionElement))?;
+        let value = element(meter).into_stop()?;
+        if !collection_type.element.admits(&value) {
+            return Err(Stop::Refused(Refusal::CheckedInvariant));
+        }
+        occurrences.push(value);
+    }
+    form(collection_type, occurrences, meter)
+}
+
+/// Form a collection of `collection_type` from completed occurrences in source
+/// or visiting order: membership comparisons, `collection.bound`, the bound
+/// check and `collection.result-retain`. An occurrence outside the element
+/// type refuses before any charge.
+pub fn form_collection(
+    collection_type: &CollectionType,
+    occurrences: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Outcome<Value>, ConstructionRefusal> {
+    if let Some(index) = occurrences
+        .iter()
+        .position(|value| !collection_type.element.admits(value))
+    {
+        return Err(ConstructionRefusal {
+            component: Component::Element(index),
+            cause: ConstructionCause::TypeMismatch,
+        });
+    }
+    Ok(Outcome::from_stop(form(
+        collection_type,
+        occurrences,
+        meter,
+    )))
+}
+
+pub(crate) fn form(
+    collection_type: &CollectionType,
+    occurrences: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Value, Stop> {
+    let kind = collection_type.kind;
+    let occurrence_count = length_amount(occurrences.len());
+    let mut elements = if kind == CollectionKind::Sequence {
+        occurrences
+    } else {
+        coalesce(kind, occurrences, meter)?
+    };
+    let count = if kind.is_unique() {
+        length_amount(elements.len())
+    } else {
+        occurrence_count
+    };
+    meter.charge(
+        Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
+    )?;
+    if let Some(violation) = collection_type.bound.violation(count) {
+        return Err(Stop::Refused(Refusal::CardinalityOutOfBound {
+            violation,
+            kind,
+            bound: collection_type.bound,
+            count,
+        }));
+    }
+    if !kind.is_ordered() {
+        sort_by_key(&mut elements)?;
+    }
+    let occ = elements
+        .iter()
+        .fold(Integer::one(), |occ, element| occ.add(&element.occ()));
+    meter.charge(
+        Charge::new(ChargePoint::CollectionResultRetain)
+            .exact_size(LimitKind::ValueOccurrences, occ.clone())
+            .exact_results(occ.clone()),
+    )?;
+    Ok(Value::Collection(Arc::new(CollectionValue {
+        collection_type: collection_type.clone(),
+        elements: elements.into_boxed_slice(),
+        occ,
+    })))
+}
+
+/// FR-144 occurrence formation for a set, bag or ordered set. The result lists
+/// each retained member in retention order, a bag member once per occurrence
+/// and adjacent to its equal occurrences.
+fn coalesce(
+    kind: CollectionKind,
+    occurrences: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Vec<Value>, Stop> {
+    // (member, multiplicity) in retention order.
+    let mut members: Vec<(Value, usize)> = Vec::new();
+    for candidate in occurrences {
+        let mut equal_member = None;
+        for (index, (member, _)) in members.iter().enumerate() {
+            if member_equal(&candidate, member, meter)? {
+                equal_member = Some(index);
+                break;
+            }
+        }
+        match equal_member.and_then(|index| members.get_mut(index)) {
+            Some((_, multiplicity)) => {
+                if kind == CollectionKind::Bag {
+                    *multiplicity = multiplicity.saturating_add(1);
                 }
             }
-            entries
-        };
-        Ok(CanonicalCollection {
-            kind: self.kind,
-            entries,
+            None => members.push((candidate, 1)),
+        }
+    }
+    Ok(members
+        .into_iter()
+        .flat_map(|(member, multiplicity)| std::iter::repeat_n(member, multiplicity))
+        .collect())
+}
+
+/// One charged membership comparison of candidate `c` with member `m`.
+pub(crate) fn member_equal(
+    candidate: &Value,
+    member: &Value,
+    meter: &mut Meter,
+) -> Result<bool, Stop> {
+    let (candidate_occ, member_occ) = (candidate.occ(), member.occ());
+    meter.charge(
+        Charge::new(ChargePoint::CollectionMemberWalk)
+            .exact_size(
+                LimitKind::ValueOccurrences,
+                candidate_occ.clone().max(member_occ.clone()),
+            )
+            .work(candidate_occ.add(&member_occ)),
+    )?;
+    let plan = plan_pairs(candidate, member).map_err(Stop::Refused)?;
+    meter.charge(
+        Charge::new(ChargePoint::CollectionMemberTest)
+            .exact_size(LimitKind::ValueOccurrences, plan.pairs.clone())
+            .work(plan.pairs),
+    )?;
+    Ok(plan.equal)
+}
+
+/// Stable ascending canonical-key order.
+fn sort_by_key(elements: &mut [Value]) -> Result<(), Stop> {
+    let unkeyed = Cell::new(false);
+    elements.sort_by(|left, right| {
+        compare_keys(left, right).unwrap_or_else(|| {
+            unkeyed.set(true);
+            Ordering::Equal
         })
+    });
+    if unkeyed.get() {
+        return Err(Stop::Refused(Refusal::CheckedInvariant));
     }
-}
-
-/// The FR-144 canonical representation of one collection.
-#[derive(Clone, Debug)]
-pub struct CanonicalCollection {
-    kind: CollectionKind,
-    entries: Vec<CanonicalEntry>,
-}
-
-impl CanonicalCollection {
-    /// The collection kind.
-    pub fn kind(&self) -> CollectionKind {
-        self.kind
-    }
-
-    /// Entries in canonical order.
-    pub fn entries(&self) -> &[CanonicalEntry] {
-        &self.entries
-    }
-}
-
-/// One canonical member with its multiplicity (always one outside a bag).
-#[derive(Clone, Debug)]
-pub struct CanonicalEntry {
-    value: Value,
-    multiplicity: Integer,
-}
-
-impl CanonicalEntry {
-    /// The member.
-    pub fn value(&self) -> &Value {
-        &self.value
-    }
-
-    /// Its positive multiplicity.
-    pub fn multiplicity(&self) -> &Integer {
-        &self.multiplicity
-    }
-}
-
-/// The element type supplies no total canonical key, so an unordered
-/// collection has no canonical order.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("the element type has no total canonical key")]
-pub struct NoTotalElementKey;
-
-/// Occurrences sorted by ascending total key; ties keep insertion order but
-/// are equal members.
-pub(crate) fn keyed_ascending<'a>(
-    element_type: &ValueType,
-    elements: &'a [Value],
-) -> Result<Vec<(TotalKey, &'a Value)>, NoTotalElementKey> {
-    if !has_total_key(element_type) {
-        return Err(NoTotalElementKey);
-    }
-    let mut keyed = elements
-        .iter()
-        .map(|value| total_key(value).map(|key| (key, value)))
-        .collect::<Option<Vec<_>>>()
-        .ok_or(NoTotalElementKey)?;
-    keyed.sort_by(|(left, _), (right, _)| left.cmp(right));
-    Ok(keyed)
-}
-
-/// A type-owned total canonical element key. Within one element type every
-/// key has the same variant, and two keys are equal exactly when the FR-149
-/// relation holds.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum TotalKey {
-    Boolean(bool),
-    Number(Rational),
-    Text(String),
-    Enum(usize),
-}
-
-/// Whether `element_type` supplies a total canonical key.
-// SPEC-GAP(119-4): FR-144/FR-149 require a "type-owned total canonical key"
-// but no type declares one. Boolean (false < true), the exact numbers by
-// mathematical value, quantities of one unit by value, text by retained
-// UTF-8 bytes (scalar order), and enum members by declaration position have a
-// key (SPEC-GAP(119-16): even for an unordered enum); options, composites,
-// collections and references do not. This and `total_key` are the only places
-// that decide it; the equality plan is decided by `equality::membership_plan`.
-pub(crate) fn has_total_key(element_type: &ValueType) -> bool {
-    match element_type {
-        ValueType::Boolean
-        | ValueType::Integer
-        | ValueType::Rational
-        | ValueType::Decimal(_)
-        | ValueType::Quantity(_)
-        | ValueType::Text(_)
-        | ValueType::Enum(_) => true,
-        ValueType::Option(_)
-        | ValueType::Composite(_)
-        | ValueType::Collection(..)
-        | ValueType::Reference(_) => false,
-    }
-}
-
-/// The total key of one value; see [`has_total_key`].
-pub(crate) fn total_key(value: &Value) -> Option<TotalKey> {
-    match value {
-        Value::Boolean(value) => Some(TotalKey::Boolean(*value)),
-        Value::Integer(value) => Some(TotalKey::Number(Rational::from_integer(value.clone()))),
-        Value::Rational(value) => Some(TotalKey::Number(value.clone())),
-        Value::Decimal(value) => Some(TotalKey::Number(value.normalized().to_rational())),
-        Value::Quantity(value) => Some(TotalKey::Number(value.value().clone())),
-        Value::Text(value) => Some(TotalKey::Text(value.retained().to_owned())),
-        Value::Enum(value) => Some(TotalKey::Enum(value.position())),
-        Value::Option(_) | Value::Composite(_) | Value::Collection(_) | Value::Reference(_) => None,
-    }
+    Ok(())
 }

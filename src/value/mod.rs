@@ -12,12 +12,10 @@
 //!    [`modulo`] (FR-147), [`admit_text`], [`compare_text`] and [`compare_enum`]
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after the type-checking [`IllTyped`] refusal;
 //! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
-//!    [`TypeEnvironment`], and the FR-149 equality matrix
-//!    [`evaluate_equality`], FR-144 bounded [`CollectionValue`]s and the
-//!    FR-145 collection queries [`map`], [`filter`], [`flatten`], [`count`],
-//!    [`fold`], [`reduce`] and [`convert`], FR-146 total pure functions
-//!    [`check_functions`] and FR-307 library resolution
-//!    [`resolve_libraries`] (QSL #119);
+//!    [`TypeEnvironment`], the FR-149 equality matrix
+//!    ([`TypeEnvironment::check_equality`]), FR-144 bounded
+//!    [`CollectionValue`]s ([`construct_collection`]) and FR-307 library
+//!    resolution [`resolve_libraries`] (QSL #119);
 //! 4. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
 //! 5. `quire.value.accounting/v1` metering through [`Meter`].
@@ -31,7 +29,6 @@
 
 mod accounting;
 mod collection;
-mod collection_query;
 mod comparison;
 mod composite;
 mod containment;
@@ -40,9 +37,9 @@ mod definition;
 mod division;
 mod enumeration;
 mod equality;
-mod function;
 mod ieee;
 mod integer;
+mod key;
 mod library;
 mod node;
 mod numeric;
@@ -55,19 +52,15 @@ mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
 pub use collection::{
-    CanonicalCollection, CanonicalEntry, CardinalityBound, CardinalityViolation, CollectionKind,
-    CollectionValue, EmptyCardinalityBound, NoTotalElementKey,
-};
-pub use collection_query::{
-    convert, count, filter, flatten, fold, map, reduce, AlgebraicProperties, CollectionConversion,
-    CollectionLoss, FoldFunction, ValueFunction,
+    construct_collection, form_collection, CardinalityBound, CollectionKind, CollectionType,
+    CollectionValue, EmptyCardinalityBound,
 };
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use composite::{
     Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,
-    ConstructionRefusal, ConstructorDeclaration, DeclarationCause, FieldDeclaration,
-    FieldExpression, FieldValue, InvalidDeclaration, OptionValue, Presence, TypeEnvironment, Value,
-    ValueType,
+    ConstructionRefusal, DeclarationCause, Deferred, FieldDeclaration, FieldExpression, FieldValue,
+    InvalidDeclaration, ObjectTypeDeclaration, OptionValue, Presence, RecursionEdges,
+    TypeEnvironment, Value, ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{
@@ -86,13 +79,9 @@ pub use division::{
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
-pub use equality::{convert_for_equality, evaluate_equality, plan_equality, EqualityPlan};
-pub use function::{
-    check_functions, ArithmeticOperator, CallRefusal, CheckedFoldFunction, CheckedFunction,
-    CheckedFunctions, CheckedValueFunction, DecreaseObligation, DischargedPrecondition, Effect,
-    ElementRelation, Expression, FunctionCause, FunctionDeclaration, FunctionLimits,
-    FunctionRefusal, IntegerComparison, Location, MeasureElement, ParameterDeclaration, PathStep,
-    Precondition, PreconditionEvidence, Termination,
+pub use equality::{
+    admits_equality_conversion, plan_equality, CheckedEquality, EqualityOperand, EqualityOperator,
+    EqualityPlan, EqualitySchedule,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
@@ -118,7 +107,7 @@ pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
-pub use outcome::{Outcome, Refusal, Undefined};
+pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,
@@ -126,7 +115,7 @@ pub use quantity::{
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-    ObjectIdentity, ObjectReference,
+    ObjectIdentity, ObjectReference, UniverseIdentity,
 };
 pub use text::{
     admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,

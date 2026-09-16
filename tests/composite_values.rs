@@ -2,18 +2,24 @@
 //! TC-188 records, tuples and finite recursive values over the real `value`
 //! boundary (FR-143).
 //!
-//! Declaration node keys are opaque fixture keys: the pinned specification
-//! defines no record, tuple or variant declaration preimage (SPEC-GAP(119-5)).
-//! Declarations that intentionally share names and shapes get distinct keys.
+//! Declaration node keys are opaque producer-assigned fixture keys; the
+//! declarations that intentionally share names and shapes get distinct keys.
+//! R02's alias row, R03, R04, R08, R09's `convert` row and R11 need the FR-146
+//! checker, the FR-307 package boundary or the parser
+//! (`Remaining work: #119`).
+
+use std::cell::Cell;
 
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
-    evaluate_equality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, ConstructorDeclaration, DeclarationCause, FieldDeclaration, FieldValue,
-    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, Integer,
-    InvalidDeclaration, Meter, NodeKey, ObjectEnvironment, ObjectEnvironmentCause,
-    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, OptionValue, Outcome, Presence,
-    ScalarLimits, TypeEnvironment, Value, ValueGraph, ValueType,
+    CardinalityBound, ChargePoint, CollectionKind, CollectionType, Component, CompositeDeclaration,
+    CompositeShape, ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand,
+    EqualityOperator, FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode,
+    GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, Incomplete, Integer,
+    InvalidDeclaration, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectEnvironmentCause,
+    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
+    Outcome, Presence, RecursionEdges, ScalarLimits, TypeEnvironment, UniverseIdentity, Value,
+    ValueGraph, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -42,263 +48,565 @@ fn int(value: i64) -> Value {
     Value::Integer(Integer::from(value))
 }
 
-fn field(label: &str, value_type: ValueType, presence: Presence) -> FieldDeclaration {
-    FieldDeclaration::new(key(label), value_type, presence)
+fn field(name: &str, value_type: ValueType, presence: Presence) -> FieldDeclaration {
+    FieldDeclaration::new(name, value_type, presence)
 }
 
-fn equal(left: &Value, right: &Value) -> Result<Outcome<bool>, IllTyped> {
-    evaluate_equality(left, right, &mut Meter::new(UNLIMITED))
+fn record(label: &str, fields: Vec<FieldDeclaration>) -> CompositeDeclaration {
+    CompositeDeclaration::new(key(label), label, CompositeShape::Record(fields))
+}
+
+fn composite(label: &str) -> ValueType {
+    ValueType::Composite(key(label))
+}
+
+fn sequence_of(element: ValueType, minimum: u64, maximum: u64) -> ValueType {
+    ValueType::collection(CollectionType::new(
+        CollectionKind::Sequence,
+        element,
+        CardinalityBound::new(minimum, maximum).unwrap(),
+    ))
 }
 
 fn refusal(component: Component, cause: ConstructionCause) -> ConstructionRefusal {
     ConstructionRefusal { component, cause }
 }
 
-/// `record-A` and `record-B { x: Integer, y: Integer }` sharing field
-/// identities; `tuple-A` and `tuple-B (Integer, Integer)`; `Slots { req,
-/// opt?, nul!, both?! }`; `List = Nil | Cons { head, tail }`.
-fn environment() -> TypeEnvironment {
-    let point = || {
-        CompositeShape::Record(vec![
-            field("x", ValueType::Integer, Presence::Required),
-            field("y", ValueType::Integer, Presence::Required),
-        ])
-    };
-    let pair = || CompositeShape::Tuple(vec![ValueType::Integer, ValueType::Integer]);
-    TypeEnvironment::new([
-        CompositeDeclaration::new(key("record-A"), point()),
-        CompositeDeclaration::new(key("record-B"), point()),
-        CompositeDeclaration::new(key("tuple-A"), pair()),
-        CompositeDeclaration::new(key("tuple-B"), pair()),
-        CompositeDeclaration::new(
-            key("Slots"),
-            CompositeShape::Record(vec![
-                field("req", ValueType::Integer, Presence::Required),
-                field("opt", ValueType::Integer, Presence::Optional),
-                field("nul", ValueType::Integer, Presence::Nullable),
-                field("both", ValueType::Integer, Presence::OptionalNullable),
-            ]),
-        ),
-        list_declaration(),
-    ])
-    .unwrap()
+/// `left = right` for two parameters of `value_type`.
+fn equal(
+    env: &TypeEnvironment,
+    value_type: &ValueType,
+    left: &Value,
+    right: &Value,
+) -> Result<Outcome<bool>, IllTyped> {
+    env.check_equality(
+        EqualityOperator::Equal,
+        EqualityOperand::typed(value_type.clone()),
+        EqualityOperand::typed(value_type.clone()),
+    )
+    .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
 }
 
-fn list_declaration() -> CompositeDeclaration {
-    CompositeDeclaration::new(
-        key("List"),
-        CompositeShape::Variant(vec![
-            ConstructorDeclaration::new(key("Nil"), vec![]),
-            ConstructorDeclaration::new(
-                key("Cons"),
+/// `record P { a: Integer; b: Integer?; }` and `tuple T(Integer, Integer);`.
+fn p_environment() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [
+            record(
+                "P",
                 vec![
-                    field("head", ValueType::Integer, Presence::Required),
-                    field(
-                        "tail",
-                        ValueType::Composite(key("List")),
-                        Presence::Required,
-                    ),
+                    field("a", ValueType::Integer, Presence::Required),
+                    field("b", ValueType::Integer, Presence::Optional),
                 ],
             ),
-        ]),
-    )
-}
-
-fn point(env: &TypeEnvironment, declaration: &str, x: i64, y: i64) -> Value {
-    env.record(
-        key(declaration),
-        vec![
-            (key("x"), FieldValue::Present(int(x))),
-            (key("y"), FieldValue::Present(int(y))),
+            CompositeDeclaration::new(
+                key("T"),
+                "T",
+                CompositeShape::Tuple(vec![ValueType::Integer, ValueType::Integer]),
+            ),
         ],
+        [],
     )
     .unwrap()
-}
-
-fn pair(env: &TypeEnvironment, declaration: &str, first: i64, second: i64) -> Value {
-    env.tuple(key(declaration), vec![int(first), int(second)])
-        .unwrap()
 }
 
 #[trace("TC-188", "FR-143-AC-1")]
+#[trace("TC-188", "FR-143-AC-5")]
 #[test]
-fn equal_records_and_tuples_of_one_declaration_compare_structurally() {
-    let env = environment();
+fn r01_equal_records_compare_structurally_whatever_the_source_field_order() {
+    let env = p_environment();
+    let p = composite("P");
+    let a1 = || env.record(key("P"), vec![("a", FieldValue::Present(int(1)))]);
     assert_eq!(
-        equal(
-            &point(&env, "record-A", 1, 2),
-            &point(&env, "record-A", 1, 2)
-        ),
+        equal(&env, &p, &a1().unwrap(), &a1().unwrap()),
+        Ok(Outcome::Completed(true))
+    );
+    let ab = env
+        .record(
+            key("P"),
+            vec![
+                ("a", FieldValue::Present(int(1))),
+                ("b", FieldValue::Present(int(2))),
+            ],
+        )
+        .unwrap();
+    let ba = env
+        .record(
+            key("P"),
+            vec![
+                ("b", FieldValue::Present(int(2))),
+                ("a", FieldValue::Present(int(1))),
+            ],
+        )
+        .unwrap();
+    assert_eq!(equal(&env, &p, &ab, &ba), Ok(Outcome::Completed(true)));
+    let t = composite("T");
+    let tuple = |second| env.tuple(key("T"), vec![int(1), int(second)]).unwrap();
+    assert_eq!(
+        equal(&env, &t, &tuple(2), &tuple(2)),
         Ok(Outcome::Completed(true))
     );
     assert_eq!(
-        equal(
-            &point(&env, "record-A", 1, 2),
-            &point(&env, "record-A", 1, 3)
-        ),
-        Ok(Outcome::Completed(false))
-    );
-    assert_eq!(
-        equal(&pair(&env, "tuple-A", 1, 2), &pair(&env, "tuple-A", 1, 2)),
-        Ok(Outcome::Completed(true))
-    );
-    assert_eq!(
-        equal(&pair(&env, "tuple-A", 1, 2), &pair(&env, "tuple-A", 2, 1)),
+        equal(&env, &t, &tuple(2), &tuple(3)),
         Ok(Outcome::Completed(false))
     );
 }
 
 #[trace("TC-188", "FR-143-AC-2")]
-#[test]
-fn equal_shapes_of_different_declarations_are_not_interchangeable() {
-    let env = environment();
-    let distinct = Err(IllTyped {
-        cause: IllTypedCause::DistinctDeclarations,
-    });
-    assert_eq!(
-        equal(
-            &point(&env, "record-A", 1, 2),
-            &point(&env, "record-B", 1, 2)
-        ),
-        distinct
-    );
-    assert_eq!(
-        equal(&pair(&env, "tuple-A", 1, 2), &pair(&env, "tuple-B", 1, 2)),
-        distinct
-    );
-    // A record-B value is not a member of a record-A field type.
-    let holder = TypeEnvironment::new([
-        CompositeDeclaration::new(
-            key("record-A"),
-            CompositeShape::Record(vec![field("x", ValueType::Integer, Presence::Required)]),
-        ),
-        CompositeDeclaration::new(
-            key("record-B"),
-            CompositeShape::Record(vec![field("x", ValueType::Integer, Presence::Required)]),
-        ),
-        CompositeDeclaration::new(
-            key("Holder"),
-            CompositeShape::Tuple(vec![ValueType::Composite(key("record-A"))]),
-        ),
-    ])
-    .unwrap();
-    let b = holder
-        .record(
-            key("record-B"),
-            vec![(key("x"), FieldValue::Present(int(1)))],
-        )
-        .unwrap();
-    assert_eq!(
-        holder.tuple(key("Holder"), vec![b]).unwrap_err(),
-        refusal(Component::Position(0), ConstructionCause::TypeMismatch)
-    );
-}
-
 #[trace("TC-188", "FR-143-AC-5")]
+#[trace("TC-188", "FR-143-AC-6")]
 #[test]
-fn canonical_field_order_does_not_equate_different_declarations() {
-    let env = environment();
-    let reordered = env
-        .record(
-            key("record-A"),
-            vec![
-                (key("y"), FieldValue::Present(int(2))),
-                (key("x"), FieldValue::Present(int(1))),
-            ],
-        )
-        .unwrap();
-    // Supplied order is not identity: the same declaration still compares equal.
+fn r02_equal_shapes_of_distinct_declarations_do_not_compare() {
+    let x = || vec![field("x", ValueType::Integer, Presence::Required)];
+    let env = TypeEnvironment::new([record("A", x()), record("B", x())], []).unwrap();
     assert_eq!(
-        equal(&reordered, &point(&env, "record-A", 1, 2)),
-        Ok(Outcome::Completed(true))
-    );
-    // Identical canonical field order and field identities still differ by
-    // declaration.
-    assert_eq!(
-        equal(&reordered, &point(&env, "record-B", 1, 2)),
+        env.check_equality(
+            EqualityOperator::Equal,
+            EqualityOperand::typed(composite("A")),
+            EqualityOperand::typed(composite("B")),
+        ),
         Err(IllTyped {
-            cause: IllTypedCause::DistinctDeclarations
+            cause: IllTypedCause::TypeMismatch
         })
     );
+    // A value of one declaration is not a member of the other.
+    let a = env
+        .record(key("A"), vec![("x", FieldValue::Present(int(1)))])
+        .unwrap();
+    assert!(composite("A").admits(&a));
+    assert!(!composite("B").admits(&a));
 }
 
-fn node(id: u64) -> GraphNodeId {
-    GraphNodeId(id)
-}
-
-fn cons_node(head: i64, tail: GraphNodeId) -> GraphNode {
-    GraphNode::Variant {
-        declaration: key("List"),
-        constructor: key("Cons"),
-        fields: vec![
-            (key("head"), GraphSlot::Value(int(head))),
-            (key("tail"), GraphSlot::Node(tail)),
+#[trace("TC-188", "FR-143-AC-3")]
+#[trace("TC-188", "FR-143-AC-7")]
+#[trace("TC-188", "FR-143-AC-9")]
+#[test]
+fn r05_recursion_rule_admits_escaping_and_named_recursion() {
+    let admitted = TypeEnvironment::new(
+        [
+            record(
+                "List",
+                vec![
+                    field("head", ValueType::Integer, Presence::Required),
+                    field("tail", composite("List"), Presence::Optional),
+                ],
+            ),
+            record(
+                "N",
+                vec![field(
+                    "kids",
+                    sequence_of(composite("N"), 0, 2),
+                    Presence::Required,
+                )],
+            ),
+            record("A", vec![field("b", composite("B"), Presence::Required)]),
+            record("B", vec![field("a", composite("A"), Presence::Optional)]),
+            record(
+                "O",
+                vec![field(
+                    "r",
+                    ValueType::Reference(key("M::Obj")),
+                    Presence::Required,
+                )],
+            ),
         ],
+        [ObjectTypeDeclaration::new(key("M::Obj"), "Obj", vec![])],
+    );
+    assert!(admitted.is_ok(), "{admitted:?}");
+
+    let bad = TypeEnvironment::new(
+        [
+            record(
+                "P",
+                vec![field("x", ValueType::Integer, Presence::Required)],
+            ),
+            record(
+                "Bad",
+                vec![field(
+                    "r",
+                    ValueType::Reference(key("P")),
+                    Presence::Required,
+                )],
+            ),
+        ],
+        [],
+    )
+    .unwrap_err();
+    assert_eq!(
+        bad,
+        InvalidDeclaration {
+            declaration: "Bad".into(),
+            cause: DeclarationCause::Type(IllTypedCause::TypeMismatch),
+        }
+    );
+    assert_eq!(bad.code(), "ill_typed");
+}
+
+#[trace("TC-188", "FR-143-AC-3")]
+#[trace("TC-188", "FR-143-AC-7")]
+#[test]
+fn r06_recursion_rule_names_each_refused_cycle() {
+    let cycle = |edges, name: &str| InvalidDeclaration {
+        declaration: name.into(),
+        cause: DeclarationCause::Recursion {
+            edges,
+            cycle: vec![name.into(), name.into()],
+        },
+    };
+    let cases = [
+        (
+            record(
+                "Loop",
+                vec![field("next", composite("Loop"), Presence::Required)],
+            ),
+            cycle(RecursionEdges::NonEscaping, "Loop"),
+        ),
+        (
+            record(
+                "M",
+                vec![field(
+                    "kids",
+                    sequence_of(composite("M"), 1, 2),
+                    Presence::Required,
+                )],
+            ),
+            cycle(RecursionEdges::NonEscaping, "M"),
+        ),
+        (
+            CompositeDeclaration::new(
+                key("Pair"),
+                "Pair",
+                CompositeShape::Tuple(vec![
+                    ValueType::Integer,
+                    ValueType::option(composite("Pair")),
+                ]),
+            ),
+            cycle(RecursionEdges::Unnamed, "Pair"),
+        ),
+    ];
+    for (declaration, expected) in cases {
+        let refused = TypeEnvironment::new([declaration], []).unwrap_err();
+        assert_eq!(refused, expected);
+        assert_eq!(refused.code(), "ill_typed");
     }
 }
 
-fn graph(nodes: Vec<(GraphNodeId, GraphNode)>) -> ValueGraph {
-    ValueGraph::new(nodes).unwrap()
+#[trace("TC-188", "FR-143-AC-4")]
+#[trace("TC-188", "FR-143-AC-6")]
+#[test]
+fn r07_absence_null_and_malformed_constructions_refuse_at_their_origin() {
+    let env = p_environment();
+    let p = composite("P");
+    let absent = env
+        .record(key("P"), vec![("a", FieldValue::Present(int(1)))])
+        .unwrap();
+    let null = env
+        .record(
+            key("P"),
+            vec![("a", FieldValue::Present(int(1))), ("b", FieldValue::Null)],
+        )
+        .unwrap();
+    let slot = |value: &Value| match value {
+        Value::Composite(record) => record.slots()[1].clone(),
+        other => panic!("a record, not {other:?}"),
+    };
+    assert!(matches!(slot(&absent), FieldValue::Absent));
+    assert!(matches!(slot(&null), FieldValue::Null));
+    assert_eq!(
+        equal(&env, &p, &absent, &null),
+        Ok(Outcome::Completed(false))
+    );
+
+    let field_refusal = |name: &str, cause| refusal(Component::Field(name.into()), cause);
+    let cases = [
+        (
+            vec![("b", FieldValue::Present(int(2)))],
+            field_refusal("a", ConstructionCause::MissingField),
+        ),
+        (
+            vec![
+                ("a", FieldValue::Present(int(1))),
+                ("c", FieldValue::Present(int(2))),
+            ],
+            field_refusal("c", ConstructionCause::UndeclaredField),
+        ),
+        (
+            vec![
+                ("a", FieldValue::Present(int(1))),
+                ("a", FieldValue::Present(int(2))),
+            ],
+            field_refusal("a", ConstructionCause::DuplicateField),
+        ),
+        (
+            vec![("a", FieldValue::Null)],
+            field_refusal("a", ConstructionCause::NullForRequiredField),
+        ),
+    ];
+    for (fields, expected) in cases {
+        let refused = env.record(key("P"), fields).unwrap_err();
+        assert_eq!(refused, expected);
+        assert_eq!(ConstructionRefusal::CODE, "ill_typed");
+    }
+    assert_eq!(
+        env.tuple(key("T"), vec![int(1)]).unwrap_err(),
+        refusal(
+            Component::Value,
+            ConstructionCause::WrongArity {
+                declared: 2,
+                supplied: 1
+            }
+        )
+    );
+
+    // `null` is not an option value: a required `Option<Integer>` slot
+    // refuses it.
+    let options = TypeEnvironment::new(
+        [record(
+            "Holder",
+            vec![field(
+                "o",
+                ValueType::option(ValueType::Integer),
+                Presence::Required,
+            )],
+        )],
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        options
+            .record(key("Holder"), vec![("o", FieldValue::Null)])
+            .unwrap_err(),
+        field_refusal("o", ConstructionCause::NullForRequiredField)
+    );
+    let none = OptionValue::none(ValueType::Integer);
+    assert!(options
+        .record(key("Holder"), vec![("o", FieldValue::Present(none))])
+        .is_ok());
 }
 
-fn nil_node() -> GraphNode {
-    GraphNode::Variant {
+fn node_environment() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [],
+        [ObjectTypeDeclaration::new(
+            key("M::Node"),
+            "Node",
+            vec![field(
+                "peer",
+                ValueType::Reference(key("M::Node")),
+                Presence::Required,
+            )],
+        )],
+    )
+    .unwrap()
+}
+
+fn node_reference(name: &str) -> ObjectReference {
+    ObjectReference::new(
+        UniverseIdentity::new(b"snapshot-1").unwrap(),
+        key("M::Node"),
+        ObjectIdentity::new(name.as_bytes()).unwrap(),
+    )
+}
+
+#[trace("TC-188", "FR-143-AC-3")]
+#[trace("TC-188", "FR-143-AC-9")]
+#[test]
+fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
+    let env = node_environment();
+    let peer = |name: &str| {
+        vec![(
+            "peer",
+            FieldValue::Present(Value::Reference(node_reference(name))),
+        )]
+    };
+    let objects = ObjectEnvironment::new(
+        &env,
+        [
+            (node_reference("o1"), peer("o2")),
+            (node_reference("o2"), peer("o1")),
+        ],
+    )
+    .unwrap();
+    let project = |object: &str| match objects.attribute(&env, &node_reference(object), "peer") {
+        Some(FieldValue::Present(value)) => value.clone(),
+        other => panic!("peer is present, not {other:?}"),
+    };
+    let reference_type = ValueType::Reference(key("M::Node"));
+    assert_eq!(
+        equal(&env, &reference_type, &project("o1"), &project("o1")),
+        Ok(Outcome::Completed(true))
+    );
+    assert_eq!(
+        equal(&env, &reference_type, &project("o1"), &project("o2")),
+        Ok(Outcome::Completed(false))
+    );
+    assert_eq!(
+        ObjectEnvironment::new(&env, [(node_reference("o1"), peer("missing"))]).unwrap_err(),
+        ObjectEnvironmentRefusal {
+            object: node_reference("o1"),
+            cause: ObjectEnvironmentCause::DanglingReference(Box::new(node_reference("missing"))),
+        }
+    );
+    assert_eq!(
+        ObjectIdentity::new(b"").map(|_| ()),
+        Err(quire_spec_language::value::InvalidObjectIdentity)
+    );
+}
+
+#[trace("TC-188", "FR-143-AC-8")]
+#[test]
+fn r10_record_construction_charges_one_result_retain() {
+    let env = p_environment();
+    let run = |limits| {
+        let mut meter = Meter::new(limits);
+        let outcome = env
+            .evaluate_record(
+                key("P"),
+                vec![(
+                    "a",
+                    FieldExpression::Evaluate(Box::new(|_: &mut Meter| Outcome::Completed(int(1)))),
+                )],
+                &mut meter,
+            )
+            .unwrap();
+        (outcome, meter)
+    };
+    let (outcome, meter) = run(ScalarLimits {
+        result_units: 1,
+        ..UNLIMITED
+    });
+    assert_eq!(
+        format!("{outcome:?}"),
+        format!(
+            "{:?}",
+            Outcome::<Value>::Incomplete(Incomplete {
+                limit_kind: LimitKind::ResultUnits,
+                limit: 1,
+                consumed: 0,
+                next_charge: Integer::from(2_i64),
+                charge_point: ChargePoint::CompositeResultRetain,
+            })
+        )
+    );
+    assert!(meter.admitted_charges().is_empty());
+
+    let (outcome, meter) = run(UNLIMITED);
+    let Outcome::Completed(value) = outcome else {
+        panic!("the record completes");
+    };
+    assert_eq!(value.occ(), Integer::from(2_i64));
+    assert_eq!(
+        meter.admitted_charges(),
+        [ChargePoint::CompositeResultRetain]
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+    assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
+}
+
+#[trace("TC-188", "FR-143-AC-8")]
+#[test]
+fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
+    let env = p_environment();
+    let b_ran = Cell::new(false);
+    let mut meter = Meter::new(UNLIMITED);
+    let outcome = env
+        .evaluate_record(
+            key("P"),
+            vec![
+                (
+                    "b",
+                    FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
+                        b_ran.set(true);
+                        Outcome::Completed(int(2))
+                    })),
+                ),
+                (
+                    "a",
+                    FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
+                        Outcome::Refused(quire_spec_language::value::Refusal::CheckedInvariant)
+                    })),
+                ),
+            ],
+            &mut meter,
+        )
+        .unwrap();
+    assert!(matches!(
+        outcome,
+        Outcome::Refused(quire_spec_language::value::Refusal::CheckedInvariant)
+    ));
+    assert!(!b_ran.get());
+    assert!(meter.admitted_charges().is_empty());
+}
+
+fn list_environment() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [
+            record(
+                "List",
+                vec![
+                    field("head", ValueType::Integer, Presence::Required),
+                    field("tail", composite("List"), Presence::Optional),
+                ],
+            ),
+            CompositeDeclaration::new(
+                key("Lists"),
+                "Lists",
+                CompositeShape::Tuple(vec![composite("List"), composite("List")]),
+            ),
+        ],
+        [],
+    )
+    .unwrap()
+}
+
+fn cons(head: i64, tail: GraphSlot) -> GraphNode {
+    GraphNode::Record {
         declaration: key("List"),
-        constructor: key("Nil"),
-        fields: vec![],
+        fields: vec![
+            ("head".into(), GraphSlot::Value(int(head))),
+            ("tail".into(), tail),
+        ],
     }
 }
 
 #[trace("TC-188", "FR-143-AC-3")]
 #[test]
-fn containment_cycles_refuse_while_finite_recursion_and_sharing_construct() {
-    let env = environment();
-    // Two lists [1, 2] sharing one immutable tail node form a DAG.
-    let shared = graph(vec![
-        (node(0), nil_node()),
-        (node(1), cons_node(2, node(0))),
-        (node(2), cons_node(1, node(1))),
+fn containment_cycles_refuse_while_shared_finite_values_construct() {
+    let env = list_environment();
+    let node = GraphNodeId;
+    // Two lists sharing one immutable tail node form a DAG.
+    let shared = ValueGraph::new([
+        (node(0), cons(2, GraphSlot::Absent)),
+        (node(1), cons(1, GraphSlot::Node(node(0)))),
         (
-            node(3),
+            node(2),
             GraphNode::Tuple {
                 declaration: key("Lists"),
-                positions: vec![GraphSlot::Node(node(2)), GraphSlot::Node(node(1))],
+                positions: vec![GraphSlot::Node(node(1)), GraphSlot::Node(node(0))],
             },
-        ),
-    ]);
-    let lists = TypeEnvironment::new([
-        list_declaration(),
-        CompositeDeclaration::new(
-            key("Lists"),
-            CompositeShape::Tuple(vec![
-                ValueType::Composite(key("List")),
-                ValueType::Composite(key("List")),
-            ]),
         ),
     ])
     .unwrap();
-    assert!(lists.build(&shared, node(3)).is_ok());
-    let first = env.build(&shared, node(2)).unwrap();
-    let again = env.build(&shared, node(2)).unwrap();
-    assert_eq!(equal(&first, &again), Ok(Outcome::Completed(true)));
+    assert!(env.build(&shared, node(2)).is_ok());
+    let list = composite("List");
+    assert_eq!(
+        equal(
+            &env,
+            &list,
+            &env.build(&shared, node(1)).unwrap(),
+            &env.build(&shared, node(1)).unwrap()
+        ),
+        Ok(Outcome::Completed(true))
+    );
 
-    // A containment back-edge refuses at the node that closes the cycle.
-    let cyclic = graph(vec![
-        (node(0), cons_node(1, node(1))),
-        (node(1), cons_node(2, node(0))),
-    ]);
+    let cyclic = ValueGraph::new([
+        (node(0), cons(1, GraphSlot::Node(node(1)))),
+        (node(1), cons(2, GraphSlot::Node(node(0)))),
+    ])
+    .unwrap();
     assert_eq!(
         env.build(&cyclic, node(0)).unwrap_err(),
         GraphRefusal {
             node: node(0),
-            cause: GraphCause::ContainmentCycle
-        }
-    );
-    let self_loop = graph(vec![(node(7), cons_node(1, node(7)))]);
-    assert_eq!(
-        env.build(&self_loop, node(7)).unwrap_err(),
-        GraphRefusal {
-            node: node(7),
             cause: GraphCause::ContainmentCycle
         }
     );
@@ -309,223 +617,25 @@ fn containment_cycles_refuse_while_finite_recursion_and_sharing_construct() {
             cause: GraphCause::UnknownNode
         }
     );
-
-    // A recursion edge that crosses no named field refuses the declaration.
-    let unnamed = TypeEnvironment::new([CompositeDeclaration::new(
-        key("Loop"),
-        CompositeShape::Tuple(vec![ValueType::Option(Box::new(ValueType::Composite(
-            key("Loop"),
-        )))]),
-    )]);
-    assert_eq!(
-        unnamed.unwrap_err(),
-        InvalidDeclaration {
-            declaration: key("Loop"),
-            cause: DeclarationCause::UnnamedRecursion
-        }
-    );
-    // Recursion through a named record field is legal and finite.
-    let chain = TypeEnvironment::new([CompositeDeclaration::new(
-        key("Chain"),
-        CompositeShape::Record(vec![field(
-            "next",
-            ValueType::Option(Box::new(ValueType::Composite(key("Chain")))),
-            Presence::Required,
-        )]),
-    )])
-    .unwrap();
-    let none = OptionValue::none(ValueType::Composite(key("Chain")));
-    let end = chain
-        .record(key("Chain"), vec![(key("next"), FieldValue::Present(none))])
-        .unwrap();
-    let link = OptionValue::present(ValueType::Composite(key("Chain")), end).unwrap();
-    assert!(chain
-        .record(key("Chain"), vec![(key("next"), FieldValue::Present(link))])
-        .is_ok());
-
-    // Object-reference cycles are admitted in a closed object environment and
-    // stay distinct from value containment.
-    let objects = TypeEnvironment::new([CompositeDeclaration::new(
-        key("Account"),
-        CompositeShape::Record(vec![field(
-            "peer",
-            ValueType::Reference(key("Account")),
-            Presence::Required,
-        )]),
-    )])
-    .unwrap();
-    let reference = |name: &str| {
-        ObjectReference::new(
-            key("Account"),
-            ObjectIdentity::new(vec!["accounts".into(), name.into()]).unwrap(),
-        )
-    };
-    let state = |peer: &str| {
-        objects
-            .record(
-                key("Account"),
-                vec![(
-                    key("peer"),
-                    FieldValue::Present(Value::Reference(reference(peer))),
-                )],
-            )
-            .unwrap()
-    };
-    let closed =
-        ObjectEnvironment::new([(reference("a"), state("b")), (reference("b"), state("a"))])
-            .unwrap();
-    assert!(closed.resolve(&reference("a")).is_some());
-    assert_eq!(
-        ObjectEnvironment::new([(reference("a"), state("missing"))]).unwrap_err(),
-        ObjectEnvironmentRefusal {
-            identity: reference("a").identity().clone(),
-            cause: ObjectEnvironmentCause::DanglingReference(
-                reference("missing").identity().clone()
-            ),
-        }
-    );
-}
-
-#[trace("TC-188", "FR-143-AC-4")]
-#[test]
-fn malformed_components_refuse_at_their_origin() {
-    let env = environment();
-    let slots = |fields: Vec<(&str, FieldValue)>| {
-        env.record(
-            key("Slots"),
-            fields
-                .into_iter()
-                .map(|(label, value)| (key(label), value))
-                .collect(),
-        )
-    };
-    let complete = || {
-        vec![
-            ("req", FieldValue::Present(int(1))),
-            ("opt", FieldValue::Absent),
-            ("nul", FieldValue::Null),
-            ("both", FieldValue::Null),
-        ]
-    };
-    assert!(slots(complete()).is_ok());
-    let with = |label: &'static str, value: FieldValue| {
-        let mut fields = complete();
-        fields.retain(|(name, _)| *name != label);
-        fields.push((label, value));
-        fields
-    };
-    let cases = [
-        (
-            complete().into_iter().skip(1).collect::<Vec<_>>(),
-            refusal(
-                Component::Field(key("req")),
-                ConstructionCause::MissingField,
-            ),
-        ),
-        (
-            with("extra", FieldValue::Present(int(1))),
-            refusal(
-                Component::Field(key("extra")),
-                ConstructionCause::ExtraField,
-            ),
-        ),
-        (
-            {
-                let mut fields = complete();
-                fields.push(("req", FieldValue::Present(int(2))));
-                fields
-            },
-            refusal(
-                Component::Field(key("req")),
-                ConstructionCause::DuplicateField,
-            ),
-        ),
-        (
-            with("req", FieldValue::Absent),
-            refusal(
-                Component::Field(key("req")),
-                ConstructionCause::AbsenceNotAdmitted,
-            ),
-        ),
-        // Absence is not substituted for a nullable field's null, nor null
-        // for an optional field's absence.
-        (
-            with("nul", FieldValue::Absent),
-            refusal(
-                Component::Field(key("nul")),
-                ConstructionCause::AbsenceNotAdmitted,
-            ),
-        ),
-        (
-            with("opt", FieldValue::Null),
-            refusal(
-                Component::Field(key("opt")),
-                ConstructionCause::NullNotAdmitted,
-            ),
-        ),
-        (
-            with("both", FieldValue::Present(Value::Boolean(true))),
-            refusal(
-                Component::Field(key("both")),
-                ConstructionCause::TypeMismatch,
-            ),
-        ),
-    ];
-    for (fields, expected) in cases {
-        assert_eq!(slots(fields).unwrap_err(), expected);
-    }
-
-    assert_eq!(
-        env.tuple(key("tuple-A"), vec![int(1)]).unwrap_err(),
-        refusal(
-            Component::Value,
-            ConstructionCause::WrongArity {
-                declared: 2,
-                supplied: 1
-            }
-        )
-    );
-    assert_eq!(
-        env.tuple(key("tuple-A"), vec![int(1), int(2), int(3)])
-            .unwrap_err(),
-        refusal(
-            Component::Value,
-            ConstructionCause::WrongArity {
-                declared: 2,
-                supplied: 3
-            }
-        )
-    );
-    assert_eq!(
-        env.tuple(key("tuple-A"), vec![int(1), Value::Boolean(false)])
-            .unwrap_err(),
-        refusal(Component::Position(1), ConstructionCause::TypeMismatch)
-    );
-    assert_eq!(
-        env.tuple(key("record-A"), vec![int(1), int(2)])
-            .unwrap_err(),
-        refusal(Component::Value, ConstructionCause::UnknownDeclaration)
-    );
-    assert_eq!(
-        env.variant(key("List"), key("Snoc"), vec![]).unwrap_err(),
-        refusal(Component::Value, ConstructionCause::UnknownConstructor)
-    );
-
     // A tuple position has no absent or null state.
-    let tuple_graph = graph(vec![(
-        node(0),
-        GraphNode::Tuple {
-            declaration: key("tuple-A"),
-            positions: vec![GraphSlot::Value(int(1)), GraphSlot::Null],
-        },
-    )]);
+    let tuple = ValueGraph::new([
+        (node(0), cons(1, GraphSlot::Absent)),
+        (
+            node(1),
+            GraphNode::Tuple {
+                declaration: key("Lists"),
+                positions: vec![GraphSlot::Node(node(0)), GraphSlot::Null],
+            },
+        ),
+    ])
+    .unwrap();
     assert_eq!(
-        env.build(&tuple_graph, node(0)).unwrap_err(),
+        env.build(&tuple, node(1)).unwrap_err(),
         GraphRefusal {
-            node: node(0),
+            node: node(1),
             cause: GraphCause::Construction(refusal(
                 Component::Position(1),
-                ConstructionCause::NullNotAdmitted
+                ConstructionCause::TypeMismatch
             )),
         }
     );
@@ -534,50 +644,36 @@ fn malformed_components_refuse_at_their_origin() {
 #[trace("TC-188", "FR-143-AC-4")]
 #[test]
 fn malformed_declarations_refuse_at_admission() {
-    let record =
-        |label: &str, fields| CompositeDeclaration::new(key(label), CompositeShape::Record(fields));
     let x = || field("x", ValueType::Integer, Presence::Required);
     let cases = [
         (
             vec![record("R", vec![x()]), record("R", vec![x()])],
             InvalidDeclaration {
-                declaration: key("R"),
-                cause: DeclarationCause::DuplicateDeclaration,
+                declaration: "R".into(),
+                cause: DeclarationCause::DuplicateKey,
             },
         ),
         (
             vec![record("R", vec![x(), x()])],
             InvalidDeclaration {
-                declaration: key("R"),
-                cause: DeclarationCause::DuplicateMember(key("x")),
+                declaration: "R".into(),
+                cause: DeclarationCause::DuplicateMember("x".into()),
             },
         ),
         (
             vec![record(
                 "R",
-                vec![field(
-                    "x",
-                    ValueType::Composite(key("S")),
-                    Presence::Required,
-                )],
+                vec![field("x", composite("S"), Presence::Required)],
             )],
             InvalidDeclaration {
-                declaration: key("R"),
+                declaration: "R".into(),
                 cause: DeclarationCause::UnknownDeclaration(key("S")),
-            },
-        ),
-        (
-            vec![CompositeDeclaration::new(
-                key("V"),
-                CompositeShape::Variant(vec![]),
-            )],
-            InvalidDeclaration {
-                declaration: key("V"),
-                cause: DeclarationCause::EmptyVariant,
             },
         ),
     ];
     for (declarations, expected) in cases {
-        assert_eq!(TypeEnvironment::new(declarations).unwrap_err(), expected);
+        let refused = TypeEnvironment::new(declarations, []).unwrap_err();
+        assert_eq!(refused.code(), "invalid_semantic_graph");
+        assert_eq!(refused, expected);
     }
 }

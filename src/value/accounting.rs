@@ -426,6 +426,12 @@ impl Charge {
         self
     }
 
+    /// A `work_units` addition other than the default one.
+    pub(crate) fn work(mut self, amount: Integer) -> Self {
+        self.work_units = amount;
+        self
+    }
+
     pub(crate) fn results(self, amount: u64) -> Self {
         self.exact_results(Integer::from(amount))
     }
@@ -550,12 +556,6 @@ impl Meter {
         self.consumed[LimitKind::ResultUnits.index()] = results;
         self.admit(point);
         Ok(())
-    }
-
-    /// One checked function call: one work unit, after the arguments are
-    /// evaluated and before they are bound.
-    pub(crate) fn charge_call(&mut self) -> Result<(), Incomplete> {
-        self.charge(Charge::new(ChargePoint::FunctionCall))
     }
 
     fn admit(&mut self, point: ChargePoint) {
