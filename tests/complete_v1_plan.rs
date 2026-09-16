@@ -61,11 +61,13 @@ fn expected_ticket(capability: &str) -> &'static str {
     let number: u8 = number.parse().expect("numeric capability suffix");
 
     match (family, number) {
-        ("SRC", 1..=15) => "QSL #117",
+        ("SRC", 10 | 11 | 13 | 14) => "QSL #123",
+        ("SRC", 1..=9 | 12 | 15) => "QSL #117",
         ("TYPE", 1..=9 | 30..=31) | ("EXPR", 5..=9) => "QSL #118",
         ("TYPE", 10..=20) | ("EXPR", 1..=4 | 10..=16 | 24..=26) | ("TOOL", 8) => "QSL #119",
         ("TYPE", 21..=29) | ("EXPR", 17..=22) => "QSL #120",
-        ("EXPR", 23) | ("TOOL", 3..=4) => "QSL #117",
+        ("EXPR", 23) => "QSL #123",
+        ("TOOL", 3..=4) => "QSL #117",
         ("RUN", 1 | 10 | 13) => "QSL #121",
         ("TOOL", 1..=2 | 6..=7) => "QSL #122",
         ("TOOL", 9) => "WASM #6",
@@ -113,12 +115,13 @@ fn complete_v1_plan_allocates_every_agent_a_capability_once() {
         "Plan-013 must remain the exact accepted QSpec Agent-A projection"
     );
     assert_eq!(capabilities.len(), 83);
-    assert_eq!(ticket_counts.get("QSL #117"), Some(&18));
+    assert_eq!(ticket_counts.get("QSL #117"), Some(&13));
     assert_eq!(ticket_counts.get("QSL #118"), Some(&16));
     assert_eq!(ticket_counts.get("QSL #119"), Some(&26));
     assert_eq!(ticket_counts.get("QSL #120"), Some(&15));
     assert_eq!(ticket_counts.get("QSL #121"), Some(&3));
     assert_eq!(ticket_counts.get("QSL #122"), Some(&4));
+    assert_eq!(ticket_counts.get("QSL #123"), Some(&5));
     assert_eq!(ticket_counts.get("WASM #6"), Some(&1));
 }
 

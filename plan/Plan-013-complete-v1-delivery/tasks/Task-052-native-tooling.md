@@ -12,6 +12,8 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-301, type: references }
   - { target: ix://agent-ix/quire-specification/FR-305, type: references }
   - { target: ix://agent-ix/quire-specification/FR-306, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-339, type: references }
+  - { target: ix://agent-ix/quire-specification/TC-180, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-220, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-221, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-225, type: verifies }
@@ -30,6 +32,7 @@ and effect-free evaluator boundaries.
 - [ ] Write TC-220/221/225/226 and API/CLI parity vectors first.
 - [ ] Expose every lifecycle operation with stable typed envelopes and exit codes.
 - [ ] Implement provider/plugin containment and exact AOT/JIT cache invalidation.
+- [ ] Repeat TC-180 before/after real backend/provider installation and prove identical syntax admission and identity.
 - [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-053.
 
 ## Deliverables
