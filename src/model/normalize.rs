@@ -40,7 +40,7 @@ use crate::model::accounting::{
 use crate::model::bundle::{Bundle, BundleRecord, ModelSelection, INTERFACE_VERSION_1_3_0};
 use crate::model::key::{
     self, digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey,
-    RULE_INHERIT, RULE_QUALIFY,
+    PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY,
 };
 
 /// A refusal FR-150 normalization returns for a real defect (never a
@@ -604,10 +604,23 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
     Ok(())
 }
 
-/// Normalize `bundle` under `limits`: FR-150 phases 1, 2, 3 and 5.
-pub fn normalize(bundle: &Bundle, limits: ModelNormalizationLimits) -> NormalizeOutcome {
+/// Every producer key `record` itself declares or refers to.
+fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
+    match record {
+        BundleRecord::ObjectType(record) => vec![&record.key],
+        BundleRecord::FieldMember(record) => vec![&record.key, &record.owner, &record.value_type],
+        BundleRecord::Generalization(record) => {
+            vec![&record.key, &record.specific, &record.general]
+        }
+    }
+}
+
+/// Phase-1 decode checks common to every entry point: the claimed producer
+/// interface version (TC-195 N08) and every referenced key's digest domain
+/// (TC-195 N05). Both refuse before any charge; no effective view is exposed.
+fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
     if bundle.model_selection.contract_version.interface_version != INTERFACE_VERSION_1_3_0 {
-        return NormalizeOutcome::Refused(ModelRefusal {
+        return Err(ModelRefusal {
             code: Code::UnknownWire,
             cause: "unsupported-wire",
             detail: format!(
@@ -615,6 +628,28 @@ pub fn normalize(bundle: &Bundle, limits: ModelNormalizationLimits) -> Normalize
                 bundle.model_selection.contract_version.interface_version
             ),
         });
+    }
+    for record in &bundle.records {
+        for key in referenced_keys(record) {
+            if key.digest.domain != PRODUCER_DIGEST_DOMAIN {
+                return Err(ModelRefusal {
+                    code: Code::StaleDependency,
+                    cause: "digest-domain-mismatch",
+                    detail: format!(
+                        "{} digest domain is {}; expected {PRODUCER_DIGEST_DOMAIN}",
+                        key.identity, key.digest.domain
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Normalize `bundle` under `limits`: FR-150 phases 1, 2, 3 and 5.
+pub fn normalize(bundle: &Bundle, limits: ModelNormalizationLimits) -> NormalizeOutcome {
+    if let Err(refusal) = decode_check(bundle) {
+        return NormalizeOutcome::Refused(refusal);
     }
     let built = match build(bundle) {
         Ok(built) => built,
@@ -634,19 +669,8 @@ pub fn normalize_with_meter(
     bundle: &Bundle,
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
-    if bundle.model_selection.contract_version.interface_version != INTERFACE_VERSION_1_3_0 {
-        let meter = Meter::new(limits);
-        return (
-            NormalizeOutcome::Refused(ModelRefusal {
-                code: Code::UnknownWire,
-                cause: "unsupported-wire",
-                detail: format!(
-                    "producer interface {} is not supported; only {INTERFACE_VERSION_1_3_0} is implemented",
-                    bundle.model_selection.contract_version.interface_version
-                ),
-            }),
-            meter,
-        );
+    if let Err(refusal) = decode_check(bundle) {
+        return (NormalizeOutcome::Refused(refusal), Meter::new(limits));
     }
     let built = match build(bundle) {
         Ok(built) => built,

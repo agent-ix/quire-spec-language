@@ -300,6 +300,56 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
     }
 }
 
+#[trace("TC-195", "FR-150-AC-3")]
+#[test]
+fn n05_digest_domain_mismatch_refuses_before_any_effective_view() {
+    let mut bundle = fixture_f1();
+    let BundleRecord::FieldMember(member) = &mut bundle.records[2] else {
+        panic!("fixture_f1 records[2] is not a field member");
+    };
+    assert_eq!(member.key.identity, "model.A.x");
+    member.key.digest.domain = "quire-native-bytes-1".to_owned();
+
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::StaleDependency
+            );
+            assert_eq!(refusal.cause, "digest-domain-mismatch");
+            assert!(refusal.detail.contains("model.A.x"));
+            assert!(refusal.detail.contains("filament-canonical-json-1"));
+            assert!(refusal.detail.contains("quire-native-bytes-1"));
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+#[trace("TC-195")]
+#[test]
+fn n09_effective_and_universe_identities_never_collide_with_a_producer_key() {
+    let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
+    let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+
+    let mut producer_digests: Vec<String> = fixture_f1()
+        .records
+        .iter()
+        .map(|record| record.key().digest.sha256)
+        .map(|bytes| quire_spec_language::model::key::hex(&bytes))
+        .collect();
+    producer_digests.sort();
+
+    for entry in &view.declarations {
+        assert!(
+            !producer_digests.contains(&entry.effective_id.hex()),
+            "effective identity {} collided with a producer digest",
+            entry.effective_id.hex()
+        );
+    }
+    assert!(!producer_digests.contains(&view.identity().hex()));
+    assert!(!producer_digests.contains(&universe.identity().hex()));
+}
+
 #[trace("TC-195", "FR-150-AC-2")]
 #[test]
 fn unsupported_interface_version_refuses_before_any_charge() {
