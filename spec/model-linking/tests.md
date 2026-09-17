@@ -85,7 +85,7 @@ per-group counts before moving this row to Passed.
 | FR-017 | FR-017-AC-4 | TC-001, TC-002, TC-003, TC-006 | ✅ Passed |
 | FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed |
-| FR-042 | FR-042-AC-3 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-3 | TC-121 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 |
 | FR-042 | FR-042-AC-4 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-5 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-6 | TC-121 | ✅ Passed |
@@ -101,7 +101,7 @@ per-group counts before moving this row to Passed.
 | FR-046 | FR-046-AC-6 | TC-128 | ✅ Passed |
 | FR-046 | FR-046-AC-7 | TC-128 | ✅ Passed |
 | FR-046 | FR-046-AC-8 | TC-126, TC-127 | ✅ Passed |
-| FR-047 | FR-047-AC-1 | TC-129 | ✅ Passed |
+| FR-047 | FR-047-AC-1 | TC-129 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 |
 | FR-047 | FR-047-AC-2 | TC-129, TC-131 | ✅ Passed |
 | FR-047 | FR-047-AC-3 | TC-129 | ✅ Passed |
 | FR-047 | FR-047-AC-4 | TC-130 | ✅ Passed |
@@ -116,14 +116,14 @@ per-group counts before moving this row to Passed.
 | FR-048 | FR-048-AC-5 | TC-133 | ✅ Passed |
 | FR-048 | FR-048-AC-6 | TC-134 | ✅ Passed |
 | FR-048 | FR-048-AC-7 | TC-134 | ✅ Passed |
-| FR-048 | FR-048-AC-8 | TC-134 | ✅ Passed |
+| FR-048 | FR-048-AC-8 | TC-134 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 |
 | FR-048 | FR-048-AC-9 | TC-135 | 🚧 Planned |
 | FR-048 | FR-048-AC-10 | TC-135 | 🚧 Planned |
 | FR-049 | FR-049-AC-1 | TC-136 | ✅ Passed |
 | FR-049 | FR-049-AC-2 | TC-136 | ✅ Passed |
 | FR-049 | FR-049-AC-3 | TC-136 | ✅ Passed |
 | FR-049 | FR-049-AC-4 | TC-136 | ✅ Passed |
-| FR-049 | FR-049-AC-5 | TC-136 | ✅ Passed |
+| FR-049 | FR-049-AC-5 | TC-136 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 |
 | FR-049 | FR-049-AC-6 | TC-136, TC-137 | ✅ Passed |
 | FR-049 | FR-049-AC-7 | TC-137 | ✅ Passed |
 | FR-049 | FR-049-AC-8 | TC-137 | ✅ Passed |
@@ -142,10 +142,11 @@ per-group counts before moving this row to Passed.
 | FR-056 | FR-056-AC-1 | TC-145 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-2 | TC-145 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-3 | TC-146 | 🚧 Planned; #131 |
-| FR-056 | FR-056-AC-4 | TC-147 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-4 | TC-145 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-5 | TC-145 | 🚧 Planned; #131 |
-| FR-056 | FR-056-AC-6 | TC-145 | 🚧 Planned; #131 |
-| FR-056 | FR-056-AC-7 | TC-148 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-6 | TC-147 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-7 | TC-147 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Planned; #131 |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -191,7 +192,7 @@ invented for that criterion.
 | TC-053 | Independent guard-fact truth-table soundness | Property | P1 | FR-016-AC-1, FR-016-AC-7 | ✅ Passed |
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
-| TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | ✅ Passed locally (tests/composed_models.rs, tests/composed_namespace.rs, tests/composed_definitions.rs, tests/composed_definition_source.rs, tests/composed_linking.rs, tests/composed_scopes.rs, tests/composed_binding.rs, src/linking/composed/arena.rs) |
+| TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_models.rs, tests/composed_namespace.rs, tests/composed_definitions.rs, tests/composed_definition_source.rs, tests/composed_linking.rs, tests/composed_scopes.rs, tests/composed_binding.rs, src/linking/composed/arena.rs) |
 | TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
@@ -203,19 +204,20 @@ invented for that criterion.
 | TC-129 | Bind exact finite graph identities and inputs | Integration | P1 | FR-047-AC-1..FR-047-AC-3 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-130 | Evaluate positive-length reachability over finite cycles | Integration | P1 | FR-047-AC-4..FR-047-AC-6 | ✅ Passed locally (tests/composed_state_evaluation.rs, tests/native_population_emission.rs) |
 | TC-131 | Bound graph evaluation and preserve historical profiles | Integration | P1 | FR-047-AC-2, FR-047-AC-7, FR-047-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
-| TC-132 | Preserve workflow, role and channel occurrence identities | Integration | P1 | FR-048-AC-1, FR-048-AC-2 | ✅ Passed locally (tests/native_*emission.rs, tests/producer_correspondence.rs) |
+| TC-132 | Preserve workflow, role and channel occurrence identities | Integration | P1 | FR-048-AC-1, FR-048-AC-2 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/native_*emission.rs, tests/producer_correspondence.rs) |
 | TC-133 | Admit bounded choreography control and visible progress | Integration | P1 | FR-048-AC-3..FR-048-AC-5 | ✅ Passed locally (tests/native_*emission.rs, tests/producer_correspondence.rs) |
 | TC-134 | Preserve compensation, retry, commit and recovery prerequisites | Integration | P1 | FR-048-AC-6..FR-048-AC-8 | ✅ Passed locally (tests/native_*emission.rs, tests/producer_correspondence.rs) |
 | TC-135 | Demonstrate the composed compiler-to-assessment ecosystem handoff | E2E | P1 | FR-048-AC-9, FR-048-AC-10, FR-042-AC-10 | 🚧 Planned; B/F integration pending |
-| TC-136 | Admit exact composed state views and typed outcomes | Integration | P1 | FR-049-AC-1..FR-049-AC-6 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
+| TC-136 | Admit exact composed state views and typed outcomes | Integration | P1 | FR-049-AC-1..FR-049-AC-6 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_state_evaluation.rs) |
 | TC-137 | Bound composed evaluation and retry immutable inputs | Property | P1 | FR-049-AC-6..FR-049-AC-8, NFR-009 | ✅ Passed locally (tests/composed_state_evaluation.rs, src/state/work.rs) |
 | TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-7 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs) |
 | TC-142 | Evaluate admitted version-2 compensation expressions and initialized captures | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | TC-143 | Publish and read strict control temporal activation mappings | Integration | P1 | FR-054-AC-1..FR-054-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
-| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-5, FR-056-AC-6 | 🚧 Planned; #131 |
-| TC-146 | Refuse an unknown meaning id | Integration | P0 | FR-056-AC-3 | 🚧 Planned; #131 |
-| TC-147 | Resolve module-qualified kinds through the constructs table | Integration | P0 | FR-056-AC-4 | 🚧 Planned; #131 |
-| TC-148 | Domain-package bundle end to end | Integration | P0 | FR-056-AC-7, FR-036-AC-1, FR-036-AC-3 | 🚧 Planned; #131 |
+| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5 | 🚧 Planned; #131 |
+| TC-146 | Refuse an unknown or mismatched construct meaning id | Integration | P0 | FR-056-AC-3 | 🚧 Planned; #131, blocked on quire-specification#85 |
+| TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 Planned; #131 |
+| TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
+| IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
 
 ## Composed language admission (L2)
 
@@ -234,26 +236,27 @@ the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
 controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
 boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
-stage grant no checked or executable package. The real domain-package
-integration in [IT-012](../integration/IT-012-domain-package-model-intake.md) is
-covered by TC-148, including common cross-family nominal type identity,
-declaration-owned capture and instance identities, and explicit backend
-capability refusal; it remains planned under #131. Status records local runs,
-not ecosystem acceptance.
+stage grant no checked or executable package. Status records local runs, not
+ecosystem acceptance. The FR-036-AC-3, FR-040-AC-4/5, FR-042-AC-3, FR-047-AC-1,
+FR-048-AC-8 and FR-049-AC-5 rows and the TC-114, TC-132 and TC-136 summaries name
+domain-package declarations as model inputs; they record the local NativeModel
+runs and stay 🚧 until #131 and #132 deliver domain-package intake and the
+compiled-protocol `Model` identity.
 
 ## Domain-package model intake (L2)
 
 [FR-056](../functional/FR-056-admit-domain-package-model-declarations.md) admits
-a Semantic IR 2.0.0 domain package, produced by quire-rs extraction and the FCD
-extraction-frontend lift and read through `agent-ix-semantic-ir`, as Quire model
-declarations. TC-145 covers admission, typed refusals, artifact-id identity and
-relationship exports; TC-146 covers meaning-id binding and its
-`unknown-meaning-id` and `meaning-shape-mismatch` refusals; TC-147 covers kind
-resolution through the embedded `constructs` table; TC-148 and IT-012 run a
-domain-package bundle whose constructs cover object, record, enum, reference,
-operation, relationship and population exports through the model linker. All
-four cases are planned under #131; no row is backed until tagged Rust tests
-exist.
+one Semantic IR 2.0.0 domain package per ModelSelection under Quire specification
+FR-154, reading lifted bytes through `agent-ix-semantic-ir`. TC-145 covers FR-154
+admission refusals, reader refusal, artifact-id identity, relationship exports,
+all-or-nothing declaration refusal and digest-slot separation; TC-146 covers
+meaning-id binding, blocked on agent-ix/quire-specification#85 for the registry
+and its refusal code; TC-147 covers `normalize.record` accounting and
+byte-identical results from both entry points. TC-148 and IT-012 run the
+agent-ix/filament-core-data#173 architecture fixture through quire-rs, the lift
+and intake, resolve its ports and a connection under FR-152, and link native
+model references against it (FR-036-AC-9). All are planned under #131; no row is
+backed until tagged Rust tests exist.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports; all seven FR-041 criteria are
@@ -276,19 +279,20 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-035 | FR-035-AC-4 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-5 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-6 | TC-113 | ✅ Passed |
-| FR-036 | FR-036-AC-1 | TC-114, TC-148 | 🚧 TC-114 passed locally (tests/composed_models.rs); TC-148 planned, #131 |
+| FR-036 | FR-036-AC-1 | TC-114 | ✅ Passed locally (tests/composed_models.rs) |
 | FR-036 | FR-036-AC-2 | TC-114 | ✅ Passed locally (tests/composed_namespace.rs) |
-| FR-036 | FR-036-AC-3 | TC-114, TC-148 | 🚧 TC-114 passed locally (tests/composed_definitions.rs); TC-148 planned, #131 |
+| FR-036 | FR-036-AC-3 | TC-114 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_definitions.rs) |
 | FR-036 | FR-036-AC-4 | TC-114 | ✅ Passed locally (tests/composed_scopes.rs) |
 | FR-036 | FR-036-AC-5 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-036 | FR-036-AC-6 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-036 | FR-036-AC-7 | TC-114 | ✅ Passed locally (tests/composed_binding.rs) |
 | FR-036 | FR-036-AC-8 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
+| FR-036 | FR-036-AC-9 | TC-148 | 🚧 Planned; #131 |
 | FR-040 | FR-040-AC-1 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-2 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-3 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
-| FR-040 | FR-040-AC-4 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
-| FR-040 | FR-040-AC-5 | TC-119 | ✅ Passed locally (tests/composed_query_proofs.rs) |
+| FR-040 | FR-040-AC-4 | TC-119 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_proofs.rs) |
+| FR-040 | FR-040-AC-5 | TC-119 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_query_proofs.rs) |
 | FR-040 | FR-040-AC-6 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
 | FR-040 | FR-040-AC-7 | TC-119 | ✅ Passed locally (tests/composed_type_pipeline.rs) |
 | FR-040 | FR-040-AC-8 | TC-119 | ✅ Passed locally (tests/composed_proofs.rs) |
@@ -396,7 +400,7 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 | --- | --- | --- | --- |
 | FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed locally |
-| FR-042 | FR-042-AC-3 | TC-121 | ✅ Passed locally |
+| FR-042 | FR-042-AC-3 | TC-121 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 |
 | FR-042 | FR-042-AC-4 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-5 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-6 | TC-121 | ✅ Passed locally |

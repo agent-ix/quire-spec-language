@@ -125,14 +125,15 @@ a new wire format as an incidental implementation choice.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-036-AC-1 | A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. All headers agree with the inventory's single language/edition; mixed editions or a header/inventory conflict refuse package namespace admission with the conflicting selections located. | Test (TC-114, TC-148) |
+| FR-036-AC-1 | A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. All headers agree with the inventory's single language/edition; mixed editions or a header/inventory conflict refuse package namespace admission with the conflicting selections located. | Test (TC-114) |
 | FR-036-AC-2 | Omitted inventory units, duplicate native names/authorities, wrong-kind targets, illegal binder/capture scope and self or mutual semantic dependencies produce located typed refusals; bounded protocol repetition is not falsely diagnosed as a dependency cycle. | Test (TC-114) |
-| FR-036-AC-3 | Missing or conflicting definition closure, a declaration from a foreign domain package and `sha256-jcs`-versus-raw-byte digest substitutions refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114, TC-148) |
+| FR-036-AC-3 | Missing or conflicting definition closure, a declaration from a foreign domain package and `sha256-jcs`-versus-raw-byte digest substitutions refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114) |
 | FR-036-AC-4 | Binding roles with equal local spelling in two declarations retain different declaration-owned identities; nominally different types and current/activation/invocation anchors remain distinct across families. | Test (TC-114) |
 | FR-036-AC-5 | Changing runtime population/window/trace or backend leaves static meaning unchanged; changing a required semantic selection changes it. Resource-only configuration changes remain visible without becoming semantic changes. | Test (TC-115) |
 | FR-036-AC-6 | A supported state request and an unsupported independent temporal projection both remain in the request report; complete aggregate success is unavailable, and unsupported family bodies are never represented as checked. | Test (TC-115) |
 | FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
 | FR-036-AC-8 | Historical linked/package artifacts retain their identities and atomic refusals; a composed partial report cannot enter an old reader or runner by changing a profile label. | Test (TC-115) |
+| FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds; a same-shaped declaration from another domain package or a changed selected digest refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
 
 ## Dependencies
 
@@ -187,9 +188,10 @@ checked. Assessment selections and backend support are retained as provenance an
 are never written back into the static subject.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
-runtime requirements. TC-148 and IT-012 exercise that boundary with a real
-domain-package bundle, common nominal types across state, temporal and protocol
-families, and declaration-owned capture and instance identities; TC-115 keeps an
+runtime requirements. TC-114 exercises common nominal types across state,
+temporal and protocol families and declaration-owned capture and instance
+identities over NativeModel exports; TC-148 and IT-012 bind native model
+references to admitted domain-package declarations (planned under #131); TC-115 keeps an
 explicit unsupported temporal projection beside an admitted state request. An admitted request is a
 handoff record, not a checked or executable clause; no result from this stage is
 a checked or executable package. The historical package path remains separate.

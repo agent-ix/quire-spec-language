@@ -11,34 +11,27 @@ relationships:
 
 ## Description
 
-Verify the full model intake path over a real domain-package bundle and the
-model linker's binding of native declarations to the admitted model
-declarations. Scope: FR-056-AC-7, FR-036-AC-1, FR-036-AC-3.
-
-The bundle's constructs cover object, record, enum, reference, operation,
-relationship and population exports. Which module and fixture supply it is
-recorded under agent-ix/quire-spec-language#131.
+Verify the full intake path over the architecture fixture of
+agent-ix/filament-core-data#173 and the model linker's binding of native model
+references to its declarations. Scope: FR-056-AC-8, FR-036-AC-9.
 
 ## Test Procedure
 
-1. Run bundle → `quire_rs::semantic::extract_semantic` with the real module
-   manifests → `agent-ix-extraction-frontend` lift → `agent-ix-semantic-ir` read →
-   model declarations. Use no hand-built semantic context or model-shaped JSON.
-2. Compile a native package whose state predicate reads an object field, follows
-   a reference, calls an operation contract and quantifies over a population,
-   and whose protocol names a relationship. Link it against the admitted domain
-   package.
-3. Inspect each bound model reference: domain package identity and digest,
-   declaration key, export kind and source loci on both sides.
-4. Substitute a same-shaped declaration from a different domain package, and
-   separately a changed domain package digest.
+1. Run the fixture bundle → `quire_rs::semantic::extract_semantic` with the real
+   module manifests → `agent-ix-extraction-frontend` lift → intake seam. Use no
+   hand-built semantic context or model-shaped JSON.
+2. Inspect each admitted Port and one admitted Connection between two ports.
+3. Link a native package whose model references name a fixture object's field, a
+   Port and the Connection against the admitted domain package.
+4. Substitute a same-shaped declaration from a different domain package for one
+   reference, and separately change the selected digest.
 
 ## Expected Results
 
-- Step 1 admits every type definition and relation with no diagnostics.
-- Step 2 binds every model reference in the native package; no reference
-  resolves by spelling alone.
-- Step 3 retains the exact domain package identity, digest, declaration key and
-  export kind for each binding.
+- Step 1 admits every IR node with no refusal.
+- Step 2: each Port retains its owning part, direction, interface type and typed
+  multiplicity; the Connection is admitted under FR-152's connection rule.
+- Step 3 binds every model reference to its declaration key and export or
+  systems kind; no reference resolves by spelling alone.
 - Step 4 refuses each dependent native declaration with its typed cause while
   unrelated declarations stay bound.
