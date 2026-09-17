@@ -162,10 +162,9 @@ never part of identity.
 A member's identity is its owner's identity, `/` and the member name (Quire
 specification FR-154).
 
-Each artifact id that declares a type definition or population node is an
-object id and follows Quire specification FR-154's id rule: ASCII letters,
-digits and underscores, starting with a letter (`^[A-Za-z][A-Za-z0-9_]*$`). A
-clause names the declaration by that id, such as `M::sys_pump`.
+The artifact id of each artifact that declares a type definition or population
+node is an object id (FR-154) and follows Quire specification FR-154's id rule.
+A clause names the declaration by that id, such as `M::sys_pump`.
 
 If an IR type definition or population node carries an artifact id that does
 not match FR-154's id rule, such as `sys-pump`, then the compiler SHALL refuse
