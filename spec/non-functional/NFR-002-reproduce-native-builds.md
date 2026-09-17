@@ -19,7 +19,7 @@ When the recorded native build command is run, the repository shall build withou
 
 ## Scope
 
-Rust crate, lockfile, toolchain, CI and optional producer checks.
+Rust crate, lockfile, toolchain and CI.
 
 ## Measurement and Evaluation
 
@@ -31,7 +31,7 @@ Rust crate, lockfile, toolchain, CI and optional producer checks.
 
 ## Verification
 
-Run the pinned toolchain with the locked minimal-feature build, tests, formatter and Clippy. The optional Filament model producer check uses its explicitly selected external toolchain and is not part of native runtime qualification.
+Run the pinned toolchain with the locked minimal-feature build, tests, formatter and Clippy.
 
 During stabilization, checks run locally. Every hosted CI workflow shall expose
 only `workflow_dispatch`; push, pull-request, schedule and other automatic
@@ -51,5 +51,4 @@ passing check.
 
 [NFR-005](NFR-005-rust-verification-paths.md) additionally requires Rust for owned
 verification logic. The previous native-runtime boundary is not an exemption
-for audit helpers. Fresh external TypeSpec/Node producer execution remains
-unapproved under the campaign policy; prior pinned observations stay historical.
+for audit helpers.

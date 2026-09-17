@@ -8,6 +8,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
   - { target: ix://agent-ix/quire-protocol/FR-003, type: references }
 ---
 # FR-049: Admit immutable composed evaluation inputs
@@ -21,7 +22,7 @@ executing the selected value graph.
 This requirement supplies the shared runtime-input seam needed by
 [FR-046](FR-046-execute-predicates-and-ordered-queries.md) and
 [FR-047](FR-047-evaluate-finite-object-reference-graphs.md). It does not create
-an observation store, protocol executor, model producer or alternate source
+an observation store, protocol executor, model source or alternate source
 representation.
 
 ## Inputs
@@ -34,24 +35,21 @@ and finite population/object views selected by their declaration-local binding
 requirements. Version-2 evaluation includes compensation guard, retry and
 recovery value handles retained by [FR-048](FR-048-preserve-native-choreography-semantics.md).
 
-D's draft Producer interface 1.2.0 contract at filament-core-data revision
-`6259d3a5b99088740df9bcc8e8d60f3720aaa603` supplies model, object-type,
-relationship, population-declaration, configuration and
-producer/native-correspondence identity. F's selected observation binding and
+The domain package admitted under
+[FR-056](FR-056-admit-domain-package-model-declarations.md) supplies model,
+object-type, relationship and population-declaration identity as declaration
+keys. F's selected observation binding and
 assessment-input contract at the accepted native-v1 baseline
 `4d6230eb8aa9766ff3017360962f2d6368d74cb3` supplies concrete records,
 occurrence correlation, membership, observation anchors, progress and
 completeness. The caller translates those authorities into this typed Rust
 view; field spelling, JSON shape or the offered protocol artifact cannot appoint
-them. That pinned D revision defines a normative contract but no Rust producer
-or wire schema. Positive local fixtures therefore exercise an explicitly
-caller-selected compatibility adapter and do not claim real D production.
+them.
 
-At the producer boundary, a concrete population document uses
+At the observation boundary, a concrete population document uses
 `ArtifactRef(kind="population")` and a concrete finite window document uses
 `ArtifactRef(kind="window")`. Those references retain the documents' byte
-identity; their producer-canonical semantic digests remain separate typed
-members. A population model export remains `ExportKind::Population`. A window
+identity; their semantic digests remain separate typed members. A population model export remains `ExportKind::Population`. A window
 is an assessment selection rather than a model export and therefore has no
 `ExportKind` alternative.
 
@@ -112,8 +110,9 @@ The population validator SHALL use the complete storage key `(observation
 occurrence, model, universe, object type, object identifier)` and reject two
 entries with the same key. The observation occurrence contains the exact
 semantic anchor, snapshot identity, optional window identity and record
-identity. D/F identities and Filament canonical digests remain typed separately
-from compiled-protocol artifact references and raw-byte digests.
+identity. Domain-package declaration keys, F identities and `sha256-jcs` domain
+package digests remain typed separately from compiled-protocol artifact
+references and raw-byte digests.
 
 The population validator SHALL permit the same model/universe/type/object
 identity under distinct pre, post or current anchors, snapshots, windows or
@@ -155,7 +154,7 @@ wire records, reparsed expression strings or unauthenticated payload bytes.
 | FR-049-AC-2 | Binder, population and window inputs retain exact declaration, compiled requirement, model, type, unit, anchor and authority; concrete population/window documents use their distinct artifact kinds, and duplicate, surplus, foreign and wrong-type entries refuse independently. | Test (TC-136) |
 | FR-049-AC-3 | Every available payload and recursively typed aggregate slot satisfies the exact compiled Boolean/numeric/text/enum/record/option/sequence/reference/object domain without implicit conversion, normalization or duplicate coalescing. | Test (TC-136) |
 | FR-049-AC-4 | Unavailable values preserve typed missing identities and participate only if evaluation reaches them; they never become null, false, zero, empty or a completed output member. | Test (TC-136) |
-| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct observation occurrences, compares permitted cross-observation identity without retagging reads, keeps D/F identity and digest domains separate from compiled artifacts, distinguishes population/window/clock roles, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
+| FR-049-AC-5 | Population storage rejects a duplicate full key, permits the same logical object under distinct observation occurrences, compares permitted cross-observation identity without retagging reads, keeps domain-package/F identity and digest domains separate from compiled artifacts, distinguishes population/window/clock roles, and distinguishes missing complete-domain targets from unavailable closure. | Test (TC-136) |
 | FR-049-AC-6 | Reports expose one closed completed/incomplete/refused/exhausted outcome plus exact effective limits and usage; diagnostic text is not an outcome discriminator. | Test (TC-136, TC-137) |
 | FR-049-AC-7 | Every accounting dimension admits zero/no-work, exact and one-short boundaries under `quire.state.evaluation-work/1`, with charge-before-work and no partial completed result. | Test (TC-137) |
 | FR-049-AC-8 | Repeating evaluation over the same borrowed package/view with different limits starts fresh counters, preserves inputs and returns the same result when both runs have sufficient limits. | Test (TC-137) |
@@ -169,12 +168,13 @@ The already implemented artifact-core portions of
 [FR-042](FR-042-publish-compiled-protocol-artifacts.md)—canonical schema,
 constructor-private emission, strict reader and bounded admitted package—supply
 the input authority; FR-042's later family-completeness and consumer-handoff
-criteria do not precede this requirement. Producer and observation systems
-retain their own identities and meanings; this interface checks selected values
+criteria do not precede this requirement. The domain package and the
+observation system retain their own identities and meanings; this interface checks selected values
 against the compiled requirements they supply.
 
-The revision pins above select semantic producer and observation contracts, not
-a crate dependency or copied wire representation. A revision change must be
+The observation revision pin above selects a semantic contract, not a crate
+dependency or copied wire representation. The domain package is selected by
+identity and digest. A revision change must be
 reconciled explicitly before its values are admitted through `StateView`.
 
 `quire-protocol` [FR-003](ix://agent-ix/quire-protocol/FR-003) consumes the

@@ -12,18 +12,19 @@ relationships:
 
 Exercise composed linking through the public Rust boundary with exact supplied
 models/definitions and source units. Concrete observations are deliberately absent
-from the valid template. Integration with the real producer belongs to IT-009.
+from the valid template. Integration with a real domain-package bundle belongs to
+TC-148 and IT-012.
 
 `tests/composed_namespace.rs` and `tests/composed_linking.rs` exercise the source
 inventory and native declaration-reference portions through `admit_namespace`.
 Their unresolved profile/model selectors do not qualify later binding.
 `tests/composed_binding.rs` exercises the combined three-family path with the
-actual native rule-model producer and exact normative definition/rule inputs.
+actual native rule-model source and exact normative definition/rule inputs.
 `composed_definitions`, `composed_definition_source`, `composed_models` and
 `composed_scopes` cover its adverse selections, original owners, lexical/causal
-environments and bounded retries. The real Producer 1.2 correspondence and the
-cross-family type/capture/instance boundary are completed by
-`tests/producer_correspondence.rs` under IT-009. None of these static cases
+environments and bounded retries. Binding against admitted domain-package
+declarations and the cross-family type/capture/instance boundary are completed
+by TC-148 under IT-012. None of these static cases
 claims runtime observations or family evaluation.
 
 ## Test Procedure
@@ -47,8 +48,8 @@ claims runtime observations or family evaluation.
    cycle. Compare with a diamond dependency and explicitly bounded protocol
    repetition; the latter two are valid graph shapes.
 5. Mutate one selected definition revision, digest, required dependency, model
-   export owner or producer/native correspondence at a time. Substitute a model
-   canonical digest in its native byte-digest position. Keep an unrelated valid
+   declaration key or domain package identity at a time. Substitute a domain
+   package `sha256-jcs` digest in a native byte-digest position. Keep an unrelated valid
    declaration and require its binding to survive each dependency-local refusal.
 6. Read the public accounting version, dimension charging rules, capacities and
    effective limits before traversal. Derive expected charges independently for

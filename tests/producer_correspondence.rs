@@ -575,14 +575,7 @@ fn add_producer_dependencies(mut inputs: Inputs) -> (Inputs, w::ArtifactRef, w::
 }
 
 #[test]
-#[trace(
-    "TC-114",
-    "TC-115",
-    "IT-009",
-    "FR-036-AC-1",
-    "FR-036-AC-4",
-    "FR-036-AC-6"
-)]
+#[trace("TC-114", "TC-115", "FR-036-AC-1", "FR-036-AC-4", "FR-036-AC-6")]
 fn real_producer_retains_cross_family_identity_and_backend_refusal() {
     let inputs = Inputs::new(&[
         Unit {

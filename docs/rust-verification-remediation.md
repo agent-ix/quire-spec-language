@@ -13,10 +13,8 @@ and IT-004 at 11a9128. The scoped full review is under
 | --- | --- | --- |
 | tools/audit_review_fixtures.py | Domain-specific historical snapshot/frame/invocation wrapper checks and negative controls. Hashing is already shared. | Rust review/self-test modes; reuse native ByteDigest. Preserve historical tuple fields and exact bytes. |
 | tools/audit_role_compositions.py | Domain-specific packet/source/model/run correspondence. Source correspondence and byte hashing already exist as native primitives. | Rust roles mode; share checked file/JSON intake, use original-byte hashing and native Source coordinates; no new evidence matcher. |
-| tools/check_model_fixture.py --bytes-only | Domain-specific pinned fixture manifest and byte checks. | Rust model-bytes mode with the same five historical digests and producer pin. |
-| tools/check_model_fixture.py producer mode | Rust can own orchestration, but the consumed TypeSpec/Node producer is a separate executable-language dependency. | Fresh execution remains unapproved; Rust model-producer refuses. Preserve original production/stale-lock evidence and producer pin. No Filament edits. |
 | tools/check_rule_syntax.py | Domain-specific rule wrapper/case metadata; actual parsing is an existing shared native capability. | Rust rule-syntax calls the existing parser directly. No expression parser, temp source runner or evaluator duplicate. |
-| CI self-test and model integrity steps | Owned executable verification logic previously invoked Python. | Replaced with the Rust audit executable; explicit count/claim boundaries retained. Hosted events are manual-dispatch only. |
+| CI self-test step | Owned executable verification logic previously invoked Python. | Replaced with the Rust audit executable; explicit count/claim boundaries retained. Hosted events are manual-dispatch only. |
 | Cargo, Rust toolchain, GitHub runner/checkout action | Existing external build/CI tooling and host; checkout@v4 is not Rust-owned verification logic. | Inventory retained; this work grants no new host/tool language exemption or broader qualification. No manual CI dispatch. |
 | Quoin/Quire specification and evidence workflows | Existing shared requirement/trace/method/evidence ownership. | Reuse installed workflows. Campaign explicitly retains Quoin for now; no local evidence-store framework or Quoin rewrite. |
 
@@ -37,7 +35,7 @@ result authorities remain unchanged.
 
 Ten TC artifacts and a scoped matrix precede implementation. They cover the
 real audit modes, stale/recomputed digest controls, selected source regions,
-producer pin, unsupported syntax, malformed/missing/wrongly typed JSON, escaped
+unsupported syntax, malformed/missing/wrongly typed JSON, escaped
 duplicate keys, path/symlink escape, OS argument encoding, and resource ceilings.
 New Rust test functions carry resolving TC/AC tags. No Python verifier is kept
 as a parity oracle; original fixture bytes and independently authored adverse
@@ -53,8 +51,8 @@ inventory records the actual resolved closure; existing grants are preserved.
 
 ## Current status
 
-The four Python helpers are removed and both former CI audit commands invoke
-Rust. Six audit unit tests and five default command/file integration tests pass;
+The Python helpers are removed and the CI audit command invokes Rust. Model
+intake comes from domain packages (FR-056), so no model fixture audit exists. Six audit unit tests and four default command/file integration tests pass;
 the 21 preexisting compiler tests also pass. All three explicitly selected private
 packet tests passed with independent corruptions. The six audit unit tests pass
 in the optimized release profile as well. Formatter, strict all-feature Clippy
@@ -62,14 +60,12 @@ and a separate-target locked build pass locally.
 
 The selected standard packet revision is
 36293bae7f5bcb7ca3b2389ed166e525dc9dba87. Review reports 23 files/seven cases/six
-controls; roles reports 17 artifacts/four regions; model-bytes reports five
-digests plus the producer pin; rule-syntax reports 50 parsed/one unsupported.
+controls; roles reports 17 artifacts/four regions; rule-syntax reports 50 parsed/one unsupported.
 Integration tests compare all original fixture bytes before/after execution;
-neither repository's historical fixtures changed. Model-producer remains an
-explicit exit-3 refusal with no child-process implementation.
+neither repository's historical fixtures changed.
 
-Quire resolves all 14 new Rust test symbols through canonical trace attributes:
-FR-012 is 11/11 backed, TC-001–TC-009 are backed, and TC-010 is a declared Manual
+Quire resolves all 13 trace attributes on the new Rust tests:
+FR-012 is 9/9 backed, TC-001–TC-003 and TC-005–TC-009 are backed, and TC-010 is a declared Manual
 inspection with no source symbol. This proves binding, not behavioral coverage
 percentages. Old compiler trace debt remains outside Plan-001.
 
@@ -80,9 +76,7 @@ single .github/workflows/ci.yml. There are zero remaining Python executable
 helpers or CI invocations and no embedded Node/shell verifier. The audit contains
 no child-process invocation. Test harness processes invoke only the real Rust
 binary; its environment has an empty PATH. Four named historical paths above
-are an inventory of removed files. Original TypeSpec model input and historical
-Python/Node command strings are preserved data; fresh producer execution is
-still unapproved.
+are an inventory of removed files.
 
 The owner requested local CI until stable. NFR-002/IT-004 amendments at 1649ef7
 received all eight review addenda at 2e5cd9a before the workflow change at
@@ -93,6 +87,6 @@ runner needs access to that repository before the test/lint commands can run.
 Local locked builds have that access/cache; hosted credential setup is not
 claimed by local results.
 
-Historical producer runs remain labeled historical. This scope does not accept
+This scope does not accept
 FS02/FS03/FS05 or complete the full compiler workflow. The root code and gap
 reviews record the actual evaluated implementation revision and limitations.

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012/NFR-005: Rust-only audit entry points, with explicit claim boundaries.
 #![forbid(unsafe_code)]
-mod checkpoint;
 mod error;
 mod input;
 mod review;
 mod roles;
+mod rule_syntax;
 
 use error::{Code, Error, Result};
 use std::{
@@ -17,18 +17,19 @@ use std::{
 
 fn run(arguments: &[OsString]) -> Result<String> {
     let usage = || {
-        Error::new(Code::Usage,"fixture-audit self-test | <review|roles|model-bytes|rule-syntax> <fixture-root> | model-producer")
+        Error::new(
+            Code::Usage,
+            "fixture-audit self-test | <review|roles|rule-syntax> <fixture-root>",
+        )
     };
     let Some(mode) = arguments.first().and_then(|arg| arg.to_str()) else {
         return Err(usage());
     };
-    match (mode,&arguments[1..]) {
-        ("self-test",[]) => review::self_test(),
-        ("model-producer",[]) => Err(Error::new(Code::ProducerUnapproved,"fresh TypeSpec/Node producer qualification requires a separate explicit owner disposition; historical bytes remain available through model-bytes")),
-        ("review",[root]) => review::audit(Path::new(root)),
-        ("roles",[root]) => roles::audit(Path::new(root)),
-        ("model-bytes",[root]) => checkpoint::model(Path::new(root)),
-        ("rule-syntax",[root]) => checkpoint::syntax(Path::new(root)),
+    match (mode, &arguments[1..]) {
+        ("self-test", []) => review::self_test(),
+        ("review", [root]) => review::audit(Path::new(root)),
+        ("roles", [root]) => roles::audit(Path::new(root)),
+        ("rule-syntax", [root]) => rule_syntax::audit(Path::new(root)),
         _ => Err(usage()),
     }
 }

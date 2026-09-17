@@ -15,7 +15,6 @@ pub(crate) enum Code {
     IdentityConflict,
     ForeignPath,
     ResourceExhausted,
-    ProducerUnapproved,
 }
 
 impl Code {
@@ -32,7 +31,6 @@ impl Code {
             Self::IdentityConflict => "identity-content-conflict",
             Self::ForeignPath => "foreign-path",
             Self::ResourceExhausted => "resource-exhausted",
-            Self::ProducerUnapproved => "producer-language-unapproved",
         }
     }
 
@@ -49,7 +47,6 @@ impl Code {
             Self::IdentityConflict,
             Self::ForeignPath,
             Self::ResourceExhausted,
-            Self::ProducerUnapproved,
         ]
     }
 
@@ -108,7 +105,7 @@ impl Error {
     pub(crate) fn exit_code(&self) -> u8 {
         match self.code {
             Code::Usage | Code::Io => 2,
-            Code::ResourceExhausted | Code::ProducerUnapproved => 3,
+            Code::ResourceExhausted => 3,
             Code::InvalidJson
             | Code::InvalidFixture
             | Code::DigestMismatch
