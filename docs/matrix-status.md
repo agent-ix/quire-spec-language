@@ -152,13 +152,6 @@ Two further traps, both found by paying for them once:
   each under-counted, in different directions, by scanning `tests/` alone. Any
   tag census must scan `src/` as well or it will report a module count that is
   simply wrong.
-- **A declared verification method can name a test case that binds nothing.**
-  `FR-036-AC-4` and `FR-036-AC-6` declare `Test (TC-114, IT-009)` and
-  `Test (TC-115, IT-009)`, and `IT-009` carries no trace tag anywhere in the
-  tree. So a criterion can read as backed on one half of its declared method
-  while the other half has no evidence at all. Backing a criterion is therefore
-  necessary but not sufficient for claiming its method was discharged; read the
-  method cell, not only the status.
 
 [SR-275](../reviews/26-09-09-matrix-status-review.md) records the bounded review.
 The producer merge and installed-stack adoption landed through

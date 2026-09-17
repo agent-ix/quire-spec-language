@@ -9,44 +9,52 @@ relationships:
 
 ## Description
 
-Verify that the compiler admits a domain package only through quire-rs
-extraction, the `agent-ix-extraction-frontend` lift and the
-`agent-ix-semantic-ir` reader, and that each admitted type definition becomes one
-model declaration keyed by its artifact identity. Scope: FR-056-AC-1,
-FR-056-AC-2, FR-056-AC-5, FR-056-AC-6.
+Verify FR-154 admission, reader refusal, artifact-id identity, relationship
+exports and all-or-nothing declaration refusal through the intake seam. Scope:
+FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-CON-4.
 
 ## Test Procedure
 
-1. Run intake over a small spec artifact bundle with the real module manifests.
-   The bundle declares one identified record with fields, one value record, one
-   enumeration, one operation, one relation with a declared name and one
-   population. Inspect the admission report.
-2. Recompute the `sha256-jcs` digest of the lifted IR document independently and
-   compare it with the reported domain package digest. Check that every
-   declaration key is (domain package identity, IR node identity, `sha256-jcs`)
-   and that each IR node identity equals its source artifact id.
-3. Change only one artifact's `displayName`, re-run intake and compare
-   declaration keys, export records, ordering and the linker's binding of a
-   native reference. Then give two artifacts equal `displayName` values.
-4. Offer a document the `agent-ix-semantic-ir` reader refuses, and separately a
-   document with contract version `1.2.0`.
-5. Remove the relation's `name`, then separately its `sourceSpan`. Point a
-   reference member at an artifact id absent from the bundle.
-6. Lower each intake limit to zero, to the exact usage of step 1 and to one
-   below it.
+1. Lift a small bundle through `agent-ix-extraction-frontend`: one identified
+   object with a reference member, one value record, one enumeration, one
+   operation interface, one population and one relation with a declared name.
+   Pass the lifted bytes and a ModelSelection naming their identity, version and
+   independently computed `sha256-jcs` digest to the intake seam.
+2. Offer, one at a time: a selection whose digest domain is not `sha256-jcs`; a
+   package input with no bytes under the selected digest; bytes whose recomputed
+   digest differs; bytes whose own identity or version differs from the
+   selection. Then offer a combination of the first and third faults.
+3. Offer bytes `agent-ix-semantic-ir` refuses.
+4. Change only one artifact's `title` or `displayName` and re-run. Then give two
+   artifacts equal titles.
+5. Remove the relation's declared name, then separately its source span. Then
+   point the reference member at an artifact id absent from the package, and
+   separately point the relation's target end at such an id.
+6. Combine one refused node with the valid nodes of step 1.
+7. Offer the admitted package's `sha256-jcs` digest in a raw-byte artifact digest
+   slot and in a compiled-artifact digest slot of a native package selection.
 
 ## Expected Results
 
-- Step 1 yields exactly one declaration per type definition, each with its bound
-  Quire meaning, source locus and export records; the relation yields one
-  `relationship` export with its declared name and span.
-- Step 2 digests and keys match the independent computation.
-- Step 3 leaves every key, export, ordering and binding byte-identical; equal
-  `displayName` values stay two distinct declarations.
-- Step 4 refuses the package: the reader case retains every reader diagnostic
-  with its node and locus, and the version case returns
-  `unsupported-ir-contract-version`. No declaration is admitted.
-- Step 5 refuses the relation with `incomplete-relation-declaration` and the
-  referring declaration with `dangling-model-reference`, each located.
-- Step 6: zero and one-short limits return `resource_exhausted` with dimension,
-  limit and usage and no admitted package; the exact limit admits.
+- Step 1 yields exactly one declaration per IR node ascending by (package
+  identity, IR node identity); each type's IR node identity equals its artifact
+  id; exports are one `object` with its `field` and `reference` records, one
+  `record`, one `enum` with its `variant` records, one `operation`, one
+  `population`, and one `relationship` carrying the declared name and span.
+- Step 2 refuses with `stale_dependency`/`digest-domain-mismatch`,
+  `missing_import`/`missing-selection`, `stale_dependency`/`byte-digest-mismatch`
+  and `invalid_model_binding`/`wrong-model-selection` respectively, with no
+  declaration; the combined case reports `digest-domain-mismatch`, the first
+  check in FR-154 order.
+- Step 3 admits no declaration and retains every reader diagnostic with its IR
+  node, artifact id and span.
+- Step 4 leaves every key, export, ordering and linker binding byte-identical;
+  equal titles stay two distinct declarations.
+- Step 5 refuses the unnamed and unspanned relations with
+  `invalid_model_binding`/`malformed-declaration`, and both dangling targets with
+  `missing_declaration`/`missing-name`, each naming node, artifact and span.
+- Step 6 reports every refusal in node order and admits no declaration of the
+  package.
+- Step 7 refuses both substitutions; the digest is accepted only in its
+  `sha256-jcs` slot.
+- Assertions compare typed refusal codes and loci, never message text.

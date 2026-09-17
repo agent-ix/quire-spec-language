@@ -14,6 +14,7 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-151, type: references }
   - { target: ix://agent-ix/quire-specification/FR-152, type: references }
   - { target: ix://agent-ix/quire-specification/FR-153, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-154, type: references }
   - { target: ix://agent-ix/quire-spec-language/TC-145, type: verifies }
   - { target: ix://agent-ix/quire-spec-language/TC-146, type: verifies }
   - { target: ix://agent-ix/quire-spec-language/TC-147, type: verifies }
@@ -39,10 +40,12 @@ conformance and redefinition, and unique most-specific dispatch.
 
 ## Subtasks
 
-- [ ] Select the merged agent-ix/filament-core-data#172 revision in `Cargo.lock`
-      and write TC-145–148 and IT-012 first.
-- [ ] Implement domain-package intake: constructs-table kind resolution,
-      meaning-id binding, artifact-id identity and relationship exports.
+- [ ] Select the merged agent-ix/filament-core-data#172 and #173 revisions in
+      `Cargo.lock`, confirm agent-ix/quire-specification#85 is merged, and write
+      TC-145–148 and IT-012 first.
+- [ ] Implement domain-package intake under QSpec FR-154: the lifted-bytes seam,
+      admission checks, meaning-id binding, artifact-id identity, relationship
+      exports, FR-152 ports and connections, and `normalize.record` accounting.
 - [ ] Implement closed lookup, specialization validation and ambiguity refusal,
       then TC-195–198.
 - [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-051.

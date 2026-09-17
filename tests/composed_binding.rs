@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: one real multi-unit static binding path, with dependent refusals.
-//! Native rule-model production is exercised; this does not claim D's IT-009.
+//! Native rule-model production is exercised; domain-package intake is TC-148.
 
 #[path = "support/native_rule_model.rs"]
 mod native_rule_model;

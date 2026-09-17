@@ -41,7 +41,7 @@ through the versioned [compiled-protocol wire contract](../../docs/compiled-prot
 ## Inputs
 
 The explicit original source inventory, actual source/formal clause owners,
-accepted baseline and artifact contract, producer implementation/revision,
+accepted baseline and artifact contract, compiler implementation/revision,
 exact domain-package/definition/rule/dependency selections, and constructor-private
 family-admission evidence derived from that same compilation. Source/profile
 acceptance comes from the independently supplied accepted inventory, not a
@@ -349,7 +349,7 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-7 | The public reader verifies canonical bytes and external selection without a native parser. Unknown/duplicate/missing fields, wrong tags, noncanonical encodings, out-of-range/foreign handles and changed content refuse with typed causes. Resealing a tampered payload under an unchanged expected reference still refuses; digest success alone is never evidence of native-source equivalence. | Test (TC-121) |
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. Every protocol-role admission refusal locus pairs a source index and span from the same owning declaration; a multi-unit invalid protocol role identifies and slices that exact role rather than a preceding source. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow/clamping and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
-| FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every producer/source/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
+| FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
 
 ## Dependencies
 
@@ -365,7 +365,7 @@ acceptance under compiler #40. The wire reader and numeric/type components
 implement part of this contract. The native path emits supported complete
 families from real source/type/proof owners, including static compensation and
 full/partial recovery requirements; strict-reader fixtures alone do not establish
-that authority. The [Rust producer recipe](../../examples/protocol-handoff/README.md)
+that authority. The [Rust emitter recipe](../../examples/protocol-handoff/README.md)
 retains four original source units, cross-unit dependencies, queries,
 population/reference roles, admitted model operations and actual executable bytes.
 Its joined receive/Boolean-choice scenario retains both received facts and
