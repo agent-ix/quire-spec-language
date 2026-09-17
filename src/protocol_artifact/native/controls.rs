@@ -4,8 +4,8 @@ use super::{
     context::Declaration,
     layout::DeclLayout,
     runtime::{
-        binder_type, nominal, operation_export, parameter_handle, relationship_binding,
-        selected_profile, structural, structural_symbol, Requirement, Runtime,
+        binder_type, nominal, operation_export, parameter_handle, selected_profile, structural,
+        structural_symbol, Requirement, Runtime,
     },
     types::{index, integer, text, ValueBuilder},
 };
@@ -553,17 +553,21 @@ pub(super) fn controls(
     Ok(controls)
 }
 
+// No admitted correspondence can authorize a relationship-endpoint export
+// without the removed Producer 1.2 adapter (#131); the composed model layer
+// already refuses every `c::Relationship` occurrence as an unsupported
+// correspondence (`ModelWalk::relationship`), so an event that names one
+// here refuses the same way, after confirming the name itself resolves.
 fn related_occurrences(
     context: &Declaration<'_, '_>,
     protocol: &c::Protocol,
     event: &c::Event,
-    builder: &ValueBuilder<'_>,
+    _builder: &ValueBuilder<'_>,
     work: &mut Work,
 ) -> Result<Vec<w::Related>, Error> {
-    let mut lowered = Vec::new();
-    lowered
-        .try_reserve_exact(event.related.len())
-        .map_err(|_| Error::Allocation)?;
+    if event.related.is_empty() {
+        return Ok(Vec::new());
+    }
     for related in &event.related {
         work.visit()?;
         let symbol = structural_symbol(
@@ -572,69 +576,18 @@ fn related_occurrences(
             scopes::StructuralKind::Relationship,
             work,
         )?;
-        let (relationship, syntax) = protocol
+        protocol
             .relationships
             .iter()
-            .enumerate()
-            .find(|(_, relationship)| relationship.name.span == symbol.name.span)
+            .find(|relationship| relationship.name.span == symbol.name.span)
             .ok_or(Error::Invalid(Invalid::Reference))?;
-        let bound = relationship_binding(context, syntax, work)?;
-        let declaration = bound
-            .declaration()
-            .ok_or(Error::Unsupported(Unsupported::Export))?;
-
-        // Every closed direction keeps the declaration's source as the first
-        // operand and target as the second. Target-to-source changes admitted
-        // traversal, not the authored operand order.
-        let (source, target) =
-            crate::linking::composed::producer::relationship_operands(declaration);
-        let source_type = bound
-            .source_type_export()
-            .filter(|export| export.identity.as_ref() == source.type_identity)
-            .ok_or(Error::Invalid(Invalid::Model))?;
-        let target_type = bound
-            .target_type_export()
-            .filter(|export| export.identity.as_ref() == target.type_identity)
-            .ok_or(Error::Invalid(Invalid::Model))?;
-        require_endpoint_type(context, related.from, bound, source_type, builder, work)?;
-        require_endpoint_type(context, related.to, bound, target_type, builder, work)?;
-
-        work.charge(Dimension::Entries, 1)?;
-        lowered.push(w::Related {
-            relationship: index(relationship)?,
-            from: context.layout.value(related.from)?,
-            to: context.layout.value(related.to)?,
-            locus: context.layout.locus(related.span)?,
-        });
     }
-    Ok(lowered)
-}
-
-fn require_endpoint_type(
-    context: &Declaration<'_, '_>,
-    expression: crate::syntax::ExprId,
-    relationship: &crate::linking::composed::models::BoundRelationship<'_>,
-    expected: &crate::linking::composed::producer::ProducerExportSelection,
-    builder: &ValueBuilder<'_>,
-    work: &mut Work,
-) -> Result<(), Error> {
-    let [owner] = expected.path.as_slice() else {
-        return Err(Error::Invalid(Invalid::Model));
-    };
-    if expected.kind == crate::linking::composed::producer::ProducerExportKind::Variant {
-        return Err(Error::Unsupported(Unsupported::Export));
-    }
-    let kind = expected.kind.wire_kind();
-    let expected = builder.export(relationship.model(), kind, owner, None, work)?;
-    let actual = context
-        .typed
-        .node(expression)
-        .and_then(|node| node.ty.as_ref())
-        .ok_or(Error::Invalid(Invalid::Type))?;
-    if nominal(actual, builder, work)? != expected {
-        return Err(Error::Invalid(Invalid::Type));
-    }
-    Ok(())
+    // Unsupported::Export, not ProducerCorrespondence: matches
+    // relationship_authority (runtime.rs) and the wire-read equivalent
+    // (protocol_artifact::models::validate_related) for the same
+    // unreachable-by-construction condition. ProducerCorrespondence stays
+    // reserved for a wire package that explicitly claims one.
+    Err(Error::Unsupported(Unsupported::Export))
 }
 
 pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {

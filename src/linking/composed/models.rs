@@ -2,7 +2,7 @@
 //! FR-036: exact unit-local imports over the existing admitted NativeModel.
 //! No model schema, runtime population or producer canonical correspondence is inferred.
 
-use std::{borrow::Cow, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use quire_contract_ir as ir;
 
@@ -19,8 +19,6 @@ use crate::{ByteDigest, Span, Spanned};
 pub enum ModelInput<'a> {
     /// Constructor-admitted native model, preserving its actual profile and declarations.
     Native(&'a NativeModel),
-    /// A producer/native pair admitted through the typed Producer 1.2 adapter.
-    Producer(&'a AdmittedProducerModel<'a>),
     /// An explicit external selection whose correspondence is not implemented.
     /// These labels select a refusal, never assert producer validity.
     UnsupportedProducer {
@@ -35,84 +33,12 @@ pub enum ModelInput<'a> {
     },
 }
 
-/// Constructor-private evidence that one Producer 1.2 selection names this native model.
-#[derive(Debug)]
-pub struct AdmittedProducerModel<'a> {
-    model: &'a NativeModel,
-    selection: Cow<'a, super::producer::ProducerCompatibilitySelection>,
-    filament: Option<&'a agent_ix_baseline_producer::AdmittedStaticBundle>,
-}
-
-impl<'a> AdmittedProducerModel<'a> {
-    pub(crate) fn new(
-        model: &'a NativeModel,
-        selection: Cow<'a, super::producer::ProducerCompatibilitySelection>,
-        filament: Option<&'a agent_ix_baseline_producer::AdmittedStaticBundle>,
-    ) -> Self {
-        Self {
-            model,
-            selection,
-            filament,
-        }
-    }
-
-    /// The exact native model whose raw bytes were selected by the correspondence.
-    pub fn model(&self) -> &'a NativeModel {
-        self.model
-    }
-
-    /// Complete caller-adapted producer selection retained by admission.
-    pub fn selection(&self) -> &super::producer::ProducerCompatibilitySelection {
-        &self.selection
-    }
-
-    /// Producer bundle identity retained by admission.
-    pub fn bundle_identity(&self) -> &str {
-        &self.selection.bundle.identity
-    }
-
-    /// Producer model identity retained by admission.
-    pub fn model_identity(&self) -> &str {
-        &self.selection.model.identity
-    }
-
-    /// Producer profile identity retained by admission.
-    pub fn profile_identity(&self) -> &str {
-        &self.selection.profile.identity
-    }
-
-    /// Producer configuration identity retained by admission.
-    pub fn configuration_identity(&self) -> &str {
-        &self.selection.configuration.identity
-    }
-
-    /// Producer/native relation identity retained by admission.
-    pub fn relation_identity(&self) -> &str {
-        &self.selection.correspondence.relation_identity
-    }
-
-    /// The indivisibly admitted Filament bundle, when this value came through
-    /// the direct producer entry point rather than the compatibility adapter.
-    pub fn filament_bundle(&self) -> Option<&'a agent_ix_baseline_producer::AdmittedStaticBundle> {
-        self.filament
-    }
-}
-
 impl<'a> ModelInput<'a> {
     /// The admitted native model, absent only for an explicitly unsupported offer.
     pub fn native_model(self) -> Option<&'a NativeModel> {
         match self {
             Self::Native(model) => Some(model),
-            Self::Producer(admitted) => Some(admitted.model()),
             Self::UnsupportedProducer { .. } => None,
-        }
-    }
-
-    /// Producer correspondence authority, when this input used that admission path.
-    pub fn producer_model(self) -> Option<&'a AdmittedProducerModel<'a>> {
-        match self {
-            Self::Producer(admitted) => Some(admitted),
-            Self::Native(_) | Self::UnsupportedProducer { .. } => None,
         }
     }
 
@@ -236,45 +162,6 @@ pub struct BoundOperation<'a> {
     location: DeclarationLocation,
 }
 
-/// Producer-authoritative relationship export selected by an authored declaration.
-#[derive(Clone, Debug)]
-pub struct BoundRelationship<'a> {
-    model: &'a NativeModel,
-    export: &'a super::producer::ProducerExportSelection,
-    declaration: Option<&'a agent_ix_baseline_producer::RelationshipDeclaration>,
-    source_type: Option<&'a super::producer::ProducerExportSelection>,
-    target_type: Option<&'a super::producer::ProducerExportSelection>,
-}
-
-impl<'a> BoundRelationship<'a> {
-    /// Native model selected by the admitted producer correspondence.
-    pub fn model(&self) -> &'a NativeModel {
-        self.model
-    }
-
-    /// Exact producer export, including its identity, path and foreign locus.
-    pub fn export(&self) -> &'a super::producer::ProducerExportSelection {
-        self.export
-    }
-
-    /// The producer-admitted endpoint and relationship semantics, present only
-    /// for the direct Filament entry point. Compatibility-only selections can
-    /// name the declaration but cannot authorize endpoint use.
-    pub fn declaration(&self) -> Option<&'a agent_ix_baseline_producer::RelationshipDeclaration> {
-        self.declaration
-    }
-
-    /// Exact native type export for the declaration's source endpoint.
-    pub fn source_type_export(&self) -> Option<&'a super::producer::ProducerExportSelection> {
-        self.source_type
-    }
-
-    /// Exact native type export for the declaration's target endpoint.
-    pub fn target_type_export(&self) -> Option<&'a super::producer::ProducerExportSelection> {
-        self.target_type
-    }
-}
-
 impl<'a> BoundOperation<'a> {
     /// Model owning the operation and all its input/result declarations.
     pub fn model(&self) -> &'a NativeModel {
@@ -293,7 +180,6 @@ impl<'a> BoundOperation<'a> {
 #[derive(Debug)]
 struct Exports<'a> {
     catalog: Catalog<'a>,
-    producer: Option<&'a AdmittedProducerModel<'a>>,
     scalars: BTreeMap<&'a str, &'a ScalarRole>,
     records: BTreeMap<&'a str, &'a ir::RecordDeclaration>,
     enumerations: BTreeMap<&'a str, &'a ir::EnumDeclaration>,
@@ -303,7 +189,7 @@ struct Exports<'a> {
 
 impl<'a> Exports<'a> {
     // charge_exports reserves these borrowed indexes before their allocation.
-    fn new(model: &'a NativeModel, producer: Option<&'a AdmittedProducerModel<'a>>) -> Self {
+    fn new(model: &'a NativeModel) -> Self {
         let catalog = Catalog::composed(model);
         Self {
             records: catalog
@@ -333,7 +219,6 @@ impl<'a> Exports<'a> {
                 .iter()
                 .map(|role| ((role.context.as_str(), role.name.as_str()), role))
                 .collect(),
-            producer,
             catalog,
         }
     }
@@ -431,86 +316,6 @@ fn charge(
 ) -> Result<(), ModelError> {
     work.charge(dimension, amount)
         .map_err(|error| failure(unit, span, ModelErrorKind::ResourceExhausted(error)))
-}
-
-fn producer_endpoint_type<'a>(
-    producer: &'a AdmittedProducerModel<'a>,
-    expected: &agent_ix_baseline_producer::ExportRecord,
-    unit: UnitId,
-    span: Span,
-    work: &mut Work,
-) -> Result<&'a super::producer::ProducerExportSelection, ModelError> {
-    let mut found = None;
-    for export in &producer.selection().correspondence.exports {
-        charge(work, Dimension::References, 1, unit, span)?;
-        charge(work, Dimension::Bytes, export.identity.len(), unit, span)?;
-        charge(
-            work,
-            Dimension::Bytes,
-            export.producer_object_identity.len(),
-            unit,
-            span,
-        )?;
-        if export.identity.as_ref() != expected.export_identity
-            || export.producer_object_identity.as_ref() != expected.producer_object_identity
-            || export.kind.wire_kind().as_str() != expected.kind.as_str()
-            || export.path.len() != expected.export_path.len()
-            || !export
-                .path
-                .iter()
-                .zip(&expected.export_path)
-                .all(|(left, right)| left.as_ref() == right)
-        {
-            continue;
-        }
-        if !export.kind.is_type() {
-            return Err(failure(unit, span, ModelErrorKind::WrongExportKind));
-        }
-        if found.replace(export).is_some() {
-            return Err(failure(
-                unit,
-                span,
-                ModelErrorKind::UnsupportedRelationshipContract,
-            ));
-        }
-    }
-    found.ok_or_else(|| failure(unit, span, ModelErrorKind::MissingExport))
-}
-
-fn filament_endpoint_type<'a>(
-    bundle: &'a agent_ix_baseline_producer::AdmittedStaticBundle,
-    endpoint: &agent_ix_baseline_producer::RelationshipEndpoint,
-    unit: UnitId,
-    span: Span,
-    work: &mut Work,
-) -> Result<&'a agent_ix_baseline_producer::ExportRecord, ModelError> {
-    for declared in bundle.endpoints() {
-        charge(work, Dimension::References, 1, unit, span)?;
-        charge(
-            work,
-            Dimension::Bytes,
-            declared.endpoint_identity.len(),
-            unit,
-            span,
-        )?;
-    }
-    for correspondence in bundle.correspondences() {
-        charge(work, Dimension::References, 1, unit, span)?;
-        for export in &correspondence.exports {
-            charge(work, Dimension::References, 1, unit, span)?;
-            charge(
-                work,
-                Dimension::Bytes,
-                export.export_identity.len(),
-                unit,
-                span,
-            )?;
-        }
-    }
-    bundle
-        .endpoint_type_export(&endpoint.endpoint_identity)
-        .filter(|export| export.export_identity == endpoint.type_identity)
-        .ok_or_else(|| failure(unit, span, ModelErrorKind::MissingExport))
 }
 
 // Catalog keys retain upstream SymbolName identities. Where a borrowed string
@@ -652,8 +457,7 @@ impl<'a> ModelBindings<'a> {
                     work.charge(Dimension::References, 1)?;
                     if self.catalogs[input].is_none() {
                         charge_exports(model, work)?;
-                        self.catalogs[input] =
-                            Some(Exports::new(model, self.inputs[input].producer_model()));
+                        self.catalogs[input] = Some(Exports::new(model));
                     }
                 }
             }
@@ -902,144 +706,6 @@ impl<'a> ModelBindings<'a> {
                 &role.source,
             ),
         })
-    }
-
-    /// Resolve only an exact producer-authoritative relationship export.
-    pub fn resolve_relationship(
-        &self,
-        unit: UnitId,
-        name: &QualifiedName,
-        work: &mut Work,
-    ) -> Result<BoundRelationship<'a>, ModelError> {
-        let exports = self.alias(unit, &name.model, work)?;
-        charge(work, Dimension::References, 1, unit, name.name.span)?;
-        charge(
-            work,
-            Dimension::Bytes,
-            name.name.value.len(),
-            unit,
-            name.name.span,
-        )?;
-        let Some(producer) = exports.producer else {
-            return Err(failure(
-                unit,
-                name.name.span,
-                ModelErrorKind::UnsupportedRelationshipContract,
-            ));
-        };
-        let mut wrong_kind = false;
-        for export in &producer.selection().correspondence.exports {
-            charge(work, Dimension::References, 1, unit, name.name.span)?;
-            if export.path.len() != 1 || export.path[0].as_ref() != name.name.value {
-                continue;
-            }
-            if export.kind == super::producer::ProducerExportKind::Relationship {
-                let mut declaration = None;
-                if let Some(bundle) = producer.filament_bundle() {
-                    for candidate in bundle.relationships() {
-                        charge(work, Dimension::References, 1, unit, name.name.span)?;
-                        charge(
-                            work,
-                            Dimension::Bytes,
-                            candidate.relationship_identity.len(),
-                            unit,
-                            name.name.span,
-                        )?;
-                        if candidate.relationship_identity.as_str() == export.identity.as_ref()
-                            && declaration.replace(candidate).is_some()
-                        {
-                            return Err(failure(
-                                unit,
-                                name.name.span,
-                                ModelErrorKind::UnsupportedRelationshipContract,
-                            ));
-                        }
-                    }
-                }
-                if producer.filament_bundle().is_some() && declaration.is_none() {
-                    return Err(failure(
-                        unit,
-                        name.name.span,
-                        ModelErrorKind::UnsupportedRelationshipContract,
-                    ));
-                }
-                if let Some(declaration) = declaration {
-                    let ownership = declaration.ownership.as_ref().ok_or_else(|| {
-                        failure(
-                            unit,
-                            name.name.span,
-                            ModelErrorKind::UnsupportedRelationshipContract,
-                        )
-                    })?;
-                    if ownership.model_identity != producer.model_identity()
-                        || ownership.profile_identity != producer.profile_identity()
-                        || ownership.configuration_identity != producer.configuration_identity()
-                    {
-                        return Err(failure(unit, name.name.span, ModelErrorKind::ForeignModel));
-                    }
-                }
-                let (source_type, target_type) = match declaration {
-                    Some(declaration) => {
-                        let bundle = producer.filament_bundle().ok_or_else(|| {
-                            failure(
-                                unit,
-                                name.name.span,
-                                ModelErrorKind::UnsupportedRelationshipContract,
-                            )
-                        })?;
-                        let source = filament_endpoint_type(
-                            bundle,
-                            &declaration.source,
-                            unit,
-                            name.name.span,
-                            work,
-                        )?;
-                        let target = filament_endpoint_type(
-                            bundle,
-                            &declaration.target,
-                            unit,
-                            name.name.span,
-                            work,
-                        )?;
-                        (
-                            Some(producer_endpoint_type(
-                                producer,
-                                source,
-                                unit,
-                                name.name.span,
-                                work,
-                            )?),
-                            Some(producer_endpoint_type(
-                                producer,
-                                target,
-                                unit,
-                                name.name.span,
-                                work,
-                            )?),
-                        )
-                    }
-                    None => (None, None),
-                };
-                charge(work, Dimension::Bindings, 1, unit, name.name.span)?;
-                return Ok(BoundRelationship {
-                    model: producer.model(),
-                    export,
-                    declaration,
-                    source_type,
-                    target_type,
-                });
-            }
-            wrong_kind = true;
-        }
-        Err(failure(
-            unit,
-            name.name.span,
-            if wrong_kind {
-                ModelErrorKind::WrongExportKind
-            } else {
-                ModelErrorKind::MissingExport
-            },
-        ))
     }
 
     fn exports_for(
@@ -1348,8 +1014,6 @@ pub enum ModelTarget<'a> {
     Type(BoundType<'a>),
     /// Explicit operation role and invocation contract.
     Operation(BoundOperation<'a>),
-    /// Producer-authoritative relationship and its exact correspondence export.
-    Relationship(BoundRelationship<'a>),
 }
 
 /// An occurrence belongs to the report's declaration and declaring source unit.
@@ -1630,29 +1294,20 @@ impl<'a> ModelWalk<'_, 'a> {
             },
         )
     }
+    // No admitted correspondence can authorize a relationship export without
+    // the removed Producer 1.2 adapter (#131); every relationship occurrence
+    // takes the same unsupported-correspondence refusal, after resolving its
+    // named type so the occurrence still records a located type reference.
     fn relationship(&mut self, relationship: &c::Relationship) -> Result<(), ModelError> {
         let name = &relationship.model;
-        let result = self.models.resolve_relationship(self.unit, name, self.work);
-        if matches!(
-            result.as_ref().map_err(|error| &error.kind),
-            Err(ModelErrorKind::UnsupportedRelationshipContract)
-        ) {
-            self.ty(name)?;
-            return self.record(
-                Err(failure(
-                    self.unit,
-                    relationship.span,
-                    ModelErrorKind::UnsupportedRelationshipContract,
-                )),
-                relationship.span,
-            );
-        }
+        self.ty(name)?;
         self.record(
-            result.map(ModelTarget::Relationship),
-            Span {
-                start: name.model.span.start,
-                end: name.name.span.end,
-            },
+            Err(failure(
+                self.unit,
+                relationship.span,
+                ModelErrorKind::UnsupportedRelationshipContract,
+            )),
+            relationship.span,
         )
     }
     fn parameter(&mut self, parameter: &c::Parameter) -> Result<(), ModelError> {
