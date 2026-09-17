@@ -156,8 +156,9 @@ IR node, ascending by declaration key, with FR-154's declaration refusals
 and `invalid_model_binding`/`unpreserved-model-meaning`.
 
 Each IR type definition, including every Part, Port, Interface, Connection and
-Allocation, has identity `ix://<package identity>/<artifact id>`; a Port's
-owning part and a Connection's ends are references and never part of identity.
+Allocation, has identity `ix://<package identity>/<artifact id>`; the owner of a
+Part or Port and the ends of a Connection or Allocation are references and
+never part of identity.
 A member's identity is its owner's identity, `/` and the member name (Quire
 specification FR-154, agent-ix/quire-specification PR #86, pending merge).
 
@@ -194,7 +195,7 @@ at the bundle entry point that lifts those bytes.
 | FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity or version differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. | Test (TC-145) |
 | FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration` per node in node order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
 | FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations. | Test (TC-145) |
-| FR-056-AC-5 | Each relation yields one `relationship` export with its name and span; a relation missing either refuses `invalid_model_binding`/`malformed-declaration`; a relation or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |
+| FR-056-AC-5 | Each relationship member yields one `relationship` export with its name and span; a relationship member missing either refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |
 | FR-056-AC-6 | Intake at its exact `normalize.record` bound completes, the one-less run is incomplete at `normalize.record` with no declaration, and admission refusals are decided before the first charge. | Test (TC-147) |
 | FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148, IT-012) |
@@ -205,7 +206,7 @@ at the bundle entry point that lifts those bytes.
 | --- | --- | --- |
 | Quire meaning ids (FR-208), artifact-id identity and construct-meaning systems binding (FR-154, FR-152) are pending merge of quire-specification PR #86. | agent-ix/quire-specification PR #86 | FR-056-AC-3, FR-056-AC-4, FR-056-AC-8 |
 | Component, endpoint, participant contract and configuration constructs have no FR-208 meaning id, so a construct naming one is refused under FR-154-AC-7 until FR-208 adds ids for them. | Architect decision | None in this requirement; FR-048 positive component, endpoint and participant cases |
-| A hyphenated artifact id, such as `entity-001`, has no qualified-name spelling, so a clause cannot name its declaration; pending architect ruling (FR-154 Open Question). The agent-ix/filament-core-data#173 fixture uses word ids such as `sys_pump` and `pump_out`. | Architect decision | FR-056-AC-8 and FR-036-AC-9 for hyphenated artifact ids |
+| A hyphenated artifact id, such as `entity-001`, has no qualified-name spelling, so a clause cannot name its declaration; pending architect ruling (FR-154 Open Question). Until the ruling, the agent-ix/filament-core-data#173 fixture uses word artifact ids. | Architect decision | FR-056-AC-8 and FR-036-AC-9 for hyphenated artifact ids |
 
 ## Dependencies
 
