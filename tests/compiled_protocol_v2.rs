@@ -12,11 +12,7 @@ use std::{
 
 use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
-use quire_spec_language::linking::composed::binding_work::{
-    Dimension as BindingDimension, Exhaustion as BindingExhaustion,
-};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::linking::composed::producer::ProducerModelRefusal;
 use quire_spec_language::protocol_artifact::{
     self as artifact,
     handoff::{
@@ -32,7 +28,7 @@ use quire_spec_language::state::{
     FieldValue, InputSlot, Limits as StateLimits, MissingInput, ObjectInput, ObjectKey,
     ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput,
     Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
-    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
+    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION,
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
@@ -306,13 +302,11 @@ fn state_authority(
         requirement: observation.clone(),
         producer: producer.clone(),
         observation: observation.clone(),
-        producer_contract_revision: PRODUCER_CONTRACT_REVISION.into(),
         observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         static_selection: static_selection.clone(),
         assessment_selection: assessment_selection.clone(),
     };
     AuthorityEvidence {
-        producer_contract_revision: PRODUCER_CONTRACT_REVISION.into(),
         observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         producer,
         observation,
@@ -2292,30 +2286,6 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
             NumberError::UnreducedRational,
         ]
         .map(Error::Numeric),
-    );
-    errors.push(Error::Producer(ProducerModelRefusal::ResourceExhausted(
-        BindingExhaustion {
-            dimension: BindingDimension::Bindings,
-            used: 0,
-            requested: 1,
-            limit: 0,
-        },
-    )));
-    errors.extend(
-        [
-            ProducerModelRefusal::Interface,
-            ProducerModelRefusal::Bundle,
-            ProducerModelRefusal::Model,
-            ProducerModelRefusal::Profile,
-            ProducerModelRefusal::Configuration,
-            ProducerModelRefusal::Correspondence,
-            ProducerModelRefusal::DefinitionClosure,
-            ProducerModelRefusal::Exports,
-            ProducerModelRefusal::ProducerDigest,
-            ProducerModelRefusal::NativeDigest,
-            ProducerModelRefusal::NativeBytes,
-        ]
-        .map(Error::Producer),
     );
     errors.extend(
         [

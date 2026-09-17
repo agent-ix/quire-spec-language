@@ -1,11 +1,5 @@
 [
   {
-    "name": "agent-ix-baseline-producer",
-    "version": "0.0.0",
-    "license": "AGPL-3.0-only",
-    "source": "git+https://github.com/agent-ix/filament-core-data?rev=404288282402d60de007295ccbafa960532b955e#404288282402d60de007295ccbafa960532b955e"
-  },
-  {
     "name": "ahash",
     "version": "0.8.12",
     "license": "MIT OR Apache-2.0",

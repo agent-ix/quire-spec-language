@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use quire_contract_ir as ir;
 
 use crate::checking::NativeType;
-use crate::linking::composed::producer;
 use crate::native_model::{NativeModel, ScalarKind, Unit};
 use crate::protocol_artifact::{
     wire as w, work::Work, AdmittedModel, Dimension, Error, Invalid, NumberWire, Unsupported,
@@ -24,21 +23,13 @@ enum Shape {
     Leaf(w::Type),
 }
 
-#[derive(Clone, Copy)]
-pub(super) struct ProducerSelection<'a> {
-    pub selected: super::ProducerSelection<'a>,
-    pub interface: u32,
-    pub relation: u32,
-}
-
 impl<'a> ValueBuilder<'a> {
     pub(super) fn new(
         models: &[AdmittedModel<'a>],
         dependencies: &[u32],
-        producers: &[Option<ProducerSelection<'a>>],
         work: &mut Work,
     ) -> Result<Self, Error> {
-        if models.len() != dependencies.len() || models.len() != producers.len() {
+        if models.len() != dependencies.len() {
             return Err(Error::Invalid(Invalid::Inventory));
         }
         work.charge(Dimension::Models, models.len())?;
@@ -48,7 +39,7 @@ impl<'a> ValueBuilder<'a> {
             types: Vec::new(),
         };
         let mut previous = None;
-        for ((selected, &dependency), producer) in models.iter().zip(dependencies).zip(producers) {
+        for (selected, &dependency) in models.iter().zip(dependencies) {
             work.visit()?;
             if previous.is_some_and(|value| value >= dependency) {
                 return Err(Error::Invalid(Invalid::Order));
@@ -59,17 +50,7 @@ impl<'a> ValueBuilder<'a> {
             {
                 return Err(Error::Invalid(Invalid::Model));
             }
-            let mut exports = model_exports(selected, work)?;
-            let correspondence = match producer {
-                Some(producer) => Some(producer_correspondence(
-                    selected,
-                    dependency,
-                    *producer,
-                    &mut exports,
-                    work,
-                )?),
-                None => None,
-            };
+            let exports = model_exports(selected, work)?;
             let profile = text(selected.model.profile().as_str(), work)?;
             work.charge(Dimension::Entries, 2)?;
             result.selected.push(*selected);
@@ -77,7 +58,9 @@ impl<'a> ValueBuilder<'a> {
                 artifact: dependency,
                 profile,
                 exports,
-                correspondence: w::Nullable(correspondence),
+                // No admitted correspondence can populate this without the
+                // removed Producer 1.2 adapter (#131).
+                correspondence: w::Nullable(None),
             });
         }
         Ok(result)
@@ -118,27 +101,6 @@ impl<'a> ValueBuilder<'a> {
                 }
             }
             return Err(Error::Unsupported(Unsupported::Export));
-        }
-        Err(Error::Invalid(Invalid::Model))
-    }
-
-    /// The separately supplied relation artifact authorizing this producer model.
-    pub(super) fn producer_relation(
-        &self,
-        model: &NativeModel,
-        work: &mut Work,
-    ) -> Result<u32, Error> {
-        for (model_index, selected) in self.selected.iter().enumerate() {
-            work.visit()?;
-            if !std::ptr::eq(selected.model, model) {
-                continue;
-            }
-            return self.models[model_index]
-                .correspondence
-                .0
-                .as_ref()
-                .map(|correspondence| correspondence.relation)
-                .ok_or(Error::Unsupported(Unsupported::Export));
         }
         Err(Error::Invalid(Invalid::Model))
     }
@@ -350,148 +312,6 @@ impl<'a> ValueBuilder<'a> {
             }
         })
     }
-}
-
-fn producer_correspondence(
-    selected: &AdmittedModel<'_>,
-    native: u32,
-    producer: ProducerSelection<'_>,
-    exports: &mut Vec<w::Export>,
-    work: &mut Work,
-) -> Result<w::Correspondence, Error> {
-    let admitted = producer.selected.model;
-    if !std::ptr::eq(admitted.model(), selected.model) {
-        return Err(Error::Invalid(Invalid::Model));
-    }
-    let selection = admitted.selection();
-    producer::validate_selection(selection).map_err(Error::Producer)?;
-    let correspondence = &selection.correspondence;
-    if correspondence.native.identity.as_ref() != selected.artifact.identity
-        || correspondence.native.revision.namespace.as_str()
-            != selected.artifact.revision.namespace.as_str()
-        || correspondence.native.revision.value.as_str()
-            != selected.artifact.revision.value.as_str()
-        || correspondence
-            .native
-            .digest
-            .value
-            .parse::<crate::ByteDigest>()
-            .ok()
-            != Some(selected.artifact.digest)
-        || correspondence.relation_identity.as_ref() != producer.selected.relation.identity
-    {
-        return Err(Error::Invalid(Invalid::Selection));
-    }
-
-    let mut mapped = BTreeMap::new();
-    for offered in &correspondence.exports {
-        work.visit()?;
-        let export = producer_export(offered, work)?;
-        let key = (export.kind.as_str().to_owned(), export.path.clone());
-        work.charge(Dimension::Entries, 1)?;
-        if mapped.insert(key, export).is_some() {
-            return Err(Error::Invalid(Invalid::Duplicate));
-        }
-    }
-
-    let mut native_exports = std::mem::take(exports).into_iter().peekable();
-    let mut producer_exports = mapped.into_iter().peekable();
-    let mut merged = Vec::new();
-    let mut indices = Vec::new();
-    while native_exports.peek().is_some() || producer_exports.peek().is_some() {
-        let take_producer = match (native_exports.peek(), producer_exports.peek()) {
-            (None, Some(_)) => true,
-            (Some(_), None) => false,
-            (Some(native), Some((key, _))) => {
-                work.visit()?;
-                export_owned_key(native).cmp(&(key.0.as_str(), key.1.as_slice()))
-                    != std::cmp::Ordering::Less
-            }
-            (None, None) => break,
-        };
-        if take_producer {
-            let (key, export) = producer_exports
-                .next()
-                .ok_or(Error::Invalid(Invalid::Model))?;
-            if native_exports.peek().is_some_and(|native| {
-                export_owned_key(native) == (key.0.as_str(), key.1.as_slice())
-            }) {
-                // A matching producer mapping deliberately replaces only the
-                // native source locus. Kind and ordered path are the equality
-                // key, and the independent reader later rechecks the retained
-                // producer locus against the admitted correspondence.
-                native_exports.next();
-            }
-            work.charge(Dimension::Entries, 1)?;
-            indices.push(index(merged.len())?);
-            merged.push(export);
-        } else {
-            merged.push(
-                native_exports
-                    .next()
-                    .ok_or(Error::Invalid(Invalid::Model))?,
-            );
-        }
-    }
-    *exports = merged;
-
-    let producer_object = &correspondence.producer;
-    work.charge(Dimension::Entries, 4)?;
-    Ok(w::Correspondence {
-        producer: w::ProducerObject {
-            interface: producer.interface,
-            kind: text(&producer_object.kind, work)?,
-            authority: text(&producer_object.authority, work)?,
-            identity: text(&producer_object.selection.identity, work)?,
-            revision: w::Revision {
-                namespace: text(&producer_object.selection.revision.namespace, work)?,
-                value: text(&producer_object.selection.revision.value, work)?,
-            },
-            digest: w::SelectedDigest {
-                domain: text(&producer_object.selection.digest.domain, work)?,
-                version: text(&producer_object.selection.digest.version, work)?,
-                algorithm: text(&producer_object.selection.digest.algorithm, work)?,
-                value: text(&producer_object.selection.digest.value, work)?,
-            },
-        },
-        native,
-        relation: producer.relation,
-        exports: indices,
-    })
-}
-
-fn producer_export(
-    value: &producer::ProducerExportSelection,
-    work: &mut Work,
-) -> Result<w::Export, Error> {
-    let mut path = Vec::new();
-    path.try_reserve_exact(value.path.len())
-        .map_err(|_| Error::Allocation)?;
-    for part in &value.path {
-        crate::protocol_artifact::intake::name(part)?;
-        path.push(text(part, work)?);
-    }
-    if path.is_empty() {
-        return Err(Error::Invalid(Invalid::Model));
-    }
-    work.charge(Dimension::Entries, 1)?;
-    Ok(w::Export {
-        kind: value.kind.wire_kind(),
-        path,
-        locus: producer_locus(&value.locus, work)?,
-    })
-}
-
-fn producer_locus(value: &w::ForeignLocus, work: &mut Work) -> Result<w::ForeignLocus, Error> {
-    Ok(w::ForeignLocus {
-        source: copy_artifact(&value.source, work)?,
-        formal: copy_formal(&value.formal, work)?,
-        span: value.span.clone(),
-    })
-}
-
-fn export_owned_key(value: &w::Export) -> (&str, &[String]) {
-    (value.kind.as_str(), &value.path)
 }
 
 fn charge_leaf(value: &w::Type, work: &mut Work) -> Result<(), Error> {

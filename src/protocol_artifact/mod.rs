@@ -35,7 +35,7 @@ pub use number::{
 };
 
 pub use encoding::encode_candidate;
-pub use intake::{read, read_with_producers};
+pub use intake::read;
 pub use occurrence::{
     occurrence_key_schema, AdmittedProtocolView, NodeOccurrenceSchema, NodeRole, OccurrenceKey,
     OccurrenceKeyError, OccurrenceKeySchema, RepeatOrdinalSchema, RoleSlotSchema,
@@ -87,17 +87,6 @@ pub struct AdmittedModel<'a> {
     pub model: &'a NativeModel,
     /// Independent source/formal correspondence for original model loci.
     pub source: &'a ExpectedForeignSource<'a>,
-}
-
-/// Independently admitted producer view for one selected native model.
-#[derive(Clone, Copy, Debug)]
-pub struct ExpectedProducerModel<'a> {
-    /// Constructor-admitted producer/native correspondence.
-    pub model: &'a crate::linking::composed::models::AdmittedProducerModel<'a>,
-    /// Exact producer interface dependency selected by the caller.
-    pub interface: &'a wire::ArtifactRef,
-    /// Exact producer-declared relation dependency selected by the caller.
-    pub relation: &'a wire::ArtifactRef,
 }
 
 /// Independently selected authored declaration correspondence.
@@ -212,8 +201,6 @@ pub enum Error {
     Json { line: usize, column: usize },
     #[error(transparent)]
     Numeric(NumberError),
-    #[error(transparent)]
-    Producer(crate::linking::composed::producer::ProducerModelRefusal),
     #[error("invalid compiled protocol data: {0:?}")]
     Invalid(Invalid),
     /// Strict version-2 refusal with a stable, axis-specific public code.
@@ -238,7 +225,6 @@ impl Error {
             Self::Allocation => "allocation",
             Self::Json { .. } => "json",
             Self::Numeric(error) => numeric_code(error),
-            Self::Producer(refusal) => producer_code(refusal),
             Self::Invalid(invalid) => invalid_code(*invalid),
             Self::V2(refusal) => refusal.code(),
             Self::V3(refusal) => refusal.code(),
@@ -254,26 +240,6 @@ const fn numeric_code(error: &NumberError) -> &'static str {
         NumberError::ComponentOutOfRange { .. } => "numeric.component-out-of-range",
         NumberError::NonPositiveDenominator => "numeric.non-positive-denominator",
         NumberError::UnreducedRational => "numeric.unreduced-rational",
-    }
-}
-
-const fn producer_code(
-    refusal: &crate::linking::composed::producer::ProducerModelRefusal,
-) -> &'static str {
-    use crate::linking::composed::producer::ProducerModelRefusal as P;
-    match refusal {
-        P::ResourceExhausted(_) => "producer.resource-exhausted",
-        P::Interface => "producer.interface",
-        P::Bundle => "producer.bundle",
-        P::Model => "producer.model",
-        P::Profile => "producer.profile",
-        P::Configuration => "producer.configuration",
-        P::Correspondence => "producer.correspondence",
-        P::DefinitionClosure => "producer.definition-closure",
-        P::Exports => "producer.exports",
-        P::ProducerDigest => "producer.producer-digest",
-        P::NativeDigest => "producer.native-digest",
-        P::NativeBytes => "producer.native-bytes",
     }
 }
 
