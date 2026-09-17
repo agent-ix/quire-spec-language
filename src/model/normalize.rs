@@ -34,11 +34,13 @@
 use std::collections::HashMap;
 
 use crate::diagnostic::Code;
-use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits};
+use crate::model::accounting::{
+    Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
+};
 use crate::model::bundle::{Bundle, BundleRecord, ModelSelection, INTERFACE_VERSION_1_3_0};
 use crate::model::key::{
-    self, digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey, RULE_INHERIT,
-    RULE_QUALIFY,
+    self, digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey,
+    RULE_INHERIT, RULE_QUALIFY,
 };
 
 /// A refusal FR-150 normalization returns for a real defect (never a
@@ -96,8 +98,14 @@ impl EffectiveView {
             "rules".to_owned(),
             Value::Object({
                 let mut rules = Map::new();
-                rules.insert("identity".to_owned(), Value::String(key::RULES_IDENTITY.to_owned()));
-                rules.insert("revision".to_owned(), Value::String(key::RULES_REVISION.to_owned()));
+                rules.insert(
+                    "identity".to_owned(),
+                    Value::String(key::RULES_IDENTITY.to_owned()),
+                );
+                rules.insert(
+                    "revision".to_owned(),
+                    Value::String(key::RULES_REVISION.to_owned()),
+                );
                 rules
             }),
         );
@@ -197,15 +205,26 @@ impl Index {
                     types.insert(t.key.identity.clone(), t.key.clone());
                 }
                 BundleRecord::FieldMember(m) => {
-                    fields_by_owner.entry(m.owner.identity.clone()).or_default().push(m.clone());
+                    fields_by_owner
+                        .entry(m.owner.identity.clone())
+                        .or_default()
+                        .push(m.clone());
                 }
                 BundleRecord::Generalization(g) => {
                     non_root.insert(g.specific.identity.clone());
-                    generals_by_specific.entry(g.specific.identity.clone()).or_default().push(g.clone());
+                    generals_by_specific
+                        .entry(g.specific.identity.clone())
+                        .or_default()
+                        .push(g.clone());
                 }
             }
         }
-        Self { types, fields_by_owner, generals_by_specific, non_root }
+        Self {
+            types,
+            fields_by_owner,
+            generals_by_specific,
+            non_root,
+        }
     }
 
     fn sorted_type_keys(&self) -> Vec<ProducerKey> {
@@ -214,14 +233,28 @@ impl Index {
         keys
     }
 
-    fn sorted_direct_members(&self, owner_identity: &str) -> Vec<crate::model::bundle::FieldMemberRecord> {
-        let mut members = self.fields_by_owner.get(owner_identity).cloned().unwrap_or_default();
+    fn sorted_direct_members(
+        &self,
+        owner_identity: &str,
+    ) -> Vec<crate::model::bundle::FieldMemberRecord> {
+        let mut members = self
+            .fields_by_owner
+            .get(owner_identity)
+            .cloned()
+            .unwrap_or_default();
         members.sort_by(|a, b| a.key.cmp(&b.key));
         members
     }
 
-    fn sorted_generals(&self, specific_identity: &str) -> Vec<crate::model::bundle::GeneralizationRecord> {
-        let mut generals = self.generals_by_specific.get(specific_identity).cloned().unwrap_or_default();
+    fn sorted_generals(
+        &self,
+        specific_identity: &str,
+    ) -> Vec<crate::model::bundle::GeneralizationRecord> {
+        let mut generals = self
+            .generals_by_specific
+            .get(specific_identity)
+            .cloned()
+            .unwrap_or_default();
         generals.sort_by(|a, b| a.key.cmp(&b.key));
         generals
     }
@@ -277,10 +310,16 @@ fn ancestor_paths(root_identity: &str, index: &Index) -> Result<Vec<AncestorPath
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: "specialization-cycle",
-                detail: format!("{ancestor_identity} generalizes back to itself via {}", record.key.identity),
+                detail: format!(
+                    "{ancestor_identity} generalizes back to itself via {}",
+                    record.key.identity
+                ),
             });
         }
-        out.push(AncestorPath { path: new_path.clone(), ancestor_identity: ancestor_identity.clone() });
+        out.push(AncestorPath {
+            path: new_path.clone(),
+            ancestor_identity: ancestor_identity.clone(),
+        });
         let mut new_visited = frame.visited.clone();
         new_visited.push(ancestor_identity.clone());
         stack.push(Frame {
@@ -337,7 +376,11 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
             inputs: vec![type_key.clone()],
             cycle_check_len: None,
         });
-        let mut derivation = vec![Fact { ordinal: 0, rule: RULE_QUALIFY, inputs: vec![type_key.clone()] }];
+        let mut derivation = vec![Fact {
+            ordinal: 0,
+            rule: RULE_QUALIFY,
+            inputs: vec![type_key.clone()],
+        }];
 
         let paths = ancestor_paths(&type_key.identity, &index)?;
         for ancestor in &paths {
@@ -354,7 +397,11 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
                 inputs: inputs.clone(),
                 cycle_check_len: Some(ancestor.path.len()),
             });
-            derivation.push(Fact { ordinal: derivation.len(), rule: RULE_INHERIT, inputs });
+            derivation.push(Fact {
+                ordinal: derivation.len(),
+                rule: RULE_INHERIT,
+                inputs,
+            });
         }
 
         let preimage = EffectiveDeclarationPreimage {
@@ -366,7 +413,8 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
         type_preimages.insert(type_key.identity.clone(), preimage);
     }
 
-    let mut member_preimages: HashMap<(String, String), EffectiveDeclarationPreimage> = HashMap::new();
+    let mut member_preimages: HashMap<(String, String), EffectiveDeclarationPreimage> =
+        HashMap::new();
 
     for type_key in &type_keys {
         let owner_effective_id = type_effective_ids[&type_key.identity].clone();
@@ -384,7 +432,11 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
                 EffectiveDeclarationPreimage {
                     owner_effective_type: Some(owner_effective_id.clone()),
                     original: member.key.clone(),
-                    derivation: vec![Fact { ordinal: 0, rule: RULE_QUALIFY, inputs: vec![member.key.clone()] }],
+                    derivation: vec![Fact {
+                        ordinal: 0,
+                        rule: RULE_QUALIFY,
+                        inputs: vec![member.key.clone()],
+                    }],
                 },
             );
         }
@@ -410,7 +462,11 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
                         derivation: Vec::new(),
                     });
                 let ordinal = entry.derivation.len();
-                entry.derivation.push(Fact { ordinal, rule: RULE_INHERIT, inputs });
+                entry.derivation.push(Fact {
+                    ordinal,
+                    rule: RULE_INHERIT,
+                    inputs,
+                });
             }
         }
     }
@@ -419,20 +475,36 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
     let mut declarations: Vec<PendingDeclaration> = Vec::new();
     let mut entries: Vec<ViewEntry> = Vec::new();
     for type_key in &type_keys {
-        let preimage = type_preimages.remove(&type_key.identity).expect("built above");
+        let preimage = type_preimages
+            .remove(&type_key.identity)
+            .expect("built above");
         let effective_id = type_effective_ids[&type_key.identity].clone();
-        declarations.push(PendingDeclaration { jcs_len: preimage.jcs_bytes().len() as u64 });
-        entries.push(ViewEntry { effective_id, preimage });
+        declarations.push(PendingDeclaration {
+            jcs_len: preimage.jcs_bytes().len() as u64,
+        });
+        entries.push(ViewEntry {
+            effective_id,
+            preimage,
+        });
     }
     let mut member_keys: Vec<(String, String)> = member_preimages.keys().cloned().collect();
     member_keys.sort_by(|(owner_a, decl_a), (owner_b, decl_b)| {
-        index.types[owner_a].cmp(&index.types[owner_b]).then_with(|| decl_a.cmp(decl_b))
+        index.types[owner_a]
+            .cmp(&index.types[owner_b])
+            .then_with(|| decl_a.cmp(decl_b))
     });
     for (owner_identity, decl_identity) in member_keys {
-        let preimage = member_preimages.remove(&(owner_identity.clone(), decl_identity)).expect("built above");
+        let preimage = member_preimages
+            .remove(&(owner_identity.clone(), decl_identity))
+            .expect("built above");
         let effective_id = preimage.identity();
-        declarations.push(PendingDeclaration { jcs_len: preimage.jcs_bytes().len() as u64 });
-        entries.push(ViewEntry { effective_id, preimage });
+        declarations.push(PendingDeclaration {
+            jcs_len: preimage.jcs_bytes().len() as u64,
+        });
+        entries.push(ViewEntry {
+            effective_id,
+            preimage,
+        });
     }
     entries.sort_by(|a, b| a.effective_id.cmp(&b.effective_id));
 
@@ -443,23 +515,48 @@ fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
         .collect();
     root_types.sort();
 
-    let view = EffectiveView { model_selection: bundle.model_selection.clone(), declarations: entries };
-    let universe = ObjectUniverse { model_selection: bundle.model_selection.clone(), root_types };
+    let view = EffectiveView {
+        model_selection: bundle.model_selection.clone(),
+        declarations: entries,
+    };
+    let universe = ObjectUniverse {
+        model_selection: bundle.model_selection.clone(),
+        root_types,
+    };
 
-    Ok(Built { phase2_facts, phase3_facts, declarations, view, universe })
+    Ok(Built {
+        phase2_facts,
+        phase3_facts,
+        declarations,
+        view,
+        universe,
+    })
 }
 
 fn sort_facts(facts: &mut [PendingFact]) {
-    facts.sort_by(|a, b| a.owner_key.cmp(&b.owner_key).then_with(|| a.declared_key.cmp(&b.declared_key)).then_with(|| a.inputs.cmp(&b.inputs)));
+    facts.sort_by(|a, b| {
+        a.owner_key
+            .cmp(&b.owner_key)
+            .then_with(|| a.declared_key.cmp(&b.declared_key))
+            .then_with(|| a.inputs.cmp(&b.inputs))
+    });
 }
 
 /// Pass two: replay the exact `ModelNormalizationLimitsV1` charge sequence
 /// over an already-built [`Built`] result.
 fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), Incomplete> {
-    let mut record_keys: Vec<ProducerKey> = bundle.records.iter().map(BundleRecord::key).cloned().collect();
+    let mut record_keys: Vec<ProducerKey> = bundle
+        .records
+        .iter()
+        .map(BundleRecord::key)
+        .cloned()
+        .collect();
     record_keys.sort();
     for (index, _) in record_keys.iter().enumerate() {
-        meter.charge(Charge::new(ChargePoint::NormalizeRecord).size(LimitKind::ProducerRecords, (index + 1) as u64))?;
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeRecord)
+                .size(LimitKind::ProducerRecords, (index + 1) as u64),
+        )?;
     }
 
     let mut fact_count: u64 = 0;
@@ -467,7 +564,9 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
     sort_facts(&mut phase2_owned);
     for _fact in &phase2_owned {
         fact_count += 1;
-        meter.charge(Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count))?;
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
+        )?;
     }
 
     let mut phase3_owned: Vec<PendingFact> = built.phase3_facts.clone();
@@ -477,20 +576,31 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
             meter.charge(Charge::new(ChargePoint::NormalizeCycleCheck).work(path_len as u64))?;
         }
         fact_count += 1;
-        meter.charge(Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count))?;
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
+        )?;
     }
 
     let mut decl_count: u64 = 0;
     for declaration in &built.declarations {
         decl_count += 1;
         meter.charge(
-            Charge::new(ChargePoint::NormalizeDeclaration).size(LimitKind::EffectiveDeclarations, decl_count),
+            Charge::new(ChargePoint::NormalizeDeclaration)
+                .size(LimitKind::EffectiveDeclarations, decl_count),
         )?;
-        meter.charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, declaration.jcs_len))?;
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeHash)
+                .size(LimitKind::HashedBytes, declaration.jcs_len),
+        )?;
     }
 
-    meter.charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, built.universe.jcs_len()))?;
-    meter.charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, built.view.jcs_len()))?;
+    meter.charge(
+        Charge::new(ChargePoint::NormalizeHash)
+            .size(LimitKind::HashedBytes, built.universe.jcs_len()),
+    )?;
+    meter.charge(
+        Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, built.view.jcs_len()),
+    )?;
     Ok(())
 }
 
@@ -520,7 +630,10 @@ pub fn normalize(bundle: &Bundle, limits: ModelNormalizationLimits) -> Normalize
 /// A meter constructed to run `bundle` under [`ModelNormalizationLimits::UNLIMITED`]
 /// and expose its admitted-charge sequence, for tests that assert the exact
 /// charge order alongside [`normalize`]'s result.
-pub fn normalize_with_meter(bundle: &Bundle, limits: ModelNormalizationLimits) -> (NormalizeOutcome, Meter) {
+pub fn normalize_with_meter(
+    bundle: &Bundle,
+    limits: ModelNormalizationLimits,
+) -> (NormalizeOutcome, Meter) {
     if bundle.model_selection.contract_version.interface_version != INTERFACE_VERSION_1_3_0 {
         let meter = Meter::new(limits);
         return (

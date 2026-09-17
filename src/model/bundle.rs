@@ -118,13 +118,22 @@ impl ModelSelection {
     pub(super) fn to_json(&self) -> serde_json::Value {
         use serde_json::{Map, Value};
         let mut export = Map::new();
-        export.insert("identity".to_owned(), Value::String(self.export.identity.clone()));
+        export.insert(
+            "identity".to_owned(),
+            Value::String(self.export.identity.clone()),
+        );
         export.insert(
             "revision".to_owned(),
             Value::Object({
                 let mut r = Map::new();
-                r.insert("namespace".to_owned(), Value::String(self.export.revision.namespace.clone()));
-                r.insert("value".to_owned(), Value::String(self.export.revision.value.clone()));
+                r.insert(
+                    "namespace".to_owned(),
+                    Value::String(self.export.revision.namespace.clone()),
+                );
+                r.insert(
+                    "value".to_owned(),
+                    Value::String(self.export.revision.value.clone()),
+                );
                 r
             }),
         );
@@ -132,8 +141,14 @@ impl ModelSelection {
             "digest".to_owned(),
             Value::Object({
                 let mut d = Map::new();
-                d.insert("domain".to_owned(), Value::String(self.export.digest.domain.clone()));
-                d.insert("sha256".to_owned(), Value::String(super::key::hex(&self.export.digest.sha256)));
+                d.insert(
+                    "domain".to_owned(),
+                    Value::String(self.export.digest.domain.clone()),
+                );
+                d.insert(
+                    "sha256".to_owned(),
+                    Value::String(super::key::hex(&self.export.digest.sha256)),
+                );
                 d
             }),
         );
@@ -142,11 +157,20 @@ impl ModelSelection {
             "interface_version".to_owned(),
             Value::String(self.contract_version.interface_version.clone()),
         );
-        contract_version.insert("wire_schema".to_owned(), Value::String(self.contract_version.wire_schema.clone()));
+        contract_version.insert(
+            "wire_schema".to_owned(),
+            Value::String(self.contract_version.wire_schema.clone()),
+        );
         let mut object = Map::new();
-        object.insert("authority".to_owned(), Value::String(self.authority.clone()));
+        object.insert(
+            "authority".to_owned(),
+            Value::String(self.authority.clone()),
+        );
         object.insert("export".to_owned(), Value::Object(export));
-        object.insert("contract_version".to_owned(), Value::Object(contract_version));
+        object.insert(
+            "contract_version".to_owned(),
+            Value::Object(contract_version),
+        );
         Value::Object(object)
     }
 
@@ -183,6 +207,9 @@ pub struct Bundle {
 impl Bundle {
     /// A bundle over `records`, selected under `model_selection`.
     pub fn new(model_selection: ModelSelection, records: Vec<BundleRecord>) -> Self {
-        Self { model_selection, records }
+        Self {
+            model_selection,
+            records,
+        }
     }
 }
