@@ -31,7 +31,7 @@ Owner directive (2026-09-07): first-party production and possible qualification 
 - Inventory existing JavaScript/Python/shell and executable generated/inline CI logic; record a Rust remediation owner or an explicit owner disposition. Data schemas and foreign-language fixture samples must be distinguished from executable checks. External tools/hosts/bindings need a scoped disposition, not an invented exemption.
 - Reuse shared assurance contracts and Quoin evidence ownership; do not recreate local evidence frameworks. Classify each helper as an existing shared capability, a missing reusable capability, or domain-specific logic before porting.
 - Complete /specify and /spec-review for the changed requirements/interfaces, resolve findings, then implement and verify. Preserve ongoing work and actual evidence provenance. Do not claim a language port or qualification complete from a policy update.
-- Filament repositories/tickets are excluded from this remediation. Interface consumption does not authorize producer changes.
+- Filament repositories/tickets are excluded from this remediation. Model intake consumes the filament-core-data `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` crates by exact git revision; a change to their contracts goes through a filament-core-data ticket.
 
 Before closure: record executable-path inventory, approved dispositions, Rust implementation/test/CI parity and failure-path evidence for the reviewed scope. Existing Quoin retention is the only accommodation recorded here; this block grants no new TypeScript approval.
 <!-- required-language-policy:end -->

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-012 AC-4/5: selected producer bytes and real native syntax, not evaluation.
+//! FR-012 AC-5: real native syntax over selected rule cases, not evaluation.
 use crate::{
     error::{ensure, Code, Error, Result},
     input::{array, equal, field, text, Input},
@@ -9,48 +9,8 @@ use quire_spec_language::{parse, Code as NativeCode, Limits, SourceIdentity};
 use serde_json::json;
 use std::{collections::BTreeSet, path::Path};
 
-const PRODUCER: &str = "3b75e01c652ba00bb07c352ff5467419401e792b";
-
-/// Verify the selected producer checkpoint bytes without executing its producer.
-pub(crate) fn model(root: &Path) -> Result<String> {
-    let mut input = Input::new(root)?;
-    let provenance = input.json("model-output/provenance.json")?;
-    equal(
-        &provenance,
-        "fixtureVersion",
-        &json!("agent-a-model-production/1-draft"),
-    )?;
-    equal(
-        field(&provenance, "producer")?,
-        "revision",
-        &json!(PRODUCER),
-    )?;
-    let artifacts = array(field(&provenance, "artifacts")?)?;
-    ensure(
-        artifacts.len() == 5,
-        Code::InvalidFixture,
-        "expected five selected checkpoint artifacts",
-    )?;
-    let mut paths = BTreeSet::new();
-    for artifact in artifacts {
-        let path = text(field(artifact, "path")?)?;
-        ensure(
-            paths.insert(path),
-            Code::InvalidFixture,
-            "duplicate checkpoint artifact",
-        )?;
-        let raw = input.read(path)?;
-        ensure(
-            digest(&raw) == text(field(artifact, "digest")?)?,
-            Code::DigestMismatch,
-            format!("checkpoint bytes changed: {path}"),
-        )?;
-    }
-    Ok("passed: 5 producer checkpoint byte digests and exact producer pin; historical evidence only; no producer or evaluator executed".into())
-}
-
 /// Execute actual native syntax checks over the selected FS03 authored cases.
-pub(crate) fn syntax(root: &Path) -> Result<String> {
+pub(crate) fn audit(root: &Path) -> Result<String> {
     let mut input = Input::new(root)?;
     let fixture = input.json("fixtures/typing-cases.json")?;
     check_syntax_profile(&mut input, &fixture)?;

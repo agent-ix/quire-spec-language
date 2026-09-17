@@ -15,13 +15,10 @@ When an owned fixture or qualification check is executed, the repository shall e
 
 ## Scope
 
-The four existing audit helpers, their replacements, CI fixture assertions,
-native rule-syntax checks and optional producer-verification entry points.
-Standard Cargo/CI launch commands do not embed a second-language verifier.
-External executable producer languages require a separate explicit owner
-disposition; an implementation in another repository or a Rust wrapper is not
-an exemption. This artifact records the campaign constraint without changing
-the external Filament implementation or its original rights.
+The four existing audit helpers, their replacements, CI fixture assertions and
+native rule-syntax checks. Standard Cargo/CI launch commands do not embed a
+second-language verifier. An implementation in another repository or a Rust
+wrapper is not an exemption.
 
 ## Measurement and Evaluation
 
@@ -29,19 +26,17 @@ the external Filament implementation or its original rights.
 | --- | --- | --- | --- |
 | Owned Python audit executables or CI invocations | 0 | 0 | inspection |
 | Non-Rust verification logic launched by the audit command | 0 | 0 | integration-testing |
-| Unapproved external producer launches | 0 | 0 | negative-abuse-testing |
 
 ## Verification
 
 Inspect CI, executable files and documented commands after removing the four
-Python helpers. Execute Rust self-test and model-bytes checks without Python or
-Node in the command's environment; run the optional packet/syntax modes against
+Python helpers. Execute the Rust self-test check without Python or Node in the
+command's environment; run the optional packet/syntax modes against
 the selected local fixtures. Trace actual test functions to TC and AC identities
 with imported `ix_trace_rs::trace` and canonical `#[trace("TC-...", "FR-...-AC-...")]`
 attributes under the installed Quire/module grammar. Legacy doc-comment tags
 are not the convention for new tests. `#[cfg(test)]` controls compilation only.
 Quire checks actual bindings separately from the macro's argument-shape check.
-Check the producer refusal mode and preserve historical producer provenance.
 Use pinned serde 1.0.229 for the Rust audit target's strict JSON and reuse
 thiserror 2.0.20 for the audit error envelope. Native Diagnostic implements
 standard error traits directly to preserve its source-identity field, as

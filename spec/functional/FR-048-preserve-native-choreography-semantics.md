@@ -26,12 +26,9 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-060, type: references }
   - { target: ix://agent-ix/quire-specification/FR-061, type: references }
   - { target: ix://agent-ix/quire-specification/FR-062, type: references }
-  - { target: ix://agent-ix/filament-core-data/FR-100, type: depends_on }
-  - { target: ix://agent-ix/filament-core-data/FR-101, type: depends_on }
-  - { target: ix://agent-ix/filament-core-data/FR-102, type: depends_on }
-  - { target: ix://agent-ix/filament-core-data/FR-103, type: depends_on }
-  - { target: ix://agent-ix/filament-core-data/FR-104, type: depends_on }
-  - { target: ix://agent-ix/filament-core-data/FR-105, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
+  - { target: ix://agent-ix/filament-core-data/FR-142, type: references }
+  - { target: ix://agent-ix/filament-core-data/FR-143, type: references }
   - { target: ix://agent-ix/quire-protocol/FR-001, type: references }
   - { target: ix://agent-ix/quire-protocol/IT-001, type: references }
 ---
@@ -50,36 +47,30 @@ business operations, infer observations or decide protocol conformance.
 
 ## Inputs
 
-The exact admitted native source and definition selections; D-owned static model,
-type, field, operation, participant, component, endpoint, relationship,
-configuration and producer/native correspondence exports; the selected L5
-temporal declarations; F-owned observation-role definitions; and finite compiler
-admission/emission limits.
+The exact admitted native source and definition selections; the domain-package
+model declarations admitted under
+[FR-056](FR-056-admit-domain-package-model-declarations.md), with their object,
+record, field, operation, reference, relationship and population exports; the
+participant, component, endpoint and configuration selections the protocol
+names; the selected L5 temporal declarations; F-owned observation-role
+definitions; and finite compiler admission/emission limits.
 
-D's selected normative input is the draft **Producer interface 1.2.0** contract at immutable
-`filament-core-data` revision
-`6259d3a5b99088740df9bcc8e8d60f3720aaa603`. Static compilation consumes its
-model/profile/configuration meaning, exports and correspondence. Population,
-snapshot, window, member, relationship-instance and closure identities are also
-D-owned; their concrete assessment selection is not a static compiler input.
-
-That pinned D revision defines no Rust producer or wire schema. Until D ships a
-reviewed producer, A accepts only an explicit typed caller-supplied compatibility
-adapter that preserves D's bare revision and three-field canonical digest
-separately from A's namespaced revision and native raw-byte digest. The adapter
-must carry an explicit configuration and producer/native correspondence
-relation; A does not infer either mapping. Local positive fixtures for that seam
-are synthetic contract fixtures and are not evidence of real D production.
+Static compilation consumes each declaration by its declaration key (domain
+package identity, IR node identity, `sha256-jcs`). The domain package digest
+stays separate from the native source raw-byte digest and the compiled-artifact
+seal. Snapshot, window, member, relationship-instance and closure identities are
+assessment selections, not static compiler inputs.
 
 F owns concrete record admission, mapping a record to its exact workflow/node/
 role/delivery/attempt/effect occurrence, and the availability, membership,
 completeness, progress and closure assertions handed to assessment. F supplies
-those facts under D's selected identities and cannot mint or reinterpret them.
+those facts under the domain package's declaration identities and cannot mint or
+reinterpret them.
 
 Future workflow instances, relationship instances, deliveries, attempts,
 effects, clock observations, records, progress and closure assertions are
 assessment inputs and are not required to compile a static template. A missing
-authoritative static D export remains an unsupported prerequisite rather than
+static declaration or export remains an unsupported prerequisite rather than
 guessed metadata. A missing or inconsistent F assessment fact remains the
 downstream incomplete or refused input selected by F/B; the compiler does not
 convert it into a static export or a protocol result.
@@ -87,8 +78,8 @@ convert it into a static export or a protocol result.
 ## Outputs
 
 An admitted compiled-protocol family retaining exact typed role and occurrence
-handles, value/control graphs, temporal/recovery requirements and producer/native
-correspondence, or a typed invalid, unsupported or resource-incomplete family
+handles, value/control graphs, temporal/recovery requirements and domain-package
+model selections, or a typed invalid, unsupported or resource-incomplete family
 disposition. An untimed subject remains representable by strict
 `quire.compiled-protocol/1`. A timed choreography requires the separately
 reviewed `quire.compiled-protocol/2` extension described under Dependencies;
@@ -177,14 +168,15 @@ The compiler SHALL retain every required observation binding's owning native
 declaration, source locus, role kind, anchor, scope premises and capture
 dependencies without appointing a concrete observation adapter.
 
-If a producer correspondence, relationship, component, endpoint or typed
-effect selector required by the selected profile is unavailable, then the
+If a domain-package declaration, relationship, participant, component, endpoint,
+configuration or typed effect selector required by the selected profile is
+unavailable, then the
 compiler SHALL return an explicit unsupported prerequisite without omitting or
 fabricating the dependent record.
 
-The compiler SHALL preserve independent source, model, producer, dependency,
+The compiler SHALL preserve independent source, domain-package, dependency,
 compiled-artifact and protocol-result identity/digest domains across the
-producer/consumer handoff.
+compiler/consumer handoff.
 
 The compiler SHALL produce the same static subject when only valid concrete
 runtime values, relationship instances, observation records or assessment-time
@@ -203,23 +195,18 @@ resource incompleteness and emits no static subject.
 | FR-048-AC-5 | A repeat with a feasible false guard contributes no guaranteed enclosing progress; an infeasible false valuation permits the entered body's proven progress; zero/exact/one-short proof budgets retain charge order and typed outcomes. | Test (TC-133) |
 | FR-048-AC-6 | Split shipments, one authored payment attempt under distinct supplied repeat ordinals, and refund paths preserve separate static subjects and required relationships while one compensation registers only for its exact successful forward effect. Attempt bounds admit one and the largest representable positive value and refuse zero or overflow without weakening the retained obligation or minting another static attempt. | Test (TC-134) |
 | FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
-| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. Missing static producer authority is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
-| FR-048-AC-9 | The release producer emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/model/producer/artifact/result digest substitution or recanonicalization refuses. | Test (TC-135) |
-| FR-048-AC-10 | A's release producer contributes the exact source-derived artifact, selection and static binding requirements to the separately owned pinned campaign run. The contribution is byte-identical at B's intake and retains every required D, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
+| FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
+| FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/artifact/result digest substitution or recanonicalization refuses. | Test (TC-135) |
+| FR-048-AC-10 | A's release compiler contributes the exact source-derived artifact, selection and static binding requirements to the separately owned pinned campaign run. The contribution is byte-identical at B's intake and retains every required domain-package, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
 
 ## Dependencies
 
 [FR-042](FR-042-publish-compiled-protocol-artifacts.md) owns the artifact and
-producer handoff. D's draft Producer interface 1.2.0 contract at
-`6259d3a5b99088740df9bcc8e8d60f3720aaa603` owns the model, relationship,
-population and configuration identities and correspondence that A consumes.
-F's observation contract owns concrete record/correlation, availability,
-membership, completeness, progress and closure assertions.
-
-The pinned D revision explicitly implements no producer or wire schema. A's
-typed compatibility-adapter fixtures verify the compiler boundary only; real D
-producer acceptance remains a campaign dependency and cannot be inferred from
-those fixtures.
+compiler handoff. [FR-056](FR-056-admit-domain-package-model-declarations.md)
+owns the model, relationship and population declarations A consumes, admitted
+from spec artifacts through quire-rs and the FCD semantic IR crates. F's
+observation contract owns concrete record/correlation, availability, membership,
+completeness, progress and closure assertions.
 
 The pinned external L5 requirement and Rust-interface baseline is merged PR #70,
 compiler revision `72507f8`, comprising FR-043/044/045 and

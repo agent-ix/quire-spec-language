@@ -20,24 +20,24 @@ without making A's local evidence claim B/F semantics.
 
 ## Test Procedure
 
-1. Run A's release producer over the reusable native OrderFlow source containing
+1. Run A's release compiler over the reusable native OrderFlow source containing
    split shipments, retry, refund, compensation and a temporal deadline. Select
-   D's Producer interface 1.2.0 at revision
-   `6259d3a5b99088740df9bcc8e8d60f3720aaa603` and merged L5 PR #70's
+   the admitted domain package by identity and `sha256-jcs` digest and merged L5
+   PR #70's
    FR-043/044/045 Rust-interface baseline at `72507f8`. Require the reviewed
    `quire.compiled-protocol/2` extension carrying every selected temporal
    definition identity/revision/raw-byte digest/artifact and exactly one tagged
    clock configuration; do not pass the timed subject through `/1`.
-2. Record A's exact source/model/profile/configuration/correspondence selections,
+2. Record A's exact source/domain-package/profile/configuration selections,
    canonical artifact bytes/reference and required relationship, population,
    clock and observation-role handles. Re-run with sufficient compiler limits;
    changing only future runtime values produces the same bytes. One-short
    compiler limits produce no artifact.
 3. Mutate one A-owned selection at a time: source/native revision or digest,
-   model/profile/configuration/producer-correspondence identity or digest,
+   domain package identity or digest, profile/configuration identity or digest,
    compiled-artifact reference, and recanonicalized bytes. Assert FR-042's exact
    typed refusal/unsupported/resource-incomplete cause; do not accept a protocol
-   result digest in a producer or artifact domain.
+   result digest in a domain-package or artifact domain.
 4. Offer the unchanged compiler output to B #11. B independently rederives its
    selection and artifact digest; byte identity at this intake is the terminal
    assertion of A's contribution.
@@ -48,7 +48,8 @@ without making A's local evidence claim B/F semantics.
    manifest, Rust driver and aggregate record; no local A fixture substitutes.
    That driver pins accepted B #6/#11/#12 and F revisions, binds concrete O1/O2
    instances, obtains F's record/correlation/availability/membership/
-   completeness/progress/closure handoff under D's identities, and records B's
+   completeness/progress/closure handoff under the domain package's declaration
+   identities, and records B's
    PT02 batch/incremental results. Missing provider/member/completeness,
    ambiguous relationships, cross-order substitution, late/absent refund,
    compensation failure and assessment-work exhaustion use those owners' exact

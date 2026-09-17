@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-012: real audit process boundaries, immutable checkpoints and private packet lane.
+//! FR-012: real audit process boundaries and the private packet lane.
 use ix_trace_rs::trace;
 use quire_spec_language::ByteDigest;
 use serde_json::{json, Value};
@@ -45,8 +45,29 @@ fn refused(output: Output, exit: i32, code: &str) -> String {
     stderr
 }
 
-fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+/// Write a minimal selected rule-syntax packet: one current-anchor case and its
+/// digest-bound rule and profile definitions.
+fn syntax_packet(root: &Path) {
+    fs::create_dir_all(root.join("fixtures")).unwrap();
+    let rule = b"rule contract bytes";
+    let profile = b"profile definition bytes";
+    fs::write(root.join("state-semantics.md"), rule).unwrap();
+    fs::write(root.join("profile.md"), profile).unwrap();
+    write_json(
+        &root.join("fixtures/typing-cases.json"),
+        &json!({
+            "fixtureVersion": "agent-a-typing-cases/1-draft",
+            "modelBinding": {"state": "unavailable"},
+            "ruleContract": {"digest": ByteDigest::of(rule).to_string()},
+            "baseProfile": {"definitionDigest": ByteDigest::of(profile).to_string()},
+            "cases": [{
+                "id": "case-1",
+                "anchor": "current",
+                "expression": "true",
+                "expected": {"syntax": "parsed"}
+            }]
+        }),
+    );
 }
 
 fn copy_tree(source: &Path, destination: &Path) {
@@ -90,34 +111,33 @@ fn write_json(path: &Path, value: &Value) {
     fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
 }
 
-#[trace("TC-009", "FR-012-AC-10", "FR-012-AC-11", "NFR-005-M-2", "NFR-005-M-3")]
+#[trace("TC-009", "FR-012-AC-10", "NFR-005-M-2")]
 #[test]
-fn cli_usage_and_unapproved_producer_with_no_external_runtime_path() {
+fn cli_usage_with_no_external_runtime_path() {
     passed(
         audit(&[OsStr::new("self-test")]),
         "6 content/digest negative controls",
     );
+    let packet = tempfile::tempdir().unwrap();
+    syntax_packet(packet.path());
     passed(
-        mode("model-bytes", &fixture_root()),
-        "5 producer checkpoint byte digests",
+        mode("rule-syntax", packet.path()),
+        "1 parsed expressions; 0 unsupported refusal",
     );
     for arguments in [
         vec![],
         vec!["unknown"],
         vec!["model-bytes"],
+        vec!["model-producer"],
+        vec!["rule-syntax"],
         vec!["self-test", "extra"],
         vec!["roles", "root", "extra"],
     ] {
         let os: Vec<_> = arguments.iter().map(OsStr::new).collect();
         refused(audit(&os), 2, "usage");
     }
-    refused(
-        audit(&[OsStr::new("model-producer")]),
-        3,
-        "producer-language-unapproved",
-    );
     let temp = tempfile::tempdir().unwrap();
-    refused(mode("model-bytes", temp.path()), 2, "io");
+    refused(mode("rule-syntax", temp.path()), 2, "io");
 }
 
 #[cfg(unix)]
@@ -129,63 +149,33 @@ fn non_utf8_mode_refuses_and_non_utf8_root_executes() {
     refused(audit(&[invalid.as_os_str()]), 2, "usage");
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join(invalid);
-    copy_tree(&fixture_root(), &root);
-    passed(
-        mode("model-bytes", &root),
-        "5 producer checkpoint byte digests",
-    );
-}
-
-#[trace("TC-004", "FR-012-AC-4", "FR-012-AC-8", "FR-017-AC-4")]
-#[test]
-fn model_checkpoint_digest_pin_and_immutable_inputs() {
-    let original = fixture_root();
-    let before = contents(&original);
-    let summary = passed(
-        mode("model-bytes", &original),
-        "5 producer checkpoint byte digests and exact producer pin",
-    );
-    assert!(summary.contains("historical evidence only; no producer or evaluator executed"));
-    let temp = tempfile::tempdir().unwrap();
-    copy_tree(&original, temp.path());
-    let provenance_path = temp.path().join("model-output/provenance.json");
-    let provenance = read_json(&provenance_path);
-    for row in provenance["artifacts"].as_array().unwrap() {
-        let path = temp.path().join(row["path"].as_str().unwrap());
-        let raw = fs::read(&path).unwrap();
-        let mut changed = raw.clone();
-        changed.push(b' ');
-        fs::write(&path, changed).unwrap();
-        refused(mode("model-bytes", temp.path()), 1, "digest-mismatch");
-        fs::write(path, raw).unwrap();
-    }
-    let mut changed = provenance;
-    changed["producer"]["revision"] = json!("unselected");
-    write_json(&provenance_path, &changed);
-    refused(mode("model-bytes", temp.path()), 1, "invalid-fixture");
-    assert_eq!(contents(&original), before);
+    syntax_packet(&root);
+    passed(mode("rule-syntax", &root), "1 parsed expressions");
 }
 
 #[trace("TC-006", "FR-012-AC-6", "FR-017-AC-4")]
 #[test]
-fn model_required_fields_reject_missing_null_and_wrong_types() {
+fn rule_syntax_required_fields_reject_missing_null_and_wrong_types() {
     let temp = tempfile::tempdir().unwrap();
-    copy_tree(&fixture_root(), temp.path());
-    let path = temp.path().join("model-output/provenance.json");
+    syntax_packet(temp.path());
+    let path = temp.path().join("fixtures/typing-cases.json");
     let original = read_json(&path);
     for pointer in [
         "/fixtureVersion",
-        "/producer",
-        "/producer/revision",
-        "/artifacts",
-        "/artifacts/0/path",
-        "/artifacts/0/digest",
+        "/modelBinding",
+        "/modelBinding/state",
+        "/ruleContract",
+        "/ruleContract/digest",
+        "/baseProfile/definitionDigest",
+        "/cases/0/id",
+        "/cases/0/anchor",
+        "/cases/0/expected/syntax",
     ] {
         for replacement in [Value::Null, json!(0), json!(false), json!([]), json!({})] {
             let mut changed = original.clone();
             *changed.pointer_mut(pointer).unwrap() = replacement;
             write_json(&path, &changed);
-            refused(mode("model-bytes", temp.path()), 1, "invalid-fixture");
+            refused(mode("rule-syntax", temp.path()), 1, "invalid-fixture");
         }
         let (parent, key) = pointer.rsplit_once('/').unwrap();
         let mut changed = original.clone();
@@ -196,11 +186,11 @@ fn model_required_fields_reject_missing_null_and_wrong_types() {
             .unwrap()
             .remove(key);
         write_json(&path, &changed);
-        refused(mode("model-bytes", temp.path()), 1, "invalid-fixture");
+        refused(mode("rule-syntax", temp.path()), 1, "invalid-fixture");
     }
     for raw in [br#"{"x":1,"\u0078":2}"#.as_slice(), b"{} true", b"\xff"] {
         fs::write(&path, raw).unwrap();
-        refused(mode("model-bytes", temp.path()), 1, "invalid-json");
+        refused(mode("rule-syntax", temp.path()), 1, "invalid-json");
     }
 }
 
@@ -208,15 +198,15 @@ fn model_required_fields_reject_missing_null_and_wrong_types() {
 #[test]
 fn process_budget_failure_emits_no_success_summary() {
     let temp = tempfile::tempdir().unwrap();
-    fs::create_dir(temp.path().join("model-output")).unwrap();
-    let path = temp.path().join("model-output/provenance.json");
+    fs::create_dir(temp.path().join("fixtures")).unwrap();
+    let path = temp.path().join("fixtures/typing-cases.json");
     fs::File::create(&path)
         .unwrap()
         .set_len(8 * 1024 * 1024 + 1)
         .unwrap();
-    refused(mode("model-bytes", temp.path()), 3, "resource-exhausted");
+    refused(mode("rule-syntax", temp.path()), 3, "resource-exhausted");
     fs::write(&path, format!("{}0{}", "[".repeat(64), "]".repeat(64))).unwrap();
-    refused(mode("model-bytes", temp.path()), 3, "resource-exhausted");
+    refused(mode("rule-syntax", temp.path()), 3, "resource-exhausted");
 }
 
 fn selected_packet() -> PathBuf {

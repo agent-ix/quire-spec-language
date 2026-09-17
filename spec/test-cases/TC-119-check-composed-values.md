@@ -12,13 +12,13 @@ relationships:
 
 Public Rust API controls for
 [FR-040](../functional/FR-040-check-composed-values.md), using the real native
-parser, exact supplied definition/rule registry and available admitted model
-producer through `binding::Report`. The case checks static value judgments and
+parser, exact supplied definition/rule registry and admitted domain-package model
+declarations through `binding::Report`. The case checks static value judgments and
 runtime requirements without supplying observations or evaluating family bodies.
 Each numbered group below corresponds to the matching acceptance criterion.
 
 Expected type identities, source spans, proof premises and costs come from fixed
-authored source/model contracts and the public charging rules. Missing producer
+authored source/model contracts and the public charging rules. Missing model
 or proof capability has its own expected refusal control; that control does not
 pass the positive semantic case it blocks. Type-admission controls execute in
 `tests/composed_types.rs` and `tests/composed_type_pipeline.rs`; supported guarded
@@ -54,7 +54,7 @@ representation, runtime prerequisites or assertions are still unavailable.
    (1/2)/(1/2) after reducing raw 2/2; reject 1/(1/2) by result bounds and
    possible zero divisors without the exact preceding nonzero guard. Keep raw
    source identities distinct from normalized values. Repeat with missing
-   rational producer/proof representation and require the precise prerequisite
+   rational model/proof representation and require the precise prerequisite
    refusal, without claiming those positive cases have executed.
 5. Check size/contains/forall/exists/filter/map/count/sum over an authored finite
    sequence, including nested binders, potentially empty values under a positive
@@ -66,7 +66,7 @@ representation, runtime prerequisites or assertions are still unavailable.
    and Total to exclude zero. Add a fold whose final mathematical sum fits but
    an intermediate prefix can exceed the selected total. Verify these proof
    obligations from domains/lengths rather than executing sample observations.
-   Refuse declared producer maxima 0 and 10,001 at model admission. Check all
+   Refuse declared model sequence maxima 0 and 10,001 at model admission. Check all
    eight forms, including sum, at maximum 10,000 with suitable authored element
    and result domains and sufficient effective proof limits. Independently lower
    a proof limit and require typed exhaustion without changing the semantic
@@ -116,6 +116,6 @@ none becomes Boolean false, absent optional data or aggregate success.
 
 Independent successful values remain inspectable beside a failed dependency.
 Runtime requirements preserve exact authority/anchor/scope without manufacturing
-observations. Whole-family execution and external producer qualification remain
+observations. Whole-family execution and domain-package intake integration (IT-012) remain
 outside this test case. The implemented type and supported proof controls do not complete
 all groups; catalog validation establishes document conformance, not test completion.

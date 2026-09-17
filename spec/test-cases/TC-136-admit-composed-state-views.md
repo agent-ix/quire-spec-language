@@ -23,12 +23,11 @@ object at pre/post anchors, a complete population with a missing target and an
 identical incomplete-closure view. Attempt to reach evaluation from raw bytes
 and a freely constructed wire package at compile time.
 
-Build the positive inputs only by translating selections from Producer
-interface 1.2.0 revision `6259d3a5b99088740df9bcc8e8d60f3720aaa603`
-and the selected F observation contract revision
-`4d6230eb8aa9766ff3017360962f2d6368d74cb3`. Substitute each revision and one
-owned identity independently; do not replace either producer with a local mock
-that invents authority.
+Build the positive inputs only by translating declaration keys from an admitted
+domain package and selections from the F observation contract revision
+`4d6230eb8aa9766ff3017360962f2d6368d74cb3`. Substitute the domain package digest,
+the observation revision and one owned identity independently; do not replace
+either authority with a local mock that invents it.
 
 ## Expected Results
 

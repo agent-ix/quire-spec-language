@@ -48,13 +48,15 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
-IT-009 selects `agent-ix-baseline-producer` 0.0.0 from the accepted
-filament-core-data merge
+`tests/producer_correspondence.rs` selects `agent-ix-baseline-producer` 0.0.0
+from the filament-core-data merge
 `404288282402d60de007295ccbafa960532b955e`. The crate declares
 `AGPL-3.0-only` and `publish = false`; this repository consumes its public
 constructor-admitted static bundle and correspondence API without copying
 producer source or adding a second reader. The revision move changes no
-third-party package version or grant.
+third-party package version or grant. Remaining work: #131 replaces it with
+the `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` crates for
+domain-package model intake (FR-056).
 
 FR-020 selects the reviewed `unbounded_depth` feature on the existing serde_json
 pin. Only package intake disables the library recursion guard; its metered
@@ -295,22 +297,9 @@ feature, so Cargo.lock and the resolved package/grant inventory are unchanged.
 The authored runtime modules and Rust tests are AGPL-3.0-or-later; serde derives
 generate only build output, and no external input reader was copied or added.
 
-## Optional model producer toolchain
-
-The original `tests/fixtures/model-source` TypeSpec source/manifest and the
-generated `model-output` records are implementation fixtures under AGPL-3.0-only.
-They contain this fixture's declarations and producer metadata; no external
-model corpus or generated TypeSpec implementation is copied. Provenance pins
-the existing Filament producer to `3b75e01c652ba00bb07c352ff5467419401e792b`,
-TypeSpec compiler 1.15.0 (MIT), and the observed Node v22.15.0 toolchain. The
-existing Filament checkout and its dependency notices remain under their
-existing grants. Fresh use of its installed toolchain awaits owner disposition;
-this change does not import its JavaScript dependency graph into the Rust crate.
+## Fixture audit toolchain
 
 All four Python helpers have been replaced by the Rust fixture-audit target.
-Local checks verify stored artifact bytes without Python, Node, TypeSpec or a
-private sibling repository; the explicitly selected private packet lane adds
-real review/roles/syntax checks. Hosted CI is manual-dispatch only. Model-producer
-refuses fresh production under the campaign language gate. Historical provenance
-keeps its original command strings and exact fixture copies retain their
-implementation-fixture grant.
+Local checks run without Python, Node or a private sibling repository; the
+explicitly selected private packet lane adds real review/roles/syntax checks.
+Hosted CI is manual-dispatch only.
