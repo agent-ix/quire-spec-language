@@ -35,13 +35,25 @@ pub const RULES_REVISION: &str = "1-draft.1";
 /// Every derivation fact cites one of these four rules
 /// (`model-effective-declaration.schema.json`, `$defs.RuleRef`); `decode` and
 /// `canonicalize` never appear as a fact's rule.
-pub const RULE_QUALIFY: RuleRef = RuleRef { identity: "quire.model.normalize.qualify/v1", revision: "1-draft.1" };
+pub const RULE_QUALIFY: RuleRef = RuleRef {
+    identity: "quire.model.normalize.qualify/v1",
+    revision: "1-draft.1",
+};
 /// See [`RULE_QUALIFY`].
-pub const RULE_INHERIT: RuleRef = RuleRef { identity: "quire.model.normalize.inherit/v1", revision: "1-draft.1" };
+pub const RULE_INHERIT: RuleRef = RuleRef {
+    identity: "quire.model.normalize.inherit/v1",
+    revision: "1-draft.1",
+};
 /// See [`RULE_QUALIFY`].
-pub const RULE_SUBSET: RuleRef = RuleRef { identity: "quire.model.normalize.subset/v1", revision: "1-draft.1" };
+pub const RULE_SUBSET: RuleRef = RuleRef {
+    identity: "quire.model.normalize.subset/v1",
+    revision: "1-draft.1",
+};
 /// See [`RULE_QUALIFY`].
-pub const RULE_REDEFINE: RuleRef = RuleRef { identity: "quire.model.normalize.redefine/v1", revision: "1-draft.1" };
+pub const RULE_REDEFINE: RuleRef = RuleRef {
+    identity: "quire.model.normalize.redefine/v1",
+    revision: "1-draft.1",
+};
 
 /// A namespaced producer revision label (FCD FR-113).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -63,7 +75,10 @@ impl Revision {
 
     fn to_json(&self) -> Value {
         let mut object = Map::new();
-        object.insert("namespace".to_owned(), Value::String(self.namespace.clone()));
+        object.insert(
+            "namespace".to_owned(),
+            Value::String(self.namespace.clone()),
+        );
         object.insert("value".to_owned(), Value::String(self.value.clone()));
         Value::Object(object)
     }
@@ -138,7 +153,10 @@ impl ProducerKey {
 
     pub(super) fn to_json(&self) -> Value {
         let mut object = Map::new();
-        object.insert("authority".to_owned(), Value::String(self.authority.clone()));
+        object.insert(
+            "authority".to_owned(),
+            Value::String(self.authority.clone()),
+        );
         object.insert("identity".to_owned(), Value::String(self.identity.clone()));
         object.insert("revision".to_owned(), self.revision.to_json());
         object.insert("digest".to_owned(), self.digest.to_json());
@@ -158,8 +176,14 @@ pub struct RuleRef {
 impl RuleRef {
     pub(super) fn to_json(&self) -> Value {
         let mut object = Map::new();
-        object.insert("identity".to_owned(), Value::String(self.identity.to_owned()));
-        object.insert("revision".to_owned(), Value::String(self.revision.to_owned()));
+        object.insert(
+            "identity".to_owned(),
+            Value::String(self.identity.to_owned()),
+        );
+        object.insert(
+            "revision".to_owned(),
+            Value::String(self.revision.to_owned()),
+        );
         Value::Object(object)
     }
 }
@@ -178,7 +202,10 @@ pub struct Fact {
 impl Fact {
     pub(super) fn to_json(&self) -> Value {
         let mut object = Map::new();
-        object.insert("ordinal".to_owned(), Value::String(self.ordinal.to_string()));
+        object.insert(
+            "ordinal".to_owned(),
+            Value::String(self.ordinal.to_string()),
+        );
         object.insert("rule".to_owned(), self.rule.to_json());
         object.insert(
             "inputs".to_owned(),

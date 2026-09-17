@@ -173,7 +173,11 @@ pub(super) struct Charge {
 
 impl Charge {
     pub(super) fn new(point: ChargePoint) -> Self {
-        Self { point, sizes: Vec::new(), work_units: 1 }
+        Self {
+            point,
+            sizes: Vec::new(),
+            work_units: 1,
+        }
     }
 
     pub(super) fn size(mut self, kind: LimitKind, amount: u64) -> Self {
@@ -199,7 +203,11 @@ pub struct Meter {
 impl Meter {
     /// A fresh meter with nothing consumed.
     pub fn new(limits: ModelNormalizationLimits) -> Self {
-        Self { limits, consumed: [0; 6], admitted: Vec::new() }
+        Self {
+            limits,
+            consumed: [0; 6],
+            admitted: Vec::new(),
+        }
     }
 
     /// The configured limits.
@@ -246,7 +254,10 @@ impl Meter {
                 _ => return Err(self.incomplete(*kind, *amount, point)),
             }
         }
-        let work_total = match self.consumed(LimitKind::WorkUnits).checked_add(charge.work_units) {
+        let work_total = match self
+            .consumed(LimitKind::WorkUnits)
+            .checked_add(charge.work_units)
+        {
             Some(total) if total <= self.limits.work_units => total,
             _ => return Err(self.incomplete(LimitKind::WorkUnits, charge.work_units, point)),
         };
