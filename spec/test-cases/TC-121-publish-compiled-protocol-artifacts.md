@@ -13,8 +13,8 @@ relationships:
 Planned public Rust controls for the full
 [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) artifact
 boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
-The positive producer fixture starts with native Quire source and actual admitted
-model/definition/producer contracts; a hand-built wire fixture exercises only
+The positive emitter fixture starts with native Quire source, an admitted domain
+package and actual definition contracts; a hand-built wire fixture exercises only
 reader behavior. The ten groups below correspond to the ten acceptance criteria.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
@@ -33,7 +33,7 @@ observations belong only to the later consumer fixture.
    family admission. Emit through the production Rust entry point. Check the
    exact selectors and external SHA-256 over the emitted bytes. Attempt emission
    with type-only/unfinished evidence and a decoded wire value; no accepted
-   producer artifact can result.
+   artifact can result.
    The [native producer recipe](../../examples/protocol-handoff/README.md)
    exercises four original predicate/state/temporal/workflow units with cross-unit
    references, bounded `sum`/`size` queries, population/reference roles, actual model
@@ -54,10 +54,11 @@ observations belong only to the later consumer fixture.
    malformed, unreduced, wrong-domain, bare-number and structural-number mutants.
 3. Mutate each reference component independently, retaining the expected
    accepted selection. Include native versus formal source revisions, rule
-   bytes, model exports, producer/native correspondence, manifest/lock closure,
+   bytes, domain package identity and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
-   optional feature. Substitute source, model/config canonical, IR and result-JCS
-   digests into the external package/model byte slots; require typed refusal.
+   optional feature. Substitute source, domain package `sha256-jcs`, IR and
+   result-JCS digests into the external package and source byte slots; require
+   typed refusal.
 4. Inspect original unit-local expression/control handles, source slices,
    nominal types/units, call order and callee owners, all eight query/graph
    representations and immutable capture origins. Individually break a reference
@@ -230,24 +231,24 @@ observations belong only to the later consumer fixture.
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001) through the public
     Rust interfaces, preserving exact selectors and finite graph/source links.
     In B's Rust integration harness, independently select the supplied original
-    sources, admitted models, registry/contract and producer bytes to construct
+    sources, admitted domain packages, registry/contract and compiler binary bytes to construct
     the reader's accepted inventory. Compare the offered package against that
     inventory; neither the payload nor the fixture's `expected.json` authorizes
     its own selections.
-    Retain all four original source files and the actual executing producer binary
-    from the recipe. Reconstruct its admitted model through the existing located
-    rule-model frontend; do not replace the model or binary with invented metadata.
+    Retain all four original source files and the actual executing compiler binary
+    from the recipe. Reconstruct its admitted model declarations through the same
+    intake path; do not replace the model or binary with invented metadata.
     A's local emission/reader round trip alone leaves this B acceptance incomplete.
     Perform its one-axis adverse controls and numeric boundary handoff. A
-    missing family, producer adapter or consumer implementation records the
+    missing family, model intake or consumer implementation records the
     unmet positive integration prerequisite; a negative unsupported test cannot
     stand in for successful source-to-consumer emission.
 
 ## Expected Results
 
 The complete emitted package preserves the accepted native subject and its
-distinct source/model/profile/producer authorities in one canonical artifact.
+distinct source/domain-package/profile/compiler authorities in one canonical artifact.
 Only its independently selected bytes pass strict consumption. Partial or
 unsupported work remains explicit; numeric codec, type and wire-reader success
-are narrower evidence than this full acceptance. No full producer or consumer
+are narrower evidence than this full acceptance. No full emitter or consumer
 result is claimed until the actual pipeline and planned controls execute.

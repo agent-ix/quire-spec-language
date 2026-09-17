@@ -109,8 +109,8 @@ belong to Agent-C; they are not silently reassigned to this lane.
   Reason: the user-assigned and central-manifest campaign is serial across one
   repository owner, with WASM consuming the merged lifecycle before final QSL
   qualification.
-- QSL #120 additionally consumes the accepted Filament I03 producer interface;
-  it does not edit producer code.
+- QSL #131 and #120 consume the merged filament-core-data semantic IR crates and
+  quire-rs extraction by exact git revision; they edit neither repository.
 - QSL #121 consumes merged temporal/protocol artifacts and preserves their
   semantic authority rather than importing their evaluators.
 - QSL #123 consumes merged temporal, protocol, IR and integration results under
@@ -130,7 +130,7 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 | L3 expressions | predicate/query suites; TC-126–128 | total functions and complete collection algebra in #118/#119 |
 | L4 model/state | graph/state suites; TC-129–131 and TC-136/137 | normalization, closed lookup, inheritance and dispatch in #120 |
 | L5 temporal handoff | TC-122–125 and authenticated owner controls TC-138–143 | merged external consumer artifacts before #121/#123 |
-| L6 protocol handoff | TC-121 and TC-132–138 | protocol conformance remains with its owner; QSL preserves exact producer inputs |
+| L6 protocol handoff | TC-121 and TC-132–138 | protocol conformance remains with its owner; QSL preserves exact source and domain-package inputs |
 
 ## Test Plan
 
@@ -289,7 +289,7 @@ concrete evidence owner; task files may require additional boundary cases.
 - **A01 = Task-047** source packages — hard; exit: complete syntax and CST round-trip exactly.
 - **A02 = Task-048** scalar semantics — hard; exit: exact numeric/text/unit matrices pass.
 - **A03 = Task-049** composites/functions — hard; exit: collection and totality properties pass.
-- **A04 = Task-050** model graph — hard; exit: closed correspondence and dispatch pass.
+- **A04 = Task-050** domain-package intake and model graph — hard; exit: domain-package intake, closed lookup and dispatch pass.
 - **A05 = Task-051** runtime — hard; exit: all admitted clauses execute and simulations replay.
 - **A06 = Task-052** tooling — hard; exit: API/CLI/plugin/AOT/JIT parity passes.
 - **A07 = Task-053** WASM — hard; exit: the pure bounded WASM surface matches native.
@@ -310,7 +310,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 | Task-047 | A01 | FR-131/134, FR-302/303, FR-339 | TC-180/184, TC-222 | done |
 | Task-048 | A02 | FR-140–142, FR-147/148 | TC-185–187, TC-192/193 | done |
 | Task-049 | A03 | FR-143–146, FR-149, FR-307 | TC-188–191, TC-194, TC-227 | not_started |
-| Task-050 | A04 | FR-150–153 | TC-195–198 | not_started |
+| Task-050 | A04 | FR-056, IT-012, FR-150–153 | TC-145–148, TC-195–198 | not_started |
 | Task-051 | A05 | FR-180/181 | TC-209/210 | not_started |
 | Task-052 | A06 | FR-300/301/305/306, FR-339 | TC-180, TC-220/221/225/226 | not_started |
 | Task-053 | A07 | FR-308 | TC-228 | not_started |

@@ -64,7 +64,7 @@ historical packets and no change to reported logical truth or resource outcomes.
 | FR-017-AC-1 | Repeated names, a type reference before its declaration, escaped JSON strings and changed whitespace/key order retain the exact selected occurrence; foreign buffers, malformed JSON and duplicate/unknown typed fields refuse. | Test (TC-054) |
 | FR-017-AC-2 | The producer has separate source intake, decoding and typed lowering responsibilities, one scalar representation/role table, propagated setup errors and bounded source/type processing. | Inspection |
 | FR-017-AC-3 | Existing exact imports, ambiguity provenance, legacy unsupported constructs and lowered/hard linker limits retain the TC-030–034 outcomes after stage separation. | Test (TC-030, TC-031, TC-032, TC-033, TC-034) |
-| FR-017-AC-4 | Historical audit commands retain their positive, corruption and incomplete observations after stage separation, including selected private fixture cases. | Test (TC-001, TC-002, TC-003, TC-004, TC-006) |
+| FR-017-AC-4 | Historical audit commands retain their positive, corruption and incomplete observations after stage separation, including selected private fixture cases. | Test (TC-001, TC-002, TC-003, TC-006) |
 
 ## Dependencies
 

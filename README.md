@@ -52,7 +52,7 @@ actual admitted model exports, typed local handles and structural control edges.
 `encode_candidate` returns transport bytes; its result and reader admission
 remain separate from native compilation authority. `protocol_artifact::native::admit`
 consumes the actual composed proof report and independently selected source,
-definition, model and producer inputs. It derives a constructor-private
+definition and model inputs. It derives a constructor-private
 `FamilyAdmission` from supported complete native families;
 `native::emit` accepts only that authority and returns canonical bytes.
 See the
@@ -257,7 +257,6 @@ cargo clippy --locked --target-dir target --all-targets --no-default-features --
 cargo test --locked --target-dir target --no-default-features
 cargo build --locked --no-default-features --target-dir target/clean
 cargo run --locked --target-dir target --bin fixture-audit -- self-test
-cargo run --locked --target-dir target --bin fixture-audit -- model-bytes tests/fixtures
 ```
 
 Run these checks locally while the repository stabilizes. Hosted CI exposes
@@ -396,24 +395,11 @@ Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/
 [compiler epic](https://github.com/agent-ix/quire-spec-language/issues/1).
 The shared contracts and LC02–LC05 acceptance remain separate work.
 
-## Model producer review fixture
+## Review fixture audits
 
-[Model input](tests/fixtures/model-source/README.md) and
-[production provenance](tests/fixtures/model-output/provenance.json) provide an
-actual synthetic ConfigVersion model from the existing Filament TypeSpec
-frontend: version numbers bounded to 0..1000, an optional parent field, and an
-operation declaration. These are retained structural/provenance fixtures;
-they supply no native formal-model binding or evaluated state result. Generated
-datatypes do not establish formal bounds, reference or observation semantics.
-
-The Rust `fixture-audit` binary replaces all four Python helpers under
-[Agent A #58](https://github.com/agent-ix/quire-research/issues/58). Model-bytes
-checks five recorded artifact digests and the exact producer revision. Earlier
-fresh, selected-lock and stale-lock observations remain historical evidence.
-The provenance JSON retains its original Python/Node command strings for that
-reason. Fresh TypeSpec/Node qualification awaits separate owner approval:
-`fixture-audit model-producer` exits 3 with `producer-language-unapproved`
-without launching a process.
+The Rust `fixture-audit` binary checks optional private state-core review,
+role and rule-syntax packets under
+[Agent A #58](https://github.com/agent-ix/quire-research/issues/58).
 
 ```sh
 cargo run --locked --target-dir target --bin fixture-audit -- review /path/to/specification/proposals/state-core/fixtures
@@ -424,7 +410,7 @@ QUIRE_STATE_CORE=/path/to/specification/proposals/state-core cargo test --locked
 
 Review checks 23 artifact files, seven invocation cases and six independent
 negative controls. The second command checks the optional private FS02 packet's exact
-artifacts and source regions. It is producer bookkeeping, not an independent
+artifacts and source regions. It is bookkeeping, not an independent
 semantic-reference matcher. These optional checks run separately from the native
 runtime.
 

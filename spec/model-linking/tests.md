@@ -32,7 +32,7 @@ backed test case is classified `complete` whatever the criterion in its
 `Acceptance Criteria` cell is worth. Per-criterion honesty therefore rests on
 the minted acceptance-criterion targets, which `quire coverage` reports
 separately, and the row status never carries it. Second, and for the same
-reason, `FR-042-AC-10` names `TC-121`, and its QSL producer-leg tests now carry
+reason, `FR-042-AC-10` names `TC-121`, and its QSL publication-leg tests now carry
 the criterion tag even though Protocol's separate consumer leg remains open.
 The coverage engine therefore reports the criterion backed but cannot infer
 cross-repository completion. Check the owning integration ticket as well as the
@@ -82,7 +82,7 @@ per-group counts before moving this row to Passed.
 | FR-016 | FR-016-AC-9 | TC-052 | ✅ Passed |
 | FR-017 | FR-017-AC-1 | TC-054 | ✅ Passed |
 | FR-017 | FR-017-AC-3 | TC-030, TC-031, TC-032, TC-033, TC-034 | ✅ Passed |
-| FR-017 | FR-017-AC-4 | TC-001, TC-002, TC-003, TC-004, TC-006 | ✅ Passed |
+| FR-017 | FR-017-AC-4 | TC-001, TC-002, TC-003, TC-006 | ✅ Passed |
 | FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-3 | TC-121 | ✅ Passed |
@@ -139,6 +139,13 @@ per-group counts before moving this row to Passed.
 | FR-054 | FR-054-AC-2 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-3 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-4 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
+| FR-056 | FR-056-AC-1 | TC-145 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-2 | TC-145 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-3 | TC-146 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-4 | TC-147 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-5 | TC-145 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-6 | TC-145 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-7 | TC-148 | 🚧 Planned; #131 |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -205,6 +212,10 @@ invented for that criterion.
 | TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-7 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs) |
 | TC-142 | Evaluate admitted version-2 compensation expressions and initialized captures | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | TC-143 | Publish and read strict control temporal activation mappings | Integration | P1 | FR-054-AC-1..FR-054-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
+| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-5, FR-056-AC-6 | 🚧 Planned; #131 |
+| TC-146 | Refuse an unknown meaning id | Integration | P0 | FR-056-AC-3 | 🚧 Planned; #131 |
+| TC-147 | Resolve module-qualified kinds through the constructs table | Integration | P0 | FR-056-AC-4 | 🚧 Planned; #131 |
+| TC-148 | Domain-package bundle end to end | Integration | P0 | FR-056-AC-7, FR-036-AC-1, FR-036-AC-3 | 🚧 Planned; #131 |
 
 ## Composed language admission (L2)
 
@@ -223,11 +234,26 @@ the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
 controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
 boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
-stage grant no checked or executable package. The real Producer 1.2 integration
-in [IT-009](../integration/IT-009-composed-package-boundary.md) is exercised by
-`tests/producer_correspondence.rs`, including common cross-family nominal type
-identity, declaration-owned capture and instance identities, and explicit
-backend capability refusal. Status records local runs, not ecosystem acceptance.
+stage grant no checked or executable package. The real domain-package
+integration in [IT-012](../integration/IT-012-domain-package-model-intake.md) is
+covered by TC-148, including common cross-family nominal type identity,
+declaration-owned capture and instance identities, and explicit backend
+capability refusal; it remains planned under #131. Status records local runs,
+not ecosystem acceptance.
+
+## Domain-package model intake (L2)
+
+[FR-056](../functional/FR-056-admit-domain-package-model-declarations.md) admits
+a Semantic IR 2.0.0 domain package, produced by quire-rs extraction and the FCD
+extraction-frontend lift and read through `agent-ix-semantic-ir`, as Quire model
+declarations. TC-145 covers admission, typed refusals, artifact-id identity and
+relationship exports; TC-146 covers meaning-id binding and its
+`unknown-meaning-id` and `meaning-shape-mismatch` refusals; TC-147 covers kind
+resolution through the embedded `constructs` table; TC-148 and IT-012 run a
+domain-package bundle whose constructs cover object, record, enum, reference,
+operation, relationship and population exports through the model linker. All
+four cases are planned under #131; no row is backed until tagged Rust tests
+exist.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports; all seven FR-041 criteria are
@@ -250,9 +276,9 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-035 | FR-035-AC-4 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-5 | TC-113 | ✅ Passed |
 | FR-035 | FR-035-AC-6 | TC-113 | ✅ Passed |
-| FR-036 | FR-036-AC-1 | TC-114 | ✅ Passed locally (tests/composed_models.rs) |
+| FR-036 | FR-036-AC-1 | TC-114, TC-148 | 🚧 TC-114 passed locally (tests/composed_models.rs); TC-148 planned, #131 |
 | FR-036 | FR-036-AC-2 | TC-114 | ✅ Passed locally (tests/composed_namespace.rs) |
-| FR-036 | FR-036-AC-3 | TC-114 | ✅ Passed locally (tests/composed_definitions.rs) |
+| FR-036 | FR-036-AC-3 | TC-114, TC-148 | 🚧 TC-114 passed locally (tests/composed_definitions.rs); TC-148 planned, #131 |
 | FR-036 | FR-036-AC-4 | TC-114 | ✅ Passed locally (tests/composed_scopes.rs) |
 | FR-036 | FR-036-AC-5 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-036 | FR-036-AC-6 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
@@ -323,16 +349,16 @@ supplied wire selections and actual admitted model exports.
 `tests/native_domain_event_choices.rs` and
 `tests/native_mixed_observation_choices.rs` drive real source through native
 family admission, emission and independent reading.
-`tests/native_digest_domains.rs` proves the producer-owned source/model/config
-digest domains stay separate from the compiled-artifact seal and from a
-consumer's RFC 8785/JCS protocol-result identity: an exact producer reference
-survives emission and reading, either substituted digest refuses, and a
-recanonicalized producer reference refuses at producer admission.
+`tests/native_digest_domains.rs` proves the source/model/config digest domains
+stay separate from the compiled-artifact seal and from a consumer's RFC 8785/JCS
+protocol-result identity: an exact model reference survives emission and
+reading, either substituted digest refuses, and a recanonicalized model
+reference refuses at model admission.
 
 FR-042-AC-1 through FR-042-AC-10 each carry
 `#[trace("TC-121", "FR-042-AC-n")]` tags on executed Rust tests, and `quire
 coverage --scope . --json` reports those minted targets as backed. AC-10's QSL
-test proves only the producer-owned publication and strict-reader leg; the
+test proves only the compiler-owned publication and strict-reader leg; the
 cross-repository Protocol leg remains open. One module carrying each criterion's
 tag:
 
@@ -446,7 +472,7 @@ TC-129 covers every identity/type/authority axis and distinguishes refusal from
 unavailable closure. TC-130 covers isolated/self-loop/cyclic/duplicate/ordered
 and edge-shape cases. TC-131 covers zero/exact/one-short work in each exercised
 dimension, fresh retry and the frozen ConfigVersion profile. No shortest-path,
-mutable graph or producer relationship behavior is inferred.
+mutable graph or domain-package relationship behavior is inferred.
 
 ## Native ecosystem choreography preservation (L6)
 

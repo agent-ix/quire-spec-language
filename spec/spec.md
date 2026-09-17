@@ -18,7 +18,7 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-041
     type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-009
+  - target: ix://agent-ix/quire-spec-language/IT-012
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-010
     type: contains
@@ -43,6 +43,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-054
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-055
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-056
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
@@ -112,8 +114,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-004
     type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-001
-    type: contains
   - target: ix://agent-ix/quire-spec-language/IT-002
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-003
@@ -170,7 +170,7 @@ relationships:
 This root indexes the native compiler requirements, including the historical
 finite-state implementation and composed-language parsing, static checking,
 bounded state evaluation, temporal evaluation, choreography preservation and
-versioned producer artifacts under compiler #35–#40. Discrete requirements
+versioned compiled artifacts under compiler #35–#40. Discrete requirements
 distinguish implemented, planned and externally gated behavior from recorded
 qualification.
 
@@ -180,16 +180,17 @@ qualification.
 
 LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned fixture verification under FR-012/NFR-005.
 
-L2 adds edition-selected syntax and exact package linking across state, temporal
+L2 admits Semantic IR 2.0.0 domain packages as Quire model declarations through
+[FR-056](functional/FR-056-admit-domain-package-model-declarations.md) and adds edition-selected syntax and exact package linking across state, temporal
 and choreography declarations through
 [FR-035](functional/FR-035-parse-composed-native-units.md) and
 [FR-036](functional/FR-036-link-composed-native-packages.md). L3/L4 add reusable
 predicates, ordered queries and finite graph evaluation through FR-046/047/049
 and NFR-009. L5 retains the merged bounded temporal evaluator under FR-043–045
 and NFR-008. L6 preserves choreography for downstream assessment under FR-048.
-FR-042 and FR-050 own the strict `/1` and `/2` compiled-artifact producer/
-consumer boundaries. Each stage consumes shared model and observation contracts
-without taking over their producer authority.
+FR-042 and FR-050 own the strict `/1` and `/2` compiled-artifact emitter/
+consumer boundaries. Each stage consumes admitted domain packages and shared
+observation contracts without taking over their authority.
 
 IT-011 adopts the accepted complete-V1 QSpec baseline into one repository-local
 delivery plan. It preserves the existing L1 through L6 evidence and assigns all
@@ -201,7 +202,9 @@ changing the central architecture or requirement meaning.
 The standard and E own temporal/protocol/message meaning; B owns PT02 protocol
 conformance and results; D owns model/configuration and the version-locked
 ecosystem integration; F owns concrete observation admission, replay and
-completeness; C owns engineering assurance. This compiler does not execute
+completeness; C owns engineering assurance. Spec artifacts own the domain
+model, quire-rs owns artifact extraction, and filament-core-data owns the
+Semantic IR lowering and reader; this compiler parses no artifact Markdown. This compiler does not execute
 business operations or compensation, create an observation store, issue model
 authority, project portable results, or claim the externally owned composed
 campaign complete. Duplicate model/type authorities, a second editable formal
@@ -218,13 +221,13 @@ dependency binding, exact value/control graphs and versioned immutable artifacts
 Public evaluators consume only admitted artifacts plus caller-supplied typed
 state/trace inputs and return closed completed/incomplete/refused/exhausted
 outcomes under versioned work accounting. Archetype schemas, formal
-declarations, producer models and runtime populations remain distinct. Contract
+declarations, domain-package model declarations and runtime populations remain distinct. Contract
 IR owns formal types and proof machinery; the native language standard owns the
 meaning of clauses being compiled.
 
 ### 3.2 Intended Users
 
-Specification authors, model producers, verification operators and toolchain integrators.
+Specification authors, domain-package authors, verification operators and toolchain integrators.
 
 ## 4. Requirements Architecture
 
@@ -290,12 +293,12 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 Run Quire over this exact repository scope and execute the serial Rust gates in
 both feature configurations. Use independently authored expected values and real
-existing producers/consumers at integration boundaries. Historical finite-state
+existing emitters/consumers at integration boundaries. Historical finite-state
 acceptance covers healthy, violating and refused/incomplete workflows. TC-113–
-121 cover composed parsing, linkage, checking and the `/1` producer; TC-122–125
+121 cover composed parsing, linkage, checking and the `/1` emitter; TC-122–125
 cover L5; TC-126–137 cover the consolidated L3/L4/L6 and state-input contracts;
-TC-138 covers the strict `/2` temporal selection extension. IT-009 remains the
-narrow static D producer boundary. TC-135 proves only A's byte-exact compiler-to-
+TC-138 covers the strict `/2` temporal selection extension. TC-145–148 and IT-012
+cover domain-package model intake through the real quire-rs and FCD crates. TC-135 proves only A's byte-exact compiler-to-
 B intake contribution; D's research #39/#49 owns the later version-locked
 aggregate campaign with accepted B/F revisions. A passed earlier stage cannot
 qualify an unexecuted later one.
@@ -346,7 +349,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
 | [NFR-003](non-functional/NFR-003-preserve-uncertain-outcomes.md) | NFR | Draft |
 | [NFR-004](non-functional/NFR-004-preserve-implementation-rights.md) | NFR | Draft |
-| [IT-001](integration/IT-001-real-model-producer.md) | IT | Draft |
 | [IT-002](integration/IT-002-native-state-workflow.md) | IT | Draft |
 | [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT | Draft |
 
@@ -365,8 +367,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared types and supported guarded proofs implemented; query/runtime acceptance open under #35/#36 |
-| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented; delivered producer reviews pass |
-| [IT-009](integration/IT-009-composed-package-boundary.md) | IT | Locally qualified direct producer/composed compiler boundary at accepted FCD merge `4042882`; 8/8 producer-correspondence tests pass |
+| [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented |
 | [IT-010](integration/IT-010-config-version-numeric-backends.md) | IT | Locally tested ConfigVersion numeric backend parity |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
 | [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Native emission, strict reader and immutable `/1`/`/2` owner handoffs implemented; external Protocol acceptance remains under quire-protocol#11 |
@@ -384,3 +385,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | Versioned opaque semantic-trigger identity bridge for Protocol FR-300 |
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
+| [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131 |
+| [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
