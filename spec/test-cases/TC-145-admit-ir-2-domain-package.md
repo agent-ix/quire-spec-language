@@ -28,7 +28,9 @@ refusal), FR-056-CON-4.
    selection. Then offer a combination of the first and third faults.
 3. Offer bytes `agent-ix-semantic-ir` refuses.
 4. Change only one artifact's `title` or `displayName` and re-run. Then give two
-   artifacts equal titles.
+   artifacts equal titles. Then change one object type's artifact id to
+   `sys_pump` and name it from a clause as `M::sys_pump`, and separately to
+   `sys-pump`.
 5. Remove the relationship member's declared name, then separately its source
    span. Then point the object-typed field member at an artifact id absent from
    the package, and separately point the relationship's target end at such an id.
@@ -52,7 +54,11 @@ refusal), FR-056-CON-4.
 - Step 3 admits no declaration and retains every reader diagnostic with its IR
   node, artifact id and span.
 - Step 4 leaves every key, export, ordering and linker binding byte-identical;
-  equal titles stay two distinct declarations.
+  equal titles stay two distinct declarations. The `sys_pump` run admits the
+  type keyed `ix://<package identity>/sys_pump` and the clause resolves to it;
+  the `sys-pump` run refuses that node with
+  `invalid_model_binding`/`malformed-declaration`, naming node, artifact and
+  span, and admits no declaration of the package.
 - Step 5 refuses the unnamed and unspanned relationship members with
   `invalid_model_binding`/`malformed-declaration`, and both dangling targets with
   `missing_declaration`/`missing-name`, each naming node, artifact and span.
