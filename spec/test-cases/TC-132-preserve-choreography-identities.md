@@ -14,9 +14,10 @@ the runtime occurrence-key requirements in the emitted protocol artifact.
 
 ## Test Procedure
 
-Compile the reusable OrderFlow template against D's Producer interface 1.2.0 at
-revision `6259d3a5b99088740df9bcc8e8d60f3720aaa603`, selecting one external
-payment component plus shipment, channel and relationship exports. Read the
+Compile the reusable OrderFlow template against an admitted domain package
+([FR-056](../functional/FR-056-admit-domain-package-model-declarations.md)),
+selecting one external payment component plus shipment, channel and relationship
+declarations. Read the
 artifact through the public parser-free reader and use the admitted-package
 occurrence-schema projection to inspect each static role slot, original node
 handle, source locus, endpoint, payload, workflow-instance binding and

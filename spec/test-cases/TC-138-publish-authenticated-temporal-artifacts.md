@@ -11,7 +11,7 @@ relationships:
 
 ## Description
 
-Verify the strict `/2` producer, wire reader and L5 selection handoff without
+Verify the strict `/2` emitter, wire reader and L5 selection handoff without
 changing or silently upgrading the historical `/1` contract.
 
 ## Test Procedure
@@ -40,11 +40,11 @@ definition/profile binding before formula classification. For progress, attempt
 to reuse ledger entries across `/1`, another `/2` artifact and a changed clock
 configuration before repeating with the exact authenticated package selection.
 
-Independently remove, duplicate and append a producer temporal selection and a
+Independently remove, duplicate and append an emitted temporal selection and a
 reader `ExpectedTemporal`; substitute its source, declaration span, definition
 or one clock field without changing the compiled source.
 
-Run the `/1` producer and strict reader over the pre-extension fixture and
+Run the `/1` emitter and strict reader over the pre-extension fixture and
 compare its bytes to the frozen expected artifact. Offer `/1` to the `/2` reader
 and `/2` to the `/1` reader. For every added work dimension, independently count
 the successful `/2` run and retry with exact, one-short and above-hard limits.

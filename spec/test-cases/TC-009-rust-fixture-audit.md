@@ -1,6 +1,6 @@
 ---
 id: TC-009
-title: "CLI encoding and producer refusal"
+title: "CLI encoding and Rust-only execution"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-012
@@ -9,12 +9,12 @@ relationships:
 
 ## Description
 
-CLI encoding and producer refusal. Scope: FR-012-AC-10, FR-012-AC-11, NFR-005-M-2, NFR-005-M-3. Type: E2E; priority P1.
+CLI encoding and Rust-only execution. Scope: FR-012-AC-10, NFR-005-M-2. Type: E2E; priority P1.
 
 ## Test Procedure
 
-Invoke the real binary with unknown/invalid OS arguments, self-test/model-bytes with external runtimes unavailable, and model-producer.
+Invoke the real binary with unknown/invalid OS arguments, and run self-test with external runtimes unavailable.
 
 ## Expected Results
 
-Usage exits 2 without panic; Rust audits execute with no Python/Node; producer mode exits 3 with producer-language-unapproved.
+Usage exits 2 without panic; Rust audits execute with no Python/Node.

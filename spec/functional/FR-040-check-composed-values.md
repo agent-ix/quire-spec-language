@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-041
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-016
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-033
@@ -43,7 +45,8 @@ When checking a composed binding report, the compiler SHALL establish each depen
 ## Inputs
 
 The immutable `linking::composed::binding::Report`, its original source units,
-definition closures, admitted model exports and lexical/anchor bindings; exact
+definition closures, admitted domain-package model declarations and their export
+records, and lexical/anchor bindings; exact
 authored formal correspondence needed by the selected proof interface; and finite
 caller-lowered checking limits. A declaration must have completed name binding
 before dependent type checking. Concrete observations, populations, clocks,
@@ -83,13 +86,13 @@ The compiler SHALL retain each callee's own definition, parameter order, nominal
 
 If a named predicate body is not total and Boolean over its declared parameter domains, then the compiler SHALL refuse that predicate and its dependent calls.
 
-The compiler SHALL solve literal and expression constraints against exact supplied native types without implicit conversion, inferred producer bounds or a first-fitting imported domain.
+The compiler SHALL solve literal and expression constraints against exact supplied native types without implicit conversion, inferred model bounds or a first-fitting imported domain.
 
 When checking a potentially evaluated partial operation, the compiler SHALL establish its range, nonzero or presence obligation under sound preceding native control facts.
 
 If an obligation cannot be proved, then the compiler SHALL retain an unproved-definedness cause without manufacturing a logical counterexample.
 
-If the selected producer or proof interface cannot represent a required meaning, then the compiler SHALL retain a typed unsupported-prerequisite cause identifying that meaning and its original selection.
+If the admitted domain package or selected proof interface cannot represent a required meaning, then the compiler SHALL retain a typed unsupported-prerequisite cause identifying that meaning and its original selection.
 
 The compiler SHALL derive declaration-owned typed runtime requirements from checked values and authoritative contracts without supplying concrete assessment data.
 
@@ -100,10 +103,10 @@ redefine the selected profile's complete admitted forms.
 
 | Concern | Required checking meaning |
 | --- | --- |
-| Native types and operators | Reuse `checking::NativeType` and admitted producer declarations where compatible. Preserve model/type/scalar identity, exact unit, finite bounds, enum and Unicode text rules, optional payload type, ordered sequence element/max and object/reference universe. Equal spellings or structures do not merge nominal owners. Only admitted equality/order and numeric operators pass; whole-record/sequence/option equality, Boolean/enum order, integer division/remainder and implicit conversions refuse even in unreachable syntax. |
+| Native types and operators | Reuse `checking::NativeType` and admitted domain-package model declarations where compatible. Preserve model/type/scalar identity, exact unit, finite bounds, enum and Unicode text rules, optional payload type, ordered sequence element/max and object/reference universe. Equal spellings or structures do not merge nominal owners. Only admitted equality/order and numeric operators pass; whole-record/sequence/option equality, Boolean/enum order, integer division/remainder and implicit conversions refuse even in unreachable syntax. |
 | Exact numbers | Integer proofs preserve authored inclusive signed-64 domains without wrap, saturation or silent widening. `rational(n,d)` rejects zero denominator, normalizes sign/gcd and zero to 0/1 before authored bounds, with unique expected rational type. Rational operations normalize exact results before bounds; rational division proves its exact divisor nonzero in the same named dimensionless type. Ordinary operands/results share their named type/unit; multiplication requires dimensionless operands. Representation gaps never authorize float approximation or removal of rational obligations. |
 | Predicates and ordered queries | Preserve exact argument arity/order/type and Boolean roots without ambient self, I/O or monitor-status truthiness. Check `size`, `contains`, `forall`, `exists`, `filter`, `map`, `count` and `sum` with their original binders and ordered duplicate-preserving sequence shape, including nested queries and maxima through 10,000. Size/count require a dimensionless result domain containing 0..N. Sum's explicit result domain has the same representation/unit, admits zero and all projections, and proves every accumulated prefix; a final in-range sum or a small observed sample cannot repair a failed obligation. |
-| Control and presence | Preserve left-to-right short-circuit and conditional facts, single immutable let initialization and only facts valid at all joined alternatives. A guard applies to the same value/field/receiver/observation identity; later guards, another object or a repeated expression spelling cannot prove it. Optional absence, producer missingness and missing observations remain distinct. |
+| Control and presence | Preserve left-to-right short-circuit and conditional facts, single immutable let initialization and only facts valid at all joined alternatives. A guard applies to the same value/field/receiver/observation identity; later guards, another object or a repeated expression spelling cannot prove it. Optional absence, a model member the domain package does not declare and missing observations remain distinct. |
 | Anchors and captures | Preserve declaration-owned current/activation/protocol/compensation and invocation pre/post anchors. Apply the selected `pre(expr)` rules without replaying or retagging an outer capture; invocation parameters stay immutable and result stays post-only. A pre-qualified reference retains its observation for navigation even when identity comparison spans pre/post. |
 | Graphs and runtime requirements | Admit only the selected graph interface and exact object/reference/universe and eligible edge shape. Retain required finite population, target closure/completeness, context, operation/frame, observation, membership and capture contracts with owning declaration/source region, kind, type/authority, anchor and scope. Reference cycles are not predicate recursion. No ambient lookup, UUID cast or fabricated relationship supplies missing authority. Current, pre/post and activation roles with equal local names remain distinct. |
 | Proof correspondence | Reuse `DeclarationEnvironment::check_expression` and existing native proof abstractions only where they preserve exact native types, guards, source and selected execution point. Every discharged goal retains its actual upstream result and native correspondence. A proof for another source, lexical owner, observation or declaration cannot discharge this one. Unsupported representations and incomplete correspondence stay explicit; no synthetic semantic owner, reparsed source or successful type check supplies proof. |
@@ -139,8 +142,8 @@ configuration provenance, separate from selected semantic identities.
 | FR-040-AC-1 | Exact multi-unit predicate/state inputs and shared values in temporal/protocol bodies retain unit-qualified expression types and source spans; names-resolved, typed, proof-discharged and family/execution dispositions cannot be interchanged. Refused or unfinished input produces no dependent checked value. | Test (TC-119) |
 | FR-040-AC-2 | StateCore refuses predicate/query-extension/graph forms where absent from its catalog; StateQueries admits its typed extension while refusing graph forms; StateGraph admits its eligible graph forms. Unused or unreachable prohibited forms still refuse and a wider caller cannot upgrade a callee. | Test (TC-119) |
 | FR-040-AC-3 | Exact parameter arity/order, nominal model/scalar/unit identity, enum/text/option/sequence constraints and Boolean roots distinguish valid inputs from same-spelled foreign types, ambiguous literals, wrong arguments and forbidden coercions or status-as-Boolean. | Test (TC-119) |
-| FR-040-AC-4 | Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing producer/proof representation, including unsupported rational sum-domain transfer, yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
-| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. Producer sequence maxima are 1..10,000; declared maxima 0 and 10,001 refuse at model admission. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-lowered exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
+| FR-040-AC-4 | Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing model/proof representation, including unsupported rational sum-domain transfer, yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
+| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. Domain-package sequence maxima are 1..10,000; declared maxima 0 and 10,001 refuse at model admission. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-lowered exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
 | FR-040-AC-6 | Guard-before-use and immutable aliases discharge supported presence/range obligations; reversed guards, invalid alternative joins, foreign receiver/observation and pre-retagged captures refuse at their original loci. Valid composite pre reads and same-invocation immutable parameters retain distinct provenance. | Test (TC-119) |
 | FR-040-AC-7 | Graph/context/operation/capture uses emit typed declaration-owned runtime requirements with exact universe, anchor, scope/completeness and frame selections without observations. Same-named roles, foreign universes and opaque scalar/relationship substitutions cannot satisfy them. | Test (TC-119) |
 | FR-040-AC-8 | Exact authored formal correspondence permits actual supported IR discharge. Omitted, duplicate, changed-source, foreign-declaration or wrong-execution-point correspondence prevents dependent proof without synthetic ownership. Unproved definedness, unsupported prerequisite and resource exhaustion retain distinct typed causes; typing remains inspectable. | Test (TC-119) |
@@ -154,15 +157,15 @@ configuration provenance, separate from selected semantic identities.
 [FR-016](FR-016-check-native-clauses.md) provide existing formal-source, native
 type and IR proof seams without changing their historical contract.
 [TC-119](../test-cases/TC-119-check-composed-values.md) is the planned compiler
-test case; [IT-009](../integration/IT-009-composed-package-boundary.md) retains
-real external-producer integration ownership.
+test case; [IT-012](../integration/IT-012-domain-package-model-intake.md) owns
+the real domain-package intake integration.
 
 Compiler [#35](https://github.com/agent-ix/quire-spec-language/issues/35),
 [#36](https://github.com/agent-ix/quire-spec-language/issues/36) and
 [#39](https://github.com/agent-ix/quire-spec-language/issues/39) retain full
 delivery obligations. The pinned IR already supplies rational types, literals,
 arithmetic and definedness. [FR-041](FR-041-admit-rational-native-model-profile.md)
-specifies the explicit `/2` native model producer extension while historical
+specifies the explicit `/2` native model source extension while historical
 `/1` admission retains its rational refusal. Composed definedness consumes those
 exact representations with the original authored correspondence. Query-body
 safety covers the admitted element domain; sum safety requires every bounded
@@ -174,7 +177,7 @@ Broader rational sum-domain transfer remains an explicit unsupported
 prerequisite where the selected proof interface cannot establish it. This does
 not remove rational sums from the requirement. The existing native scalar type
 retains the underlying IR value type; a second numeric authority is unnecessary.
-D's exact producer/native correspondence and authoritative relationship exports
-remain producer-owned prerequisites. Unsupported prerequisites are implementation
+Relationship exports come from admitted domain-package relation declarations
+([FR-056](FR-056-admit-domain-package-model-declarations.md)). Unsupported prerequisites are implementation
 gaps, not a narrower definition of this requirement; reference evaluation,
 family checks, runtime validation and full artifact delivery remain downstream.

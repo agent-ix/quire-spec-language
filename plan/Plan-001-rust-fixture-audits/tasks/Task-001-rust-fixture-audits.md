@@ -16,8 +16,6 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/TC-003
     type: verifies
-  - target: ix://agent-ix/quire-spec-language/TC-004
-    type: verifies
   - target: ix://agent-ix/quire-spec-language/TC-005
     type: verifies
   - target: ix://agent-ix/quire-spec-language/TC-006

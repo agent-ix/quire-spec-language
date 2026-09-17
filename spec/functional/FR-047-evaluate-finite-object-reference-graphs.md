@@ -9,6 +9,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-042, type: references }
   - { target: ix://agent-ix/quire-spec-language/FR-049, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/NFR-009, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-038, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-039, type: depends_on }
@@ -31,8 +32,9 @@ the historical ConfigVersion profile or inventing finite bounds for that model.
 
 ## Inputs
 
-An admitted compiled value graph; exact model, universe, object-type, reference
-field and observation selections; immutable current, invocation-pre or
+An admitted compiled value graph; exact domain-package model declarations
+([FR-056](FR-056-admit-domain-package-model-declarations.md)), universe,
+object-type, reference field and observation selections; immutable current, invocation-pre or
 invocation-post anchors; a finite object arena keyed by the complete storage
 identity `(observation occurrence, model, universe, object type, object
 identifier)` and preserving reference occurrence order; explicit membership
@@ -40,14 +42,15 @@ and closure authority; and caller-lowered finite evaluation limits admitted by
 [FR-049](FR-049-admit-composed-evaluation-inputs.md).
 
 The observation occurrence is the exact semantic anchor, snapshot identity,
-optional window identity and record identity supplied by F under the selected D
-assessment authority. Those identities remain opaque producer/observation
-identities; they are not compiled-protocol `ArtifactRef` values and do not reuse
+optional window identity and record identity supplied by F under the selected
+observation contract. Those identities remain opaque observation identities; they
+are not compiled-protocol `ArtifactRef` values and do not reuse
 the compiled artifact's raw-byte digest domain.
 
 An object identifier string, payload field, trace identifier, same-shaped model
-or successful static type check is not a graph environment. D/F remain the
-authorities for concrete object, relationship, population, snapshot and closure
+or successful static type check is not a graph environment. The admitted domain
+package declares object types, references, relationships and populations; F
+supplies concrete object, relationship, population, snapshot and closure
 inputs.
 
 ## Outputs
@@ -126,13 +129,14 @@ parent relationship or graph authority.
 Mutable graph execution, shortest-path selection, canonical path witnesses,
 untyped heterogeneous traversal, network lookup, scalar-ID navigation and graph
 repair remain outside this scope. Protocol relationships remain first-class
-producer-owned bindings; they do not become fields merely to reuse `reaches`.
+relationship declarations from the domain package; they do not become fields
+merely to reuse `reaches`.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-047-AC-1 | Exact anchor, snapshot, optional window, record occurrence, model, universe, object type, object identifier and edge type survive parse, binding, checking, admission, emission and independent reading as the complete storage identity; equal strings or shapes cannot substitute and producer/observation identities do not become compiled-artifact references. | Test (TC-129) |
+| FR-047-AC-1 | Exact anchor, snapshot, optional window, record occurrence, model, universe, object type, object identifier and edge type survive parse, binding, checking, admission, emission and independent reading as the complete storage identity; equal strings or shapes cannot substitute and domain-package/observation identities do not become compiled-artifact references. | Test (TC-129) |
 | FR-047-AC-2 | A duplicate full storage key and a dangling target in a declared-complete domain refuse, while the same logical object at distinct pre/post anchors is admitted. Foreign models/universes, wrong object/reference types, wrong edge owners and incompatible endpoint observations refuse; missing membership or closure is incomplete and cannot turn an absent offered target into a dangling or empty-graph judgment. | Test (TC-129, TC-131) |
 | FR-047-AC-3 | Dereference reads only the exact qualified environment and retains pre/post observation identity across the returned object. | Test (TC-129) |
 | FR-047-AC-4 | Reachability is positive-length: an isolated `a` does not reach itself, while `a→a` and `a→b→a` do; a direct or longer path to another target succeeds. | Test (TC-130) |

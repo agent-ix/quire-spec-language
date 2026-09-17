@@ -44,7 +44,7 @@ reconcile all 83 Agent-A rows.
       and bind every emitted producer code/cause to that authority.
 - [ ] Integrate formatting with the concrete crate-owned checked-package artifact;
       do not accept a caller-mintable semantic verifier or digest.
-- [ ] Build the canonical manifest only from the concrete complete checked-package artifact and admitted producer/model correspondences.
+- [ ] Build the canonical manifest only from the concrete complete checked-package artifact and admitted domain-package model declarations.
 - [ ] Admit extensions only from exact declarative grammar/typed-node schemas and checked historical semantic compatibility evidence.
 - [ ] Reconcile every capability and criterion to attributable Rust/cross-repo evidence.
 - [ ] Preserve unsupported, incomplete, exhausted and failed partitions independently.

@@ -26,9 +26,7 @@ jobs:
         run: cargo test --locked --all-features
       - name: Clean build
         run: cargo build --locked --no-default-features --target-dir target/clean
-      - name: Producer identity negative controls
+      - name: Review fixture identity negative controls
         run: cargo run --locked --no-default-features --bin fixture-audit -- self-test
-      - name: Model producer checkpoint integrity
-        run: cargo run --locked --no-default-features --bin fixture-audit -- model-bytes tests/fixtures
       - name: Parse example
         run: cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
