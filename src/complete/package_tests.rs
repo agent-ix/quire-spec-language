@@ -2,9 +2,10 @@
 use std::collections::BTreeSet;
 
 use crate::complete::{
-    self, lower_source_graph, resolve_source_package, CapabilityId, CompleteCode, Definition,
-    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet, ModelArtifact,
-    ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority, SourceDigest,
+    self, lower_source_graph, resolve_source_package, CapabilityId, CompleteCause, CompleteCode,
+    Definition, DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet,
+    ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority,
+    SourceDigest,
 };
 use crate::{Limits, SourceIdentity};
 use ix_trace_rs::trace;
@@ -156,6 +157,12 @@ fn assert_refusal_authority(refusal: &complete::PackageRefusal, parsed: &complet
     assert_eq!(refusal.authority.identity, *parsed.source().identity());
     assert_eq!(refusal.authority.path, parsed.source().path());
     assert_eq!(refusal.authority.digest.digest(), parsed.source().digest());
+    assert!(
+        refusal.cause_tag.is_cause_of(refusal.code),
+        "{:?} is not a cause of {:?}",
+        refusal.cause_tag,
+        refusal.code
+    );
 }
 
 #[trace("TC-180", "FR-131-AC-1", "FR-131-AC-2", "FR-131-AC-3", "FR-339-AC-3")]
@@ -200,6 +207,30 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     let unknown_catalog = DefinitionCatalog::new(definitions[1..].to_vec()).unwrap();
     let unknown = resolve_fixture(parsed.clone(), &unknown_catalog, &model).unwrap_err();
     assert_eq!(unknown.code, CompleteCode::UnknownProfile);
+    assert_eq!(unknown.cause_tag, CompleteCause::UnsupportedSelection);
+
+    let broken_text = format!(
+        "{}\nrecord Broken {{ value: Integer }}",
+        parsed.source().text()
+    );
+    let broken = std::sync::Arc::new(
+        complete::parse(
+            SourceIdentity {
+                identity: "test:broken-source".into(),
+                revision: "r1".into(),
+            },
+            "broken.native",
+            broken_text.as_bytes(),
+            Limits::default(),
+        )
+        .unwrap(),
+    );
+    let inadmissible = resolve_fixture(broken.clone(), &unknown_catalog, &model).unwrap_err();
+    assert_eq!(
+        (inadmissible.code, inadmissible.cause_tag),
+        (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
+    );
+    assert_refusal_authority(&inadmissible, broken.as_ref());
     assert_eq!(unknown.span, parsed.selections().profiles[0].identity_span);
     assert_refusal_authority(&unknown, parsed.as_ref());
 
@@ -221,7 +252,29 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     )
     .unwrap_err();
     assert_eq!(stale.code, CompleteCode::StaleDependency);
+    assert_eq!(stale.cause_tag, CompleteCause::RevisionMismatch);
     assert_refusal_authority(&stale, parsed.as_ref());
+
+    let mut rebytes = definitions.clone();
+    rebytes[0] = Definition::from_exact_bytes(
+        &READER_AUTHORITY,
+        definitions[0].exact().identity(),
+        definitions[0].exact().version(),
+        DefinitionRole::Source,
+        BTreeSet::new(),
+        CapabilityId::complete_inventory().into_iter().collect(),
+        b"same version, other source definition bytes",
+    )
+    .unwrap();
+    let digest_only = resolve_fixture(
+        parsed.clone(),
+        &DefinitionCatalog::new(rebytes).unwrap(),
+        &model,
+    )
+    .unwrap_err();
+    assert_eq!(digest_only.code, CompleteCode::StaleDependency);
+    assert_eq!(digest_only.cause_tag, CompleteCause::ByteDigestMismatch);
+    assert_refusal_authority(&digest_only, parsed.as_ref());
 
     let stale_source = resolved_source(&definitions, &model)
         .source()
@@ -269,6 +322,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     .unwrap_err();
     assert_eq!(missing.code, CompleteCode::MissingImport);
     assert!(matches!(missing.cause, PackageError::MissingDefinition(_)));
+    assert_eq!(missing.cause_tag, CompleteCause::MissingSelection);
     assert_refusal_authority(&missing, missing_source.as_ref());
 }
 
@@ -328,6 +382,7 @@ fn dependency_closure_refuses_logical_conflicts_and_duplicate_aliases() {
     )
     .unwrap_err();
     assert_eq!(conflict.code, CompleteCode::AmbiguousDeclaration);
+    assert_eq!(conflict.cause_tag, CompleteCause::ConflictingAuthority);
     assert_eq!(conflict.span, second_span);
     let PackageError::ConflictingDefinitions(details) = conflict.cause else {
         panic!("expected a typed transitive definition conflict")
@@ -355,6 +410,7 @@ fn dependency_closure_refuses_logical_conflicts_and_duplicate_aliases() {
     )
     .unwrap_err();
     assert_eq!(duplicate.code, CompleteCode::AmbiguousDeclaration);
+    assert_eq!(duplicate.cause_tag, CompleteCause::AmbiguousName);
     assert!(matches!(
         duplicate.cause,
         PackageError::DuplicateAlias { .. }
@@ -385,6 +441,13 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
     assert_eq!(
         refusal.cause,
         PackageError::MissingFacet(Facet::Observation)
+    );
+    assert_eq!(
+        (refusal.code, refusal.cause_tag),
+        (
+            CompleteCode::InvalidPackage,
+            CompleteCause::FeatureSetMismatch
+        )
     );
 
     type ParseFn = fn(
@@ -538,6 +601,7 @@ fn compiled_models_cannot_substitute_for_or_be_substituted_by_definitions() {
     .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::InvalidModelBinding);
     assert!(matches!(refusal.cause, PackageError::MissingModel(_)));
+    assert_eq!(refusal.cause_tag, CompleteCause::WrongModelSelection);
 
     let stale_model = ModelArtifact::from_exact_bytes(
         &READER_AUTHORITY,
@@ -554,6 +618,7 @@ fn compiled_models_cannot_substitute_for_or_be_substituted_by_definitions() {
     )
     .unwrap_err();
     assert!(matches!(stale.cause, PackageError::StaleModel(_)));
+    assert!(stale.cause_tag.is_cause_of(stale.code));
 }
 
 #[trace("TC-180", "FR-131-AC-2")]
@@ -616,6 +681,10 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
     .unwrap_err();
     assert_eq!(artifact_refusal.code, CompleteCode::ResourceExhausted);
     assert_eq!(artifact_refusal.cause, PackageError::ResourceLimit);
+    assert_eq!(
+        artifact_refusal.cause_tag,
+        CompleteCause::InsufficientNextCharge
+    );
     assert_refusal_authority(&artifact_refusal, parsed.as_ref());
 
     let refusal = resolve_source_package(

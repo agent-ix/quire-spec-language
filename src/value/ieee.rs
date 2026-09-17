@@ -539,11 +539,18 @@ impl IeeeResult {
     }
 }
 
+/// Information an IEEE-to-exact conversion discards.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IeeeExactLoss {
+    /// The source was `-0`, whose sign has no rational representation.
+    NegativeZeroSign,
+}
+
 /// The exact value of a finite IEEE operand.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct IeeeExact {
     value: Rational,
-    discarded_negative_zero: bool,
+    loss: Option<IeeeExactLoss>,
 }
 
 impl IeeeExact {
@@ -552,10 +559,9 @@ impl IeeeExact {
         &self.value
     }
 
-    /// Whether the source was `-0`, whose sign has no rational representation
-    /// and is reported as loss.
-    pub fn discarded_negative_zero(&self) -> bool {
-        self.discarded_negative_zero
+    /// The discarded information, reported as loss.
+    pub fn loss(&self) -> Option<IeeeExactLoss> {
+        self.loss
     }
 }
 
@@ -761,14 +767,14 @@ fn to_exact(
             charge_exact_result(meter, 1)?;
             IeeeExact {
                 value: Rational::from_integer(Integer::zero()),
-                discarded_negative_zero: negative,
+                loss: negative.then_some(IeeeExactLoss::NegativeZeroSign),
             }
         }
         Class::Finite(finite) => {
             charge_exact_result(meter, finite.max_part_bits())?;
             IeeeExact {
                 value: finite.to_rational(),
-                discarded_negative_zero: false,
+                loss: None,
             }
         }
     };

@@ -5,7 +5,7 @@ QSL #118 directly selects num-bigint 0.4.8, num-integer 0.1.47, num-traits
 existing `tinyvec` dependency) for the exact `value` layer. All were already
 resolved in the lock and retain their declared `MIT OR Apache-2.0` grants; no
 package is added to the lock. `resources/complete-value/` holds unmodified QSpec
-`a25c93c875231664d90f5d4b3f2ac51f1dc77a75` definition, rule, vector and TestCase
+`7d7943ab1482e091f6d126401ada38957c4a1ccf` definition, rule, vector and TestCase
 bytes, plus the Unicode 17.0.0 artifacts named by
 `quire.value.text.unicode-17.0.0/v1` under their Unicode license; provenance
 and the deferred QSpec document licence are recorded in its README.

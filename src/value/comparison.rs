@@ -101,4 +101,35 @@ pub enum IllTypedCause {
     /// An IEEE value is converted directly to `Decimal`, `Integer` or
     /// `Int[..]`; only a `Rational[..]` target is defined.
     IeeeToNonRationalExact,
+    /// FR-272 `type-mismatch`: the operands or a value and its expected
+    /// position have no common declared type and no admitted conversion.
+    TypeMismatch,
+    /// FR-272 `operator-ineligible`: the operator is not defined for the
+    /// operand type, such as `=` on an IEEE-bearing type.
+    OperatorIneligible,
+    /// FR-272 `ambiguous-literal`: a collection or `rational` literal has no
+    /// unique expected type.
+    AmbiguousLiteral,
+}
+
+impl IllTypedCause {
+    /// The closed FR-272 `cause` tag, for the causes the complete-V1 cause
+    /// table names.
+    pub fn tag(self) -> Option<&'static str> {
+        match self {
+            Self::TypeMismatch => Some("type-mismatch"),
+            Self::OperatorIneligible => Some("operator-ineligible"),
+            Self::AmbiguousLiteral => Some("ambiguous-literal"),
+            Self::DistinctTextProfiles
+            | Self::DistinctEnumDeclarations
+            | Self::UnorderedEnumOrdering
+            | Self::IncompatibleDimensions
+            | Self::AffineUnitArithmetic
+            | Self::DistinctUnits
+            | Self::MalformedDecimalType
+            | Self::DistinctIeeeWidths
+            | Self::IeeeWithExactOperand
+            | Self::IeeeToNonRationalExact => None,
+        }
+    }
 }

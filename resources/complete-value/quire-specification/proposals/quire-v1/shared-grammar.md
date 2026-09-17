@@ -79,8 +79,10 @@ The complete-V1 facets additionally reserve `import`, `dimension`, `unit`,
 `at-least-once`, `exactly-once-premise`, `any`, `quorum`, `outstanding`,
 `continue`, `cancel`, `invariant`, `variant`, `relation`, `hyper`, `trace`,
 `bounded`, `hybrid`, `mode`, `flow`, `transition`, `reset`, `synthesis`,
-`grammar`, `satisfies`, `verify`, `claim`, `method`, `domain`, `depends` and
-`bound`. Hyphenated tokens are matched as single keyword spellings only in
+`grammar`, `satisfies`, `verify`, `claim`, `method`, `domain`, `depends`,
+`bound`, `lookup`, `absent` and `body`. The words `undefined`, `empty` and
+`refused` are matched as keyword spellings only in the lookup absence position
+and remain identifiers elsewhere. Hyphenated tokens are matched as single keyword spellings only in
 their grammar positions; they are never identifier normalization aliases.
 
 ## Declarations and expressions
@@ -266,7 +268,7 @@ declaration   = dimension-decl | unit-decl | enum-decl | record-decl
               | tuple-decl | alias-decl | function | predicate
               | state-clause | temporal-clause | protocol-clause
               | relation-clause | hyper-clause | hybrid-decl
-              | synthesis-decl | verification-plan ;
+              | synthesis-decl | verification-plan | operation-body ;
 
 type-ref      = 'Boolean' | 'Integer' | qualified-name
               | 'Int', '[', signed-int, ',', signed-int, ']'
@@ -314,7 +316,12 @@ primary       = 'true' | 'false' | 'null' | 'none' | 'self' | 'result'
               | 'convert', '<', type-ref, '>', '(', expr, ')'
               | 'allInstances', '<', type-ref, '>', '(', expr, ')'
               | collection-call
-              | 'reaches', '(', expr, ',', expr, ',', qualified-name, ')' ;
+              | 'reaches', '(', expr, ',', expr, ',', qualified-name, ')'
+              | 'lookup', '<', type-ref, '>', '(', expr, ',', expr, ')',
+                'absent', absence-mode ;
+absence-mode  = 'undefined' | 'empty' | 'refused' ;
+operation-body = 'body', ident, 'using', ident, 'on', qualified-name,
+                 '(', [ ident, { ',', ident } ], ')', block ;
 exact-number  = 'rational', '(', signed-int, ',', signed-int, ')'
               | 'decimal', '(', signed-int, ',', uint, ')' ;
 float-value   = 'float32', '(', 'bits', ':', hex32, ')'
@@ -334,7 +341,9 @@ collection-value = 'sequence', '[', [ expr, { ',', expr } ], ']'
 record-value  = qualified-name, '{', field-value, { ',', field-value }, '}' ;
 field-value   = ident, ':', expr ;
 
-postfix       = primary, { '.', member-name | '[', expr, ']' } ;
+postfix       = primary, { '.', member-name,
+                           [ '(', [ expr, { ',', expr } ], ')' ]
+                         | '[', expr, ']' } ;
 product       = unary, { ('*' | '/' | 'div' | 'rem' | 'mod'), unary } ;
 collection-call = ('map' | 'collect' | 'filter' | 'flatMap'),
                   '(', ident, 'in', expr, ':', expr, ')'
@@ -369,6 +378,22 @@ library: `quire::value::ieee::sqrt(x)`,
 `quire::value::ieee::totalOrder(a,b)` and
 `quire::value::ieee::bitIdentical(a,b)`. User declarations cannot replace or
 shadow those selected definition identities.
+
+The selected `quire.model.complete/v1` definition gives the model forms above
+their meaning; FR-150 through FR-153 own it. `lookup<T>(p, r) absent m` reads
+the closed population binding `p` at key `r` with the per-query absence mode
+`m`. `receiver.member-name(args)` is a dispatched operation call: `member-name`
+resolves statically to one exposed effective operation of the receiver's static
+type and the call dispatches once, on the receiver's runtime most-specific
+type. `receiver.member-name` without parentheses is field or relationship-end
+navigation. An `operation-body` supplies the pure query body of one effective
+operation `qualified-name`, whose first segment is a declared model alias (a
+`model` declaration or an import `as` alias) naming the model; its `using`
+selects a declared profile alias, as for every native declaration;
+its identifiers bind the receiver-less operation parameters positionally, in
+signature order, and the body reads the receiver as `self`. A package that does
+not select `quire.model.complete/v1` receives `unsupported_construct` for each
+of these forms.
 
 ### Complete temporal, choreography and analysis forms
 
@@ -463,8 +488,13 @@ cannot shadow aliases, native declarations or another visible binding. Separate
 predicate declarations may reuse a parameter name. A `let` binding is visible
 only in its body, not its initializer. A quantifier binder is visible only in
 its predicate, not its domain. Forward predicate references can resolve after
-declaration collection; the complete call graph must be acyclic. No overload
-resolution or dynamic dispatch is introduced.
+declaration collection; the complete call graph, including the FR-151 dispatch
+edges from a dispatched call to every candidate body and effective precondition
+clause, must be acyclic. No overload
+resolution or dynamic dispatch is introduced, except that a package selecting
+`quire.model.complete/v1` admits exactly the single dispatch on the receiver's
+runtime most-specific type defined by FR-151. That exception supersedes the
+preceding sentence for such a package only; it adds no overload resolution.
 
 A named predicate reads its explicit parameters and pure lexical values.
 `self`, `result` and `pre(...)` are caller-side anchor operations, unavailable
@@ -628,7 +658,10 @@ successful parsing of the fragment.
 Selected finite snapshot/window aggregate rules use the same common `filter`,
 `count` and `sum` expressions over explicitly bound model fields. The source
 requires the declared view; D/F supply its membership, window and completeness
-contract. No `allInstances()` or implicit history query is introduced.
+contract. These finite snapshot/window aggregate rules introduce no
+`allInstances()` or implicit history query; the complete-V1
+`allInstances<T>(p)` form reads only an explicit population binding under
+FR-153.
 
 ## Exact rational literal proposal
 

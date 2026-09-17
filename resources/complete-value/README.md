@@ -2,16 +2,22 @@
 
 The files below `quire-specification/` are unmodified bytes of
 [agent-ix/quire-specification](https://github.com/agent-ix/quire-specification)
-at merged revision `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` (QSpec PR #73, amending QSpec #68),
+at merged revision `7d7943ab1482e091f6d126401ada38957c4a1ccf` (QSpec PR #75, amending QSpec #68 after PRs #73 and #74),
 copied with `git show <revision>:<path>` at their repository-relative paths so
 the lock's relative `artifact_path` values resolve unchanged. QSL #118 /
-Plan-013 Task-048 consumes them.
+Plan-013 Task-048 consumes them; QSL #119 / Plan-013 Task-049 adds the
+FR-143, FR-144, FR-145, FR-146 and FR-307 rules and the TC-188, TC-189,
+TC-190, TC-191, TC-194 and TC-227 procedures, and consumes FR-149.
 
 `complete-value-lock.json` is the authority for every qualification-catalog
 artifact digest; `tests/complete_value_lock.rs` recomputes each vendored
 artifact's raw-byte SHA-256 against that lock. The lock itself, the selection
-vectors, the checked-package-v2 node-identity vectors and preimage schema, and
-the TC-185/TC-186/TC-187/TC-192/TC-193 procedures are not in the catalog, so the same
+vectors, the checked-package-v2 node-identity vectors and preimage schema, the
+`positive-nominal-identities` CheckedPackage V2 fixture whose identity preimage
+FR-307 resolution reads, and
+the FR-143/FR-144/FR-145/FR-146/FR-307 rules and the
+TC-185/TC-186/TC-187/TC-188/TC-189/TC-190/TC-191/TC-192/TC-193/TC-194/TC-227
+procedures are not in the catalog, so the same
 test pins their SHA-256 values as read from the pinned revision.
 
 FR-142 dimensions, units and quantities (TC-187) read the checked-package-v2

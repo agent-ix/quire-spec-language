@@ -67,6 +67,25 @@ struct Document {
 #[derive(Clone, Debug)]
 pub struct Source(Arc<Document>);
 
+/// Why [`Source::read`] refused its input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SourceReadCause {
+    /// The identity, revision or path is empty.
+    UnnamedSource,
+    /// The bytes exceed the byte budget.
+    ByteBudget,
+    /// The bytes are not UTF-8.
+    InvalidUtf8,
+    /// The text contains NUL.
+    Nul,
+}
+
+/// A typed [`Source::read`] refusal and its legacy diagnostic.
+pub(crate) struct SourceReadRefusal {
+    pub(crate) cause: SourceReadCause,
+    pub(crate) diagnostic: Box<Diagnostic>,
+}
+
 /// Hard source-content ceiling; callers may select a lower value.
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 
@@ -78,6 +97,16 @@ impl Source {
         bytes: &[u8],
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
+        Self::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| refusal.diagnostic)
+    }
+
+    /// [`Self::read`] with the refusal's typed cause retained.
+    pub(crate) fn read_typed(
+        identity: SourceIdentity,
+        path: impl Into<String>,
+        bytes: &[u8],
+        byte_limit: usize,
+    ) -> Result<Self, SourceReadRefusal> {
         let path = path.into();
         let byte_limit = byte_limit.min(MAX_SOURCE_BYTES);
         let point = Position {
@@ -85,8 +114,9 @@ impl Source {
             line: 1,
             column: 1,
         };
-        let refusal = |code, message: &str| {
-            Box::new(Diagnostic {
+        let refusal = |cause, code, message: &str| SourceReadRefusal {
+            cause,
+            diagnostic: Box::new(Diagnostic {
                 phase: Phase::Source,
                 code,
                 source: identity.clone(),
@@ -99,19 +129,21 @@ impl Source {
                 related: Vec::new(),
                 upstream: None,
                 runtime: None,
-            })
+            }),
         };
         if identity.identity.trim().is_empty()
             || identity.revision.trim().is_empty()
             || path.is_empty()
         {
             return Err(refusal(
+                SourceReadCause::UnnamedSource,
                 Code::InvalidSourceIdentity,
                 "source identity, revision and path must be explicit",
             ));
         }
         if bytes.len() > byte_limit {
             return Err(refusal(
+                SourceReadCause::ByteBudget,
                 Code::ResourceExhausted,
                 "source byte budget exhausted",
             ));
@@ -119,29 +151,36 @@ impl Source {
         let text = match std::str::from_utf8(bytes) {
             Ok(text) => text,
             Err(error) => {
-                let mut diagnostic = refusal(Code::InvalidUtf8, "source must be valid UTF-8");
+                let mut refused = refusal(
+                    SourceReadCause::InvalidUtf8,
+                    Code::InvalidUtf8,
+                    "source must be valid UTF-8",
+                );
                 let prefix =
                     std::str::from_utf8(&bytes[..error.valid_up_to()]).expect("UTF-8 valid prefix");
                 let source = Source::new(identity.clone(), path.clone(), prefix);
-                diagnostic.span = source
+                refused.diagnostic.span = source
                     .locate(Span {
                         start: prefix.len(),
                         end: prefix.len(),
                     })
                     .expect("prefix EOF");
-                return Err(diagnostic);
+                return Err(refused);
             }
         };
         let source = Source::new(identity, path, text);
         if let Some(at) = text.find('\0') {
-            return Err(crate::diagnostic::error(
-                &source,
-                Code::InvalidSyntax,
-                Phase::Source,
-                at,
-                at + 1,
-                "NUL is forbidden in source bytes",
-            ));
+            return Err(SourceReadRefusal {
+                cause: SourceReadCause::Nul,
+                diagnostic: crate::diagnostic::error(
+                    &source,
+                    Code::InvalidSyntax,
+                    Phase::Source,
+                    at,
+                    at + 1,
+                    "NUL is forbidden in source bytes",
+                ),
+            });
         }
         Ok(source)
     }

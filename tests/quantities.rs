@@ -10,6 +10,8 @@
 use std::path::Path;
 
 use ix_trace_rs::trace;
+use num_bigint::{BigInt, BigUint};
+use num_traits::Pow;
 use quire_spec_language::value::{
     compare_quantity, convert_quantity, evaluate_quantity, ChargePoint, ComparisonOperator,
     CompoundUnitCause, CompoundUnitPreimage, ConvertedValue, Decimal, DecimalType, Dimension,
@@ -994,7 +996,7 @@ fn u09_u09b_identity_is_the_node_key_not_the_shape() {
 }
 
 const U10: ScalarLimits = ScalarLimits {
-    integer_bits: 7,
+    integer_bits: 8,
     decimal_digits: 0,
     scale_expansion: 0,
     text_input_bytes: 0,
@@ -1027,7 +1029,8 @@ fn u10_exact_bound_accounting_and_named_denials() {
     ];
     assert_eq!(meter.admitted_charges(), charges);
     let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
-    assert_eq!(consumed, [7, 0, 0, 0, 0, 0, 1, 1, 6, 1]);
+    // `max(bits(100) + bits(1), bits(1) + bits(100)) = 8` at the multiply event.
+    assert_eq!(consumed, [8, 0, 0, 0, 0, 0, 1, 1, 6, 1]);
 
     assert_eq!(
         run(&mut Meter::new(ScalarLimits {
@@ -1276,7 +1279,8 @@ fn u13_huge_power_is_incomplete_before_computing() {
         result_units: 1,
     };
     let exponent: Integer = "18446744073709551616".parse().unwrap();
-    let next: Integer = "18446744073709551617".parse().unwrap();
+    // `abs(n) × maxparts(2) = 2^64 × 2`.
+    let next: Integer = "36893488147419103232".parse().unwrap();
     assert_eq!(
         evaluated(
             QuantityOperation::Power(&f.quantity(whole(2), f.m), &exponent),
@@ -1346,7 +1350,7 @@ fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
 
 #[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
 #[test]
-fn rounded_target_sizes_match_the_materialized_coefficient() {
+fn rounded_target_sizes_bound_the_materialized_coefficient() {
     let f = fixture();
     let fractions = [
         (1, 3),
@@ -1365,7 +1369,19 @@ fn rounded_target_sizes_match_the_materialized_coefficient() {
     for (numerator, denominator) in fractions {
         let source = f.quantity(ratio(numerator, denominator), f.m);
         let input_bits = source.value().max_part_bits();
-        for scale in 0..64 {
+        let magnitude = BigInt::from(numerator).magnitude().clone();
+        let numerator_digits = u64::try_from(magnitude.to_string().len()).unwrap();
+        for scale in 0..64_u64 {
+            // `sbits(a,T)` and `sdigits(a,T)` of the reduced numerator `a`.
+            let bits = if scale == 0 {
+                magnitude.bits()
+            } else {
+                magnitude.bits()
+                    + BigUint::from(10_u8)
+                        .pow(u32::try_from(scale).unwrap())
+                        .bits()
+            };
+            let digits = numerator_digits + scale;
             for mode in RoundingMode::ALL.into_iter().skip(1) {
                 let target = wide_decimal(scale, mode);
                 let run = |meter: &mut Meter| converted(&source, &f.unit(f.m), &target, meter);
@@ -1374,8 +1390,9 @@ fn rounded_target_sizes_match_the_materialized_coefficient() {
                     panic!("{numerator}/{denominator} at {scale} {mode:?} did not complete");
                 };
                 let coefficient = result.value().representation().coefficient();
-                let (bits, digits) = (coefficient.magnitude_bits(), coefficient.decimal_digits());
                 let context = format!("{numerator}/{denominator} at {scale} {mode:?}");
+                assert!(coefficient.magnitude_bits() <= bits, "{context}");
+                assert!(coefficient.decimal_digits() <= digits, "{context}");
                 if bits > input_bits {
                     assert_eq!(
                         run(&mut Meter::new(ScalarLimits {
@@ -1606,7 +1623,7 @@ fn u15_every_edge_is_charged_before_the_first_rational_event() {
     let f = fixture();
     let inch = f.quantity(whole(1), f.inch);
     let run = |meter: &mut Meter| converted(&inch, &f.unit(f.cm), &QuantityTarget::Exact, meter);
-    let mut meter = limits(13, 0, 2, 1, 9, 1);
+    let mut meter = limits(15, 0, 2, 1, 9, 1);
     assert_eq!(
         run(&mut meter),
         Outcome::Completed(ConvertedValue::Exact(ratio(127, 50)))
@@ -1625,6 +1642,19 @@ fn u15_every_edge_is_charged_before_the_first_rational_event() {
             ChargePoint::UnitResultRetain,
         ]
     );
+    // Event amounts 14, 15, 15 and 14: the offset add to `127/5000` is
+    // `max(bits(127) + bits(1), bits(0) + bits(5000)) + 1 = 15`.
+    assert_eq!(meter.consumed(LimitKind::IntegerBits), 15);
+    assert_eq!(
+        run(&mut limits(14, 0, 2, 1, 9, 1)),
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::IntegerBits,
+            limit: 14,
+            consumed: 14,
+            next_charge: int(15),
+            charge_point: ChargePoint::UnitRationalArithmetic,
+        })
+    );
     assert_eq!(
         run(&mut limits(7, 0, 1, 1, 9, 1)),
         Outcome::Incomplete(Incomplete {
@@ -1642,7 +1672,7 @@ fn u15_every_edge_is_charged_before_the_first_rational_event() {
 fn u16_strict_rounding_refuses_before_the_target_domain() {
     let f = fixture();
     let inch = f.quantity(whole(1), f.inch);
-    let mut meter = limits(13, 1, 1, 1, 6, 1);
+    let mut meter = limits(15, 5, 1, 1, 6, 1);
     assert_eq!(
         converted(
             &inch,
@@ -1661,26 +1691,27 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
             &inch,
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
-            &mut limits(13, 1, 1, 1, 4, 1)
+            &mut limits(15, 5, 1, 1, 4, 1)
         ),
         Outcome::Refused(Refusal::InexactDecimal)
     );
     let nearest = decimal_type(-1000, 1000, 2, RoundingMode::NearestEven);
-    let Outcome::Completed(ConvertedValue::Decimal(result)) = converted(
-        &inch,
-        &f.unit(f.m),
-        &nearest,
-        &mut limits(13, 1, 1, 1, 6, 1),
-    ) else {
+    let mut meter = limits(15, 5, 1, 1, 6, 1);
+    let Outcome::Completed(ConvertedValue::Decimal(result)) =
+        converted(&inch, &f.unit(f.m), &nearest, &mut meter)
+    else {
         panic!("nearest-even did not complete");
     };
     assert_eq!(value_of(result.value()), 3);
+    // `unit.target-domain`: `sbits(127,2) = 14`, `sdigits(127,2) = 5`.
+    assert_eq!(meter.consumed(LimitKind::DecimalDigits), 5);
+
     assert_eq!(
         converted(
             &inch,
             &f.unit(f.m),
             &nearest,
-            &mut limits(13, 1, 1, 1, 4, 1)
+            &mut limits(15, 5, 1, 1, 4, 1)
         ),
         Outcome::Incomplete(work_denied(4, ChargePoint::UnitTargetDomain))
     );
@@ -1737,7 +1768,7 @@ fn u19_rational_target_charges_one_work_unit_and_no_size() {
     let f = fixture();
     let (two, three) = (f.quantity(whole(2), f.m), f.quantity(whole(3), f.m));
     let operation = QuantityOperation::Add(&two, &three);
-    let mut meter = limits(3, 0, 0, 2, 5, 1);
+    let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
         evaluated(operation, &mut meter),
         Outcome::Completed(f.quantity(whole(5), f.m))
@@ -1753,7 +1784,7 @@ fn u19_rational_target_charges_one_work_unit_and_no_size() {
         ]
     );
     assert_eq!(
-        evaluated(operation, &mut limits(3, 0, 0, 2, 4, 1)),
+        evaluated(operation, &mut limits(4, 0, 0, 2, 4, 1)),
         Outcome::Incomplete(work_denied(4, ChargePoint::UnitResultRetain))
     );
 }
@@ -1776,7 +1807,7 @@ fn u20_affinity_is_the_composed_offset() {
         typed(IllTypedCause::AffineUnitArithmetic)
     );
     assert!(meter.admitted_charges().is_empty());
-    let mut meter = limits(2, 0, 0, 2, 5, 1);
+    let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
         evaluated(QuantityOperation::Add(&q(1, x.u2), &q(2, x.u2)), &mut meter),
         Outcome::Completed(q(3, x.u2))
@@ -1865,7 +1896,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     );
     let to_cm2 =
         |meter: &mut Meter| converted(&square, &x.unit(x.cm2), &QuantityTarget::Exact, meter);
-    let mut meter = limits(16, 0, 1, 1, 6, 1);
+    let mut meter = limits(17, 0, 1, 1, 6, 1);
     assert_eq!(
         to_cm2(&mut meter),
         Outcome::Completed(ConvertedValue::Exact(whole(40_000)))
@@ -1882,12 +1913,14 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         ]
     );
     assert_eq!(
-        to_cm2(&mut limits(15, 0, 1, 1, 6, 1)),
+        // The divide event's `bits(4) + bits(10000) = 17` after the subtract
+        // event's 5.
+        to_cm2(&mut limits(16, 0, 1, 1, 6, 1)),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::IntegerBits,
-            limit: 15,
-            consumed: 3,
-            next_charge: int(16),
+            limit: 16,
+            consumed: 5,
+            next_charge: int(17),
             charge_point: ChargePoint::UnitRationalArithmetic,
         })
     );
@@ -1922,7 +1955,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
     let x = extended();
     let q = |value, key| x.quantity(whole(value), key);
     let (one, two) = (q(1, x.base.deg_c), q(2, x.base.deg_c));
-    let mut meter = limits(13, 0, 2, 2, 9, 1);
+    let mut meter = limits(15, 0, 2, 2, 9, 1);
     assert_eq!(
         compare_quantity(ComparisonOperator::Less, &one, &two, &mut meter),
         Ok(Outcome::Completed(true))
@@ -1946,7 +1979,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
             ComparisonOperator::Less,
             &one,
             &two,
-            &mut limits(13, 0, 2, 2, 8, 1)
+            &mut limits(15, 0, 2, 2, 8, 1)
         ),
         Ok(Outcome::Incomplete(work_denied(
             8,
@@ -1992,7 +2025,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
 #[test]
 fn u24_identical_unit_addition_traverses_no_edge() {
     let f = fixture();
-    let mut meter = limits(2, 0, 0, 2, 5, 1);
+    let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
         evaluated(
             QuantityOperation::Add(&f.quantity(whole(1), f.cm), &f.quantity(whole(2), f.cm)),
@@ -2053,7 +2086,7 @@ fn u26_conversion_has_no_common_ancestor_shortcut() {
     let x = extended();
     let one = x.quantity(whole(1), x.u2);
     let run = |meter: &mut Meter| converted(&one, &x.unit(x.u1), &QuantityTarget::Exact, meter);
-    let mut meter = limits(4, 0, 3, 1, 12, 1);
+    let mut meter = limits(6, 0, 3, 1, 12, 1);
     assert_eq!(
         run(&mut meter),
         Outcome::Completed(ConvertedValue::Exact(whole(-9)))
@@ -2064,7 +2097,7 @@ fn u26_conversion_has_no_common_ancestor_shortcut() {
     expected.extend([ChargePoint::UnitTargetDomain, ChargePoint::UnitResultRetain]);
     assert_eq!(meter.admitted_charges(), expected);
     assert_eq!(
-        run(&mut limits(4, 0, 2, 1, 12, 1)),
+        run(&mut limits(6, 0, 2, 1, 12, 1)),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::UnitEdges,
             limit: 2,
@@ -2102,7 +2135,7 @@ fn u28_multiplication_charges_left_then_right_then_the_product() {
     let f = fixture();
     let (cm, inch) = (f.quantity(whole(1), f.cm), f.quantity(whole(1), f.inch));
     let operation = QuantityOperation::Multiply(&cm, &inch);
-    let mut meter = limits(19, 0, 2, 2, 11, 1);
+    let mut meter = limits(20, 0, 2, 2, 11, 1);
     let product = exact(evaluated(operation, &mut meter));
     assert_eq!(product.value(), &ratio(127, 500_000));
     assert_eq!(product.unit(), &compound_unit(&f, &[(f.m, "2")]));
@@ -2121,12 +2154,12 @@ fn u28_multiplication_charges_left_then_right_then_the_product() {
         })
     };
     assert_eq!(
-        evaluated(operation, &mut limits(12, 0, 2, 2, 11, 1)),
-        bits_denied(12, 7)
+        evaluated(operation, &mut limits(13, 0, 2, 2, 11, 1)),
+        bits_denied(13, 9)
     );
     assert_eq!(
-        evaluated(operation, &mut limits(18, 0, 2, 2, 11, 1)),
-        bits_denied(18, 13)
+        evaluated(operation, &mut limits(19, 0, 2, 2, 11, 1)),
+        bits_denied(19, 15)
     );
 }
 
@@ -2143,7 +2176,7 @@ fn u29_integer_target_charges_integer_bits_only() {
             meter,
         )
     };
-    let mut meter = limits(13, 0, 1, 1, 4, 1);
+    let mut meter = limits(15, 0, 1, 1, 4, 1);
     assert_eq!(
         run(&inch, RoundingMode::Exact, &mut meter),
         Outcome::Refused(Refusal::InexactDecimal)
@@ -2161,14 +2194,14 @@ fn u29_integer_target_charges_integer_bits_only() {
         run(
             &inch,
             RoundingMode::NearestEven,
-            &mut limits(13, 0, 1, 1, 4, 1)
+            &mut limits(15, 0, 1, 1, 4, 1)
         ),
         Outcome::Incomplete(work_denied(4, ChargePoint::UnitTargetDomain))
     );
     let Outcome::Completed(ConvertedValue::Integer { value, .. }) = run(
         &inch,
         RoundingMode::NearestEven,
-        &mut limits(13, 0, 1, 1, 6, 1),
+        &mut limits(15, 0, 1, 1, 6, 1),
     ) else {
         panic!("nearest-even did not complete");
     };

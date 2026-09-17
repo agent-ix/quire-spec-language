@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-185 exact decimal semantics over the real `value` boundary.
 //!
-//! Vectors D01–D19 are transcribed from the vendored TC-185 procedure pinned by
+//! Vectors D01–D23 are transcribed from the vendored TC-185 procedure pinned by
 //! `tests/complete_value_lock.rs`. The generated oracle uses independent `i128`
 //! rational arithmetic; no floating-point value appears in either side.
 
@@ -9,9 +9,9 @@ use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::Pow;
 use quire_spec_language::value::{
-    evaluate_decimal, ChargePoint, Decimal, DecimalOperation, DecimalResult, DecimalType, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
-    RoundingMode, ScalarLimits, Undefined,
+    evaluate_decimal, order_numbers, ChargePoint, Decimal, DecimalOperation, DecimalResult,
+    DecimalType, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter,
+    OrderedOperands, OrderingOperator, Outcome, Refusal, RoundingMode, ScalarLimits, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -212,7 +212,7 @@ fn d06_d08_zero_divisors_are_undefined_and_domains_refuse() {
 }
 
 const D09: ScalarLimits = ScalarLimits {
-    integer_bits: 7,
+    integer_bits: 8,
     decimal_digits: 3,
     scale_expansion: 2,
     text_input_bytes: 0,
@@ -249,7 +249,7 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
         ]
     );
     let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
-    assert_eq!(consumed, [7, 3, 2, 0, 0, 0, 0, 2, 5, 1]);
+    assert_eq!(consumed, [8, 3, 2, 0, 0, 0, 0, 2, 5, 1]);
 
     let one_less = ScalarLimits {
         work_units: 4,
@@ -277,17 +277,18 @@ fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
             ..
         })
     ));
+    // `sbits(1,2) = bits(1) + bits(100) = 8` on the expanded dividend.
     let narrow_bits = ScalarLimits {
-        integer_bits: 6,
+        integer_bits: 7,
         ..D09
     };
     assert_eq!(
         d05(&mut Meter::new(narrow_bits)),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::IntegerBits,
-            limit: 6,
+            limit: 7,
             consumed: 2,
-            next_charge: Integer::from(7_i64),
+            next_charge: Integer::from(8_i64),
             charge_point: ChargePoint::DecimalScaleExpansion,
         })
     );
@@ -403,8 +404,8 @@ fn d12_a_rounded_coefficient_outside_the_domain_is_never_re_rounded() {
 }
 
 const D13: ScalarLimits = ScalarLimits {
-    integer_bits: 9,
-    decimal_digits: 3,
+    integer_bits: 10,
+    decimal_digits: 4,
     scale_expansion: 0,
     text_input_bytes: 0,
     text_scalars: 0,
@@ -453,15 +454,16 @@ fn d13_discarded_zero_digits_are_not_a_rounding_step() {
             work_denied(3, ChargePoint::DecimalResultRetain)
         );
         assert_eq!(
+            // `bits(150) + bits(2) = 10` on the retained `(150,2)`.
             run(ScalarLimits {
-                integer_bits: 8,
+                integer_bits: 9,
                 ..D13
             }),
             Outcome::Incomplete(Incomplete {
                 limit_kind: LimitKind::IntegerBits,
-                limit: 8,
+                limit: 9,
                 consumed: 8,
-                next_charge: Integer::from(9_i64),
+                next_charge: Integer::from(10_i64),
                 charge_point: ChargePoint::DecimalArithmetic,
             })
         );
@@ -642,6 +644,218 @@ fn d19_membership_at_the_largest_scale_never_materializes_the_lift() {
     assert!(!decimal_type.contains(&dec(1, 0)));
 }
 
+/// `ScalarLimitsV1` of D20/D21 with the text and unit counters at zero.
+fn ordering_limits(integer_bits: u64, decimal_digits: u64, scale_expansion: u64) -> ScalarLimits {
+    ScalarLimits {
+        integer_bits,
+        decimal_digits,
+        scale_expansion,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 2,
+        work_units: 3,
+        result_units: 1,
+    }
+}
+
+/// Order `left < right` and report the outcome, admitted points and the
+/// consumed `[integer_bits, decimal_digits, scale_expansion,
+/// value_occurrences, work_units, result_units]`.
+fn order_less(
+    left: &Decimal,
+    right: &Decimal,
+    limits: ScalarLimits,
+) -> (Outcome<bool>, Vec<ChargePoint>, [u64; 6]) {
+    let mut meter = Meter::new(limits);
+    let outcome = order_numbers(
+        OrderingOperator::Less,
+        OrderedOperands::Decimals(left, right),
+        &mut meter,
+    );
+    let consumed = [
+        LimitKind::IntegerBits,
+        LimitKind::DecimalDigits,
+        LimitKind::ScaleExpansion,
+        LimitKind::ValueOccurrences,
+        LimitKind::WorkUnits,
+        LimitKind::ResultUnits,
+    ]
+    .map(|kind| meter.consumed(kind));
+    (outcome, meter.admitted_charges().to_vec(), consumed)
+}
+
+const ORDERING: [ChargePoint; 3] = [
+    ChargePoint::OrderingOperands,
+    ChargePoint::OrderingArithmetic,
+    ChargePoint::OrderingResultRetain,
+];
+
+fn bits_denied(limit: u64, consumed: u64, next: u64) -> Outcome<bool> {
+    Outcome::Incomplete(Incomplete {
+        limit_kind: LimitKind::IntegerBits,
+        limit,
+        consumed,
+        next_charge: Integer::from(next),
+        charge_point: ChargePoint::OrderingArithmetic,
+    })
+}
+
+#[trace("TC-185", "FR-140-AC-1", "FR-140-AC-6")]
+#[test]
+fn d20_decimal_ordering_charges_the_aligned_coefficients() {
+    let (left, right) = (dec(15, 1), dec(2, 0));
+    assert_eq!(
+        order_less(&left, &right, ordering_limits(6, 2, 1)),
+        (
+            Outcome::Completed(true),
+            ORDERING.to_vec(),
+            [6, 2, 1, 2, 3, 1]
+        )
+    );
+    let (outcome, admitted, consumed) = order_less(&left, &right, ordering_limits(5, 2, 1));
+    assert_eq!(outcome, bits_denied(5, 4, 6));
+    assert_eq!(admitted, [ChargePoint::OrderingOperands]);
+    assert_eq!(consumed, [4, 2, 0, 2, 1, 0]);
+}
+
+#[trace("TC-185", "FR-140-AC-1", "FR-140-AC-6")]
+#[test]
+fn d21_decimal_ordering_measures_the_retained_representation() {
+    let (left, right) = (dec(100, 2), dec(2, 0));
+    assert_eq!(
+        order_less(&left, &right, ordering_limits(9, 3, 2)),
+        (
+            Outcome::Completed(true),
+            ORDERING.to_vec(),
+            [9, 3, 2, 2, 3, 1]
+        )
+    );
+    let (outcome, admitted, consumed) = order_less(&left, &right, ordering_limits(8, 3, 2));
+    assert_eq!(outcome, bits_denied(8, 7, 9));
+    assert_eq!(admitted, [ChargePoint::OrderingOperands]);
+    assert_eq!(consumed, [7, 3, 0, 2, 1, 0]);
+}
+
+const VALUE_ACCOUNTING: &str = include_str!(
+    "../resources/complete-value/quire-specification/proposals/quire-v1/definitions/value-accounting.md"
+);
+
+/// Charge-point families of the FR-150–FR-153 model domain, deferred to #120.
+const DEFERRED_FAMILIES: [&str; 9] = [
+    "model",
+    "graph",
+    "lookup",
+    "population",
+    "dispatch",
+    "normalize",
+    "systems",
+    "conformance",
+    "binding",
+];
+
+/// Every deferred charge point the vendored document names, in ascending order.
+const DEFERRED_POINTS: [&str; 27] = [
+    "binding.member",
+    "binding.subset-value",
+    "conformance.axis",
+    "dispatch.candidate",
+    "dispatch.dominance",
+    "dispatch.select",
+    "dispatch.subtype",
+    "graph.edge",
+    "graph.expand",
+    "graph.result-retain",
+    "lookup.key",
+    "lookup.result-retain",
+    "model.deref",
+    "model.navigate",
+    "normalize.conflict-check",
+    "normalize.cycle-check",
+    "normalize.declaration",
+    "normalize.fact",
+    "normalize.hash",
+    "normalize.record",
+    "normalize.redefinition-check",
+    "normalize.unsupplied-item",
+    "population.visit",
+    "systems.allocation",
+    "systems.connection-condition",
+    "systems.kind",
+    "systems.resolve",
+];
+
+/// The backticked `family.point` codes of `text`, in order of appearance.
+fn charge_point_codes(text: &str) -> Vec<String> {
+    text.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|code| {
+            code.split_once('.').is_some_and(|(family, point)| {
+                family.len() > 1
+                    && !point.contains('.')
+                    && code
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c == '.' || c == '-')
+            })
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+fn is_deferred(code: &str) -> bool {
+    code.split_once('.')
+        .is_some_and(|(family, _)| DEFERRED_FAMILIES.contains(&family))
+}
+
+/// The charge points of the vendored operation-family table, in table order.
+fn vendored_charge_points() -> Vec<String> {
+    let table = VALUE_ACCOUNTING
+        .split("| Operation family | Ordered charge points |")
+        .nth(1)
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    table
+        .lines()
+        .skip(2)
+        .flat_map(|row| charge_point_codes(row.rsplit('|').nth(1).unwrap()))
+        .collect()
+}
+
+#[trace("TC-185", "FR-140-AC-6")]
+#[test]
+fn every_vendored_charge_point_is_named_in_table_order() {
+    let named: Vec<String> = ChargePoint::ALL
+        .iter()
+        .map(|point| point.as_str().to_owned())
+        .collect();
+    let mut value_points = Vec::new();
+    for code in vendored_charge_points() {
+        if !is_deferred(&code) && !value_points.contains(&code) {
+            value_points.push(code);
+        }
+    }
+    assert_eq!(named, value_points);
+    for point in ChargePoint::ALL {
+        assert_eq!(ChargePoint::from_code(point.as_str()), Some(point));
+    }
+
+    let mut deferred: Vec<String> = charge_point_codes(VALUE_ACCOUNTING)
+        .into_iter()
+        .filter(|code| !named.contains(code))
+        .collect();
+    deferred.sort();
+    deferred.dedup();
+    assert_eq!(deferred, DEFERRED_POINTS);
+    assert!(DEFERRED_POINTS.iter().all(|code| is_deferred(code)));
+    assert!(DEFERRED_POINTS
+        .iter()
+        .all(|code| ChargePoint::from_code(code).is_none()));
+}
+
 #[trace("TC-185", "FR-140-AC-1")]
 #[test]
 fn comparison_decides_extreme_scales_by_sign_and_aligned_magnitude() {
@@ -673,8 +887,8 @@ fn comparison_decides_extreme_scales_by_sign_and_aligned_magnitude() {
 }
 
 const TIGHT: ScalarLimits = ScalarLimits {
-    integer_bits: 3,
-    decimal_digits: 1,
+    integer_bits: 4,
+    decimal_digits: 2,
     scale_expansion: 0,
     text_input_bytes: 0,
     text_scalars: 0,
@@ -736,7 +950,9 @@ fn working_scales_above_the_target_never_materialize_the_excess_power() {
             charge_point: ChargePoint::DecimalResultRetain,
         })
     );
-    assert_eq!(meter.consumed(LimitKind::IntegerBits), 3);
+    // `bits(3) + bits(2) = 4`: the operands bound the amount, not the
+    // working scale.
+    assert_eq!(meter.consumed(LimitKind::IntegerBits), 4);
 
     // The loss record keeps the working-scale power factored; only the
     // explicit denominator accessor would materialize it.
@@ -748,6 +964,112 @@ fn working_scales_above_the_target_never_materialize_the_excess_power() {
     assert_eq!(int(loss.exact_numerator()), -3);
     assert_eq!(int(loss.rounded_coefficient()), 0);
     assert_eq!(loss.mode(), RoundingMode::NearestEven);
+}
+
+/// `ScalarLimitsV1` of D22/D23 with the text and unit counters at zero.
+fn retain_limits(integer_bits: u64, decimal_digits: u64, scale_expansion: u64) -> ScalarLimits {
+    ScalarLimits {
+        integer_bits,
+        decimal_digits,
+        scale_expansion,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 2,
+        work_units: 4,
+        result_units: 1,
+    }
+}
+
+/// `(1,0) × (1,0)` into `Decimal[0,1;0,scale;exact]`, reporting the outcome,
+/// admitted points and every consumed counter.
+fn unit_product(
+    scale: u64,
+    limits: ScalarLimits,
+) -> (Outcome<DecimalResult>, Vec<ChargePoint>, Vec<u64>) {
+    let one = dec(1, 0);
+    let mut meter = Meter::new(limits);
+    let outcome = evaluate_decimal(
+        DecimalOperation::Multiply(&one, &one),
+        &target(0, 1, scale, RoundingMode::Exact),
+        &mut meter,
+    );
+    let consumed = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
+    (outcome, meter.admitted_charges().to_vec(), consumed)
+}
+
+#[trace("TC-185", "FR-140-AC-6")]
+#[test]
+fn d22_result_retention_charges_the_target_scale_upscale_analytically() {
+    let (outcome, admitted, consumed) = unit_product(1000, retain_limits(3323, 1001, 1000));
+    let result = completed(outcome);
+    let representation = result.value().representation();
+    assert_eq!(representation.scale(), 1000);
+    assert_eq!(
+        big(&BigInt::from(10).pow(1000_u32)),
+        *representation.coefficient()
+    );
+    assert!(result.loss().is_none());
+    assert_eq!(
+        admitted,
+        [
+            ChargePoint::DecimalOperands,
+            ChargePoint::DecimalScaleExpansion,
+            ChargePoint::DecimalArithmetic,
+            ChargePoint::DecimalResultRetain,
+        ]
+    );
+    assert_eq!(consumed, [3323, 1001, 1000, 0, 0, 0, 0, 2, 4, 1]);
+
+    let denied = |limit_kind, limit, consumed, next: u64| {
+        Outcome::Incomplete(Incomplete {
+            limit_kind,
+            limit,
+            consumed,
+            next_charge: Integer::from(next),
+            charge_point: ChargePoint::DecimalResultRetain,
+        })
+    };
+    assert_eq!(
+        unit_product(1000, retain_limits(3322, 1001, 1000)).0,
+        denied(LimitKind::IntegerBits, 3322, 2, 3323)
+    );
+    assert_eq!(
+        unit_product(1000, retain_limits(3323, 1001, 999)).0,
+        denied(LimitKind::ScaleExpansion, 999, 0, 1000)
+    );
+}
+
+#[trace("TC-185", "FR-140-AC-6")]
+#[test]
+fn d23_the_largest_target_scale_is_sized_without_materializing_its_power() {
+    let (outcome, admitted, consumed) = unit_product(
+        4_294_967_295,
+        ScalarLimits {
+            integer_bits: u64::MAX,
+            ..retain_limits(u64::MAX, 64, 4_294_967_295)
+        },
+    );
+    assert_eq!(
+        outcome,
+        Outcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::DecimalDigits,
+            limit: 64,
+            consumed: 2,
+            next_charge: Integer::from(4_294_967_296_u64),
+            charge_point: ChargePoint::DecimalResultRetain,
+        })
+    );
+    assert_eq!(
+        admitted,
+        [
+            ChargePoint::DecimalOperands,
+            ChargePoint::DecimalScaleExpansion,
+            ChargePoint::DecimalArithmetic,
+        ]
+    );
+    assert_eq!(consumed[LimitKind::ALL.len() - 2], 3);
 }
 
 fn big(value: &BigInt) -> Integer {
