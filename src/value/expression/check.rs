@@ -768,7 +768,8 @@ impl<'a> Typer<'a> {
                     BinaryOperator::Add => ArithmeticOperator::Add,
                     BinaryOperator::Subtract => ArithmeticOperator::Subtract,
                     BinaryOperator::Multiply => ArithmeticOperator::Multiply,
-                    _ => ArithmeticOperator::Divide,
+                    BinaryOperator::Divide => ArithmeticOperator::Divide,
+                    _ => return Err(ineligible(location)),
                 };
                 self.arithmetic(operator, left, right, hint, location)
             }
@@ -788,7 +789,8 @@ impl<'a> Typer<'a> {
                     BinaryOperator::Less => OrderingOperator::Less,
                     BinaryOperator::LessOrEqual => OrderingOperator::LessOrEqual,
                     BinaryOperator::Greater => OrderingOperator::Greater,
-                    _ => OrderingOperator::GreaterOrEqual,
+                    BinaryOperator::GreaterOrEqual => OrderingOperator::GreaterOrEqual,
+                    _ => return Err(ineligible(location)),
                 };
                 self.ordering(ordering, left, right, location)
             }
@@ -796,7 +798,8 @@ impl<'a> Typer<'a> {
                 let connective = match operator {
                     BinaryOperator::And => Connective::And,
                     BinaryOperator::Or => Connective::Or,
-                    _ => Connective::Implies,
+                    BinaryOperator::Implies => Connective::Implies,
+                    _ => return Err(ineligible(location)),
                 };
                 let left = self.check_as(left, &ValueType::Boolean, &left_location)?;
                 let right = self.check_as(right, &ValueType::Boolean, &right_location)?;
@@ -991,10 +994,13 @@ impl<'a> Typer<'a> {
                 }
             },
             (l, r, _) if is_integer(l) && is_integer(r) => {
+                // `Divide` is taken by the preceding arm; naming it here keeps
+                // a later change from silently lowering `/` as `*`.
                 let integer = match operator {
                     ArithmeticOperator::Add => Arithmetic::Add,
                     ArithmeticOperator::Subtract => Arithmetic::Subtract,
-                    _ => Arithmetic::Multiply,
+                    ArithmeticOperator::Multiply => Arithmetic::Multiply,
+                    ArithmeticOperator::Divide => return Err(ineligible(location)),
                 };
                 (
                     NodeKind::Arithmetic(integer, left_box, right_box),

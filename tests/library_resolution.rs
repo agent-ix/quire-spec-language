@@ -548,11 +548,38 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     wrong_domain["identity_projection"][0]["node_id"]["domain"] = json!("quire.other/v1");
     let empty = preimage_value(Vec::new());
     let descending = preimage_value(vec![high, low]);
-    let repeated = preimage_value(vec![node_r.clone(), node_r]);
+    let repeated = preimage_value(vec![node_r.clone(), node_r.clone()]);
     let mut spaced = jcs(&valid).into_vec();
     spaced.insert(1, b' ');
 
-    let cases: [MalformedCase; 8] = [
+    let mut unknown_member = valid.clone();
+    unknown_member["surplus"] = json!(0);
+    let mut wrong_edition_type = valid.clone();
+    wrong_edition_type["edition"] = json!([]);
+    let mut wrong_selection_type = valid.clone();
+    wrong_selection_type["model_selections"] = json!({});
+    let mut unknown_node_member = valid.clone();
+    unknown_node_member["identity_projection"][0]["surplus"] = json!(0);
+    let mut wrong_schema_version = valid.clone();
+    wrong_schema_version["identity_projection"][0]["schema_version"] =
+        json!("quire.checked-semantic-graph/v1");
+    let mut wrong_declaration = valid.clone();
+    wrong_declaration["identity_projection"][0]["nominal_identity_preimage"]
+        ["qualified_declaration"] = json!([]);
+    let not_an_object = jcs(&json!([]));
+    let not_json: Box<[u8]> = Box::from(&b"{"[..]);
+    // Two distinct node ids declaring one name `R`, in ascending id order.
+    let mut second_r = projection_node("L@1::S", Some("R"));
+    second_r["nominal_identity_preimage"]["qualified_declaration"] = json!(["R"]);
+    let (first_declaration, second_declaration) = if hex("L@1::R") < hex("L@1::S") {
+        (node_r.clone(), second_r)
+    } else {
+        (second_r, node_r.clone())
+    };
+    let duplicate_declaration = preimage_value(vec![first_declaration, second_declaration]);
+    let scalar_node = preimage_value(vec![json!(0)]);
+
+    let cases: [MalformedCase; 18] = [
         (jcs(&wrong_version), &["R"], PreimageDefect::Version),
         (
             jcs(&missing_member),
@@ -586,6 +613,60 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
             spaced.into_boxed_slice(),
             &["R"],
             PreimageDefect::NonCanonical,
+        ),
+        (not_an_object, &[], PreimageDefect::NotObject),
+        (not_json, &[], PreimageDefect::NotObject),
+        (
+            jcs(&unknown_member),
+            &["R"],
+            PreimageDefect::UnknownMember("surplus".to_owned()),
+        ),
+        (
+            jcs(&wrong_edition_type),
+            &["R"],
+            PreimageDefect::MemberType("edition"),
+        ),
+        (
+            jcs(&wrong_selection_type),
+            &["R"],
+            PreimageDefect::MemberType("model_selections"),
+        ),
+        (
+            jcs(&unknown_node_member),
+            &["R"],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::UnknownMember("surplus".to_owned()),
+            },
+        ),
+        (
+            jcs(&scalar_node),
+            &[],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::NotObject,
+            },
+        ),
+        (
+            jcs(&wrong_schema_version),
+            &["R"],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::SchemaVersion,
+            },
+        ),
+        (
+            jcs(&wrong_declaration),
+            &[],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::Declaration,
+            },
+        ),
+        (
+            jcs(&duplicate_declaration),
+            &[],
+            PreimageDefect::DuplicateDeclaration { index: 1 },
         ),
     ];
     let importer = over_l("P", "1", id("L@1"));

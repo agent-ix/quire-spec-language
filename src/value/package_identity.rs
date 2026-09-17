@@ -42,7 +42,9 @@ const NODE_OPTIONAL: [&str; 2] = ["recursion_group", "nominal_identity_preimage"
 pub enum PreimageDefect {
     /// The bytes are not one JSON object.
     NotObject,
-    /// The bytes are not the RFC 8785 JCS serialization of their JSON value.
+    /// The bytes are not the canonical serialization of their JSON value, so
+    /// one logical preimage could carry two `package_id`s. See
+    /// [`project_declarations`] for the exact form enforced.
     NonCanonical,
     /// A required member is absent.
     MissingMember(&'static str),
@@ -230,6 +232,18 @@ fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect
 
 /// Validate `bytes` as an identity preimage and derive the node key of each
 /// nominal declaration in its `identity_projection`.
+///
+/// Canonicity is enforced by requiring `bytes` to be byte-identical to the
+/// re-serialization of the JSON value they parse to: object members in
+/// ascending UTF-8 byte order, no insignificant whitespace and one string and
+/// number spelling per value. That is RFC 8785 JCS for every preimage whose
+/// member names are ASCII, which is every name this schema defines and every
+/// name QSpec 7d7943a gives a projection node. It is stricter than JCS, never
+/// weaker: a preimage that JCS would order differently (member names outside
+/// ASCII, whose UTF-16 code-unit order differs from their UTF-8 byte order) is
+/// refused as [`PreimageDefect::NonCanonical`] rather than admitted under a
+/// second `package_id`. Admitting those names needs a real JCS encoder, which
+/// is the Complete-V1 writer's contract, not this reader's.
 pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
     let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {

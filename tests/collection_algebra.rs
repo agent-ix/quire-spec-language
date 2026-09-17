@@ -183,6 +183,7 @@ fn c02_duplicates_are_kept_by_sequence_and_bag_and_coalesced_by_sets() {
 }
 
 #[trace("TC-189", "FR-144-AC-3")]
+#[trace("TC-189", "FR-144-AC-5")]
 #[test]
 fn c03_bound_violations_refuse_after_the_bound_charge() {
     let set = integers(CollectionKind::Set, 2);
@@ -217,6 +218,38 @@ fn c03_bound_violations_refuse_after_the_bound_charge() {
     assert_eq!(BoundViolation::BelowMinimum.as_str(), "below-minimum");
     assert_eq!(BoundViolation::AboveMaximum.as_str(), "above-maximum");
     assert!(CardinalityBound::new(3, 1).is_err());
+}
+
+/// The same three occurrences `[1, 1, 2]` count as three for a sequence and a
+/// bag and as two for a set and an ordered set, so one `[3, 3]` bound admits
+/// only the occurrence-counting kinds and one `[2, 2]` bound only the
+/// member-counting kinds.
+#[trace("TC-189", "FR-144-AC-5")]
+#[test]
+fn c03b_bound_counting_is_occurrences_or_unique_members_per_kind() {
+    let occurrences = values(&[1, 1, 2]);
+    for kind in CollectionKind::ALL {
+        let counted = if kind.is_unique() { 2 } else { 3 };
+        let admitting = collection_type(kind, ValueType::Integer, counted, counted);
+        assert_eq!(
+            elements(&completed(&admitting, occurrences.clone())).len(),
+            usize::try_from(counted).unwrap()
+        );
+
+        // The other kind's count is out of this kind's bound, in the direction
+        // unique-member coalescing moves it.
+        let other = if kind.is_unique() { 3 } else { 2 };
+        let refusing = collection_type(kind, ValueType::Integer, other, other);
+        let violation = if kind.is_unique() {
+            BoundViolation::BelowMinimum
+        } else {
+            BoundViolation::AboveMaximum
+        };
+        assert_outcome(
+            &construct(&refusing, occurrences.clone(), &mut Meter::new(UNLIMITED)),
+            &Outcome::Refused(out_of_bound(violation, &refusing, counted)),
+        );
+    }
 }
 
 #[trace("TC-189", "FR-144-AC-4")]
@@ -339,6 +372,7 @@ fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
 }
 
 #[trace("TC-189", "FR-144-AC-7")]
+#[trace("TC-189", "FR-144-AC-8")]
 #[test]
 fn c07_set_construction_charges_membership_comparisons_in_retention_order() {
     let set = integers(CollectionKind::Set, 3);
@@ -371,6 +405,7 @@ fn c07_set_construction_charges_membership_comparisons_in_retention_order() {
 }
 
 #[trace("TC-189", "FR-144-AC-7")]
+#[trace("TC-189", "FR-144-AC-8")]
 #[test]
 fn c08_denied_construction_charges_expose_no_collection() {
     let set = integers(CollectionKind::Set, 3);
@@ -423,6 +458,7 @@ fn c08_denied_construction_charges_expose_no_collection() {
 }
 
 #[trace("TC-189", "FR-144-AC-7")]
+#[trace("TC-189", "FR-144-AC-8")]
 #[test]
 fn c09_sequence_and_rejected_set_charge_exact_work() {
     let sequence = integers(CollectionKind::Sequence, 3);
