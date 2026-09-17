@@ -11,13 +11,15 @@ relationships:
 
 Verify FR-154 admission, reader refusal, artifact-id identity, relationship
 exports and all-or-nothing declaration refusal through the intake seam. Scope:
-FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-CON-4.
+FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 (digest-slot
+refusal), FR-056-CON-4.
 
 ## Test Procedure
 
-1. Lift a small bundle through `agent-ix-extraction-frontend`: one identified
-   object with a reference member, one value record, one enumeration, one
-   operation interface, one population and one relation with a declared name.
+1. Lift a small bundle through `agent-ix-extraction-frontend`: one object type
+   (`quire.meaning.model.object-type/v1`) with a field member, a field member
+   typed by an object type, an operation member and a relationship member with a
+   declared name; one value type; one variant type; and one population.
    Pass the lifted bytes and a ModelSelection naming their identity, version and
    independently computed `sha256-jcs` digest to the intake seam.
 2. Offer, one at a time: a selection whose digest domain is not `sha256-jcs`; a
@@ -27,9 +29,9 @@ FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-CON-4.
 3. Offer bytes `agent-ix-semantic-ir` refuses.
 4. Change only one artifact's `title` or `displayName` and re-run. Then give two
    artifacts equal titles.
-5. Remove the relation's declared name, then separately its source span. Then
-   point the reference member at an artifact id absent from the package, and
-   separately point the relation's target end at such an id.
+5. Remove the relationship member's declared name, then separately its source
+   span. Then point the object-typed field member at an artifact id absent from
+   the package, and separately point the relationship's target end at such an id.
 6. Combine one refused node with the valid nodes of step 1.
 7. Offer the admitted package's `sha256-jcs` digest in a raw-byte artifact digest
    slot and in a compiled-artifact digest slot of a native package selection.
@@ -38,9 +40,10 @@ FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-CON-4.
 
 - Step 1 yields exactly one declaration per IR node ascending by (package
   identity, IR node identity); each type's IR node identity equals its artifact
-  id; exports are one `object` with its `field` and `reference` records, one
-  `record`, one `enum` with its `variant` records, one `operation`, one
-  `population`, and one `relationship` carrying the declared name and span.
+  id; exports are one `object`; from its members, `field` records, one `reference`,
+  one `operation` and one `relationship` carrying the declared name and span;
+  one `scalar` naming the value type and its native value type; one `enum` with
+  its `variant` records; and one `population`.
 - Step 2 refuses with `stale_dependency`/`digest-domain-mismatch`,
   `missing_import`/`missing-selection`, `stale_dependency`/`byte-digest-mismatch`
   and `invalid_model_binding`/`wrong-model-selection` respectively, with no
@@ -50,7 +53,7 @@ FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-CON-4.
   node, artifact id and span.
 - Step 4 leaves every key, export, ordering and linker binding byte-identical;
   equal titles stay two distinct declarations.
-- Step 5 refuses the unnamed and unspanned relations with
+- Step 5 refuses the unnamed and unspanned relationship members with
   `invalid_model_binding`/`malformed-declaration`, and both dangling targets with
   `missing_declaration`/`missing-name`, each naming node, artifact and span.
 - Step 6 reports every refusal in node order and admits no declaration of the

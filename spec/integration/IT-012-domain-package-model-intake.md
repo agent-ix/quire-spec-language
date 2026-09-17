@@ -41,8 +41,9 @@ All three are Rust crate calls at the exact git revisions selected in
 - The architecture fixture of agent-ix/filament-core-data#173, with its IR
   golden, is available at that revision. It declares parts, interfaces, ports
   and at least one connection between two ports.
-- agent-ix/quire-specification#85 has fixed the meaning-id registry the fixture's
-  constructs bind to.
+- Quire specification FR-208 and FR-154 (agent-ix/quire-specification PR #86,
+  pending merge) fix the meaning ids the fixture's constructs bind to and
+  artifact-id identity.
 
 ## Inputs
 
@@ -90,6 +91,7 @@ assessment are verified elsewhere.
 ## Dependencies
 
 **Upstream:** [FR-056](../functional/FR-056-admit-domain-package-model-declarations.md),
-agent-ix/filament-core-data#172 and #173, and agent-ix/quire-specification#85.
+agent-ix/filament-core-data#172 and #173, and Quire specification FR-208 and
+FR-154 (agent-ix/quire-specification PR #86, pending merge).
 **Downstream:** [TC-148](../test-cases/TC-148-domain-package-end-to-end.md) and
 the compiled-protocol `Model` identity under agent-ix/quire-spec-language#132.
