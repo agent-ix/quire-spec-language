@@ -94,13 +94,15 @@ The reader owns contract-version checks and resolution of each module-qualified
 If the reader reports an IR node whose `kind` names no entry of the `constructs`
 table, then the compiler SHALL refuse that node with
 `invalid_model_binding`/`malformed-declaration`, retaining the IR node identity,
-the artifact id and the span, one refusal per such node in node order.
+the artifact id and the span, reported in FR-154's declaration refusal order:
+node order, and within one node every failing check in FR-154's table order,
+the object id check first.
 
 ### Meaning binding
 
 The compiler SHALL bind each IR type definition and population node to a Quire
 meaning by the exact `meaning` id of its construct, as Quire specification
-FR-208 lists (agent-ix/quire-specification PR #86, pending merge), and SHALL NOT
+FR-208 lists, and SHALL NOT
 select a meaning by kind name, module, shape or members.
 
 If a construct has no `meaning`, or a `meaning` that is not an FR-208 value, then
@@ -160,7 +162,16 @@ Allocation, has identity `ix://<package identity>/<artifact id>`; the owner of a
 Part or Port and the ends of a Connection or Allocation are references and
 never part of identity.
 A member's identity is its owner's identity, `/` and the member name (Quire
-specification FR-154, agent-ix/quire-specification PR #86, pending merge).
+specification FR-154).
+
+The artifact id of each artifact that declares a type definition or population
+node is an object id under Quire specification FR-154's id rule.
+A clause names the declaration by that id, such as `M::sys_pump`.
+
+If an IR type definition or population node carries an artifact id that does
+not match FR-154's id rule, such as `sys-pump`, then the compiler SHALL refuse
+it with `invalid_model_binding`/`malformed-declaration` under FR-154, retaining
+the IR node identity, the artifact id and the span.
 
 The compiler SHALL NOT use `title` or `displayName` in any identity, key,
 digest, ordering or resolution decision.
@@ -193,8 +204,8 @@ at the bundle entry point that lifts those bytes.
 | --- | --- | --- |
 | FR-056-AC-1 | Lifted bytes of a valid domain package passed to the intake seam are read by `agent-ix-semantic-ir` and yield exactly one original declaration per IR node, ascending by (domain package identity, IR node identity), each with its bound meaning, export records and artifact id and span. | Test (TC-145) |
 | FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity or version differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. | Test (TC-145) |
-| FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration` per node in node order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
-| FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations. | Test (TC-145) |
+| FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration`, reported in FR-154's declaration refusal order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
+| FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations; an artifact id matching FR-154's id rule, such as `sys_pump`, is admitted and named `M::sys_pump`, while one that does not, such as `sys-pump`, refuses `invalid_model_binding`/`malformed-declaration` with node, artifact and span, a reference to that node reports no `missing_declaration`/`missing-name`, and a second failing check on that node reports after the id refusal (FR-154-AC-8). | Test (TC-145) |
 | FR-056-AC-5 | Each relationship member yields one `relationship` export with its name and span; a relationship member missing either refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |
 | FR-056-AC-6 | Intake at its exact `normalize.record` bound completes, the one-less run is incomplete at `normalize.record` with no declaration, and admission refusals are decided before the first charge. | Test (TC-147) |
 | FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
@@ -204,17 +215,14 @@ at the bundle entry point that lifts those bytes.
 
 | Question | Owner | Blocked criteria |
 | --- | --- | --- |
-| Quire meaning ids (FR-208), artifact-id identity and construct-meaning systems binding (FR-154, FR-152) are pending merge of quire-specification PR #86. | agent-ix/quire-specification PR #86 | FR-056-AC-3, FR-056-AC-4, FR-056-AC-8 |
 | Component, endpoint, participant contract and configuration constructs have no FR-208 meaning id, so a construct naming one is refused under FR-154-AC-7 until FR-208 adds ids for them. | Architect decision | None in this requirement; FR-048 positive component, endpoint and participant cases |
-| A hyphenated artifact id, such as `entity-001`, has no qualified-name spelling, so a clause cannot name its declaration; pending architect ruling (FR-154 Open Question). Until the ruling, the agent-ix/filament-core-data#173 fixture uses word artifact ids. | Architect decision | FR-056-AC-8 and FR-036-AC-9 for hyphenated artifact ids |
 
 ## Dependencies
 
 - **Upstream:** [US-002](../usecase/US-002-link-exact-models.md); Quire
   specification AD-006 and FR-150–154 own model intake, normalization,
   conformance, systems kinds and closed lookup; FR-208 and FR-154
-  (agent-ix/quire-specification PR #86, pending merge) own the Quire meaning ids
-  and artifact-id identity; filament-core-data
+  own the Quire meaning ids and artifact-id identity; filament-core-data
   FR-142/FR-143 and agent-ix/filament-core-data#172 own Semantic IR 2.0.0, the
   embedded `constructs` table and the reader; quire-rs owns artifact extraction.
 - **Downstream:** [FR-036](FR-036-link-composed-native-packages.md) links native

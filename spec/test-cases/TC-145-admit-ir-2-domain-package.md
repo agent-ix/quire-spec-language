@@ -28,7 +28,13 @@ refusal), FR-056-CON-4.
    selection. Then offer a combination of the first and third faults.
 3. Offer bytes `agent-ix-semantic-ir` refuses.
 4. Change only one artifact's `title` or `displayName` and re-run. Then give two
-   artifacts equal titles.
+   artifacts equal titles. Then change the step 1 object-type artifact's id to
+   `sys_pump` and name it from a clause as `M::sys_pump`, and separately to
+   `sys-pump`, keeping the step 1 object-typed field member typed by that type
+   and adding a second object type `Housing` whose field member `pump` is typed
+   by that type.
+   Then change the id to `sys-pump` and also point its `kind` at a name with no
+   `constructs` entry.
 5. Remove the relationship member's declared name, then separately its source
    span. Then point the object-typed field member at an artifact id absent from
    the package, and separately point the relationship's target end at such an id.
@@ -51,13 +57,25 @@ refusal), FR-056-CON-4.
   check in FR-154 order.
 - Step 3 admits no declaration and retains every reader diagnostic with its IR
   node, artifact id and span.
-- Step 4 leaves every key, export, ordering and linker binding byte-identical;
-  equal titles stay two distinct declarations.
+- Step 4: the title and displayName runs leave every key, export, ordering and
+  linker binding byte-identical; equal titles stay two distinct declarations.
+  The id runs change the type's key and its members' keys (FR-154-AC-6): the
+  `sys_pump` run admits the type keyed `ix://<package identity>/sys_pump` and
+  the clause resolves to it;
+  the `sys-pump` run refuses that node exactly once with
+  `invalid_model_binding`/`malformed-declaration`, naming node, artifact and
+  span, reports no `missing_declaration`/`missing-name` for the step 1
+  object-typed field member or for `Housing`'s `pump` field member, both of
+  which reference it, and admits no declaration of the package;
+  the `sys-pump` run with the unknown kind refuses that node twice with
+  `invalid_model_binding`/`malformed-declaration`, the object id refusal first
+  and the unknown-kind refusal second (FR-154-AC-8).
 - Step 5 refuses the unnamed and unspanned relationship members with
   `invalid_model_binding`/`malformed-declaration`, and both dangling targets with
   `missing_declaration`/`missing-name`, each naming node, artifact and span.
-- Step 6 reports every refusal in node order and admits no declaration of the
-  package.
+- Step 6 reports every refusal in FR-154's declaration refusal order (node
+  order, and within one node FR-154's table order) and admits no declaration of
+  the package.
 - Step 7 refuses both substitutions; the digest is accepted only in its
   `sha256-jcs` slot.
 - Assertions compare typed refusal codes and loci, never message text.
