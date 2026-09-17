@@ -15,6 +15,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-049
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-033
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-034
@@ -37,15 +39,17 @@ promote the historical no-call profile in place.
 
 ## Inputs
 
-Original native declarations, exact model and definition selections, explicit
+Original native declarations, exact domain-package model declarations
+([FR-056](FR-056-admit-domain-package-model-declarations.md)) and definition selections, explicit
 predicate arguments and immutable capture/anchor environments; checked values
 and their original source correspondence; validated finite sequences or declared
 population views with independently supplied membership/completeness authority;
 and caller-lowered finite checking and execution budgets.
 
 A typed expression, emitted graph or successful independent wire read is not a
-validated runtime input. Population views are supplied through their owning
-model/observation interfaces, not an additional observation store.
+validated runtime input. Population declarations come from the admitted domain
+package; concrete population views are supplied through the observation
+interface, not an additional observation store.
 
 ## Outputs
 
@@ -155,9 +159,10 @@ editable formal representation.
 [FR-049](FR-049-admit-composed-evaluation-inputs.md) owns runtime input
 validation and the result interface; [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md)
 owns runtime accounting.
-Model and observation producers retain authority for concrete populations,
-membership and completeness. Missing producer authority is an explicit
-prerequisite, not permission to fabricate it locally.
+The admitted domain package declares populations; the observation contract
+supplies concrete members, membership and completeness. A missing declaration or
+observation fact is an explicit prerequisite, not permission to fabricate it
+locally.
 
 This specification cycle is retrospective under
 [#66](https://github.com/agent-ix/quire-spec-language/issues/66). Existing

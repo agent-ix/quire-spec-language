@@ -17,7 +17,6 @@ Failed or incomplete checks emit no success summary on stdout.
 | identity-content-conflict | 1 | Immutable review key reused with a different profile/digest. |
 | foreign-path | 1 | Absolute manifest path or canonical target outside the selected root. |
 | resource-exhausted | 3 | Byte, file, decoded-value, JSON-depth or native syntax ceiling exceeded. |
-| producer-language-unapproved | 3 | Fresh TypeSpec/Node production has no owner language disposition. |
 
 Zero reports only the mode's completed byte/identity/correspondence/syntax checks.
 These codes do not implement the shared portable verification result envelope.

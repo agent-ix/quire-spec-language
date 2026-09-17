@@ -8,6 +8,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-038, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-041, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-056, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-004, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-015, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-017, type: depends_on }
@@ -40,8 +41,8 @@ through the versioned [compiled-protocol wire contract](../../docs/compiled-prot
 ## Inputs
 
 The explicit original source inventory, actual source/formal clause owners,
-accepted baseline and artifact contract, producer implementation/revision,
-exact model/definition/rule/dependency selections, and constructor-private
+accepted baseline and artifact contract, compiler implementation/revision,
+exact domain-package/definition/rule/dependency selections, and constructor-private
 family-admission evidence derived from that same compilation. Source/profile
 acceptance comes from the independently supplied accepted inventory, not a
 payload flag, current Git revision, installed default or similar display name.
@@ -50,16 +51,16 @@ requirements and registered semantic definitions; source-artifact revision label
 remain separate from the semantic revisions derived from those owners.
 
 The reader takes canonical bytes, an independently selected external artifact
-reference, that accepted inventory, exact local dependency bytes/admitted
-producer views and caller-lowered artifact limits. It consumes no concrete
+reference, that accepted inventory, exact local dependency bytes, the admitted
+domain packages and caller-lowered artifact limits. It consumes no concrete
 workflow instances, observations, clocks, assessment requests or backend results.
 
 For the cross-repository positive handoff, the quire-protocol integration caller
 SHALL construct the accepted inventory as Rust values from independently selected
-original sources, admitted models, registered definitions, artifact contract and
-producer bytes. The compiler supplies those original inputs with its emitted
+original sources, admitted domain packages, registered definitions, artifact
+contract and compiler binary bytes. The compiler supplies those original inputs with its emitted
 bytes and reference; the offered payload cannot appoint its own accepted inventory.
-The producer example's `expected.json` is an inspection aid for the fixture, not
+The handoff example's `expected.json` is an inspection aid for the fixture, not
 an accepted-inventory interchange format or an authority B may accept by default.
 
 ## Outputs
@@ -68,8 +69,8 @@ An immutable `quire.compiled-protocol/1` package and its external exact-byte
 reference, or a typed refused, unsupported or resource-incomplete result with
 original available loci and partial compilation evidence. The public Rust
 admission, emission and reader interfaces expose structured results through the
-wire contract; source stdout, shell commands and hand-edited JSON are not the producer
-handoff. Successfully verified wire content remains distinct from compiler-owned
+wire contract; source stdout, shell commands and hand-edited JSON are not the
+compiler handoff. Successfully verified wire content remains distinct from compiler-owned
 family admission and B-owned assessment admission/execution.
 
 When the compiler begins protocol-role model or type admission, the compiler SHALL establish the
@@ -218,21 +219,27 @@ numeric components; SHA-256 binds the resulting complete bytes. This registers
 a wire encoding, not a new source-free semantic canonicalizer or JCS identity.
 
 The emitter SHALL keep its digest in the external artifact reference, outside
-the hashed payload. Model raw-byte digests, source digests, producer canonical
-object/fingerprint domains, manifest/lock/dependency references and protocol
+the hashed payload. Source raw-byte digests, domain package `sha256-jcs` digests,
+manifest/lock/dependency references and protocol
 result JCS identities retain their own exact roles and algorithms. Copying an
 external reference does not authorize recanonicalizing its object or substituting
 its hash into another role. The outer package canonical identity remains null.
 
+Each compiled-protocol `Model` selection SHALL name the domain package it was
+linked against by domain package identity, Semantic IR contract version and
+`sha256-jcs` digest, as admitted under
+[FR-056](FR-056-admit-domain-package-model-declarations.md). The versioned wire change is
+agent-ix/quire-spec-language#132.
+
 The strict reader SHALL verify the expected byte seal and exact accepted
-contract/producer/baseline/source/profile/dependency/feature selections before
+contract/compiler-binary/baseline/source/domain-package/profile/dependency/feature selections before
 admitting their dependent semantic records. It then checks closed shape,
 numeric domains, typed reference kinds/owners, scope/control invariants and
 canonical byte equality under the finite pass order in the wire contract.
 Source text is hashed and indexed for spans without a native parser. Valid
 JSON or a recomputed internal seal cannot replace an independently expected
 artifact selection. The reader does not claim to prove source compilation from
-source text, source digests or a producer label.
+source text, source digests or a compiler label.
 
 The artifact SHALL retain distinct workflow/role-instance, participant,
 component, endpoint, message, send, receive, delivery, attempt, effect,
@@ -335,14 +342,14 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | --- | --- | --- |
 | FR-042-AC-1 | A complete source-derived package containing a protocol and its predicate/state/temporal dependencies emits the exact registered media/schema/type/encoding/numeric selections, complete original inventory and immutable external byte reference. Missing family admission, a type/proof-only result or an arbitrary wire fixture cannot invoke production emission. | Test (TC-121) |
 | FR-042-AC-2 | Fixed compact JSON vectors retain field order, Unicode escaping and authored sequence order; permitted inventory reordering yields identical bytes. Integer safe endpoints, signed-64 extrema and normalized rationals retain exact kind/components in every value/bound field; invalid field-domain values, bare native numbers, floats and noncanonical structural integers refuse without rounding or repair. | Test (TC-121) |
-| FR-042-AC-3 | One-axis changes to producer, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
+| FR-042-AC-3 | One-axis changes to compiler binary, domain package identity or digest, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
 | FR-042-AC-4 | Typed values preserve exact nominal/unit/domain identities, cross-unit callee owners, ordered arguments, all eight query forms, graph-export authority, Boolean roots, source loci, scope and pre/post/activation/capture origins. Wrong type/owner, dangling/cyclic value references, missing totality and proof-witness substitution cannot produce an emitted package. | Test (TC-121) |
 | FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Received, own-attempt and same-owner domain-event Boolean choices preserve exact atom/owner/provenance identity and prove one case for every abstract valuation; equal ordered advertised-result vectors select the same case, including composite formulas without disclosing their individual operands; unsupported visibility or an unproved partition returns FamilyProof, while evaluated closed overlap/hole remains Invalid(Control). Equal role model types do not grant ownership. Compensation-qualified events retain their registration prerequisite; Boolean observations grant no activation or effect-success evidence. A dynamic choice establishes continuing-loop progress only when every feasible branch progresses. An observed repeat guard preserves the same atom/owner/provenance identity and partitions the continuing and exhausting branches; a foreign-role, unlisted or composite guard atom returns FamilyProof, an atom established only inside the body refuses earlier as out of scope, a non-progressing continuing body remains Invalid(Control), and an unproved one returns FamilyProof. An observed repeat whose false guard valuation is feasible contributes no progress to an enclosing obligation, so an enclosing repeat relying on it alone remains Invalid(Control); an infeasible false valuation contributes the continuing body's progress exactly as a true constant guard does, and an infeasible true valuation contributes no progress and carries no body obligation, like a closed false guard. Missing/foreign joins, unbounded or zero-progress repetition, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
 | FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. A forward attempt authored inside a bounded repeat retains one static attempt identity, distinct from the carrying delivery and from the single business effect; bounded iteration mints no further attempt record and no ordinal field, and a retried attempt inherits no earlier effect. Effect-dependent registration, bounded retries through the signed-64 maximum, commit boundaries and full versus partial recovery retain exact relations and authorities. Producer and reader derive identical recovery population membership through original operand, binder-initializer and selected-origin reachability, preserving captured anchors without span-based or proof-folded substitutions. Compensation effects retain exact operation/subject/retry/attempt identity even when a type is inserted; an otherwise valid typed compensation effect remains explicitly unsupported. Missing/cross-wired registration, activation, clock or recovery prerequisites, unrelated recovery/population records, null model, an ordinary effect with null type, or an operation-success shortcut refuse. | Test (TC-121) |
 | FR-042-AC-7 | The public reader verifies canonical bytes and external selection without a native parser. Unknown/duplicate/missing fields, wrong tags, noncanonical encodings, out-of-range/foreign handles and changed content refuse with typed causes. Resealing a tampered payload under an unchanged expected reference still refuses; digest success alone is never evidence of native-source equivalence. | Test (TC-121) |
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. Every protocol-role admission refusal locus pairs a source index and span from the same owning declaration; a multi-unit invalid protocol role identifies and slices that exact role rather than a preceding source. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow/clamping and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
-| FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every producer/source/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
+| FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
 
 ## Dependencies
 
@@ -358,7 +365,7 @@ acceptance under compiler #40. The wire reader and numeric/type components
 implement part of this contract. The native path emits supported complete
 families from real source/type/proof owners, including static compensation and
 full/partial recovery requirements; strict-reader fixtures alone do not establish
-that authority. The [Rust producer recipe](../../examples/protocol-handoff/README.md)
+that authority. The [Rust emitter recipe](../../examples/protocol-handoff/README.md)
 retains four original source units, cross-unit dependencies, queries,
 population/reference roles, admitted model operations and actual executable bytes.
 Its joined receive/Boolean-choice scenario retains both received facts and

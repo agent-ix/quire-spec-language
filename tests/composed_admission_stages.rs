@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-115: static meaning, every requested capability, historical compatibility.
-//! Request dispositions are compiler-side records; this does not claim D's IT-009.
+//! Request dispositions are compiler-side records, not domain-package intake evidence.
 
 // The fixture also supports compiler, graph and operation integration tests.
 #[allow(dead_code)]

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-114: exact source inventory and bounded namespace admission.
-//! Unresolved profile/model strings are syntax inputs, not IT-009 evidence.
+//! Unresolved profile/model strings are syntax inputs, not model-intake evidence.
 
 use ix_trace_rs::trace;
 use quire_spec_language::linking::composed::{
