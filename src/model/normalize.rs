@@ -357,11 +357,62 @@ struct Built {
     universe: ObjectUniverse,
 }
 
+/// Refuses a [`BundleRecord`] that names a type identity absent from the
+/// bundle's own `ObjectType` records, so a dangling `owner`, `specific` or
+/// `general` reference is a typed refusal rather than a panic or a silently
+/// dropped record — `bundle` is caller-supplied, not validated on the way in.
+fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusal> {
+    for record in &bundle.records {
+        match record {
+            BundleRecord::ObjectType(_) => {}
+            BundleRecord::FieldMember(member)
+                if !index.types.contains_key(&member.owner.identity) =>
+            {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-owner",
+                    detail: format!(
+                        "field member {} names owner {}, which is not a declared object type",
+                        member.key.identity, member.owner.identity
+                    ),
+                });
+            }
+            BundleRecord::Generalization(general)
+                if !index.types.contains_key(&general.specific.identity) =>
+            {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-specific",
+                    detail: format!(
+                        "generalization {} names specific {}, which is not a declared object type",
+                        general.key.identity, general.specific.identity
+                    ),
+                });
+            }
+            BundleRecord::Generalization(general)
+                if !index.types.contains_key(&general.general.identity) =>
+            {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-general",
+                    detail: format!(
+                        "generalization {} names general {}, which is not a declared object type",
+                        general.key.identity, general.general.identity
+                    ),
+                });
+            }
+            BundleRecord::FieldMember(_) | BundleRecord::Generalization(_) => {}
+        }
+    }
+    Ok(())
+}
+
 /// Pass one: build the complete normalization unconditionally, refusing
 /// outright on a real defect. See the module docs for why this is
 /// unconstrained by [`ModelNormalizationLimits`].
 fn build(bundle: &Bundle) -> Result<Built, ModelRefusal> {
     let index = Index::build(bundle);
+    validate_references(bundle, &index)?;
     let type_keys = index.sorted_type_keys();
 
     let mut phase2_facts = Vec::new();
