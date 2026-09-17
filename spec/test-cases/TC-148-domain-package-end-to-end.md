@@ -21,6 +21,8 @@ references to its declarations. Scope: FR-056-AC-8, FR-036-AC-9.
    module manifests → `agent-ix-extraction-frontend` lift → intake seam. Use no
    hand-built semantic context or model-shaped JSON.
 2. Inspect each admitted Port and one admitted Connection between two ports.
+   Then move one port to another part in the bundle, re-run step 1 and inspect
+   that port again.
 3. Link a native package whose model references name a fixture object's field, a
    Port and the Connection against the admitted domain package.
 4. Substitute a same-shaped declaration from a different domain package for one
@@ -30,7 +32,9 @@ references to its declarations. Scope: FR-056-AC-8, FR-036-AC-9.
 
 - Step 1 admits every IR node with no refusal.
 - Step 2: each Port retains its owning part, direction, interface type and typed
-  multiplicity; the Connection is admitted under FR-152's connection rule.
+  multiplicity; the Connection is admitted under FR-152's connection rule; each
+  Port and the Connection is keyed `ix://<package identity>/<artifact id>`; the
+  moved port keeps its declaration key and retains its new owning part.
 - Step 3 binds every model reference to its declaration key and export or
   systems kind; no reference resolves by spelling alone.
 - Step 4 refuses each dependent native declaration with its typed cause while

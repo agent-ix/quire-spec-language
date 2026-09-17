@@ -145,7 +145,7 @@ per-group counts before moving this row to Passed.
 | FR-056 | FR-056-AC-4 | TC-145 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-5 | TC-145 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-6 | TC-147 | 🚧 Planned; #131 |
-| FR-056 | FR-056-AC-7 | TC-147 | 🚧 Planned; #131 |
+| FR-056 | FR-056-AC-7 | TC-145, TC-147 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Planned; #131 |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
@@ -213,8 +213,8 @@ invented for that criterion.
 | TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-7 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs) |
 | TC-142 | Evaluate admitted version-2 compensation expressions and initialized captures | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | TC-143 | Publish and read strict control temporal activation mappings | Integration | P1 | FR-054-AC-1..FR-054-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
-| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5 | 🚧 Planned; #131 |
-| TC-146 | Refuse an unknown or mismatched construct meaning id | Integration | P0 | FR-056-AC-3 | 🚧 Planned; #131, blocked on quire-specification#85 |
+| TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 | 🚧 Planned; #131 |
+| TC-146 | Refuse an unknown or mismatched construct meaning id | Integration | P0 | FR-056-AC-3 | 🚧 Planned; #131, pending merge of quire-specification PR #86 |
 | TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 Planned; #131 |
 | TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
 | IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
@@ -250,8 +250,8 @@ one Semantic IR 2.0.0 domain package per ModelSelection under Quire specificatio
 FR-154, reading lifted bytes through `agent-ix-semantic-ir`. TC-145 covers FR-154
 admission refusals, reader refusal, artifact-id identity, relationship exports,
 all-or-nothing declaration refusal and digest-slot separation; TC-146 covers
-meaning-id binding, blocked on agent-ix/quire-specification#85 for the registry
-and its refusal code; TC-147 covers `normalize.record` accounting and
+construct and meaning-id binding under Quire specification FR-208 and FR-154,
+pending merge of agent-ix/quire-specification PR #86; TC-147 covers `normalize.record` accounting and
 byte-identical results from both entry points. TC-148 and IT-012 run the
 agent-ix/filament-core-data#173 architecture fixture through quire-rs, the lift
 and intake, resolve its ports and a connection under FR-152, and link native

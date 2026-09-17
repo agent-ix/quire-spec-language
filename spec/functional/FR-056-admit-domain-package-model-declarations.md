@@ -11,6 +11,7 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-152, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-153, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-154, type: depends_on }
+  - { target: ix://agent-ix/quire-specification/FR-208, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-142, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-143, type: depends_on }
 ---
@@ -36,8 +37,8 @@ spec artifact bundle
 ```
 
 quire-rs is the only artifact parser, filament-core-data owns the lowering and
-the IR reader, and the Quire specification owns model meaning and the meaning-id
-registry. Generated Rust, TypeScript and Python types and Quire model
+the IR reader, and the Quire specification owns model meaning and the Quire meaning
+ids (FR-208). Generated Rust, TypeScript and Python types and Quire model
 declarations come from one fingerprinted lowering of the same artifacts.
 
 ## Inputs
@@ -46,8 +47,8 @@ declarations come from one fingerprinted lowering of the same artifacts.
   declaration's domain package identity, version and `sha256-jcs` digest. Each
   selection names exactly one domain package.
 - The package input: a map from `sha256-jcs` digest to domain package bytes.
-- The selected `quire.model.complete/v1` definition, including the meaning-id
-  registry that agent-ix/quire-specification#85 adds to it.
+- The selected `quire.model.complete/v1` definition and the Quire meaning ids
+  of Quire specification FR-208.
 - `ModelNormalizationLimitsV1` of `quire.value.accounting/v1`.
 - For the bundle entry point: the explicit artifact inventory (paths and bytes)
   and the exact module manifests that type it, selected by module identity and
@@ -90,53 +91,61 @@ node, artifact id and span.
 The reader owns contract-version checks and resolution of each module-qualified
 `kind` through the document's embedded `constructs` table.
 
+If the reader reports an IR node whose `kind` names no entry of the `constructs`
+table, then the compiler SHALL refuse that node with
+`invalid_model_binding`/`malformed-declaration`, retaining the IR node identity,
+the artifact id and the span, one refusal per such node in node order.
+
 ### Meaning binding
 
-The compiler SHALL bind each IR node to a Quire meaning by its construct's
-`meaning` id, looked up in the selected meaning-id registry
-(agent-ix/quire-specification#85).
+The compiler SHALL bind each IR type definition and population node to a Quire
+meaning by the exact `meaning` id of its construct, as Quire specification
+FR-208 lists (agent-ix/quire-specification PR #86, pending merge), and SHALL NOT
+select a meaning by kind name, module, shape or members.
 
-If a construct's `meaning` id is absent from the selected registry, then the
-compiler SHALL refuse each IR node of that kind with the refusal
-agent-ix/quire-specification#85 names, retaining the meaning id, the
-module-qualified kind, the IR node identity, the artifact id and the span.
-
-If a construct's `shape` or `identity` is not one the bound meaning accepts, then
+If a construct has no `meaning`, or a `meaning` that is not an FR-208 value, then
 the compiler SHALL refuse each IR node of that kind with
+`invalid_model_binding`/`malformed-declaration` (FR-154-AC-7), retaining the
+meaning id when present, the module-qualified kind, the IR node identity, the
+artifact id and the span.
+
+If an IR node is not valid for its construct's meaning under FR-154's construct
+validity rule, then the compiler SHALL refuse it with
 `invalid_model_binding`/`malformed-declaration`.
 
-The compiler SHALL derive export records from the bound meaning, `shape` and
-`identity` as this table fixes:
+The compiler SHALL derive type export records from the bound meaning as this
+table fixes:
 
-| Bound meaning | Accepted `identity` / `shape` | Export records |
-| --- | --- | --- |
-| object | `identified` / `record` | one `object`, one `field` per member, one `reference` per reference member |
-| record | `value` / `record` | one `record`, one `field` per member |
-| enumeration | `none` / `enumeration` | one `enum`, one `variant` per member |
-| operation | `none` / `interface` | one `operation` per feature signature |
-| population | `identified` / `sequence` | one `population` |
+| Construct meaning | Export records |
+| --- | --- |
+| `quire.meaning.model.object-type/v1` | one `object` |
+| `quire.meaning.model.value-type/v1` | one `scalar` naming the value type and its bound native value type |
+| `quire.meaning.model.variant-type/v1` | one `enum`, one `variant` per case |
+| `quire.meaning.model.population/v1` | one `population` |
+| `quire.meaning.systems.interface/v1`, `quire.meaning.systems.part/v1`, `quire.meaning.systems.port/v1`, `quire.meaning.systems.connection/v1`, `quire.meaning.systems.allocation/v1` | none; the node binds to its FR-152 kind |
 
-The compiler SHALL derive a `scalar` export for each member type that the bound
-meaning declares scalar.
+The compiler SHALL derive member export records from each type's members, which
+carry no meaning id: one `field` per field member, one `reference` per field
+member whose type is an object type, one `operation` per operation member and
+one `relationship` per relationship member.
 
-The compiler SHALL derive one `relationship` export per relation declaration,
-keyed by its source declaration identity and declared `name`, with its
-`sourceSpan` as the export locus.
+If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`,
+then the compiler SHALL refuse the clause with
+`unsupported_construct`/`declaration-form` (FR-150).
 
-If a relation declaration has no declared name or no source span, then the
+The compiler SHALL key each `relationship` export by its owner's declaration
+identity and declared `name`, with its `sourceSpan` as the export locus.
+
+If a relationship member has no declared name or no source span, then the
 compiler SHALL refuse it with `invalid_model_binding`/`malformed-declaration`.
 
-When a construct's meaning id binds a systems-model meaning, the compiler SHALL
-bind the IR node to its FR-152 kind (Part, Port, Interface, Connection or
-Allocation) and SHALL apply FR-152's kind mapping, connection and allocation
-rules to it.
+When a construct's meaning id is one of the five `quire.meaning.systems.*`
+values, the compiler SHALL bind the IR node to its FR-152 kind (Interface, Part,
+Port, Connection or Allocation) and SHALL apply FR-152's kind mapping,
+connection and allocation rules to it.
 
 When an IR node binds as a Port, the compiler SHALL retain its owning part,
 direction, interface type and typed multiplicity.
-
-When a construct's meaning id binds a component, endpoint, participant or
-configuration meaning, the compiler SHALL retain the IR node as a typed
-unsupported prerequisite and SHALL derive no export for it.
 
 ### Declarations
 
@@ -146,9 +155,11 @@ IR node, ascending by declaration key, with FR-154's declaration refusals
 `missing_declaration`/`missing-name`, `invalid_model_binding`/`conflicting-binding`
 and `invalid_model_binding`/`unpreserved-model-meaning`.
 
-The compiler SHALL use a type's source artifact id as its IR node identity and
-an owner's identity plus member name as a member's identity
-(agent-ix/quire-specification#85).
+Each IR type definition, including every Part, Port, Interface, Connection and
+Allocation, has identity `ix://<package identity>/<artifact id>`; a Port's
+owning part and a Connection's ends are references and never part of identity.
+A member's identity is its owner's identity, `/` and the member name (Quire
+specification FR-154, agent-ix/quire-specification PR #86, pending merge).
 
 The compiler SHALL NOT use `title` or `displayName` in any identity, key,
 digest, ordering or resolution decision.
@@ -181,26 +192,28 @@ at the bundle entry point that lifts those bytes.
 | --- | --- | --- |
 | FR-056-AC-1 | Lifted bytes of a valid domain package passed to the intake seam are read by `agent-ix-semantic-ir` and yield exactly one original declaration per IR node, ascending by (domain package identity, IR node identity), each with its bound meaning, export records and artifact id and span. | Test (TC-145) |
 | FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity or version differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. | Test (TC-145) |
-| FR-056-AC-3 | A construct whose meaning id is absent from the selected registry refuses each IR node of its kind with the #85 refusal, naming meaning id, kind, node, artifact and span; a shape or identity its meaning does not accept refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
+| FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration` per node in node order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
 | FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations. | Test (TC-145) |
 | FR-056-AC-5 | Each relation yields one `relationship` export with its name and span; a relation missing either refuses `invalid_model_binding`/`malformed-declaration`; a relation or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |
 | FR-056-AC-6 | Intake at its exact `normalize.record` bound completes, the one-less run is incomplete at `normalize.record` with no declaration, and admission refusals are decided before the first charge. | Test (TC-147) |
-| FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-147) |
+| FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148, IT-012) |
 
 ## Open Questions
 
 | Question | Owner | Blocked criteria |
 | --- | --- | --- |
-| The meaning-id registry, its spelling and the refusal code for an unknown meaning id; artifact-id identity in place of FR-154's artifact title; systems kinds bound by construct meaning id in place of FR-152's IR kind. | agent-ix/quire-specification#85 | FR-056-AC-3, FR-056-AC-4, FR-056-AC-8 |
-| Which Quire meanings, members and export kinds cover component, endpoint, participant contract and configuration constructs. Until decided they stay typed unsupported prerequisites. | Architect decision | None in this requirement; FR-048 positive component, endpoint and participant cases |
+| Quire meaning ids (FR-208), artifact-id identity and construct-meaning systems binding (FR-154, FR-152) are pending merge of quire-specification PR #86. | agent-ix/quire-specification PR #86 | FR-056-AC-3, FR-056-AC-4, FR-056-AC-8 |
+| Component, endpoint, participant contract and configuration constructs have no FR-208 meaning id, so a construct naming one is refused under FR-154-AC-7 until FR-208 adds ids for them. | Architect decision | None in this requirement; FR-048 positive component, endpoint and participant cases |
+| A hyphenated artifact id, such as `entity-001`, has no qualified-name spelling, so a clause cannot name its declaration; pending architect ruling (FR-154 Open Question). The agent-ix/filament-core-data#173 fixture uses word ids such as `sys_pump` and `pump_out`. | Architect decision | FR-056-AC-8 and FR-036-AC-9 for hyphenated artifact ids |
 
 ## Dependencies
 
 - **Upstream:** [US-002](../usecase/US-002-link-exact-models.md); Quire
   specification AD-006 and FR-150–154 own model intake, normalization,
-  conformance, systems kinds and closed lookup; agent-ix/quire-specification#85
-  owns the meaning-id registry and artifact-id identity; filament-core-data
+  conformance, systems kinds and closed lookup; FR-208 and FR-154
+  (agent-ix/quire-specification PR #86, pending merge) own the Quire meaning ids
+  and artifact-id identity; filament-core-data
   FR-142/FR-143 and agent-ix/filament-core-data#172 own Semantic IR 2.0.0, the
   embedded `constructs` table and the reader; quire-rs owns artifact extraction.
 - **Downstream:** [FR-036](FR-036-link-composed-native-packages.md) links native

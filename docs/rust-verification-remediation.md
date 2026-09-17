@@ -52,7 +52,7 @@ inventory records the actual resolved closure; existing grants are preserved.
 ## Current status
 
 The Python helpers are removed and the CI audit command invokes Rust. Model
-intake comes from domain packages (FR-056), so no model fixture audit exists. Six audit unit tests and five default command/file integration tests pass;
+intake comes from domain packages (FR-056), so no model fixture audit exists. Six audit unit tests and four default command/file integration tests pass;
 the 21 preexisting compiler tests also pass. All three explicitly selected private
 packet tests passed with independent corruptions. The six audit unit tests pass
 in the optimized release profile as well. Formatter, strict all-feature Clippy
@@ -64,8 +64,8 @@ controls; roles reports 17 artifacts/four regions; rule-syntax reports 50 parsed
 Integration tests compare all original fixture bytes before/after execution;
 neither repository's historical fixtures changed.
 
-Quire resolves all 14 new Rust test symbols through canonical trace attributes:
-FR-012 is 11/11 backed, TC-001–TC-009 are backed, and TC-010 is a declared Manual
+Quire resolves all 13 trace attributes on the new Rust tests:
+FR-012 is 9/9 backed, TC-001–TC-003 and TC-005–TC-009 are backed, and TC-010 is a declared Manual
 inspection with no source symbol. This proves binding, not behavioral coverage
 percentages. Old compiler trace debt remains outside Plan-001.
 
