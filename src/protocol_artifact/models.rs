@@ -3,7 +3,7 @@
 
 mod populations;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_ir as ir;
 
@@ -70,7 +70,7 @@ pub(super) fn validate(
     }
     work.charge(Dimension::Models, expected_models.len())?;
     let mut supplied = BTreeMap::new();
-    let mut model_pointers = std::collections::BTreeSet::new();
+    let mut model_pointers = BTreeSet::new();
     let mut owners = BTreeMap::new();
     let mut sources = BTreeMap::new();
     for model in expected_models {
@@ -310,7 +310,16 @@ pub(super) fn validate(
 // No admitted correspondence can authorize a relationship endpoint without
 // the removed Producer 1.2 adapter (#131); any event occurrence that names
 // a relationship is refused as unsupported, after confirming the name
-// itself resolves.
+// itself resolves. The bounds check above is real and reachable from
+// untrusted wire bytes (see the out-of-range `Related` mutant in
+// tests/protocol_artifact.rs); the `Unsupported::Export` refusal below it is
+// not, in this build: every model in `package.models` has already been
+// proven to carry no correspondence by the loop above this function's
+// caller, and `Graph::protocol` (validate/control.rs) independently refuses
+// any relationship whose model *lacks* one, so a `relationships[i]` entry
+// that resolves here can never exist. Kept, not deleted, because it is
+// reachable data-in/data-out logic over the wire schema, not compiler
+// state, and a future relaxation of either check would change that.
 fn validate_related(package: &w::Package, work: &mut Work) -> Result<(), Error> {
     for declaration in &package.declarations {
         let w::Body::Protocol {
@@ -325,15 +334,13 @@ fn validate_related(package: &w::Package, work: &mut Work) -> Result<(), Error> 
             let w::ControlOperation::Event { related, .. } = &control.operation else {
                 continue;
             };
-            let mut any = false;
             for occurrence in related {
                 work.visit()?;
                 relationships
                     .get(wire_index(occurrence.relationship)?)
                     .ok_or(Error::Invalid(Invalid::Reference))?;
-                any = true;
             }
-            if any {
+            if !related.is_empty() {
                 return Err(Error::Unsupported(Unsupported::Export));
             }
         }

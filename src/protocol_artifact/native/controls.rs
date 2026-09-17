@@ -582,7 +582,12 @@ fn related_occurrences(
             .find(|relationship| relationship.name.span == symbol.name.span)
             .ok_or(Error::Invalid(Invalid::Reference))?;
     }
-    Err(Error::Unsupported(Unsupported::ProducerCorrespondence))
+    // Unsupported::Export, not ProducerCorrespondence: matches
+    // relationship_authority (runtime.rs) and the wire-read equivalent
+    // (protocol_artifact::models::validate_related) for the same
+    // unreachable-by-construction condition. ProducerCorrespondence stays
+    // reserved for a wire package that explicitly claims one.
+    Err(Error::Unsupported(Unsupported::Export))
 }
 
 pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {

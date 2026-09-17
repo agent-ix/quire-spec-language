@@ -159,7 +159,9 @@ pub enum SymbolKind {
     Role,
     /// Declared message channel.
     Channel,
-    /// Declared producer-owned relationship.
+    /// Declared relationship. No admitted correspondence can authorize one
+    /// without the removed Producer 1.2 adapter (#131); every occurrence is
+    /// refused as unsupported once its name resolves.
     Relationship,
     /// Registered compensation template.
     Compensation,
