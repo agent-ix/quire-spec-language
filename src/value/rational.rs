@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use super::integer::{Integer, IntegerInterval};
+use super::numeric::ArithmeticOperator;
 
 /// A reduced rational: positive denominator, `gcd(numerator, denominator) = 1`,
 /// and zero is exactly `0/1`. Construction is the only way to obtain one.
@@ -219,4 +220,103 @@ impl RationalDomain {
     pub fn contains(&self, value: &Rational) -> bool {
         self.numerator.contains(value.numerator()) && self.denominator.contains(value.denominator())
     }
+
+    /// Whether every member of `other` is a member of `self`.
+    pub(crate) fn contains_domain(&self, other: &Self) -> bool {
+        let within = |outer: &IntegerInterval, inner: &IntegerInterval| {
+            outer.lower() <= inner.lower() && inner.upper() <= outer.upper()
+        };
+        within(&self.numerator, &other.numerator) && within(&self.denominator, &other.denominator)
+    }
+
+    /// Whether no member is zero.
+    pub(crate) fn excludes_zero(&self) -> bool {
+        let zero = Integer::zero();
+        self.numerator.lower() > &zero || self.numerator.upper() < &zero
+    }
+
+    /// The domain of every reduced `-x` for a member `x`: negation keeps the
+    /// denominator and negates the numerator.
+    pub(crate) fn negated(&self) -> Self {
+        Self {
+            numerator: ordered(self.numerator.upper().neg(), self.numerator.lower().neg()),
+            denominator: self.denominator.clone(),
+        }
+    }
+
+    /// A domain containing every reduced `x op y` for members `x` of `self`
+    /// and nonzero-divisor members `y` of `other`, derived from interval
+    /// arithmetic on the unreduced parts. Reduction keeps the numerator's
+    /// sign and never grows either part, so the numerator lies between zero
+    /// and the unreduced extreme, and the denominator in `[1, max]`.
+    pub(crate) fn result_of(&self, operator: ArithmeticOperator, other: &Self) -> Self {
+        let (numerator, denominator) = match operator {
+            ArithmeticOperator::Multiply => (
+                product(&self.numerator, &other.numerator),
+                self.denominator.upper().mul(other.denominator.upper()),
+            ),
+            ArithmeticOperator::Add | ArithmeticOperator::Subtract => {
+                let left = product(&self.numerator, &other.denominator);
+                let right = product(&other.numerator, &self.denominator);
+                let right = if operator == ArithmeticOperator::Add {
+                    right
+                } else {
+                    ordered(right.upper().neg(), right.lower().neg())
+                };
+                (
+                    ordered(
+                        left.lower().add(right.lower()),
+                        left.upper().add(right.upper()),
+                    ),
+                    self.denominator.upper().mul(other.denominator.upper()),
+                )
+            }
+            ArithmeticOperator::Divide => {
+                let scaled = product(&self.numerator, &other.denominator);
+                let zero = Integer::zero();
+                let numerator = if other.numerator.lower() > &zero {
+                    scaled
+                } else if other.numerator.upper() < &zero {
+                    ordered(scaled.upper().neg(), scaled.lower().neg())
+                } else {
+                    let magnitude = scaled.lower().abs().max(scaled.upper().abs());
+                    ordered(magnitude.neg(), magnitude)
+                };
+                let divisor = other
+                    .numerator
+                    .lower()
+                    .abs()
+                    .max(other.numerator.upper().abs());
+                (numerator, self.denominator.upper().mul(&divisor))
+            }
+        };
+        let zero = Integer::zero();
+        Self {
+            numerator: ordered(
+                numerator.lower().clone().min(zero.clone()),
+                numerator.upper().clone().max(zero),
+            ),
+            denominator: ordered(Integer::one(), denominator.max(Integer::one())),
+        }
+    }
+}
+
+/// The interval spanning two ends.
+fn ordered(lower: Integer, upper: Integer) -> IntegerInterval {
+    IntegerInterval::spanning(lower, upper)
+}
+
+/// The hull of every product of a member of `left` and a member of `right`.
+fn product(left: &IntegerInterval, right: &IntegerInterval) -> IntegerInterval {
+    let [a, b, c, d] = [
+        left.lower().mul(right.lower()),
+        left.lower().mul(right.upper()),
+        left.upper().mul(right.lower()),
+        left.upper().mul(right.upper()),
+    ];
+    let (lower, upper) = (
+        a.clone().min(b.clone()).min(c.clone()).min(d.clone()),
+        a.max(b).max(c).max(d),
+    );
+    ordered(lower, upper)
 }

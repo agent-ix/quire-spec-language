@@ -2,7 +2,9 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use quire_spec_language::complete::{self, CompleteCode, Production, SourceEdit, TokenClass};
+use quire_spec_language::complete::{
+    self, CompleteCause, CompleteCode, HostCause, Production, SourceEdit, TokenClass,
+};
 use quire_spec_language::{Limits, SourceIdentity, Span};
 
 const SOURCE: &str = concat!(
@@ -229,7 +231,10 @@ fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
 
     assert_eq!(parsed.cst().render(), source.as_bytes());
     assert!(!parsed.is_admissible());
-    assert_eq!(parsed.diagnostics()[0].code, CompleteCode::InvalidSyntax);
+    assert_eq!(
+        (parsed.diagnostics()[0].code, parsed.diagnostics()[0].cause),
+        (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
+    );
     assert!(!parsed.cst().recoveries().is_empty());
 }
 
@@ -394,13 +399,13 @@ fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
         Limits::default(),
     )
     .unwrap();
+    let foreign = first.cst().render_node(second.cst().root()).unwrap_err();
     assert_eq!(
-        first
-            .cst()
-            .render_node(second.cst().root())
-            .unwrap_err()
-            .code,
-        CompleteCode::InvalidSourceIdentity
+        (foreign.code, foreign.cause),
+        (
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::ForeignNode)
+        )
     );
 }
 
@@ -489,8 +494,8 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
             Limits::default(),
         )
         .unwrap_err()
-        .code,
-        CompleteCode::InvalidSourceIdentity
+        .cause,
+        CompleteCause::Host(HostCause::EditPredecessor)
     );
     assert_eq!(
         complete::apply_edits(
@@ -501,8 +506,8 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
             Limits::default(),
         )
         .unwrap_err()
-        .code,
-        CompleteCode::InvalidSourceMap
+        .cause,
+        CompleteCause::Host(HostCause::EditRanges)
     );
 }
 
@@ -552,7 +557,13 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
             Limits::default(),
         )
         .unwrap_err();
-        assert_eq!(refusal.code, CompleteCode::InvalidSourceMap);
+        assert_eq!(
+            (refusal.code, refusal.cause),
+            (
+                CompleteCode::InvalidSourceMap,
+                CompleteCause::Host(HostCause::EditRanges)
+            )
+        );
         assert_eq!(refusal.span.start.byte, 0);
         assert_eq!(refusal.span.end.byte, 0);
     }

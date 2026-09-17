@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use quire_spec_language::complete::{self, Production};
+use quire_spec_language::complete::{self, CompleteCause, CompleteCode, HostCause, Production};
 use quire_spec_language::{Limits, SourceIdentity, Span};
 
 // Independently transcribed from the accepted complete-V1 EBNF. This must not
@@ -510,4 +510,122 @@ fn reserved_member_spellings_do_not_create_phantom_profile_selections() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(parsed.selections().profiles.len(), 1);
     assert_eq!(parsed.selections().profiles[0].alias, "Complete");
+}
+
+fn first_diagnostic(id: &str, bytes: &[u8]) -> (CompleteCode, CompleteCause) {
+    let identity = SourceIdentity {
+        identity: format!("test:{id}"),
+        revision: "1".into(),
+    };
+    match complete::parse(identity, format!("{id}.native"), bytes, Limits::default()) {
+        Ok(parsed) => {
+            for diagnostic in parsed.diagnostics() {
+                assert!(diagnostic.cause.is_cause_of(diagnostic.code), "{id}");
+            }
+            let first = parsed.diagnostics().first().expect(id);
+            (first.code, first.cause)
+        }
+        Err(refusal) => {
+            assert!(refusal.cause.is_cause_of(refusal.code), "{id}");
+            (refusal.code, refusal.cause)
+        }
+    }
+}
+
+#[trace("TC-047", "FR-047-AC-3")]
+#[test]
+fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
+    let profile = |identity: &str, version: &str, digest: &str| {
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"{identity}\" version \"{version}\" digest \"{digest}\";\nrecord Reading {{ datum: Integer; }}"
+        )
+    };
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let cases: [(&str, Vec<u8>, CompleteCode, CompleteCause); 10] = [
+        (
+            "unexpected-token",
+            source("record Broken { value: Integer }").into_bytes(),
+            CompleteCode::InvalidSyntax,
+            CompleteCause::UnexpectedToken,
+        ),
+        (
+            "unexpected-end",
+            b"language \"ix:native\" edition \"1-draft\"".to_vec(),
+            CompleteCode::InvalidSyntax,
+            CompleteCause::UnexpectedEnd,
+        ),
+        (
+            "invalid-token",
+            source("record Broken { value: Integer; } $").into_bytes(),
+            CompleteCode::InvalidSyntax,
+            CompleteCause::InvalidToken,
+        ),
+        (
+            "invalid-escape",
+            source("ordered enum Color { Red = \"r\\q\" }").into_bytes(),
+            CompleteCode::InvalidSyntax,
+            CompleteCause::InvalidEscape,
+        ),
+        (
+            "unknown-language",
+            b"language \"ix:other\" edition \"1-draft\";".to_vec(),
+            CompleteCode::UnknownLanguage,
+            CompleteCause::UnsupportedSelection,
+        ),
+        (
+            "invalid-identifier",
+            profile("", "1", &digest).into_bytes(),
+            CompleteCode::InvalidIdentifier,
+            CompleteCause::Host(HostCause::SelectionIdentity),
+        ),
+        (
+            "invalid-digest",
+            profile("quire.value.complete/v1", "1", "sha256:AA").into_bytes(),
+            CompleteCode::InvalidDigest,
+            CompleteCause::Host(HostCause::SelectionDigest),
+        ),
+        (
+            "invalid-utf8",
+            vec![0xff],
+            CompleteCode::InvalidUtf8,
+            CompleteCause::Host(HostCause::InvalidUtf8),
+        ),
+        (
+            "nul",
+            b"language\0".to_vec(),
+            CompleteCode::InvalidSyntax,
+            CompleteCause::InvalidToken,
+        ),
+        (
+            "unnamed",
+            Vec::new(),
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::UnnamedSource),
+        ),
+    ];
+    for (id, bytes, code, cause) in cases {
+        let observed = if id == "unnamed" {
+            let refusal = complete::parse(
+                SourceIdentity {
+                    identity: String::new(),
+                    revision: "1".into(),
+                },
+                "unnamed.native",
+                &bytes,
+                Limits::default(),
+            )
+            .unwrap_err();
+            (refusal.code, refusal.cause)
+        } else {
+            first_diagnostic(id, &bytes)
+        };
+        assert_eq!(observed, (code, cause), "{id}");
+        assert!(cause.is_cause_of(code), "{id}");
+    }
+    assert_eq!(CompleteCause::InvalidEscape.as_str(), "invalid-escape");
+    assert_eq!(
+        CompleteCause::Host(HostCause::SelectionDigest).as_str(),
+        "invalid-digest"
+    );
+    assert!(!CompleteCause::UnexpectedEnd.is_cause_of(CompleteCode::ResourceExhausted));
 }

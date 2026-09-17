@@ -304,6 +304,7 @@ impl LosslessCst {
             return Err(super::diagnostic::error(
                 &self.source,
                 super::CompleteCode::InvalidSourceIdentity,
+                super::CompleteCause::Host(super::HostCause::ForeignNode),
                 crate::Phase::SourceMap,
                 0,
                 0,

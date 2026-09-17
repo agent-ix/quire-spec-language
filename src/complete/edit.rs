@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use super::{parse, CompleteCode, CompleteDiagnostic, ParsedSource};
+use super::{parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, ParsedSource};
 use crate::{Limits, Phase, SourceIdentity, Span};
 
 /// One UTF-8-boundary-preserving source replacement.
@@ -92,10 +92,11 @@ fn apply_edits_selected(
     if let Some(catalog) = catalog {
         super::editor::validate_catalog_profiles(parsed, catalog)?;
     }
-    let failure = |code, span: Span, message| {
+    let failure = |code, cause, span: Span, message| {
         super::diagnostic::error(
             source,
             code,
+            cause,
             Phase::SourceMap,
             span.start,
             span.end,
@@ -108,6 +109,7 @@ fn apply_edits_selected(
     {
         return Err(failure(
             CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::EditPredecessor),
             Span { start: 0, end: 0 },
             "incremental edit revision does not match the exact source predecessor",
         ));
@@ -124,6 +126,7 @@ fn apply_edits_selected(
         if !range_valid || (index > 0 && conflicts) {
             return Err(failure(
                 CompleteCode::InvalidSourceMap,
+                CompleteCause::Host(HostCause::EditRanges),
                 if range_valid {
                     edit.range
                 } else {
@@ -146,6 +149,7 @@ fn apply_edits_selected(
     let Some(output_len) = output_len else {
         return Err(failure(
             CompleteCode::ResourceExhausted,
+            CompleteCause::InsufficientNextCharge,
             Span { start: 0, end: 0 },
             "incremental edit output length overflowed",
         ));
@@ -153,6 +157,7 @@ fn apply_edits_selected(
     if output_len > limits.source_bytes {
         return Err(failure(
             CompleteCode::ResourceExhausted,
+            CompleteCause::InsufficientNextCharge,
             Span { start: 0, end: 0 },
             "incremental edit exceeds the source byte budget",
         ));
@@ -174,13 +179,12 @@ fn apply_edits_selected(
         && limits.nodes == Limits::default().nodes
         && limits.nesting == Limits::default().nesting
     {
-        let edited_source = crate::Source::read(
+        let edited_source = super::diagnostic::read_source(
             new_identity.clone(),
             source.path(),
             &bytes,
             limits.source_bytes,
-        )
-        .map_err(|diagnostic| Box::new(CompleteDiagnostic::from_legacy(*diagnostic)))?;
+        )?;
         if let Some(cst) = parsed.cst().with_whitespace_insertion(
             edited_source.clone(),
             edits[0].range.start,

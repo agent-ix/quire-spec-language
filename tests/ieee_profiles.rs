@@ -20,11 +20,12 @@ use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal,
     DecimalType, DefinitionLock, ExactScalar, IeeeBackendCapabilities, IeeeComparison,
-    IeeeDisposition, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeItemRequirement,
-    IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeResult, IeeeUnsupportedCause, IeeeValue,
-    IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer, IntegerInterval,
-    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain, Refusal,
-    RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
+    IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags,
+    IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeResult,
+    IeeeUnsupportedCause, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete,
+    InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome, PackageCause,
+    PackageRefusalCode, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined,
+    IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -1034,10 +1035,10 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
         half.value(),
         &Rational::new(Integer::from(-1_i64), Integer::from(2_i64)).unwrap()
     );
-    assert!(!half.discarded_negative_zero());
+    assert_eq!(half.loss(), None);
     let zero = to_exact(f64v(0x8000_0000_0000_0000)).completed().unwrap();
     assert_eq!(zero.value(), &Rational::from_integer(Integer::from(0_i64)));
-    assert!(zero.discarded_negative_zero());
+    assert_eq!(zero.loss(), Some(IeeeExactLoss::NegativeZeroSign));
     for undefined in [
         f32v(0x7f80_0000),
         f32v(0x7fc0_0000),
@@ -1142,7 +1143,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
                 RoundingMode::Exact,
                 &mut meter,
             ));
-            let expected = if exact.discarded_negative_zero() {
+            let expected = if exact.loss() == Some(IeeeExactLoss::NegativeZeroSign) {
                 0
             } else {
                 bits
@@ -2376,7 +2377,7 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
         .completed()
         .unwrap();
     assert_eq!(zero.value(), &ratio(0, 1));
-    assert!(zero.discarded_negative_zero());
+    assert_eq!(zero.loss(), Some(IeeeExactLoss::NegativeZeroSign));
     assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
     assert_eq!(
         to_rational(
