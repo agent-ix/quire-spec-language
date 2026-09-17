@@ -350,6 +350,71 @@ fn n09_effective_and_universe_identities_never_collide_with_a_producer_key() {
     assert!(!producer_digests.contains(&universe.identity().hex()));
 }
 
+#[trace("TC-195")]
+#[test]
+fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
+    let mut bundle = fixture_f1();
+    bundle.records.push(field_member(
+        "model.orphan.x",
+        "model.no-such-type",
+        "model.A",
+    ));
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::DanglingReference
+            );
+            assert_eq!(refusal.cause, "unknown-owner");
+            assert!(refusal.detail.contains("model.orphan.x"));
+            assert!(refusal.detail.contains("model.no-such-type"));
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+#[trace("TC-195")]
+#[test]
+fn a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignored() {
+    let mut bundle = fixture_f1();
+    bundle.records.push(generalization(
+        "model.gen.orphan",
+        "model.no-such-type",
+        "model.A",
+    ));
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::DanglingReference
+            );
+            assert_eq!(refusal.cause, "unknown-specific");
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+#[trace("TC-195")]
+#[test]
+fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() {
+    let mut bundle = fixture_f1();
+    bundle.records.push(generalization(
+        "model.gen.orphan",
+        "model.A",
+        "model.no-such-type",
+    ));
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::DanglingReference
+            );
+            assert_eq!(refusal.cause, "unknown-general");
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
 #[trace("TC-195", "FR-150-AC-2")]
 #[test]
 fn unsupported_interface_version_refuses_before_any_charge() {
