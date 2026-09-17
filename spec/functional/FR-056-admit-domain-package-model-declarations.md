@@ -100,7 +100,7 @@ the artifact id and the span, one refusal per such node in node order.
 
 The compiler SHALL bind each IR type definition and population node to a Quire
 meaning by the exact `meaning` id of its construct, as Quire specification
-FR-208 lists (agent-ix/quire-specification PR #86, pending merge), and SHALL NOT
+FR-208 lists, and SHALL NOT
 select a meaning by kind name, module, shape or members.
 
 If a construct has no `meaning`, or a `meaning` that is not an FR-208 value, then
@@ -160,7 +160,7 @@ Allocation, has identity `ix://<package identity>/<artifact id>`; the owner of a
 Part or Port and the ends of a Connection or Allocation are references and
 never part of identity.
 A member's identity is its owner's identity, `/` and the member name (Quire
-specification FR-154, agent-ix/quire-specification PR #86, pending merge).
+specification FR-154).
 
 Each artifact id that declares a type definition or population node is an
 object id and follows Quire specification FR-154's id rule: ASCII letters,
@@ -214,7 +214,6 @@ at the bundle entry point that lifts those bytes.
 
 | Question | Owner | Blocked criteria |
 | --- | --- | --- |
-| Quire meaning ids (FR-208), artifact-id identity and construct-meaning systems binding (FR-154, FR-152) are pending merge of quire-specification PR #86. | agent-ix/quire-specification PR #86 | FR-056-AC-3, FR-056-AC-4, FR-056-AC-8 |
 | Component, endpoint, participant contract and configuration constructs have no FR-208 meaning id, so a construct naming one is refused under FR-154-AC-7 until FR-208 adds ids for them. | Architect decision | None in this requirement; FR-048 positive component, endpoint and participant cases |
 
 ## Dependencies
@@ -222,8 +221,7 @@ at the bundle entry point that lifts those bytes.
 - **Upstream:** [US-002](../usecase/US-002-link-exact-models.md); Quire
   specification AD-006 and FR-150–154 own model intake, normalization,
   conformance, systems kinds and closed lookup; FR-208 and FR-154
-  (agent-ix/quire-specification PR #86, pending merge) own the Quire meaning ids
-  and artifact-id identity; filament-core-data
+  own the Quire meaning ids and artifact-id identity; filament-core-data
   FR-142/FR-143 and agent-ix/filament-core-data#172 own Semantic IR 2.0.0, the
   embedded `constructs` table and the reader; quire-rs owns artifact extraction.
 - **Downstream:** [FR-036](FR-036-link-composed-native-packages.md) links native

@@ -11,8 +11,8 @@ relationships:
 
 Verify that meaning binding goes only through each construct's `meaning` id as
 Quire specification FR-208 lists it, and that a missing construct, an unbound
-meaning or an invalid node refuses the package under FR-154
-(agent-ix/quire-specification PR #86, pending merge). Scope: FR-056-AC-3.
+meaning or an invalid node refuses the package under FR-154.
+Scope: FR-056-AC-3.
 
 ## Test Procedure
 
