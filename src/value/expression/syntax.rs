@@ -1,0 +1,294 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! The Complete-V1 value-expression and declaration forms the checker admits,
+//! as a typed tree over source names.
+//!
+//! Names are unresolved source spellings: a parameter, `let` or binder name,
+//! a qualified enum member `E::m`, or a qualified call target. A location in
+//! a refusal is the path of child indices from the declaration root, each
+//! index numbered as [`Expression::children`] lists the children.
+
+use super::super::collection::CollectionKind;
+use super::super::composite::ValueType;
+use super::super::integer::Integer;
+
+/// A binary operator of the expression grammar.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BinaryOperator {
+    /// `+`.
+    Add,
+    /// `-`.
+    Subtract,
+    /// `*`.
+    Multiply,
+    /// `/`.
+    Divide,
+    /// `=`.
+    Equal,
+    /// `!=`.
+    NotEqual,
+    /// `<`.
+    Less,
+    /// `<=`.
+    LessOrEqual,
+    /// `>`.
+    Greater,
+    /// `>=`.
+    GreaterOrEqual,
+    /// `and`.
+    And,
+    /// `or`.
+    Or,
+    /// `implies`.
+    Implies,
+}
+
+/// A record field initializer `f: e` or `f: null`.
+#[derive(Clone, Debug)]
+pub enum FieldInitializer {
+    /// `f: e`.
+    Value(Expression),
+    /// `f: null`.
+    Null,
+}
+
+/// A one-binder collection query form.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BinderQuery {
+    /// `map(x in c: e)`, also spelled `collect`.
+    Map,
+    /// `filter(x in c: p)`.
+    Filter,
+    /// `flatMap(x in c: e)`: exactly `flatten(map(x in c: e))`.
+    FlatMap,
+    /// `forall(x in c: p)`.
+    Forall,
+    /// `exists(x in c: p)`.
+    Exists,
+}
+
+/// An accumulating collection form.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Accumulation {
+    /// `fold<A>(acc, x in c: step, identity: i)`.
+    Fold,
+    /// `reduce<A>(acc, x in c: step)`.
+    Reduce,
+}
+
+/// One value expression.
+#[derive(Clone, Debug)]
+pub enum Expression {
+    /// `true` or `false`.
+    Boolean(bool),
+    /// An integer literal.
+    Integer(Integer),
+    /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
+    Rational(Integer, Integer),
+    /// A parameter, `let` or binder name, or a qualified enum member.
+    Name(String),
+    /// `let name = value in body`.
+    Let {
+        /// The bound name.
+        name: String,
+        /// The initializer, evaluated once.
+        value: Box<Expression>,
+        /// The scope of the binding.
+        body: Box<Expression>,
+    },
+    /// `if condition then then else otherwise`.
+    If {
+        /// The Boolean condition.
+        condition: Box<Expression>,
+        /// Taken when the condition is true.
+        then: Box<Expression>,
+        /// Taken when the condition is false.
+        otherwise: Box<Expression>,
+    },
+    /// `left op right`.
+    Binary {
+        /// The operator.
+        operator: BinaryOperator,
+        /// The left operand.
+        left: Box<Expression>,
+        /// The right operand.
+        right: Box<Expression>,
+    },
+    /// Unary `-e`.
+    Negate(Box<Expression>),
+    /// `not e`.
+    Not(Box<Expression>),
+    /// `e.f`.
+    Field {
+        /// The record, or `deref(r)`, operand.
+        operand: Box<Expression>,
+        /// The field or attribute name.
+        field: String,
+    },
+    /// `present(e)`.
+    Present(Box<Expression>),
+    /// `value(e)`.
+    Value(Box<Expression>),
+    /// `deref(r)`; only an attribute projection `deref(r).f` is a value.
+    Deref(Box<Expression>),
+    /// A call of a qualified name: a function, tuple constructor, or another
+    /// declaration or undeclared name that the checker refuses.
+    Call {
+        /// The qualified call target.
+        name: String,
+        /// Arguments in source order.
+        arguments: Vec<Expression>,
+    },
+    /// `R { f: e, ... }` in source order.
+    Record {
+        /// The record declaration name.
+        name: String,
+        /// Field initializers in source order.
+        fields: Vec<(String, FieldInitializer)>,
+    },
+    /// `sequence[..]`, `set[..]`, `bag[..]` or `orderedSet[..]`; it takes its
+    /// unique expected collection type.
+    Collection {
+        /// The literal's kind.
+        kind: CollectionKind,
+        /// Element expressions in source order.
+        elements: Vec<Expression>,
+    },
+    /// `convert<T>(e)`.
+    Convert {
+        /// The target type.
+        target: ValueType,
+        /// The converted operand.
+        operand: Box<Expression>,
+    },
+    /// A one-binder query `q(binder in source: body)`.
+    Query {
+        /// The form.
+        query: BinderQuery,
+        /// The binder name.
+        binder: String,
+        /// The collection operand.
+        source: Box<Expression>,
+        /// The body, predicate or mapped expression.
+        body: Box<Expression>,
+    },
+    /// `flatten(source)`.
+    Flatten(Box<Expression>),
+    /// `fold<A>(acc, x in c: step, identity: i)` or `reduce<A>(acc, x in c:
+    /// step)`; the identity is kept whichever form is written so its presence
+    /// is checked.
+    Accumulate {
+        /// Fold or reduce.
+        form: Accumulation,
+        /// The qualified name of the accumulator type `A`.
+        accumulator_type: String,
+        /// The accumulator name.
+        accumulator: String,
+        /// The element binder name.
+        binder: String,
+        /// The collection operand.
+        source: Box<Expression>,
+        /// The step.
+        step: Box<Expression>,
+        /// The `identity:` expression, when written.
+        identity: Option<Box<Expression>>,
+    },
+    /// `count<N>(x in c: p)`.
+    Count {
+        /// The qualified name of the result type `N`.
+        result_type: String,
+        /// The binder name.
+        binder: String,
+        /// The collection operand.
+        source: Box<Expression>,
+        /// The predicate.
+        predicate: Box<Expression>,
+    },
+    /// `sum<N>(x in c: e)`.
+    Sum {
+        /// The qualified name of the result type `N`.
+        result_type: String,
+        /// The binder name.
+        binder: String,
+        /// The collection operand.
+        source: Box<Expression>,
+        /// The summand.
+        summand: Box<Expression>,
+    },
+    /// `size(c)`.
+    Size(Box<Expression>),
+    /// `contains(c, v)`.
+    Contains {
+        /// The collection operand.
+        collection: Box<Expression>,
+        /// The searched value.
+        item: Box<Expression>,
+    },
+}
+
+impl Expression {
+    /// The direct subexpressions in location-index order.
+    pub fn children(&self) -> Vec<&Expression> {
+        match self {
+            Self::Boolean(_) | Self::Integer(_) | Self::Rational(..) | Self::Name(_) => Vec::new(),
+            Self::Let { value, body, .. } => vec![value, body],
+            Self::If {
+                condition,
+                then,
+                otherwise,
+            } => vec![condition, then, otherwise],
+            Self::Binary { left, right, .. } => vec![left, right],
+            Self::Negate(operand)
+            | Self::Not(operand)
+            | Self::Present(operand)
+            | Self::Value(operand)
+            | Self::Deref(operand)
+            | Self::Flatten(operand)
+            | Self::Size(operand)
+            | Self::Field { operand, .. }
+            | Self::Convert { operand, .. } => vec![operand],
+            Self::Call { arguments, .. } => arguments.iter().collect(),
+            Self::Record { fields, .. } => fields
+                .iter()
+                .filter_map(|(_, initializer)| match initializer {
+                    FieldInitializer::Value(expression) => Some(expression),
+                    FieldInitializer::Null => None,
+                })
+                .collect(),
+            Self::Collection { elements, .. } => elements.iter().collect(),
+            Self::Query { source, body, .. } => vec![source, body],
+            Self::Accumulate {
+                source,
+                step,
+                identity,
+                ..
+            } => {
+                let mut children: Vec<&Expression> = vec![source, step];
+                children.extend(identity.as_deref());
+                children
+            }
+            Self::Count {
+                source, predicate, ..
+            } => vec![source, predicate],
+            Self::Sum {
+                source, summand, ..
+            } => vec![source, summand],
+            Self::Contains { collection, item } => vec![collection, item],
+        }
+    }
+}
+
+/// `function name using V(parameters): result pure [decreases(measure)] {
+/// body }`.
+#[derive(Clone, Debug)]
+pub struct FunctionDeclaration {
+    /// The declared name.
+    pub name: String,
+    /// Parameters in order.
+    pub parameters: Vec<(String, ValueType)>,
+    /// The declared result type.
+    pub result: ValueType,
+    /// The `decreases` measure, when written.
+    pub measure: Option<Expression>,
+    /// The body.
+    pub body: Expression,
+}

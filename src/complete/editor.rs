@@ -3,9 +3,10 @@
 use crate::{Limits, Phase, SourceIdentity, Span};
 use std::collections::BTreeSet;
 
+use super::package::{ProfileStatus, StaleProfile};
 use super::{
-    CompleteCode, CompleteDiagnostic, DefinitionRef, NodeIdentity, ParsedSource, Production,
-    ProfileCatalog, SourceEdit, TokenClass, TokenKind,
+    CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionRef, HostCause, NodeIdentity,
+    ParsedSource, Production, ProfileCatalog, SourceEdit, TokenClass, TokenKind,
 };
 
 /// Exact document/profile tuple carried by every editor request and response.
@@ -109,6 +110,7 @@ pub fn analyze_document(
         return Err(super::diagnostic::error(
             parsed.source(),
             CompleteCode::Cancelled,
+            CompleteCause::CallerCancelled,
             Phase::Check,
             0,
             0,
@@ -210,9 +212,20 @@ pub fn format_document(
     let limits = limits.bounded();
     validate_binding(parsed, &binding, catalog)?;
     if !parsed.is_admissible() {
+        // The refusal retains the originating code and cause. The parser
+        // records a diagnostic with every recovery, so a recovery without one
+        // breaks that invariant.
+        let (code, cause) = parsed.diagnostics().first().map_or(
+            (
+                CompleteCode::RuntimeInvariant,
+                CompleteCause::EstablishedInvariantBroken,
+            ),
+            |origin| (origin.code, origin.cause),
+        );
         return Err(super::diagnostic::error(
             parsed.source(),
-            CompleteCode::InvalidSyntax,
+            code,
+            cause,
             Phase::Format,
             0,
             parsed.source().text().len(),
@@ -234,6 +247,7 @@ pub fn format_document(
         return Err(super::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidProjectionCorrespondence,
+            CompleteCause::CorrespondenceLoss,
             Phase::Format,
             0,
             parsed.source().text().len(),
@@ -261,6 +275,7 @@ pub fn format_document(
         return Err(super::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidProjectionCorrespondence,
+            CompleteCause::CorrespondenceLoss,
             Phase::Format,
             0,
             parsed.source().text().len(),
@@ -304,6 +319,7 @@ fn validate_binding(
         return Err(super::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::RequestRevision),
             Phase::SourceMap,
             0,
             0,
@@ -315,30 +331,56 @@ fn validate_binding(
         || selected_profiles
             .iter()
             .any(|selection| selection.definition == binding.profile);
-    match catalog.profile_status(&binding.profile) {
-        super::package::ProfileStatus::Exact if selected => {}
-        super::package::ProfileStatus::Exact | super::package::ProfileStatus::Unknown => {
-            return Err(super::diagnostic::error(
-                parsed.source(),
-                CompleteCode::UnknownProfile,
-                Phase::Profile,
-                0,
-                0,
-                "editor request did not select a known complete-V1 profile",
-            ));
-        }
-        super::package::ProfileStatus::Stale => {
-            return Err(super::diagnostic::error(
-                parsed.source(),
-                CompleteCode::StaleDependency,
-                Phase::Profile,
-                0,
-                0,
-                "editor request selected a stale complete-V1 profile",
-            ));
-        }
+    let status = catalog.profile_status(&binding.profile);
+    let refusal = match (status, selected) {
+        (ProfileStatus::Exact, true) => return Ok(()),
+        (ProfileStatus::Stale(stale), _) => (
+            CompleteCode::StaleDependency,
+            stale_cause(stale),
+            "editor request selected a stale complete-V1 profile",
+        ),
+        (ProfileStatus::Exact, false) | (ProfileStatus::Unknown, _) => (
+            CompleteCode::UnknownProfile,
+            CompleteCause::UnsupportedSelection,
+            "editor request did not select a known complete-V1 profile",
+        ),
+    };
+    let (code, cause, message) = refusal;
+    Err(super::diagnostic::error(
+        parsed.source(),
+        code,
+        cause,
+        Phase::Profile,
+        0,
+        0,
+        message,
+    ))
+}
+
+fn stale_cause(stale: StaleProfile) -> CompleteCause {
+    match stale {
+        StaleProfile::Revision => CompleteCause::RevisionMismatch,
+        StaleProfile::ByteDigest => CompleteCause::ByteDigestMismatch,
     }
-    Ok(())
+}
+
+/// The refusal of a profile selection with `status`, if it is not exact.
+pub(super) fn profile_refusal(
+    status: ProfileStatus,
+) -> Option<(CompleteCode, CompleteCause, &'static str)> {
+    match status {
+        ProfileStatus::Exact => None,
+        ProfileStatus::Stale(stale) => Some((
+            CompleteCode::StaleDependency,
+            stale_cause(stale),
+            "selected profile version or digest is stale for this consumer",
+        )),
+        ProfileStatus::Unknown => Some((
+            CompleteCode::UnknownProfile,
+            CompleteCause::UnsupportedSelection,
+            "selected profile definition is unknown to this consumer",
+        )),
+    }
 }
 
 pub(super) fn validate_catalog_profiles(
@@ -346,20 +388,15 @@ pub(super) fn validate_catalog_profiles(
     catalog: &ProfileCatalog,
 ) -> Result<(), Box<CompleteDiagnostic>> {
     for selection in &parsed.selections().profiles {
-        let (code, message) = match catalog.profile_status(&selection.definition) {
-            super::package::ProfileStatus::Exact => continue,
-            super::package::ProfileStatus::Stale => (
-                CompleteCode::StaleDependency,
-                "selected profile version or digest is stale for this consumer",
-            ),
-            super::package::ProfileStatus::Unknown => (
-                CompleteCode::UnknownProfile,
-                "selected profile definition is unknown to this consumer",
-            ),
+        let Some((code, cause, message)) =
+            profile_refusal(catalog.profile_status(&selection.definition))
+        else {
+            continue;
         };
         return Err(super::diagnostic::error(
             parsed.source(),
             code,
+            cause,
             Phase::Profile,
             selection.identity_span.start,
             selection.identity_span.end,
@@ -445,6 +482,7 @@ fn token_text<'a>(
         super::diagnostic::error(
             parsed.source(),
             CompleteCode::RuntimeInvariant,
+            CompleteCause::EstablishedInvariantBroken,
             Phase::Format,
             token.span().start,
             token.span().end,
@@ -498,6 +536,7 @@ fn append_bounded(
         return Err(super::diagnostic::error(
             parsed.source(),
             CompleteCode::ResourceExhausted,
+            CompleteCause::InsufficientNextCharge,
             Phase::Format,
             span.start,
             span.end,

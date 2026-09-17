@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use ix_trace_rs::trace;
 use quire_spec_language::complete::{
-    self, analyze_document, format_document, CompleteCode, DefinitionDigest, DefinitionRef,
-    DocumentBinding, ProfileCatalog, SourceEdit, TokenClass,
+    self, analyze_document, format_document, CompleteCause, CompleteCode, DefinitionDigest,
+    DefinitionRef, DocumentBinding, HostCause, ProfileCatalog, SourceEdit, TokenClass,
 };
 use quire_spec_language::{Limits, SourceIdentity, Span};
 
@@ -304,11 +304,14 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
         Limits::default(),
     )
     .unwrap();
+    let unbound =
+        analyze_document(&parsed, binding("stale", &profile), false, &catalog).unwrap_err();
     assert_eq!(
-        analyze_document(&parsed, binding("stale", &profile), false, &catalog)
-            .unwrap_err()
-            .code,
-        CompleteCode::InvalidSourceIdentity
+        (unbound.code, unbound.cause),
+        (
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::RequestRevision)
+        )
     );
     let mut wrong_profile = binding("r1", &profile);
     wrong_profile.profile = DefinitionRef::new(
@@ -321,17 +324,18 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
         .unwrap(),
     )
     .unwrap();
+    let unknown = format_document(&parsed, wrong_profile, &catalog, Limits::default()).unwrap_err();
     assert_eq!(
-        format_document(&parsed, wrong_profile, &catalog, Limits::default())
-            .unwrap_err()
-            .code,
-        CompleteCode::UnknownProfile
+        (unknown.code, unknown.cause),
+        (
+            CompleteCode::UnknownProfile,
+            CompleteCause::UnsupportedSelection
+        )
     );
+    let cancelled = analyze_document(&parsed, binding("r1", &profile), true, &catalog).unwrap_err();
     assert_eq!(
-        analyze_document(&parsed, binding("r1", &profile), true, &catalog)
-            .unwrap_err()
-            .code,
-        CompleteCode::Cancelled
+        (cancelled.code, cancelled.cause),
+        (CompleteCode::Cancelled, CompleteCause::CallerCancelled)
     );
 }
 
@@ -358,26 +362,45 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
         },
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(
+        (refusal.code, refusal.cause),
+        (
+            CompleteCode::ResourceExhausted,
+            CompleteCause::InsufficientNextCharge
+        )
+    );
 }
 
 #[trace("Task-047")]
 #[test]
 fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection() {
     let (catalog, profile) = catalog();
-    let digest = profile.digest().digest().to_string();
-    for (revision, selected_identity, selected_version, expected_code) in [
+    let known_digest = profile.digest().digest().to_string();
+    let other_digest = format!("sha256:{}", "b".repeat(64));
+    for (revision, selected_identity, selected_version, digest, expected_code, expected_cause) in [
         (
             "unknown-profile",
             "acme.unknown.complete/v1",
             "1",
+            &known_digest,
             CompleteCode::UnknownProfile,
+            CompleteCause::UnsupportedSelection,
         ),
         (
             "stale-profile",
             profile.identity(),
             "2",
+            &known_digest,
             CompleteCode::StaleDependency,
+            CompleteCause::RevisionMismatch,
+        ),
+        (
+            "stale-digest",
+            profile.identity(),
+            "1",
+            &other_digest,
+            CompleteCode::StaleDependency,
+            CompleteCause::ByteDigestMismatch,
         ),
     ] {
         let source = ugly(&profile).replacen(
@@ -398,6 +421,7 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
         let failing_span = parsed.selections().profiles[1].identity_span;
         let assert_failure = |failure: &complete::CompleteDiagnostic| {
             assert_eq!(failure.code, expected_code, "{revision}");
+            assert_eq!(failure.cause, expected_cause, "{revision}");
             assert_eq!(failure.source, *parsed.source().identity(), "{revision}");
             assert_eq!(failure.span.start.byte, failing_span.start, "{revision}");
             assert_eq!(failure.span.end.byte, failing_span.end, "{revision}");

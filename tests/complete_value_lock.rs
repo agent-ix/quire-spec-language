@@ -16,11 +16,55 @@ const DEFINITIONS: &str =
     "resources/complete-value/quire-specification/proposals/quire-v1/definitions";
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
-/// `a25c93c875231664d90f5d4b3f2ac51f1dc77a75` with `git show`.
-const PINNED_NON_CATALOG: [(&str, &str); 9] = [
+/// `7d7943ab1482e091f6d126401ada38957c4a1ccf` with `git show`.
+const PINNED_NON_CATALOG: [(&str, &str); 21] = [
+    (
+        "spec/functional/expressions/FR-146-check-total-pure-functions.md",
+        "4d21ad026fdf637f9eea9ec9455c678a4e78a8d4f6b87fd9446e7cde31556d29",
+    ),
+    (
+        "spec/functional/tooling/FR-307-package-reusable-semantic-libraries.md",
+        "d287d75f670ae46cbc6d2fbe895f13c5eb29a52af59b6569b0e2c1d03ea7f03a",
+    ),
+    (
+        "spec/test-cases/TC-191-total-pure-function-checking.md",
+        "24441875a3ef17a4aa4ce4f86c901709d0cf1424b05c01392a3190f4e2ed3295",
+    ),
+    (
+        "spec/test-cases/TC-227-reusable-semantic-library-resolution.md",
+        "bf1d59228323f6325afa0fc8b35791a12db9263c67585f9bd590d62947425674",
+    ),
+    (
+        "spec/functional/type-model/FR-144-preserve-complete-collection-algebra.md",
+        "a1319ba750bdef42df93627e07601a808f998a4ba5f83cde02104edea6ee8951",
+    ),
+    (
+        "spec/functional/expressions/FR-145-convert-and-query-collections.md",
+        "eb3b4c8ebad6ca616ba0fb166663f4163d55418294ba864b471f10b6f2c74c93",
+    ),
+    (
+        "spec/test-cases/TC-189-collection-kind-algebra.md",
+        "df2a5768489ea1432c7a1587ac59da7536377a9c16942b58a7073c7686924cf6",
+    ),
+    (
+        "spec/test-cases/TC-190-collection-query-and-conversion-algebra.md",
+        "080d2801ca78999a2b8437974efc3e0b00b9abd02482b065f5851a8b2659b3d8",
+    ),
+    (
+        "spec/functional/type-model/FR-143-evaluate-record-tuple-recursive-values.md",
+        "cfa98d995dad5939c065fc1fca581e1524dc05c01d3596198f9f0c8bc8aa5313",
+    ),
+    (
+        "spec/test-cases/TC-188-record-tuple-and-recursive-values.md",
+        "011ff0d8450ac876e63f078cc8328f84c180c50278e5a6f49612bcbeceaa499a",
+    ),
+    (
+        "spec/test-cases/TC-194-complete-equality-matrix.md",
+        "e7a261755c7b7552bf3a5fc516c2c57dcbc8f20e321d9ad339cdf3549c7a3b48",
+    ),
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
-        "8bb7238b7e811aa810b07b49466693c5ee7d5d39fc6858b88d0740526de27370",
+        "8892527d03064c1c1c06fbe7ec2ebaee0b5f33d0934c90af12ca02edb9580aef",
     ),
     (
         "proposals/quire-v1/definitions/complete-value-selection-vectors.json",
@@ -28,7 +72,7 @@ const PINNED_NON_CATALOG: [(&str, &str); 9] = [
     ),
     (
         "spec/test-cases/TC-185-exact-decimal-semantics.md",
-        "b822e091441b59fc6bd4993b8112aefa51ef12d2d4499cca8c4d99a7c124e3d1",
+        "7000e35969abefab803c1ee1eaf170ff6729909c25492b22648eb7c21cbccbed",
     ),
     (
         "spec/test-cases/TC-192-integer-division-profiles.md",
@@ -36,7 +80,7 @@ const PINNED_NON_CATALOG: [(&str, &str); 9] = [
     ),
     (
         "spec/test-cases/TC-187-quantity-and-unit-conversion.md",
-        "f0bad365a11e8e19eeb2da6b8d67d078997f65c857770bacba1cd66a1b7211f5",
+        "8c006cd22741b28fbe20f4d10ffca761aa563c77c4b18ea507168a9278e2edb4",
     ),
     (
         "spec/test-cases/TC-186-text-and-enum-identity-semantics.md",
@@ -49,6 +93,10 @@ const PINNED_NON_CATALOG: [(&str, &str); 9] = [
     (
         "proposals/checked-package-v2/node-identity-preimage.schema.json",
         "978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501",
+    ),
+    (
+        "proposals/checked-package-v2/fixtures/positive-nominal-identities.json",
+        "b6b1f81f33d6b8756f91ac3fefed74e8cb01b85892c4520a072952232e968a47",
     ),
     (
         "spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",

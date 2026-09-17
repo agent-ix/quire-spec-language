@@ -102,10 +102,10 @@ fn operand_bits(dividend: &Integer, divisor: &Integer) -> u64 {
     dividend.magnitude_bits().max(divisor.magnitude_bits())
 }
 
-fn arithmetic_bits([first, rest @ ..]: [&Integer; 4]) -> u64 {
-    rest.iter()
-        .map(|value| value.magnitude_bits())
-        .fold(first.magnitude_bits(), u64::max)
+/// The `integer-division.arithmetic` and `integer-modulus.arithmetic` amount:
+/// `max(bits(a),bits(b))`, which bounds both quotient and remainder.
+fn arithmetic_bits(dividend: &Integer, divisor: &Integer) -> u64 {
+    operand_bits(dividend, divisor)
 }
 
 fn reject_zero_divisor(divisor: &Integer) -> Result<(), Stop> {
@@ -131,11 +131,11 @@ fn paired(
             .size(LimitKind::ValueOccurrences, 2),
     )?;
     reject_zero_divisor(divisor)?;
+    meter.charge(
+        Charge::new(ChargePoint::IntegerDivisionArithmetic)
+            .size(LimitKind::IntegerBits, arithmetic_bits(dividend, divisor)),
+    )?;
     let (quotient, remainder) = profile.apply(dividend, divisor);
-    meter.charge(Charge::new(ChargePoint::IntegerDivisionArithmetic).size(
-        LimitKind::IntegerBits,
-        arithmetic_bits([dividend, divisor, &quotient, &remainder]),
-    ))?;
     meter.charge(
         Charge::new(ChargePoint::IntegerDivisionDomainPair).size(LimitKind::ValueOccurrences, 2),
     )?;
@@ -166,11 +166,11 @@ fn euclidean_remainder(
             .size(LimitKind::ValueOccurrences, 2),
     )?;
     reject_zero_divisor(divisor)?;
-    let (quotient, remainder) = DivisionProfile::Euclidean.apply(dividend, divisor);
-    meter.charge(Charge::new(ChargePoint::IntegerModulusArithmetic).size(
-        LimitKind::IntegerBits,
-        arithmetic_bits([dividend, divisor, &quotient, &remainder]),
-    ))?;
+    meter.charge(
+        Charge::new(ChargePoint::IntegerModulusArithmetic)
+            .size(LimitKind::IntegerBits, arithmetic_bits(dividend, divisor)),
+    )?;
+    let (_, remainder) = DivisionProfile::Euclidean.apply(dividend, divisor);
     meter.charge(
         Charge::new(ChargePoint::IntegerModulusDomain).size(LimitKind::ValueOccurrences, 1),
     )?;

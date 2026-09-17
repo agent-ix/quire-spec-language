@@ -6,6 +6,7 @@
 //! so they have no variant here.
 
 use super::accounting::Incomplete;
+use super::collection::{CardinalityBound, CollectionKind};
 use super::ieee::IeeeFlags;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
@@ -41,6 +42,15 @@ impl<T> Outcome<T> {
             Err(Stop::Incomplete(record)) => Self::Incomplete(record),
         }
     }
+
+    pub(crate) fn into_stop(self) -> Result<T, Stop> {
+        match self {
+            Self::Completed(value) => Ok(value),
+            Self::Undefined(reason) => Err(Stop::Undefined(reason)),
+            Self::Refused(reason) => Err(Stop::Refused(reason)),
+            Self::Incomplete(record) => Err(Stop::Incomplete(record)),
+        }
+    }
 }
 
 /// Why an operation is undefined.
@@ -50,6 +60,12 @@ pub enum Undefined {
     DivisionByZero,
     /// An IEEE NaN or infinity has no exact value.
     IeeeNotFinite,
+    /// FR-145: `reduce` over an empty collection has no value. Only direct
+    /// kernel evaluation of an unlinked expression can meet it.
+    EmptyReduction,
+    /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
+    /// expression can meet it.
+    NoneValue,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
@@ -72,8 +88,12 @@ pub enum Refusal {
     /// The profile length (scalars, or bytes for `binary-utf8`) is outside the
     /// declared `Text[min,max; profile]` bounds.
     TextLengthOutOfDomain,
-    /// An exact conversion result is outside the target integer domain.
+    /// An exact conversion or arithmetic result is outside the target integer
+    /// domain.
     IntegerOutOfDomain,
+    /// An exact rational arithmetic result is outside its `Rational[..]`
+    /// result domain.
+    RationalOutOfDomain,
     /// Strict IEEE `exact` found an inexact, overflowing or tiny-and-inexact
     /// result; only its would-be flags are reported, never rounded bits.
     IeeeNotExact {
@@ -85,6 +105,24 @@ pub enum Refusal {
     /// An exact rational converted from an IEEE value is outside the
     /// `Rational[..]` target domain.
     IeeeRationalOutOfDomain,
+    /// An FR-149 comparison met two references of different universes.
+    ForeignReference,
+    /// A formed collection's bound count is outside its declared bound; no
+    /// collection is materialized.
+    CardinalityOutOfBound {
+        /// Which side of the bound is violated.
+        violation: BoundViolation,
+        /// The collection kind of the declared type.
+        kind: CollectionKind,
+        /// The declared inclusive bound.
+        bound: CardinalityBound,
+        /// The formed bound count: occurrences for a sequence or bag, members
+        /// for a set or ordered set.
+        count: u64,
+    },
+    /// A checked-program invariant failed during evaluation; unreachable for
+    /// an admitted program.
+    CheckedInvariant,
 }
 
 impl Refusal {
@@ -93,13 +131,55 @@ impl Refusal {
         match self {
             Self::IeeeNanPayloadNotRepresentable => Some("ieee_nan_payload_not_representable"),
             Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
+            Self::ForeignReference => Some("foreign_reference"),
+            Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }
             | Self::ModuloOutOfDomain
             | Self::TextLengthOutOfDomain
             | Self::IntegerOutOfDomain
-            | Self::IeeeNotExact { .. } => None,
+            | Self::RationalOutOfDomain
+            | Self::IeeeNotExact { .. }
+            | Self::CheckedInvariant => None,
+        }
+    }
+
+    /// The closed FR-272 `cause` tag, where the code has one.
+    pub fn cause(self) -> Option<&'static str> {
+        match self {
+            Self::CardinalityOutOfBound { violation, .. } => Some(violation.as_str()),
+            Self::InexactDecimal
+            | Self::DecimalOutOfDomain
+            | Self::DivisionPairOutOfDomain { .. }
+            | Self::ModuloOutOfDomain
+            | Self::TextLengthOutOfDomain
+            | Self::IntegerOutOfDomain
+            | Self::RationalOutOfDomain
+            | Self::IeeeNotExact { .. }
+            | Self::IeeeNanPayloadNotRepresentable
+            | Self::IeeeRationalOutOfDomain
+            | Self::ForeignReference
+            | Self::CheckedInvariant => None,
+        }
+    }
+}
+
+/// The side of a cardinality bound a formed collection violates.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BoundViolation {
+    /// `below-minimum`.
+    BelowMinimum,
+    /// `above-maximum`.
+    AboveMaximum,
+}
+
+impl BoundViolation {
+    /// The FR-272 cause tag.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::BelowMinimum => "below-minimum",
+            Self::AboveMaximum => "above-maximum",
         }
     }
 }

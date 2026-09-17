@@ -19,7 +19,7 @@ pub use cst::{
     CstElement, CstNode, CstToken, LosslessCst, NodeIdentity, Production, Recovery, RecoveryKind,
     StableNodeId, TokenClass, TokenKind,
 };
-pub use diagnostic::{CompleteCode, CompleteDiagnostic};
+pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use edit::{
     apply_edit, apply_edit_with_catalog, apply_edits, apply_edits_with_catalog, SourceEdit,
 };
@@ -107,8 +107,7 @@ pub fn parse(
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let limits = limits.bounded();
-    let source = Source::read(identity, path, bytes, limits.source_bytes)
-        .map_err(|diagnostic| Box::new(CompleteDiagnostic::from_legacy(*diagnostic)))?;
+    let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
     parse_source(source, limits)
 }
 
@@ -131,33 +130,25 @@ pub fn parse_with_catalog(
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let limits = limits.bounded();
-    let source = Source::read(identity, path, bytes, limits.source_bytes)
-        .map_err(|diagnostic| Box::new(CompleteDiagnostic::from_legacy(*diagnostic)))?;
+    let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
     let mut base = parser::parse(source.clone(), limits)?;
-    if let Some(unknown) = catalog.unknown_profile(base.selections()) {
-        let (code, message) = match catalog.profile_status(&unknown.definition) {
-            package::ProfileStatus::Stale => (
-                CompleteCode::StaleDependency,
-                "selected profile version or digest is stale for this consumer",
-            ),
-            package::ProfileStatus::Unknown => (
-                CompleteCode::UnknownProfile,
-                "selected profile definition is unknown to this consumer",
-            ),
-            package::ProfileStatus::Exact => unreachable!("exact profile was reported missing"),
-        };
+    let refused = base.selections().profiles.iter().find_map(|selection| {
+        editor::profile_refusal(catalog.profile_status(&selection.definition))
+            .map(|refusal| (selection.identity_span, refusal))
+    });
+    if let Some((identity_span, (code, cause, message))) = refused {
         base.diagnostics.insert(
             0,
             *diagnostic::error(
                 &source,
                 code,
+                cause,
                 crate::Phase::Profile,
-                unknown.identity_span.start,
-                unknown.identity_span.end,
+                identity_span.start,
+                identity_span.end,
                 message,
             ),
         );
-        return Ok(base);
     }
     Ok(base)
 }
