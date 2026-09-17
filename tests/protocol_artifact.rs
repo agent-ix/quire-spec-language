@@ -1219,7 +1219,7 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
         declaration.bindings[5].subject,
         declaration.bindings[6].subject
     );
-    let mutants: [Mutation<Vec<w::Control>>; 7] = [
+    let mutants: [Mutation<Vec<w::Control>>; 8] = [
         (
             |controls| {
                 let w::ControlOperation::Choice { cases, .. } = &mut controls[3].operation else {
@@ -1287,6 +1287,25 @@ fn choice_repeat_await_and_operation_events_preserve_static_edges_and_binding_ki
                 *instance = 6;
             },
             Error::Invalid(Invalid::Binding),
+        ),
+        (
+            // No admitted correspondence can back a real relationship (#131), so
+            // an event's related occurrence can only ever name an out-of-range
+            // index; this exercises that bounds check independently of the
+            // now-unreachable "found" branch (see the profiles/producer test).
+            |controls| {
+                let locus = controls[1].locus.clone();
+                let w::ControlOperation::Event { related, .. } = &mut controls[1].operation else {
+                    unreachable!()
+                };
+                related.push(w::Related {
+                    relationship: 0,
+                    from: handle(0),
+                    to: handle(0),
+                    locus,
+                });
+            },
+            Error::Invalid(Invalid::Reference),
         ),
     ];
     for (mutate, expected) in mutants {

@@ -15,7 +15,7 @@ use quire_spec_language::state::{
     EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
     ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
     PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
-    OBSERVATION_CONTRACT_REVISION, PRODUCER_CONTRACT_REVISION,
+    OBSERVATION_CONTRACT_REVISION,
 };
 use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
@@ -314,13 +314,11 @@ fn authority(
         requirement: observation.clone(),
         producer: producer.clone(),
         observation: observation.clone(),
-        producer_contract_revision: PRODUCER_CONTRACT_REVISION.into(),
         observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         static_selection: static_selection.clone(),
         assessment_selection: assessment_selection.clone(),
     };
     AuthorityEvidence {
-        producer_contract_revision: PRODUCER_CONTRACT_REVISION.into(),
         observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         producer,
         observation,

@@ -18,9 +18,8 @@ mod values;
 use super::{wire, work::Work, AdmittedModel, Candidate, Limits, Report, SuppliedDependency};
 use crate::checking::composed::proofs::ProofReport;
 use crate::formal_source::FormalSource;
-use crate::linking::composed::models::AdmittedProducerModel;
 
-pub use temporal_v2::{admit_v2, admit_v2_with_producers, AdmissionV2, TemporalSelection};
+pub use temporal_v2::{admit_v2, AdmissionV2, TemporalSelection};
 pub use temporal_v3::{admit_v3, ActivationSelection, AdmissionV3};
 
 /// Explicit external namespace selection for an actual authored formal source.
@@ -52,16 +51,6 @@ pub struct Selections<'a> {
     pub definition_revision_namespace: &'a str,
     /// Namespace for the exact authored requirement's numeric IR revision.
     pub requirement_revision_namespace: &'a str,
-}
-/// Existing compiled-contract inputs assigned to one admitted producer model.
-#[derive(Clone, Copy, Debug)]
-pub struct ProducerSelection<'a> {
-    /// Constructor-admitted producer/native correspondence.
-    pub model: &'a AdmittedProducerModel<'a>,
-    /// Exact producer-interface artifact from `Selections::dependencies`.
-    pub interface: &'a wire::ArtifactRef,
-    /// Exact producer-declared relation artifact from `Selections::dependencies`.
-    pub relation: &'a wire::ArtifactRef,
 }
 /// Completed source-derived family admission; callers cannot grant it to wire data.
 #[derive(Debug)]
@@ -95,20 +84,9 @@ pub fn admit(
     selections: &Selections<'_>,
     limits: Limits,
 ) -> Report<FamilyAdmission> {
-    admit_with_producers(proofs, selections, &[], limits)
-}
-
-/// Check and lower completed families with admitted producer correspondences.
-pub fn admit_with_producers(
-    proofs: &ProofReport<'_, '_, '_>,
-    selections: &Selections<'_>,
-    producers: &[ProducerSelection<'_>],
-    limits: Limits,
-) -> Report<FamilyAdmission> {
     let mut work = Work::new(limits);
     let result = (|| {
-        let metadata::Lowered { package, .. } =
-            metadata::lower(proofs, selections, producers, &mut work)?;
+        let metadata::Lowered { package, .. } = metadata::lower(proofs, selections, &mut work)?;
         super::validate::package(&package, &mut work)?;
         Ok(FamilyAdmission { package })
     })();
