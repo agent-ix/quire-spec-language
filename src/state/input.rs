@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use crate::protocol_artifact::{wire, ProtocolNumber};
 
-/// Required Producer interface semantic revision.
-pub const PRODUCER_CONTRACT_REVISION: &str = "6259d3a5b99088740df9bcc8e8d60f3720aaa603";
 /// Required observation contract semantic revision.
 pub const OBSERVATION_CONTRACT_REVISION: &str = "4d6230eb8aa9766ff3017360962f2d6368d74cb3";
 
@@ -83,7 +81,6 @@ pub struct AssessmentAuthority {
 /// Independently selected producer/observation inputs and compiled requirement authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorityEvidence {
-    pub producer_contract_revision: String,
     pub observation_contract_revision: String,
     pub producer: wire::ArtifactRef,
     pub observation: wire::ArtifactRef,
@@ -101,7 +98,6 @@ pub struct AuthorityAdapter {
     pub requirement: wire::ArtifactRef,
     pub producer: wire::ArtifactRef,
     pub observation: wire::ArtifactRef,
-    pub producer_contract_revision: String,
     pub observation_contract_revision: String,
     pub static_selection: StaticAuthority,
     pub assessment_selection: AssessmentAuthority,

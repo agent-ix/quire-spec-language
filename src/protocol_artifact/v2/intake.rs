@@ -474,16 +474,6 @@ pub fn encode_candidate(package: &wire::Package, limits: Limits) -> Report<Candi
 
 /// Read exact bounded version-2 bytes against independent complete selections.
 pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<AdmittedPackage> {
-    read_with_producers(bytes, expected, &[], limits)
-}
-
-/// Read exact bounded version-2 bytes with admitted producer views.
-pub fn read_with_producers(
-    bytes: &[u8],
-    expected: &Expected<'_>,
-    producers: &[artifact::ExpectedProducerModel<'_>],
-    limits: Limits,
-) -> Report<AdmittedPackage> {
     let mut work = Work::new(limits);
     let result = (|| {
         work.charge(Dimension::PayloadBytes, bytes.len())?;
@@ -500,11 +490,10 @@ pub fn read_with_producers(
         artifact::intake::sources(&package.inherited, &expected.inherited, &mut work)?;
         artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
         artifact::validate::package(&package.inherited, &mut work)?;
-        let model_schema = artifact::models::validate_with_producers(
+        let model_schema = artifact::models::validate(
             &package.inherited,
             expected.inherited.models,
             expected.inherited.dependencies,
-            producers,
             &mut work,
         )?;
         let canonical = artifact::encoding::bytes(&package, &mut work)?;

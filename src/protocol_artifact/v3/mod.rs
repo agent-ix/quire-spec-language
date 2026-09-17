@@ -7,7 +7,7 @@ pub mod wire;
 
 use crate::protocol_artifact::{v2, wire::Handle};
 use crate::ByteDigest;
-pub use intake::{encode_candidate, read, read_with_producers};
+pub use intake::{encode_candidate, read};
 pub use refusal::{InventorySide, MappingCause, MappingField, Refusal};
 
 /// Exact version-3 payload selection.

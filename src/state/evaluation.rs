@@ -909,8 +909,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .get(owner as usize)
             .and_then(|declaration| declaration.bindings.get(index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(handle.clone())))?;
-        if offered.producer_contract_revision != PRODUCER_CONTRACT_REVISION
-            || offered.observation_contract_revision != OBSERVATION_CONTRACT_REVISION
+        if offered.observation_contract_revision != OBSERVATION_CONTRACT_REVISION
             || offered.static_selection.interface_version != "1.2.0"
             || !valid_identity(&offered.static_selection.document_identity)
             || !valid_identity(&offered.static_selection.model_identity)
@@ -956,7 +955,6 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             || adapter.requirement != requirement.authority
             || adapter.producer != offered.producer
             || adapter.observation != offered.observation
-            || adapter.producer_contract_revision != offered.producer_contract_revision
             || adapter.observation_contract_revision != offered.observation_contract_revision
             || adapter.static_selection != offered.static_selection
             || adapter.assessment_selection != offered.assessment_selection

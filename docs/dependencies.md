@@ -35,7 +35,7 @@ for the remaining registry packages, Unicode-3.0 additionally for unicode-ident,
 the existing LLVM-exception alternatives for wasi, and BSD-2-Clause additionally
 for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 
-The lock now selects 181 packages including this crate, optional and target-specific
+The lock now selects 180 packages including this crate, optional and target-specific
 dependencies. Cargo metadata
 supplies the complete [name/version/source/license snapshot](dependency-licenses.json).
 FR-030 adds optional quire-rs 0.46.0 at
@@ -48,15 +48,13 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
-`tests/producer_correspondence.rs` selects `agent-ix-baseline-producer` 0.0.0
-from the filament-core-data merge
-`404288282402d60de007295ccbafa960532b955e`. The crate declares
-`AGPL-3.0-only` and `publish = false`; this repository consumes its public
-constructor-admitted static bundle and correspondence API without copying
-producer source or adding a second reader. The revision move changes no
-third-party package version or grant. Remaining work: #131 replaces it with
+#131 removes the `agent-ix-baseline-producer` dependency, `tests/producer_correspondence.rs`
+and the whole Producer 1.2/Filament correspondence adapter (`AdmittedProducerModel`,
+`ProducerCompatibilitySelection` and the `_with_producers` reader/admission
+family). Nothing in this prerelease repo consumed that path, so it is deleted
+outright rather than bridged. Remaining work: #131 replaces model intake with
 the `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` crates for
-domain-package model intake (FR-056).
+domain-package model intake (FR-056), in a follow-up PR.
 
 FR-020 selects the reviewed `unbounded_depth` feature on the existing serde_json
 pin. Only package intake disables the library recursion guard; its metered

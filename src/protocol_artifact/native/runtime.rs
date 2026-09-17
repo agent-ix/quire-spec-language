@@ -749,48 +749,18 @@ pub(super) fn body(
     Ok((runtime.anchors, runtime.bindings, body))
 }
 
+// No admitted correspondence can authorize a relationship export without the
+// removed Producer 1.2 adapter (#131); the composed model layer already
+// refuses every `c::Relationship` occurrence as an unsupported
+// correspondence (`ModelWalk::relationship`), so native compilation reaches
+// this only defensively and refuses the same way.
 fn relationship_authority(
-    context: &Declaration<'_, '_>,
-    relationship: &c::Relationship,
-    builder: &ValueBuilder<'_>,
-    work: &mut Work,
+    _context: &Declaration<'_, '_>,
+    _relationship: &c::Relationship,
+    _builder: &ValueBuilder<'_>,
+    _work: &mut Work,
 ) -> Result<(w::ExportRef, u32), Error> {
-    let bound = relationship_binding(context, relationship, work)?;
-    let export = bound.export();
-    if export.path.len() != 1 {
-        return Err(Error::Invalid(Invalid::Model));
-    }
-    let model = builder.export(
-        bound.model(),
-        w::ExportKind::Relationship,
-        &export.path[0],
-        None,
-        work,
-    )?;
-    let relation = builder.producer_relation(bound.model(), work)?;
-    Ok((model, relation))
-}
-
-pub(super) fn relationship_binding<'a, 'm>(
-    context: &'a Declaration<'_, 'm>,
-    relationship: &c::Relationship,
-    work: &mut Work,
-) -> Result<&'a crate::linking::composed::models::BoundRelationship<'m>, Error> {
-    let span = Span {
-        start: relationship.model.model.span.start,
-        end: relationship.model.name.span.end,
-    };
-    for occurrence in &context.exports.occurrences {
-        work.visit()?;
-        if occurrence.span != span {
-            continue;
-        }
-        if let ModelTarget::Relationship(bound) = &occurrence.target {
-            return Ok(bound);
-        }
-        return Err(Error::Invalid(Invalid::Model));
-    }
-    Err(Error::Invalid(Invalid::Model))
+    Err(Error::Unsupported(Unsupported::ProducerCorrespondence))
 }
 
 fn population_name(

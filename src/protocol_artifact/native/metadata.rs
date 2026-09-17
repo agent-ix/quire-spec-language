@@ -2,8 +2,8 @@
 //! FR-042: source/proof correspondence and exact selected semantic resources.
 use super::{
     layout,
-    types::{index as checked_index, text, ProducerSelection as LoweredProducer, ValueBuilder},
-    ProducerSelection, Selections,
+    types::{index as checked_index, text, ValueBuilder},
+    Selections,
 };
 use crate::checking::composed::proofs::ProofReport;
 use crate::linking::composed::models::ModelTarget;
@@ -149,7 +149,6 @@ pub(super) struct Lowered {
 pub(super) fn lower(
     proofs: &ProofReport<'_, '_, '_>,
     selections: &Selections<'_>,
-    producers: &[ProducerSelection<'_>],
     work: &mut Work,
 ) -> Result<Lowered, Error> {
     let binding = proofs.types().binding();
@@ -343,27 +342,13 @@ pub(super) fn lower(
     }
     let model_binding = binding.models().ok_or(Error::Invalid(Invalid::Model))?;
     work.charge(Dimension::Models, selections.models.len())?;
-    work.charge(Dimension::Models, producers.len())?;
     work.charge(
         Dimension::Entries,
-        selections
-            .models
-            .len()
-            .saturating_mul(2)
-            .saturating_add(producers.len()),
+        selections.models.len().saturating_mul(2),
     )?;
-    let mut producer_by_model = BTreeMap::new();
-    for selected in producers {
-        work.visit()?;
-        let key = std::ptr::from_ref(selected.model);
-        if producer_by_model.insert(key, *selected).is_some() {
-            return Err(Error::Invalid(Invalid::Duplicate));
-        }
-    }
     let mut models = Vec::new();
     for model in selections.models {
         let mut found = false;
-        let mut producer = None;
         for input in model_binding.inputs() {
             work.visit()?;
             if (*input)
@@ -371,45 +356,18 @@ pub(super) fn lower(
                 .is_some_and(|actual| std::ptr::eq(actual, model.model))
             {
                 found = true;
-                if let Some(admitted) = (*input).producer_model() {
-                    let key = std::ptr::from_ref(admitted);
-                    let selected = producer_by_model.get(&key).copied().ok_or(Error::Producer(
-                        crate::linking::composed::producer::ProducerModelRefusal::Correspondence,
-                    ))?;
-                    if producer.replace(selected).is_some() {
-                        return Err(Error::Invalid(Invalid::Duplicate));
-                    }
-                }
             }
         }
         if !found {
             return Err(Error::Invalid(Invalid::Model));
         }
-        if let Some(selected) = producer {
-            let key = std::ptr::from_ref(selected.model);
-            if producer_by_model.remove(&key).is_none() {
-                return Err(Error::Invalid(Invalid::Inventory));
-            }
-        }
         let artifact = meta.dependency(model.artifact, work)?;
-        let producer = match producer {
-            Some(selected) => Some(LoweredProducer {
-                selected,
-                interface: meta.dependency(selected.interface, work)?,
-                relation: meta.dependency(selected.relation, work)?,
-            }),
-            None => None,
-        };
-        models.push((artifact, *model, producer));
+        models.push((artifact, *model));
     }
-    if !producer_by_model.is_empty() {
-        return Err(Error::Invalid(Invalid::Inventory));
-    }
-    models.sort_by_key(|(index, _, _)| *index);
-    let indices = models.iter().map(|(i, _, _)| *i).collect::<Vec<_>>();
-    let selected_models = models.iter().map(|(_, m, _)| *m).collect::<Vec<_>>();
-    let selected_producers = models.iter().map(|(_, _, p)| *p).collect::<Vec<_>>();
-    let mut builder = ValueBuilder::new(&selected_models, &indices, &selected_producers, work)?;
+    models.sort_by_key(|(index, _)| *index);
+    let indices = models.iter().map(|(i, _)| *i).collect::<Vec<_>>();
+    let selected_models = models.iter().map(|(_, m)| *m).collect::<Vec<_>>();
+    let mut builder = ValueBuilder::new(&selected_models, &indices, work)?;
     let mut declarations = Vec::new();
     let mut families = BTreeSet::new();
     let mut features = BTreeSet::from(["quire.protocol.bindings/1", "quire.protocol.numeric/1"]);
@@ -598,22 +556,9 @@ pub(super) fn lower(
         declarations,
     };
     // The same independent model adapter used by the public reader checks the
-    // actual export, locus, type and producer authority before bytes can exist.
-    let expected_producers = producers
-        .iter()
-        .map(|producer| artifact::ExpectedProducerModel {
-            model: producer.model,
-            interface: producer.interface,
-            relation: producer.relation,
-        })
-        .collect::<Vec<_>>();
-    let model_schema = artifact::models::validate_with_producers(
-        &package,
-        selections.models,
-        selections.dependencies,
-        &expected_producers,
-        work,
-    )?;
+    // actual export, locus and type before bytes can exist.
+    let model_schema =
+        artifact::models::validate(&package, selections.models, selections.dependencies, work)?;
     Ok(Lowered {
         package,
         model_schema,
