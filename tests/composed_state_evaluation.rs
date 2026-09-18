@@ -279,7 +279,6 @@ fn authority(
         .artifact
         .clone();
     let static_selection = StaticAuthority {
-        interface_version: "1.2.0".into(),
         document_identity: "document:selected".into(),
         document_digest: canonical('1'),
         model_identity: "model:selected".into(),
@@ -863,7 +862,9 @@ fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
     });
 }
 
-/// Tracing: TC-136.
+/// Tracing: TC-136. The authority below sets document/model/profile/configuration
+/// identity with `sha256` `filament-canonical-json-1` digests, and evaluation
+/// completes.
 #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-4", "FR-049-AC-5")]
 #[test]
 fn tc_136_pre_reads_the_exact_invocation_pre_observation_and_binding() {

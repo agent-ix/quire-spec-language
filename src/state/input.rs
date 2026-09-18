@@ -38,7 +38,7 @@ pub struct ObjectKey {
     pub identifier: String,
 }
 
-/// Producer canonical digest tuple from the selected Producer 1.2 interface.
+/// Producer canonical digest tuple, at the authority's static selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalDigest {
     pub algorithm: String,
@@ -50,10 +50,15 @@ pub struct CanonicalDigest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservationDigest(pub String);
 
-/// Producer-owned static identities required by composed evaluation.
+/// Static document, model, profile and configuration identity and digest
+/// required by composed evaluation.
+///
+/// Each identity is paired with a `sha256` digest in the
+/// `filament-canonical-json-1` domain, checked by `valid_digest` in
+/// `crate::state::evaluation`. `StaticAuthority` is a plain Rust struct the
+/// caller builds directly from those checked identities and digests.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StaticAuthority {
-    pub interface_version: String,
     pub document_identity: String,
     pub document_digest: CanonicalDigest,
     pub model_identity: String,
