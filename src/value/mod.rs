@@ -55,7 +55,11 @@ mod unit;
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
 // `crate::model` reuses this crate-wide `usize -> u64` persistence/wire
 // conversion (PR #140 F7) rather than a bare `as u64` at its own charge sites.
-pub(crate) use accounting::length_amount;
+// FR-153's `crate::model::population` charges `lookup.*`, `population.visit`
+// and `collection.*` directly against this crate's own `ScalarLimitsV1`
+// meter (`quire.value.accounting/v1` is the one schedule those charge points
+// belong to), so `Charge` itself is exposed crate-wide the same way.
+pub(crate) use accounting::{length_amount, Charge};
 pub use collection::{
     construct_collection, form_collection, CardinalityBound, CollectionKind, CollectionType,
     CollectionValue, EmptyCardinalityBound,
