@@ -24,7 +24,8 @@ use quire_spec_language::model::bundle::{
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
 use quire_spec_language::model::normalize::{
-    normalize, object_universe, EffectiveView, NormalizeOutcome,
+    normalize, object_universe, EffectiveView, ModelRefusalCause, NormalizeOutcome,
+    OfferedSelection,
 };
 use quire_spec_language::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AbsenceMode, AdmissionChargePoint,
@@ -397,7 +398,12 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     ) {
         AdmissionOutcome::UnknownClosure(refusal) => {
             assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(refusal.cause, "incomplete-scope");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::IncompleteScope {
+                    selection: "bundle.n01".to_string(),
+                }
+            );
         }
         other => panic!("expected UnknownClosure(incomplete-scope), got {other:?}"),
     }
@@ -417,7 +423,13 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     ) {
         AdmissionOutcome::UnknownClosure(refusal) => {
             assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(refusal.cause, "unclosed-subtypes");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::UnclosedSubtypes {
+                    selection: "bundle.n01".to_string(),
+                    type_name: Some(ProducerKey::fixture("model.A")),
+                }
+            );
         }
         other => panic!("expected UnknownClosure(unclosed-subtypes), got {other:?}"),
     }
@@ -599,7 +611,12 @@ fn l03_lookup_refused_mode() {
     match outcome {
         LookupOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "absent-key");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AbsentKey {
+                    key: b"c9".to_vec(),
+                }
+            );
         }
         other => panic!("expected Refused(invalid_runtime_input/absent-key), got {other:?}"),
     }
@@ -637,7 +654,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     match outcome {
         LookupOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::IllTyped);
-            assert_eq!(refusal.cause, "type-mismatch");
+            assert_eq!(refusal.cause, ModelRefusalCause::TypeMismatch);
         }
         other => panic!("expected Refused(ill_typed/type-mismatch), got {other:?}"),
     }
@@ -682,7 +699,13 @@ fn l04_lookup_foreign_universe_refuses() {
     match outcome {
         LookupOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-universe");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignUniverse {
+                    actual: foreign_universe.as_bytes().to_vec(),
+                    expected: binding.universe().clone(),
+                }
+            );
         }
         other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
     }
@@ -718,7 +741,14 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "conflicting-identity");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingIdentity {
+                    object: "a1".to_string(),
+                    existing_type: type_id(&view, "model.A"),
+                    declared_type: type_id(&view, "model.B"),
+                }
+            );
         }
         other => {
             panic!("expected Refused(invalid_runtime_input/conflicting-identity), got {other:?}")
@@ -809,7 +839,13 @@ fn l05_foreign_type_refuses() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-type");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignType {
+                    member: "z1".to_string(),
+                    type_name: ProducerKey::fixture("model.Z"),
+                }
+            );
         }
         other => panic!("expected Refused(foreign_reference/foreign-type), got {other:?}"),
     }
@@ -847,7 +883,13 @@ fn l06_cardinality_bound_and_incomplete() {
     match outcome {
         AllInstancesOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::CardinalityOutOfBound);
-            assert_eq!(refusal.cause, "above-maximum");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AboveMaximum {
+                    selected: 3,
+                    maximum: 2,
+                }
+            );
         }
         other => panic!("expected Refused(cardinality_out_of_bound/above-maximum), got {other:?}"),
     }
@@ -943,7 +985,13 @@ fn l05_foreign_model_selection_refuses_at_admission() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignModelSelection {
+                    actual: OfferedSelection::Document("bundle.other".to_string()),
+                    expected: bundle.model_selection.clone(),
+                }
+            );
         }
         other => {
             panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
@@ -984,7 +1032,13 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignModelSelection {
+                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    expected: bundle.model_selection.clone(),
+                }
+            );
         }
         other => {
             panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
@@ -1215,7 +1269,15 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "subsetting-violation");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::SubsettingViolation {
+                    object: "a1".to_owned(),
+                    record: ProducerKey::fixture("model.subset.some-all"),
+                    subsetting: ProducerKey::fixture("model.A.some"),
+                    subsetted: ProducerKey::fixture("model.A.all"),
+                }
+            );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("a3"));
             assert!(refusal.detail.contains("model.A.some"));
@@ -1334,7 +1396,13 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "duplicate-member");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DuplicateMember {
+                    object: "a1".to_owned(),
+                    field: ProducerKey::fixture("model.A.all"),
+                }
+            );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("model.A.all"));
         }
@@ -1475,7 +1543,13 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::FrameViolation);
-            assert_eq!(refusal.cause, "unauthorized-change");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::FrameDeleteOutsideGrant {
+                    object: "a2".to_owned(),
+                    type_name: ProducerKey::fixture("model.A"),
+                }
+            );
             assert!(refusal.detail.contains("a2"));
         }
         other => panic!("expected Refused(frame_violation/unauthorized-change), got {other:?}"),
@@ -1520,7 +1594,13 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::FrameViolation);
-            assert_eq!(refusal.cause, "unauthorized-change");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::FrameCreateOutsideGrant {
+                    object: "a9".to_owned(),
+                    type_name: ProducerKey::fixture("model.A"),
+                }
+            );
             assert!(refusal.detail.contains("a9"));
         }
         other => panic!("expected Refused(frame_violation/unauthorized-change), got {other:?}"),
@@ -1574,7 +1654,13 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::FrameViolation);
-            assert_eq!(refusal.cause, "unauthorized-change");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                    object: "a1".to_owned(),
+                    field: ProducerKey::fixture("model.A.x"),
+                }
+            );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("model.A.x"));
         }
@@ -1759,7 +1845,13 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::FrameViolation);
-            assert_eq!(refusal.cause, "unauthorized-change");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                    object: "a1".to_owned(),
+                    field: ProducerKey::fixture("model.A.ordered"),
+                }
+            );
             assert!(refusal.detail.contains("model.A.ordered"));
         }
         other => panic!(
@@ -1994,7 +2086,14 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::FrameViolation);
-            assert_eq!(refusal.cause, "unauthorized-change");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::FrameTypeChanged {
+                    object: "a1".to_owned(),
+                    pre_type: ProducerKey::fixture("model.A"),
+                    post_type: ProducerKey::fixture("model.B"),
+                }
+            );
             assert!(refusal.detail.contains("a1"));
         }
         other => panic!(
@@ -2090,7 +2189,15 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::PopulationDeltaMismatch);
-            assert_eq!(refusal.cause, "delta-disagreement");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DeclaredDeltaMismatch {
+                    declared_created: BTreeSet::new(),
+                    declared_deleted: BTreeSet::new(),
+                    computed_created: BTreeSet::new(),
+                    computed_deleted: ["a2".to_owned()].into_iter().collect(),
+                }
+            );
         }
         other => {
             panic!("expected Refused(population_delta_mismatch/delta-disagreement), got {other:?}")
@@ -2144,12 +2251,18 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::PopulationDeltaMismatch);
-            assert_eq!(refusal.cause, "delta-disagreement");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DeclaredCreateDeleteOverlap {
+                    identity: "a2".to_owned(),
+                }
+            );
             // PR #168 review round 2, finding 6: pin the overlap check's own
-            // detail text, not just its code/cause, so disabling the
-            // overlap-check branch specifically (rather than any other
-            // `delta_mismatch` branch, which shares the same code/cause)
-            // turns this test red.
+            // detail text too, not just its code/cause -- now that `cause`
+            // is the typed `DeclaredCreateDeleteOverlap` variant, the
+            // `assert_eq!` above already discriminates this branch from the
+            // other `delta_mismatch` call sites on its own, but the detail
+            // text stays pinned as well for the message-content guarantee.
             assert!(
                 refusal.detail.contains("both created and deleted"),
                 "expected the overlap check's own detail text, got {:?}",

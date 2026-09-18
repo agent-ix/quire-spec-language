@@ -31,6 +31,11 @@ use crate::model::population::AbsenceMode;
 
 /// The largest expression nesting depth a checker may declare. It keeps every
 /// recursive checking pass well inside the host stack.
+///
+/// #141 P2: [`crate::model::normalize::MAX_GENERALIZATION_DEPTH`] shares this
+/// value for the same reason (a safe host-stack bound for a *different*
+/// recursion, the FR-150 generalization ancestor-path walk), not because
+/// either limit constrains the other.
 pub const MAX_CHECKING_DEPTH: u64 = 128;
 
 /// The NFR-010 node admission limits this checker declares before accepting

@@ -120,6 +120,14 @@
 //! foreign checks, and binding admission; selecting which already-admitted
 //! binding a query reads is a structural dispatch over that already-charged
 //! data, not a new evaluation step.
+#![allow(
+    clippy::large_enum_variant,
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+)]
+#![allow(
+    clippy::result_large_err,
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -131,7 +139,9 @@ use crate::model::bundle::{
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
-use crate::model::normalize::{object_universe, EffectiveView, ModelRefusal};
+use crate::model::normalize::{
+    object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
+};
 use crate::value::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
@@ -592,7 +602,10 @@ pub fn admit_binding(
     if view.model_selection != bundle.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-model-selection",
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: OfferedSelection::View(view.model_selection.clone()),
+                expected: bundle.model_selection.clone(),
+            },
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting bundle's {}",
                 view.model_selection.export.identity, bundle.model_selection.export.identity
@@ -602,7 +615,10 @@ pub fn admit_binding(
     if document.model_identity != bundle.model_selection.export.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-model-selection",
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: OfferedSelection::Document(document.model_identity.clone()),
+                expected: bundle.model_selection.clone(),
+            },
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",
                 document.model_identity, bundle.model_selection.export.identity
@@ -612,7 +628,9 @@ pub fn admit_binding(
     if !document.closed_world {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
-            cause: "incomplete-scope",
+            cause: ModelRefusalCause::IncompleteScope {
+                selection: bundle.model_selection.export.identity.clone(),
+            },
             detail: format!(
                 "population document for {} does not declare closedWorld: true",
                 bundle.model_selection.export.identity
@@ -622,7 +640,13 @@ pub fn admit_binding(
     if matches!(subtype_closure, GeneralizationClosure::Open) {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
-            cause: "unclosed-subtypes",
+            cause: ModelRefusalCause::UnclosedSubtypes {
+                selection: bundle.model_selection.export.identity.clone(),
+                type_name: document
+                    .members
+                    .first()
+                    .map(|member| member.type_identity.clone()),
+            },
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
                 bundle.model_selection.export.identity,
@@ -668,7 +692,10 @@ pub fn admit_binding(
         let Some(effective_type) = type_lookup.get(&member.type_identity) else {
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::ForeignReference,
-                cause: "foreign-type",
+                cause: ModelRefusalCause::ForeignType {
+                    member: member.object.clone(),
+                    type_name: member.type_identity.clone(),
+                },
                 detail: format!(
                     "member {} names type {}, absent from the effective view",
                     member.object, member.type_identity.identity
@@ -687,7 +714,11 @@ pub fn admit_binding(
             }
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
-                cause: "conflicting-identity",
+                cause: ModelRefusalCause::ConflictingIdentity {
+                    object: key.object.clone(),
+                    existing_type: existing.type_identity.clone(),
+                    declared_type: key.type_identity.clone(),
+                },
                 detail: format!(
                     "object {} is declared with conflicting types {} and {}",
                     key.object,
@@ -747,7 +778,10 @@ pub fn admit_binding(
                     // FR-272's `invalid_runtime_input` cause list is
                     // closed; there is no dedicated duplicate-field
                     // variant, so this is the catalogued `duplicate-member`.
-                    cause: "duplicate-member",
+                    cause: ModelRefusalCause::DuplicateMember {
+                        object: key.object.clone(),
+                        field: field.clone(),
+                    },
                     detail: format!(
                         "object {} declares field {} more than once in its field_values",
                         key.object, field.identity
@@ -778,7 +812,12 @@ pub fn admit_binding(
                     if !subsetted_values.iter().any(|other| other == value) {
                         return AdmissionOutcome::Refused(ModelRefusal {
                             code: Code::InvalidRuntimeInput,
-                            cause: "subsetting-violation",
+                            cause: ModelRefusalCause::SubsettingViolation {
+                                object: key.object.clone(),
+                                record: record.key.clone(),
+                                subsetting: record.subsetting.clone(),
+                                subsetted: record.subsetted.clone(),
+                            },
                             detail: format!(
                                 "object {}'s {} names {value}, not among its {} values \
                                  (subsetting record {})",
@@ -943,24 +982,25 @@ pub fn admit_invocation(
     }
 }
 
-/// One [`ModelRefusal`]/`Code::FrameViolation` for `detail`, cause
-/// `unauthorized-change` (the catalogued cause for this code; see
-/// `admit_invocation`'s own docs).
-fn frame_violation(detail: String) -> ModelRefusal {
+/// One [`ModelRefusal`]/`Code::FrameViolation` for `detail`/`cause`, `cause`
+/// one of [`ModelRefusalCause`]'s four `unauthorized-change` variants (the
+/// catalogued cause tag for this code; see `admit_invocation`'s own docs).
+fn frame_violation(cause: ModelRefusalCause, detail: String) -> ModelRefusal {
     ModelRefusal {
         code: Code::FrameViolation,
-        cause: "unauthorized-change",
+        cause,
         detail,
     }
 }
 
-/// One [`ModelRefusal`]/`Code::PopulationDeltaMismatch` for `detail`, cause
-/// `delta-disagreement` (the catalogued cause for this code; see
+/// One [`ModelRefusal`]/`Code::PopulationDeltaMismatch` for `detail`/`cause`,
+/// `cause` one of [`ModelRefusalCause`]'s three `delta-disagreement`
+/// variants (the catalogued cause tag for this code; see
 /// `admit_invocation`'s own docs).
-fn delta_mismatch(detail: String) -> ModelRefusal {
+fn delta_mismatch(cause: ModelRefusalCause, detail: String) -> ModelRefusal {
     ModelRefusal {
         code: Code::PopulationDeltaMismatch,
-        cause: "delta-disagreement",
+        cause,
         detail,
     }
 }
@@ -1126,22 +1166,35 @@ fn enforce_frame(
                 }
             }
             if !allowed {
-                return Err(frame_violation(format!(
-                    "invocation creates object {object} of type {}, outside the operation's \
-                     declared creates frame",
-                    post_type.identity
-                )));
+                return Err(frame_violation(
+                    ModelRefusalCause::FrameCreateOutsideGrant {
+                        object: (*object).to_owned(),
+                        type_name: (*post_type).clone(),
+                    },
+                    format!(
+                        "invocation creates object {object} of type {}, outside the operation's \
+                         declared creates frame",
+                        post_type.identity
+                    ),
+                ));
             }
             computed_created.insert((*object).to_owned());
             continue;
         };
         if *pre_type != *post_type {
-            return Err(frame_violation(format!(
-                "invocation changes object {object}'s most-specific type from {} to {} between \
-                 pre and post, which no operation frame may authorize (FR-151's effect grants \
-                 cover fieldWrites/creates/deletes only)",
-                pre_type.identity, post_type.identity
-            )));
+            return Err(frame_violation(
+                ModelRefusalCause::FrameTypeChanged {
+                    object: (*object).to_owned(),
+                    pre_type: (*pre_type).clone(),
+                    post_type: (*post_type).clone(),
+                },
+                format!(
+                    "invocation changes object {object}'s most-specific type from {} to {} \
+                     between pre and post, which no operation frame may authorize (FR-151's \
+                     effect grants cover fieldWrites/creates/deletes only)",
+                    pre_type.identity, post_type.identity
+                ),
+            ));
         }
     }
 
@@ -1159,11 +1212,17 @@ fn enforce_frame(
             }
         }
         if !allowed {
-            return Err(frame_violation(format!(
-                "invocation deletes object {object} of type {}, outside the operation's \
-                 declared deletes frame",
-                pre_type.identity
-            )));
+            return Err(frame_violation(
+                ModelRefusalCause::FrameDeleteOutsideGrant {
+                    object: (*object).to_owned(),
+                    type_name: (*pre_type).clone(),
+                },
+                format!(
+                    "invocation deletes object {object} of type {}, outside the operation's \
+                     declared deletes frame",
+                    pre_type.identity
+                ),
+            ));
         }
         computed_deleted.insert((*object).to_owned());
     }
@@ -1192,11 +1251,17 @@ fn enforce_frame(
             if field_write_covered(bundle, declared.effect, field) {
                 continue;
             }
-            return Err(frame_violation(format!(
-                "invocation changes object {}'s field {}, outside the operation's declared \
-                 fieldWrites frame",
-                pre_member.object, field.identity
-            )));
+            return Err(frame_violation(
+                ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                    object: pre_member.object.clone(),
+                    field: field.clone(),
+                },
+                format!(
+                    "invocation changes object {}'s field {}, outside the operation's declared \
+                     fieldWrites frame",
+                    pre_member.object, field.identity
+                ),
+            ));
         }
     }
 
@@ -1224,23 +1289,37 @@ fn check_declared_delta(
     ] {
         for identity in declared_list {
             if !identities.insert(identity.clone()) {
-                return Err(delta_mismatch(format!(
-                    "invocation declares {identity} more than once in the same delta list"
-                )));
+                return Err(delta_mismatch(
+                    ModelRefusalCause::DuplicateDeclaredIdentity {
+                        identity: identity.clone(),
+                    },
+                    format!("invocation declares {identity} more than once in the same delta list"),
+                ));
             }
         }
     }
     if let Some(overlap) = declared_created.intersection(&declared_deleted).next() {
-        return Err(delta_mismatch(format!(
-            "invocation declares {overlap} as both created and deleted"
-        )));
+        return Err(delta_mismatch(
+            ModelRefusalCause::DeclaredCreateDeleteOverlap {
+                identity: overlap.clone(),
+            },
+            format!("invocation declares {overlap} as both created and deleted"),
+        ));
     }
     if declared_created != *computed_created || declared_deleted != *computed_deleted {
-        return Err(delta_mismatch(format!(
-            "declared population delta (created {declared_created:?}, deleted \
-             {declared_deleted:?}) differs from the complete pre/post populations (created \
-             {computed_created:?}, deleted {computed_deleted:?})"
-        )));
+        return Err(delta_mismatch(
+            ModelRefusalCause::DeclaredDeltaMismatch {
+                declared_created: declared_created.clone(),
+                declared_deleted: declared_deleted.clone(),
+                computed_created: computed_created.clone(),
+                computed_deleted: computed_deleted.clone(),
+            },
+            format!(
+                "declared population delta (created {declared_created:?}, deleted \
+                 {declared_deleted:?}) differs from the complete pre/post populations (created \
+                 {computed_created:?}, deleted {computed_deleted:?})"
+            ),
+        ));
     }
     Ok(())
 }
@@ -1322,14 +1401,14 @@ pub fn all_instances(
     let Some(declared_maximum) = binding.declared_maximum() else {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
-            cause: "operator-ineligible",
+            cause: ModelRefusalCause::OperatorIneligible,
             detail: "population binding has no declared maximum".to_owned(),
         });
     };
     if !is_object_type(bundle, t) {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
-            cause: "type-mismatch",
+            cause: ModelRefusalCause::TypeMismatch,
             detail: format!("{} is not a model object type", t.identity),
         });
     }
@@ -1359,7 +1438,10 @@ pub fn all_instances(
     if n > declared_maximum {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::CardinalityOutOfBound,
-            cause: "above-maximum",
+            cause: ModelRefusalCause::AboveMaximum {
+                selected: selected.len(),
+                maximum: usize::try_from(declared_maximum).unwrap_or(usize::MAX),
+            },
             detail: format!(
                 "selected count {n} is above the declared maximum [0,{declared_maximum}]"
             ),
@@ -1472,7 +1554,7 @@ pub fn lookup(
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {
                 code: Code::IllTyped,
-                cause: "type-mismatch",
+                cause: ModelRefusalCause::TypeMismatch,
                 detail: format!(
                     "{} does not conform to {}",
                     r.static_type.identity, t.identity
@@ -1491,7 +1573,10 @@ pub fn lookup(
     if r.key.universe != *binding.universe() {
         return LookupOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-universe",
+            cause: ModelRefusalCause::ForeignUniverse {
+                actual: r.key.universe.as_bytes().to_vec(),
+                expected: binding.universe().clone(),
+            },
             detail: format!(
                 "reference key names universe {}, not the binding's {}",
                 r.key.universe.hex(),
@@ -1516,7 +1601,9 @@ pub fn lookup(
         AbsenceMode::Undefined => LookupOutcome::Undefined,
         AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
-            cause: "absent-key",
+            cause: ModelRefusalCause::AbsentKey {
+                key: r.key.object.clone().into_bytes(),
+            },
             detail: format!("{} is not a member of the bound population", r.key.object),
         }),
         AbsenceMode::Empty => {

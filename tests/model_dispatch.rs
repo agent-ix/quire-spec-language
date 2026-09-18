@@ -21,7 +21,7 @@ use quire_spec_language::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
 use quire_spec_language::model::key::ProducerKey;
-use quire_spec_language::model::normalize::{normalize, NormalizeOutcome};
+use quire_spec_language::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
 
 fn object_type(identity: &str) -> BundleRecord {
     BundleRecord::ObjectType(ObjectTypeRecord {
@@ -280,7 +280,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     let refusal = &refusals[0];
     assert_eq!(refusal.subtype.identity, "model.D");
     assert_eq!(refusal.code, Code::AmbiguousDispatch);
-    assert_eq!(refusal.cause, "multiple-undominated");
+    assert_eq!(refusal.cause, ModelRefusalCause::MultipleUndominated);
     let mut candidate_names: Vec<&str> = refusal
         .candidates
         .iter()
@@ -373,7 +373,9 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
         .collect();
     assert_eq!(subtypes, vec!["model.D", "model.C", "model.B", "model.A"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
-    assert!(refusals.iter().all(|r| r.cause == "no-applicable"));
+    assert!(refusals
+        .iter()
+        .all(|r| r.cause == ModelRefusalCause::NoApplicable));
     assert!(refusals.iter().all(|r| r.candidates.is_empty()));
     assert!(!meter
         .admitted_charges()
@@ -460,7 +462,7 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
     let LinkCheckOutcome::OpenClosure(unclosed) = outcome else {
         panic!("expected an open-closure outcome, got {outcome:?}");
     };
-    assert_eq!(unclosed.cause, "unclosed-method-set");
+    assert_eq!(unclosed.cause, ModelRefusalCause::UnclosedMethodSet);
     assert_eq!(unclosed.operation.identity, "model.A.size");
     assert!(meter.admitted_charges().is_empty());
 }

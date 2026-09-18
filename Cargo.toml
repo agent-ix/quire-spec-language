@@ -82,6 +82,11 @@ name = "model_systems"
 path = "tests/model_systems.rs"
 required-features = ["test-support"]
 
+[[test]]
+name = "model_reference_queries"
+path = "tests/model_reference_queries.rs"
+required-features = ["test-support"]
+
 [lints.rust]
 unsafe_code = "forbid"
 

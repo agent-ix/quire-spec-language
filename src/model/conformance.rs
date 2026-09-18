@@ -58,6 +58,14 @@
 //!   actually normalizes through it, `normalize`'s own phase 4
 //!   (`apply_redefinitions`'s undominated-edges branch), which already has
 //!   every sibling redefiner of a contended target in view.
+#![allow(
+    clippy::large_enum_variant,
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+)]
+#![allow(
+    clippy::result_large_err,
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -68,7 +76,7 @@ use crate::model::bundle::{
     OperationMemberRecord, PostconditionClause, RedefinitionRecord, SubsettingRecord,
 };
 use crate::model::key::ProducerKey;
-use crate::model::normalize::ModelRefusal;
+use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::value::{
     established_field_fact, Connective, Established, Integer, IntegerInterval, Location, Node,
     NodeKind, OrderedKind, OrderingOperator, Origin, ProvedInterval, Value, ValueType,
@@ -88,7 +96,7 @@ pub struct AxisFailure {
     /// The stable top-level code.
     pub code: Code,
     /// The FR-151-specific cause tag.
-    pub cause: &'static str,
+    pub cause: ModelRefusalCause,
     /// A human-readable detail naming the offending declarations.
     pub detail: String,
 }
@@ -126,10 +134,10 @@ pub enum RedefinitionTargetOutcome {
     /// Zero or multiple valid inherited targets; every checked record and
     /// its named target, in bundle order.
     Refused {
-        /// FR-151's cause tag: always `"redefinition-target"` — TC-196 R07
-        /// reports both failure shapes under "the same refusal" (see the
-        /// module docs).
-        cause: &'static str,
+        /// FR-151's cause tag: always [`ModelRefusalCause::RedefinitionTarget`]
+        /// — TC-196 R07 reports both failure shapes under "the same refusal"
+        /// (see the module docs).
+        cause: ModelRefusalCause,
         /// The record/target pairs considered.
         candidates: Vec<(ProducerKey, ProducerKey)>,
         /// The distinct valid (genuinely inherited) targets among
@@ -251,7 +259,9 @@ pub(super) fn type_conforms(
         if steps > MAX_CONFORMANCE_DEPTH {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: "conformance-depth",
+                cause: ModelRefusalCause::ConformanceDepth {
+                    from: s.clone(),
+                },
                 detail: format!(
                     "conformance check from {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
                     s.identity
@@ -291,7 +301,7 @@ fn charge_axis(meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::ConformanceAxis))
 }
 
-fn missing_member(cause: &'static str, identity: &str, role: &str) -> ModelRefusal {
+fn missing_member(cause: ModelRefusalCause, identity: &str, role: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::DanglingReference,
         cause,
@@ -309,14 +319,18 @@ pub fn check_field_redefinition(
     let index = ConformanceIndex::build(bundle);
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            "unknown-redefining",
+            ModelRefusalCause::UnknownRedefining {
+                member: record.redefining.clone(),
+            },
             &record.redefining.identity,
             "redefining field",
         ));
     };
     let Some(redefined) = index.fields.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            "unknown-redefined",
+            ModelRefusalCause::UnknownRedefined {
+                member: record.redefined.clone(),
+            },
             &record.redefined.identity,
             "redefined field",
         ));
@@ -336,7 +350,7 @@ pub fn check_field_redefinition(
         Ok(false) => failures.push(AxisFailure {
             axis: "value-type",
             code: Code::IllTyped,
-            cause: "variance-result",
+            cause: ModelRefusalCause::VarianceResult,
             detail: format!(
                 "{} does not conform to {}",
                 redefining.value_type.identity, redefined.value_type.identity
@@ -352,7 +366,10 @@ pub fn check_field_redefinition(
         failures.push(AxisFailure {
             axis: "multiplicity",
             code: Code::IllTyped,
-            cause: "multiplicity-narrowing",
+            cause: ModelRefusalCause::MultiplicityNarrowing {
+                from: redefining.multiplicity,
+                to: redefined.multiplicity,
+            },
             detail: format!(
                 "{:?} does not conform to {:?}",
                 redefining.multiplicity, redefined.multiplicity
@@ -380,14 +397,18 @@ pub fn check_subsetting(
     let index = ConformanceIndex::build(bundle);
     let Some(subsetting) = index.fields.get(&record.subsetting) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            "unknown-subsetting",
+            ModelRefusalCause::UnknownSubsetting {
+                member: record.subsetting.clone(),
+            },
             &record.subsetting.identity,
             "subsetting field",
         ));
     };
     let Some(subsetted) = index.fields.get(&record.subsetted) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            "unknown-subsetted",
+            ModelRefusalCause::UnknownSubsetted {
+                member: record.subsetted.clone(),
+            },
             &record.subsetted.identity,
             "subsetted field",
         ));
@@ -407,7 +428,10 @@ pub fn check_subsetting(
         Ok(false) => failures.push(AxisFailure {
             axis: "subsetting-type",
             code: Code::IllTyped,
-            cause: "subsetting-type",
+            cause: ModelRefusalCause::SubsettingType {
+                subsetting: subsetting.value_type.clone(),
+                subsetted: subsetted.value_type.clone(),
+            },
             detail: format!(
                 "{} does not conform to {}",
                 subsetting.value_type.identity, subsetted.value_type.identity
@@ -423,7 +447,10 @@ pub fn check_subsetting(
         failures.push(AxisFailure {
             axis: "multiplicity",
             code: Code::IllTyped,
-            cause: "multiplicity-narrowing",
+            cause: ModelRefusalCause::MultiplicityNarrowing {
+                from: subsetting.multiplicity,
+                to: subsetted.multiplicity,
+            },
             detail: format!(
                 "{:?} does not conform to {:?}",
                 subsetting.multiplicity, subsetted.multiplicity
@@ -449,14 +476,18 @@ pub fn check_operation_redefinition(
     let index = ConformanceIndex::build(bundle);
     let Some(redefining) = index.operations.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            "unknown-redefining",
+            ModelRefusalCause::UnknownRedefining {
+                member: record.redefining.clone(),
+            },
             &record.redefining.identity,
             "redefining operation",
         ));
     };
     let Some(redefined) = index.operations.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            "unknown-redefined",
+            ModelRefusalCause::UnknownRedefined {
+                member: record.redefined.clone(),
+            },
             &record.redefined.identity,
             "redefined operation",
         ));
@@ -473,7 +504,7 @@ pub fn check_operation_redefinition(
         failures.push(AxisFailure {
             axis: "arity",
             code: Code::IllTyped,
-            cause: "type-mismatch",
+            cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "expected {} parameters, found {}",
                 redefined.parameters.len(),
@@ -497,7 +528,11 @@ pub fn check_operation_redefinition(
                 Ok(false) => failures.push(AxisFailure {
                     axis: "parameter-type",
                     code: Code::IllTyped,
-                    cause: "variance-parameter",
+                    cause: ModelRefusalCause::VarianceParameter {
+                        index: display_index,
+                        declared: dp.value_type.clone(),
+                        redefined: rp.value_type.clone(),
+                    },
                     detail: format!(
                         "parameter {display_index}: expected {} to conform to {}",
                         dp.value_type.identity, rp.value_type.identity
@@ -513,7 +548,10 @@ pub fn check_operation_redefinition(
                 failures.push(AxisFailure {
                     axis: "parameter-multiplicity",
                     code: Code::IllTyped,
-                    cause: "multiplicity-narrowing",
+                    cause: ModelRefusalCause::MultiplicityNarrowing {
+                        from: dp.multiplicity,
+                        to: rp.multiplicity,
+                    },
                     detail: format!(
                         "parameter {display_index}: {:?} does not conform to {:?}",
                         dp.multiplicity, rp.multiplicity
@@ -534,7 +572,7 @@ pub fn check_operation_redefinition(
                 Ok(false) => failures.push(AxisFailure {
                     axis: "result-type",
                     code: Code::IllTyped,
-                    cause: "variance-result",
+                    cause: ModelRefusalCause::VarianceResult,
                     detail: format!(
                         "{} does not conform to {}",
                         rr.value_type.identity, dr.value_type.identity
@@ -547,7 +585,7 @@ pub fn check_operation_redefinition(
         _ => failures.push(AxisFailure {
             axis: "result-type",
             code: Code::IllTyped,
-            cause: "variance-result",
+            cause: ModelRefusalCause::VarianceResult,
             detail: "one of the redefining/redefined operations has no result".to_owned(),
         }),
     }
@@ -561,7 +599,10 @@ pub fn check_operation_redefinition(
             failures.push(AxisFailure {
                 axis: "result-multiplicity",
                 code: Code::IllTyped,
-                cause: "multiplicity-narrowing",
+                cause: ModelRefusalCause::MultiplicityNarrowing {
+                    from: rr.multiplicity,
+                    to: dr.multiplicity,
+                },
                 detail: format!(
                     "{:?} does not conform to {:?}",
                     rr.multiplicity, dr.multiplicity
@@ -592,7 +633,9 @@ pub fn check_operation_redefinition(
             failures.push(AxisFailure {
                 axis: "effect",
                 code: Code::IllTyped,
-                cause: "effect-escape",
+                cause: ModelRefusalCause::EffectEscape {
+                    field: write.clone(),
+                },
                 detail: format!(
                     "write {} is not covered by the redefined effect",
                     write.identity
@@ -620,7 +663,9 @@ pub fn check_operation_redefinition(
                 failures.push(AxisFailure {
                     axis: "effect",
                     code: Code::IllTyped,
-                    cause: "effect-escape",
+                    cause: ModelRefusalCause::EffectEscape {
+                        field: entry.clone(),
+                    },
                     detail: format!("{} is not covered by the redefined effect", entry.identity),
                 });
             }
@@ -697,7 +742,7 @@ fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefus
                         // `malformed-declaration` (its own payload: "the IR
                         // node identity and invalid member path" — here the
                         // scalar type's own declaration).
-                        cause: "malformed-declaration",
+                        cause: ModelRefusalCause::MalformedDeclaration,
                         detail: format!(
                             "a scalar type's declared domain has lower {lower} greater than its upper {upper}"
                         ),
@@ -807,14 +852,18 @@ pub fn check_field_refinement_obligation(
     let index = ConformanceIndex::build(bundle);
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return Err(missing_member(
-            "unknown-redefining",
+            ModelRefusalCause::UnknownRedefining {
+                member: record.redefining.clone(),
+            },
             &record.redefining.identity,
             "redefining field",
         ));
     };
     let Some(redefined) = index.fields.get(&record.redefined) else {
         return Err(missing_member(
-            "unknown-redefined",
+            ModelRefusalCause::UnknownRedefined {
+                member: record.redefined.clone(),
+            },
             &record.redefined.identity,
             "redefined field",
         ));
@@ -886,7 +935,7 @@ pub fn check_field_refinement_obligation(
             Ok(ConformanceOutcome::Refused(vec![AxisFailure {
                 axis: "refinement",
                 code: Code::UndefinedExpression,
-                cause: "unproved-refinement",
+                cause: ModelRefusalCause::UnprovedRefinement,
                 detail: format!(
                     "{} narrows the multiplicity of {} with no establishing presence fact (obligation field-presence)",
                     record.redefining.identity, record.redefined.identity
@@ -899,7 +948,7 @@ pub fn check_field_refinement_obligation(
         return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "refinement",
             code: Code::UndefinedExpression,
-            cause: "unproved-refinement",
+            cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
                 "{} narrows a collection upper bound, which no FR-146 fact form expresses (obligation no-proof-form)",
                 record.redefining.identity
@@ -930,7 +979,7 @@ pub fn check_field_refinement_obligation(
                         Ok(ConformanceOutcome::Refused(vec![AxisFailure {
                             axis: "refinement",
                             code: Code::UndefinedExpression,
-                            cause: "unproved-refinement",
+                            cause: ModelRefusalCause::UnprovedRefinement,
                             detail: format!(
                                 "established interval {} is not contained in [{narrow_lower}, {narrow_upper}] (obligation field-domain)",
                                 format_interval(&proved)
@@ -941,7 +990,7 @@ pub fn check_field_refinement_obligation(
                 None => Ok(ConformanceOutcome::Refused(vec![AxisFailure {
                     axis: "refinement",
                     code: Code::UndefinedExpression,
-                    cause: "unproved-refinement",
+                    cause: ModelRefusalCause::UnprovedRefinement,
                     detail: format!(
                         "no establishing interval fact for {} (obligation field-domain)",
                         record.redefining.identity
@@ -952,7 +1001,7 @@ pub fn check_field_refinement_obligation(
         _ => Ok(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "refinement",
             code: Code::UndefinedExpression,
-            cause: "unproved-refinement",
+            cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
                 "{} narrows an object-typed domain, which no FR-146 fact form expresses (obligation no-proof-form)",
                 record.redefining.identity
@@ -1017,7 +1066,7 @@ pub fn resolve_redefinition_target(
     match distinct.len() {
         1 => Ok(RedefinitionTargetOutcome::Resolved(distinct.remove(0))),
         _ => Ok(RedefinitionTargetOutcome::Refused {
-            cause: "redefinition-target",
+            cause: ModelRefusalCause::RedefinitionTarget,
             candidates,
             valid_targets: distinct,
         }),
