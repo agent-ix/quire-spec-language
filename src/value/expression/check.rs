@@ -26,6 +26,7 @@ use super::refusal::{
 use super::syntax::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
 };
+use crate::model::population::AbsenceMode;
 
 /// The largest expression nesting depth a checker may declare. It keeps every
 /// recursive checking pass well inside the host stack.
@@ -338,7 +339,8 @@ impl<'a> Typer<'a> {
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
                 | ValueType::Composite(_)
-                | ValueType::Reference(_) => {}
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => {}
             }
         }
         Ok(())
@@ -666,6 +668,15 @@ impl<'a> Typer<'a> {
                     location,
                 ))
             }
+            Expression::AllInstances { target, population } => {
+                self.all_instances(target, population, location)
+            }
+            Expression::Lookup {
+                target,
+                population,
+                reference,
+                absence,
+            } => self.lookup(target, population, reference, *absence, location),
         }
     }
 
@@ -1121,7 +1132,8 @@ impl<'a> Typer<'a> {
             | ValueType::Option(_)
             | ValueType::Composite(_)
             | ValueType::Collection(_)
-            | ValueType::Reference(_) => return Err(mismatch(location)),
+            | ValueType::Reference(_)
+            | ValueType::Population(_) => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }
@@ -1450,6 +1462,90 @@ impl<'a> Typer<'a> {
         }
     }
 
+    /// `allInstances<T>(p)` (FR-153): `p`'s own checked `Population<T>[N]`
+    /// type (`ValueType::Population`) gives the result's declared bound
+    /// `[0,N]` directly; no runtime value is consulted at check time.
+    fn all_instances(
+        &mut self,
+        target: &ValueType,
+        population: &Expression,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.check_declared_type(target, location)?;
+        if !matches!(target, ValueType::Reference(_)) {
+            return Err(mismatch(location));
+        }
+        let population = self.infer(population, None, &location.child(0))?;
+        // FR-153 requires `p` to be a population binding with a declared
+        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
+        // the operand is the wrong kind, not merely the wrong type name.
+        let ValueType::Population(maximum) = population.value_type else {
+            return Err(ineligible(&population.location));
+        };
+        let collection_type = CollectionType::new(
+            CollectionKind::Set,
+            target.clone(),
+            bound(0, maximum, location)?,
+        );
+        Ok(node(
+            NodeKind::AllInstances {
+                population: Box::new(population),
+            },
+            ValueType::collection(collection_type),
+            location,
+        ))
+    }
+
+    /// `lookup<T>(p, r) absent m` (FR-153). `r`'s own checked static type `S`
+    /// (never `T`) is `reference.value_type` at evaluation time
+    /// (`crate::value::expression::evaluate`), so [`NodeKind::Lookup`] does
+    /// not restate it. FR-153 also refuses `ill_typed`/`type-mismatch` at
+    /// check time when `S` does not conform to `T` (TC-198 L03's last case,
+    /// "before any charge") -- this checker cannot decide that here without
+    /// the model's own generalization graph, which `TypeEnvironment` does not
+    /// carry (the "TypeEnvironment island", tracked at
+    /// <https://github.com/agent-ix/quire-spec-language/issues/164>), so that
+    /// refusal is deferred to evaluation, inside
+    /// `crate::model::population::lookup`'s own `type_conforms` call
+    /// (`crate::value::model_query::evaluate_lookup`).
+    fn lookup(
+        &mut self,
+        target: &ValueType,
+        population: &Expression,
+        reference: &Expression,
+        absence: AbsenceMode,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.check_declared_type(target, location)?;
+        if !matches!(target, ValueType::Reference(_)) {
+            return Err(mismatch(location));
+        }
+        let population = self.infer(population, None, &location.child(0))?;
+        // FR-153 requires `p` to be a population binding with a declared
+        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
+        // the operand is the wrong kind, not merely the wrong type name.
+        if !matches!(population.value_type, ValueType::Population(_)) {
+            return Err(ineligible(&population.location));
+        }
+        let reference = self.infer(reference, None, &location.child(1))?;
+        if !matches!(reference.value_type, ValueType::Reference(_)) {
+            return Err(mismatch(&reference.location));
+        }
+        let value_type = match absence {
+            AbsenceMode::Undefined | AbsenceMode::Refused => target.clone(),
+            AbsenceMode::Empty => ValueType::option(target.clone()),
+        };
+        Ok(node(
+            NodeKind::Lookup {
+                population: Box::new(population),
+                reference: Box::new(reference),
+                absence,
+            },
+            value_type,
+            location,
+        ))
+    }
+
     fn query(
         &mut self,
         query: BinderQuery,
@@ -1662,13 +1758,22 @@ fn catalogued_step(step: &Node, accumulator: Slot, value_type: &ValueType) -> bo
 }
 
 /// Check a function signature's declared types and bind its parameters.
+/// FR-153's `Population<T>[N]` parameter type (`ValueType::Population`) is
+/// the one context that names a population binding directly, so it bypasses
+/// [`Typer::check_declared_type`]: that walk (`TypeEnvironment::type_refusal`)
+/// refuses `Population` everywhere else (an equality operand, an `Option`
+/// payload, a collection element, a record/tuple/object-type member, or any
+/// other named type), since FR-153 gives it Outputs only as the direct
+/// operand of `allInstances`/`lookup`.
 pub(crate) fn bind_parameters(
     typer: &mut Typer<'_>,
     parameters: &[(String, ValueType)],
     location: &Location,
 ) -> Result<(), CheckRefusal> {
     for (name, value_type) in parameters {
-        typer.check_declared_type(value_type, location)?;
+        if !matches!(value_type, ValueType::Population(_)) {
+            typer.check_declared_type(value_type, location)?;
+        }
         typer.bind(name, value_type.clone(), location)?;
     }
     Ok(())

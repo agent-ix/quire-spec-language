@@ -165,6 +165,29 @@ impl CollectionValue {
     }
 }
 
+/// Materialize an already-charged, already-ordered result as a
+/// `Value::Collection`, charging nothing and checking no bound: FR-153's
+/// `allInstances<T>(p)` (`crate::model::population::all_instances`) already
+/// charges its own `collection.bound`/`collection.result-retain` against this
+/// same meter, and already checked its own declared maximum, before handing
+/// its selection to this bridge, so charging or checking either again here
+/// would double-count. `elements` must already be the collection's exact
+/// canonical-key order with no duplicate; `allInstances`'s `ReferenceSet`
+/// members are already unique (a `BTreeSet<ReferenceKey>`) and its
+/// FR-143 identity bridge (`crate::value::reference`) preserves `ReferenceKey`
+/// ascending order byte-for-byte into `ObjectReference` ascending order, so
+/// no sort is needed either.
+pub(crate) fn from_admitted(collection_type: CollectionType, elements: Vec<Value>) -> Value {
+    let occ = elements
+        .iter()
+        .fold(Integer::one(), |occ, element| occ.add(&element.occ()));
+    Value::Collection(Arc::new(CollectionValue {
+        collection_type,
+        elements: elements.into_boxed_slice(),
+        occ,
+    }))
+}
+
 /// Evaluate a collection constructor expression `K[e1, ..., en]` checked
 /// against `collection_type`. Each element charges `collection.element` and
 /// then runs; the first element that does not complete becomes the outcome and

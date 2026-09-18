@@ -135,6 +135,14 @@ impl TypeEnvironment {
                 return ill_typed(IllTypedCause::DistinctUnits)
             }
             (ValueType::Quantity(_), ValueType::Quantity(_)) => EqualitySchedule::Quantity,
+            // FR-153 names a population binding only as the direct operand of
+            // `allInstances`/`lookup`, never as an equality operand: refuse it
+            // here rather than falling into the `l == r` plan schedule below,
+            // which would otherwise accept `p == p` and only fail at
+            // evaluation (`plan_pairs`'s own checked-invariant catch-all).
+            (ValueType::Population(_), _) | (_, ValueType::Population(_)) => {
+                return ill_typed(IllTypedCause::OperatorIneligible)
+            }
             (l, r) if l == r => EqualitySchedule::Plan,
             _ => return ill_typed(IllTypedCause::TypeMismatch),
         };
@@ -329,7 +337,8 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
                 | Value::Reference(_)
                 | Value::Option(_)
                 | Value::Composite(_)
-                | Value::Collection(_),
+                | Value::Collection(_)
+                | Value::Population(_),
                 _,
             ) => return Err(Refusal::CheckedInvariant),
         };
@@ -415,7 +424,8 @@ fn integer_source_admits(lower: &Integer, upper: &Integer, target: &ValueType) -
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_) => false,
+        | ValueType::Reference(_)
+        | ValueType::Population(_) => false,
     }
 }
 

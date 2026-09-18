@@ -8,6 +8,7 @@
 use super::accounting::Incomplete;
 use super::collection::{CardinalityBound, CollectionKind};
 use super::ieee::IeeeFlags;
+use crate::diagnostic::Code;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,6 +67,10 @@ pub enum Undefined {
     /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
     /// expression can meet it.
     NoneValue,
+    /// FR-153 `lookup<T>(p, r) absent undefined`'s catalogued `absent-key`
+    /// reason: `r` is not a member of the bound population, and the query
+    /// names no mathematical value for that case.
+    AbsentKey,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
@@ -123,6 +128,23 @@ pub enum Refusal {
     /// A checked-program invariant failed during evaluation; unreachable for
     /// an admitted program.
     CheckedInvariant,
+    /// FR-153's `allInstances<T>(p)`/`lookup<T>(p, r) absent refused`
+    /// refused the query outright
+    /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
+    Model(ModelQueryRefusal),
+}
+
+/// The closed code and FR-272 cause tag of an FR-153 population-query
+/// refusal (`crate::model::normalize::ModelRefusal`'s own `code` and `cause`
+/// fields, never its free-text `detail`, which is diagnostic prose rather
+/// than part of the closed contract every other [`Refusal`] variant exposes
+/// through [`Refusal::code`]/[`Refusal::cause`]).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ModelQueryRefusal {
+    /// The native code.
+    pub code: Code,
+    /// The FR-272 cause tag.
+    pub cause: &'static str,
 }
 
 impl Refusal {
@@ -133,6 +155,7 @@ impl Refusal {
             Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
             Self::ForeignReference => Some("foreign_reference"),
             Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
+            Self::Model(refusal) => Some(refusal.code.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }
@@ -149,6 +172,7 @@ impl Refusal {
     pub fn cause(self) -> Option<&'static str> {
         match self {
             Self::CardinalityOutOfBound { violation, .. } => Some(violation.as_str()),
+            Self::Model(refusal) => Some(refusal.cause),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }

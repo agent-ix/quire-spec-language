@@ -51,12 +51,15 @@
 //! Neither wraps its members as `crate::value::Value::Reference`
 //! (`ObjectReference`): that type's identity components
 //! (`NodeKey`/`UniverseIdentity`/`ObjectIdentity`, `crate::value::reference`)
-//! belong to FR-143's own closed object environment, and this crate defines
-//! no mapping from `crate::model`'s `EffectiveId`/`ProducerKey` identities
-//! into that byte space anywhere. Fabricating one here without a documented
-//! canonical encoding would risk a worse defect than the untyped result it
-//! replaces, so this rung's typed wrappers stay in `crate::model`'s own
-//! identity domain.
+//! belong to FR-143's own closed object environment, so this rung's typed
+//! wrappers stay in `crate::model`'s own identity domain rather than
+//! constructing that type themselves. `crate::value::model_query` is the
+//! documented canonical encoding this module's own module docs once called
+//! for: FR-143 defines a reference's `universe` and most-specific `type` as
+//! literally this crate's own `quire.model.object-universe/v1` and
+//! `quire.model.effective-declaration/v1` digests, so that bridge is a
+//! direct byte transfer between `EffectiveId`/`ProducerKey` and
+//! `NodeKey`/`UniverseIdentity`, never a re-hash.
 //!
 //! # Binding/bundle correspondence
 //!
@@ -411,6 +414,16 @@ pub struct PopulationBinding {
     /// instead of once per lookup" move [`admit_binding`] already makes for
     /// `type_lookup`/`by_object` below.
     generals: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    /// Every declared object type of `bundle`'s effective view, `ProducerKey`
+    /// to its FR-150-derived [`EffectiveId`]. Computed once here from
+    /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
+    /// rather than discarded): the FR-143 reference-identity bridge
+    /// (`crate::value::expression::model_query`) needs this exact
+    /// correspondence to translate a checked `Reference<T>`'s `T`
+    /// (a `crate::value::NodeKey`, the same 32 bytes as an `EffectiveId`)
+    /// back into the `ProducerKey` [`all_instances`]/[`lookup`] take, for
+    /// every declared type, not only ones a current member happens to name.
+    type_catalog: BTreeMap<ProducerKey, EffectiveId>,
 }
 
 impl PopulationBinding {
@@ -439,6 +452,13 @@ impl PopulationBinding {
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     pub fn declared_maximum(&self) -> Option<u64> {
         self.declared_maximum
+    }
+
+    /// Every declared object type of the admitted effective view,
+    /// `ProducerKey` to its FR-150-derived [`EffectiveId`]; see the field's
+    /// own doc comment.
+    pub fn type_catalog(&self) -> &BTreeMap<ProducerKey, EffectiveId> {
+        &self.type_catalog
     }
 }
 
@@ -706,6 +726,7 @@ pub fn admit_binding(
         members: admitted,
         declared_maximum,
         generals,
+        type_catalog: type_lookup,
     })
 }
 
@@ -990,4 +1011,26 @@ pub fn lookup(
             LookupOutcome::Completed(None)
         }
     }
+}
+
+/// Whether `s` conforms to `t` under `binding`'s own admitted generalization
+/// graph -- a `pub(crate)` door onto [`type_conforms`], which stays
+/// `pub(super)`, because `binding.generals` is private to this module. Exists
+/// only for `crate::value::model_query`'s malformed-reference short-circuit
+/// (FR-153: a reference whose universe or object-identity bytes cannot be
+/// losslessly bridged into a well-formed [`LookupKey`] still has to decide
+/// `type_conforms(S, T)` *before any charge*, [`lookup`]'s own ordering,
+/// without ever substituting a derived value for the malformed bytes and
+/// risking it aliasing a real member -- see that module's docs). This is
+/// evaluation-time only: it does nothing for the check-time "TypeEnvironment
+/// island" gap tracked at
+/// <https://github.com/agent-ix/quire-spec-language/issues/164>, which is
+/// about the *checker* having no generalization data before any
+/// `PopulationBinding` exists.
+pub(crate) fn conforms(
+    binding: &PopulationBinding,
+    s: &ProducerKey,
+    t: &ProducerKey,
+) -> Result<bool, ModelRefusal> {
+    type_conforms(&binding.generals, s, t)
 }

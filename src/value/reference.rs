@@ -200,7 +200,8 @@ impl ObjectEnvironment {
                 | Value::Float(_)
                 | Value::Quantity(_)
                 | Value::Text(_)
-                | Value::Enum(_) => {}
+                | Value::Enum(_)
+                | Value::Population(_) => {}
             }
         }
         Ok(())
