@@ -12,8 +12,27 @@
 //! Rust's compiler rejects (#163 re-review ruling 3) — only a real cyclic
 //! type/const definition would be.
 
-use crate::model::bundle::Multiplicity;
+use crate::model::bundle::{ModelSelection, Multiplicity};
 use crate::model::key::{EffectiveId, ProducerKey};
+
+/// The offered model selection at a `foreign-model-selection` refusal's two
+/// sites (#163 review finding: a revision-only mismatch must stay
+/// distinguishable in the typed cause, not just in `detail`'s text).
+///
+/// The effective-view site (`crate::model::population::admit_binding`'s
+/// `view.model_selection != bundle.model_selection` check) has the offered
+/// selection's own full `ModelSelection`, so it carries that. The population-
+/// document site (the same function's `modelIdentity` check) has only the
+/// document's declared `modelIdentity` string — a `PopulationDocument`
+/// carries no full `ModelSelection` of its own — so it carries that string
+/// instead, never a substituted or partially-populated `ModelSelection`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OfferedSelection {
+    /// The effective view's own model selection, in full.
+    View(ModelSelection),
+    /// The population document's declared `modelIdentity`.
+    Document(String),
+}
 
 /// The closed FR-150/151/152/153/272 cause of a
 /// [`crate::model::normalize::ModelRefusal`] (#141 F9a): each variant is one
@@ -230,10 +249,11 @@ pub enum ModelRefusalCause {
     /// A population document or effective view names a model selection
     /// other than the admitting bundle's.
     ForeignModelSelection {
-        /// The offered model selection.
-        actual: String,
-        /// The admitting bundle's model selection.
-        expected: String,
+        /// The offered model selection: full at the effective-view site,
+        /// `modelIdentity` only at the population-document site.
+        actual: OfferedSelection,
+        /// The admitting bundle's model selection, in full.
+        expected: ModelSelection,
     },
     /// A population document does not declare `closedWorld: true`.
     IncompleteScope {
@@ -493,7 +513,7 @@ impl std::fmt::Display for ModelRefusalCause {
 mod tests {
     use serde_json::Value;
 
-    use super::ModelRefusalCause;
+    use super::{ModelRefusalCause, OfferedSelection};
     use crate::model::bundle::Multiplicity;
     use crate::model::key::{digest_of, ProducerKey};
 
@@ -672,8 +692,8 @@ mod tests {
             ModelRefusalCause::UnprovedRefinement,
             ModelRefusalCause::RedefinitionTarget,
             ModelRefusalCause::ForeignModelSelection {
-                actual: String::new(),
-                expected: String::new(),
+                actual: OfferedSelection::Document(String::new()),
+                expected: crate::model::bundle::ModelSelection::fixture("p"),
             },
             ModelRefusalCause::IncompleteScope {
                 selection: String::new(),

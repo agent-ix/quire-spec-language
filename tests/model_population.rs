@@ -24,6 +24,7 @@ use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, ModelRefusalCause, NormalizeOutcome,
+    OfferedSelection,
 };
 use quire_spec_language::model::population::{
     admit_binding, all_instances, lookup, AbsenceMode, AdmissionChargePoint, AdmissionLimitKind,
@@ -977,8 +978,8 @@ fn l05_foreign_model_selection_refuses_at_admission() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
-                    actual: "bundle.other".to_string(),
-                    expected: "bundle.n01".to_string(),
+                    actual: OfferedSelection::Document("bundle.other".to_string()),
+                    expected: bundle.model_selection.clone(),
                 }
             );
         }
@@ -1024,8 +1025,8 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
-                    actual: "bundle.n01".to_string(),
-                    expected: "bundle.n01".to_string(),
+                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    expected: bundle.model_selection.clone(),
                 }
             );
         }

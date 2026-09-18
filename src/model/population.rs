@@ -90,7 +90,9 @@ use crate::model::bundle::{
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
-use crate::model::normalize::{object_universe, EffectiveView, ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{
+    object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
+};
 use crate::value::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
@@ -518,8 +520,8 @@ pub fn admit_binding(
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
-                actual: view.model_selection.export.identity.clone(),
-                expected: bundle.model_selection.export.identity.clone(),
+                actual: OfferedSelection::View(view.model_selection.clone()),
+                expected: bundle.model_selection.clone(),
             },
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting bundle's {}",
@@ -531,8 +533,8 @@ pub fn admit_binding(
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
-                actual: document.model_identity.clone(),
-                expected: bundle.model_selection.export.identity.clone(),
+                actual: OfferedSelection::Document(document.model_identity.clone()),
+                expected: bundle.model_selection.clone(),
             },
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",

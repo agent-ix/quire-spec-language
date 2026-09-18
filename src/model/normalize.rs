@@ -101,7 +101,7 @@ use crate::value::length_amount;
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
 /// cause type without a cycle. This path is unchanged for every caller.
-pub use crate::model::refusal::ModelRefusalCause;
+pub use crate::model::refusal::{ModelRefusalCause, OfferedSelection};
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
