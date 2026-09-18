@@ -90,6 +90,19 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
             !(code.is_unsupported() && code.is_incomplete()),
             "{code} claims both unsupported and incomplete"
         );
+        // command/output.rs's report() picks the highest-severity code in a
+        // diagnostic bag by taking the numeric minimum of Code::exit_code()
+        // over its members. That is only correct because every Code's
+        // exit_code() is confined to {20, 21, 22}, where FR-301's severity
+        // order (invalid > unsupported > incomplete) happens to coincide
+        // with ascending numeric order. Widen this range (a Code that
+        // ladders to 30, 10 or 0) and min() silently inverts; this
+        // assertion is what would catch it.
+        assert!(
+            matches!(code.exit_code(), 20..=22),
+            "{code} exit_code {} outside {{20, 21, 22}}, the range command/output.rs's min() depends on",
+            code.exit_code()
+        );
     }
     assert_eq!(seen.len(), 42);
     assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");

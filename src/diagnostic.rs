@@ -328,10 +328,16 @@ impl Diagnostic {
     pub fn is_unsupported(&self) -> bool {
         self.code.is_unsupported()
     }
-    /// FR-301's exit code for this diagnostic alone; a caller combining
-    /// several diagnostics into one report resolves the group's code by
-    /// taking the numeric minimum, since ascending exit code is ascending
-    /// severity within this ladder (20 invalid, 21 unsupported, 22 incomplete).
+    /// FR-301's exit code for this diagnostic alone, always one of
+    /// {20, 21, 22} (asserted over `Code::all()` in
+    /// tests/native_boundaries.rs). Within exactly that range, ascending
+    /// exit code happens to be ascending severity (20 invalid, 21
+    /// unsupported, 22 incomplete), so a caller combining several
+    /// diagnostics into one report resolves the group's code by taking the
+    /// numeric minimum over this method — see command/output.rs's `report`.
+    /// This does not generalize past {20, 21, 22}; FR-301's full order
+    /// (tool failure, invalid, unsupported, incomplete, violation, success)
+    /// is not ascending-numeric across 0/10/20/21/22/30.
     pub fn exit_code(&self) -> u8 {
         self.code.exit_code()
     }
