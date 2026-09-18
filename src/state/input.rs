@@ -8,6 +8,13 @@ use crate::protocol_artifact::{wire, ProtocolNumber};
 /// Required observation contract semantic revision.
 pub const OBSERVATION_CONTRACT_REVISION: &str = "4d6230eb8aa9766ff3017360962f2d6368d74cb3";
 
+/// Required [`StaticAuthority::interface_version`] under FR-049's authority
+/// evidence contract. This pins the current interface version FR-049
+/// accepts, the same way [`OBSERVATION_CONTRACT_REVISION`] pins the
+/// observation contract revision; bumping either is a contract change, not
+/// a compatibility question (#139).
+pub const STATIC_AUTHORITY_INTERFACE_VERSION: &str = "1.2.0";
+
 /// Exact selection of one declaration-local value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvaluationRequest {
@@ -38,7 +45,8 @@ pub struct ObjectKey {
     pub identifier: String,
 }
 
-/// Producer canonical digest tuple from the selected Producer 1.2 interface.
+/// Producer canonical digest tuple, at the authority's
+/// [`STATIC_AUTHORITY_INTERFACE_VERSION`] selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalDigest {
     pub algorithm: String,
@@ -50,7 +58,8 @@ pub struct CanonicalDigest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservationDigest(pub String);
 
-/// Producer-owned static identities required by composed evaluation.
+/// Producer-owned static identities required by composed evaluation, pinned
+/// to [`STATIC_AUTHORITY_INTERFACE_VERSION`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StaticAuthority {
     pub interface_version: String,

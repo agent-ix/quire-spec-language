@@ -28,7 +28,7 @@ use quire_spec_language::state::{
     FieldValue, InputSlot, Limits as StateLimits, MissingInput, ObjectInput, ObjectKey,
     ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput,
     Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
-    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION,
+    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION, STATIC_AUTHORITY_INTERFACE_VERSION,
 };
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
@@ -267,7 +267,7 @@ fn state_authority(
         .artifact
         .clone();
     let static_selection = StaticAuthority {
-        interface_version: "1.2.0".into(),
+        interface_version: STATIC_AUTHORITY_INTERFACE_VERSION.into(),
         document_identity: "document:selected".into(),
         document_digest: canonical('1'),
         model_identity: "model:selected".into(),

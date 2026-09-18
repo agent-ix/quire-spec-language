@@ -15,7 +15,7 @@ use quire_spec_language::state::{
     EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
     ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
     PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
-    OBSERVATION_CONTRACT_REVISION,
+    OBSERVATION_CONTRACT_REVISION, STATIC_AUTHORITY_INTERFACE_VERSION,
 };
 use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
@@ -279,7 +279,7 @@ fn authority(
         .artifact
         .clone();
     let static_selection = StaticAuthority {
-        interface_version: "1.2.0".into(),
+        interface_version: STATIC_AUTHORITY_INTERFACE_VERSION.into(),
         document_identity: "document:selected".into(),
         document_digest: canonical('1'),
         model_identity: "model:selected".into(),
@@ -1820,6 +1820,33 @@ fn tc_129_130_131_full_occurrences_authority_and_graph_limits_are_exact() {
             )
             .outcome(),
             EvaluationOutcome::Refused(Refusal::Authority(_))
+        ));
+
+        let mut wrong_interface_version = view.clone();
+        wrong_interface_version.binders[0]
+            .authority
+            .as_mut()
+            .expect("binder authority")
+            .static_selection
+            .interface_version = "9.9.9".into();
+        assert_ne!(
+            wrong_interface_version.binders[0]
+                .authority
+                .as_ref()
+                .expect("binder authority")
+                .static_selection
+                .interface_version,
+            STATIC_AUTHORITY_INTERFACE_VERSION
+        );
+        assert!(matches!(
+            state::evaluate(
+                package,
+                request.clone(),
+                &wrong_interface_version,
+                Limits::default()
+            )
+            .outcome(),
+            EvaluationOutcome::Refused(Refusal::AuthorityRevision)
         ));
 
         let mut raw_digest_in_canonical_domain = view.clone();
