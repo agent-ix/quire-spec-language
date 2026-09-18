@@ -258,13 +258,19 @@ pub(super) fn report(
             // FR-301's exit ladder is the highest-severity code present
             // across every retained diagnostic (including the terminal one,
             // when present): invalid (20) outranks unsupported (21)
-            // outranks incomplete (22). Ascending exit code is ascending
-            // severity in this ladder, so the minimum over
-            // `Diagnostic::exit_code` is exactly that highest-severity
-            // code; a single unsupported diagnostic never promotes a report
-            // that also holds an invalid one. ValidationStatus only carries
-            // the wire-schema's binary refused/incomplete distinction and
-            // does not drive the exit code.
+            // outranks incomplete (22). `Code::exit_code()`'s range is
+            // exactly {20, 21, 22} (asserted over `Code::all()` in
+            // tests/native_boundaries.rs), and FR-301's ordering over that
+            // three-code range happens to coincide with ascending numeric
+            // order, so the minimum over `Diagnostic::exit_code` is exactly
+            // the highest-severity code present; a single unsupported
+            // diagnostic never promotes a report that also holds an invalid
+            // one. This is not general — FR-301's full order (tool failure,
+            // invalid, unsupported, incomplete, violation, success) is not
+            // ascending-numeric across 0/10/20/21/22/30, only within the
+            // three codes a diagnostic can actually carry here. ValidationStatus
+            // only carries the wire-schema's binary refused/incomplete
+            // distinction and does not drive the exit code.
             let status = match failure.status {
                 ValidationStatus::Refused => types::FailureStatus::Refused,
                 ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
