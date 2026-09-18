@@ -60,16 +60,35 @@
 //! # Binding/bundle correspondence
 //!
 //! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
-//! only constructor, and it stores the full admitted `ModelSelection` header
-//! alongside the universe that header's bundle normalized to.
-//! [`all_instances`] and [`lookup`] both check the supplied `bundle`'s own
-//! `model_selection` header against that recorded one before doing anything
-//! else ([`require_bundle_matches`]), so a binding admitted against one
-//! bundle is refused, not silently answered, against a different one — and
-//! without re-normalizing the query bundle to do it (see
-//! `require_bundle_matches`'s own doc comment).
+//! only constructor, and it stores the admitted `Bundle` itself (as an
+//! `Arc`, cheap to clone) alongside the universe that bundle normalized to.
+//! [`all_instances`] and [`lookup`] read that bound bundle — neither takes a
+//! separate `bundle` argument — so there is no mismatched-bundle class to
+//! guard against at query time: a query can only ever be evaluated against
+//! the exact bundle [`admit_binding`] admitted, by construction, not by a
+//! runtime comparison.
+//!
+//! An earlier revision of this module took a separate `bundle: &Bundle`
+//! argument on both query functions and refused when it didn't match the
+//! binding's own recorded header
+//! (`bundle.model_selection != binding.model_selection`). Review found that
+//! check unsound: nothing in this crate verifies `ModelSelection.export.digest`
+//! against a bundle's actual `records` anywhere (including at admission), and
+//! the test-only `ModelSelection::fixture` constructor derives the digest from
+//! the identity string alone — so a caller could present a bundle with the
+//! binding's exact admitted header (identity, revision, digest) but different
+//! `records`, and the header comparison would pass while the query silently
+//! answered against the wrong content (e.g. `all_instances` dropping a member
+//! whose only supporting generalization record the caller removed). FR-153's
+//! own Inputs clause already describes the population binding as carrying
+//! "the FR-150 effective view and ModelSelection" itself, with the query
+//! supplying only the requested type (and, for `lookup`, a key and absence
+//! mode) — never a second, independently suppliable bundle — so binding the
+//! bundle removes the unsound check by removing the parameter that made it
+//! necessary, rather than trying to make the comparison itself sound.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::diagnostic::Code;
 use crate::model::bundle::{Bundle, BundleRecord, ModelSelection};
@@ -369,19 +388,15 @@ pub enum AbsenceMode {
 ///
 /// Every field is private; [`admit_binding`] is this type's only
 /// constructor, so a caller cannot assemble a binding that was never checked
-/// against a bundle's `modelIdentity`, object closure or subtype closure.
-/// [`all_instances`] and [`lookup`] both re-check the binding's own recorded
-/// [`ModelSelection`] header against their own `bundle` argument before
-/// answering, so a binding admitted against one bundle is refused, not
-/// silently answered, against a different one — see
-/// [`require_bundle_matches`] for why this is a header comparison, not a
-/// re-derived universe.
+/// against a bundle's `modelIdentity`, object closure or subtype closure —
+/// and, because the admitted bundle itself lives here, cannot later evaluate
+/// [`all_instances`]/[`lookup`] against any bundle other than the one that
+/// was checked (see the module docs' "Binding/bundle correspondence").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
-    /// The full `ModelSelection` header (`{authority, export, contract_version}`,
-    /// export being `{identity, revision, digest}`) this binding was admitted
-    /// against.
-    model_selection: ModelSelection,
+    /// The bundle this binding was admitted against. `Arc`, so cloning a
+    /// binding never re-clones the bundle's own records.
+    bundle: Arc<Bundle>,
     /// This binding's own object universe, computed once at admission.
     universe: EffectiveId,
     /// Every admitted member, ascending by [`ReferenceKey`].
@@ -394,13 +409,13 @@ pub struct PopulationBinding {
 impl PopulationBinding {
     /// The full `ModelSelection` header this binding was admitted against.
     pub fn model_selection(&self) -> &ModelSelection {
-        &self.model_selection
+        &self.bundle.model_selection
     }
 
     /// The `ModelSelection` export identity this binding was admitted
     /// against.
     pub fn model_identity(&self) -> &str {
-        &self.model_selection.export.identity
+        &self.bundle.model_selection.export.identity
     }
 
     /// This binding's own object universe.
@@ -418,48 +433,6 @@ impl PopulationBinding {
     pub fn declared_maximum(&self) -> Option<u64> {
         self.declared_maximum
     }
-}
-
-/// Refuse a query whose `bundle` argument does not match `binding`'s own
-/// admitted [`ModelSelection`] header. Uncharged, checked first, by both
-/// [`all_instances`] and [`lookup`].
-///
-/// This compares `bundle.model_selection` (the query's own header —
-/// `{authority, export: {identity, revision, digest}, contract_version}`,
-/// already present on `Bundle`, no computation) directly against the header
-/// [`admit_binding`] recorded, rather than calling [`object_universe`] again
-/// to re-derive and compare a fresh universe: that would re-run `build`'s
-/// full, unbounded normalization on every query, uncharged — the same class
-/// of hole `quire.value.accounting/v1` exists to close, just moved onto the
-/// query path. `export.digest` is `filament-canonical-json-1`'s digest of the
-/// bundle's actual content, so an exact header match already implies an
-/// identical universe without rebuilding one; this crate already extends the
-/// same trust to `export.identity` alone at [`admit_binding`]'s own
-/// `modelIdentity` check, so trusting the full header here is a strengthening
-/// of that same boundary, not a new one. A caller presenting a bundle whose
-/// declared header collides with an admitted one while actually supplying
-/// different records is a producer-side integrity defect this crate does not
-/// independently re-verify anywhere, admission included.
-fn require_bundle_matches(
-    bundle: &Bundle,
-    binding: &PopulationBinding,
-) -> Result<(), ModelRefusal> {
-    if bundle.model_selection != binding.model_selection {
-        return Err(ModelRefusal {
-            code: Code::ForeignReference,
-            cause: "foreign-model-selection",
-            detail: format!(
-                "query bundle's model selection {} (revision {}, digest {:?}) does not match the binding's admitted selection {} (revision {}, digest {:?})",
-                bundle.model_selection.export.identity,
-                bundle.model_selection.export.revision.value,
-                bundle.model_selection.export.digest,
-                binding.model_selection.export.identity,
-                binding.model_selection.export.revision.value,
-                binding.model_selection.export.digest,
-            ),
-        });
-    }
-    Ok(())
 }
 
 /// The outcome of one [`admit_binding`] attempt.
@@ -594,7 +567,7 @@ pub fn admit_binding(
     // docs' scope boundary.
 
     AdmissionOutcome::Admitted(Box::new(PopulationBinding {
-        model_selection: bundle.model_selection.clone(),
+        bundle: Arc::new(bundle.clone()),
         universe,
         members: admitted,
         declared_maximum,
@@ -666,16 +639,15 @@ fn is_object_type(bundle: &Bundle, key: &ProducerKey) -> bool {
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
 /// conforms to `t`, once by reference key, in canonical reference-key order.
-/// `binding.members()` already iterates in that order.
+/// `binding.members()` already iterates in that order. Evaluated entirely
+/// against `binding`'s own admitted bundle — there is no separate `bundle`
+/// argument to mismatch (see the module docs' "Binding/bundle correspondence").
 pub fn all_instances(
-    bundle: &Bundle,
     binding: &PopulationBinding,
     t: &ProducerKey,
     meter: &mut ScalarMeter,
 ) -> AllInstancesOutcome {
-    if let Err(refusal) = require_bundle_matches(bundle, binding) {
-        return AllInstancesOutcome::Refused(refusal);
-    }
+    let bundle = &*binding.bundle;
     let Some(declared_maximum) = binding.declared_maximum() else {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
@@ -814,19 +786,18 @@ fn charge_result_retain(meter: &mut ScalarMeter, occ: u64) -> Result<(), ScalarI
 /// `Option<Reference<T>>` (`empty` mode, the wrapper plus the reference); an
 /// absent `empty`-mode result still retains 1 (the `none` wrapper alone),
 /// while an absent `undefined`/`refused`-mode result retains nothing at all
-/// — verified against TC-198 L03's three absence-mode vectors.
+/// — verified against TC-198 L03's three absence-mode vectors. Evaluated
+/// entirely against `binding`'s own admitted bundle — there is no separate
+/// `bundle` argument to mismatch (see the module docs' "Binding/bundle
+/// correspondence").
 pub fn lookup(
-    bundle: &Bundle,
     binding: &PopulationBinding,
     t: &ProducerKey,
     r: &LookupKey,
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
-    if let Err(refusal) = require_bundle_matches(bundle, binding) {
-        return LookupOutcome::Refused(refusal);
-    }
-    let generals = generals_by_specific(bundle);
+    let generals = generals_by_specific(&binding.bundle);
     match type_conforms(&generals, &r.static_type, t) {
         Ok(true) => {}
         Ok(false) => {
