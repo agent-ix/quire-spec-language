@@ -66,15 +66,32 @@
 //! Phase 4's own dominance check (deciding which of several redefiners of
 //! the same target wins) asks a different question than phase 3's own
 //! [`ancestor_paths`]: only *reachability* between two specific owners, never
-//! every path between them. It reuses [`ancestor_paths`] rather than a
-//! second traversal primitive, but under the same `limits`-derived budget
-//! (PR #140 F1's own discipline, not a second unbounded walk introduced
-//! alongside it), and phase 3's own already-computed ancestor paths for
-//! `type_key` are reused verbatim for `apply_redefinitions`'s owner-path
-//! bookkeeping rather than recomputed a second time (PR #140 F10's same
-//! "don't walk the identical DFS twice" lesson, applied to phase 4 too).
+//! every path between them, and it has no derivation facts of its own to
+//! charge against `limits`. An earlier version reused [`ancestor_paths`]
+//! anyway, under a budget (`remaining_fact_budget(limits, 0)`) that read as
+//! this run's real remaining capacity but silently reset to "everything
+//! remaining" on every call — so `apply_redefinitions`'s `O(|edges|^2)` loop
+//! of pairwise dominance tests over it could look individually bounded
+//! while doing unbounded aggregate work across many calls (PR #144 review
+//! finding #4, QSL #145). It now delegates to
+//! [`crate::model::conformance::type_conforms`], the identical bounded
+//! (`MAX_CONFORMANCE_DEPTH`-ceiling) graph walk
+//! [`crate::model::dispatch`]'s own dominance check already uses — a fixed,
+//! honest per-call ceiling rather than a budget with no legitimate claim on
+//! `build`'s shared, cumulative fact accounting. The pairwise loop itself is
+//! still `O(|edges|^2)` in the worst case, but each contesting redefinition
+//! edge's *owner* — not the edge — is what the walk is keyed on, and TC-196
+//! R07 documents the case where several edges share one owner; `apply_redefinitions`
+//! precomputes each *distinct* owner's ancestor closure once
+//! ([`conformance::ancestor_closure`](crate::model::conformance::ancestor_closure))
+//! rather than re-walking the graph once per edge pair, so the walk cost is
+//! `O(distinct owners)`, not `O(|edges|^2)`, and only cheap `O(1)` set
+//! lookups remain inside the pair enumeration. Phase 3's own already-computed
+//! ancestor paths for `type_key` are still reused verbatim for
+//! `apply_redefinitions`'s owner-path bookkeeping rather than recomputed a
+//! second time (PR #140 F10's "don't walk the identical DFS twice" lesson).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{
@@ -84,6 +101,7 @@ use crate::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection,
     INTERFACE_VERSION_1_2_0, INTERFACE_VERSION_1_3_0,
 };
+use crate::model::conformance::{ancestor_closure, generals_by_specific};
 use crate::model::key::{
     digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey,
     PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
@@ -291,7 +309,11 @@ impl Index {
     fn build(bundle: &Bundle) -> Self {
         let mut types = std::collections::BTreeSet::new();
         let mut fields_by_owner: HashMap<ProducerKey, Vec<_>> = HashMap::new();
-        let mut generals_by_specific: HashMap<ProducerKey, Vec<_>> = HashMap::new();
+        // Built once by the one shared function every bounded proper-descendant
+        // walk in `crate::model` uses (`crate::model::conformance`'s own doc),
+        // rather than a second, independent accumulation of the identical
+        // `specific -> generalization records` map.
+        let generals_by_specific = generals_by_specific(bundle);
         let mut non_root = std::collections::HashSet::new();
         let mut known_scalars = std::collections::HashSet::new();
         let mut field_member_keys = std::collections::HashSet::new();
@@ -310,10 +332,6 @@ impl Index {
                 }
                 BundleRecord::Generalization(g) => {
                     non_root.insert(g.specific.clone());
-                    generals_by_specific
-                        .entry(g.specific.clone())
-                        .or_default()
-                        .push(g.clone());
                 }
                 BundleRecord::ScalarType(s) => {
                     known_scalars.insert(s.key.clone());
@@ -851,7 +869,6 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         let (type_edges, type_groups) = apply_redefinitions(
             bundle,
             &index,
-            limits,
             type_key,
             &paths,
             &mut member_preimages,
@@ -953,7 +970,6 @@ struct RedefinitionEdge {
 fn apply_redefinitions(
     bundle: &Bundle,
     index: &Index,
-    limits: &ModelNormalizationLimits,
     type_key: &ProducerKey,
     paths: &[AncestorPath],
     member_preimages: &mut HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage>,
@@ -1010,6 +1026,17 @@ fn apply_redefinitions(
                 .then_with(|| a.record_key.cmp(&b.record_key))
         });
 
+        // Precomputed once per *distinct* owner among `edges` (QSL #145 / PR
+        // #144 review finding #4): the winner search and its undominated-owner
+        // fallback below each compare every edge's owner against every other
+        // edge's owner, but TC-196 R07's own documented shape — several
+        // redefining members sharing one contending owner — means distinct
+        // owners are frequently far fewer than edges. See the module docs.
+        let closures = owner_dominance_closures(
+            &index.generals_by_specific,
+            edges.iter().map(|edge| edge.owner.clone()),
+        )?;
+
         let mut winner: Option<usize> = None;
         for i in 0..edges.len() {
             let mut dominates_all = true;
@@ -1017,7 +1044,7 @@ fn apply_redefinitions(
                 if i == j {
                     continue;
                 }
-                if !dominates(&edges[i].owner, &edges[j].owner, index, limits)? {
+                if !owner_dominates(&closures, &edges[i].owner, &edges[j].owner) {
                     dominates_all = false;
                     break;
                 }
@@ -1057,7 +1084,7 @@ fn apply_redefinitions(
                     if other.owner.identity == edge.owner.identity {
                         continue;
                     }
-                    if dominates(&other.owner, &edge.owner, index, limits)? {
+                    if owner_dominates(&closures, &other.owner, &edge.owner) {
                         dominated_by_another = true;
                         break;
                     }
@@ -1166,29 +1193,47 @@ fn apply_redefinitions(
     Ok((edge_total, group_total))
 }
 
-/// Whether `descendant` has `ancestor` among its own generalization
-/// ancestors (a proper-descendant test, never reflexive). Reuses
-/// [`ancestor_paths`] under a `limits`-derived budget, never left unbounded
-/// just because it is "only" a reachability check — but that budget starts
-/// fresh at zero facts consumed on every call (`remaining_fact_budget(limits,
-/// 0)`), unlike `build`'s own phase-3 walk, which threads its real
-/// `facts_so_far` through. Each individual call is bounded; phase 4's
-/// `O(|edges|^2)` loop over this function is not metered cumulatively across
-/// calls the way `build`'s own walk is. Tracked as a performance/consolidation
-/// follow-up, not fixed here (PR #144 review finding #4).
-fn dominates(
-    descendant: &ProducerKey,
-    ancestor: &ProducerKey,
-    index: &Index,
-    limits: &ModelNormalizationLimits,
-) -> Result<bool, ModelRefusal> {
-    if descendant == ancestor {
-        return Ok(false);
+/// Precomputes each distinct owner among `owners`' own proper-ancestor
+/// closure via [`ancestor_closure`], once per owner rather than once per
+/// contesting-edge pair (QSL #145 / PR #144 review finding #4; see the
+/// module docs). Delegates to [`crate::model::conformance`]'s shared,
+/// bounded (`MAX_CONFORMANCE_DEPTH`-ceiling) graph walk — the same
+/// primitive [`crate::model::conformance::type_conforms`] and
+/// [`crate::model::dispatch`]'s own
+/// dominance check use — rather than [`ancestor_paths`], which exists to
+/// build derivation-fact *paths* for the effective view under `build`'s own
+/// cumulative fact budget; a pure boolean dominance query has no derivation
+/// facts to charge against that budget and no legitimate claim on it.
+fn owner_dominance_closures(
+    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    owners: impl Iterator<Item = ProducerKey>,
+) -> Result<HashMap<ProducerKey, HashSet<ProducerKey>>, ModelRefusal> {
+    let mut distinct: Vec<ProducerKey> = owners.collect();
+    distinct.sort();
+    distinct.dedup();
+    let mut closures = HashMap::with_capacity(distinct.len());
+    for owner in distinct {
+        let closure = ancestor_closure(generals_by_specific, &owner)?;
+        closures.insert(owner, closure);
     }
-    let budget = remaining_fact_budget(limits, 0);
-    Ok(ancestor_paths(descendant, index, budget)?
-        .iter()
-        .any(|candidate| &candidate.ancestor_key == ancestor))
+    Ok(closures)
+}
+
+/// Whether `p_owner` strictly dominates `q_owner`: `p_owner` is a proper
+/// descendant of `q_owner` in `closures` (see [`owner_dominance_closures`]).
+/// An `O(1)` set lookup against an already-computed closure, never a fresh
+/// graph walk — the `O(|edges|^2)` pair enumeration this function is called
+/// from stays cheap because the expensive part already ran once per
+/// distinct owner.
+fn owner_dominates(
+    closures: &HashMap<ProducerKey, HashSet<ProducerKey>>,
+    p_owner: &ProducerKey,
+    q_owner: &ProducerKey,
+) -> bool {
+    p_owner != q_owner
+        && closures
+            .get(p_owner)
+            .is_some_and(|ancestors| ancestors.contains(q_owner))
 }
 
 fn sort_facts(facts: &mut [PendingFact]) {
