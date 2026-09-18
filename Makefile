@@ -14,7 +14,7 @@
 TREE ?= all
 QSPEC_CLONE ?=
 
-.PHONY: revendor revendor-check ci ci-default-features ci-all-features
+.PHONY: revendor revendor-check ci ci-default-features ci-all-features ci-clean-build
 
 revendor:
 	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE))
@@ -24,10 +24,11 @@ revendor-check:
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below. `test-support`
-# fixture constructors are reachable only under `--all-features`
-# (Cargo.toml `[[test]] required-features`), so a default-feature build must
-# also be checked or a fixture-only test target can silently stop compiling
-# under the feature set every non-Quire caller actually builds with.
+# fixture constructors are reachable with `--features test-support` (Cargo.toml
+# `[[test]] required-features`), not only under `--all-features`, so a
+# default-feature build must also be checked or a fixture-only test target
+# can silently stop compiling under the feature set every non-Quire caller
+# actually builds with.
 ci-default-features:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -37,4 +38,13 @@ ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 	cargo test --locked --workspace --all-features
 
-ci: ci-default-features ci-all-features
+# The same three no-default-features checks `.github/workflows/ci.yml` runs
+# after its own clippy/test steps: a from-clean build (its own target-dir, so
+# it never reuses this build's cached artifacts), the fixture-audit negative
+# controls and the parse example.
+ci-clean-build:
+	cargo build --locked --workspace --no-default-features --target-dir target/clean
+	cargo run --locked --no-default-features --bin fixture-audit -- self-test
+	cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
+
+ci: ci-default-features ci-all-features ci-clean-build
