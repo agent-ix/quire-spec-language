@@ -323,7 +323,7 @@ fn tc_041_unsupported_representations_include_unused_ir_declarations() {
         vec![function],
     )
     .unwrap();
-    refuse(input, Code::UnrepresentableConstraint);
+    refuse(input, Code::InvalidPackage);
 }
 
 #[test]

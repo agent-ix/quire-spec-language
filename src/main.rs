@@ -20,17 +20,10 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
             "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}},
         "message": value.message })
     .to_string();
-    // FR-301's contract: a recognized construct this profile does not admit
-    // is unsupported (21); other incomplete work is 22; a refused syntax
-    // request is otherwise invalid input (20).
-    let code = if value.code.is_unsupported() {
-        21
-    } else if incomplete {
-        22
-    } else {
-        20
-    };
-    (code, output)
+    // FR-301's contract, via Code::exit_code(): a recognized construct this
+    // profile does not admit is unsupported (21); other incomplete work is
+    // 22; a refused syntax request is otherwise invalid input (20).
+    (value.exit_code(), output)
 }
 
 fn syntax(

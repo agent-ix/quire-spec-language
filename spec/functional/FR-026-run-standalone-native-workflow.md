@@ -47,7 +47,12 @@ false (a logical violation); 20 means refused, invalid command usage, request
 syntax, identifier or I/O failure; 21 means a construct the parser recognizes
 but the admitted profile does not support, or a native package naming an
 unknown or unavailable required feature; 22 means incomplete. Output failure
-exits 30.
+exits 30. This result's diagnostics field can carry several diagnostics of
+different classifications at once; when it does, the exit code is the
+highest-severity classification present, on FR-301's ordering (tool failure,
+invalid, unsupported, incomplete, violation, success) — an invalid diagnostic
+always outranks an unsupported one, which always outranks an incomplete one,
+regardless of how many of each are present or their order in the list.
 Intake failures use a JSON error on stderr with request digest when read, typed
 stage/code and relevant original source/reference details. Existing parse/format
 commands preserve their behavior. Broken pipes end quietly with the computed

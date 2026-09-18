@@ -200,6 +200,28 @@ fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_populat
     assert_eq!(ByteDigest::of(&compiled.stdout), native.digest());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+#[trace("TC-107", "FR-029-AC-4")]
+fn failed_projection_output_is_a_tool_failure_exit() {
+    let directory = tempfile::tempdir().unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("lower")
+        .arg(directory.path().join("compile.json"))
+        .stdout(std::process::Stdio::from(full))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(30));
+    assert!(std::str::from_utf8(&output.stderr)
+        .unwrap()
+        .starts_with("output failed:"));
+}
+
 #[test]
 #[trace("TC-107", "FR-029-AC-2")]
 fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefix() {

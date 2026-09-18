@@ -67,16 +67,21 @@ an upstream IR canonicalization or proof failure is retained in the optional ups
 field. Runtime diagnostics additionally retain the exact actual/expected artifact,
 authored clause, observation and typed value path in `runtime`. Earlier phases
 leave that field empty. These fields do not change the
-existing syntax CLI output. Resource exhaustion is incomplete, never false. On
-FR-301's six-code contract, the CLI exits 20 for malformed requests, invalid
-command usage, request syntax, identifier and I/O failures and semantic
-refusals other than an admitted-but-unsupported capability; 21 for a real,
-profile-gated capability this build does not admit — `unsupported_projection`,
-`unsupported_construct` and `unknown_required_feature`, via `Code::is_unsupported()`;
-22 for incompleteness; and 30 for a tool/output failure distinct from the
-requested work, such as a broken serialization or write. Usage/I/O text does
-not pretend to be a source diagnostic. A successful parse exits 0 and reports
-parsed, without model-linking or evaluation claims.
+existing syntax CLI output. Resource exhaustion is incomplete, never false. This
+six-code contract is carried by the `quire-spec` binary; the separate
+`fixture-audit` target keeps its own [audit codes](audit-error-codes.md) and is
+not on this contract. On FR-301's six-code contract, `quire-spec` exits 0 for a
+successful parse or a completed-true run predicate; 10 for a completed-false
+run predicate, a logical violation, not a tool defect; 20 for malformed
+requests, invalid command usage, request syntax, identifier and I/O failures
+and semantic refusals other than an admitted-but-unsupported capability; 21 for
+a real, profile-gated capability this build does not admit —
+`unsupported_projection`, `unsupported_construct` and
+`unknown_required_feature`, via `Code::is_unsupported()`; 22 for incompleteness;
+and 30 for a tool/output failure distinct from the requested work, such as a
+broken serialization or write. Usage/I/O text does not pretend to be a source
+diagnostic. A successful parse exits 0 and reports parsed, without
+model-linking or evaluation claims.
 
 Validation reports keep each diagnostic's classification. Incomplete population,
 unavailable observation, cancellation and exhausted work are incomplete. A known

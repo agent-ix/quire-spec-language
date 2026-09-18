@@ -149,6 +149,30 @@ fn cli_parses_and_formats_without_claiming_execution() {
     assert_eq!(value["status"], "refused");
 }
 
+#[cfg(target_os = "linux")]
+#[trace("TC-015", "FR-010-AC-10")]
+#[test]
+fn parse_output_failure_exits_30() {
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args([
+            "parse",
+            "test:parent",
+            "fixture:1",
+            "tests/fixtures/parent.native",
+        ])
+        .stdout(std::process::Stdio::from(full))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(30));
+    assert!(std::str::from_utf8(&output.stderr)
+        .unwrap()
+        .starts_with("output failed:"));
+}
+
 #[trace("TC-015", "FR-010-AC-9")]
 #[test]
 fn parse_of_a_recognized_but_unsupported_construct_exits_21() {
