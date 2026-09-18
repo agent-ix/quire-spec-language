@@ -26,6 +26,7 @@ use super::refusal::{
 use super::syntax::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
 };
+use crate::model::population::AbsenceMode;
 
 /// The largest expression nesting depth a checker may declare. It keeps every
 /// recursive checking pass well inside the host stack.
@@ -338,7 +339,8 @@ impl<'a> Typer<'a> {
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
                 | ValueType::Composite(_)
-                | ValueType::Reference(_) => {}
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => {}
             }
         }
         Ok(())
@@ -666,6 +668,15 @@ impl<'a> Typer<'a> {
                     location,
                 ))
             }
+            Expression::AllInstances { target, population } => {
+                self.all_instances(target, population, location)
+            }
+            Expression::Lookup {
+                target,
+                population,
+                reference,
+                absence,
+            } => self.lookup(target, population, reference, *absence, location),
         }
     }
 
@@ -1121,7 +1132,8 @@ impl<'a> Typer<'a> {
             | ValueType::Option(_)
             | ValueType::Composite(_)
             | ValueType::Collection(_)
-            | ValueType::Reference(_) => return Err(mismatch(location)),
+            | ValueType::Reference(_)
+            | ValueType::Population(_) => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }
@@ -1448,6 +1460,76 @@ impl<'a> Typer<'a> {
                 ))
             }
         }
+    }
+
+    /// `allInstances<T>(p)` (FR-153): `p`'s own checked `Population<T>[N]`
+    /// type (`ValueType::Population`) gives the result's declared bound
+    /// `[0,N]` directly; no runtime value is consulted at check time.
+    fn all_instances(
+        &mut self,
+        target: &ValueType,
+        population: &Expression,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.check_declared_type(target, location)?;
+        if !matches!(target, ValueType::Reference(_)) {
+            return Err(mismatch(location));
+        }
+        let population = self.infer(population, None, &location.child(0))?;
+        let ValueType::Population(maximum) = population.value_type else {
+            return Err(mismatch(&population.location));
+        };
+        let collection_type = CollectionType::new(
+            CollectionKind::Set,
+            target.clone(),
+            bound(0, maximum, location)?,
+        );
+        Ok(node(
+            NodeKind::AllInstances {
+                population: Box::new(population),
+            },
+            ValueType::collection(collection_type),
+            location,
+        ))
+    }
+
+    /// `lookup<T>(p, r) absent m` (FR-153). `r`'s own checked static type `S`
+    /// (never `T`) is `reference.value_type` at evaluation time
+    /// (`crate::value::expression::evaluate`), so [`NodeKind::Lookup`] does
+    /// not restate it.
+    fn lookup(
+        &mut self,
+        target: &ValueType,
+        population: &Expression,
+        reference: &Expression,
+        absence: AbsenceMode,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.check_declared_type(target, location)?;
+        if !matches!(target, ValueType::Reference(_)) {
+            return Err(mismatch(location));
+        }
+        let population = self.infer(population, None, &location.child(0))?;
+        if !matches!(population.value_type, ValueType::Population(_)) {
+            return Err(mismatch(&population.location));
+        }
+        let reference = self.infer(reference, None, &location.child(1))?;
+        if !matches!(reference.value_type, ValueType::Reference(_)) {
+            return Err(mismatch(&reference.location));
+        }
+        let value_type = match absence {
+            AbsenceMode::Undefined | AbsenceMode::Refused => target.clone(),
+            AbsenceMode::Empty => ValueType::option(target.clone()),
+        };
+        Ok(node(
+            NodeKind::Lookup {
+                population: Box::new(population),
+                reference: Box::new(reference),
+                absence,
+            },
+            value_type,
+            location,
+        ))
     }
 
     fn query(

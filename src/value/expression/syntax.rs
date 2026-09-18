@@ -10,6 +10,7 @@
 use super::super::collection::CollectionKind;
 use super::super::composite::ValueType;
 use super::super::integer::Integer;
+use crate::model::population::AbsenceMode;
 
 /// A binary operator of the expression grammar.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -223,6 +224,25 @@ pub enum Expression {
         /// The searched value.
         item: Box<Expression>,
     },
+    /// `allInstances<T>(p)` (FR-153): every current member of `p` whose
+    /// most-specific type conforms to `T`.
+    AllInstances {
+        /// The queried type `T`.
+        target: ValueType,
+        /// The population operand `p`.
+        population: Box<Expression>,
+    },
+    /// `lookup<T>(p, r) absent m` (FR-153): `r`'s presence in `p`, per `m`.
+    Lookup {
+        /// The queried type `T`.
+        target: ValueType,
+        /// The population operand `p`.
+        population: Box<Expression>,
+        /// The reference operand `r`.
+        reference: Box<Expression>,
+        /// The absence mode `m`.
+        absence: AbsenceMode,
+    },
 }
 
 impl Expression {
@@ -273,6 +293,12 @@ impl Expression {
                 source, summand, ..
             } => vec![source, summand],
             Self::Contains { collection, item } => vec![collection, item],
+            Self::AllInstances { population, .. } => vec![population],
+            Self::Lookup {
+                population,
+                reference,
+                ..
+            } => vec![population, reference],
         }
     }
 }

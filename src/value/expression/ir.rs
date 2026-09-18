@@ -11,6 +11,7 @@ use super::super::node::NodeKey;
 use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::rational::RationalDomain;
 use super::refusal::Location;
+use crate::model::population::AbsenceMode;
 
 /// A local slot of one function frame or checked expression.
 pub(crate) type Slot = usize;
@@ -234,6 +235,21 @@ pub(crate) enum NodeKind {
     },
     Size(Box<Node>),
     Contains(Box<Node>, Box<Node>),
+    /// `allInstances<T>(p)` (FR-153). `T`, `N` and the bound `[0,N]` are
+    /// exactly this node's own checked `value_type`
+    /// (`ValueType::Collection`), never restated here.
+    AllInstances {
+        population: Box<Node>,
+    },
+    /// `lookup<T>(p, r) absent m` (FR-153). `T` is exactly this node's own
+    /// checked `value_type` (a bare `Reference<T>` for
+    /// `undefined`/`refused`, an `Option<Reference<T>>` for `empty`), never
+    /// restated here.
+    Lookup {
+        population: Box<Node>,
+        reference: Box<Node>,
+        absence: AbsenceMode,
+    },
 }
 
 impl Node {
@@ -297,6 +313,12 @@ impl Node {
                 children.push(step);
                 children
             }
+            NodeKind::AllInstances { population } => vec![population],
+            NodeKind::Lookup {
+                population,
+                reference,
+                ..
+            } => vec![population, reference],
         }
     }
 

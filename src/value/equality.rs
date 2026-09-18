@@ -329,7 +329,8 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
                 | Value::Reference(_)
                 | Value::Option(_)
                 | Value::Composite(_)
-                | Value::Collection(_),
+                | Value::Collection(_)
+                | Value::Population(_),
                 _,
             ) => return Err(Refusal::CheckedInvariant),
         };
@@ -415,7 +416,8 @@ fn integer_source_admits(lower: &Integer, upper: &Integer, target: &ValueType) -
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_) => false,
+        | ValueType::Reference(_)
+        | ValueType::Population(_) => false,
     }
 }
 
