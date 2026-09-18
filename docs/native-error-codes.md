@@ -59,9 +59,6 @@ reused; prose may change without changing classification.
 | ill_typed | Native contextual types, nominal identities, units or operator eligibility disagree, or a scalar context is ambiguous. |
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
 | resource_exhausted | A source, syntax, formatter, map, linking, checking/proof, package or runtime construction/validation ceiling prevented completion. |
-| ambiguous_dispatch | FR-151 dispatch linking found no, or several undominated, applicable candidates for a closed subtype. |
-| foreign_reference | FR-152/FR-153 named an element outside the bound correspondence bundle, ModelSelection or reference universe. |
-| cardinality_out_of_bound | FR-153 a selected or bound count is outside its declared inclusive bound. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
 source_map, link, check or validate. Related formal declaration locations are structured fields;
