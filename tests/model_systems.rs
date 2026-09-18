@@ -245,7 +245,11 @@ fn find_component<'a>(records: &'a mut [BundleRecord], identity: &str) -> &'a mu
         .unwrap_or_else(|| panic!("fixture Y has no component {identity}"))
 }
 
-#[trace("TC-197", "FR-152-AC-1")]
+// FR-152-AC-1 dropped (retagged, PR #144 review finding #1): AC-1 requires
+// resolving "exact producer AND effective-declaration identity," and this
+// module computes no effective-declaration identity at all (see the module
+// doc's own scope note) — nothing here can honestly claim AC-1.
+#[trace("TC-197")]
 #[test]
 fn y01_every_kind_resolves_to_its_exact_producer_key() {
     let bundle = fixture_y(|_| {});
@@ -337,7 +341,10 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-3")]
+// Retagged AC-3 -> AC-6 (PR #144 review finding #1): y03a-e test the
+// per-`RelationshipDirection` port-pair admit/refuse rule directly — AC-6's
+// own subject.
+#[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03a_swapped_connection_ends_refuse_on_port_direction() {
     let bundle = fixture_y(|records| {
@@ -362,7 +369,7 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-3")]
+#[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03b_target_to_source_against_the_declared_ports_refuses() {
     let bundle = fixture_y(|records| {
@@ -384,7 +391,7 @@ fn y03b_target_to_source_against_the_declared_ports_refuses() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-3")]
+#[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03c_bidirectional_against_non_inout_ports_refuses() {
     let bundle = fixture_y(|records| {
@@ -406,7 +413,7 @@ fn y03c_bidirectional_against_non_inout_ports_refuses() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-3")]
+#[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03d_bidirectional_with_both_ports_inout_admits() {
     let bundle = fixture_y(|records| {
@@ -428,7 +435,7 @@ fn y03d_bidirectional_with_both_ports_inout_admits() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-3")]
+#[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03e_undirected_is_never_a_connection_direction() {
     let bundle = fixture_y(|records| {
@@ -449,7 +456,12 @@ fn y03e_undirected_is_never_a_connection_direction() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-3", "FR-152-AC-4")]
+// Retagged AC-3 -> AC-6 (PR #144 review finding #1; AC-4 kept, per the same
+// finding): this exercises the interface-type condition (AC-4: "port
+// direction, endpoint type and multiplicity are all enforced") over a
+// connection whose port direction is the same admissible pair y03d already
+// covers under AC-6.
+#[trace("TC-197", "FR-152-AC-4", "FR-152-AC-6")]
 #[test]
 fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     // model.Flow2 generalizes to model.Flow (Flow2 is more derived), so
@@ -512,7 +524,8 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     assert_eq!(charges, 3);
 }
 
-#[trace("TC-197", "FR-152-AC-3")]
+// Retagged AC-3 -> AC-6 (PR #144 review finding #1).
+#[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
     let bundle = fixture_y(|records| {
@@ -540,9 +553,15 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-2", "FR-152-AC-5")]
+// FR-152-AC-5 dropped (retagged, PR #144 review finding #1): AC-5's real
+// subject is display-name-vs-identity substitution in relationship
+// navigation, which finding #2 showed this module got wrong before this
+// PR's re-keying fix — this test never exercises that axis, so it stays
+// honestly unbacked. Also renamed: the cascade is three refusals
+// (component -> endpoint -> relationship), not four.
+#[trace("TC-197", "FR-152-AC-2")]
 #[test]
-fn y06_removing_the_part_capability_cascades_four_refusals_in_rule_order() {
+fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     let bundle = fixture_y(|records| {
         find_component(records, "model.Sys.pump").has_part_signature = false;
     });
@@ -597,5 +616,52 @@ fn y06_removing_the_part_capability_cascades_four_refusals_in_rule_order() {
         &ProducerKey::fixture("model.Sys.pump"),
     )
     .expect_err("model.Sys.pump no longer resolves to any kind");
+    assert_eq!(refusal.cause, "unsupplied-producer-record");
+}
+
+/// PR #144 review finding #2 regression: two components sharing a display
+/// identity but differing in revision must classify and resolve
+/// independently — never one collapsing/overwriting the other by identity
+/// alone (the exact defect class PR #140 fixed in `normalize.rs`). Mirrors
+/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
+/// in `tests/model_normalization.rs`.
+#[trace("TC-197")]
+#[test]
+fn f2_components_sharing_an_identity_but_differing_in_revision_both_survive() {
+    let revision_1 = ProducerKey::fixture("model.Sys.pump");
+    let mut revision_2 = ProducerKey::fixture("model.Sys.pump");
+    revision_2.revision.value = "2".to_owned();
+
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.f2-systems-revision"),
+        vec![
+            object_type("model.Pump", None),
+            BundleRecord::Component(ComponentRecord {
+                key: revision_1.clone(),
+                owning_type: ProducerKey::fixture("model.Sys"),
+                value_type: ProducerKey::fixture("model.Pump"),
+                multiplicity: one(),
+                has_part_signature: true,
+            }),
+            BundleRecord::Component(ComponentRecord {
+                key: revision_2.clone(),
+                owning_type: ProducerKey::fixture("model.Sys"),
+                value_type: ProducerKey::fixture("model.Pump"),
+                multiplicity: one(),
+                has_part_signature: false,
+            }),
+        ],
+    );
+    let mut meter = unlimited_meter();
+    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+
+    // Revision "2" (no part-signature) must never silently overwrite
+    // revision "1" (has one) in `SystemsClassification`'s maps.
+    let resolved = resolve_kind(&classification, Kind::Part, &revision_1)
+        .expect("revision \"1\" has the part-signature capability");
+    assert_eq!(resolved.key, revision_1);
+
+    let refusal = resolve_kind(&classification, Kind::Part, &revision_2)
+        .expect_err("revision \"2\" does not have the part-signature capability");
     assert_eq!(refusal.cause, "unsupplied-producer-record");
 }

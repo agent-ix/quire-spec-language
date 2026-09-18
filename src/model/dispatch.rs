@@ -77,6 +77,8 @@ pub struct DominancePair {
 pub struct SubtypeRefusal {
     /// The subtype this refusal is about.
     pub subtype: ProducerKey,
+    /// Always `Code::AmbiguousDispatch` (FR-151-AC-3 names it explicitly).
+    pub code: Code,
     /// FR-151's cause tag: `"no-applicable"` or `"multiple-undominated"`.
     pub cause: &'static str,
     /// Every applicable candidate's own original key, in enumeration order.
@@ -101,10 +103,14 @@ impl DispatchTable {
     }
 
     /// The candidate linked for `subtype`, if this table has an entry for it.
-    pub fn linked_for(&self, subtype: &str) -> Option<&ProducerKey> {
+    /// Matches on the full [`ProducerKey`], never the display identity
+    /// alone (finding #2): two subtypes sharing an identity but differing
+    /// in revision must resolve independently, not "first identity match
+    /// wins."
+    pub fn linked_for(&self, subtype: &ProducerKey) -> Option<&ProducerKey> {
         self.entries
             .iter()
-            .find(|(s, _)| s.identity == subtype)
+            .find(|(s, _)| s == subtype)
             .map(|(_, candidate)| candidate)
     }
 }
@@ -150,9 +156,9 @@ pub enum LinkCheckOutcome {
 }
 
 struct DispatchIndex {
-    operations: HashMap<String, OperationMemberRecord>,
+    operations: HashMap<ProducerKey, OperationMemberRecord>,
     redefinitions: Vec<RedefinitionRecord>,
-    generals_by_specific: HashMap<String, Vec<crate::model::bundle::GeneralizationRecord>>,
+    generals_by_specific: HashMap<ProducerKey, Vec<crate::model::bundle::GeneralizationRecord>>,
 }
 
 impl DispatchIndex {
@@ -162,7 +168,7 @@ impl DispatchIndex {
         for record in &bundle.records {
             match record {
                 BundleRecord::OperationMember(operation) => {
-                    operations.insert(operation.key.identity.clone(), operation.clone());
+                    operations.insert(operation.key.clone(), operation.clone());
                 }
                 BundleRecord::Redefinition(redefinition) => {
                     redefinitions.push(redefinition.clone());
@@ -194,9 +200,9 @@ fn build_family(
     original: &ProducerKey,
 ) -> Result<Vec<ProducerKey>, ModelRefusal> {
     let mut family = vec![original.clone()];
-    let mut frontier: Vec<String> = vec![original.identity.clone()];
-    let mut visited: HashSet<String> = HashSet::new();
-    visited.insert(original.identity.clone());
+    let mut frontier: Vec<ProducerKey> = vec![original.clone()];
+    let mut visited: HashSet<ProducerKey> = HashSet::new();
+    visited.insert(original.clone());
     let mut steps: usize = 0;
     while let Some(target) = frontier.pop() {
         steps += 1;
@@ -211,11 +217,9 @@ fn build_family(
             });
         }
         for redefinition in &index.redefinitions {
-            if redefinition.redefined.identity == target
-                && visited.insert(redefinition.redefining.identity.clone())
-            {
+            if redefinition.redefined == target && visited.insert(redefinition.redefining.clone()) {
                 family.push(redefinition.redefining.clone());
-                frontier.push(redefinition.redefining.identity.clone());
+                frontier.push(redefinition.redefining.clone());
             }
         }
     }
@@ -226,9 +230,9 @@ fn build_family(
 /// Whether `p` (by its owner) strictly dominates `q`: `p`'s owner is a
 /// proper descendant of `q`'s owner.
 fn dominates(
-    generals_by_specific: &HashMap<String, Vec<crate::model::bundle::GeneralizationRecord>>,
-    p_owner: &str,
-    q_owner: &str,
+    generals_by_specific: &HashMap<ProducerKey, Vec<crate::model::bundle::GeneralizationRecord>>,
+    p_owner: &ProducerKey,
+    q_owner: &ProducerKey,
 ) -> Result<bool, ModelRefusal> {
     if p_owner == q_owner {
         return Ok(false);
@@ -256,14 +260,14 @@ pub fn link_dispatch(
     }
 
     let index = DispatchIndex::build(bundle);
-    let Some(receiver_operation) = index.operations.get(&original.identity) else {
+    let Some(receiver_operation) = index.operations.get(original) else {
         return LinkCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: "unknown-original",
             detail: format!("{} is not a declared operation member", original.identity),
         });
     };
-    let receiver_type = receiver_operation.owner.identity.clone();
+    let receiver_type = receiver_operation.owner.clone();
 
     let family = match build_family(&index, original) {
         Ok(family) => family,
@@ -271,12 +275,7 @@ pub fn link_dispatch(
     };
     let mut candidates: Vec<ProducerKey> = family
         .into_iter()
-        .filter(|member| {
-            index
-                .operations
-                .get(&member.identity)
-                .is_some_and(|op| op.has_body)
-        })
+        .filter(|member| index.operations.get(member).is_some_and(|op| op.has_body))
         .collect();
     candidates.sort();
 
@@ -291,7 +290,7 @@ pub fn link_dispatch(
         let candidate_subtype = &entry.preimage.original;
         match type_conforms(
             &index.generals_by_specific,
-            &candidate_subtype.identity,
+            candidate_subtype,
             &receiver_type,
         ) {
             Ok(true) => subtypes.push(candidate_subtype.clone()),
@@ -318,17 +317,15 @@ pub fn link_dispatch(
             ) {
                 return LinkCheckOutcome::Incomplete(incomplete);
             }
-            let candidate_owner = &index
-                .operations
-                .get(&candidate.identity)
-                .expect("a dispatch candidate is always a declared operation member")
-                .owner
-                .identity;
-            match type_conforms(
-                &index.generals_by_specific,
-                &subtype.identity,
-                candidate_owner,
-            ) {
+            let Some(candidate_record) = index.operations.get(candidate) else {
+                return LinkCheckOutcome::Refused(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-candidate",
+                    detail: format!("{} is not a declared operation member", candidate.identity),
+                });
+            };
+            let candidate_owner = &candidate_record.owner;
+            match type_conforms(&index.generals_by_specific, subtype, candidate_owner) {
                 Ok(true) => applicable.push(candidate.clone()),
                 Ok(false) => {}
                 Err(refusal) => return LinkCheckOutcome::Refused(refusal),
@@ -338,6 +335,7 @@ pub fn link_dispatch(
         if applicable.is_empty() {
             refusals.push(SubtypeRefusal {
                 subtype: subtype.clone(),
+                code: Code::AmbiguousDispatch,
                 cause: "no-applicable",
                 candidates: Vec::new(),
                 dominance_pairs: Vec::new(),
@@ -354,21 +352,35 @@ pub fn link_dispatch(
             return LinkCheckOutcome::Incomplete(incomplete);
         }
         let mut dominance_pairs: Vec<DominancePair> = Vec::new();
-        let mut dominated: HashSet<String> = HashSet::new();
+        let mut dominated: HashSet<ProducerKey> = HashSet::new();
         for p in &applicable {
-            let p_owner = &index.operations.get(&p.identity).unwrap().owner.identity;
+            let Some(p_record) = index.operations.get(p) else {
+                return LinkCheckOutcome::Refused(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-candidate",
+                    detail: format!("{} is not a declared operation member", p.identity),
+                });
+            };
+            let p_owner = &p_record.owner;
             for q in &applicable {
-                if p.identity == q.identity {
+                if p == q {
                     continue;
                 }
-                let q_owner = &index.operations.get(&q.identity).unwrap().owner.identity;
+                let Some(q_record) = index.operations.get(q) else {
+                    return LinkCheckOutcome::Refused(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: "unknown-candidate",
+                        detail: format!("{} is not a declared operation member", q.identity),
+                    });
+                };
+                let q_owner = &q_record.owner;
                 match dominates(&index.generals_by_specific, p_owner, q_owner) {
                     Ok(true) => {
                         dominance_pairs.push(DominancePair {
                             dominant: p.clone(),
                             dominated: q.clone(),
                         });
-                        dominated.insert(q.identity.clone());
+                        dominated.insert(q.clone());
                     }
                     Ok(false) => {}
                     Err(refusal) => return LinkCheckOutcome::Refused(refusal),
@@ -377,7 +389,7 @@ pub fn link_dispatch(
         }
         let undominated: Vec<ProducerKey> = applicable
             .iter()
-            .filter(|c| !dominated.contains(&c.identity))
+            .filter(|c| !dominated.contains(*c))
             .cloned()
             .collect();
 
@@ -386,6 +398,7 @@ pub fn link_dispatch(
         } else {
             refusals.push(SubtypeRefusal {
                 subtype: subtype.clone(),
+                code: Code::AmbiguousDispatch,
                 cause: "multiple-undominated",
                 candidates: applicable,
                 dominance_pairs,

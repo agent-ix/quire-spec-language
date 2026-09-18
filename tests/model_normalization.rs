@@ -498,7 +498,14 @@ fn unsupported_interface_version_refuses_before_any_charge() {
     }
 }
 
-#[trace("TC-195", "FR-150-AC-1")]
+// Retagged (PR #144 review finding #1): this is the conflict refusal AC-3
+// names ("a conflicting phase 4 derivation... refuses with its named
+// cause") and, together, the perfect test for AC-5 ("conflicting
+// derivations report both rule paths and expose no chosen effective
+// member") — asserting the refusal names both contending redefiners' rule
+// paths is exactly that. Not AC-1: nothing here links a normalized
+// identity to its contributing declarations.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-5")]
 #[test]
 fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
     match normalize(&fixture_n06_conflict(), ModelNormalizationLimits::UNLIMITED) {
@@ -518,7 +525,11 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
     }
 }
 
-#[trace("TC-195", "FR-150-AC-4")]
+// Retagged (PR #144 review finding #1): every assertion here checks that
+// the winner's/hidden target's derivation facts link to every contributing
+// original declaration and rule — AC-1's own language. It never checks
+// replay/record-order independence, which is what AC-4 actually requires.
+#[trace("TC-195", "FR-150-AC-1")]
 #[test]
 fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender() {
     let view = completed(&fixture_n06_resolved(), ModelNormalizationLimits::UNLIMITED);
@@ -628,7 +639,11 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
     );
 }
 
-#[trace("TC-195", "FR-150-AC-1")]
+// Retagged (PR #144 review finding #1): a dangling redefinition target
+// refuses with a named cause, closer to AC-3 than to AC-1 (which is about
+// linking a normalized identity to its contributing declarations — there
+// is no normalized identity here at all, only a refusal).
+#[trace("TC-195", "FR-150-AC-3")]
 #[test]
 fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() {
     let mut bundle = fixture_f2();

@@ -145,7 +145,12 @@ fn bundle_h(mut records: Vec<BundleRecord>) -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.h"), records)
 }
 
-#[trace("TC-196", "FR-151-AC-1", "FR-151-AC-4")]
+// FR-151-AC-1 dropped (retagged, PR #144 review finding #1): AC-1 is about
+// an effective member's provenance, and `check_operation_redefinition`
+// never builds or exposes one — `normalize.rs`'s own module doc says
+// operation redefinition builds no phase there. AC-4 is this test's real
+// subject: every variance axis admitting independently.
+#[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r02_a_compatible_operation_redefinition_admits_every_axis() {
     let bundle = bundle_h(vec![
@@ -631,5 +636,61 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (f), got {other:?}"),
+    }
+}
+
+/// PR #144 review finding #2 regression: two field members sharing a
+/// display identity but differing in revision must both survive
+/// independently in `ConformanceIndex.fields` — never one collapsing/
+/// overwriting the other by identity alone (the exact defect class PR #140
+/// fixed in `normalize.rs`). Mirrors
+/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
+/// in `tests/model_normalization.rs`.
+#[trace("TC-196")]
+#[test]
+fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive() {
+    let revision_1 = ProducerKey::fixture("model.A.x");
+    let mut revision_2 = ProducerKey::fixture("model.A.x");
+    revision_2.revision.value = "2".to_owned();
+
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.y"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.y"),
+        redefined: revision_2.clone(),
+    };
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.f2-conformance-revision"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            // revision "1": a narrow {0,1} upper bound. If the index ever
+            // collapsed onto this record instead of `revision_2` (the
+            // record.redefined actually names), the redefining {0,3} field
+            // below would wrongly fail to narrow it.
+            BundleRecord::FieldMember(FieldMemberRecord {
+                key: revision_1,
+                owner: ProducerKey::fixture("model.A"),
+                value_type: ProducerKey::fixture("model.A"),
+                multiplicity: mult(0, Some(1)),
+            }),
+            // revision "2": the actual redefinition target, a wider {0,5}
+            // upper bound that the redefining field genuinely narrows.
+            BundleRecord::FieldMember(FieldMemberRecord {
+                key: revision_2,
+                owner: ProducerKey::fixture("model.A"),
+                value_type: ProducerKey::fixture("model.A"),
+                multiplicity: mult(0, Some(5)),
+            }),
+            field_member("model.B.y", "model.B", "model.A", mult(0, Some(3))),
+        ],
+    );
+
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    match check_field_redefinition(&bundle, &record, &mut meter) {
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
+        other => {
+            panic!("expected Compatible against revision \"2\"'s {{0,5}} bound, got {other:?}")
+        }
     }
 }

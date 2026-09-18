@@ -11,6 +11,7 @@
 //! `51796212` < `C` = `7c28ad04` < `B` = `b9953c43` < `A` = `f1cc59cd`.
 
 use ix_trace_rs::trace;
+use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, GeneralizationRecord, ModelSelection, ObjectTypeRecord, OperationEffect,
@@ -92,7 +93,11 @@ fn unlimited_meter() -> quire_spec_language::model::accounting::Meter {
 /// A.size`, with one `dispatch.subtype` and one `dispatch.candidate` per
 /// (subtype, candidate) pair, and `dispatch.dominance` only where `D`/`B`
 /// have two applicable candidates.
-#[trace("TC-196", "FR-151-AC-1", "FR-151-AC-3")]
+// Neither FR-151-AC-1 nor FR-151-AC-3 tags this test (retagged, PR #144
+// review finding #1): AC-1 is about an effective member's provenance, which
+// this happy-path linking test never inspects; AC-3 is entirely about
+// refusals, and this test has none.
+#[trace("TC-196")]
 #[test]
 fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate() {
     let mut records = fixture_g();
@@ -119,7 +124,11 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
     let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
         panic!("expected a linked dispatch table, got {outcome:?}");
     };
-    let linked = |subtype: &str| table.linked_for(subtype).map(|c| c.identity.clone());
+    let linked = |subtype: &str| {
+        table
+            .linked_for(&ProducerKey::fixture(subtype))
+            .map(|c| c.identity.clone())
+    };
     assert_eq!(linked("model.D"), Some("model.B.size".to_owned()));
     assert_eq!(linked("model.C"), Some("model.A.size".to_owned()));
     assert_eq!(linked("model.B"), Some("model.B.size".to_owned()));
@@ -185,6 +194,41 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     assert_eq!(incomplete.charge_point, ChargePoint::DispatchCandidate);
 }
 
+/// D01's `dispatch_candidates` boundary, the other half of FR-151-AC-8: the
+/// exact bound (`8`, the real count D01 charges) completes.
+#[trace("TC-196", "FR-151-AC-8")]
+#[test]
+fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
+    let mut records = fixture_g();
+    records.push(operation("model.A.size", "model.A", true));
+    records.push(operation("model.B.size", "model.B", true));
+    records.push(redefinition(
+        "model.redef.B.size",
+        "model.B",
+        "model.B.size",
+        "model.A.size",
+    ));
+    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
+    let view = effective_view(&bundle);
+
+    let mut meter = quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits {
+        dispatch_candidates: 8,
+        ..ModelNormalizationLimits::UNLIMITED
+    });
+    let outcome = link_dispatch(
+        &bundle,
+        &view,
+        &ProducerKey::fixture("model.A.size"),
+        GeneralizationClosure::Closed,
+        &mut meter,
+    );
+
+    assert!(matches!(
+        outcome,
+        LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(_))
+    ));
+}
+
 /// D02: `C.size`/`D.size` also redefine `A.size`. Without a body for
 /// `D.size`, `D` is a three-way tie among `A.size`, `B.size`, `C.size`
 /// (`B.size`/`C.size` each dominate `A.size`, but neither dominates the
@@ -235,6 +279,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     assert_eq!(refusals.len(), 1);
     let refusal = &refusals[0];
     assert_eq!(refusal.subtype.identity, "model.D");
+    assert_eq!(refusal.code, Code::AmbiguousDispatch);
     assert_eq!(refusal.cause, "multiple-undominated");
     let mut candidate_names: Vec<&str> = refusal
         .candidates
@@ -284,7 +329,9 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
         panic!("expected a linked dispatch table, got {resolved_outcome:?}");
     };
     assert_eq!(
-        table.linked_for("model.D").map(|c| c.identity.as_str()),
+        table
+            .linked_for(&ProducerKey::fixture("model.D"))
+            .map(|c| c.identity.as_str()),
         Some("model.D.size")
     );
 }
@@ -325,6 +372,7 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
         .map(|r| r.subtype.identity.as_str())
         .collect();
     assert_eq!(subtypes, vec!["model.D", "model.C", "model.B", "model.A"]);
+    assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals.iter().all(|r| r.cause == "no-applicable"));
     assert!(refusals.iter().all(|r| r.candidates.is_empty()));
     assert!(!meter
@@ -372,7 +420,11 @@ fn d04_registration_order_does_not_change_the_linked_table() {
     let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
         panic!("expected a linked dispatch table, got {outcome:?}");
     };
-    let linked = |subtype: &str| table.linked_for(subtype).map(|c| c.identity.as_str());
+    let linked = |subtype: &str| {
+        table
+            .linked_for(&ProducerKey::fixture(subtype))
+            .map(|c| c.identity.as_str())
+    };
     assert_eq!(linked("model.D"), Some("model.B.size"));
     assert_eq!(linked("model.C"), Some("model.A.size"));
     assert_eq!(linked("model.B"), Some("model.B.size"));
@@ -411,4 +463,66 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
     assert_eq!(unclosed.cause, "unclosed-method-set");
     assert_eq!(unclosed.operation.identity, "model.A.size");
     assert!(meter.admitted_charges().is_empty());
+}
+
+/// PR #144 review finding #2 regression: two operation members sharing a
+/// display identity but differing in revision must classify and resolve
+/// independently in `DispatchIndex` — never one collapsing/overwriting the
+/// other by identity alone (the exact defect class PR #140 fixed in
+/// `normalize.rs`). Mirrors
+/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
+/// in `tests/model_normalization.rs`.
+#[trace("TC-196")]
+#[test]
+fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survive() {
+    let op1_key = ProducerKey::fixture("model.A.size");
+    let mut op2_key = ProducerKey::fixture("model.A.size");
+    op2_key.revision.value = "2".to_owned();
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.f2-dispatch-revision"),
+        vec![
+            object_type("model.A"),
+            BundleRecord::OperationMember(OperationMemberRecord {
+                key: op1_key.clone(),
+                owner: ProducerKey::fixture("model.A"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                has_own_precondition: false,
+                own_postcondition_facts: Vec::new(),
+                has_body: true,
+            }),
+            BundleRecord::OperationMember(OperationMemberRecord {
+                key: op2_key,
+                owner: ProducerKey::fixture("model.A"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                has_own_precondition: false,
+                own_postcondition_facts: Vec::new(),
+                has_body: false,
+            }),
+        ],
+    );
+    let view = effective_view(&bundle);
+
+    let mut meter = unlimited_meter();
+    let outcome = link_dispatch(
+        &bundle,
+        &view,
+        &op1_key,
+        GeneralizationClosure::Closed,
+        &mut meter,
+    );
+
+    let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
+        panic!("expected a linked dispatch table, got {outcome:?}");
+    };
+    let linked = table
+        .linked_for(&ProducerKey::fixture("model.A"))
+        .expect("model.A must link to the revision-1 candidate, which has a body");
+    // Revision "2" (no body) must never silently overwrite revision "1"
+    // (has a body) in `DispatchIndex.operations` by shared identity alone.
+    assert_eq!(linked, &op1_key);
+    assert_eq!(linked.revision.value, "1");
 }
