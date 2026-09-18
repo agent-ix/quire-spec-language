@@ -17,15 +17,15 @@ jobs:
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Lints with minimal features
-        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
       - name: Native behavior with minimal features
-        run: cargo test --locked --no-default-features
+        run: cargo test --locked --workspace --no-default-features
       - name: Lints with all native integrations
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Compiler, runtime, extraction and CLI
-        run: cargo test --locked --all-features
+        run: cargo test --locked --workspace --all-features
       - name: Clean build
-        run: cargo build --locked --no-default-features --target-dir target/clean
+        run: cargo build --locked --workspace --no-default-features --target-dir target/clean
       - name: Review fixture identity negative controls
         run: cargo run --locked --no-default-features --bin fixture-audit -- self-test
       - name: Parse example
