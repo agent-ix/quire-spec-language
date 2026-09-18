@@ -686,8 +686,8 @@ mod checked {
     use super::*;
     use quire_spec_language::value::{
         BinaryOperator, BoundViolation, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckingLimits, Expression, FieldInitializer, FunctionDeclaration,
-        InputRefusal, Obligation, PackageDeclarations, Refusal,
+        CheckedPackage, CheckingLimits, ClauseKind, Expression, FieldInitializer,
+        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal,
     };
 
     fn name(spelling: &str) -> Expression {
@@ -731,6 +731,7 @@ mod checked {
             result: ValueType::Integer,
             measure: None,
             body,
+            clause_kind: ClauseKind::Body,
         }
     }
 

@@ -42,7 +42,8 @@ pub use refusal::{
     Obligation, Origin, ProvedInterval,
 };
 pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
+    FunctionDeclaration,
 };
 
 /// How a standalone expression is checked.
@@ -212,7 +213,13 @@ impl PackageDeclarations {
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let typed = (|| {
-                let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes);
+                let mut typer = Typer::new(
+                    &scope,
+                    &signatures,
+                    limits,
+                    &mut nodes,
+                    function.clause_kind,
+                );
                 bind_parameters(&mut typer, &function.parameters, &location)?;
                 typer.check_declared_type(&function.result, &location)?;
                 let body = typer.check_as(&function.body, &function.result, &location)?;
@@ -223,7 +230,13 @@ impl PackageDeclarations {
                             function: function.name.clone(),
                             index,
                         });
-                        let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes);
+                        let mut typer = Typer::new(
+                            &scope,
+                            &signatures,
+                            limits,
+                            &mut nodes,
+                            function.clause_kind,
+                        );
                         bind_parameters(&mut typer, &function.parameters, &at)?;
                         Some(typer.infer(measure, None, &at)?)
                     }
@@ -292,12 +305,34 @@ impl PackageDeclarations {
 
 impl CheckedPackage {
     /// Check a standalone expression over `parameters`, against `expected`
-    /// when given.
+    /// when given, as a function or operation body.
     pub fn check_expression(
         &self,
         parameters: Vec<(String, ValueType)>,
         expression: &Expression,
         expected: Option<&ValueType>,
+        mode: CheckMode,
+        limits: CheckingLimits,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        self.check_clause_expression(
+            parameters,
+            expression,
+            expected,
+            ClauseKind::Body,
+            mode,
+            limits,
+        )
+    }
+
+    /// Check a standalone expression over `parameters` as `clause_kind`,
+    /// against `expected` when given. FR-151's dispatch-call restriction
+    /// (TC-196 D06/D07) gates on `clause_kind`, not on syntax alone.
+    pub fn check_clause_expression(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        expected: Option<&ValueType>,
+        clause_kind: ClauseKind,
         mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedExpression, CheckRefusal> {
@@ -308,7 +343,7 @@ impl CheckedPackage {
             .map(|function| function.signature.clone())
             .collect();
         let mut nodes = 0_u64;
-        let mut typer = Typer::new(&self.scope, &signatures, limits, &mut nodes);
+        let mut typer = Typer::new(&self.scope, &signatures, limits, &mut nodes, clause_kind);
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {

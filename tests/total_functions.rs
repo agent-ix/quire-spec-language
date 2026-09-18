@@ -6,13 +6,13 @@ use ix_trace_rs::trace;
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionKind, CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock,
-    Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth,
-    IllTypedCause, Incomplete, Integer, IntegerInterval, LimitKind, MeasureObligation, Meter,
-    NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
-    OptionValue, Origin, Outcome, PackageDeclarations, Presence, ProvedInterval, Rational,
-    RationalDomain, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    ClauseKind, CollectionKind, CollectionType, CompositeDeclaration, CompositeShape,
+    DefinitionLock, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
+    IeeeWidth, IllTypedCause, Incomplete, Integer, IntegerInterval, LimitKind, MeasureObligation,
+    Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
+    Obligation, OptionValue, Origin, Outcome, PackageDeclarations, Presence, ProvedInterval,
+    Rational, RationalDomain, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity,
+    Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -134,6 +134,7 @@ fn function(
         result,
         measure,
         body,
+        clause_kind: ClauseKind::Body,
     }
 }
 

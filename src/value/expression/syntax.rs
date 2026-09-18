@@ -76,6 +76,24 @@ pub enum Accumulation {
     Reduce,
 }
 
+/// The clause a checked declaration is. FR-151's dispatch-call restriction
+/// (`quire.model.dispatch.single/v1`) gates a dispatched
+/// `receiver.member(args)` call on this context, not on syntax alone: it
+/// checks inside an invariant, precondition or postcondition, and is refused
+/// `ill_typed`/`operator-ineligible` inside a function or operation body
+/// (TC-196 D07).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ClauseKind {
+    /// A model invariant clause.
+    Invariant,
+    /// An operation's precondition clause.
+    Precondition,
+    /// An operation's postcondition clause.
+    Postcondition,
+    /// A function body, an operation body, or a `decreases` measure.
+    Body,
+}
+
 /// One value expression.
 #[derive(Clone, Debug)]
 pub enum Expression {
@@ -246,7 +264,9 @@ pub enum Expression {
     /// `receiver.member(args)` (FR-151): a dispatched call, resolved at
     /// check time to the receiver's static type's exposed effective
     /// operation, and at link time to the receiver's most-specific runtime
-    /// type.
+    /// type. Only checks inside an invariant, precondition or postcondition
+    /// clause (TC-196 D07); a call in a function or operation body is
+    /// `ill_typed`/`operator-ineligible`.
     Dispatch {
         /// `self`, a `deref(...)` result, or another `Reference<T>` value.
         receiver: Box<Expression>,
@@ -326,6 +346,13 @@ impl Expression {
 
 /// `function name using V(parameters): result pure [decreases(measure)] {
 /// body }`.
+///
+/// Also used for a checked FR-151 dispatch candidate's own body or effective
+/// precondition, so both share the FR-146 call-graph and termination
+/// machinery: [`clause_kind`](Self::clause_kind) then reads
+/// [`ClauseKind::Precondition`] instead of the default
+/// [`ClauseKind::Body`], since a dispatched call is admitted inside a
+/// precondition but not inside an operation body (TC-196 D06/D07/D08).
 #[derive(Clone, Debug)]
 pub struct FunctionDeclaration {
     /// The declared name.
@@ -338,4 +365,7 @@ pub struct FunctionDeclaration {
     pub measure: Option<Expression>,
     /// The body.
     pub body: Expression,
+    /// The clause this declaration's body is checked as. Every ordinary
+    /// named function is [`ClauseKind::Body`].
+    pub clause_kind: ClauseKind,
 }

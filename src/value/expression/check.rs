@@ -27,7 +27,8 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
 };
 use super::syntax::{
-    Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
+    FunctionDeclaration,
 };
 use crate::model::population::AbsenceMode;
 
@@ -178,6 +179,7 @@ pub(crate) struct Typer<'a> {
     depth: u64,
     locals: Vec<Local>,
     slots: usize,
+    clause_kind: ClauseKind,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -261,6 +263,7 @@ impl<'a> Typer<'a> {
         signatures: &'a [Signature],
         limits: CheckingLimits,
         nodes: &'a mut u64,
+        clause_kind: ClauseKind,
     ) -> Self {
         Self {
             scope,
@@ -270,6 +273,7 @@ impl<'a> Typer<'a> {
             depth: 0,
             locals: Vec::new(),
             slots: 0,
+            clause_kind,
         }
     }
 
@@ -1334,9 +1338,10 @@ impl<'a> Typer<'a> {
     }
 
     /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):
-    /// the receiver is `self`, a `deref(...)` result or another
-    /// `Reference<T>` value, and `member` resolves statically against `T`'s
-    /// exposed dispatch-eligible operations.
+    /// only checks inside an invariant, precondition or postcondition
+    /// (TC-196 D07); the receiver is `self`, a `deref(...)` result or
+    /// another `Reference<T>` value, and `member` resolves statically
+    /// against `T`'s exposed dispatch-eligible operations.
     fn dispatch_call(
         &mut self,
         receiver: &Expression,
@@ -1344,6 +1349,12 @@ impl<'a> Typer<'a> {
         arguments: &[Expression],
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        if !matches!(
+            self.clause_kind,
+            ClauseKind::Invariant | ClauseKind::Precondition | ClauseKind::Postcondition
+        ) {
+            return Err(ineligible(location));
+        }
         let receiver_location = location.child(0);
         let receiver_node = if let Expression::Deref(inner) = receiver {
             self.enter(&receiver_location)?;

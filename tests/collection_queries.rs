@@ -5,13 +5,13 @@
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, BinderQuery, BoundViolation, CardinalityBound, ChargePoint,
-    CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimits, CollectionKind,
-    CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
-    Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IllTypedCause, Incomplete,
-    Integer, IntegerInterval, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, Outcome, PackageDeclarations, Presence,
-    ProvedInterval, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimits, ClauseKind,
+    CollectionKind, CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration,
+    CompositeShape, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IllTypedCause,
+    Incomplete, Integer, IntegerInterval, LimitKind, Meter, NodeKey, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation, Outcome,
+    PackageDeclarations, Presence, ProvedInterval, Refusal, ScalarLimits, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -460,6 +460,7 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             result: ValueType::Integer,
             measure: None,
             body: reduce,
+            clause_kind: ClauseKind::Body,
         }],
         ..PackageDeclarations::default()
     }
@@ -506,6 +507,7 @@ fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
         result: ValueType::Integer,
         measure: None,
         body: binary(BinaryOperator::Add, name("a"), name("b")),
+        clause_kind: ClauseKind::Body,
     };
     let package = package(TypeEnvironment::default(), vec![add]);
     let set = integers(CollectionKind::Set, 0, 3);
