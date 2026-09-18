@@ -145,7 +145,7 @@ fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
     );
 }
 
-#[trace("TC-195", "FR-150-AC-4")]
+#[trace("TC-195", "FR-150-AC-6")]
 #[test]
 fn n02_normalizes_f2_diamond_inheritance_to_the_exact_ground_truth_identities() {
     let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
@@ -415,7 +415,7 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
     }
 }
 
-#[trace("TC-195", "FR-150-AC-2")]
+#[trace("TC-195")]
 #[test]
 fn unsupported_interface_version_refuses_before_any_charge() {
     let mut bundle = fixture_f1();
@@ -430,4 +430,374 @@ fn unsupported_interface_version_refuses_before_any_charge() {
         }
         other => panic!("expected Refused, got {other:?}"),
     }
+}
+
+/// PR #140 F2 regression: two `ObjectType` records that share a display
+/// identity but differ in revision are distinct original declarations under
+/// `ProducerKey`'s full-key equality and must both survive as distinguishable
+/// effective declarations, not collapse to one. This is also FR-150-AC-2's
+/// real test (`unsupported_interface_version_refuses_before_any_charge`
+/// above was mistagged with this AC; it actually tests N08's second clause).
+/// On `759968d` `Index::build` keyed `types` by display identity alone, so
+/// this collapsed to a single declaration.
+#[trace("TC-195", "FR-150-AC-2")]
+#[test]
+fn f2_producer_keys_sharing_an_identity_but_differing_in_revision_both_survive() {
+    let mut second_revision = ProducerKey::fixture("model.T");
+    second_revision.revision.value = "2".to_owned();
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.f2-revision"),
+        vec![
+            BundleRecord::ObjectType(ObjectTypeRecord {
+                key: ProducerKey::fixture("model.T"),
+            }),
+            BundleRecord::ObjectType(ObjectTypeRecord {
+                key: second_revision,
+            }),
+        ],
+    );
+    let view = completed(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        view.declarations.len(),
+        2,
+        "both revisions of model.T must survive as distinct effective types"
+    );
+    let identities: std::collections::HashSet<_> = view
+        .declarations
+        .iter()
+        .map(|e| e.effective_id.clone())
+        .collect();
+    assert_eq!(
+        identities.len(),
+        2,
+        "the two declarations must be distinguishable, not merged"
+    );
+}
+
+/// PR #140 F2 regression: two `FieldMember` records under the same owner that
+/// share a display identity but differ in revision must also both survive.
+/// On `759968d` `member_preimages` was keyed `(String, String)` (display
+/// identities), so the second record silently overwrote the first while the
+/// meter still charged for both — a silent drop, not just a merge.
+#[trace("TC-195")]
+#[test]
+fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive() {
+    let mut second_revision = ProducerKey::fixture("model.A.x");
+    second_revision.revision.value = "2".to_owned();
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.f2-member-revision"),
+        vec![
+            object_type("model.A"),
+            BundleRecord::FieldMember(FieldMemberRecord {
+                key: ProducerKey::fixture("model.A.x"),
+                owner: ProducerKey::fixture("model.A"),
+                value_type: ProducerKey::fixture("model.A"),
+                multiplicity: MULTIPLICITY_0_1,
+            }),
+            BundleRecord::FieldMember(FieldMemberRecord {
+                key: second_revision,
+                owner: ProducerKey::fixture("model.A"),
+                value_type: ProducerKey::fixture("model.A"),
+                multiplicity: MULTIPLICITY_0_1,
+            }),
+        ],
+    );
+    let view = completed(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        view.declarations.len(),
+        3,
+        "type A plus both revisions of member A.x must all survive"
+    );
+}
+
+/// PR #140 F1 regression: 15 types in a chain, each specific type generalizing
+/// to its predecessor via TWO parallel generalization records (43 records
+/// total: 15 `ObjectType` + 28 `Generalization`) — the exact shape the review
+/// reproduced (diamond/parallel generalization causes an ancestor-path count
+/// exponential in chain depth). Under a tight budget this must return a typed
+/// `Incomplete` quickly rather than enumerate every path first. On `759968d`
+/// this exact 43-record shape took ~51s (unbounded `ancestor_paths`); it must
+/// complete in low single-digit seconds here.
+fn fixture_deep_parallel_generalization_chain() -> Bundle {
+    let mut records: Vec<BundleRecord> = (0..15)
+        .map(|i| object_type(&format!("model.T{i}")))
+        .collect();
+    for i in 1..15 {
+        records.push(generalization(
+            &format!("model.gen.T{i}-T{}-a", i - 1),
+            &format!("model.T{i}"),
+            &format!("model.T{}", i - 1),
+        ));
+        records.push(generalization(
+            &format!("model.gen.T{i}-T{}-b", i - 1),
+            &format!("model.T{i}"),
+            &format!("model.T{}", i - 1),
+        ));
+    }
+    assert_eq!(records.len(), 43, "15 types + 28 generalizations");
+    Bundle::new(
+        ModelSelection::fixture("bundle.deep-parallel-chain"),
+        records,
+    )
+}
+
+#[trace("TC-195")]
+#[test]
+fn f1_deep_parallel_generalization_bounds_enumeration_instead_of_exploding() {
+    let bundle = fixture_deep_parallel_generalization_chain();
+    let tight = ModelNormalizationLimits {
+        producer_records: 43,
+        derivation_facts: 1,
+        effective_declarations: 1,
+        dispatch_candidates: 0,
+        hashed_bytes: 1,
+        work_units: 1,
+    };
+    let start = std::time::Instant::now();
+    let outcome = normalize(&bundle, tight);
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "normalize took {elapsed:?} under a saturated budget; ancestor-path \
+         enumeration is not bounded during the walk (F1 regression)"
+    );
+    match outcome {
+        NormalizeOutcome::Incomplete(_) => {}
+        other => panic!("expected a typed Incomplete under limits of 1, got {other:?}"),
+    }
+}
+
+/// PR #140 F6: a producer key with an absent revision (empty
+/// `revision.namespace`/`revision.value`) refuses `wrong-model-selection`
+/// rather than normalizing as if the revision label were simply blank.
+#[trace("TC-195", "FR-150-AC-3")]
+#[test]
+fn n04_absent_revision_refuses_wrong_model_selection() {
+    let mut bundle = fixture_f1();
+    let BundleRecord::Generalization(gen) = &mut bundle.records[3] else {
+        panic!("fixture_f1 records[3] is not a generalization");
+    };
+    assert_eq!(gen.key.identity, "model.gen.B-A");
+    gen.key.revision.namespace.clear();
+    gen.key.revision.value.clear();
+
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "wrong-model-selection");
+            assert!(refusal.detail.contains("model.gen.B-A"));
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+/// PR #140 F4 / TC-195 N08: a producer interface `1.2.0` bundle yields
+/// exactly one `unsupplied-producer-record` refusal per missing FR-150
+/// capability item, in the fixed order, after three `normalize.record` and
+/// ten `normalize.unsupplied-item` charges — never the `unknown-wire`
+/// refusal a plain unsupported-version bundle gets.
+#[trace("TC-195", "FR-150-AC-7")]
+#[test]
+fn n08_interface_1_2_0_refuses_every_missing_capability_in_fixed_order() {
+    let mut selection = ModelSelection::fixture("bundle.n01");
+    selection.contract_version.interface_version = "1.2.0".to_owned();
+    let bundle = Bundle::new(
+        selection,
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            field_member("model.A.x", "model.A", "model.A"),
+        ],
+    );
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    let refusals = match outcome {
+        NormalizeOutcome::UnsupportedCapabilities(refusals) => refusals,
+        other => panic!("expected UnsupportedCapabilities, got {other:?}"),
+    };
+
+    let expected: &[(&str, &str)] = &[
+        ("subtype-closure", "bundle.n01"),
+        ("subsetting-closure", "bundle.n01"),
+        ("redefinition-closure", "bundle.n01"),
+        ("generalization", "model.A"),
+        ("generalization", "model.B"),
+        ("redefinition", "model.A.x"),
+        ("subsetting", "model.A.x"),
+        ("interface-signature", "model.A"),
+        ("interface-signature", "model.B"),
+        ("typed-multiplicity", "model.A.x"),
+    ];
+    assert_eq!(refusals.len(), expected.len());
+    for (refusal, (name, subject)) in refusals.iter().zip(expected) {
+        assert_eq!(
+            refusal.code,
+            quire_spec_language::diagnostic::Code::InvalidModelBinding
+        );
+        assert_eq!(refusal.cause, "unsupplied-producer-record");
+        assert!(refusal.detail.contains(name), "{}", refusal.detail);
+        assert!(refusal.detail.contains(subject), "{}", refusal.detail);
+        assert!(refusal.detail.contains("1.3.0"), "{}", refusal.detail);
+        assert!(refusal.detail.contains("1.2.0"), "{}", refusal.detail);
+    }
+
+    assert_eq!(meter.consumed(LimitKind::ProducerRecords), 3);
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted.len(),
+        13,
+        "three normalize.record + ten normalize.unsupplied-item"
+    );
+    assert!(admitted[..3]
+        .iter()
+        .all(|point| *point == ChargePoint::NormalizeRecord));
+    assert!(admitted[3..]
+        .iter()
+        .all(|point| *point == ChargePoint::NormalizeUnsuppliedItem));
+}
+
+/// PR #140 F5 / TC-195 N10: the three `invalid_mutations` named "refused by
+/// the semantic check" over an already-constructed effective declaration or
+/// view. The other three N10 mutations (`stale-digest`,
+/// `cross-domain-producer-digest`, `owner-as-producer-key`) are "refused by
+/// schema" against the wire `model-effective-declaration.schema.json` this
+/// rung does not decode from wire bytes (`Bundle`'s fields are already typed
+/// Rust, not JSON); they are honestly uncovered here for that reason.
+#[trace("TC-195")]
+#[test]
+fn n10_unsorted_derivation_refuses_by_the_semantic_check() {
+    let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
+    let type_b = find(&view, "b9953c43");
+    let mut mutated = type_b.preimage.clone();
+    assert!(
+        mutated.derivation.len() >= 2,
+        "type B has a qualify fact plus at least one inherit fact"
+    );
+    mutated.derivation.swap(0, 1);
+    let (cause, _detail) = mutated
+        .validate_derivation()
+        .expect_err("a derivation whose ordinals no longer match array position must be refused");
+    assert_eq!(cause, "unsorted-derivation");
+}
+
+#[trace("TC-195")]
+#[test]
+fn n10_duplicate_path_refuses_by_the_semantic_check() {
+    let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
+    let member_d_x = find(&view, "13a71b44");
+    let mut mutated = member_d_x.preimage.clone();
+    assert_eq!(mutated.derivation.len(), 2, "both diamond paths retained");
+    let duplicate_inputs = mutated.derivation[0].inputs.clone();
+    mutated.derivation[1].inputs = duplicate_inputs;
+    let (cause, _detail) = mutated
+        .validate_derivation()
+        .expect_err("a derivation retaining the same input path twice must be refused");
+    assert_eq!(cause, "duplicate-path");
+}
+
+#[trace("TC-195")]
+#[test]
+fn n10_unsorted_view_refuses_by_the_semantic_check() {
+    let mut view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
+    assert!(view.declarations.len() >= 2);
+    view.declarations.swap(0, 1);
+    let refusal = view
+        .validate_order()
+        .expect_err("a view whose declarations are no longer ascending must be refused");
+    assert_eq!(refusal.cause, "unsorted-view");
+    assert_eq!(
+        refusal.code,
+        quire_spec_language::diagnostic::Code::InvalidModelBinding
+    );
+}
+
+/// PR #140 F12: the exact TC-195 N01 charge sequence and per-declaration JCS
+/// lengths — four `normalize.record`; three phase-2 `normalize.fact`
+/// (qualify A, qualify B, qualify A.x); one `normalize.cycle-check` then a
+/// phase-3 `normalize.fact` (inherit B); one more phase-3 `normalize.fact`
+/// (inherit B.x, no cycle-check — cycle-check is charged only for phase-3
+/// type-level facts); four `(normalize.declaration, normalize.hash)` pairs
+/// with JCS lengths 739 (A), 1380 (B), 864 (A.x), 1135 (B.x); then
+/// `normalize.hash` of the universe (591) and of the view (5280) — 9989
+/// hashed bytes and 20 work units total, verified against the running
+/// preimage's own `jcs_bytes()`, not just against the meter's own bookkeeping.
+#[trace("TC-195", "FR-150-AC-1", "FR-150-AC-8")]
+#[test]
+fn n01_charges_the_exact_ground_truth_sequence_in_order() {
+    let (outcome, meter) = normalize_with_meter(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
+    let view = match outcome {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("expected Completed, got {other:?}"),
+    };
+
+    use ChargePoint::{
+        NormalizeCycleCheck, NormalizeDeclaration, NormalizeFact, NormalizeHash, NormalizeRecord,
+    };
+    let expected = vec![
+        NormalizeRecord,
+        NormalizeRecord,
+        NormalizeRecord,
+        NormalizeRecord,
+        NormalizeFact,
+        NormalizeFact,
+        NormalizeFact,
+        NormalizeCycleCheck,
+        NormalizeFact,
+        NormalizeFact,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeHash,
+        NormalizeHash,
+    ];
+    assert_eq!(meter.admitted_charges().to_vec(), expected);
+
+    assert_eq!(find(&view, "f1cc59cd").preimage.jcs_bytes().len(), 739);
+    assert_eq!(find(&view, "b9953c43").preimage.jcs_bytes().len(), 1380);
+    assert_eq!(find(&view, "4c06822f").preimage.jcs_bytes().len(), 864);
+    assert_eq!(find(&view, "e8a29d61").preimage.jcs_bytes().len(), 1135);
+
+    let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    assert_eq!(universe.jcs_bytes().len(), 591);
+
+    assert_eq!(meter.consumed(LimitKind::HashedBytes), 9989);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 20);
+}
+
+/// PR #140 F12: TC-195 N02's fifteen `normalize.fact` charges (five phase-2
+/// qualify facts for A, B, C, D and A.x; ten phase-3 inherit facts) and six
+/// `normalize.cycle-check` charges (one per phase-3 type-level ancestor
+/// path: B->A, C->A, D->B, D->C via B, D->C via C, D->A via each of D's two
+/// two-hop paths through B and C — six total across the diamond), for fifty
+/// work units and 27969 hashed bytes.
+#[trace("TC-195", "FR-150-AC-4", "FR-150-AC-6")]
+#[test]
+fn n02_charges_fifteen_facts_and_six_cycle_checks() {
+    let (outcome, meter) = normalize_with_meter(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+
+    let admitted = meter.admitted_charges();
+    let fact_count = admitted
+        .iter()
+        .filter(|point| **point == ChargePoint::NormalizeFact)
+        .count();
+    let cycle_check_count = admitted
+        .iter()
+        .filter(|point| **point == ChargePoint::NormalizeCycleCheck)
+        .count();
+    assert_eq!(fact_count, 15, "five qualify plus ten inherit facts");
+    assert_eq!(
+        cycle_check_count, 6,
+        "one cycle-check per phase-3 type-level ancestor path"
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 50);
+    assert_eq!(meter.consumed(LimitKind::HashedBytes), 27969);
 }
