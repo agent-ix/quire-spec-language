@@ -16,7 +16,7 @@ use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
     AdmittedIeeeProfile, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage, CheckingLimits,
-    CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
+    ClauseKind, CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
     ConstructionCause, ConstructionRefusal, Decimal, DecimalType, DefinitionLock,
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
@@ -2143,6 +2143,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
             result: ValueType::Integer,
             measure: None,
             body: operand("n"),
+            clause_kind: ClauseKind::Body,
         }],
         ..PackageDeclarations::default()
     }
