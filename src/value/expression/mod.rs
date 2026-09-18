@@ -272,11 +272,11 @@ impl PackageDeclarations {
         let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(functions.len());
         for function in &functions {
             let parameters = function.signature.parameters.len();
-            let mut body = Definedness::new(parameters);
+            let mut body = Definedness::new(parameters, &dispatch_tables);
             let checked = body
                 .check(&function.body)
                 .and_then(|()| match &function.measure {
-                    Some(measure) => Definedness::new(parameters).check(measure),
+                    Some(measure) => Definedness::new(parameters, &dispatch_tables).check(measure),
                     None => Ok(()),
                 });
             if let Err(refusal) = checked {
@@ -360,7 +360,7 @@ impl CheckedPackage {
         };
         let slots = typer.slots();
         if mode == CheckMode::Linked {
-            Definedness::new(parameters.len()).check(&root)?;
+            Definedness::new(parameters.len(), &self.dispatch_tables).check(&root)?;
         }
         Ok(CheckedExpression {
             parameters,
