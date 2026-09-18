@@ -550,7 +550,13 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
                 .find(|f| f.condition == "multiplicity")
                 .expect("a multiplicity failure");
             assert_eq!(failure.code, Code::IllTyped);
-            assert_eq!(failure.cause, ModelRefusalCause::MultiplicityNarrowing);
+            assert_eq!(
+                failure.cause,
+                ModelRefusalCause::MultiplicityNarrowing {
+                    from: mult(0, Some(2)),
+                    to: one(),
+                }
+            );
         }
         other => panic!("expected a multiplicity refusal (no connection exposed), got {other:?}"),
     }

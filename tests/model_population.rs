@@ -852,7 +852,13 @@ fn l06_cardinality_bound_and_incomplete() {
     match outcome {
         AllInstancesOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::CardinalityOutOfBound);
-            assert_eq!(refusal.cause, ModelRefusalCause::AboveMaximum);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AboveMaximum {
+                    selected: 3,
+                    maximum: 2,
+                }
+            );
         }
         other => panic!("expected Refused(cardinality_out_of_bound/above-maximum), got {other:?}"),
     }
@@ -1235,7 +1241,15 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "subsetting-violation");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::SubsettingViolation {
+                    object: "a1".to_owned(),
+                    record: ProducerKey::fixture("model.subset.some-all"),
+                    subsetting: ProducerKey::fixture("model.A.some"),
+                    subsetted: ProducerKey::fixture("model.A.all"),
+                }
+            );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("a3"));
             assert!(refusal.detail.contains("model.A.some"));
@@ -1354,7 +1368,13 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "duplicate-member");
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DuplicateMember {
+                    object: "a1".to_owned(),
+                    field: ProducerKey::fixture("model.A.all"),
+                }
+            );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("model.A.all"));
         }

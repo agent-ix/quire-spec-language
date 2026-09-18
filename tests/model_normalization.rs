@@ -579,7 +579,17 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::DerivationConflict);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DerivationConflict {
+                    type_: ProducerKey::fixture("model.D"),
+                    member: ProducerKey::fixture("model.A.x"),
+                    redefiners: vec![
+                        ProducerKey::fixture("model.B.x2"),
+                        ProducerKey::fixture("model.C.x3"),
+                    ],
+                }
+            );
             assert!(refusal.detail.contains("model.gen.D-B"));
             assert!(refusal.detail.contains("model.redef.B"));
             assert!(refusal.detail.contains("model.gen.D-C"));
@@ -609,7 +619,7 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, "redefinition-target");
+            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
             assert!(
                 refusal.detail.contains("model.B.z2"),
                 "detail must name B/z2's own declaration key: {}",
@@ -651,7 +661,7 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, "redefinition-target");
+            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
             assert!(
                 refusal.detail.contains("model.B.z") && refusal.detail.contains("model.B.z2"),
                 "detail must name both of B's own redefining members: {}",
@@ -1071,7 +1081,14 @@ fn n10_unsorted_derivation_refuses_by_the_semantic_check() {
     let (cause, _detail) = mutated
         .validate_derivation()
         .expect_err("a derivation whose ordinals no longer match array position must be refused");
-    assert_eq!(cause, ModelRefusalCause::UnsortedDerivation);
+    assert_eq!(
+        cause,
+        ModelRefusalCause::UnsortedDerivation {
+            original: mutated.original.clone(),
+            position: 0,
+            ordinal: 1,
+        }
+    );
 }
 
 #[trace("TC-195")]
@@ -1086,7 +1103,14 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
     let (cause, _detail) = mutated
         .validate_derivation()
         .expect_err("a derivation retaining the same input path twice must be refused");
-    assert_eq!(cause, ModelRefusalCause::DuplicatePath);
+    assert_eq!(
+        cause,
+        ModelRefusalCause::DuplicatePath {
+            original: mutated.original.clone(),
+            earlier: 0,
+            later: 1,
+        }
+    );
 }
 
 #[trace("TC-195")]
@@ -1222,7 +1246,10 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, "specialization-cycle");
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::SpecializationCycle { .. }
+            ));
             assert!(
                 refusal.detail.contains("[model.A, model.B]"),
                 "the chain must be rotated to start at its least key regardless of \
@@ -1263,7 +1290,10 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, "specialization-cycle");
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::SpecializationCycle { .. }
+            ));
             assert!(
                 refusal.detail.contains("[model.B, model.C]"),
                 "the listing must name only the cycle itself, excluding model.A, \

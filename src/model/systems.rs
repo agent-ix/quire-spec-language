@@ -32,6 +32,14 @@
 //!   record, for the same reason: FR-152's own worked figures (e.g. Y04's
 //!   `f(Flow)`/`f(Flow2)`) price `normalize`'s derivation-fact accounting,
 //!   which this module would have to re-walk to reproduce exactly.
+#![allow(
+    clippy::large_enum_variant,
+    reason = "ModelRefusalCause is a closed typed cause vocabulary retaining complete producer/effective identities without heap allocation"
+)]
+#![allow(
+    clippy::result_large_err,
+    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -236,8 +244,8 @@ pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassificat
                 None => {
                     refusals.push(dangling(
                         ModelRefusalCause::UnknownComponent {
-                            item: endpoint.key.identity.clone(),
-                            missing: endpoint.owning_component.identity.clone(),
+                            item: endpoint.key.clone(),
+                            missing: endpoint.owning_component.clone(),
                         },
                         &endpoint.owning_component.identity,
                         &endpoint.key.identity,
@@ -273,8 +281,9 @@ pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassificat
                         None => {
                             refusals.push(dangling(
                                 ModelRefusalCause::UnknownEndpoint {
-                                    item: format!("{} end of {}", label, relationship.key.identity),
-                                    missing: end.type_identity.identity.clone(),
+                                    end: label,
+                                    relationship: relationship.key.clone(),
+                                    missing: end.type_identity.clone(),
                                 },
                                 &end.type_identity.identity,
                                 &format!("{} end of {}", label, relationship.key.identity),
@@ -441,7 +450,7 @@ pub fn check_connection(
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownRelationship {
-                relationship: relationship_key.identity.clone(),
+                relationship: relationship_key.clone(),
             },
             detail: format!(
                 "{} is not a declared relationship",
@@ -453,7 +462,7 @@ pub fn check_connection(
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownSourcePort {
-                port: relationship.source.type_identity.identity.clone(),
+                port: relationship.source.type_identity.clone(),
             },
             detail: format!(
                 "{} names an end that is not a declared endpoint",
@@ -465,7 +474,7 @@ pub fn check_connection(
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownTargetPort {
-                port: relationship.target.type_identity.identity.clone(),
+                port: relationship.target.type_identity.clone(),
             },
             detail: format!(
                 "{} names an end that is not a declared endpoint",
@@ -518,8 +527,8 @@ pub fn check_connection(
             condition: "port-direction",
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::PortDirection {
-                source: source_port.key.identity.clone(),
-                target: target_port.key.identity.clone(),
+                source: source_port.key.clone(),
+                target: target_port.key.clone(),
             },
             detail: format!(
                 "direction {:?}: source {} is not compatible with target {}",
@@ -570,7 +579,10 @@ pub fn check_connection(
             failures.push(ConditionFailure {
                 condition: "multiplicity",
                 code: Code::IllTyped,
-                cause: ModelRefusalCause::MultiplicityNarrowing,
+                cause: ModelRefusalCause::MultiplicityNarrowing {
+                    from: end.multiplicity,
+                    to: port.multiplicity,
+                },
                 detail: format!(
                     "{label} end {:?} does not conform to port {:?}",
                     end.multiplicity, port.multiplicity
@@ -624,7 +636,7 @@ pub fn check_allocation(
         return AllocationCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownRelationship {
-                relationship: relationship_key.identity.clone(),
+                relationship: relationship_key.clone(),
             },
             detail: format!(
                 "{} is not a declared relationship",

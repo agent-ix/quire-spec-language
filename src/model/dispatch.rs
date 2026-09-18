@@ -34,6 +34,10 @@
 //!   only for ordering (never for redefinition/effect data, which it reads
 //!   from the [`crate::model::bundle::Bundle`] directly, mirroring
 //!   `conformance`'s independence from phase 4's exposure machinery).
+#![allow(
+    clippy::result_large_err,
+    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -211,7 +215,7 @@ fn build_family(
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::DispatchFamilyDepth {
-                    original: original.identity.clone(),
+                    original: original.clone(),
                 },
                 detail: format!(
                     "dispatch family for {} exceeded {MAX_DISPATCH_DEPTH} redefinition steps",
@@ -267,7 +271,7 @@ pub fn link_dispatch(
         return LinkCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOriginal {
-                original: original.identity.clone(),
+                original: original.clone(),
             },
             detail: format!("{} is not a declared operation member", original.identity),
         });
@@ -326,7 +330,7 @@ pub fn link_dispatch(
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownCandidate {
-                        candidate: candidate.identity.clone(),
+                        candidate: candidate.clone(),
                     },
                     detail: format!("{} is not a declared operation member", candidate.identity),
                 });
@@ -365,7 +369,7 @@ pub fn link_dispatch(
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownCandidate {
-                        candidate: p.identity.clone(),
+                        candidate: p.clone(),
                     },
                     detail: format!("{} is not a declared operation member", p.identity),
                 });
@@ -379,7 +383,7 @@ pub fn link_dispatch(
                     return LinkCheckOutcome::Refused(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownCandidate {
-                            candidate: q.identity.clone(),
+                            candidate: q.clone(),
                         },
                         detail: format!("{} is not a declared operation member", q.identity),
                     });
