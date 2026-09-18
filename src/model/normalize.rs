@@ -455,12 +455,16 @@ fn ancestor_paths(
         new_path.push(record.key.clone());
         let ancestor_key = record.general.clone();
         if frame.visited.contains(&ancestor_key) {
-            // Every contributing declaration, not just the closing edge: the
-            // full visited chain already names every type the cycle passes
-            // through (`ancestor_key` duplicates its first entry), rotated
-            // to start at its least key so the same cycle reports identically
-            // regardless of which type's own walk closes it first (TC-196
-            // R01: "listing [A, B], rotated to start at the least key A").
+            // Every contributing declaration in the cycle itself, not the
+            // whole path from the walk's root: `frame.visited` is that whole
+            // path, so it is first trimmed to start at `ancestor_key`'s own
+            // first occurrence (everything before that is how the walk
+            // *reached* the cycle, not part of it), then rotated to start at
+            // its least key so the same cycle reports identically regardless
+            // of which type's own walk closes it first (TC-196 R01: "listing
+            // [A, B], rotated to start at the least key A"). E.g. A -> C,
+            // C -> B, B -> C lists `[model.B, model.C]`, not
+            // `[model.A, model.C, model.B]`.
             // Scope decision: this rung stops at the first cycle a type's
             // own walk finds (line ~723's `?`) rather than continuing to
             // walk every remaining type and deduplicating repeated closures,
@@ -468,10 +472,13 @@ fn ancestor_paths(
             // charge count across both types' walks — only the refusal's own
             // code/cause/contributing-declarations shape.
             let mut chain = frame.visited.clone();
+            if let Some(start) = chain.iter().position(|key| key == &ancestor_key) {
+                chain.drain(..start);
+            }
             if let Some(least) = chain
                 .iter()
                 .enumerate()
-                .min_by_key(|(_, key)| (*key).clone())
+                .min_by_key(|(_, key)| *key)
                 .map(|(index, _)| index)
             {
                 chain.rotate_left(least);

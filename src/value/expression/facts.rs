@@ -877,44 +877,50 @@ impl Definedness {
     }
 }
 
-/// One fact a guard's true outcome establishes about a field, as
+/// What a guard's true outcome establishes about a field, as
 /// [`established_field_fact`] reports it to `crate::model`'s FR-151
-/// refinement-obligation check.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Established {
-    /// `present(self.<field>)` held on the true outcome.
-    Presence,
-    /// The proved integer interval on `self.<field>` on the true outcome.
-    Interval(ProvedInterval),
+/// refinement-obligation check. Both facts are carried together — a
+/// conjunction of clauses can establish presence and an interval at once —
+/// rather than an either/or shape that would force a caller folding several
+/// clauses into one guard to pick only one of them.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Established {
+    /// Whether `present(self.<field>)` held on the true outcome.
+    pub(crate) presence: bool,
+    /// The proved integer interval on `self.<field>` on the true outcome,
+    /// if any.
+    pub(crate) interval: Option<ProvedInterval>,
 }
 
-/// Derives the fact `condition`'s true outcome establishes about
+/// Derives the facts `condition`'s true outcome establishes about
 /// `self.<field>` (`self` bound at `self_slot`, `field` projected at stable
 /// path step zero), by running the exact guard-fact propagation `walk`
-/// itself uses (`outcomes`), not a bespoke re-implementation. `None` when
-/// the true outcome establishes neither an FR-146 presence nor interval fact
-/// about that path.
+/// itself uses (`outcomes`), not a bespoke re-implementation. Both the
+/// presence and interval facts are read from the one resulting [`Facts`],
+/// so a caller that folds several clauses into one `condition` (an `AND`
+/// tree) gets everything that conjunction actually proves, not only
+/// whichever fact form happened to be checked first. The default
+/// (`Established::default()`, i.e. neither fact) when the true outcome is
+/// unreachable or proves nothing about that path.
 ///
 /// `crate::model` has no FR-146 expression parser, so `condition` is not
 /// parsed from producer-supplied source; the caller
-/// (`crate::model::conformance`) builds the small typed guard tree a single
-/// accepted `PostconditionClause` form describes and hands it here, so what
-/// that clause actually proves is decided by this same arithmetic a real
-/// checked postcondition already runs, never restated from the clause's own
-/// literal.
-pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Option<Established> {
+/// (`crate::model::conformance`) builds the small typed guard tree the
+/// accepted `PostconditionClause` forms describe and hands it here, so what
+/// they actually prove is decided by this same arithmetic a real checked
+/// postcondition already runs, never restated from a clause's own literal.
+pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Established {
     let checker = Definedness::new(self_slot + 1);
     let (when_true, _) = checker.outcomes(condition, &Facts::default());
-    let facts = when_true?;
+    let Some(facts) = when_true else {
+        return Established::default();
+    };
     let path = StablePath {
         root: self_slot,
         steps: vec![Step::Field(0)],
     };
-    if facts.present.contains(&path) {
-        return Some(Established::Presence);
+    Established {
+        presence: facts.present.contains(&path),
+        interval: facts.intervals.get(&Subject::Value(path)).cloned(),
     }
-    facts
-        .intervals
-        .get(&Subject::Value(path))
-        .map(|interval| Established::Interval(interval.clone()))
 }
