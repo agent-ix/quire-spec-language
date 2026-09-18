@@ -13,8 +13,10 @@
 //! ("subsetting never conflicts with redefinition because it derives no
 //! replacement") — so [`crate::model::bundle::SubsettingRecord`] carries no
 //! normalization derivation at all; it is checked directly by
-//! `crate::model::conformance` (the static `subsetting-type` axis) and by
-//! `crate::model::environment` (the runtime `binding.subset-value` charge).
+//! `crate::model::conformance` (the static `subsetting-type` axis) and, at
+//! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
+//! — FR-153 territory, not yet implemented anywhere in this crate (see
+//! `crate::model::conformance`'s own module doc).
 //! **Operation-member** redefinition (TC-196 R02–R08) also builds no phase
 //! here: `crate::model::conformance` constructs its own
 //! [`EffectiveDeclarationPreimage`] directly over the bundle's
@@ -1066,10 +1068,14 @@ fn apply_redefinitions(
 
 /// Whether `descendant` has `ancestor` among its own generalization
 /// ancestors (a proper-descendant test, never reflexive). Reuses
-/// [`ancestor_paths`] under a fresh `limits`-derived budget (PR #140 F1's
-/// own discipline: this is a second, independent enumeration from `build`'s
-/// own phase-3 walk, so it must be bounded the same way, never left
-/// unbounded just because it is "only" a reachability check).
+/// [`ancestor_paths`] under a `limits`-derived budget, never left unbounded
+/// just because it is "only" a reachability check — but that budget starts
+/// fresh at zero facts consumed on every call (`remaining_fact_budget(limits,
+/// 0)`), unlike `build`'s own phase-3 walk, which threads its real
+/// `facts_so_far` through. Each individual call is bounded; phase 4's
+/// `O(|edges|^2)` loop over this function is not metered cumulatively across
+/// calls the way `build`'s own walk is. Tracked as a performance/consolidation
+/// follow-up, not fixed here (PR #144 review finding #4).
 fn dominates(
     descendant: &ProducerKey,
     ancestor: &ProducerKey,

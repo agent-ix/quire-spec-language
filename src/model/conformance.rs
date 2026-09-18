@@ -38,7 +38,7 @@
 //!   call: FR-151's own prose motivates it only informally. It is recorded
 //!   here, not asserted as unambiguous spec fidelity.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
@@ -109,26 +109,36 @@ pub enum RedefinitionTargetOutcome {
 }
 
 struct ConformanceIndex {
-    generals_by_specific: HashMap<String, Vec<GeneralizationRecord>>,
-    fields: HashMap<String, FieldMemberRecord>,
-    operations: HashMap<String, OperationMemberRecord>,
-    scalars: HashMap<String, (i64, i64)>,
-    /// Original member identity -> its declaring type's identity, for
-    /// fields and operations alike.
-    member_owner: HashMap<String, String>,
+    generals_by_specific: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    fields: HashMap<ProducerKey, FieldMemberRecord>,
+    /// A `BTreeMap`, not a `HashMap`: [`check_field_refinement_obligation`]
+    /// scans `.values()` for the (assumed unique) writer of a field, and a
+    /// `HashMap`'s `RandomState` iteration order made that scan
+    /// nondeterministic across runs of the same bundle (finding #3).
+    operations: BTreeMap<ProducerKey, OperationMemberRecord>,
+    scalars: HashMap<ProducerKey, (i64, i64)>,
+    /// Original member key -> its declaring type's key, for fields and
+    /// operations alike.
+    member_owner: HashMap<ProducerKey, ProducerKey>,
     redefinitions: Vec<RedefinitionRecord>,
 }
 
-/// Builds the `specific identity -> its generalization records` map every
+/// Builds the `specific key -> its generalization records` map every
 /// bounded conformance walk in `crate::model` (this module and
 /// [`crate::model::dispatch`]) needs. One builder, so the map's shape is a
-/// single fact rather than a duplicated field-by-field copy.
-pub(super) fn generals_by_specific(bundle: &Bundle) -> HashMap<String, Vec<GeneralizationRecord>> {
-    let mut generals_by_specific: HashMap<String, Vec<GeneralizationRecord>> = HashMap::new();
+/// single fact rather than a duplicated field-by-field copy. Keyed on the
+/// full [`ProducerKey`], not the display identity alone (PR #140 F2): two
+/// generalization records whose `specific` shares a display identity but
+/// differs in revision must both index their own distinct ancestor set,
+/// never silently overwrite one another.
+pub(super) fn generals_by_specific(
+    bundle: &Bundle,
+) -> HashMap<ProducerKey, Vec<GeneralizationRecord>> {
+    let mut generals_by_specific: HashMap<ProducerKey, Vec<GeneralizationRecord>> = HashMap::new();
     for record in &bundle.records {
         if let BundleRecord::Generalization(general) = record {
             generals_by_specific
-                .entry(general.specific.identity.clone())
+                .entry(general.specific.clone())
                 .or_default()
                 .push(general.clone());
         }
@@ -140,7 +150,7 @@ impl ConformanceIndex {
     fn build(bundle: &Bundle) -> Self {
         let generals_by_specific = generals_by_specific(bundle);
         let mut fields = HashMap::new();
-        let mut operations = HashMap::new();
+        let mut operations = BTreeMap::new();
         let mut scalars = HashMap::new();
         let mut member_owner = HashMap::new();
         let mut redefinitions = Vec::new();
@@ -148,18 +158,15 @@ impl ConformanceIndex {
             match record {
                 BundleRecord::ObjectType(_) | BundleRecord::Generalization(_) => {}
                 BundleRecord::FieldMember(field) => {
-                    member_owner.insert(field.key.identity.clone(), field.owner.identity.clone());
-                    fields.insert(field.key.identity.clone(), field.clone());
+                    member_owner.insert(field.key.clone(), field.owner.clone());
+                    fields.insert(field.key.clone(), field.clone());
                 }
                 BundleRecord::ScalarType(scalar) => {
-                    scalars.insert(scalar.key.identity.clone(), (scalar.lower, scalar.upper));
+                    scalars.insert(scalar.key.clone(), (scalar.lower, scalar.upper));
                 }
                 BundleRecord::OperationMember(operation) => {
-                    member_owner.insert(
-                        operation.key.identity.clone(),
-                        operation.owner.identity.clone(),
-                    );
-                    operations.insert(operation.key.identity.clone(), operation.clone());
+                    member_owner.insert(operation.key.clone(), operation.owner.clone());
+                    operations.insert(operation.key.clone(), operation.clone());
                 }
                 BundleRecord::Redefinition(redefinition) => {
                     redefinitions.push(redefinition.clone());
@@ -193,15 +200,15 @@ impl ConformanceIndex {
 /// applicability and dominance) reuse this one implementation rather than a
 /// second copy.
 pub(super) fn type_conforms(
-    generals_by_specific: &HashMap<String, Vec<GeneralizationRecord>>,
-    s: &str,
-    t: &str,
+    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    s: &ProducerKey,
+    t: &ProducerKey,
 ) -> Result<bool, ModelRefusal> {
     if s == t {
         return Ok(true);
     }
-    let mut stack: Vec<String> = vec![s.to_owned()];
-    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stack: Vec<ProducerKey> = vec![s.clone()];
+    let mut visited: std::collections::HashSet<ProducerKey> = std::collections::HashSet::new();
     let mut steps: usize = 0;
     while let Some(current) = stack.pop() {
         if !visited.insert(current.clone()) {
@@ -213,15 +220,16 @@ pub(super) fn type_conforms(
                 code: Code::ResourceExhausted,
                 cause: "conformance-depth",
                 detail: format!(
-                    "conformance check from {s} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps"
+                    "conformance check from {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
+                    s.identity
                 ),
             });
         }
         for general in generals_by_specific.get(&current).into_iter().flatten() {
-            if general.general.identity == t {
+            if &general.general == t {
                 return Ok(true);
             }
-            stack.push(general.general.identity.clone());
+            stack.push(general.general.clone());
         }
     }
     Ok(false)
@@ -266,14 +274,14 @@ pub fn check_field_redefinition(
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
     let index = ConformanceIndex::build(bundle);
-    let Some(redefining) = index.fields.get(&record.redefining.identity) else {
+    let Some(redefining) = index.fields.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             "unknown-redefining",
             &record.redefining.identity,
             "redefining field",
         ));
     };
-    let Some(redefined) = index.fields.get(&record.redefined.identity) else {
+    let Some(redefined) = index.fields.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             "unknown-redefined",
             &record.redefined.identity,
@@ -288,8 +296,8 @@ pub fn check_field_redefinition(
     }
     match type_conforms(
         &index.generals_by_specific,
-        &redefining.value_type.identity,
-        &redefined.value_type.identity,
+        &redefining.value_type,
+        &redefined.value_type,
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -337,14 +345,14 @@ pub fn check_subsetting(
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
     let index = ConformanceIndex::build(bundle);
-    let Some(subsetting) = index.fields.get(&record.subsetting.identity) else {
+    let Some(subsetting) = index.fields.get(&record.subsetting) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             "unknown-subsetting",
             &record.subsetting.identity,
             "subsetting field",
         ));
     };
-    let Some(subsetted) = index.fields.get(&record.subsetted.identity) else {
+    let Some(subsetted) = index.fields.get(&record.subsetted) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             "unknown-subsetted",
             &record.subsetted.identity,
@@ -359,8 +367,8 @@ pub fn check_subsetting(
     }
     match type_conforms(
         &index.generals_by_specific,
-        &subsetting.value_type.identity,
-        &subsetted.value_type.identity,
+        &subsetting.value_type,
+        &subsetted.value_type,
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -406,14 +414,14 @@ pub fn check_operation_redefinition(
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
     let index = ConformanceIndex::build(bundle);
-    let Some(redefining) = index.operations.get(&record.redefining.identity) else {
+    let Some(redefining) = index.operations.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             "unknown-redefining",
             &record.redefining.identity,
             "redefining operation",
         ));
     };
-    let Some(redefined) = index.operations.get(&record.redefined.identity) else {
+    let Some(redefined) = index.operations.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             "unknown-redefined",
             &record.redefined.identity,
@@ -451,11 +459,7 @@ pub fn check_operation_redefinition(
             if let Err(incomplete) = charge_axis(meter) {
                 return ConformanceCheckOutcome::Incomplete(incomplete);
             }
-            match type_conforms(
-                &index.generals_by_specific,
-                &dp.value_type.identity,
-                &rp.value_type.identity,
-            ) {
+            match type_conforms(&index.generals_by_specific, &dp.value_type, &rp.value_type) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
                     axis: "parameter-type",
@@ -492,11 +496,7 @@ pub fn check_operation_redefinition(
     }
     match (&redefining.result, &redefined.result) {
         (Some(rr), Some(dr)) => {
-            match type_conforms(
-                &index.generals_by_specific,
-                &rr.value_type.identity,
-                &dr.value_type.identity,
-            ) {
+            match type_conforms(&index.generals_by_specific, &rr.value_type, &dr.value_type) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
                     axis: "result-type",
@@ -574,11 +574,7 @@ pub fn check_operation_redefinition(
         for entry in create {
             let mut covered = false;
             for grant in grants {
-                match type_conforms(
-                    &index.generals_by_specific,
-                    &entry.identity,
-                    &grant.identity,
-                ) {
+                match type_conforms(&index.generals_by_specific, entry, grant) {
                     Ok(true) => {
                         covered = true;
                         break;
@@ -622,14 +618,14 @@ pub fn check_field_refinement_obligation(
     record: &RedefinitionRecord,
 ) -> Result<ConformanceOutcome, ModelRefusal> {
     let index = ConformanceIndex::build(bundle);
-    let Some(redefining) = index.fields.get(&record.redefining.identity) else {
+    let Some(redefining) = index.fields.get(&record.redefining) else {
         return Err(missing_member(
             "unknown-redefining",
             &record.redefining.identity,
             "redefining field",
         ));
     };
-    let Some(redefined) = index.fields.get(&record.redefined.identity) else {
+    let Some(redefined) = index.fields.get(&record.redefined) else {
         return Err(missing_member(
             "unknown-redefined",
             &record.redefined.identity,
@@ -645,11 +641,15 @@ pub fn check_field_refinement_obligation(
         // No narrowing at all (or a narrower upper bound only, which this
         // rung treats under `no-proof-form` below, matching FR-151's
         // "an upper bound on a collection" example).
-        if redefining.multiplicity.upper.is_none()
-            || redefined
-                .multiplicity
-                .upper
-                .is_none_or(|u| redefining.multiplicity.upper.unwrap() <= u)
+        if redefining
+            .multiplicity
+            .upper
+            .is_none_or(|redefining_upper| {
+                redefined
+                    .multiplicity
+                    .upper
+                    .is_none_or(|redefined_upper| redefining_upper <= redefined_upper)
+            })
         {
             return Ok(ConformanceOutcome::Compatible);
         }
@@ -671,7 +671,7 @@ pub fn check_field_refinement_obligation(
         if redefinition.redefined.identity == writer.key.identity
             && redefinition.owner.identity == record.owner.identity
         {
-            if let Some(overriding) = index.operations.get(&redefinition.redefining.identity) {
+            if let Some(overriding) = index.operations.get(&redefinition.redefining) {
                 facts.extend(overriding.own_postcondition_facts.iter());
             }
         }
@@ -715,8 +715,8 @@ pub fn check_field_refinement_obligation(
     // no-proof-form when either type is not a known scalar (an object type
     // narrowing, per FR-151's own example).
     match (
-        index.scalars.get(&redefining.value_type.identity),
-        index.scalars.get(&redefined.value_type.identity),
+        index.scalars.get(&redefining.value_type),
+        index.scalars.get(&redefined.value_type),
     ) {
         (Some(&(narrow_lower, narrow_upper)), Some(_)) => {
             let interval = facts.iter().find_map(|fact| match fact {
@@ -781,13 +781,13 @@ pub fn resolve_redefinition_target(
             continue;
         }
         candidates.push((record.key.clone(), record.redefined.clone()));
-        let Some(target_owner) = index.member_owner.get(&record.redefined.identity) else {
+        let Some(target_owner) = index.member_owner.get(&record.redefined) else {
             continue;
         };
-        if target_owner == &owner.identity {
+        if target_owner == owner {
             continue; // declared directly on `owner`, not inherited.
         }
-        if type_conforms(&index.generals_by_specific, &owner.identity, target_owner)? {
+        if type_conforms(&index.generals_by_specific, owner, target_owner)? {
             valid.push(record.redefined.clone());
         }
     }
