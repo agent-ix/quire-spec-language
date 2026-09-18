@@ -7,6 +7,7 @@
 
 use super::accounting::Incomplete;
 use super::collection::{CardinalityBound, CollectionKind};
+use super::expression::WrongSnapshotCause;
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::diagnostic::Code;
@@ -152,6 +153,22 @@ pub enum Refusal {
     /// A checked-program invariant failed during evaluation; unreachable for
     /// an admitted program.
     CheckedInvariant,
+    /// FR-153's `pre(..)` anchor selection (`evaluate.rs`'s `select_anchor`)
+    /// meeting a `Value::Population` with no attached pre binding --
+    /// `wrong_snapshot`, with the identical closed [`WrongSnapshotCause`]
+    /// cause set the checker uses (`crate::value::expression`'s own
+    /// `WrongSnapshotCause`, reused rather than a separately invented
+    /// runtime cause, since FR-272/native-diagnostics.md catalogues exactly
+    /// one `wrong_snapshot` cause list). The checker only admits `pre(..)`
+    /// syntactically -- clause context, an eligible operand not itself a
+    /// captured `let` alias -- it cannot see whether the population value a
+    /// caller supplies at evaluation time was actually admitted through
+    /// [`crate::model::population::admit_invocation`] (the only constructor
+    /// that attaches a pre anchor) rather than
+    /// [`crate::model::population::admit_binding`] directly, so this is a
+    /// real, caller-input-reachable refusal, never a broken-evaluator
+    /// [`Self::CheckedInvariant`].
+    WrongSnapshot(WrongSnapshotCause),
     /// FR-153's `allInstances<T>(p)`/`lookup<T>(p, r) absent refused`
     /// refused the query outright
     /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
@@ -180,6 +197,7 @@ impl Refusal {
             Self::ForeignReference => Some("foreign_reference"),
             Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
             Self::Model(refusal) => Some(refusal.code.as_str()),
+            Self::WrongSnapshot(_) => Some(Code::WrongSnapshot.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }
@@ -197,6 +215,7 @@ impl Refusal {
         match self {
             Self::CardinalityOutOfBound { violation, .. } => Some(violation.as_str()),
             Self::Model(refusal) => Some(refusal.cause),
+            Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }

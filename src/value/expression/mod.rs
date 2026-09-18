@@ -39,7 +39,7 @@ pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval,
+    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
 };
 pub use syntax::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -416,7 +416,12 @@ impl PackageDeclarations {
 
 impl CheckedPackage {
     /// Check a standalone expression over `parameters`, against `expected`
-    /// when given, as a function or operation body.
+    /// when given, as a function or operation body (`ClauseKind::Body`).
+    /// `pre(...)` refuses `wrong_snapshot`/`wrong-anchor` here: this is not
+    /// an operation's postcondition, the only clause FR-153's anchor table
+    /// admits it in. Use [`Self::check_postcondition_expression`] to check a
+    /// real postcondition, where `pre(...)` is legal, or
+    /// [`Self::check_clause_expression`] for any other [`ClauseKind`].
     pub fn check_expression(
         &self,
         parameters: Vec<(String, ValueType)>,
@@ -435,9 +440,48 @@ impl CheckedPackage {
         )
     }
 
+    /// Check a standalone expression as an operation's postcondition
+    /// (`ClauseKind::Postcondition`): identical to [`Self::check_expression`],
+    /// except `pre(...)` is legal (FR-153's own anchor table;
+    /// shared-grammar.md's caller-side anchor operations), subject to its
+    /// own eligible-operand rule (FR-042's Behavior clause, `Typer`'s
+    /// `Expression::Pre` arm).
+    ///
+    /// `self`/`result`, shared-grammar.md's other two caller-side anchor
+    /// operations (line 500/604, alongside `pre(...)`), are out of scope
+    /// here: this method takes no declared operation (no result type, no
+    /// receiver type) to bind either one to, [`Expression`] itself
+    /// (`syntax.rs`) has no `Self_`/`Result` variant to even lower a
+    /// reference to either into, and nothing in this crate's own value
+    /// layer defines a checked "operation" declaration with a result-type
+    /// binding contract (`crate::model::bundle`'s `PostconditionClause` is
+    /// a different, model-layer structure, never lowered through this
+    /// `Expression`/`Typer`/`Node` pipeline). Binding `result` needs that
+    /// missing declaration shape first; this method is deliberately silent
+    /// on it rather than guessing one.
+    pub fn check_postcondition_expression(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        expected: Option<&ValueType>,
+        mode: CheckMode,
+        limits: CheckingLimits,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        self.check_clause_expression(
+            parameters,
+            expression,
+            expected,
+            ClauseKind::Postcondition,
+            mode,
+            limits,
+        )
+    }
+
     /// Check a standalone expression over `parameters` as `clause_kind`,
     /// against `expected` when given. FR-151's dispatch-call restriction
-    /// (TC-196 D06/D07) gates on `clause_kind`, not on syntax alone.
+    /// (TC-196 D06/D07) gates on `clause_kind`, not on syntax alone; `pre(...)`
+    /// is legal exactly when `clause_kind` is [`ClauseKind::Postcondition`]
+    /// (`Typer`'s `Expression::Pre` arm).
     pub fn check_clause_expression(
         &self,
         parameters: Vec<(String, ValueType)>,

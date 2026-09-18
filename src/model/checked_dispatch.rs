@@ -595,6 +595,9 @@ fn substitute_names(
                 .map(|argument| substitute_names(argument, rename, shadow))
                 .collect(),
         },
+        Expression::Pre(operand) => {
+            Expression::Pre(Box::new(substitute_names(operand, rename, shadow)))
+        }
     }
 }
 

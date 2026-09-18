@@ -12,6 +12,8 @@
 //! Rust's compiler rejects (#163 re-review ruling 3) — only a real cyclic
 //! type/const definition would be.
 
+use std::collections::BTreeSet;
+
 use crate::model::bundle::{ModelSelection, Multiplicity};
 use crate::model::key::{EffectiveId, ProducerKey};
 
@@ -436,6 +438,78 @@ pub enum ModelRefusalCause {
         /// The subsetted field.
         subsetted: ProducerKey,
     },
+    /// FR-046/FR-151: an invocation creates an object outside its
+    /// operation's declared `creates` frame. One of four distinct
+    /// `crate::model::population::enforce_frame` conditions sharing the
+    /// catalogued `Code::FrameViolation`/`unauthorized-change` cause tag
+    /// (`native-diagnostics.md`); kept as its own variant, like every other
+    /// cause in this enum, so a caller distinguishes it by match arm rather
+    /// than by re-parsing `detail`.
+    FrameCreateOutsideGrant {
+        /// The created object.
+        object: String,
+        /// Its most-specific type.
+        type_name: ProducerKey,
+    },
+    /// FR-046/FR-151: an invocation changes an object's most-specific type
+    /// between pre and post, which no `creates`/`deletes`/`fieldWrites`
+    /// grant may authorize. `Code::FrameViolation`/`unauthorized-change`.
+    FrameTypeChanged {
+        /// The object whose type changed.
+        object: String,
+        /// Its pre most-specific type.
+        pre_type: ProducerKey,
+        /// Its post most-specific type.
+        post_type: ProducerKey,
+    },
+    /// FR-046/FR-151: an invocation deletes an object outside its
+    /// operation's declared `deletes` frame. `Code::FrameViolation`/
+    /// `unauthorized-change`.
+    FrameDeleteOutsideGrant {
+        /// The deleted object.
+        object: String,
+        /// Its pre most-specific type.
+        type_name: ProducerKey,
+    },
+    /// FR-046/FR-151: an invocation changes a surviving object's field
+    /// outside its operation's declared `fieldWrites` frame.
+    /// `Code::FrameViolation`/`unauthorized-change`.
+    FrameFieldWriteOutsideGrant {
+        /// The object whose field changed.
+        object: String,
+        /// The changed field.
+        field: ProducerKey,
+    },
+    /// FR-046: an invocation's caller-supplied delta declares the same
+    /// identity more than once in one of its own `created`/`deleted` lists.
+    /// One of three distinct `crate::model::population::check_declared_delta`
+    /// conditions sharing the catalogued `Code::PopulationDeltaMismatch`/
+    /// `delta-disagreement` cause tag.
+    DuplicateDeclaredIdentity {
+        /// The identity declared twice in the same list.
+        identity: String,
+    },
+    /// FR-046: an invocation's caller-supplied delta declares the same
+    /// identity as both created and deleted. `Code::PopulationDeltaMismatch`/
+    /// `delta-disagreement`.
+    DeclaredCreateDeleteOverlap {
+        /// The identity declared as both created and deleted.
+        identity: String,
+    },
+    /// FR-046: an invocation's caller-supplied delta disagrees with the
+    /// complete created/deleted sets `enforce_frame` computed from the pre
+    /// and post populations. `Code::PopulationDeltaMismatch`/
+    /// `delta-disagreement`.
+    DeclaredDeltaMismatch {
+        /// The delta's own declared created identities.
+        declared_created: BTreeSet<String>,
+        /// The delta's own declared deleted identities.
+        declared_deleted: BTreeSet<String>,
+        /// The complete created identities computed from pre/post.
+        computed_created: BTreeSet<String>,
+        /// The complete deleted identities computed from pre/post.
+        computed_deleted: BTreeSet<String>,
+    },
 }
 
 impl ModelRefusalCause {
@@ -499,6 +573,13 @@ impl ModelRefusalCause {
             Self::MalformedDeclaration => "malformed-declaration",
             Self::DuplicateMember { .. } => "duplicate-member",
             Self::SubsettingViolation { .. } => "subsetting-violation",
+            Self::FrameCreateOutsideGrant { .. }
+            | Self::FrameTypeChanged { .. }
+            | Self::FrameDeleteOutsideGrant { .. }
+            | Self::FrameFieldWriteOutsideGrant { .. } => "unauthorized-change",
+            Self::DuplicateDeclaredIdentity { .. }
+            | Self::DeclaredCreateDeleteOverlap { .. }
+            | Self::DeclaredDeltaMismatch { .. } => "delta-disagreement",
         }
     }
 }
@@ -605,6 +686,13 @@ mod tests {
             ModelRefusalCause::MalformedDeclaration => "malformed-declaration",
             ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
             ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
+            ModelRefusalCause::FrameCreateOutsideGrant { .. }
+            | ModelRefusalCause::FrameTypeChanged { .. }
+            | ModelRefusalCause::FrameDeleteOutsideGrant { .. }
+            | ModelRefusalCause::FrameFieldWriteOutsideGrant { .. } => "unauthorized-change",
+            ModelRefusalCause::DuplicateDeclaredIdentity { .. }
+            | ModelRefusalCause::DeclaredCreateDeleteOverlap { .. }
+            | ModelRefusalCause::DeclaredDeltaMismatch { .. } => "delta-disagreement",
         }
     }
 
@@ -764,6 +852,35 @@ mod tests {
                 record: key("p"),
                 subsetting: key("p"),
                 subsetted: key("p"),
+            },
+            ModelRefusalCause::FrameCreateOutsideGrant {
+                object: String::new(),
+                type_name: key("p"),
+            },
+            ModelRefusalCause::FrameTypeChanged {
+                object: String::new(),
+                pre_type: key("p"),
+                post_type: key("p"),
+            },
+            ModelRefusalCause::FrameDeleteOutsideGrant {
+                object: String::new(),
+                type_name: key("p"),
+            },
+            ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                object: String::new(),
+                field: key("p"),
+            },
+            ModelRefusalCause::DuplicateDeclaredIdentity {
+                identity: String::new(),
+            },
+            ModelRefusalCause::DeclaredCreateDeleteOverlap {
+                identity: String::new(),
+            },
+            ModelRefusalCause::DeclaredDeltaMismatch {
+                declared_created: std::collections::BTreeSet::new(),
+                declared_deleted: std::collections::BTreeSet::new(),
+                computed_created: std::collections::BTreeSet::new(),
+                computed_deleted: std::collections::BTreeSet::new(),
             },
         ];
         for cause in &cases {

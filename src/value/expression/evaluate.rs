@@ -42,6 +42,8 @@ use super::ir::{
     Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
 };
 use super::refusal::Location;
+use super::refusal::WrongSnapshotCause;
+use crate::model::population::PopulationBinding;
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
 /// expression where a non-completed outcome originated.
@@ -164,6 +166,9 @@ enum Task<'a> {
     /// body has just evaluated; decide it, then continue to the selected
     /// candidate's own body.
     DispatchGuard(Box<DispatchGuard>),
+    /// Restore the anchor a `pre(..)` or a `Call` saved before evaluating its
+    /// operand/callee body.
+    RestoreAnchor(Anchor),
 }
 
 /// A dispatched call's linked candidate body, awaiting its effective
@@ -173,6 +178,21 @@ struct DispatchGuard {
     arguments: Vec<Value>,
     /// The `precondition-false` payload to report if the guard fails.
     failure: PreconditionFailure,
+}
+
+/// Which population an `allInstances`/`lookup` reads: the ambient post
+/// population, or (underneath a `pre(..)`) the invocation's pre population.
+/// FR-153. Switching this counter is a structural evaluator decision, like
+/// the closure/foreign checks `value-accounting.md`'s "Model and graph
+/// evaluation" paragraph already names as making no evaluation charge; that
+/// document defines no charge point for an anchor at all, so `Task::
+/// RestoreAnchor` and every `self.anchor` assignment below are uncharged by
+/// the conservative reading the same paragraph already establishes for this
+/// module's other structural decisions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Anchor {
+    Post,
+    Pre,
 }
 
 /// A one-binder query or fold in progress.
@@ -196,6 +216,9 @@ pub(crate) struct Machine<'a, 'm> {
     frames: Vec<Vec<Option<Value>>>,
     tasks: Vec<Task<'a>>,
     losses: Vec<LocatedLoss>,
+    /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
+    /// it for its operand and `Task::RestoreAnchor` restores it after.
+    anchor: Anchor,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -216,6 +239,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             frames: Vec::new(),
             tasks: Vec::new(),
             losses: Vec::new(),
+            anchor: Anchor::Post,
         }
     }
 
@@ -246,7 +270,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Retain(node)
                 | Task::ChargeElement(node) => Some(&node.location),
                 Task::Iterate(iteration) => Some(&iteration.node.location),
-                Task::Bind(_) | Task::Return | Task::DispatchGuard(_) => None,
+                Task::Bind(_) | Task::Return | Task::DispatchGuard(_) | Task::RestoreAnchor(_) => {
+                    None
+                }
             };
             let location = location.cloned().unwrap_or_else(|| root.location.clone());
             if let Err(stop) = self.step(task) {
@@ -343,6 +369,39 @@ impl<'a, 'm> Machine<'a, 'm> {
             .ok_or_else(invariant)
     }
 
+    /// FR-153: the population `allInstances`/`lookup` reads for `binding` at
+    /// the current anchor -- `binding` itself when reading the ambient post
+    /// population, or `binding`'s attached pre population underneath
+    /// `pre(..)`. A `Pre` anchor with no attached pre population is a real,
+    /// caller-input-reachable refusal, not a checked invariant: the
+    /// *checker* only admits `pre(..)` in a postcondition, over an operand
+    /// with an eligible read underneath it that is not itself a captured
+    /// `let` alias (`check.rs`'s `contains_pre_eligible_read`/
+    /// `contains_captured_pre_alias`), but it has no way to see whether the
+    /// `Value::Population` a caller supplies at evaluation time was actually
+    /// admitted through [`admit_invocation`] (the only constructor that
+    /// attaches a `pre_anchor`) rather than [`admit_binding`] directly. A
+    /// binding with no attached pre population reaching here is exactly that
+    /// caller-input defect, refused `wrong_snapshot`/`wrong-anchor` --
+    /// `CheckedInvariant` is reserved for a broken evaluator invariant, never
+    /// for input a caller controls.
+    ///
+    /// [`admit_invocation`]: crate::model::population::admit_invocation
+    /// [`admit_binding`]: crate::model::population::admit_binding
+    fn select_anchor<'x>(
+        &self,
+        binding: &'x PopulationBinding,
+    ) -> Result<&'x PopulationBinding, Stop> {
+        match self.anchor {
+            Anchor::Post => Ok(binding),
+            Anchor::Pre => binding
+                .pre_anchor()
+                .ok_or(Stop::Refused(Refusal::WrongSnapshot(
+                    WrongSnapshotCause::WrongAnchor,
+                ))),
+        }
+    }
+
     fn step(&mut self, task: Task<'a>) -> Result<(), Stop> {
         match task {
             Task::Eval(node) => self.eval(node),
@@ -418,6 +477,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Iterate(iteration) => self.iterate(iteration),
+            Task::RestoreAnchor(previous) => {
+                self.anchor = previous;
+                Ok(())
+            }
         }
     }
 
@@ -471,6 +534,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(source));
                 return Ok(());
             }
+            NodeKind::Pre(operand) => {
+                // FR-153: read the invocation pre population for every
+                // `allInstances`/`lookup` under `operand`, then restore.
+                // Identity-typed, so no `Task::Apply` follows: `operand`'s
+                // own value is `pre(operand)`'s value.
+                self.tasks.push(Task::RestoreAnchor(self.anchor));
+                self.anchor = Anchor::Pre;
+                self.tasks.push(Task::Eval(operand));
+                return Ok(());
+            }
             _ => {}
         }
         self.tasks.push(Task::Apply(node));
@@ -486,7 +559,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::Local(_)
             | NodeKind::Let { .. }
             | NodeKind::If { .. }
-            | NodeKind::Connective(..) => return Err(invariant()),
+            | NodeKind::Connective(..)
+            | NodeKind::Pre(_) => return Err(invariant()),
             NodeKind::Coerce(_, target) => {
                 let value = self.pop_integer()?;
                 if !target.contains(&value) {
@@ -684,6 +758,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 self.frames.push(frame);
+                // shared-grammar.md: "self, result and pre(...) are ...
+                // unavailable ... inside a reusable predicate" -- a callee's
+                // own body is never anchored by its caller's `pre(..)`, so
+                // `pre(F(p))` never lets the anchor leak into `F`'s body.
+                // Reset to `Post` for the callee, then restore the caller's
+                // anchor once its own `Task::Eval`/`Task::Return` complete
+                // (mirrors `NodeKind::Pre`'s own save/restore pair).
+                self.tasks.push(Task::RestoreAnchor(self.anchor));
+                self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
                 return Ok(());
@@ -842,7 +925,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let ValueType::Collection(collection_type) = &node.value_type else {
                     return Err(invariant());
                 };
-                evaluate_all_instances(&binding, collection_type, self.meter)?
+                let binding = self.select_anchor(&binding)?;
+                evaluate_all_instances(binding, collection_type, self.meter)?
             }
             NodeKind::Lookup {
                 reference, absence, ..
@@ -862,8 +946,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     },
                     _ => return Err(invariant()),
                 };
+                let binding = self.select_anchor(&binding)?;
                 evaluate_lookup(
-                    &binding,
+                    binding,
                     target_key,
                     *static_key,
                     reference_value,
