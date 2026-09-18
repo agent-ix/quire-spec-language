@@ -1,0 +1,4 @@
+[alias]
+# QSL #138: `cargo xtask revendor` / `cargo xtask revendor-check` wrap the
+# `xtask` workspace crate (see xtask/README topics in resources/*/README.md).
+xtask = "run --package xtask --"
