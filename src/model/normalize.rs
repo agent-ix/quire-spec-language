@@ -610,7 +610,9 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     }
                 }
             }
-            BundleRecord::Redefinition(redefinition) if !index.types.contains(&redefinition.owner) => {
+            BundleRecord::Redefinition(redefinition)
+                if !index.types.contains(&redefinition.owner) =>
+            {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: "unknown-owner",
@@ -666,7 +668,9 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             // FR-152 systems-model records validate their own references
             // independently (crate::model::systems); FR-150's phase 1 does
             // not concern itself with them.
-            BundleRecord::Component(_) | BundleRecord::Endpoint(_) | BundleRecord::Relationship(_) => {}
+            BundleRecord::Component(_)
+            | BundleRecord::Endpoint(_)
+            | BundleRecord::Relationship(_) => {}
         }
     }
     Ok(())
