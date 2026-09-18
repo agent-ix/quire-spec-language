@@ -40,6 +40,7 @@ use super::super::text::compare_text;
 use super::check::Scope;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::refusal::Location;
+use super::refusal::WrongSnapshotCause;
 use crate::model::population::PopulationBinding;
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
@@ -337,16 +338,19 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// FR-153: the population `allInstances`/`lookup` reads for `binding` at
     /// the current anchor -- `binding` itself when reading the ambient post
     /// population, or `binding`'s attached pre population underneath
-    /// `pre(..)`. A `Pre` anchor with no attached pre population is a
-    /// checked invariant, not a normal refusal: the *checker* only admits
-    /// `pre(..)` in a postcondition, over an operand with an eligible read
-    /// underneath it (`check.rs`'s `contains_pre_eligible_read`), but it has
-    /// no way to see whether the `Value::Population` a caller supplies at
-    /// evaluation time was actually admitted through [`admit_invocation`]
-    /// (the only constructor that attaches a `pre_anchor`) rather than
-    /// [`admit_binding`] directly -- so this is still a real, reachable
-    /// runtime check, and a binding with no attached pre population reaching
-    /// here is a caller-input defect this evaluator declines to paper over.
+    /// `pre(..)`. A `Pre` anchor with no attached pre population is a real,
+    /// caller-input-reachable refusal, not a checked invariant: the
+    /// *checker* only admits `pre(..)` in a postcondition, over an operand
+    /// with an eligible read underneath it that is not itself a captured
+    /// `let` alias (`check.rs`'s `contains_pre_eligible_read`/
+    /// `contains_captured_pre_alias`), but it has no way to see whether the
+    /// `Value::Population` a caller supplies at evaluation time was actually
+    /// admitted through [`admit_invocation`] (the only constructor that
+    /// attaches a `pre_anchor`) rather than [`admit_binding`] directly. A
+    /// binding with no attached pre population reaching here is exactly that
+    /// caller-input defect, refused `wrong_snapshot`/`wrong-anchor` --
+    /// `CheckedInvariant` is reserved for a broken evaluator invariant, never
+    /// for input a caller controls.
     ///
     /// [`admit_invocation`]: crate::model::population::admit_invocation
     /// [`admit_binding`]: crate::model::population::admit_binding
@@ -356,7 +360,11 @@ impl<'a, 'm> Machine<'a, 'm> {
     ) -> Result<&'x PopulationBinding, Stop> {
         match self.anchor {
             Anchor::Post => Ok(binding),
-            Anchor::Pre => binding.pre_anchor().ok_or_else(invariant),
+            Anchor::Pre => binding
+                .pre_anchor()
+                .ok_or(Stop::Refused(Refusal::WrongSnapshot(
+                    WrongSnapshotCause::WrongAnchor,
+                ))),
         }
     }
 

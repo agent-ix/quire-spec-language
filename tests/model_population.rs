@@ -1451,7 +1451,7 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
 /// scenario (deleting `a2`), but under `empty_effect()`'s empty `deletes:
 /// []`.
 #[test]
-#[trace("TC-198", "FR-046-AC-3", "FR-153-AC-7")]
+#[trace("TC-198", "FR-046-AC-3")]
 fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1486,7 +1486,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
 /// way: post names `a9` (of `model.A`), absent from pre, under an effect
 /// declaring no `creates` grant at all.
 #[test]
-#[trace("FR-046-AC-3", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn invocation_refuses_a_create_outside_the_declared_frame() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1532,7 +1532,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
 /// and admits when it does -- both over the identical pre/post pair, so only
 /// the declared frame decides the outcome.
 #[test]
-#[trace("FR-046-AC-3", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admits() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1661,7 +1661,7 @@ fn ordering_bundle() -> Bundle {
 /// plain sequences). This test went red as expected (`Refused(
 /// frame_violation/unauthorized-change)` instead of `Admitted`); reverted.
 #[test]
-#[trace("FR-151", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
     let bundle = ordering_bundle();
     let view = view_of(&bundle);
@@ -1718,7 +1718,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
 /// declared-`ordered: true` field, as order-insensitive). This test went
 /// red as expected (`Admitted` instead of `Refused`); reverted.
 #[test]
-#[trace("FR-151", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     let bundle = ordering_bundle();
     let view = view_of(&bundle);
@@ -1785,6 +1785,29 @@ fn redefinition_bundle() -> Bundle {
     )
 }
 
+/// A dedicated bundle for the review's own chained-redefinition test:
+/// `model.A <- model.B <- model.C`, with `model.B.x` redefining `model.A.x`
+/// and `model.C.x` redefining `model.B.x` -- no direct `model.C.x ->
+/// model.A.x` record exists, per model-complete.md:56 ("the redefining
+/// feature replaces the *one* inherited redefined feature").
+fn redefinition_chain_bundle() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.redef.chain"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.B.x", "model.B", "model.A"),
+            field_member("model.C.x", "model.C", "model.A"),
+            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+        ],
+    )
+}
+
 /// Item 7: a field write is covered by `effect.field_writes` when it
 /// "reaches one through redefinition records" (FR-151's own effect-
 /// inclusion rule), not only by an exact key match. The operation declares
@@ -1797,7 +1820,7 @@ fn redefinition_bundle() -> Bundle {
 /// expected (`Refused(frame_violation/unauthorized-change)` instead of
 /// `Admitted`); reverted.
 #[test]
-#[trace("FR-151", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_redefinition() {
     let bundle = redefinition_bundle();
     let view = view_of(&bundle);
@@ -1848,6 +1871,71 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
     }
 }
 
+/// Re-review finding 3: one redefinition hop is not enough. `model.C.x`
+/// reaches `model.A.x` only through a *chain* (`model.C.x -> model.B.x ->
+/// model.A.x`, two hops, `redefinition_chain_bundle`'s own two records) --
+/// there is no direct `model.C.x -> model.A.x` record to satisfy a one-hop
+/// lookup, yet the write must still admit under `fieldWrites: [model.A.x]`,
+/// since model-complete.md:56 makes this chain shape legal and ordinary.
+///
+/// Mutation used: in `redefinition_reaches`, replaced the loop bound
+/// `0..=bound` with `0..=0` (a single iteration: check `field` itself, hop
+/// once, then stop without checking the hop's own result). This test went
+/// red as expected (`Refused(frame_violation/unauthorized-change)` instead
+/// of `Admitted` -- the walk found `model.C.x -> model.B.x` but never
+/// checked whether `model.B.x` itself reached a grant); reverted.
+#[test]
+#[trace("FR-046-AC-3")]
+fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_redefinition_chain() {
+    let bundle = redefinition_chain_bundle();
+    let view = view_of(&bundle);
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.redef.chain".to_owned(),
+        members: vec![member_with_fields(
+            "c1",
+            "model.C",
+            vec![("model.C.x", vec!["a1"])],
+        )],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.redef.chain".to_owned(),
+        members: vec![member_with_fields(
+            "c1",
+            "model.C",
+            vec![("model.C.x", vec!["a9"])],
+        )],
+    };
+    let effect = OperationEffect {
+        field_writes: vec![ProducerKey::fixture("model.A.x")],
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Admitted(_) => {}
+        other => panic!(
+            "expected Admitted -- model.C.x reaches the declared model.A.x grant through the \
+             two-hop chain model.C.x -> model.B.x -> model.A.x, got {other:?}"
+        ),
+    }
+}
+
 /// Item 5: an object that changes its most-specific type between pre and
 /// post (`a1: model.A -> a1: model.B`) has no authorization path under any
 /// declared frame -- FR-151's effect vocabulary grants only `fieldWrites`/
@@ -1863,7 +1951,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
 /// invocation was silently admitted, `a1` ending up typed `model.B` in the
 /// returned post binding); reverted.
 #[test]
-#[trace("FR-151", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1922,7 +2010,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 /// not exact type equality, exactly like `all_instances`'s own subtype
 /// selection (`tests/model_population.rs`'s `l01_*` test).
 #[test]
-#[trace("TC-198", "FR-151", "FR-153-AC-7")]
+#[trace("TC-198", "FR-046-AC-3")]
 fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1979,7 +2067,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
 /// This test went red as expected (`Admitted` instead of `Refused`);
 /// reverted.
 #[test]
-#[trace("FR-046-AC-3", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populations() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -2029,7 +2117,7 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
 /// to mirror the native runtime's own `declared_deltas` shape, not because
 /// this test independently proves it fires.
 #[test]
-#[trace("FR-046-AC-3", "FR-153-AC-7")]
+#[trace("FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_and_deleted() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -2057,6 +2145,16 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::PopulationDeltaMismatch);
             assert_eq!(refusal.cause, "delta-disagreement");
+            // PR #168 review round 2, finding 6: pin the overlap check's own
+            // detail text, not just its code/cause, so disabling the
+            // overlap-check branch specifically (rather than any other
+            // `delta_mismatch` branch, which shares the same code/cause)
+            // turns this test red.
+            assert!(
+                refusal.detail.contains("both created and deleted"),
+                "expected the overlap check's own detail text, got {:?}",
+                refusal.detail
+            );
         }
         other => {
             panic!("expected Refused(population_delta_mismatch/delta-disagreement), got {other:?}")
