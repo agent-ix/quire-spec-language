@@ -342,17 +342,22 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_operation_redefinition(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
-            let causes: Vec<ModelRefusalCause> = failures.iter().map(|f| f.cause).collect();
-            assert_eq!(
-                causes,
-                vec![
-                    ModelRefusalCause::VarianceParameter,
-                    ModelRefusalCause::MultiplicityNarrowing,
-                    ModelRefusalCause::VarianceResult,
-                    ModelRefusalCause::MultiplicityNarrowing,
-                    ModelRefusalCause::EffectEscape,
-                ]
-            );
+            let causes: Vec<ModelRefusalCause> = failures.iter().map(|f| f.cause.clone()).collect();
+            assert_eq!(causes.len(), 5);
+            assert!(matches!(
+                causes[0],
+                ModelRefusalCause::VarianceParameter { .. }
+            ));
+            assert!(matches!(
+                causes[1],
+                ModelRefusalCause::MultiplicityNarrowing
+            ));
+            assert!(matches!(causes[2], ModelRefusalCause::VarianceResult));
+            assert!(matches!(
+                causes[3],
+                ModelRefusalCause::MultiplicityNarrowing
+            ));
+            assert!(matches!(causes[4], ModelRefusalCause::EffectEscape { .. }));
             assert!(failures.iter().all(|f| f.code == Code::IllTyped));
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -477,7 +482,10 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     match check_subsetting(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, ModelRefusalCause::SubsettingType);
+            assert!(matches!(
+                failures[0].cause,
+                ModelRefusalCause::SubsettingType { .. }
+            ));
         }
         other => panic!("expected Refused, got {other:?}"),
     }

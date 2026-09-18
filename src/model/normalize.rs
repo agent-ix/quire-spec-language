@@ -90,222 +90,10 @@ use crate::model::key::{
 };
 use crate::value::length_amount;
 
-/// The closed FR-150/151/152/153 cause of a [`ModelRefusal`] (#141 F9a):
-/// each variant is one condition a caller must distinguish, checked by the
-/// compiler rather than compared by string.
-///
-/// Shared by every `crate::model` rung that refuses through [`ModelRefusal`]
-/// (`normalize`, `population`, `dispatch`, `conformance`, `systems`) and by
-/// [`crate::model::key::EffectiveDeclarationPreimage::validate_derivation`],
-/// which refuses a preimage's own well-formedness through the same closed
-/// vocabulary rather than a second one-off string pair.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ModelRefusalCause {
-    /// A dispatch family's redefinition chain exceeded `MAX_DISPATCH_DEPTH`.
-    DispatchFamilyDepth,
-    /// An operation family closes over an unresolved or unproved method set.
-    UnclosedMethodSet,
-    /// A dispatch original names an operation absent from the bundle.
-    UnknownOriginal,
-    /// A dispatch candidate names an operation absent from the bundle.
-    UnknownCandidate,
-    /// No candidate in a dispatch family is applicable to the call.
-    NoApplicable,
-    /// More than one candidate is applicable and none dominates the others.
-    MultipleUndominated,
-    /// View declarations are not sorted ascending by effective identity.
-    UnsortedView,
-    /// An ancestor path exceeded [`MAX_GENERALIZATION_DEPTH`] generalization
-    /// records.
-    GeneralizationDepthExceeded,
-    /// A type generalizes back to itself through its own ancestor path.
-    SpecializationCycle,
-    /// A field, operation, redefinition or subsetting record names an owner
-    /// that is not a declared object type.
-    UnknownOwner,
-    /// A generalization record names a specific that is not a declared
-    /// object type.
-    UnknownSpecific,
-    /// A generalization record names a general that is not a declared
-    /// object type.
-    UnknownGeneral,
-    /// An operation parameter or result names a value type that is not
-    /// declared.
-    UnknownValueType,
-    /// An operation effect writes a field that is not a declared member.
-    UnknownFieldWrite,
-    /// An operation effect names a type that is not a declared object type.
-    UnknownEffectType,
-    /// A redefinition or subsetting record names a member absent from its
-    /// owner.
-    UnknownMember,
-    /// A type has two or more undominated redefinitions of one member.
-    DerivationConflict,
-    /// A redefinition edge's target or redefining member is not an
-    /// effective member of its owner.
-    RedefinitionUnreachable,
-    /// A bundle record's producer interface is neither normalized nor a
-    /// recognized refusal (outside FR-150's supported wire range).
-    UnsupportedWire,
-    /// A bundle record has no producer revision to select.
-    WrongModelSelection,
-    /// A producer key's digest domain does not match
-    /// [`PRODUCER_DIGEST_DOMAIN`].
-    DigestDomainMismatch,
-    /// A required item does not supply the producer capability its
-    /// interface revision requires.
-    UnsuppliedProducerRecord,
-    /// A conformance check's generalization walk exceeded
-    /// `MAX_CONFORMANCE_DEPTH`.
-    ConformanceDepth,
-    /// A redefining or subsetting result/effect does not conform to the
-    /// redefined/subsetted one under FR-151 variance.
-    VarianceResult,
-    /// A redefining or subsetting multiplicity does not conform to the
-    /// redefined/subsetted one.
-    MultiplicityNarrowing,
-    /// A subsetting field's value type does not conform to the subsetted
-    /// field's value type.
-    SubsettingType,
-    /// Two compared items disagree in kind, arity or declared type where
-    /// FR-151/FR-152 require agreement.
-    TypeMismatch,
-    /// A redefining operation parameter does not conform to the redefined
-    /// one under contravariant parameter checking.
-    VarianceParameter,
-    /// A redefining operation's effect writes a field the redefined
-    /// operation's effect does not cover.
-    EffectEscape,
-    /// A redefinition narrows a fact FR-146 has no proof form to establish,
-    /// or narrows past an established fact with no supporting proof.
-    UnprovedRefinement,
-    /// More than one redefinition target candidate remains after dominance.
-    RedefinitionTarget,
-    /// A population document or effective view names a model selection
-    /// other than the admitting bundle's.
-    ForeignModelSelection,
-    /// A population document does not declare `closedWorld: true`.
-    IncompleteScope,
-    /// A closed-world model selection's generalization graph is not itself
-    /// closed.
-    UnclosedSubtypes,
-    /// A population member names a type absent from the effective view.
-    ForeignType,
-    /// One object is declared with two conflicting types.
-    ConflictingIdentity,
-    /// A population binding has no declared maximum to select against.
-    OperatorIneligible,
-    /// A selected population count exceeds its declared maximum.
-    AboveMaximum,
-    /// A reference key names a universe other than the binding's.
-    ForeignUniverse,
-    /// A reference key is not a member of the bound population.
-    AbsentKey,
-    /// A bundle record does not export the required [`crate::model::key`]
-    /// kind for its role.
-    WrongExport,
-    /// A systems relationship names an endpoint absent from the bundle.
-    UnknownRelationship,
-    /// A connection's source end names a port that is not a declared
-    /// endpoint.
-    UnknownSourcePort,
-    /// A connection's target end names a port that is not a declared
-    /// endpoint.
-    UnknownTargetPort,
-    /// A connection's direction is not compatible with its source/target
-    /// ports.
-    PortDirection,
-    /// A conformance redefinition record names a redefining member absent
-    /// from the bundle.
-    UnknownRedefining,
-    /// A conformance redefinition record names a redefined member absent
-    /// from the bundle.
-    UnknownRedefined,
-    /// A conformance subsetting record names a subsetting member absent
-    /// from the bundle.
-    UnknownSubsetting,
-    /// A conformance subsetting record names a subsetted member absent
-    /// from the bundle.
-    UnknownSubsetted,
-    /// An endpoint's owning component names a key absent from the bundle.
-    UnknownComponent,
-    /// A relationship end names a type identity absent from the bundle.
-    UnknownEndpoint,
-    /// An [`crate::model::key::EffectiveDeclarationPreimage`]'s derivation
-    /// fact has an `ordinal` that does not match its array position.
-    UnsortedDerivation,
-    /// An [`crate::model::key::EffectiveDeclarationPreimage`]'s derivation
-    /// retains the same input path at two positions.
-    DuplicatePath,
-}
-
-impl ModelRefusalCause {
-    /// The cause tag (the exact spelling every FR-150/151/152/153 test
-    /// tracing and every prior wire-visible string used before #141).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::DispatchFamilyDepth => "dispatch-family-depth",
-            Self::UnclosedMethodSet => "unclosed-method-set",
-            Self::UnknownOriginal => "unknown-original",
-            Self::UnknownCandidate => "unknown-candidate",
-            Self::NoApplicable => "no-applicable",
-            Self::MultipleUndominated => "multiple-undominated",
-            Self::UnsortedView => "unsorted-view",
-            Self::GeneralizationDepthExceeded => "generalization-depth-exceeded",
-            Self::SpecializationCycle => "specialization-cycle",
-            Self::UnknownOwner => "unknown-owner",
-            Self::UnknownSpecific => "unknown-specific",
-            Self::UnknownGeneral => "unknown-general",
-            Self::UnknownValueType => "unknown-value-type",
-            Self::UnknownFieldWrite => "unknown-field-write",
-            Self::UnknownEffectType => "unknown-effect-type",
-            Self::UnknownMember => "unknown-member",
-            Self::DerivationConflict => "derivation-conflict",
-            Self::RedefinitionUnreachable => "redefinition-unreachable",
-            Self::UnsupportedWire => "unsupported-wire",
-            Self::WrongModelSelection => "wrong-model-selection",
-            Self::DigestDomainMismatch => "digest-domain-mismatch",
-            Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
-            Self::ConformanceDepth => "conformance-depth",
-            Self::VarianceResult => "variance-result",
-            Self::MultiplicityNarrowing => "multiplicity-narrowing",
-            Self::SubsettingType => "subsetting-type",
-            Self::TypeMismatch => "type-mismatch",
-            Self::VarianceParameter => "variance-parameter",
-            Self::EffectEscape => "effect-escape",
-            Self::UnprovedRefinement => "unproved-refinement",
-            Self::RedefinitionTarget => "redefinition-target",
-            Self::ForeignModelSelection => "foreign-model-selection",
-            Self::IncompleteScope => "incomplete-scope",
-            Self::UnclosedSubtypes => "unclosed-subtypes",
-            Self::ForeignType => "foreign-type",
-            Self::ConflictingIdentity => "conflicting-identity",
-            Self::OperatorIneligible => "operator-ineligible",
-            Self::AboveMaximum => "above-maximum",
-            Self::ForeignUniverse => "foreign-universe",
-            Self::AbsentKey => "absent-key",
-            Self::WrongExport => "wrong-export",
-            Self::UnknownRelationship => "unknown-relationship",
-            Self::UnknownSourcePort => "unknown-source-port",
-            Self::UnknownTargetPort => "unknown-target-port",
-            Self::PortDirection => "port-direction",
-            Self::UnknownRedefining => "unknown-redefining",
-            Self::UnknownRedefined => "unknown-redefined",
-            Self::UnknownSubsetting => "unknown-subsetting",
-            Self::UnknownSubsetted => "unknown-subsetted",
-            Self::UnknownComponent => "unknown-component",
-            Self::UnknownEndpoint => "unknown-endpoint",
-            Self::UnsortedDerivation => "unsorted-derivation",
-            Self::DuplicatePath => "duplicate-path",
-        }
-    }
-}
-
-impl std::fmt::Display for ModelRefusalCause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+/// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
+/// is lower-level than this one so [`crate::model::key`] can depend on the
+/// cause type without a cycle. This path is unchanged for every caller.
+pub use crate::model::refusal::ModelRefusalCause;
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
@@ -428,7 +216,9 @@ impl EffectiveView {
             if pair[0].effective_id > pair[1].effective_id {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::UnsortedView,
+                    cause: ModelRefusalCause::UnsortedView {
+                        at: pair[1].effective_id.hex(),
+                    },
                     detail: format!(
                         "view declarations are not sorted ascending by effective identity at {}",
                         pair[1].effective_id.hex()
@@ -670,7 +460,9 @@ fn ancestor_paths(
         if stack_len >= MAX_GENERALIZATION_DEPTH {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::GeneralizationDepthExceeded,
+                cause: ModelRefusalCause::GeneralizationDepthExceeded {
+                    root: root_key.identity.clone(),
+                },
                 detail: format!(
                     "ancestor path from {} exceeds {MAX_GENERALIZATION_DEPTH} generalization records",
                     root_key.identity
@@ -714,7 +506,10 @@ fn ancestor_paths(
             let listing: Vec<&str> = chain.iter().map(|key| key.identity.as_str()).collect();
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle,
+                cause: ModelRefusalCause::SpecializationCycle {
+                    ancestor: ancestor_key.identity.clone(),
+                    via: record.key.identity.clone(),
+                },
                 detail: format!(
                     "{} generalizes back to itself via {}, through the cycle [{}]",
                     ancestor_key.identity,
@@ -786,7 +581,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::FieldMember(member) if !index.types.contains(&member.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: member.key.identity.clone(),
+                        owner: member.owner.identity.clone(),
+                    },
                     detail: format!(
                         "field member {} names owner {}, which is not a declared object type",
                         member.key.identity, member.owner.identity
@@ -796,7 +594,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::Generalization(general) if !index.types.contains(&general.specific) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownSpecific,
+                    cause: ModelRefusalCause::UnknownSpecific {
+                        generalization: general.key.identity.clone(),
+                        specific: general.specific.identity.clone(),
+                    },
                     detail: format!(
                         "generalization {} names specific {}, which is not a declared object type",
                         general.key.identity, general.specific.identity
@@ -806,7 +607,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::Generalization(general) if !index.types.contains(&general.general) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownGeneral,
+                    cause: ModelRefusalCause::UnknownGeneral {
+                        generalization: general.key.identity.clone(),
+                        general: general.general.identity.clone(),
+                    },
                     detail: format!(
                         "generalization {} names general {}, which is not a declared object type",
                         general.key.identity, general.general.identity
@@ -817,7 +621,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::OperationMember(op) if !index.types.contains(&op.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: op.key.identity.clone(),
+                        owner: op.owner.identity.clone(),
+                    },
                     detail: format!(
                         "operation member {} names owner {}, which is not a declared object type",
                         op.key.identity, op.owner.identity
@@ -859,7 +666,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     if !index.field_member_keys.contains(field) {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownFieldWrite,
+                            cause: ModelRefusalCause::UnknownFieldWrite {
+                                operation: op.key.identity.clone(),
+                                field: field.identity.clone(),
+                            },
                             detail: format!(
                                 "operation {} effect writes {}, which is not a declared field member",
                                 op.key.identity, field.identity
@@ -871,7 +681,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     if !index.types.contains(target) {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownEffectType,
+                            cause: ModelRefusalCause::UnknownEffectType {
+                                operation: op.key.identity.clone(),
+                                type_name: target.identity.clone(),
+                            },
                             detail: format!(
                                 "operation {} effect names type {}, which is not a declared object type",
                                 op.key.identity, target.identity
@@ -885,7 +698,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: redefinition.key.identity.clone(),
+                        owner: redefinition.owner.identity.clone(),
+                    },
                     detail: format!(
                         "redefinition {} names owner {}, which is not a declared object type",
                         redefinition.key.identity, redefinition.owner.identity
@@ -899,7 +715,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownMember,
+                            cause: ModelRefusalCause::UnknownMember {
+                                record: redefinition.key.identity.clone(),
+                                member: member.identity.clone(),
+                            },
                             detail: format!(
                                 "redefinition {} names {}, which is not a declared field or operation member",
                                 redefinition.key.identity, member.identity
@@ -911,7 +730,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::Subsetting(subsetting) if !index.types.contains(&subsetting.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: subsetting.key.identity.clone(),
+                        owner: subsetting.owner.identity.clone(),
+                    },
                     detail: format!(
                         "subsetting {} names owner {}, which is not a declared object type",
                         subsetting.key.identity, subsetting.owner.identity
@@ -925,7 +747,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownMember,
+                            cause: ModelRefusalCause::UnknownMember {
+                                record: subsetting.key.identity.clone(),
+                                member: member.identity.clone(),
+                            },
                             detail: format!(
                                 "subsetting {} names {}, which is not a declared field or operation member",
                                 subsetting.key.identity, member.identity
@@ -1344,7 +1169,10 @@ fn apply_redefinitions(
         if !member_preimages.contains_key(&member_key) {
             return Err(ModelRefusal {
                 code: Code::DanglingReference,
-                cause: ModelRefusalCause::RedefinitionUnreachable,
+                cause: ModelRefusalCause::RedefinitionUnreachable {
+                    member: target_key.identity.clone(),
+                    owner: type_key.identity.clone(),
+                },
                 detail: format!(
                     "redefinition target {} is not an effective member of {}",
                     target_key.identity, type_key.identity
@@ -1362,7 +1190,10 @@ fn apply_redefinitions(
                 .get_mut(&redefining_key)
                 .ok_or_else(|| ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: edge.redefining.identity.clone(),
+                        owner: type_key.identity.clone(),
+                    },
                     detail: format!(
                         "redefining member {} is not an effective member of {}",
                         edge.redefining.identity, type_key.identity
@@ -1571,7 +1402,9 @@ fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
     if version != INTERFACE_VERSION_1_3_0 && version != INTERFACE_VERSION_1_2_0 {
         return Err(ModelRefusal {
             code: Code::UnknownWire,
-            cause: ModelRefusalCause::UnsupportedWire,
+            cause: ModelRefusalCause::UnsupportedWire {
+                version: version.clone(),
+            },
             detail: format!(
                 "producer interface {version} is not supported; only {INTERFACE_VERSION_1_3_0} is normalized and {INTERFACE_VERSION_1_2_0} is refused"
             ),
@@ -1582,14 +1415,19 @@ fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
             if revision_is_absent(&key.revision) {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::WrongModelSelection,
+                    cause: ModelRefusalCause::WrongModelSelection {
+                        key: key.identity.clone(),
+                    },
                     detail: format!("{} has no producer revision", key.identity),
                 });
             }
             if key.digest.domain != PRODUCER_DIGEST_DOMAIN {
                 return Err(ModelRefusal {
                     code: Code::StaleDependency,
-                    cause: ModelRefusalCause::DigestDomainMismatch,
+                    cause: ModelRefusalCause::DigestDomainMismatch {
+                        key: key.identity.clone(),
+                        domain: key.digest.domain.clone(),
+                    },
                     detail: format!(
                         "{} digest domain is {}; expected {PRODUCER_DIGEST_DOMAIN}",
                         key.identity, key.digest.domain

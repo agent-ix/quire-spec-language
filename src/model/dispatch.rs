@@ -210,7 +210,9 @@ fn build_family(
         if steps > MAX_DISPATCH_DEPTH {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::DispatchFamilyDepth,
+                cause: ModelRefusalCause::DispatchFamilyDepth {
+                    original: original.identity.clone(),
+                },
                 detail: format!(
                     "dispatch family for {} exceeded {MAX_DISPATCH_DEPTH} redefinition steps",
                     original.identity
@@ -264,7 +266,9 @@ pub fn link_dispatch(
     let Some(receiver_operation) = index.operations.get(original) else {
         return LinkCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOriginal,
+            cause: ModelRefusalCause::UnknownOriginal {
+                original: original.identity.clone(),
+            },
             detail: format!("{} is not a declared operation member", original.identity),
         });
     };
@@ -321,7 +325,9 @@ pub fn link_dispatch(
             let Some(candidate_record) = index.operations.get(candidate) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownCandidate,
+                    cause: ModelRefusalCause::UnknownCandidate {
+                        candidate: candidate.identity.clone(),
+                    },
                     detail: format!("{} is not a declared operation member", candidate.identity),
                 });
             };
@@ -358,7 +364,9 @@ pub fn link_dispatch(
             let Some(p_record) = index.operations.get(p) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownCandidate,
+                    cause: ModelRefusalCause::UnknownCandidate {
+                        candidate: p.identity.clone(),
+                    },
                     detail: format!("{} is not a declared operation member", p.identity),
                 });
             };
@@ -370,7 +378,9 @@ pub fn link_dispatch(
                 let Some(q_record) = index.operations.get(q) else {
                     return LinkCheckOutcome::Refused(ModelRefusal {
                         code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownCandidate,
+                        cause: ModelRefusalCause::UnknownCandidate {
+                            candidate: q.identity.clone(),
+                        },
                         detail: format!("{} is not a declared operation member", q.identity),
                     });
                 };
