@@ -94,9 +94,13 @@ fn preflight(
         }
     }
     if !environment.functions().is_empty() {
+        // A declaration form this profile's admitted package structure does
+        // not include, not a fixed representability limit against an
+        // otherwise-admitted declaration: reuse the existing invalid-package
+        // code rather than minting a new one.
         return Err(failure(
             source,
-            Code::UnrepresentableConstraint,
+            Code::InvalidPackage,
             "pure function signatures are outside the native model profile",
         ));
     }
@@ -186,6 +190,12 @@ fn check_type(
             check_type(profile, source, value, remaining, depth + 1, maximum_depth)?
         }
         ir::ValueType::Collection { value } => {
+            // MAX_SEQUENCE_ITEMS is a fixed representability ceiling of the
+            // native profile itself, not a caller-configurable ModelLimits
+            // budget (nodes/entries/depth, checked via `spend` and
+            // `Code::ResourceExhausted` above): a declaration that exceeds
+            // it is invalid on this build under any limits, so it exits 20,
+            // not the 22 a caller could clear by raising a supplied limit.
             if value.maximum_items() > MAX_SEQUENCE_ITEMS {
                 return Err(failure(
                     source,

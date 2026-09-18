@@ -207,9 +207,13 @@ impl<'a> LinkedPackage<'a> {
     pub(crate) fn require_historical_native(&self) -> Result<(), Box<Diagnostic>> {
         match self.profile {
             BindingProfile::Native => native::check_selected_profiles(&self.unit, &self.models),
+            // A strict equality check against one admitted profile, not a
+            // catalog of admitted profiles: invalid binding, not an
+            // unsupported construct. Same shape and reasoning as the
+            // clause-kind check below.
             BindingProfile::Formal => Err(failure(
                 &self.unit,
-                Code::UnsupportedConstruct,
+                Code::InvalidModelBinding,
                 Span { start: 0, end: 0 },
                 "checking requires the explicit native model binding profile",
             )),

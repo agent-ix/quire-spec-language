@@ -263,6 +263,20 @@ impl Code {
             Self::UnsupportedProjection | Self::UnsupportedConstruct | Self::UnknownRequiredFeature
         )
     }
+
+    /// FR-301's single-code ladder: unsupported (21) before incomplete (22)
+    /// before invalid or refused input (20). The sole source of this
+    /// mapping; every exit-code site routes through it rather than
+    /// re-deriving it from `is_unsupported`/`is_incomplete`.
+    pub fn exit_code(self) -> u8 {
+        if self.is_unsupported() {
+            21
+        } else if self.is_incomplete() {
+            22
+        } else {
+            20
+        }
+    }
 }
 
 impl std::fmt::Display for Code {
@@ -313,6 +327,13 @@ impl Diagnostic {
     /// build does not implement, rather than input that is itself invalid.
     pub fn is_unsupported(&self) -> bool {
         self.code.is_unsupported()
+    }
+    /// FR-301's exit code for this diagnostic alone; a caller combining
+    /// several diagnostics into one report resolves the group's code by
+    /// taking the numeric minimum, since ascending exit code is ascending
+    /// severity within this ladder (20 invalid, 21 unsupported, 22 incomplete).
+    pub fn exit_code(&self) -> u8 {
+        self.code.exit_code()
     }
 }
 

@@ -279,9 +279,12 @@ impl<'a> Resolver<'_, 'a> {
         depth: usize,
     ) -> Result<Shape<'a>> {
         if self.models[self.current].native.is_none() {
+            // A missing binding, the same condition already classified
+            // InvalidModelBinding above and at this function's own
+            // `InvalidModelBinding` return below; not a shape mismatch.
             return Err(failure(
                 self.unit,
-                Code::IllTyped,
+                Code::InvalidModelBinding,
                 span,
                 "native references need a concrete formal mapping",
             ));
@@ -328,9 +331,10 @@ impl<'a> Resolver<'_, 'a> {
         depth: usize,
     ) -> Result<Shape<'a>> {
         if self.models[self.current].native.is_none() {
+            // A missing binding, not a shape mismatch; see `dereference` above.
             return Err(failure(
                 self.unit,
-                Code::IllTyped,
+                Code::InvalidModelBinding,
                 span,
                 "native reachability needs a concrete reference/population mapping",
             ));

@@ -232,8 +232,11 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
     assert_eq!(legacy.models()[0].digest(), digest);
     assert_ne!(digest, models[0].digest());
     for (clause, code) in [
-        (invariant("deref(self.peer).n"), Code::IllTyped),
-        (invariant("reaches(self, other, parent)"), Code::IllTyped),
+        (invariant("deref(self.peer).n"), Code::InvalidModelBinding),
+        (
+            invariant("reaches(self, other, parent)"),
+            Code::InvalidModelBinding,
+        ),
         (
             "post Rule on M::Node::step { true }".into(),
             Code::InvalidModelBinding,
