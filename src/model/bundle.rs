@@ -33,11 +33,16 @@ pub struct Multiplicity {
     pub unique: bool,
 }
 
-/// An object type export: `{key}`.
+/// An object type export: `{key, interfaceFeatures}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
     /// This type's original producer key.
     pub key: ProducerKey,
+    /// `Some(features)` when the producer supplies `interfaceFeatures`
+    /// (FR-152's Interface kind), `None` when it does not. `Some(vec![])`
+    /// is a real, valid interface with zero declared features; the
+    /// distinction from `None` is the capability itself, not emptiness.
+    pub interface_features: Option<Vec<ProducerKey>>,
 }
 
 /// A field member of an object type: `{key, owner, value_type, multiplicity}`.
@@ -65,6 +70,239 @@ pub struct GeneralizationRecord {
     pub general: ProducerKey,
 }
 
+/// A scalar type export bound to a closed `Int[lower,upper]` domain
+/// (FR-151's `model.Count`/`model.Small` fixtures). QSL V1 does not carry the
+/// FR-149 equality-conversion table; this is the narrow slice this rung
+/// needs to decide value-type conformance and FR-146 interval containment
+/// for a scalar redefinition, not a general scalar type system.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScalarTypeRecord {
+    /// This type's own original producer key.
+    pub key: ProducerKey,
+    /// Inclusive lower bound.
+    pub lower: i64,
+    /// Inclusive upper bound.
+    pub upper: i64,
+}
+
+/// One operation parameter: `{key, value_type, multiplicity}`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationParameterRecord {
+    /// This parameter's own original producer key.
+    pub key: ProducerKey,
+    /// The declared parameter value type's original producer key.
+    pub value_type: ProducerKey,
+    /// The declared parameter multiplicity.
+    pub multiplicity: Multiplicity,
+}
+
+/// An operation's declared result: `{value_type, multiplicity}`; absent
+/// entirely when the operation has no result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationResult {
+    /// The declared result value type's original producer key.
+    pub value_type: ProducerKey,
+    /// The declared result multiplicity.
+    pub multiplicity: Multiplicity,
+}
+
+/// An operation's producer-supplied effect frame: `{fieldWrites, creates,
+/// deletes}` (FR-151's `quire.model.conformance.effect/v1`).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OperationEffect {
+    /// Field members this operation writes.
+    pub field_writes: Vec<ProducerKey>,
+    /// Object types this operation creates.
+    pub creates: Vec<ProducerKey>,
+    /// Object types this operation deletes.
+    pub deletes: Vec<ProducerKey>,
+}
+
+/// A fact an operation's own postcondition clause establishes about
+/// `self.<field>`, exactly as FR-151's refinement obligation names it.
+///
+/// FR-146's stable-path/closed-guard-fact evaluator is out of scope for this
+/// rung ([`crate::model`] normalizes and checks a caller-constructed
+/// [`Bundle`] only; it has no expression evaluator). A postcondition clause
+/// is therefore not parsed here: the caller states which facts it
+/// establishes directly, as this typed value, and FR-151's refinement rule
+/// (`crate::model::conformance`) decides only whether a stated fact
+/// discharges the obligation for a given narrowing. This is a scope
+/// decision, not a silent approximation: nothing here infers a fact from
+/// prose or accepts an unstated one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EstablishedFact {
+    /// `present(self.<field>)`.
+    Presence {
+        /// The field the postcondition establishes presence for.
+        field: ProducerKey,
+    },
+    /// `self.<field>` (or a two-sided form) constrained to `[lower, upper]`.
+    Interval {
+        /// The field the postcondition establishes the interval for.
+        field: ProducerKey,
+        /// Inclusive lower bound the postcondition establishes.
+        lower: i64,
+        /// Inclusive upper bound the postcondition establishes.
+        upper: i64,
+    },
+}
+
+impl EstablishedFact {
+    /// The field this fact is about.
+    pub fn field(&self) -> &ProducerKey {
+        match self {
+            Self::Presence { field } | Self::Interval { field, .. } => field,
+        }
+    }
+}
+
+/// An operation member of an object type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationMemberRecord {
+    /// This member's own original producer key.
+    pub key: ProducerKey,
+    /// The owning object type's original producer key (the receiver type).
+    pub owner: ProducerKey,
+    /// Declared parameters, in signature order.
+    pub parameters: Vec<OperationParameterRecord>,
+    /// Declared result, or `None` when the operation has no result.
+    pub result: Option<OperationResult>,
+    /// Declared effect frame.
+    pub effect: OperationEffect,
+    /// Whether this operation carries an own precondition clause.
+    pub has_own_precondition: bool,
+    /// Facts this operation's own postcondition clause(s) establish, exactly
+    /// as the caller states them (see [`EstablishedFact`]).
+    pub own_postcondition_facts: Vec<EstablishedFact>,
+    /// Whether an `operation-body` declaration supplies this member's body.
+    /// FR-151's dispatch family (`crate::model::dispatch`) is the original
+    /// declaration together with every redefining operation reaching a
+    /// subtype; only family members with a body are dispatch candidates. A
+    /// member without a body (an abstract redefinition) is still a real
+    /// family member for redefinition-conformance checking, just never a
+    /// candidate.
+    pub has_body: bool,
+}
+
+/// A redefinition record: `{key, owner, redefining, redefined}` — `owner`
+/// declares `redefining`, which redefines the inherited `redefined` member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RedefinitionRecord {
+    /// This record's own original producer key.
+    pub key: ProducerKey,
+    /// The redefining member's owning object type.
+    pub owner: ProducerKey,
+    /// The redefining (more derived) member's original producer key.
+    pub redefining: ProducerKey,
+    /// The redefined (inherited) member's original producer key.
+    pub redefined: ProducerKey,
+}
+
+/// FCD FR-114 component record: FR-152's Part candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComponentRecord {
+    /// This component's own original producer key.
+    pub key: ProducerKey,
+    /// The owning composite type's original producer key
+    /// (`owningTypeIdentity`).
+    pub owning_type: ProducerKey,
+    /// The declared part type's original producer key (`typeIdentity`).
+    pub value_type: ProducerKey,
+    /// The declared multiplicity.
+    pub multiplicity: Multiplicity,
+    /// Whether the producer supplies the `part-signature` capability
+    /// (FR-152's Part kind requires it).
+    pub has_part_signature: bool,
+}
+
+/// FCD FR-114 endpoint direction (`port-direction`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortDirection {
+    /// `in`.
+    In,
+    /// `out`.
+    Out,
+    /// `inout`.
+    InOut,
+}
+
+/// FCD FR-114 endpoint record: FR-152's Port candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EndpointRecord {
+    /// This endpoint's own original producer key.
+    pub key: ProducerKey,
+    /// The owning component's original producer key
+    /// (`owningComponentIdentity`).
+    pub owning_component: ProducerKey,
+    /// The declared interface type's original producer key (`typeIdentity`).
+    pub value_type: ProducerKey,
+    /// `Some(direction)` when the producer supplies the `port-direction`
+    /// capability (FR-152's Port kind requires it); `None` when it does not.
+    pub direction: Option<PortDirection>,
+    /// The declared multiplicity.
+    pub multiplicity: Multiplicity,
+}
+
+/// One end of a [`RelationshipRecord`]: `{type_identity, multiplicity}`.
+/// `type_identity` names whatever the end's `typeIdentity` names in the
+/// correspondence — an endpoint, a component, an operation member or an
+/// object type — which [`crate::model::systems`] resolves by kind.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationshipEnd {
+    /// The named producer key.
+    pub type_identity: ProducerKey,
+    /// The declared multiplicity.
+    pub multiplicity: Multiplicity,
+}
+
+/// FCD FR-115 relationship traversal direction (`semantics.direction`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelationshipDirection {
+    /// `source-to-target`.
+    SourceToTarget,
+    /// `target-to-source`.
+    TargetToSource,
+    /// `bidirectional`.
+    Bidirectional,
+    /// `undirected`.
+    Undirected,
+}
+
+/// FCD FR-115 relationship record: FR-152's Connection/Allocation candidate,
+/// or (when both ends name object types) a navigation-only relationship
+/// with no kind.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationshipRecord {
+    /// This relationship's own original producer key.
+    pub key: ProducerKey,
+    /// The source end.
+    pub source: RelationshipEnd,
+    /// The target end.
+    pub target: RelationshipEnd,
+    /// The producer's `semantics.category` bytes, e.g. `"allocation"`,
+    /// `"connection"`, `"composition"`. Compared verbatim, never mapped
+    /// through a closed Rust enum: FR-152 checks this field for exact byte
+    /// equality to `"allocation"` and otherwise leaves it to the producer.
+    pub category: String,
+    /// The producer's `semantics.direction`.
+    pub direction: RelationshipDirection,
+}
+
+/// A subsetting record: `{key, owner, subsetting, subsetted}` — `owner`
+/// declares `subsetting`, whose runtime values are a subset of `subsetted`'s.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubsettingRecord {
+    /// This record's own original producer key.
+    pub key: ProducerKey,
+    /// The subsetting member's owning object type.
+    pub owner: ProducerKey,
+    /// The subsetting feature's original producer key.
+    pub subsetting: ProducerKey,
+    /// The subsetted feature's original producer key.
+    pub subsetted: ProducerKey,
+}
+
 /// One producer record, in the bundle's declared order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BundleRecord {
@@ -74,6 +312,20 @@ pub enum BundleRecord {
     FieldMember(FieldMemberRecord),
     /// A generalization between two object types.
     Generalization(GeneralizationRecord),
+    /// A scalar type export bound to a closed integer interval.
+    ScalarType(ScalarTypeRecord),
+    /// An operation member of an object type.
+    OperationMember(OperationMemberRecord),
+    /// An explicit redefinition of an inherited field or operation member.
+    Redefinition(RedefinitionRecord),
+    /// An explicit subsetting of another feature.
+    Subsetting(SubsettingRecord),
+    /// FCD FR-114 component (FR-152 Part candidate).
+    Component(ComponentRecord),
+    /// FCD FR-114 endpoint (FR-152 Port candidate).
+    Endpoint(EndpointRecord),
+    /// FCD FR-115 relationship (FR-152 Connection/Allocation candidate).
+    Relationship(RelationshipRecord),
 }
 
 impl BundleRecord {
@@ -83,6 +335,13 @@ impl BundleRecord {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::Generalization(record) => &record.key,
+            Self::ScalarType(record) => &record.key,
+            Self::OperationMember(record) => &record.key,
+            Self::Redefinition(record) => &record.key,
+            Self::Subsetting(record) => &record.key,
+            Self::Component(record) => &record.key,
+            Self::Endpoint(record) => &record.key,
+            Self::Relationship(record) => &record.key,
         }
     }
 }
