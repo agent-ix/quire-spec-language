@@ -252,12 +252,13 @@ phase until the previous command has completed.
 ```sh
 cargo run --locked --target-dir target -- parse test:parent fixture:1 tests/fixtures/parent.native
 cargo run --locked --target-dir target -- format test:parent fixture:1 tests/fixtures/parent.native
-cargo fmt --all -- --check
-cargo clippy --locked --target-dir target --all-targets --no-default-features -- -D warnings
-cargo test --locked --target-dir target --no-default-features
-cargo build --locked --no-default-features --target-dir target/clean
-cargo run --locked --target-dir target --bin fixture-audit -- self-test
 ```
+
+Run the full local gate with `make ci`: formatting, clippy and `cargo test`
+under both no-default-features and `--all-features`, a clean
+no-default-features build, `fixture-audit self-test`, and the parse example
+above — the exact commands `.github/workflows/ci.yml` runs, mirrored so a
+contributor never needs to run them by hand. See `Makefile` for each step.
 
 Run these checks locally while the repository stabilizes. Hosted CI exposes
 only `workflow_dispatch` and has a ten-minute job timeout. Pushing commits or
