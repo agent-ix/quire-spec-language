@@ -54,6 +54,15 @@
 //! found, so the reported outcome is still the correct `Incomplete`, matching
 //! FR-150's "exhaustion ends checking" rule.
 //!
+//! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
+//! every contributing declaration in the cycle, rotated to start at its
+//! least key, from the one type whose own walk finds it first
+//! ([`ancestor_paths`]'s own `?`-propagated `Err`) — this rung does not also
+//! continue walking every remaining type to reproduce R01's exact
+//! six-`normalize.cycle-check`-charge, deduplicated-across-both-walks
+//! accounting; only the refusal's own shape is reproduced, a recorded scope
+//! choice like phase 4's own dominance-check reuse above.
+//!
 //! Phase 4's own dominance check (deciding which of several redefiners of
 //! the same target wins) asks a different question than phase 3's own
 //! [`ancestor_paths`]: only *reachability* between two specific owners, never
@@ -446,12 +455,43 @@ fn ancestor_paths(
         new_path.push(record.key.clone());
         let ancestor_key = record.general.clone();
         if frame.visited.contains(&ancestor_key) {
+            // Every contributing declaration in the cycle itself, not the
+            // whole path from the walk's root: `frame.visited` is that whole
+            // path, so it is first trimmed to start at `ancestor_key`'s own
+            // first occurrence (everything before that is how the walk
+            // *reached* the cycle, not part of it), then rotated to start at
+            // its least key so the same cycle reports identically regardless
+            // of which type's own walk closes it first (TC-196 R01: "listing
+            // [A, B], rotated to start at the least key A"). E.g. A -> C,
+            // C -> B, B -> C lists `[model.B, model.C]`, not
+            // `[model.A, model.C, model.B]`.
+            // Scope decision: this rung stops at the first cycle a type's
+            // own walk finds (line ~723's `?`) rather than continuing to
+            // walk every remaining type and deduplicating repeated closures,
+            // so it does not reproduce R01's exact six-`normalize.cycle-check`
+            // charge count across both types' walks — only the refusal's own
+            // code/cause/contributing-declarations shape.
+            let mut chain = frame.visited.clone();
+            if let Some(start) = chain.iter().position(|key| key == &ancestor_key) {
+                chain.drain(..start);
+            }
+            if let Some(least) = chain
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, key)| *key)
+                .map(|(index, _)| index)
+            {
+                chain.rotate_left(least);
+            }
+            let listing: Vec<&str> = chain.iter().map(|key| key.identity.as_str()).collect();
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: "specialization-cycle",
                 detail: format!(
-                    "{} generalizes back to itself via {}",
-                    ancestor_key.identity, record.key.identity
+                    "{} generalizes back to itself via {}, through the cycle [{}]",
+                    ancestor_key.identity,
+                    record.key.identity,
+                    listing.join(", ")
                 ),
             });
         }
@@ -989,6 +1029,66 @@ fn apply_redefinitions(
         }
 
         let Some(winner_index) = winner else {
+            // TC-196 R07's second shape: among the undominated edges, the
+            // most-derived owners (those no *other* edge's owner properly
+            // descends from) are all the identical owner — contending
+            // redefiners of one inherited target (e.g. `B/z` and `B/z2`
+            // both `redefines: A/x`) — rather than distinct sibling
+            // lineages neither of which dominates the other (a genuine
+            // diamond, `derivation-conflict` below).
+            //
+            // Restricted to the most-derived owners, not every edge's
+            // owner: a less-derived owner's edge (e.g. `C/w` where
+            // `B <= C`) has already lost to any more-derived owner's edge
+            // (`B`'s) in the winner search above exactly as it would if
+            // `B` had only one redefiner, so it takes no part in deciding
+            // whether the *remaining* ambiguity is "one owner, several
+            // redefiners" or "two genuinely different lineages."
+            //
+            // A caller cannot resolve either shape by an arbitrary pick,
+            // but they are different ambiguities with different FR-272
+            // causes: this one refuses `redefinition-target`, naming every
+            // redefining member's own declaration key (never its
+            // redefinition record's key) and the one contended target.
+            let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
+            for edge in &edges {
+                let mut dominated_by_another = false;
+                for other in &edges {
+                    if other.owner.identity == edge.owner.identity {
+                        continue;
+                    }
+                    if dominates(&other.owner, &edge.owner, index, limits)? {
+                        dominated_by_another = true;
+                        break;
+                    }
+                }
+                if !dominated_by_another {
+                    most_derived.push(edge);
+                }
+            }
+            let same_owner = !most_derived.is_empty()
+                && most_derived
+                    .iter()
+                    .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
+            if same_owner {
+                let mut redefiners: Vec<String> = most_derived
+                    .iter()
+                    .map(|edge| edge.redefining.identity.clone())
+                    .collect();
+                redefiners.sort();
+                return Err(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: "redefinition-target",
+                    detail: format!(
+                        "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
+                        most_derived[0].owner.identity,
+                        most_derived.len(),
+                        redefiners.join(", "),
+                        target_key.identity
+                    ),
+                });
+            }
+
             let paths: Vec<String> = edges
                 .iter()
                 .map(|edge| {

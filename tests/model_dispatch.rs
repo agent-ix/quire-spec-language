@@ -57,7 +57,7 @@ fn operation(identity: &str, owner: &str, has_body: bool) -> BundleRecord {
         result: None,
         effect: OperationEffect::default(),
         has_own_precondition: false,
-        own_postcondition_facts: Vec::new(),
+        own_postcondition_clauses: Vec::new(),
         has_body,
     })
 }
@@ -489,7 +489,7 @@ fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survi
                 result: None,
                 effect: OperationEffect::default(),
                 has_own_precondition: false,
-                own_postcondition_facts: Vec::new(),
+                own_postcondition_clauses: Vec::new(),
                 has_body: true,
             }),
             BundleRecord::OperationMember(OperationMemberRecord {
@@ -499,7 +499,7 @@ fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survi
                 result: None,
                 effect: OperationEffect::default(),
                 has_own_precondition: false,
-                own_postcondition_facts: Vec::new(),
+                own_postcondition_clauses: Vec::new(),
                 has_body: false,
             }),
         ],
