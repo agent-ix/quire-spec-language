@@ -23,7 +23,7 @@ use quire_spec_language::model::bundle::{
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
 use quire_spec_language::model::normalize::{
-    normalize, object_universe, EffectiveView, NormalizeOutcome,
+    normalize, object_universe, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::model::population::{
     admit_binding, all_instances, lookup, AbsenceMode, AdmissionChargePoint, AdmissionLimitKind,
@@ -387,7 +387,7 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     ) {
         AdmissionOutcome::UnknownClosure(refusal) => {
             assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(refusal.cause, "incomplete-scope");
+            assert_eq!(refusal.cause, ModelRefusalCause::IncompleteScope);
         }
         other => panic!("expected UnknownClosure(incomplete-scope), got {other:?}"),
     }
@@ -407,7 +407,7 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     ) {
         AdmissionOutcome::UnknownClosure(refusal) => {
             assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(refusal.cause, "unclosed-subtypes");
+            assert_eq!(refusal.cause, ModelRefusalCause::UnclosedSubtypes);
         }
         other => panic!("expected UnknownClosure(unclosed-subtypes), got {other:?}"),
     }
@@ -589,7 +589,7 @@ fn l03_lookup_refused_mode() {
     match outcome {
         LookupOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "absent-key");
+            assert_eq!(refusal.cause, ModelRefusalCause::AbsentKey);
         }
         other => panic!("expected Refused(invalid_runtime_input/absent-key), got {other:?}"),
     }
@@ -627,7 +627,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     match outcome {
         LookupOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::IllTyped);
-            assert_eq!(refusal.cause, "type-mismatch");
+            assert_eq!(refusal.cause, ModelRefusalCause::TypeMismatch);
         }
         other => panic!("expected Refused(ill_typed/type-mismatch), got {other:?}"),
     }
@@ -672,7 +672,7 @@ fn l04_lookup_foreign_universe_refuses() {
     match outcome {
         LookupOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-universe");
+            assert_eq!(refusal.cause, ModelRefusalCause::ForeignUniverse);
         }
         other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
     }
@@ -708,7 +708,7 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "conflicting-identity");
+            assert_eq!(refusal.cause, ModelRefusalCause::ConflictingIdentity);
         }
         other => {
             panic!("expected Refused(invalid_runtime_input/conflicting-identity), got {other:?}")
@@ -799,7 +799,7 @@ fn l05_foreign_type_refuses() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-type");
+            assert_eq!(refusal.cause, ModelRefusalCause::ForeignType);
         }
         other => panic!("expected Refused(foreign_reference/foreign-type), got {other:?}"),
     }
@@ -837,7 +837,7 @@ fn l06_cardinality_bound_and_incomplete() {
     match outcome {
         AllInstancesOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::CardinalityOutOfBound);
-            assert_eq!(refusal.cause, "above-maximum");
+            assert_eq!(refusal.cause, ModelRefusalCause::AboveMaximum);
         }
         other => panic!("expected Refused(cardinality_out_of_bound/above-maximum), got {other:?}"),
     }
@@ -933,7 +933,7 @@ fn l05_foreign_model_selection_refuses_at_admission() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
+            assert_eq!(refusal.cause, ModelRefusalCause::ForeignModelSelection);
         }
         other => {
             panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
@@ -974,7 +974,7 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
+            assert_eq!(refusal.cause, ModelRefusalCause::ForeignModelSelection);
         }
         other => {
             panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")

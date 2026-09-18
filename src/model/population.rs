@@ -82,7 +82,7 @@ use crate::model::bundle::{
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
-use crate::model::normalize::{object_universe, EffectiveView, ModelRefusal};
+use crate::model::normalize::{object_universe, EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
@@ -509,7 +509,7 @@ pub fn admit_binding(
     if view.model_selection != bundle.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-model-selection",
+            cause: ModelRefusalCause::ForeignModelSelection,
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting bundle's {}",
                 view.model_selection.export.identity, bundle.model_selection.export.identity
@@ -519,7 +519,7 @@ pub fn admit_binding(
     if document.model_identity != bundle.model_selection.export.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-model-selection",
+            cause: ModelRefusalCause::ForeignModelSelection,
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",
                 document.model_identity, bundle.model_selection.export.identity
@@ -529,7 +529,7 @@ pub fn admit_binding(
     if !document.closed_world {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
-            cause: "incomplete-scope",
+            cause: ModelRefusalCause::IncompleteScope,
             detail: format!(
                 "population document for {} does not declare closedWorld: true",
                 bundle.model_selection.export.identity
@@ -539,7 +539,7 @@ pub fn admit_binding(
     if matches!(subtype_closure, GeneralizationClosure::Open) {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
-            cause: "unclosed-subtypes",
+            cause: ModelRefusalCause::UnclosedSubtypes,
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
                 bundle.model_selection.export.identity,
@@ -585,7 +585,7 @@ pub fn admit_binding(
         let Some(effective_type) = type_lookup.get(&member.type_identity) else {
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::ForeignReference,
-                cause: "foreign-type",
+                cause: ModelRefusalCause::ForeignType,
                 detail: format!(
                     "member {} names type {}, absent from the effective view",
                     member.object, member.type_identity.identity
@@ -604,7 +604,7 @@ pub fn admit_binding(
             }
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
-                cause: "conflicting-identity",
+                cause: ModelRefusalCause::ConflictingIdentity,
                 detail: format!(
                     "object {} is declared with conflicting types {} and {}",
                     key.object,
@@ -807,14 +807,14 @@ pub fn all_instances(
     let Some(declared_maximum) = binding.declared_maximum() else {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
-            cause: "operator-ineligible",
+            cause: ModelRefusalCause::OperatorIneligible,
             detail: "population binding has no declared maximum".to_owned(),
         });
     };
     if !is_object_type(bundle, t) {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
-            cause: "type-mismatch",
+            cause: ModelRefusalCause::TypeMismatch,
             detail: format!("{} is not a model object type", t.identity),
         });
     }
@@ -844,7 +844,7 @@ pub fn all_instances(
     if n > declared_maximum {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::CardinalityOutOfBound,
-            cause: "above-maximum",
+            cause: ModelRefusalCause::AboveMaximum,
             detail: format!(
                 "selected count {n} is above the declared maximum [0,{declared_maximum}]"
             ),
@@ -957,7 +957,7 @@ pub fn lookup(
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {
                 code: Code::IllTyped,
-                cause: "type-mismatch",
+                cause: ModelRefusalCause::TypeMismatch,
                 detail: format!(
                     "{} does not conform to {}",
                     r.static_type.identity, t.identity
@@ -976,7 +976,7 @@ pub fn lookup(
     if r.key.universe != *binding.universe() {
         return LookupOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-universe",
+            cause: ModelRefusalCause::ForeignUniverse,
             detail: format!(
                 "reference key names universe {}, not the binding's {}",
                 r.key.universe.hex(),
@@ -1001,7 +1001,7 @@ pub fn lookup(
         AbsenceMode::Undefined => LookupOutcome::Undefined,
         AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
-            cause: "absent-key",
+            cause: ModelRefusalCause::AbsentKey,
             detail: format!("{} is not a member of the bound population", r.key.object),
         }),
         AbsenceMode::Empty => {

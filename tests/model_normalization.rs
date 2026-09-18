@@ -13,7 +13,9 @@ use quire_spec_language::model::bundle::{
     ObjectTypeRecord, RedefinitionRecord,
 };
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
-use quire_spec_language::model::normalize::{normalize, normalize_with_meter, NormalizeOutcome};
+use quire_spec_language::model::normalize::{
+    normalize, normalize_with_meter, ModelRefusalCause, NormalizeOutcome,
+};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,
@@ -430,7 +432,7 @@ fn n05_digest_domain_mismatch_refuses_before_any_effective_view() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::StaleDependency
             );
-            assert_eq!(refusal.cause, "digest-domain-mismatch");
+            assert_eq!(refusal.cause, ModelRefusalCause::DigestDomainMismatch);
             assert!(refusal.detail.contains("model.A.x"));
             assert!(refusal.detail.contains("filament-canonical-json-1"));
             assert!(refusal.detail.contains("quire-native-bytes-1"));
@@ -479,7 +481,7 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, "unknown-owner");
+            assert_eq!(refusal.cause, ModelRefusalCause::UnknownOwner);
             assert!(refusal.detail.contains("model.orphan.x"));
             assert!(refusal.detail.contains("model.no-such-type"));
         }
@@ -502,7 +504,7 @@ fn a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignor
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, "unknown-specific");
+            assert_eq!(refusal.cause, ModelRefusalCause::UnknownSpecific);
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -523,7 +525,7 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, "unknown-general");
+            assert_eq!(refusal.cause, ModelRefusalCause::UnknownGeneral);
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -540,7 +542,7 @@ fn unsupported_interface_version_refuses_before_any_charge() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::UnknownWire
             );
-            assert_eq!(refusal.cause, "unsupported-wire");
+            assert_eq!(refusal.cause, ModelRefusalCause::UnsupportedWire);
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -562,7 +564,7 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, "derivation-conflict");
+            assert_eq!(refusal.cause, ModelRefusalCause::DerivationConflict);
             assert!(refusal.detail.contains("model.gen.D-B"));
             assert!(refusal.detail.contains("model.redef.B"));
             assert!(refusal.detail.contains("model.gen.D-C"));
@@ -791,7 +793,7 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, "unknown-member");
+            assert_eq!(refusal.cause, ModelRefusalCause::UnknownMember);
             assert!(refusal.detail.contains("model.B.no-such-member"));
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -955,7 +957,7 @@ fn n04_absent_revision_refuses_wrong_model_selection() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, "wrong-model-selection");
+            assert_eq!(refusal.cause, ModelRefusalCause::WrongModelSelection);
             assert!(refusal.detail.contains("model.gen.B-A"));
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -1005,7 +1007,7 @@ fn n08_interface_1_2_0_refuses_every_missing_capability_in_fixed_order() {
             refusal.code,
             quire_spec_language::diagnostic::Code::InvalidModelBinding
         );
-        assert_eq!(refusal.cause, "unsupplied-producer-record");
+        assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
         assert!(refusal.detail.contains(name), "{}", refusal.detail);
         assert!(refusal.detail.contains(subject), "{}", refusal.detail);
         assert!(refusal.detail.contains("1.3.0"), "{}", refusal.detail);
@@ -1048,7 +1050,7 @@ fn n10_unsorted_derivation_refuses_by_the_semantic_check() {
     let (cause, _detail) = mutated
         .validate_derivation()
         .expect_err("a derivation whose ordinals no longer match array position must be refused");
-    assert_eq!(cause, "unsorted-derivation");
+    assert_eq!(cause, ModelRefusalCause::UnsortedDerivation);
 }
 
 #[trace("TC-195")]
@@ -1063,7 +1065,7 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
     let (cause, _detail) = mutated
         .validate_derivation()
         .expect_err("a derivation retaining the same input path twice must be refused");
-    assert_eq!(cause, "duplicate-path");
+    assert_eq!(cause, ModelRefusalCause::DuplicatePath);
 }
 
 #[trace("TC-195")]
@@ -1075,7 +1077,7 @@ fn n10_unsorted_view_refuses_by_the_semantic_check() {
     let refusal = view
         .validate_order()
         .expect_err("a view whose declarations are no longer ascending must be refused");
-    assert_eq!(refusal.cause, "unsorted-view");
+    assert_eq!(refusal.cause, ModelRefusalCause::UnsortedView);
     assert_eq!(
         refusal.code,
         quire_spec_language::diagnostic::Code::InvalidModelBinding
