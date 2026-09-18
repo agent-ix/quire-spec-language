@@ -122,6 +122,7 @@ fn member(object: &str, type_identity: &str) -> PopulationMember {
     PopulationMember {
         object: object.to_owned(),
         type_identity: ProducerKey::fixture(type_identity),
+        field_values: Vec::new(),
     }
 }
 
