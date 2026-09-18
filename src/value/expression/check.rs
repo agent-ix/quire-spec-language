@@ -16,10 +16,13 @@ use super::super::enumeration::{EnumDeclaration, EnumValue};
 use super::super::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
 use super::super::ieee::AdmittedIeeeProfile;
 use super::super::integer::Integer;
+use super::super::node::NodeKey;
 use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::quantity::{check_comparable, result_unit, UnitOperation};
 use super::super::rational::Rational;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+use super::ir::{
+    Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
+};
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
 };
@@ -106,6 +109,34 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
+    /// resolve to, keyed by the receiver's static type and the member name.
+    /// Built by the caller (the `crate::model` bridge); the checker only
+    /// resolves against it.
+    pub dispatch_operations: Vec<DispatchOperation>,
+    /// The checked dispatch tables `dispatch_operations` indexes into, ready
+    /// for the evaluator. Built by the same caller, with function indices
+    /// already resolved against `functions`.
+    pub dispatch_tables: Vec<DispatchTable>,
+}
+
+/// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call
+/// whose receiver's static type is `receiver_type` and whose member name is
+/// `member` resolves to this signature, checked against `parameters` and
+/// `result`, and its call site becomes a [`super::ir::NodeKind::Dispatch`]
+/// naming `table` (an index into the package's `dispatch_tables`).
+#[derive(Clone, Debug)]
+pub struct DispatchOperation {
+    /// The receiver's required static type.
+    pub receiver_type: NodeKey,
+    /// The unqualified member name a dispatch call site names.
+    pub member: String,
+    /// The declared parameter types, in order.
+    pub parameters: Vec<ValueType>,
+    /// The declared result type.
+    pub result: ValueType,
+    /// The dispatch table this operation's call sites resolve to.
+    pub table: usize,
 }
 
 /// Everything names resolve against, apart from function bodies.
@@ -116,6 +147,7 @@ pub(crate) struct Scope {
     pub(crate) aliases: Vec<(String, ValueType)>,
     pub(crate) model_operations: Vec<String>,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    pub(crate) dispatch_operations: Vec<DispatchOperation>,
 }
 
 /// A function's declared signature.
@@ -677,6 +709,11 @@ impl<'a> Typer<'a> {
                 reference,
                 absence,
             } => self.lookup(target, population, reference, *absence, location),
+            Expression::Dispatch {
+                receiver,
+                member,
+                arguments,
+            } => self.dispatch_call(receiver, member, arguments, location),
         }
     }
 
@@ -1294,6 +1331,54 @@ impl<'a> Typer<'a> {
             }
             None => Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
         }
+    }
+
+    /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):
+    /// the receiver is `self`, a `deref(...)` result or another
+    /// `Reference<T>` value, and `member` resolves statically against `T`'s
+    /// exposed dispatch-eligible operations.
+    fn dispatch_call(
+        &mut self,
+        receiver: &Expression,
+        member: &str,
+        arguments: &[Expression],
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let receiver_location = location.child(0);
+        let receiver_node = if let Expression::Deref(inner) = receiver {
+            self.enter(&receiver_location)?;
+            let inner = self.infer(inner, None, &receiver_location.child(0))?;
+            self.leave();
+            inner
+        } else {
+            self.infer(receiver, None, &receiver_location)?
+        };
+        let ValueType::Reference(receiver_type) = receiver_node.value_type else {
+            return Err(ineligible(location));
+        };
+        let Some(operation) = self.scope.dispatch_operations.iter().find(|operation| {
+            operation.receiver_type == receiver_type && operation.member == member
+        }) else {
+            return Err(ineligible(location));
+        };
+        if operation.parameters.len() != arguments.len() {
+            return Err(mismatch(location));
+        }
+        let mut typed_arguments = Vec::with_capacity(arguments.len());
+        for (index, (argument, parameter)) in
+            arguments.iter().zip(&operation.parameters).enumerate()
+        {
+            typed_arguments.push(self.check_as(argument, parameter, &location.child(index + 1))?);
+        }
+        Ok(node(
+            NodeKind::Dispatch {
+                receiver: Box::new(receiver_node),
+                table: operation.table,
+                arguments: typed_arguments,
+            },
+            operation.result.clone(),
+            location,
+        ))
     }
 
     fn record(

@@ -818,6 +818,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     self.meter,
                 )?
             }
+            NodeKind::Dispatch { .. } => return Err(invariant()),
         };
         self.values.push(value);
         Ok(())

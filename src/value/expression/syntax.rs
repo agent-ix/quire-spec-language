@@ -243,6 +243,18 @@ pub enum Expression {
         /// The absence mode `m`.
         absence: AbsenceMode,
     },
+    /// `receiver.member(args)` (FR-151): a dispatched call, resolved at
+    /// check time to the receiver's static type's exposed effective
+    /// operation, and at link time to the receiver's most-specific runtime
+    /// type.
+    Dispatch {
+        /// `self`, a `deref(...)` result, or another `Reference<T>` value.
+        receiver: Box<Expression>,
+        /// The unqualified member name.
+        member: String,
+        /// Arguments in source order.
+        arguments: Vec<Expression>,
+    },
 }
 
 impl Expression {
@@ -299,6 +311,15 @@ impl Expression {
                 reference,
                 ..
             } => vec![population, reference],
+            Self::Dispatch {
+                receiver,
+                arguments,
+                ..
+            } => {
+                let mut children: Vec<&Expression> = vec![receiver];
+                children.extend(arguments);
+                children
+            }
         }
     }
 }

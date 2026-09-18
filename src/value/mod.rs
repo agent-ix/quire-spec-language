@@ -106,9 +106,10 @@ pub use equality::{
 pub use expression::{
     Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal,
     CheckedExpression, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionLoss, CollectionProperty, DepthAboveMaximum, EnumBinding, Evaluation, Expression,
-    FieldInitializer, FunctionDeclaration, InputRefusal, LocatedLoss, Location, MeasureObligation,
-    Obligation, Origin, PackageDeclarations, ProvedInterval, ValueLoss, MAX_CHECKING_DEPTH,
+    CollectionLoss, CollectionProperty, DepthAboveMaximum, DispatchCandidate, DispatchOperation,
+    DispatchTable, EnumBinding, Evaluation, Expression, FieldInitializer, FunctionDeclaration,
+    InputRefusal, LocatedLoss, Location, MeasureObligation, Obligation, Origin,
+    PackageDeclarations, ProvedInterval, ValueLoss, MAX_CHECKING_DEPTH,
 };
 // `crate::model::conformance`'s FR-151 refinement obligation reuses this
 // crate's own FR-146 fact-derivation primitive (see
