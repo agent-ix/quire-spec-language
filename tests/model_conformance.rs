@@ -19,7 +19,7 @@ use quire_spec_language::model::conformance::{
 };
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
-    normalize, EffectiveView, NormalizeOutcome, ViewEntry,
+    normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
 use quire_spec_language::value::OrderingOperator;
 
@@ -342,16 +342,36 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_operation_redefinition(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
-            let causes: Vec<&str> = failures.iter().map(|f| f.cause).collect();
+            let causes: Vec<ModelRefusalCause> = failures.iter().map(|f| f.cause.clone()).collect();
+            assert_eq!(causes.len(), 5);
             assert_eq!(
-                causes,
-                vec![
-                    "variance-parameter",
-                    "multiplicity-narrowing",
-                    "variance-result",
-                    "multiplicity-narrowing",
-                    "effect-escape",
-                ]
+                causes[0],
+                ModelRefusalCause::VarianceParameter {
+                    index: 1,
+                    declared: ProducerKey::fixture("model.A"),
+                    redefined: ProducerKey::fixture("model.B"),
+                }
+            );
+            assert_eq!(
+                causes[1],
+                ModelRefusalCause::MultiplicityNarrowing {
+                    from: mult(0, Some(1)),
+                    to: mult(1, Some(1)),
+                }
+            );
+            assert_eq!(causes[2], ModelRefusalCause::VarianceResult);
+            assert_eq!(
+                causes[3],
+                ModelRefusalCause::MultiplicityNarrowing {
+                    from: mult(0, Some(1)),
+                    to: mult(1, Some(1)),
+                }
+            );
+            assert_eq!(
+                causes[4],
+                ModelRefusalCause::EffectEscape {
+                    field: ProducerKey::fixture("model.B.y"),
+                }
             );
             assert!(failures.iter().all(|f| f.code == Code::IllTyped));
         }
@@ -385,7 +405,7 @@ fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
     match check_operation_redefinition(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, "type-mismatch");
+            assert_eq!(failures[0].cause, ModelRefusalCause::TypeMismatch);
             assert_eq!(failures[0].code, Code::IllTyped);
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -420,7 +440,13 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     match check_field_redefinition(&narrowing, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, "multiplicity-narrowing");
+            assert_eq!(
+                failures[0].cause,
+                ModelRefusalCause::MultiplicityNarrowing {
+                    from: mult(0, Some(5)),
+                    to: mult(1, Some(3)),
+                }
+            );
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -466,7 +492,13 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     match check_subsetting(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, "multiplicity-narrowing");
+            assert_eq!(
+                failures[0].cause,
+                ModelRefusalCause::MultiplicityNarrowing {
+                    from: mult(0, Some(9)),
+                    to: mult(0, Some(5)),
+                }
+            );
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -477,7 +509,13 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     match check_subsetting(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, "subsetting-type");
+            assert_eq!(
+                failures[0].cause,
+                ModelRefusalCause::SubsettingType {
+                    subsetting: ProducerKey::fixture("model.C"),
+                    subsetted: ProducerKey::fixture("model.A"),
+                }
+            );
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -518,7 +556,7 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
             candidates,
             valid_targets,
         }) => {
-            assert_eq!(cause, "redefinition-target");
+            assert_eq!(cause, ModelRefusalCause::RedefinitionTarget);
             assert_eq!(candidates.len(), 1);
             assert!(
                 valid_targets.is_empty(),
@@ -552,7 +590,7 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
             candidates,
             valid_targets,
         }) => {
-            assert_eq!(cause, "redefinition-target");
+            assert_eq!(cause, ModelRefusalCause::RedefinitionTarget);
             assert_eq!(candidates.len(), 2);
             assert_eq!(
                 valid_targets.len(),
@@ -626,7 +664,7 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     match check_field_refinement_obligation(&bundle, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-presence"));
         }
         other => panic!("expected Refused(field-presence), got {other:?}"),
@@ -705,7 +743,7 @@ fn r08c_an_object_typed_narrowing_has_no_proof_form() {
     };
     match check_field_refinement_obligation(&bundle, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("no-proof-form"));
         }
         other => panic!("expected Refused(no-proof-form), got {other:?}"),
@@ -737,7 +775,7 @@ fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain()
     };
     match check_field_refinement_obligation(&bundle, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused(field-domain), got {other:?}"),
@@ -797,7 +835,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
     }
     match check_field_refinement_obligation(&contained(6), &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (f), got {other:?}"),
@@ -854,7 +892,7 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
     };
     match check_field_refinement_obligation(&bundle, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
-            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (g, unrelated clause), got {other:?}"),
@@ -999,7 +1037,7 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
             // FR-272's `invalid_model_binding` cause list is closed; there
             // is no dedicated scalar-domain variant, so this is the
             // catalogued `malformed-declaration`.
-            assert_eq!(refusal.cause, "malformed-declaration");
+            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
         }
         other => panic!("expected Err(malformed-declaration), got {other:?}"),
     }
