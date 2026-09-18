@@ -250,6 +250,10 @@ pub(crate) enum NodeKind {
         reference: Box<Node>,
         absence: AbsenceMode,
     },
+    /// `pre(e)` (FR-153): evaluate `e` with `allInstances`/`lookup`
+    /// underneath it reading the invocation pre population. Identity-typed:
+    /// this node's `value_type` is always exactly its operand's.
+    Pre(Box<Node>),
 }
 
 impl Node {
@@ -273,7 +277,8 @@ impl Node {
             | NodeKind::DecimalNegate(operand, _)
             | NodeKind::ConvertDecimal(operand, _)
             | NodeKind::Flatten(operand)
-            | NodeKind::Size(operand) => vec![operand],
+            | NodeKind::Size(operand)
+            | NodeKind::Pre(operand) => vec![operand],
             NodeKind::Let { value, body, .. } => vec![value, body],
             NodeKind::If {
                 condition,

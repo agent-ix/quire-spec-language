@@ -3,13 +3,14 @@
 //!
 //! Fixtures reuse TC-195 F1 (`model.A`, `model.B`, generalization `B -> A`)
 //! exactly as TC-198 imports it as `M`, and population documents P1/P2 as
-//! TC-198 states them. L07 (`pre(allInstances<T>(p))` in a postcondition),
-//! L08 (FR-149 reference equality/upcast) and L10/L11 (`reaches`/`deref`,
-//! FR-043's graph navigation) are out of this rung's scope: L07's
-//! pre/post-state anchor needs real operation-effect execution this crate
-//! has no evaluator for yet, so FR-153-AC-7 stays unbacked here and is
-//! tracked on QSL #147 instead; see the crate's `src/model/population.rs`
-//! module docs.
+//! TC-198 states them. L07 (`pre(allInstances<T>(p))` in a postcondition,
+//! `admit_invocation`'s created/deleted-identity and operation-frame
+//! enforcement) is backed at this model layer below (the
+//! `l07_invocation_*` tests); the source-expression form of the same
+//! scenario (`Expression::Pre`, the real `Typer`/`Machine`) is
+//! `tests/model_reference_queries.rs`'s own `l07_pre_*` tests. L08 (FR-149
+//! reference equality/upcast) and L10/L11 (`reaches`/`deref`, FR-043's graph
+//! navigation) stay out of this rung's scope.
 
 use std::collections::BTreeSet;
 
@@ -18,7 +19,7 @@ use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord, SubsettingRecord,
+    ObjectTypeRecord, OperationEffect, SubsettingRecord,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
@@ -26,10 +27,10 @@ use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
 use quire_spec_language::model::population::{
-    admit_binding, all_instances, lookup, AbsenceMode, AdmissionChargePoint, AdmissionLimitKind,
-    AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, LookupKey, LookupOutcome,
-    MemberFieldValues, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
-    PopulationMember, ReferenceKey, TypedReference,
+    admit_binding, admit_invocation, all_instances, lookup, AbsenceMode, AdmissionChargePoint,
+    AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
+    LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits, PopulationBinding,
+    PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
@@ -1340,5 +1341,245 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
         other => {
             panic!("expected Refused(invalid_runtime_input/duplicate-member), got {other:?}")
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TC-198 L07: admit_invocation -- created/deleted identities and the
+// operation frame (EXPR-020/021/022)
+// ---------------------------------------------------------------------------
+
+/// TC-198 P1 (see [`p1`]) after the operation's own effect deletes `a2`:
+/// `a1`/`b1` survive unchanged.
+fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
+    PopulationDocument {
+        closed_world: true,
+        model_identity: model_identity.to_owned(),
+        members: vec![member("a1", "model.A"), member("b1", "model.B")],
+    }
+}
+
+/// TC-198 L07's own `model.A.remove` effect: `{fieldWrites: [], creates: [],
+/// deletes: [model.A]}`.
+fn deletes_a_effect() -> OperationEffect {
+    OperationEffect {
+        field_writes: Vec::new(),
+        creates: Vec::new(),
+        deletes: vec![ProducerKey::fixture("model.A")],
+    }
+}
+
+/// An operation effect declaring no frame at all: every create, delete and
+/// field write it did not itself grant is unauthorized.
+fn empty_effect() -> OperationEffect {
+    OperationEffect {
+        field_writes: Vec::new(),
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    }
+}
+
+fn invocation_context<'a>(bundle: &'a Bundle, view: &'a EffectiveView) -> InvocationContext<'a> {
+    InvocationContext {
+        bundle,
+        view,
+        subtype_closure: GeneralizationClosure::Closed,
+        declared_maximum: Some(3),
+    }
+}
+
+/// TC-198 L07: `admit_invocation` admits P1 (pre) and P1-without-`a2` (post)
+/// under `model.A.remove`'s declared frame -- `a2`'s deletion conforms to
+/// the declared `deletes: [model.A]` grant -- and attaches the pre binding
+/// as the post binding's own `pre_anchor`, so `pre(allInstances(p))`/
+/// `pre(lookup(p, r) absent m)` (backed at the source-expression layer by
+/// `tests/model_reference_queries.rs`'s `l07_pre_*` tests) can read it. The
+/// deleted object, `a2`, keeps its pre most-specific type in the attached
+/// pre anchor.
+///
+/// Mutation used: in `enforce_frame`, replaced the deleted-identity loop's
+/// `if !allowed { return Err(..) }` with an unconditional no-op (accepting
+/// every deletion regardless of the declared frame). This test still went
+/// green (it never violates the frame), but
+/// `l07_invocation_refuses_a_delete_outside_the_declared_frame` below went
+/// green when it should have stayed red, confirming the mutation defeats
+/// the guard that test exists to pin; reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-7")]
+fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let universe = object_universe(&bundle).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let effect = deletes_a_effect();
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+
+    let post = match admit_invocation(
+        invocation_context(&bundle, &view),
+        &p1("bundle.n01"),
+        &p1_minus_a2("bundle.n01"),
+        &effect,
+        &mut pre_meter,
+        &mut post_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted invocation, got {other:?}"),
+    };
+
+    let pre = post
+        .pre_anchor()
+        .expect("post binding must carry its pre anchor");
+    assert_eq!(pre.members().len(), 3);
+    assert_eq!(post.members().len(), 2);
+
+    let a2_key = reference_key(&universe, &a, "a2");
+    assert_eq!(
+        pre.members().get(&a2_key),
+        Some(&ProducerKey::fixture("model.A"))
+    );
+    assert!(!post.members().contains_key(&a2_key));
+}
+
+/// A deletion the operation's own effect does not grant refuses
+/// `Code::FrameViolation`/cause `unauthorized-change` -- the same TC-198 L07
+/// scenario (deleting `a2`), but under `empty_effect()`'s empty `deletes:
+/// []`.
+#[test]
+#[trace("TC-198", "FR-151", "FR-153-AC-7")]
+fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let effect = empty_effect();
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &p1("bundle.n01"),
+        &p1_minus_a2("bundle.n01"),
+        &effect,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause, "unauthorized-change");
+            assert!(refusal.detail.contains("a2"));
+        }
+        other => panic!("expected Refused(frame_violation/unauthorized-change), got {other:?}"),
+    }
+}
+
+/// A creation the operation's own effect does not grant refuses the same
+/// way: post names `a9` (of `model.A`), absent from pre, under an effect
+/// declaring no `creates` grant at all.
+#[test]
+#[trace("FR-151", "FR-153-AC-7")]
+fn invocation_refuses_a_create_outside_the_declared_frame() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let effect = empty_effect();
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![
+            member("a1", "model.A"),
+            member("a2", "model.A"),
+            member("b1", "model.B"),
+            member("a9", "model.A"),
+        ],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &p1("bundle.n01"),
+        &post_document,
+        &effect,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause, "unauthorized-change");
+            assert!(refusal.detail.contains("a9"));
+        }
+        other => panic!("expected Refused(frame_violation/unauthorized-change), got {other:?}"),
+    }
+}
+
+/// A surviving member's field value changing pre to post refuses when the
+/// operation's effect does not declare that field a `fieldWrites` member,
+/// and admits when it does -- both over the identical pre/post pair, so only
+/// the declared frame decides the outcome.
+#[test]
+#[trace("FR-151", "FR-153-AC-7")]
+fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admits() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.x", vec!["a2"])],
+        )],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.x", vec!["a9"])],
+        )],
+    };
+
+    let undeclared = empty_effect();
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &undeclared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause, "unauthorized-change");
+            assert!(refusal.detail.contains("a1"));
+            assert!(refusal.detail.contains("model.A.x"));
+        }
+        other => panic!("expected Refused(frame_violation/unauthorized-change), got {other:?}"),
+    }
+
+    let declared = OperationEffect {
+        field_writes: vec![ProducerKey::fixture("model.A.x")],
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Admitted(_) => {}
+        other => panic!(
+            "expected Admitted once model.A.x is a declared fieldWrites member, got {other:?}"
+        ),
     }
 }

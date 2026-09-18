@@ -22,7 +22,7 @@ use ix_trace_rs::trace;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord,
+    ObjectTypeRecord, OperationEffect,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey};
@@ -30,8 +30,9 @@ use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
 use quire_spec_language::model::population::{
-    admit_binding, AbsenceMode, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
-    PopulationBinding, PopulationDocument, PopulationMember,
+    admit_binding, admit_invocation, AbsenceMode, AdmissionMeter, AdmissionOutcome,
+    InvocationContext, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
+    PopulationMember,
 };
 use quire_spec_language::value::{
     BinaryOperator, CardinalityBound, ChargePoint, CheckCause, CheckMode, CheckRefusal,
@@ -200,6 +201,60 @@ fn scenario() -> Scenario {
     }
 }
 
+/// TC-198 P1 (see [`p1`]) after `model.A.remove` deletes `a2`: `a1`/`b1`
+/// survive unchanged.
+fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
+    PopulationDocument {
+        closed_world: true,
+        model_identity: model_identity.to_owned(),
+        members: vec![member("a1", "model.A"), member("b1", "model.B")],
+    }
+}
+
+/// TC-198 L07's own scenario, as a real invocation admission: pre P1,
+/// post P1-without-`a2`, under `model.A.remove`'s declared frame
+/// `{fieldWrites: [], creates: [], deletes: [model.A]}`. The returned
+/// `Scenario`'s `binding` is the admitted *post* binding with the admitted
+/// *pre* binding attached as its `pre_anchor` -- exactly the
+/// `Value::Population` argument a real `pre(..)` source expression reads.
+fn l07_scenario() -> Scenario {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let universe = object_universe(&bundle).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let effect = OperationEffect {
+        field_writes: Vec::new(),
+        creates: Vec::new(),
+        deletes: vec![ProducerKey::fixture("model.A")],
+    };
+    let context = InvocationContext {
+        bundle: &bundle,
+        view: &view,
+        subtype_closure: GeneralizationClosure::Closed,
+        declared_maximum: Some(3),
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_invocation(
+        context,
+        &p1("bundle.n01"),
+        &p1_minus_a2("bundle.n01"),
+        &effect,
+        &mut pre_meter,
+        &mut post_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted invocation, got {other:?}"),
+    };
+    Scenario {
+        universe,
+        a,
+        b,
+        binding,
+    }
+}
+
 /// A checked package whose `TypeEnvironment` declares `M::A`/`M::B` as
 /// object types under their real checked `NodeKey`s (the same 32 bytes as
 /// `scenario`'s own `EffectiveId`s) — required for `ValueType::Reference`
@@ -341,6 +396,11 @@ fn lookup(target: ValueType, absence: AbsenceMode) -> Expression {
         reference: Box::new(Expression::Name("r".to_owned())),
         absence,
     }
+}
+
+/// `pre(inner)` (FR-153).
+fn pre(inner: Expression) -> Expression {
+    Expression::Pre(Box::new(inner))
 }
 
 /// `Value` deliberately has no structural `PartialEq` (equality is the
@@ -1197,5 +1257,174 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
             assert_eq!(elements[0].object_type(), node_key(&scenario.b));
         }
         other => panic!("expected a completed collection, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TC-198 L07: `pre(..)` as a real source expression (EXPR-020/021/022)
+// ---------------------------------------------------------------------------
+
+/// TC-198 L07: `allInstances<M::A>(p)` reads the post population (`a2`
+/// deleted), and `pre(allInstances<M::A>(p))` reads the invocation's pre
+/// population (`a2` still present) -- the identical expression, differing
+/// only in whether it is wrapped in `pre(..)`, over the identical
+/// `Value::Population` argument (`l07_scenario`'s post binding, carrying its
+/// pre anchor).
+///
+/// Mutation used: in `Machine::select_anchor`, changed `Anchor::Pre =>
+/// binding.pre_anchor().ok_or_else(invariant)` to always return `Ok(binding)`
+/// (ignoring the anchor entirely). `pre(allInstances(p))`'s result went from
+/// `[b1, a1, a2]` to `[b1, a1]`, so the assertion below on the pre-anchored
+/// result went red as expected; reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-7")]
+fn l07_pre_all_instances_reads_the_invocation_pre_population() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let target = ValueType::Reference(node_key(&scenario.a));
+
+    let (post_outcome, _) = run(
+        &package,
+        &parameters,
+        &all_instances(target.clone()),
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    let post_expected = vec![
+        object_reference(&scenario.universe, &scenario.b, "b1"),
+        object_reference(&scenario.universe, &scenario.a, "a1"),
+    ];
+    match post_outcome {
+        Outcome::Completed(value) => assert_eq!(reference_elements(&value), post_expected),
+        other => panic!("expected a completed post-anchored collection, got {other:?}"),
+    }
+
+    let (pre_outcome, _) = run(
+        &package,
+        &parameters,
+        &pre(all_instances(target)),
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    let pre_expected = vec![
+        object_reference(&scenario.universe, &scenario.b, "b1"),
+        object_reference(&scenario.universe, &scenario.a, "a1"),
+        object_reference(&scenario.universe, &scenario.a, "a2"),
+    ];
+    match pre_outcome {
+        Outcome::Completed(value) => assert_eq!(reference_elements(&value), pre_expected),
+        other => panic!("expected a completed pre-anchored collection, got {other:?}"),
+    }
+}
+
+/// TC-198 L07: `lookup<M::A>(p, r2) absent empty` is `none` for the deleted
+/// `a2` over the post population, and `pre(lookup<M::A>(p, r2) absent
+/// empty)` is present, `a2` keeping its pre most-specific type `M::A`.
+#[test]
+#[trace("TC-198", "FR-153-AC-7")]
+fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.a))),
+    ];
+    let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
+    let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])]).unwrap();
+
+    let (post_outcome, _) = run(
+        &package,
+        &parameters,
+        &lookup(target.clone(), AbsenceMode::Empty),
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(r2.clone()),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match post_outcome {
+        Outcome::Completed(Value::Option(option)) => assert!(option.payload().is_none()),
+        other => panic!("expected a completed none option for the deleted a2, got {other:?}"),
+    }
+
+    let (pre_outcome, _) = run(
+        &package,
+        &parameters,
+        &pre(lookup(target.clone(), AbsenceMode::Empty)),
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(r2.clone()),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match pre_outcome {
+        Outcome::Completed(Value::Option(option)) => {
+            assert_eq!(option.payload_type(), &target);
+            match option.payload() {
+                Some(Value::Reference(reference)) => {
+                    assert_eq!(*reference, r2);
+                    assert_eq!(reference.object_type(), node_key(&scenario.a));
+                }
+                other => panic!("expected a present a2 payload, got {other:?}"),
+            }
+        }
+        other => panic!("expected a completed present option for pre(a2), got {other:?}"),
+    }
+}
+
+/// EXPR-021: a `pre(..)` anchor's effect is scoped exactly to its own
+/// operand -- once `pre(allInstances(p))` finishes evaluating (bound to
+/// `pre_count` here), a sibling `allInstances(p)` in the same body reads the
+/// post population again, not a drifted pre anchor left over from the
+/// preceding `let` value.
+///
+/// Mutation used: in `Machine::eval`'s `NodeKind::Pre` arm, dropped the
+/// `Task::RestoreAnchor` push (only setting `self.anchor = Anchor::Pre`,
+/// never restoring it). The body's `allInstances(p)` then also read the pre
+/// population (3 members, matching `pre_count`), so the `NotEqual` assertion
+/// below went red as expected (`false`, not `true`); reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-7")]
+fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let pre_count = size(pre(allInstances(p))) in
+    //   size(allInstances(p)) != pre_count
+    let expression = Expression::Let {
+        name: "pre_count".to_owned(),
+        value: Box::new(Expression::Size(Box::new(pre(all_instances(
+            target.clone(),
+        ))))),
+        body: Box::new(Expression::Binary {
+            operator: BinaryOperator::NotEqual,
+            left: Box::new(Expression::Size(Box::new(all_instances(target)))),
+            right: Box::new(Expression::Name("pre_count".to_owned())),
+        }),
+    };
+
+    let (outcome, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    match outcome {
+        Outcome::Completed(Value::Boolean(result)) => assert!(
+            result,
+            "post-anchored allInstances(p) after a pre(..) sibling must not drift to the \
+             pre population (expected 2 post members != 3 pre members)"
+        ),
+        other => panic!("expected a completed boolean, got {other:?}"),
     }
 }

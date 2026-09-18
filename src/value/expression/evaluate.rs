@@ -40,6 +40,7 @@ use super::super::text::compare_text;
 use super::check::Scope;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::refusal::Location;
+use crate::model::population::PopulationBinding;
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
 /// expression where a non-completed outcome originated.
@@ -144,6 +145,17 @@ enum Task<'a> {
     ChargeElement(&'a Node),
     Return,
     Iterate(Box<Iteration<'a>>),
+    /// Restore the anchor `pre(..)` had saved before evaluating its operand.
+    RestoreAnchor(Anchor),
+}
+
+/// Which population an `allInstances`/`lookup` reads: the ambient post
+/// population, or (underneath a `pre(..)`) the invocation's pre population.
+/// FR-153.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Anchor {
+    Post,
+    Pre,
 }
 
 /// A one-binder query or fold in progress.
@@ -166,6 +178,9 @@ pub(crate) struct Machine<'a, 'm> {
     frames: Vec<Vec<Option<Value>>>,
     tasks: Vec<Task<'a>>,
     losses: Vec<LocatedLoss>,
+    /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
+    /// it for its operand and `Task::RestoreAnchor` restores it after.
+    anchor: Anchor,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -184,6 +199,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             frames: Vec::new(),
             tasks: Vec::new(),
             losses: Vec::new(),
+            anchor: Anchor::Post,
         }
     }
 
@@ -214,7 +230,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Retain(node)
                 | Task::ChargeElement(node) => Some(&node.location),
                 Task::Iterate(iteration) => Some(&iteration.node.location),
-                Task::Bind(_) | Task::Return => None,
+                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) => None,
             };
             let location = location.cloned().unwrap_or_else(|| root.location.clone());
             if let Err(stop) = self.step(task) {
@@ -311,6 +327,23 @@ impl<'a, 'm> Machine<'a, 'm> {
             .ok_or_else(invariant)
     }
 
+    /// FR-153: the population `allInstances`/`lookup` reads for `binding` at
+    /// the current anchor -- `binding` itself when reading the ambient post
+    /// population, or `binding`'s attached pre population underneath
+    /// `pre(..)`. A `Pre` anchor with no attached pre population is a
+    /// checked invariant: the checker only admits `pre(..)` where the
+    /// population operand carries one (a postcondition's parameter, bound
+    /// to an admitted invocation).
+    fn select_anchor<'x>(
+        &self,
+        binding: &'x PopulationBinding,
+    ) -> Result<&'x PopulationBinding, Stop> {
+        match self.anchor {
+            Anchor::Post => Ok(binding),
+            Anchor::Pre => binding.pre_anchor().ok_or_else(invariant),
+        }
+    }
+
     fn step(&mut self, task: Task<'a>) -> Result<(), Stop> {
         match task {
             Task::Eval(node) => self.eval(node),
@@ -364,6 +397,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Iterate(iteration) => self.iterate(iteration),
+            Task::RestoreAnchor(previous) => {
+                self.anchor = previous;
+                Ok(())
+            }
         }
     }
 
@@ -417,6 +454,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(source));
                 return Ok(());
             }
+            NodeKind::Pre(operand) => {
+                // FR-153: read the invocation pre population for every
+                // `allInstances`/`lookup` under `operand`, then restore.
+                // Identity-typed, so no `Task::Apply` follows: `operand`'s
+                // own value is `pre(operand)`'s value.
+                self.tasks.push(Task::RestoreAnchor(self.anchor));
+                self.anchor = Anchor::Pre;
+                self.tasks.push(Task::Eval(operand));
+                return Ok(());
+            }
             _ => {}
         }
         self.tasks.push(Task::Apply(node));
@@ -432,7 +479,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::Local(_)
             | NodeKind::Let { .. }
             | NodeKind::If { .. }
-            | NodeKind::Connective(..) => return Err(invariant()),
+            | NodeKind::Connective(..)
+            | NodeKind::Pre(_) => return Err(invariant()),
             NodeKind::Coerce(_, target) => {
                 let value = self.pop_integer()?;
                 if !target.contains(&value) {
@@ -788,7 +836,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let ValueType::Collection(collection_type) = &node.value_type else {
                     return Err(invariant());
                 };
-                evaluate_all_instances(&binding, collection_type, self.meter)?
+                let binding = self.select_anchor(&binding)?;
+                evaluate_all_instances(binding, collection_type, self.meter)?
             }
             NodeKind::Lookup {
                 reference, absence, ..
@@ -808,8 +857,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     },
                     _ => return Err(invariant()),
                 };
+                let binding = self.select_anchor(&binding)?;
                 evaluate_lookup(
-                    &binding,
+                    binding,
                     target_key,
                     *static_key,
                     reference_value,
