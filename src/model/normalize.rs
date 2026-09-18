@@ -150,6 +150,14 @@
 //! redefinition's owner can sort after the type currently being processed
 //! in `type_keys`' ascending order, and its own member/fact counts must
 //! already exist regardless.
+#![allow(
+    clippy::large_enum_variant,
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+)]
+#![allow(
+    clippy::result_large_err,
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -168,14 +176,20 @@ use crate::model::key::{
 };
 use crate::value::length_amount;
 
+/// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
+/// is lower-level than this one so [`crate::model::key`] can depend on the
+/// cause type without a cycle. This path is unchanged for every caller.
+pub use crate::model::refusal::{ModelRefusalCause, OfferedSelection};
+
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelRefusal {
     /// The stable top-level code.
     pub code: Code,
-    /// The FR-150-specific cause tag.
-    pub cause: &'static str,
+    /// The FR-150-specific cause tag (#141: a closed enum, not a bare
+    /// string literal constructed independently at each call site).
+    pub cause: ModelRefusalCause,
     /// A human-readable detail naming the offending declaration(s).
     pub detail: String,
 }
@@ -288,7 +302,9 @@ impl EffectiveView {
             if pair[0].effective_id > pair[1].effective_id {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: "unsorted-view",
+                    cause: ModelRefusalCause::UnsortedView {
+                        at: pair[1].effective_id.clone(),
+                    },
                     detail: format!(
                         "view declarations are not sorted ascending by effective identity at {}",
                         pair[1].effective_id.hex()
@@ -342,6 +358,16 @@ impl ObjectUniverse {
 /// A generalization or field-member producer record is not visited more
 /// than this many times in one ancestor path before normalization refuses
 /// rather than recurse without bound.
+///
+/// #141 P2: this bounds a distinct recursion (the FR-150 generalization
+/// ancestor-path walk over a [`Bundle`]) from [`crate::value::MAX_CHECKING_DEPTH`]
+/// (Complete-V1 expression-checking recursion, `src/value/expression/check.rs`).
+/// Both happen to be 128 because both were
+/// chosen as "a safe bound well inside the host stack" for their own
+/// recursion, not because one normatively constrains the other; nothing in
+/// FR-150 or FR-143 ties a model's generalization depth to an expression's
+/// checking depth. They are independent constants that coincide in value,
+/// not one limit duplicated.
 pub const MAX_GENERALIZATION_DEPTH: usize = 128;
 
 struct Index {
@@ -520,7 +546,9 @@ fn ancestor_paths(
         if stack_len >= MAX_GENERALIZATION_DEPTH {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: "generalization-depth-exceeded",
+                cause: ModelRefusalCause::GeneralizationDepthExceeded {
+                    root: root_key.clone(),
+                },
                 detail: format!(
                     "ancestor path from {} exceeds {MAX_GENERALIZATION_DEPTH} generalization records",
                     root_key.identity
@@ -564,7 +592,10 @@ fn ancestor_paths(
             let listing: Vec<&str> = chain.iter().map(|key| key.identity.as_str()).collect();
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: "specialization-cycle",
+                cause: ModelRefusalCause::SpecializationCycle {
+                    ancestor: ancestor_key.clone(),
+                    via: record.key.clone(),
+                },
                 detail: format!(
                     "{} generalizes back to itself via {}, through the cycle [{}]",
                     ancestor_key.identity,
@@ -643,7 +674,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::FieldMember(member) if !index.types.contains(&member.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-owner",
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: member.key.clone(),
+                        owner: member.owner.clone(),
+                    },
                     detail: format!(
                         "field member {} names owner {}, which is not a declared object type",
                         member.key.identity, member.owner.identity
@@ -653,7 +687,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::Generalization(general) if !index.types.contains(&general.specific) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-specific",
+                    cause: ModelRefusalCause::UnknownSpecific {
+                        generalization: general.key.clone(),
+                        specific: general.specific.clone(),
+                    },
                     detail: format!(
                         "generalization {} names specific {}, which is not a declared object type",
                         general.key.identity, general.specific.identity
@@ -663,7 +700,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::Generalization(general) if !index.types.contains(&general.general) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-general",
+                    cause: ModelRefusalCause::UnknownGeneral {
+                        generalization: general.key.clone(),
+                        general: general.general.clone(),
+                    },
                     detail: format!(
                         "generalization {} names general {}, which is not a declared object type",
                         general.key.identity, general.general.identity
@@ -674,7 +714,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::OperationMember(op) if !index.types.contains(&op.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-owner",
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: op.key.clone(),
+                        owner: op.owner.clone(),
+                    },
                     detail: format!(
                         "operation member {} names owner {}, which is not a declared object type",
                         op.key.identity, op.owner.identity
@@ -688,7 +731,11 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: "unknown-value-type",
+                            cause: ModelRefusalCause::UnknownValueType {
+                                operation: op.key.clone(),
+                                parameter: Some(parameter.key.clone()),
+                                value_type: parameter.value_type.clone(),
+                            },
                             detail: format!(
                                 "operation {} parameter {} names value type {}, which is not a declared type",
                                 op.key.identity,
@@ -704,7 +751,11 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: "unknown-value-type",
+                            cause: ModelRefusalCause::UnknownValueType {
+                                operation: op.key.clone(),
+                                parameter: None,
+                                value_type: result.value_type.clone(),
+                            },
                             detail: format!(
                                 "operation {} result names value type {}, which is not a declared type",
                                 op.key.identity, result.value_type.identity
@@ -716,7 +767,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     if !index.field_member_keys.contains(field) {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: "unknown-field-write",
+                            cause: ModelRefusalCause::UnknownFieldWrite {
+                                operation: op.key.clone(),
+                                field: field.clone(),
+                            },
                             detail: format!(
                                 "operation {} effect writes {}, which is not a declared field member",
                                 op.key.identity, field.identity
@@ -728,7 +782,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     if !index.types.contains(target) {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: "unknown-effect-type",
+                            cause: ModelRefusalCause::UnknownEffectType {
+                                operation: op.key.clone(),
+                                type_name: target.clone(),
+                            },
                             detail: format!(
                                 "operation {} effect names type {}, which is not a declared object type",
                                 op.key.identity, target.identity
@@ -742,7 +799,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-owner",
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: redefinition.key.clone(),
+                        owner: redefinition.owner.clone(),
+                    },
                     detail: format!(
                         "redefinition {} names owner {}, which is not a declared object type",
                         redefinition.key.identity, redefinition.owner.identity
@@ -756,7 +816,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: "unknown-member",
+                            cause: ModelRefusalCause::UnknownMember {
+                                record: redefinition.key.clone(),
+                                member: member.clone(),
+                            },
                             detail: format!(
                                 "redefinition {} names {}, which is not a declared field or operation member",
                                 redefinition.key.identity, member.identity
@@ -768,7 +831,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
             BundleRecord::Subsetting(subsetting) if !index.types.contains(&subsetting.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-owner",
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: subsetting.key.clone(),
+                        owner: subsetting.owner.clone(),
+                    },
                     detail: format!(
                         "subsetting {} names owner {}, which is not a declared object type",
                         subsetting.key.identity, subsetting.owner.identity
@@ -782,7 +848,10 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
-                            cause: "unknown-member",
+                            cause: ModelRefusalCause::UnknownMember {
+                                record: subsetting.key.clone(),
+                                member: member.clone(),
+                            },
                             detail: format!(
                                 "subsetting {} names {}, which is not a declared field or operation member",
                                 subsetting.key.identity, member.identity
@@ -1391,7 +1460,7 @@ fn apply_redefinitions(
                     redefiners.sort();
                     return Err(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: "redefinition-target",
+                        cause: ModelRefusalCause::RedefinitionTarget,
                         detail: format!(
                             "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
                             most_derived[0].owner.identity,
@@ -1414,7 +1483,11 @@ fn apply_redefinitions(
                     .collect();
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: "derivation-conflict",
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: type_key.clone(),
+                        member: target_key.clone(),
+                        redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                    },
                     detail: format!(
                         "type {} has {} undominated redefinitions of {}: {}",
                         type_key.identity,
@@ -1431,7 +1504,10 @@ fn apply_redefinitions(
         if !member_preimages.contains_key(&member_key) {
             return Err(ModelRefusal {
                 code: Code::DanglingReference,
-                cause: "redefinition-unreachable",
+                cause: ModelRefusalCause::RedefinitionUnreachable {
+                    member: target_key.clone(),
+                    owner: type_key.clone(),
+                },
                 detail: format!(
                     "redefinition target {} is not an effective member of {}",
                     target_key.identity, type_key.identity
@@ -1449,7 +1525,10 @@ fn apply_redefinitions(
                 .get_mut(&redefining_key)
                 .ok_or_else(|| ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "redefinition-unreachable",
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: edge.redefining.clone(),
+                        owner: type_key.clone(),
+                    },
                     detail: format!(
                         "redefining member {} is not an effective member of {}",
                         edge.redefining.identity, type_key.identity
@@ -1552,14 +1631,10 @@ fn sort_facts(facts: &mut [PendingFact]) {
 /// Pass two: replay the exact `ModelNormalizationLimitsV1` charge sequence
 /// over an already-built [`Built`] result.
 fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), Incomplete> {
-    let mut record_keys: Vec<ProducerKey> = bundle
-        .records
-        .iter()
-        .map(BundleRecord::key)
-        .cloned()
-        .collect();
-    record_keys.sort();
-    for (index, _) in record_keys.iter().enumerate() {
+    // #141 F11: only the running position (`index + 1`) is charged, never a
+    // key's value or its relative order, so collecting and sorting a
+    // `Vec<ProducerKey>` just to throw the order away was dead work.
+    for index in 0..bundle.records.len() {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
                 .size(LimitKind::ProducerRecords, length_amount(index + 1)),
@@ -1696,7 +1771,9 @@ fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
     if version != INTERFACE_VERSION_1_3_0 && version != INTERFACE_VERSION_1_2_0 {
         return Err(ModelRefusal {
             code: Code::UnknownWire,
-            cause: "unsupported-wire",
+            cause: ModelRefusalCause::UnsupportedWire {
+                version: version.clone(),
+            },
             detail: format!(
                 "producer interface {version} is not supported; only {INTERFACE_VERSION_1_3_0} is normalized and {INTERFACE_VERSION_1_2_0} is refused"
             ),
@@ -1707,14 +1784,17 @@ fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
             if revision_is_absent(&key.revision) {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: "wrong-model-selection",
+                    cause: ModelRefusalCause::WrongModelSelection { key: key.clone() },
                     detail: format!("{} has no producer revision", key.identity),
                 });
             }
             if key.digest.domain != PRODUCER_DIGEST_DOMAIN {
                 return Err(ModelRefusal {
                     code: Code::StaleDependency,
-                    cause: "digest-domain-mismatch",
+                    cause: ModelRefusalCause::DigestDomainMismatch {
+                        key: key.clone(),
+                        domain: key.digest.domain.clone(),
+                    },
                     detail: format!(
                         "{} digest domain is {}; expected {PRODUCER_DIGEST_DOMAIN}",
                         key.identity, key.digest.domain
@@ -1778,14 +1858,9 @@ fn unsupported_capability_refusals(
     bundle: &Bundle,
     meter: &mut Meter,
 ) -> Result<Vec<ModelRefusal>, Incomplete> {
-    let mut record_keys: Vec<ProducerKey> = bundle
-        .records
-        .iter()
-        .map(BundleRecord::key)
-        .cloned()
-        .collect();
-    record_keys.sort();
-    for (index, _) in record_keys.iter().enumerate() {
+    // #141 F11: same dead work as `charge_all` above — the sorted order was
+    // never used, only the running position.
+    for index in 0..bundle.records.len() {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
                 .size(LimitKind::ProducerRecords, length_amount(index + 1)),
@@ -1799,7 +1874,7 @@ fn unsupported_capability_refusals(
         meter.charge(Charge::new(ChargePoint::NormalizeUnsuppliedItem))?;
         refusals.push(ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: "unsupplied-producer-record",
+            cause: ModelRefusalCause::UnsuppliedProducerRecord,
             detail: format!(
                 "{name} for {subject} requires producer interface {INTERFACE_VERSION_1_3_0}; supplied {supplied}"
             ),
