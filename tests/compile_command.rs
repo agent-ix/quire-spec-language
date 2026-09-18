@@ -164,7 +164,7 @@ fn compile_arity_is_checked_before_opening_any_request() {
             .args(arguments)
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         assert_eq!(
             std::str::from_utf8(&output.stderr).unwrap(),

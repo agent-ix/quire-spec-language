@@ -17,5 +17,5 @@ On Unix invoke the real compiler with byte FF in each command/label position, th
 
 ## Expected Results
 
-Invalid command/label encoding returns usage exit 2 without panic; valid OS paths reach actual I/O and parsing, preserving exact source labels and digest.
+Invalid command/label encoding returns exit 20, invalid or refused input, without panic; valid OS paths reach actual I/O and parsing, preserving exact source labels and digest.
 

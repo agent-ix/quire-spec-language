@@ -17,5 +17,5 @@ Invoke the real compiler binary for parse/format, empty identity, invalid/missin
 
 ## Expected Results
 
-Exit codes are 0/1/2/3 for success/refusal/usage-or-I/O/incomplete. Only successful parsing emits parsed, and no path claims logical evaluation.
+Exit codes are 0/20/22 for success/invalid-or-refused-input/incomplete, [FR-301](ix://agent-ix/quire-specification/FR-301)'s contract. Only successful parsing emits parsed, and no path claims logical evaluation.
 
