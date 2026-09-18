@@ -890,11 +890,24 @@ impl<'a> Definedness<'a> {
                 for argument in arguments {
                     self.walk(argument, facts)?;
                 }
+                // Defense in depth: `PackageDeclarations::check`'s own
+                // upfront validation already refuses an out-of-range table
+                // index before any node is walked, so this should be
+                // unreachable — but silently treating a missing table as
+                // "no edges" would hide real call-graph edges rather than
+                // refuse (finding #172-4), so this still reports a typed
+                // refusal instead of `unwrap_or_default`.
+                let table_index = *table;
                 let callees = self
                     .dispatch_tables
-                    .get(*table)
+                    .get(table_index)
                     .map(DispatchTable::callees)
-                    .unwrap_or_default();
+                    .ok_or_else(|| CheckRefusal {
+                        location: node.location.clone(),
+                        cause: CheckCause::InvalidDispatchDeclaration {
+                            detail: format!("dispatch table {table_index} is out of range"),
+                        },
+                    })?;
                 for callee in callees {
                     self.calls.push(CallSite {
                         callee,

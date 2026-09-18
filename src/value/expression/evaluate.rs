@@ -32,7 +32,7 @@ use super::super::numeric::{
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
     OrderingOperator, RationalArithmetic,
 };
-use super::super::outcome::{Outcome, Refusal, Stop, Undefined};
+use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
 use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperation};
 use super::super::rational::Rational;
 use super::super::reference::ObjectEnvironment;
@@ -80,6 +80,9 @@ pub struct LocatedLoss {
 pub(crate) struct Callable<'a> {
     pub(crate) body: &'a Node,
     pub(crate) slots: usize,
+    /// The declared name, needed for the FR-151 `precondition-false` payload
+    /// (`native-diagnostics.md`: "the selected method's effective identity").
+    pub(crate) name: &'a str,
 }
 
 fn comparison(operator: OrderingOperator) -> ComparisonOperator {
@@ -168,6 +171,8 @@ enum Task<'a> {
 struct DispatchGuard {
     body_function: usize,
     arguments: Vec<Value>,
+    /// The `precondition-false` payload to report if the guard fails.
+    failure: PreconditionFailure,
 }
 
 /// A one-binder query or fold in progress.
@@ -394,11 +399,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let DispatchGuard {
                     body_function,
                     arguments,
+                    failure,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames.pop().ok_or_else(invariant)?;
                 if !holds {
-                    return Err(Stop::Undefined(Undefined::PreconditionFalse));
+                    return Err(Stop::Undefined(Undefined::PreconditionFalse(Box::new(
+                        failure,
+                    ))));
                 }
                 let callable = self.functions.get(body_function).ok_or_else(invariant)?;
                 charge_call(self.meter)?;
@@ -872,11 +880,20 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let subtype = reference.object_type();
-                let table = self.dispatch_tables.get(*table).ok_or_else(invariant)?;
-                charge_dispatch_select(self.meter, table.candidate_count())?;
-                let candidate = *table.linked_for(&subtype).ok_or_else(invariant)?;
+                let operation = self
+                    .scope
+                    .dispatch_operations
+                    .iter()
+                    .find(|operation| operation.table == *table)
+                    .ok_or_else(invariant)?;
+                let table_ref = self.dispatch_tables.get(*table).ok_or_else(invariant)?;
+                charge_dispatch_select(self.meter, table_ref.candidate_count())?;
+                let candidate = table_ref
+                    .linked_for(&subtype)
+                    .ok_or_else(invariant)?
+                    .clone();
                 let mut full_arguments = Vec::with_capacity(arguments.len() + 1);
-                full_arguments.push(Value::Reference(reference));
+                full_arguments.push(Value::Reference(reference.clone()));
                 full_arguments.extend(arguments);
                 match candidate.precondition {
                     Some(precondition_function) => {
@@ -884,6 +901,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                             .functions
                             .get(precondition_function)
                             .ok_or_else(invariant)?;
+                        let selected = self
+                            .functions
+                            .get(candidate.body)
+                            .ok_or_else(invariant)?
+                            .name
+                            .to_owned();
                         let mut frame: Vec<Option<Value>> =
                             full_arguments.clone().into_iter().map(Some).collect();
                         frame.resize(callable.slots.max(frame.len()), None);
@@ -891,6 +914,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
+                            failure: PreconditionFailure {
+                                operation: operation.member.clone(),
+                                selected,
+                                receiver: reference,
+                            },
                         })));
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());

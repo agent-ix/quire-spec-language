@@ -5,13 +5,13 @@
 use ix_trace_rs::trace;
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, BinderQuery, BoundViolation, CardinalityBound, ChargePoint,
-    CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimits, ClauseKind,
-    CollectionKind, CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration,
-    CompositeShape, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IllTypedCause,
-    Incomplete, Integer, IntegerInterval, LimitKind, Meter, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation, Outcome,
-    PackageDeclarations, Presence, ProvedInterval, Refusal, ScalarLimits, TypeEnvironment,
-    Undefined, UniverseIdentity, Value, ValueType,
+    CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimits, CollectionKind,
+    CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
+    Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IllTypedCause, Incomplete,
+    Integer, IntegerInterval, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Obligation, Outcome, PackageDeclarations, Presence,
+    ProvedInterval, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -454,14 +454,13 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
 
     let linked = PackageDeclarations {
         aliases: aliases(),
-        functions: vec![FunctionDeclaration {
-            name: "r".to_owned(),
-            parameters: vec![("e".to_owned(), integers(CollectionKind::Set, 0, 2))],
-            result: ValueType::Integer,
-            measure: None,
-            body: reduce,
-            clause_kind: ClauseKind::Body,
-        }],
+        functions: vec![FunctionDeclaration::new(
+            "r".to_owned(),
+            vec![("e".to_owned(), integers(CollectionKind::Set, 0, 2))],
+            ValueType::Integer,
+            None,
+            reduce,
+        )],
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
@@ -498,17 +497,16 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
 #[trace("TC-190", "FR-145-AC-9")]
 #[test]
 fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
-    let add = FunctionDeclaration {
-        name: "add".to_owned(),
-        parameters: vec![
+    let add = FunctionDeclaration::new(
+        "add".to_owned(),
+        vec![
             ("a".to_owned(), ValueType::Integer),
             ("b".to_owned(), ValueType::Integer),
         ],
-        result: ValueType::Integer,
-        measure: None,
-        body: binary(BinaryOperator::Add, name("a"), name("b")),
-        clause_kind: ClauseKind::Body,
-    };
+        ValueType::Integer,
+        None,
+        binary(BinaryOperator::Add, name("a"), name("b")),
+    );
     let package = package(TypeEnvironment::default(), vec![add]);
     let set = integers(CollectionKind::Set, 0, 3);
     let parameters = [("s", set.clone())];

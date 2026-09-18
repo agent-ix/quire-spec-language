@@ -25,10 +25,11 @@ use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::ProducerKey;
 use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use quire_spec_language::value::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind, DispatchCandidate,
-    DispatchOperation, DispatchTable, Expression, FunctionDeclaration, IllTypedCause, Integer,
-    LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Outcome, PackageDeclarations, ScalarLimits, TypeEnvironment, Undefined,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
+    DispatchCandidate, DispatchOperation, DispatchTable, Expression, FunctionDeclaration,
+    IllTypedCause, Integer, IntegerInterval, LimitKind, Location, Meter, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome,
+    PackageDeclarations, PreconditionFailure, ScalarLimits, TypeEnvironment, Undefined,
     UniverseIdentity, Value, ValueType,
 };
 
@@ -83,12 +84,16 @@ fn objects(receiver_type: NodeKey, identity: &str) -> ObjectEnvironment {
     .unwrap()
 }
 
-fn dispatch_expression() -> Expression {
+fn dispatch_expression_on(receiver: &str) -> Expression {
     Expression::Dispatch {
-        receiver: Box::new(Expression::Name("self".to_owned())),
+        receiver: Box::new(Expression::Name(receiver.to_owned())),
         member: "size".to_owned(),
         arguments: Vec::new(),
     }
+}
+
+fn dispatch_expression() -> Expression {
+    dispatch_expression_on("self")
 }
 
 /// A one-candidate dispatch package: `functions[0]` is the linked
@@ -106,31 +111,38 @@ fn one_candidate_package(
         ValueType::Boolean => Expression::Boolean(true),
         other => panic!("this fixture only supports Integer/Boolean results, not {other:?}"),
     };
-    let mut functions = vec![FunctionDeclaration {
-        name: "candidate.body".to_owned(),
-        parameters: vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-        result: result.clone(),
-        measure: None,
-        body: body_value,
-        clause_kind: ClauseKind::Body,
-    }];
+    let mut functions = vec![FunctionDeclaration::clause(
+        "candidate.body",
+        vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+        result.clone(),
+        None,
+        body_value,
+        ClauseKind::Body,
+    )];
     let precondition_index = precondition.map(|expression| {
-        functions.push(FunctionDeclaration {
-            name: "candidate.precondition".to_owned(),
-            parameters: vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-            result: ValueType::Boolean,
-            measure: None,
-            body: expression,
-            clause_kind: ClauseKind::Precondition,
-        });
+        functions.push(FunctionDeclaration::clause(
+            "candidate.precondition",
+            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+            ValueType::Boolean,
+            None,
+            expression,
+            ClauseKind::Precondition,
+        ));
         functions.len() - 1
     });
+    // The precondition function (when present) is its own authored clause,
+    // reachable from the static FR-146 call-graph regardless of the runtime
+    // guard's own decision (`DispatchCandidate::precondition_clauses`); this
+    // single-candidate fixture has no redefinition ancestry, so the set is
+    // just the precondition function itself (D08's self-loop depends on this).
+    let precondition_clauses = precondition_index.into_iter().collect();
     let table = DispatchTable::new(
         vec![(
             receiver_type,
             DispatchCandidate {
                 body: 0,
                 precondition: precondition_index,
+                precondition_clauses,
             },
         )],
         1,
@@ -155,7 +167,7 @@ fn one_candidate_package(
 /// `ill_typed`/`operator-ineligible` while checking a function or operation
 /// body — the same `ClauseKind` context every ordinary named-function body
 /// checks under.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("TC-196")]
 #[test]
 fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition() {
     let receiver_type = key("model.dispatch-calls.Receiver");
@@ -200,69 +212,260 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
     );
 }
 
-/// D06 (FR-151-AC-2): `dispatch.select` charges once, sized by the table's
-/// candidate count (`value_occurrences`), then the selected candidate's
-/// effective precondition decides `true`, and the evaluator proceeds to
-/// charge `function.call` and run the candidate body.
-#[trace("TC-196", "FR-151-AC-2")]
+/// D07, in TC-196's own shape: `function f using V(r: Reference<M::A>):
+/// Integer pure { if r.size() >= 1 then 1 else 0 }` is refused
+/// `ill_typed`/`operator-ineligible` at `r.size()` — an ordinary named
+/// function admitted alongside the dispatch table, not a standalone
+/// clause expression (finding #172-9).
+#[trace("TC-196")]
 #[test]
-fn d06_dispatch_select_evaluates_effective_precondition_true_then_runs_the_body() {
+fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
     let receiver_type = key("model.dispatch-calls.Receiver");
-    let package = one_candidate_package(
-        receiver_type,
-        Some(Expression::Boolean(true)),
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    let body = Expression::If {
+        condition: Box::new(Expression::Binary {
+            operator: BinaryOperator::GreaterOrEqual,
+            left: Box::new(dispatch_expression_on("r")),
+            right: Box::new(Expression::Integer(Integer::from(1_i64))),
+        }),
+        then: Box::new(Expression::Integer(Integer::from(1_i64))),
+        otherwise: Box::new(Expression::Integer(Integer::from(0_i64))),
+    };
+    package.functions.push(FunctionDeclaration::new(
+        "f",
+        vec![("r".to_owned(), ValueType::Reference(receiver_type))],
         ValueType::Integer,
-    )
-    .check(CheckingLimits::default())
-    .unwrap();
-    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
-    let checked = package
-        .check_clause_expression(
-            parameters,
-            &dispatch_expression(),
-            None,
-            ClauseKind::Invariant,
-            CheckMode::Kernel,
-            CheckingLimits::default(),
-        )
-        .unwrap();
-
-    let objects = objects(receiver_type, "r1");
-    let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let evaluation = package
-        .evaluate(
-            &checked,
-            vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
-            &objects,
-            &mut meter,
-        )
-        .unwrap();
-    match evaluation.outcome {
-        Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(1_i64)),
-        other => panic!("expected a completed Integer(1), got {other:?}"),
-    }
-    // `dispatch.select` sizes `value_occurrences` by the table's one
-    // distinct candidate; `function.call` (the candidate body) then charges
-    // one work unit on top of `dispatch.select`'s own.
-    assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 1);
-    assert!(meter.consumed(LimitKind::WorkUnits) >= 2);
+        None,
+        body,
+    ));
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a dispatch call inside an ordinary function body must be refused");
+    assert!(
+        refusals.iter().any(|refusal: &CheckRefusal| refusal.cause
+            == CheckCause::IllTyped(IllTypedCause::OperatorIneligible)),
+        "expected an IllTyped/OperatorIneligible refusal, got {refusals:?}"
+    );
 }
 
-/// D06 (FR-151-AC-2): a `false` effective precondition undefines the call
-/// (`Undefined::PreconditionFalse`) instead of running the candidate body —
-/// the candidate body's own `function.call`/`1` never evaluates.
-#[trace("TC-196", "FR-151-AC-2")]
+/// FR-151 (`quire.model.dispatch.single/v1`): a dispatch call argument is
+/// type-checked "with reference upcasts only" — never the `Integer`/`Int[..]`
+/// widening an ordinary call's argument admits (finding #172-10).
+#[trace("TC-196")]
 #[test]
-fn d06_dispatch_select_evaluates_effective_precondition_false_is_undefined() {
+fn dispatch_argument_never_admits_integer_to_int_coercion() {
     let receiver_type = key("model.dispatch-calls.Receiver");
-    let package = one_candidate_package(
-        receiver_type,
-        Some(Expression::Boolean(false)),
+    let narrow =
+        ValueType::Int(IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64)).unwrap());
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.functions[0]
+        .parameters
+        .push(("n".to_owned(), narrow.clone()));
+    package.dispatch_operations[0].parameters = vec![narrow];
+    let checked_package = package.check(CheckingLimits::default()).unwrap();
+    let parameters = vec![
+        ("self".to_owned(), ValueType::Reference(receiver_type)),
+        ("n".to_owned(), ValueType::Integer),
+    ];
+    let call = Expression::Dispatch {
+        receiver: Box::new(Expression::Name("self".to_owned())),
+        member: "size".to_owned(),
+        arguments: vec![Expression::Name("n".to_owned())],
+    };
+    let refusal = checked_package
+        .check_clause_expression(
+            parameters,
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect_err("an unbounded Integer argument must not coerce into a dispatch operation's Int[..] parameter");
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
+/// D07 (finding #172-6): a synthesized dispatch candidate body is never
+/// `callable_by_name` — an ordinary named `Call` targeting it by its
+/// internal name (`"candidate.body"`) is refused `missing-name`, the same
+/// as any other undeclared name, closing the bypass that would otherwise
+/// let an ordinary function body reach a dispatch candidate's own body or
+/// precondition clause without ever going through `dispatch_call`'s
+/// clause-kind restriction.
+#[trace("TC-196")]
+#[test]
+fn synthesized_dispatch_candidate_is_not_callable_by_name() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.functions.push(FunctionDeclaration::new(
+        "f",
+        vec![("self".to_owned(), ValueType::Reference(receiver_type))],
         ValueType::Integer,
+        None,
+        Expression::Call {
+            name: "candidate.body".to_owned(),
+            arguments: vec![Expression::Name("self".to_owned())],
+        },
+    ));
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a synthesized candidate body must not be callable by name");
+    assert!(
+        refusals.iter().any(|refusal: &CheckRefusal| refusal.cause
+            == CheckCause::MissingName("candidate.body".to_owned())),
+        "expected a MissingName(\"candidate.body\") refusal, got {refusals:?}"
+    );
+}
+
+/// FR-151 (finding #172-4): an out-of-range candidate body function index
+/// is refused `invalid_package`/`invalid-value` upfront, before any node is
+/// typed — never an `unwrap_or_default`/panic on the malformed table.
+#[trace("TC-196")]
+#[test]
+fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatch() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.dispatch_tables[0] = DispatchTable::new(
+        vec![(
+            receiver_type,
+            DispatchCandidate {
+                body: 99,
+                precondition: None,
+                precondition_clauses: Vec::new(),
+            },
+        )],
+        1,
+    );
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("an out-of-range candidate body index must be refused");
+    assert!(
+        refusals.iter().any(|refusal: &CheckRefusal| matches!(
+            &refusal.cause,
+            CheckCause::InvalidDispatchDeclaration { detail }
+                if detail.contains("out of range")
+        )),
+        "expected an InvalidDispatchDeclaration/out-of-range refusal, got {refusals:?}"
+    );
+}
+
+/// FR-151 (finding #172-4): a candidate body whose declared parameter count
+/// does not match the dispatch operation's own arity (receiver plus
+/// arguments) is refused `invalid_package`/`invalid-value`, not admitted
+/// with a silently mismatched call frame.
+#[trace("TC-196")]
+#[test]
+fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    // The operation declares one extra Integer argument that no candidate
+    // function accepts (`one_candidate_package`'s body only takes `self`).
+    package.dispatch_operations[0].parameters = vec![ValueType::Integer];
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a candidate/operation arity mismatch must be refused");
+    assert!(
+        refusals.iter().any(|refusal: &CheckRefusal| matches!(
+            &refusal.cause,
+            CheckCause::InvalidDispatchDeclaration { detail } if detail.contains("parameters")
+        )),
+        "expected an InvalidDispatchDeclaration/arity refusal, got {refusals:?}"
+    );
+}
+
+/// A two-candidate `model.A`/`model.B` (`B <= A`) bridge fixture, `size`
+/// returning `1` for A's own body and `2` for B's, with an optional own
+/// precondition on each (`PA`/`PB`). `B.size` redefines `A.size`.
+fn ab_bridge_clauses(
+    receiver_type: NodeKey,
+    pa: Option<Expression>,
+    pb: Option<Expression>,
+) -> OperationClauses {
+    let a = ProducerKey::fixture("model.A.size");
+    let b = ProducerKey::fixture("model.B.size");
+    let mut clauses = OperationClauses::default();
+    clauses.member.insert(a.clone(), "size".to_owned());
+    for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
+        clauses.parameters.insert(
+            operation.clone(),
+            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+        );
+        clauses.result.insert(operation.clone(), ValueType::Integer);
+        clauses.own_body.insert(
+            operation.clone(),
+            Expression::Integer(Integer::from(result)),
+        );
+    }
+    if let Some(pa) = pa {
+        clauses.own_precondition.insert(a, pa);
+    }
+    if let Some(pb) = pb {
+        clauses.own_precondition.insert(b, pb);
+    }
+    clauses
+}
+
+/// Links the `model.A`/`model.B` bridge fixture (see [`bridge_bundle`]) with
+/// the given `PA`/`PB` own-precondition clauses, for a call site whose
+/// static receiver type is `receiver_type` and whose root operation is
+/// `model.A.size`.
+fn ab_bridge_package(
+    receiver_type: NodeKey,
+    pa: Option<Expression>,
+    pb: Option<Expression>,
+) -> quire_spec_language::value::CheckedPackage {
+    let bundle = bridge_bundle();
+    let view = bridge_view(&bundle);
+    let a_type = key("model.A");
+    let b_type = key("model.B");
+    let clauses = ab_bridge_clauses(a_type, pa, pb);
+    let mut object_keys = BTreeMap::new();
+    object_keys.insert(ProducerKey::fixture("model.A"), a_type);
+    object_keys.insert(ProducerKey::fixture("model.B"), b_type);
+    let mut meter =
+        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let root = DispatchRoot {
+        key: ProducerKey::fixture("model.A.size"),
+        receiver_type,
+        closure: GeneralizationClosure::Closed,
+    };
+    let mut declarations =
+        checked_dispatch_operation(&bundle, &view, &root, &object_keys, &clauses, &mut meter)
+            .unwrap_or_else(|refusal| {
+                panic!("expected a linked, checked dispatch family, got {refusal:?}")
+            });
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(a_type, "A", vec![]),
+            ObjectTypeDeclaration::new(b_type, "B", vec![]),
+        ],
     )
-    .check(CheckingLimits::default())
     .unwrap();
-    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
+    declarations.types = types;
+    declarations.check(CheckingLimits::default()).unwrap()
+}
+
+/// D06 (FR-151-AC-7/AC-8): a `B`-typed receiver, statically declared
+/// `Reference<B>` at the call site, always selects `B.size` — the
+/// most-specific redefining candidate — never `A.size`, the less-specific
+/// method `B.size` redefines. `B` declares no own precondition at all, and
+/// `A`'s own precondition is `false`: since the absent-precondition-is-true
+/// rule (finding #172-1) makes `B`'s effective precondition `true`
+/// unconditionally (its own clause is absent, so no ancestor's precondition
+/// is even consulted), the call still completes with `B`'s own body value,
+/// proving both properties at once.
+#[trace("TC-196", "FR-151-AC-7", "FR-151-AC-8")]
+#[test]
+fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific() {
+    let b_type = key("model.B");
+    let package = ab_bridge_package(b_type, Some(Expression::Boolean(false)), None);
+
+    let objects = objects(b_type, "b1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
     let checked = package
         .check_clause_expression(
             parameters,
@@ -274,29 +477,88 @@ fn d06_dispatch_select_evaluates_effective_precondition_false_is_undefined() {
         )
         .unwrap();
 
-    let objects = objects(receiver_type, "r1");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let evaluation = package
         .evaluate(
             &checked,
-            vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
+            vec![Value::Reference(receiver_reference(b_type, "b1"))],
             &objects,
             &mut meter,
         )
         .unwrap();
     match evaluation.outcome {
-        Outcome::Undefined(reason) => assert_eq!(reason, Undefined::PreconditionFalse),
+        Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(2_i64)),
+        other => panic!("expected a completed Integer(2) (B's own body), got {other:?}"),
+    }
+    // `dispatch.select` sizes `value_occurrences` by the family's two
+    // distinct candidates; `function.call` then charges exactly one work
+    // unit for B's own body (never A's — A's body is never even
+    // considered, matching zero additional `function.call` charges).
+    assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 2);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
+}
+
+/// D06 (FR-151-AC-7/AC-8): an `A`-typed receiver with `A`'s own precondition
+/// `false` (no ancestor to inherit from — `A` is the family's root) is
+/// refused `Undefined::PreconditionFalse`, and the candidate body's own
+/// `function.call` never charges: only `dispatch.select`'s own charge is
+/// consumed.
+#[trace("TC-196", "FR-151-AC-7", "FR-151-AC-8")]
+#[test]
+fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() {
+    let a_type = key("model.A");
+    let package = ab_bridge_package(a_type, Some(Expression::Boolean(false)), None);
+
+    let objects = objects(a_type, "a1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
+    let checked = package
+        .check_clause_expression(
+            parameters,
+            &dispatch_expression(),
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![Value::Reference(receiver_reference(a_type, "a1"))],
+            &objects,
+            &mut meter,
+        )
+        .unwrap();
+    match evaluation.outcome {
+        Outcome::Undefined(Undefined::PreconditionFalse(failure)) => {
+            assert_eq!(
+                *failure,
+                PreconditionFailure {
+                    operation: "size".to_owned(),
+                    selected: "model.A.size".to_owned(),
+                    receiver: receiver_reference(a_type, "a1"),
+                }
+            );
+        }
         other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
     }
+    // Only `dispatch.select` charges (sized by the family's two distinct
+    // candidates); the candidate body's own `function.call` never runs.
+    assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 2);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
 }
 
-/// D08 (FR-151-AC-4): a strongly connected component reached only through a
+/// D08 (FR-151-AC-3): a strongly connected component reached only through a
 /// dispatch edge is refused `invalid_package`/`definition-cycle` — here the
 /// candidate's own effective precondition dispatches back to itself, the
-/// smallest possible dispatch cycle — before the measure-decrease
-/// obligation (which this pseudo-function, having no `decreases` clause,
-/// would otherwise fail on `missing-measure`) is even attempted.
-#[trace("TC-196", "FR-151-AC-4")]
+/// smallest possible dispatch cycle (call graph nodes `{"candidate.precondition"}`,
+/// a single self-loop edge `"candidate.precondition" -> "candidate.precondition"`)
+/// — before the measure-decrease obligation (which this pseudo-function,
+/// having no `decreases` clause, would otherwise fail on `missing-measure`)
+/// is even attempted.
+#[trace("TC-196", "FR-151-AC-3")]
 #[test]
 fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
     let receiver_type = key("model.dispatch-calls.Receiver");
@@ -308,12 +570,28 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
     let refusals = package
         .check(CheckingLimits::default())
         .expect_err("a dispatch-edge cycle must be refused");
-    assert!(
-        refusals.iter().any(|refusal: &CheckRefusal| matches!(
-            refusal.cause,
-            CheckCause::DefinitionCycle { .. }
-        )),
-        "expected a DefinitionCycle refusal, got {refusals:?}"
+    let refusal = refusals
+        .iter()
+        .find(|refusal: &&CheckRefusal| matches!(refusal.cause, CheckCause::DefinitionCycle { .. }))
+        .unwrap_or_else(|| panic!("expected a DefinitionCycle refusal, got {refusals:?}"));
+    assert_eq!(
+        refusal.cause,
+        CheckCause::DefinitionCycle {
+            edges: vec![(
+                "candidate.precondition".to_owned(),
+                "candidate.precondition".to_owned(),
+            )],
+        }
+    );
+    assert_eq!(
+        refusal.location,
+        Location {
+            origin: Origin::Body {
+                function: "candidate.precondition".to_owned(),
+                index: 1,
+            },
+            path: Vec::new(),
+        }
     );
 }
 
@@ -432,7 +710,7 @@ fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
 /// (`DispatchTable::linked_for`) works once a receiver's most-specific type
 /// is in hand; this test proves the *bridge* assembles a real multi-candidate
 /// table and functions array correctly (`value_occurrences == 2`, below).
-#[trace("TC-196", "FR-151-AC-1", "FR-151-AC-2")]
+#[trace("TC-196")]
 #[test]
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let bundle = bridge_bundle();

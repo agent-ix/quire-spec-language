@@ -6,13 +6,13 @@ use ix_trace_rs::trace;
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
-    ClauseKind, CollectionKind, CollectionType, CompositeDeclaration, CompositeShape,
-    DefinitionLock, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
-    IeeeWidth, IllTypedCause, Incomplete, Integer, IntegerInterval, LimitKind, MeasureObligation,
-    Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    Obligation, OptionValue, Origin, Outcome, PackageDeclarations, Presence, ProvedInterval,
-    Rational, RationalDomain, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity,
-    Value, ValueType,
+    CollectionKind, CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock,
+    Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth,
+    IllTypedCause, Incomplete, Integer, IntegerInterval, LimitKind, MeasureObligation, Meter,
+    NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
+    OptionValue, Origin, Outcome, PackageDeclarations, Presence, ProvedInterval, Rational,
+    RationalDomain, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -125,17 +125,16 @@ fn function(
     measure: Option<Expression>,
     body: Expression,
 ) -> FunctionDeclaration {
-    FunctionDeclaration {
-        name: spelling.to_owned(),
-        parameters: parameters
+    FunctionDeclaration::new(
+        spelling.to_owned(),
+        parameters
             .iter()
             .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
             .collect(),
         result,
         measure,
         body,
-        clause_kind: ClauseKind::Body,
-    }
+    )
 }
 
 fn declarations(

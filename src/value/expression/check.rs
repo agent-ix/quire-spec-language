@@ -162,6 +162,11 @@ pub(crate) struct Signature {
     pub(crate) name: String,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) result: ValueType,
+    /// Whether an ordinary named [`Expression::Call`] may resolve to this
+    /// signature (TC-196 D07's bypass: a crate-internal FR-151 synthesized
+    /// dispatch candidate body or precondition clause is never callable by
+    /// plain name, only reachable through a real dispatched call).
+    pub(crate) callable_by_name: bool,
 }
 
 /// A local name in scope.
@@ -1269,7 +1274,7 @@ impl<'a> Typer<'a> {
             .signatures
             .iter()
             .enumerate()
-            .filter(|(_, signature)| signature.name == name)
+            .filter(|(_, signature)| signature.name == name && signature.callable_by_name)
             .map(|(index, _)| index)
             .collect();
         if let Some(&function) = functions.first() {
@@ -1384,7 +1389,11 @@ impl<'a> Typer<'a> {
         for (index, (argument, parameter)) in
             arguments.iter().zip(&operation.parameters).enumerate()
         {
-            typed_arguments.push(self.check_as(argument, parameter, &location.child(index + 1))?);
+            typed_arguments.push(self.check_dispatch_argument(
+                argument,
+                parameter,
+                &location.child(index + 1),
+            )?);
         }
         Ok(node(
             NodeKind::Dispatch {
@@ -1395,6 +1404,74 @@ impl<'a> Typer<'a> {
             operation.result.clone(),
             location,
         ))
+    }
+
+    /// A dispatch call argument against its declared parameter type
+    /// (`quire.model.dispatch.single/v1`: "its arguments are type-checked
+    /// statically against `o`'s signature with reference upcasts only").
+    /// Unlike [`Self::check_as`], this never calls [`coerce`]: an ordinary
+    /// call admits an `Integer`/`Int[..]` argument into a wider or
+    /// differently-bounded `Int[..]` parameter, which a dispatch call must
+    /// not (finding #172-10). This checker has no object-type generalization
+    /// data of its own (`TypeEnvironment` carries none), so a `Reference<T>`
+    /// argument is admitted only where `T` exactly matches the declared
+    /// parameter — the reflexive case of "upcast only," never a wider
+    /// admission than the spec allows.
+    fn check_dispatch_argument(
+        &mut self,
+        expression: &Expression,
+        required: &ValueType,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        match expression {
+            Expression::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                self.enter(location)?;
+                let condition =
+                    self.check_as(condition, &ValueType::Boolean, &location.child(0))?;
+                let then = self.check_dispatch_argument(then, required, &location.child(1))?;
+                let otherwise =
+                    self.check_dispatch_argument(otherwise, required, &location.child(2))?;
+                self.leave();
+                Ok(node(
+                    NodeKind::If {
+                        condition: Box::new(condition),
+                        then: Box::new(then),
+                        otherwise: Box::new(otherwise),
+                    },
+                    required.clone(),
+                    location,
+                ))
+            }
+            Expression::Let { name, value, body } => {
+                self.enter(location)?;
+                let value = self.infer(value, None, &location.child(0))?;
+                let slot = self.bind(name, value.value_type.clone(), location)?;
+                let body = self.check_dispatch_argument(body, required, &location.child(1))?;
+                self.unbind(1);
+                self.leave();
+                Ok(node(
+                    NodeKind::Let {
+                        slot,
+                        value: Box::new(value),
+                        body: Box::new(body),
+                    },
+                    required.clone(),
+                    location,
+                ))
+            }
+            _ => {
+                let typed = self.infer(expression, Some(required), location)?;
+                if &typed.value_type == required {
+                    Ok(typed)
+                } else {
+                    Err(mismatch(location))
+                }
+            }
+        }
     }
 
     fn record(

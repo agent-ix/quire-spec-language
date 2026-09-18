@@ -144,7 +144,7 @@ pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
-pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
+pub use outcome::{BoundViolation, Outcome, PreconditionFailure, Refusal, Undefined};
 pub use package_identity::{NodeDefect, PreimageDefect};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,

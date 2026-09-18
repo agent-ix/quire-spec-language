@@ -158,6 +158,61 @@ fn root(origin: Origin) -> Location {
     }
 }
 
+fn invalid_dispatch(detail: String) -> CheckRefusal {
+    CheckRefusal {
+        location: root(Origin::Expression),
+        cause: CheckCause::InvalidDispatchDeclaration { detail },
+    }
+}
+
+/// One dispatch-table function index against the dispatch operation it must
+/// conform to: `expected_arity` is the receiver plus every declared
+/// argument, `result` is `Boolean` for a precondition (clause or combinator)
+/// and the operation's own declared result for a body (finding #172-4:
+/// validate every dispatch table/candidate index and signature arity/type
+/// upfront, rather than trusting a caller-supplied table at evaluation
+/// time).
+fn validate_dispatch_function(
+    functions: &[FunctionDeclaration],
+    index: usize,
+    call_parameters: &[ValueType],
+    result: &ValueType,
+    role: &str,
+) -> Result<(), CheckRefusal> {
+    let Some(function) = functions.get(index) else {
+        return Err(invalid_dispatch(format!(
+            "{role} function {index} is out of range"
+        )));
+    };
+    let expected_arity = call_parameters.len() + 1;
+    if function.parameters.len() != expected_arity {
+        return Err(invalid_dispatch(format!(
+            "{role} function {index} has {} parameters, expected {expected_arity} \
+             (the receiver plus the dispatch operation's own arguments)",
+            function.parameters.len()
+        )));
+    }
+    let mismatched = function
+        .parameters
+        .iter()
+        .skip(1)
+        .map(|(_, value_type)| value_type)
+        .zip(call_parameters)
+        .any(|(declared, expected)| declared != expected);
+    if mismatched {
+        return Err(invalid_dispatch(format!(
+            "{role} function {index}'s parameter types do not match the dispatch \
+             operation's declared arguments"
+        )));
+    }
+    if &function.result != result {
+        return Err(invalid_dispatch(format!(
+            "{role} function {index}'s result type does not match its declared result"
+        )));
+    }
+    Ok(())
+}
+
 impl PackageDeclarations {
     /// Check every function: duplicate names, declared types, typing, static
     /// definedness and termination, in that order. Every refusal is made
@@ -192,6 +247,51 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        for operation in &self.dispatch_operations {
+            let Some(table) = self.dispatch_tables.get(operation.table) else {
+                refusals.push(invalid_dispatch(format!(
+                    "dispatch operation {} names out-of-range table {}",
+                    operation.member, operation.table
+                )));
+                continue;
+            };
+            for (_, candidate) in table.entries() {
+                if let Err(refusal) = validate_dispatch_function(
+                    &self.functions,
+                    candidate.body,
+                    &operation.parameters,
+                    &operation.result,
+                    "body",
+                ) {
+                    refusals.push(refusal);
+                }
+                if let Some(precondition) = candidate.precondition {
+                    if let Err(refusal) = validate_dispatch_function(
+                        &self.functions,
+                        precondition,
+                        &operation.parameters,
+                        &ValueType::Boolean,
+                        "precondition",
+                    ) {
+                        refusals.push(refusal);
+                    }
+                }
+                for &clause in &candidate.precondition_clauses {
+                    if let Err(refusal) = validate_dispatch_function(
+                        &self.functions,
+                        clause,
+                        &operation.parameters,
+                        &ValueType::Boolean,
+                        "precondition clause",
+                    ) {
+                        refusals.push(refusal);
+                    }
+                }
+            }
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         let scope = Scope {
             types: self.types,
             enums: self.enums,
@@ -208,6 +308,7 @@ impl PackageDeclarations {
                 name: function.name.clone(),
                 parameters: function.parameters.clone(),
                 result: function.result.clone(),
+                callable_by_name: function.callable_by_name,
             })
             .collect();
         let mut nodes = 0_u64;
@@ -232,13 +333,16 @@ impl PackageDeclarations {
                             function: function.name.clone(),
                             index,
                         });
-                        let mut typer = Typer::new(
-                            &scope,
-                            &signatures,
-                            limits,
-                            &mut nodes,
-                            function.clause_kind,
-                        );
+                        // A `decreases` measure is always checked as
+                        // `ClauseKind::Body` (`syntax.rs`'s own doc: "A
+                        // function body, an operation body, or a `decreases`
+                        // measure"), never `function.clause_kind`: FR-151's
+                        // dispatch-call restriction gates on the *body's*
+                        // context, and a measure is its own, always-Body
+                        // context regardless of what the body itself is
+                        // checked as (finding #172-6).
+                        let mut typer =
+                            Typer::new(&scope, &signatures, limits, &mut nodes, ClauseKind::Body);
                         bind_parameters(&mut typer, &function.parameters, &at)?;
                         Some(typer.infer(measure, None, &at)?)
                     }
@@ -252,6 +356,7 @@ impl PackageDeclarations {
                         name: function.name,
                         parameters: function.parameters,
                         result: function.result,
+                        callable_by_name: function.callable_by_name,
                     },
                     body,
                     measure,
@@ -396,6 +501,7 @@ impl CheckedPackage {
             .map(|function| Callable {
                 body: &function.body,
                 slots: function.slots,
+                name: &function.signature.name,
             })
             .collect()
     }

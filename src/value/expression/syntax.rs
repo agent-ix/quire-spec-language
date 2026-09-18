@@ -349,10 +349,20 @@ impl Expression {
 ///
 /// Also used for a checked FR-151 dispatch candidate's own body or effective
 /// precondition, so both share the FR-146 call-graph and termination
-/// machinery: [`clause_kind`](Self::clause_kind) then reads
+/// machinery: [`clause_kind`](Self::clause) then reads
 /// [`ClauseKind::Precondition`] instead of the default
 /// [`ClauseKind::Body`], since a dispatched call is admitted inside a
 /// precondition but not inside an operation body (TC-196 D06/D07/D08).
+///
+/// `clause_kind` and `callable_by_name` are crate-private: neither is a bare
+/// mutable field a caller can set independently of the other, and a
+/// synthesized FR-151 dispatch candidate body or precondition clause is
+/// never itself reachable through an ordinary named [`Expression::Call`]
+/// (TC-196 D07's own restriction would otherwise be reachable by calling a
+/// candidate directly instead of dispatching to it). Build one with
+/// [`Self::new`] (an ordinary named function, name-callable) or
+/// [`Self::clause`] (an invariant/precondition/postcondition clause, or a
+/// crate-internal synthesized dispatch candidate, never name-callable).
 #[derive(Clone, Debug)]
 pub struct FunctionDeclaration {
     /// The declared name.
@@ -367,5 +377,57 @@ pub struct FunctionDeclaration {
     pub body: Expression,
     /// The clause this declaration's body is checked as. Every ordinary
     /// named function is [`ClauseKind::Body`].
-    pub clause_kind: ClauseKind,
+    pub(crate) clause_kind: ClauseKind,
+    /// Whether an ordinary named [`Expression::Call`] elsewhere in the same
+    /// package may resolve to this declaration. `false` for every
+    /// crate-internal FR-151 synthesized function (TC-196 D07's bypass:
+    /// closing the clause-kind restriction off syntax alone still leaves a
+    /// candidate's body or precondition callable by plain name unless this
+    /// is also `false`).
+    pub(crate) callable_by_name: bool,
+}
+
+impl FunctionDeclaration {
+    /// An ordinary named function: a real, name-callable declaration checked
+    /// as [`ClauseKind::Body`].
+    pub fn new(
+        name: impl Into<String>,
+        parameters: Vec<(String, ValueType)>,
+        result: ValueType,
+        measure: Option<Expression>,
+        body: Expression,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            parameters,
+            result,
+            measure,
+            body,
+            clause_kind: ClauseKind::Body,
+            callable_by_name: true,
+        }
+    }
+
+    /// A declaration checked as `clause_kind`, never reachable through an
+    /// ordinary named [`Expression::Call`]: an invariant, precondition or
+    /// postcondition clause, or (crate-internal) a synthesized FR-151
+    /// dispatch candidate body or effective precondition.
+    pub fn clause(
+        name: impl Into<String>,
+        parameters: Vec<(String, ValueType)>,
+        result: ValueType,
+        measure: Option<Expression>,
+        body: Expression,
+        clause_kind: ClauseKind,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            parameters,
+            result,
+            measure,
+            body,
+            clause_kind,
+            callable_by_name: false,
+        }
+    }
 }

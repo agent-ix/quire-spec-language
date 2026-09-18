@@ -686,8 +686,8 @@ mod checked {
     use super::*;
     use quire_spec_language::value::{
         BinaryOperator, BoundViolation, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckingLimits, ClauseKind, Expression, FieldInitializer,
-        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal,
+        CheckedPackage, CheckingLimits, Expression, FieldInitializer, FunctionDeclaration,
+        InputRefusal, Obligation, PackageDeclarations, Refusal,
     };
 
     fn name(spelling: &str) -> Expression {
@@ -725,14 +725,13 @@ mod checked {
         parameters: &[(&str, ValueType)],
         body: Expression,
     ) -> FunctionDeclaration {
-        FunctionDeclaration {
-            name: spelling.to_owned(),
-            parameters: owned(parameters),
-            result: ValueType::Integer,
-            measure: None,
+        FunctionDeclaration::new(
+            spelling.to_owned(),
+            owned(parameters),
+            ValueType::Integer,
+            None,
             body,
-            clause_kind: ClauseKind::Body,
-        }
+        )
     }
 
     fn owned(parameters: &[(&str, ValueType)]) -> Vec<(String, ValueType)> {
