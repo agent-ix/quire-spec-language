@@ -67,13 +67,34 @@ This is stated in `normalize.rs`'s module doc, not a silent gap.
 
 TC-195 N03 (ambiguous member-name checking) and N04's second clause (checking
 a `variant` type reference in source) require integrating the model with the
-existing expression/type checker, outside this rung's engine. N04's first
-clause (a producer record missing its `revision` member) and N08 (producer
-interface `1.2.0`'s ten `unsupplied-producer-record` charges) require a wire
-decoder this rung does not have — `Bundle` is a typed value the caller
-constructs directly, not a wire-format decode target (module doc,
-`src/model/bundle.rs`), so "a required member absent from the wire" is not a
-constructible input here and is not silently approximated.
+existing expression/type checker, outside this rung's engine; still not
+covered. N04's first clause (a producer key with an absent revision) and N08
+(producer interface `1.2.0`'s ten `unsupplied-producer-record` refusals, in
+the fixed TC-195 order) are now both covered: `Bundle` is a typed value the
+caller constructs directly rather than a wire-format decode target, so
+"absent" here means the caller supplying an empty `revision.namespace`/
+`revision.value` on an otherwise-constructed key, which `decode_check`
+refuses `invalid_model_binding`/`wrong-model-selection`
+(`n04_absent_revision_refuses_wrong_model_selection`); the `1.2.0` sequence is
+covered by `n08_interface_1_2_0_refuses_every_missing_capability_in_fixed_order`,
+asserting all ten refusals' code, cause, detail text and exact order.
+
+TC-195 N10's `invalid_mutations` (six named mutations against an
+already-constructed effective declaration/view, not a wire decode) split
+into two groups. Three are "refused by the semantic check" this engine now
+implements and tests: `unsorted-derivation`/`duplicate-path`
+(`EffectiveDeclarationPreimage::validate_derivation`,
+`n10_unsorted_derivation_refuses_by_the_semantic_check`,
+`n10_duplicate_path_refuses_by_the_semantic_check`) and `unsorted-view`
+(`EffectiveView::validate_order`, `n10_unsorted_view_refuses_by_the_semantic_check`).
+The other three — `stale-digest`, `cross-domain-producer-digest`,
+`owner-as-producer-key` — are named in the vector as "refused by schema"
+against `model-effective-declaration.schema.json`; this rung has no wire
+schema validator (the same reason N04/N08 were previously uncovered, before
+this update fixed the two that *were* representable as typed `Bundle`
+values). They remain honestly uncovered here, named individually with this
+reason, rather than silently omitted from the gap enumeration the way this
+document previously omitted N10 in its entirety.
 
 FR-151, FR-152 and FR-153 are not started: no `src/model/` file addresses
 conformance dispatch resolution (FR-151), systems-model reference binding
@@ -96,9 +117,15 @@ Native `quoin validate --repo . --strict` reports no repository finding.
 | Record-order independence of the effective view | FR-150-AC-4 | `n07_record_order_does_not_affect_identity_or_view` |
 | `ModelNormalizationLimitsV1` exact-bound completion and one-less-unit `Incomplete` at the named charge point | FR-150-AC-8 | `n01_exact_limits_complete_and_the_charge_totals_match_ground_truth`, `n01_one_less_work_unit_is_incomplete_at_the_view_hash` |
 | Cross-domain digest substitution refusal | FR-150-AC-3 | `n05_digest_domain_mismatch_refuses_before_any_effective_view` |
-| Unsupported producer interface version refuses before any charge | FR-150-AC-2 | `unsupported_interface_version_refuses_before_any_charge` |
+| Absent producer revision refuses `wrong-model-selection` (TC-195 N04 first clause) | FR-150-AC-3 | `n04_absent_revision_refuses_wrong_model_selection` |
+| Unrecognized producer interface version (e.g. `1.4.0`) refuses `unsupported-wire` before any charge (TC-195 N08 second clause) | FR-150 | `unsupported_interface_version_refuses_before_any_charge` |
+| Producer interface `1.2.0` yields the fixed ten-item `unsupplied-producer-record` refusal sequence (TC-195 N08 first clause) | FR-150-AC-7 | `n08_interface_1_2_0_refuses_every_missing_capability_in_fixed_order` |
+| Two producer keys sharing a display identity but differing in revision/digest both survive as distinguishable declarations | FR-150-AC-2 | `f2_producer_keys_sharing_an_identity_but_differing_in_revision_both_survive`, `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive` |
+| Unsorted derivation / duplicate retained input path / unsorted view refuse by the semantic check (TC-195 N10, 3 of 6 mutations) | FR-150 | `n10_unsorted_derivation_refuses_by_the_semantic_check`, `n10_duplicate_path_refuses_by_the_semantic_check`, `n10_unsorted_view_refuses_by_the_semantic_check` |
 | Dangling owner/specific/general references refuse rather than drop or panic | task exit condition 4 (no partial substitute) | three `a_*_refuses_instead_of_*` tests |
+| Exact N01/N02 charge order and per-declaration JCS lengths against the vendored ground-truth vector | FR-150-AC-1, FR-150-AC-8 | `n01_charges_the_exact_ground_truth_sequence_in_order`, `n02_charges_fifteen_facts_and_six_cycle_checks` |
 | Phase 4 (subsetting/redefinition) | FR-150 (TC-195 N06) | **not implemented** — no `BundleRecord` variant, no charge points |
+| N10's `stale-digest`/`cross-domain-producer-digest`/`owner-as-producer-key` mutations | FR-150 (TC-195 N10, 3 of 6 mutations) | **not implemented** — "refused by schema" against a wire schema this rung does not decode from |
 | Conformance, redefinition resolution, closed most-specific dispatch | FR-151 | **not implemented** — no test, no `src/model/` module |
 | Systems-model structure binding | FR-152 | **not implemented** — no test, no `src/model/` module |
 | Population binding, `lookup<T>`, `allInstances<T>` | FR-153 | **not implemented** — no test, no `src/model/` module |
@@ -110,12 +137,18 @@ reachable except through it, per its module doc).
 
 ## Gates
 
+Real measured numbers (this document previously repeated the PR body's
+"99 test-result blocks, 0 failed" claim without quoting a total-passed
+count; a reviewer measuring a differently-scoped run separately reported 28
+blocks/329 passed — both are superseded here by a fresh measurement against
+this update's own head):
+
 | Gate | Result |
 | --- | --- |
 | `cargo fmt --check` | pass |
 | `cargo clippy --all-targets --all-features -- -D warnings` | pass |
-| `cargo test --all-features` (full suite) | pass — 99 test-result blocks, 0 failed |
-| `cargo test --test model_normalization` | pass — 11/11 |
+| `cargo test --all-features` (full suite) | pass — 99 test-result blocks, **1101 tests passed, 0 failed** |
+| `cargo test --test model_normalization --all-features` | pass — **21/21** |
 | Native `quoin validate --repo . --strict` | pass — no findings |
 
 ## Findings
@@ -126,4 +159,6 @@ reachable except through it, per its module doc).
 | FND-002 | medium | FR-152 (systems-model structure binding) is entirely unimplemented; TC-197 has no executing test. | FR-152; TC-197 |
 | FND-003 | medium | FR-153 (population binding, `lookup<T>`, `allInstances<T>`) is entirely unimplemented; TC-198 has no executing test. | FR-153; TC-198 |
 | FND-004 | low | FR-150 phase 4 (subsetting/redefinition, TC-195 N06) is a stated, representable-input scope decision, not a silent gap: `BundleRecord` has no subsetting/redefinition variant. | FR-150; TC-195 N06 |
-| FND-005 | low | TC-195 N03/N04/N08 need either checker integration or a wire decoder this rung does not have; not silently approximated. | TC-195 N03/N04/N08 |
+| FND-005 | low (**corrected — previously covered N04/N08 as a gap; both are now implemented, see Reverse trace**) | TC-195 N03 (ambiguous member-name checking) and N04's second clause (checking a `variant` type reference in source) still need checker integration outside this rung's engine; genuinely uncovered. | TC-195 N03; N04 second clause |
+| FND-006 | low | TC-195 N10's `stale-digest`/`cross-domain-producer-digest`/`owner-as-producer-key` mutations are "refused by schema" against a wire schema this rung does not decode from (`Bundle` is a typed value, not a wire-decode target); the other three N10 mutations are implemented and tested (see Reverse trace). This document previously omitted N10 from the gap enumeration entirely, alongside the PR body's own "N03, N04, N06, N08" list which never named N10; both are corrected here. | TC-195 N10 |
+| FND-007 | deferred | `ModelRefusal.cause`/`Diagnostic` convergence, the dead `record_keys.sort()`, and the `MAX_GENERALIZATION_DEPTH`/`MAX_CHECKING_DEPTH` duplication are filed as [quire-spec-language#141](https://github.com/agent-ix/quire-spec-language/issues/141); directly-declared-member-shadows-inherited-member semantics are noted in the PR body as phase-4 territory. Neither is a gap this analysis silently passed over. | issue #141; PR body |
