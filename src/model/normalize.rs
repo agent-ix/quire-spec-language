@@ -29,8 +29,17 @@
 //! decision covers only the *view* this pass grows: the `m + r`
 //! `normalize.redefinition-check` charge below still prices every
 //! redefinition record and every effective member the spec names,
-//! operation and field alike (PR #167 review finding #3, QSL #145) — it is
-//! not itself an operation-redefinition normalization pass.
+//! operation and field alike (PR #167 review finding #3, QSL #145), and the
+//! `Σ (c − 1) × f(o)` `normalize.conflict-check` charge below prices a
+//! contested operation target (`c >= 2` operation-redefinition records
+//! reaching the same target) exactly as it prices a contested field target
+//! (PR #167 round-3 review finding #2, QSL #145) — neither charge is itself
+//! an operation-redefinition normalization pass. Detecting and *resolving*
+//! a contested operation target — deciding which of several competing
+//! operation redefiners wins, the way this pass's own field-redefinition
+//! dominance search does — is not implemented anywhere in this crate today:
+//! `crate::model::conformance`'s own module doc names the same gap for its
+//! side of this split. Remaining work: #173.
 //!
 //! This engine takes a [`Bundle`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
@@ -1197,40 +1206,53 @@ fn apply_redefinitions(
             .or_insert_with(|| ancestor.path.clone());
     }
 
-    // Every field-redefinition record reachable at `type_key`, gathered
-    // flat (not yet grouped by target); `normalize.redefinition-check`'s own
-    // charge sequence no longer comes from this list at all (PR #167 review
-    // finding #1: it is `build`'s own bundle-wide pass over every
-    // redefinition record, field and operation alike), so this is scoped
-    // purely to this type's own conflict *resolution* — reachable-at-
-    // `type_key` field redefinitions only, exactly as the module docs
-    // describe.
+    // Every redefinition record reachable at `type_key`, gathered flat (not
+    // yet grouped by target) and split by member kind.
+    // `normalize.redefinition-check`'s own charge sequence no longer comes
+    // from either list at all (PR #167 review finding #1: it is `build`'s
+    // own bundle-wide pass over every redefinition record, field and
+    // operation alike); `all_edges` (field-only) is scoped purely to this
+    // type's own conflict *resolution*, exactly as the module docs describe.
+    // `operation_edges` feeds only the contention *charge* below (PR #167
+    // round-3 review finding #2, QSL #145): operation-member redefinition is
+    // still never resolved here — `crate::model::conformance` resolves it
+    // directly (see the module docs) — but a contested operation target
+    // (`c >= 2`) still owes `normalize.conflict-check`'s own
+    // `value-accounting.md:456` price, exactly as a contested field target
+    // does.
     let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
+    let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
     for record in &bundle.records {
         let BundleRecord::Redefinition(redefinition) = record else {
             continue;
         };
-        if !index.field_member_keys.contains(&redefinition.redefining)
-            || !index.field_member_keys.contains(&redefinition.redefined)
-        {
-            // Operation-member redefinition: out of scope for this pass —
-            // `crate::model::conformance` resolves it directly (see the
-            // module docs). Still charged by `build`'s own bundle-wide
-            // `normalize.redefinition-check` sequence above, which is not
-            // filtered this way.
+        let is_field = index.field_member_keys.contains(&redefinition.redefining)
+            && index.field_member_keys.contains(&redefinition.redefined);
+        let is_operation = index
+            .operation_member_keys
+            .contains(&redefinition.redefining)
+            && index
+                .operation_member_keys
+                .contains(&redefinition.redefined);
+        if !is_field && !is_operation {
             continue;
         }
         let Some(path) = owner_paths.get(&redefinition.owner) else {
             // This redefinition's owner does not reach `type_key`.
             continue;
         };
-        all_edges.push(RedefinitionEdge {
+        let edge = RedefinitionEdge {
             owner: redefinition.owner.clone(),
             redefining: redefinition.redefining.clone(),
             record_key: redefinition.key.clone(),
             target: redefinition.redefined.clone(),
             path: path.clone(),
-        });
+        };
+        if is_field {
+            all_edges.push(edge);
+        } else {
+            operation_edges.push(edge);
+        }
     }
 
     let mut groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
@@ -1454,6 +1476,47 @@ fn apply_redefinitions(
             });
         }
         hidden.insert(member_key);
+    }
+
+    // Operation-member redefinition contention: never resolved here (see
+    // the module docs — `crate::model::conformance` decides which operation
+    // redefiner wins), but a contested operation target still owes
+    // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
+    // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
+    // contested field target (PR #167 round-3 review finding #2, QSL #145).
+    // No `member_preimages`/`hidden` state is touched here: operation
+    // members never enter `member_preimages` (see the module docs), so
+    // there is nothing here for this loop to resolve or hide.
+    let mut operation_groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    for edge in operation_edges {
+        operation_groups
+            .entry(edge.target.clone())
+            .or_default()
+            .push(edge);
+    }
+    let mut operation_target_keys: Vec<ProducerKey> = operation_groups.keys().cloned().collect();
+    operation_target_keys.sort();
+    for target_key in operation_target_keys {
+        let edges = operation_groups.remove(&target_key).expect("just listed");
+        if edges.len() < 2 {
+            // A single redefiner has nothing to contest: no charge, matching
+            // `value-accounting.md:456`'s own `c >= 2` condition.
+            continue;
+        }
+        let c = edges.len() as u64;
+        let fact_total: u64 = edges
+            .iter()
+            .map(|edge| {
+                accounting
+                    .type_fact_counts
+                    .get(&edge.owner)
+                    .copied()
+                    .unwrap_or(0)
+            })
+            .sum();
+        accounting
+            .conflict_check_work
+            .push(fact_total.saturating_mul(c.saturating_sub(1)));
     }
 
     Ok(())

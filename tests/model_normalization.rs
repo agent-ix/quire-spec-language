@@ -593,6 +593,54 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
     }
 }
 
+/// PR #167 round-3 review finding #1, QSL #145: `build`'s own
+/// `fact_budget_exceeded` gate skips phase-4 resolution entirely once phase
+/// 2/3's own fact budget is already exhausted, so a truncated ancestor-path
+/// set can never derive a false phase-4 refusal from partial data --
+/// `charge_all`'s own replay of the phase 2/3 facts that triggered the
+/// truncation always denies, in charge order, before phase 4's own charges
+/// are ever consulted (FR-150's "exhaustion ends checking"). Under
+/// `ModelNormalizationLimits::UNLIMITED`, `fixture_n06_conflict` refuses
+/// `derivation-conflict` (the test above); under a tight `derivation_facts`
+/// budget the outcome is `Incomplete` instead, at every point along the
+/// sweep, never that refusal or the `redefinition-unreachable` refusal a
+/// still-tighter budget's truncated `D` would otherwise expose.
+///
+/// Revert-probe: removing the `if !fact_budget_exceeded(...)` guard around
+/// the per-type phase-4 loop in `build()` (running `apply_redefinitions`
+/// unconditionally again) turns both cases below back into their pre-fix
+/// refusals — confirmed locally, then restored.
+#[trace("TC-195", "FR-150-AC-8")]
+#[test]
+fn n06_conflict_under_a_tight_fact_budget_is_incomplete_not_a_phase4_refusal() {
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.derivation_facts = 10;
+    match normalize(&fixture_n06_conflict(), limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
+            assert_eq!(incomplete.limit, 10);
+            assert_eq!(incomplete.consumed, 10);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+        }
+        other => panic!(
+            "expected Incomplete at normalize.fact, not a phase-4 derivation-conflict refusal, got {other:?}"
+        ),
+    }
+
+    limits.derivation_facts = 0;
+    match normalize(&fixture_n06_conflict(), limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
+            assert_eq!(incomplete.limit, 0);
+            assert_eq!(incomplete.consumed, 0);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+        }
+        other => panic!(
+            "expected Incomplete at normalize.fact, not a redefinition-unreachable refusal, got {other:?}"
+        ),
+    }
+}
+
 /// TC-196 R07's second shape, run through `normalize`'s own phase 4
 /// (`apply_redefinitions`) rather than `model::conformance`'s
 /// `resolve_redefinition_target` in isolation — the real boundary a model
@@ -1746,6 +1794,93 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
             );
         }
         other => panic!("expected Incomplete at normalize.redefinition-check, got {other:?}"),
+    }
+}
+
+/// PR #167 round-3 review finding #2, QSL #145: `B` declares two operation
+/// members, `B.op2` and `B.op3`, both redefining the identical inherited
+/// operation `A.op` — the operation-member analog of `fixture_n06_conflict`'s
+/// field contest, except `B` is the only owner (nothing dominates anything;
+/// this fixture is only about the `c >= 2` *charge*, never resolution).
+fn fixture_operation_redefinition_conflict() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.op-redef-conflict"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            operation_member("model.A.op", "model.A"),
+            operation_member("model.B.op2", "model.B"),
+            operation_member("model.B.op3", "model.B"),
+            redefinition("model.redef.op2", "model.B", "model.B.op2", "model.A.op"),
+            redefinition("model.redef.op3", "model.B", "model.B.op3", "model.A.op"),
+        ],
+    )
+}
+
+/// `value-accounting.md:456` prices every `(effective type, redefined
+/// member)` reached by `c >= 2` redefinition records, and an operation
+/// member is a redefined member same as a field one — `apply_redefinitions`
+/// now charges a contested operation-redefinition group exactly like a
+/// contested field group, even though it still never resolves which
+/// operation redefiner wins (that stays `crate::model::conformance`'s job;
+/// see the module docs, and QSL #173 for the still-open detection gap).
+///
+/// Cross-checked by hand: `f(A) = 1` (`A`'s own qualify fact only), `f(B) =
+/// 2` (qualify plus its own inherit-`A` fact) — both types are otherwise
+/// identical to `fixture_operation_redefinition`'s. The contested group at
+/// `A.op` has `c = 2` edges, both owned by `B`, so `Σ (c − 1) × f(o) = (2 −
+/// 1) × (f(B) + f(B)) = 1 × (2 + 2) = 4`.
+///
+/// Revert-probe: removing the new operation-group charging loop in
+/// `apply_redefinitions` (the one added for this finding, which never
+/// touches `member_preimages`/`hidden`) drops the `NormalizeConflictCheck`
+/// count to `0` and the `work_units` floor below no longer denies at that
+/// charge point — confirmed by hand: removing the loop locally reproduces
+/// both failures, restoring it returns this test to green.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
+    let bundle = fixture_operation_redefinition_conflict();
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        1,
+        "the contested operation-redefinition group is charged once, even \
+         though apply_redefinitions never resolves which operation \
+         redefiner wins"
+    );
+    assert_eq!(
+        meter.consumed(LimitKind::WorkUnits),
+        29,
+        "8 normalize.record + 2 normalize.fact (A/B qualify) + 1 \
+         normalize.cycle-check + 1 normalize.fact (B's own inherit-A path) \
+         + 2 normalize.redefinition-check (m + r = 3 + 0, then 3 + 1) + 1 \
+         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * 4 = 4) + 2 \
+         normalize.declaration + 2 normalize.hash (per type declaration) + \
+         2 normalize.hash (universe/view) = 29; no member declarations at \
+         all, since operation members never enter member_preimages"
+    );
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 19;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.consumed, 19);
+            assert_eq!(
+                incomplete.next_charge, 4,
+                "(c-1) * (f(B)+f(B)) = 1 * (2+2) = 4"
+            );
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+        }
+        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
     }
 }
 
