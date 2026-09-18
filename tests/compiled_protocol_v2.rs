@@ -267,7 +267,6 @@ fn state_authority(
         .artifact
         .clone();
     let static_selection = StaticAuthority {
-        interface_version: "1.2.0".into(),
         document_identity: "document:selected".into(),
         document_digest: canonical('1'),
         model_identity: "model:selected".into(),
