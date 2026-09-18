@@ -29,11 +29,11 @@
 //! decision covers only the *view* this pass grows: the `m + r`
 //! `normalize.redefinition-check` charge below still prices every
 //! redefinition record and every effective member the spec names,
-//! operation and field alike (PR #167 review finding #3, QSL #145), and the
+//! operation and field alike (QSL #145), and the
 //! `Σ (c − 1) × f(o)` `normalize.conflict-check` charge below prices a
 //! contested operation target (`c >= 2` operation-redefinition records
 //! reaching the same target) exactly as it prices a contested field target
-//! (PR #167 round-3 review finding #2, QSL #145) — neither charge is itself
+//! (QSL #145) — neither charge is itself
 //! an operation-redefinition normalization pass. Detecting and *resolving*
 //! a contested operation target — deciding which of several competing
 //! operation redefiners wins, the way this pass's own field-redefinition
@@ -89,8 +89,8 @@
 //! uncontested ancestry (128+ direct generalizations) could exhaust it on a
 //! single owner with nothing to dominate, and, once the `edges.len() < 2`
 //! guard below fixed that uncontested case, a wide ancestry with a genuine
-//! *contest* (`edges.len() >= 2`) still could (PR #167 review finding #2,
-//! QSL #145). Phase 4 now derives each owner's ancestor set from
+//! *contest* (`edges.len() >= 2`) still could (QSL #145). Phase 4 now
+//! derives each owner's ancestor set from
 //! `owner_ancestor_sets`, built once in `build()` from every type's own
 //! phase-3 `type_paths` (`ancestor_key`, one entry per distinct proper
 //! ancestor) — data `build()` already produced walking every type exactly
@@ -110,7 +110,7 @@
 //! documents the case where several edges share one owner; looking up each
 //! distinct owner's already-built set (`O(distinct owners)` build-wide,
 //! computed once regardless of how many (type, target) groups query it —
-//! QSL #145 PR #167 review finding #5) rather than re-deriving it per group
+//! QSL #145) rather than re-deriving it per group
 //! leaves only cheap `O(1)` set lookups inside the pair enumeration. A
 //! target group with fewer than two contesting edges has nothing to
 //! dominate and needs no ancestor-set lookup at all — `apply_redefinitions`
@@ -123,16 +123,15 @@
 //!
 //! Phase 4's two charge points price this work exactly as
 //! `proposals/quire-v1/definitions/value-accounting.md` states, not a flat
-//! one work unit (PR #167 review finding #2, QSL #145 scope item 2):
+//! one work unit (QSL #145 scope item 2):
 //! `normalize.redefinition-check` (`:455`) charges `m + r` once per
-//! redefinition record in the *entire bundle* — field or operation alike
-//! (PR #167 review finding #3) — ascending by the record's own producer
-//! key, where `m` is the number of the record's own owning type's effective
-//! members (field and operation together) and `r` is the count of
-//! redefinition records already checked before it in that same ascending,
-//! bundle-wide sequence. This is computed exactly once, in `build()`,
-//! before the per-type phase-4 loop runs at all (PR #167 review finding
-//! #1): the unit the spec prices is the record itself, tested once against
+//! redefinition record in the *entire bundle* — field or operation alike —
+//! ascending by the record's own producer key, where `m` is the number of
+//! the record's own owning type's effective members (field and operation
+//! together) and `r` is the count of redefinition records already checked
+//! before it in that same ascending, bundle-wide sequence. This is computed
+//! exactly once, in `build()`, before the per-type phase-4 loop runs at
+//! all: the unit the spec prices is the record itself, tested once against
 //! its own owning type, never once per (record, effective type reaching
 //! it) pair the previous per-type loop recomputed it at, which overcharged
 //! any record reachable from more than one effective type and reset `r` at
@@ -647,8 +646,8 @@ struct Built {
     /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
     /// per redefinition record in the entire bundle (field and operation
     /// alike), ascending by the record's own producer key — computed once,
-    /// bundle-wide, in `build()` itself (PR #167 review finding #1), never
-    /// once per (record, effective type reaching it) pair; replayed by
+    /// bundle-wide, in `build()` itself, never once per (record, effective
+    /// type reaching it) pair; replayed by
     /// `charge_all`.
     redefinition_check_work: Vec<u64>,
     /// Every phase-4 `normalize.conflict-check` charge's own exact
@@ -1021,8 +1020,8 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     for (owner, _member) in member_preimages.keys() {
         *member_counts_by_owner.entry(owner.clone()).or_insert(0) += 1;
     }
-    // `m` counts *every* effective member, not only fields (PR #167 review
-    // finding #3, QSL #145): each type's own directly-declared operation
+    // `m` counts *every* effective member, not only fields (QSL #145): each
+    // type's own directly-declared operation
     // members, plus every operation directly declared on a proper ancestor
     // reached along that type's own phase-3 `type_paths` -- the same
     // "direct at this type, or direct at some ancestor `type_paths` already
@@ -1061,13 +1060,13 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         .collect();
     // Every owner's own proper-ancestor set, derived from phase 3's own
     // `type_paths` (populated above for every type in the bundle) rather
-    // than a fresh, separately-bounded walk (PR #167 review finding #2,
-    // QSL #145): `ancestor_key` is exactly the proper-ancestor identity
+    // than a fresh, separately-bounded walk (QSL #145): `ancestor_key` is
+    // exactly the proper-ancestor identity
     // `crate::model::conformance::ancestor_closure` used to compute with its
     // own `MAX_CONFORMANCE_DEPTH` breadth ceiling, so deduplicating those
     // same keys here needs no walk of its own and has no ceiling to exceed.
-    // Computed once, build-wide (QSL #145 PR #167 review finding #5), not
-    // once per (type, target) group.
+    // Computed once, build-wide (QSL #145), not once per (type, target)
+    // group.
     let owner_ancestor_sets: HashMap<ProducerKey, HashSet<ProducerKey>> = type_paths
         .iter()
         .map(|(owner, paths)| {
@@ -1079,13 +1078,13 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
 
     // `normalize.redefinition-check` (`value-accounting.md:455`) charges
     // `m + r` once per redefinition record in the *entire bundle* -- field
-    // and operation alike (PR #167 review finding #3) -- ascending by the
-    // record's own producer key, `r` the count of records already checked
-    // before it in this same bundle-wide sequence. Computed once here,
-    // before the per-type phase-4 loop below even starts (PR #167 review
-    // finding #1): the record is the unit the spec prices, tested once
-    // against its own owning type, never once per (record, effective type
-    // reaching it) pair a per-type loop would recompute it at.
+    // and operation alike -- ascending by the record's own producer key,
+    // `r` the count of records already checked before it in this same
+    // bundle-wide sequence. Computed once here, before the per-type phase-4
+    // loop below even starts: the record is the spec's own priced unit,
+    // tested once against its own owning type, never once per (record,
+    // effective type reaching it) pair a per-type loop would recompute it
+    // at.
     let mut all_redefinition_records: Vec<_> = bundle
         .records
         .iter()
@@ -1120,8 +1119,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     // triggered the truncation runs, in charge order, before it ever
     // reaches phase 4's own charges below -- it already reports the correct
     // `Incomplete` there, never consulting `redefinition_check_work`/
-    // `conflict_check_work` computed from truncated data (PR #167 review
-    // finding #2, QSL #145).
+    // `conflict_check_work` computed from truncated data (QSL #145).
     if !fact_budget_exceeded(limits, facts_so_far) {
         for type_key in &type_keys {
             let paths = type_paths
@@ -1218,9 +1216,8 @@ struct RedefinitionEdge {
 /// `value-accounting.md:456`, and each owner's own proper-ancestor set);
 /// `conflict_check_work` is a build-wide accumulator mutated across every
 /// `type_key`'s own call. `normalize.redefinition-check`'s own charge
-/// sequence — and the `m` it needs — is no longer built here at all (PR
-/// #167 review finding #1) — `build` computes it once, bundle-wide, before
-/// any `apply_redefinitions` call.
+/// sequence — and the `m` it needs — is not built here at all: `build`
+/// computes it once, bundle-wide, before any `apply_redefinitions` call.
 struct Phase4Accounting<'a> {
     type_fact_counts: &'a HashMap<ProducerKey, u64>,
     owner_ancestor_sets: &'a HashMap<ProducerKey, HashSet<ProducerKey>>,
@@ -1249,15 +1246,15 @@ struct Phase4Accounting<'a> {
 /// Also appends this contested target group's own `normalize.conflict-check`
 /// charge amount (`value-accounting.md:456`) to `conflict_check_work`,
 /// replayed later by `charge_all` — `normalize.redefinition-check`'s own
-/// charge sequence is `build`'s own bundle-wide pass, not this function's
-/// (PR #167 review finding #1). `type_fact_counts` supplies `f(o)` for any
-/// owner in the bundle, not just `type_key` itself — `build` computes it
+/// charge sequence is `build`'s own bundle-wide pass, not this function's.
+/// `type_fact_counts` supplies `f(o)` for any owner in the bundle, not just
+/// `type_key` itself — `build` computes it
 /// only after every type's own phase 2/3 has run (see the module docs) so
 /// this is always a lookup, never a fresh walk. `owner_ancestor_sets` is
 /// `build`'s own build-wide map of every owner's proper-ancestor set,
-/// derived from phase 3's own `type_paths` (QSL #145 PR #167 review finding
-/// #2) rather than a second, separately bounded walk, and likewise computed
-/// once, build-wide (finding #5), not once per (type, target) group.
+/// derived from phase 3's own `type_paths` (QSL #145) rather than a second,
+/// separately bounded walk, and likewise computed once, build-wide, not
+/// once per (type, target) group.
 fn apply_redefinitions(
     bundle: &Bundle,
     index: &Index,
@@ -1277,14 +1274,14 @@ fn apply_redefinitions(
 
     // Every redefinition record reachable at `type_key`, gathered flat (not
     // yet grouped by target) and split by member kind.
-    // `normalize.redefinition-check`'s own charge sequence no longer comes
-    // from either list at all (PR #167 review finding #1: it is `build`'s
-    // own bundle-wide pass over every redefinition record, field and
-    // operation alike); `all_edges` (field-only) is scoped purely to this
-    // type's own conflict *resolution*, exactly as the module docs describe.
-    // `operation_edges` feeds only the contention *charge* below (PR #167
-    // round-3 review finding #2, QSL #145): operation-member redefinition is
-    // still never resolved here — `crate::model::conformance` resolves it
+    // `normalize.redefinition-check`'s own charge sequence does not come
+    // from either list: it is `build`'s own bundle-wide pass over every
+    // redefinition record, field and operation alike; `all_edges`
+    // (field-only) is scoped purely to this type's own conflict
+    // *resolution*, exactly as the module docs describe. `operation_edges`
+    // feeds only the contention *charge* below (QSL #145): operation-member
+    // redefinition is still never resolved here —
+    // `crate::model::conformance` resolves it
     // directly (see the module docs) — but a contested operation target
     // (`c >= 2`) still owes `normalize.conflict-check`'s own
     // `value-accounting.md:456` price, exactly as a contested field target
@@ -1340,9 +1337,9 @@ fn apply_redefinitions(
     // resolves (and, for fields, hides/derives) its own kind in its own
     // pass, but neither pushes its charge amount straight to
     // `accounting.conflict_check_work`; both collect `(target key, amount)`
-    // here and the combined set is sorted by target key and pushed only
-    // once, after both loops, in that merged order (PR #167 review finding
-    // #1).
+    // here, and charges from both loops are sorted by effective member key
+    // before being pushed, once, after both loops
+    // (`value-accounting.md:456`).
     let mut conflict_charges: Vec<(ProducerKey, u64)> = Vec::new();
 
     for target_key in target_keys {
@@ -1357,8 +1354,8 @@ fn apply_redefinitions(
             // A single redefiner has nothing to dominate: no ancestor
             // closure is computed at all, and no `normalize.conflict-check`
             // charge either (`value-accounting.md:456`'s own `c >= 2`
-            // condition) -- PR #167 review finding #1 / QSL #145: computing
-            // a closure regardless of `edges.len()` is what made a wide
+            // condition; QSL #145): computing a closure regardless of
+            // `edges.len()` is what made a wide
             // (128+ direct generalizations) but uncontested bundle wrongly
             // refuse `conformance-depth`.
             0
@@ -1388,9 +1385,9 @@ fn apply_redefinitions(
             ));
 
             // `owner_ancestor_sets` already holds every owner in the bundle's
-            // own proper-ancestor set (QSL #145 PR #167 review finding #2:
-            // derived once, build-wide, from phase 3's own `type_paths`
-            // rather than a fresh, separately bounded walk here) -- the
+            // own proper-ancestor set (QSL #145: derived once, build-wide,
+            // from phase 3's own `type_paths` rather than a fresh,
+            // separately bounded walk here) -- the
             // winner search and its undominated-owner fallback below each
             // compare every edge's owner against every other edge's owner,
             // but TC-196 R07's own documented shape — several redefining
@@ -1576,7 +1573,7 @@ fn apply_redefinitions(
     // redefiner wins), but a contested operation target still owes
     // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
     // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
-    // contested field target (PR #167 round-3 review finding #2, QSL #145).
+    // contested field target (QSL #145).
     // No `member_preimages`/`hidden` state is touched here: operation
     // members never enter `member_preimages` (see the module docs), so
     // there is nothing here for this loop to resolve or hide.
@@ -1623,8 +1620,8 @@ fn apply_redefinitions(
 
 /// Whether `p_owner` strictly dominates `q_owner`: `p_owner` is a proper
 /// descendant of `q_owner` in `closures` (`build`'s own `owner_ancestor_sets`,
-/// derived from phase 3's own `type_paths` — QSL #145 PR #167 review
-/// finding #2). An `O(1)` set lookup against an already-computed set, never
+/// derived from phase 3's own `type_paths` — QSL #145). An `O(1)` set
+/// lookup against an already-computed set, never
 /// a fresh graph walk — the `O(|edges|^2)` pair enumeration this function is
 /// called from stays cheap because `closures` was already built once,
 /// build-wide, before any `apply_redefinitions` call.

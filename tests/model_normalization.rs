@@ -638,10 +638,10 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
     }
 }
 
-/// PR #167 round-3 review finding #1, QSL #145: `build`'s own
-/// `fact_budget_exceeded` gate skips phase-4 resolution entirely once phase
-/// 2/3's own fact budget is already exhausted, so a truncated ancestor-path
-/// set can never derive a false phase-4 refusal from partial data --
+/// QSL #145: `build`'s own `fact_budget_exceeded` gate skips phase-4
+/// resolution entirely once phase 2/3's own fact budget is already
+/// exhausted, so a truncated ancestor-path set can never derive a false
+/// phase-4 refusal from partial data --
 /// `charge_all`'s own replay of the phase 2/3 facts that triggered the
 /// truncation always denies, in charge order, before phase 4's own charges
 /// are ever consulted (FR-150's "exhaustion ends checking"). Under
@@ -1414,8 +1414,8 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
     }
 }
 
-/// PR #167 review finding #3(a): F2 plus a single, uncontested redefiner
-/// owned by `B2` (`B2 <= A`, `B2.x2 redefines A.x`) -- exactly
+/// F2 plus a single, uncontested redefiner owned by `B2` (`B2 <= A`,
+/// `B2.x2 redefines A.x`) -- exactly
 /// `fixture_n06_resolved`'s own diamond, reused so the exact `m + r` here
 /// (`value-accounting.md:455`) is cross-checked against N06's own already
 /// hand-verified `f(o)`/`m` values below, not derived from a fresh fixture.
@@ -1433,9 +1433,8 @@ fn fixture_single_redefiner_no_conflict() -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.single-redefiner"), records)
 }
 
-/// PR #167 review finding #1's own regression shape: `Owner` declares
-/// `n_parents` direct generalizations (one to `Base`, the rest to
-/// unrelated, ancestor-less filler types) and a single field
+/// `Owner` declares `n_parents` direct generalizations (one to `Base`, the
+/// rest to unrelated, ancestor-less filler types) and a single field
 /// (`Owner.x2 redefines Base.x`) with no other redefiner contesting
 /// `Base.x` -- an uncontested redefinition group (`edges.len() == 1`) whose
 /// owner's own breadth alone, before this fix, was enough to exceed
@@ -1475,8 +1474,8 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> Bundle {
     )
 }
 
-/// PR #167 review finding #3(a): TC-195 N06's own resolved diamond
-/// (`fixture_n06_resolved`, three redefiners of `A.x` -- `B`, `C`, and the
+/// TC-195 N06's own resolved diamond (`fixture_n06_resolved`, three
+/// redefiners of `A.x` -- `B`, `C`, and the
 /// dominating winner `D` -- own owners `B`/`C`/`D`) charges exactly one
 /// `normalize.conflict-check` at `Σ (c − 1) × f(o)`
 /// (`value-accounting.md:456`), not a flat one work unit per group:
@@ -1496,7 +1495,7 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> Bundle {
 /// `normalize.redefinition-check` (`value-accounting.md:455`) charges
 /// `m + r` once per redefinition record in the whole bundle, ascending by
 /// the record's own producer key -- never once per (record, effective type
-/// reaching it) pair (PR #167 review finding #1, QSL #145): `redef.B`
+/// reaching it) pair (QSL #145): `redef.B`
 /// (`r = 0`, `m(B) = 2`) charges `2`; `redef.C` (`r = 1`, `m(C) = 2`)
 /// charges `3`; `redef.D` (`r = 2`, `m(D) = 4`: `D`'s own effective members
 /// are `A.x`, `B.x2`, `C.x3`, all inherited, plus its own direct `D.x4`)
@@ -1564,8 +1563,8 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
     }
 }
 
-/// PR #167 review finding #1: a redefinition target with only one
-/// redefiner reaching it (`c = 1`) admits zero `normalize.conflict-check`
+/// A redefinition target with only one redefiner reaching it (`c = 1`)
+/// admits zero `normalize.conflict-check`
 /// charges -- `value-accounting.md:456`'s own `c >= 2` condition -- and no
 /// dominance closure is ever computed for it, rather than the pre-fix
 /// shape that walked one unconditionally regardless of `edges.len()`.
@@ -1624,9 +1623,9 @@ fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
     }
 }
 
-/// PR #167 review finding #1's own regression: before this fix, resolving
-/// a redefinition group unconditionally computed every contesting owner's
-/// ancestor-dominance closure -- even a group with a single, uncontested
+/// Before this fix, resolving a redefinition group unconditionally
+/// computed every contesting owner's ancestor-dominance closure -- even a
+/// group with a single, uncontested
 /// redefiner, which has nothing to dominate. A redefiner's owner with 128
 /// or more *direct* generalizations (never a deep chain; a single wide
 /// fan-out is enough) hit `crate::model::conformance`'s own
@@ -1659,8 +1658,8 @@ fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
             NormalizeOutcome::Completed(view) => view,
             other => panic!(
                 "expected Completed for {n_parents} direct generalizations, got {other:?} \
-                 (PR #167 review finding #1 regression: an uncontested redefiner's owner \
-                 breadth alone must never force a dominance-closure walk)"
+                 (an uncontested redefiner's owner breadth alone must never \
+                 force a dominance-closure walk)"
             ),
         };
 
@@ -1681,18 +1680,17 @@ fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
     }
 }
 
-/// PR #167 review finding #2's own regression shape: the `edges.len() < 2`
-/// guard above only ever fixed the *uncontested* wide-ancestry case.
-/// `Owner` (renamed `O` in the review comment) still declares `n_parents`
-/// direct generalizations, one of them to `Base` (renamed `G000`), but now
-/// `G000` itself also declares a second field, `G000.w`, that redefines
-/// `G000.x` — a genuine two-redefiner contest (`c = 2`: `O.z` and `G000.w`)
-/// whose dominance resolution, before this fix, still built `G000`'s own
+/// The `edges.len() < 2` guard above only ever fixed the *uncontested*
+/// wide-ancestry case. `Owner` (`O`) still declares `n_parents` direct
+/// generalizations, one of them to `Base` (`G000`), but now `G000` itself
+/// also declares a second field, `G000.w`, that redefines `G000.x` — a
+/// genuine two-redefiner contest (`c = 2`: `O.z` and `G000.w`) whose
+/// dominance resolution, before this fix, still built `G000`'s own
 /// [`crate::model::conformance::ancestor_closure`] and exceeded
 /// `MAX_CONFORMANCE_DEPTH` on `O`'s breadth alone, exactly as the
-/// uncontested case did before PR #167's first round. `O` is a proper
-/// descendant of `G000` (one of its `n_parents` direct generalizations), so
-/// `O` dominates `G000` and `O.z` wins outright.
+/// uncontested case did. `O` is a proper descendant of `G000` (one of its
+/// `n_parents` direct generalizations), so `O` dominates `G000` and `O.z`
+/// wins outright.
 fn fixture_wide_ancestry_contested_redefiners(n_parents: usize) -> Bundle {
     let mut records = vec![
         object_type("model.G000"),
@@ -1730,8 +1728,8 @@ fn fixture_wide_ancestry_contested_redefiners(n_parents: usize) -> Bundle {
     )
 }
 
-/// PR #167 review finding #2: a wide (128+ direct generalizations) but
-/// genuinely *contested* ancestry must resolve by dominance exactly as a
+/// A wide (128+ direct generalizations) but genuinely *contested* ancestry
+/// must resolve by dominance exactly as a
 /// narrow one would, not refuse `conformance-depth` — the breadth-vs-depth
 /// defect the `edges.len() < 2` guard alone left unfixed for `c >= 2`
 /// groups.
@@ -1759,8 +1757,8 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
             NormalizeOutcome::Completed(view) => view,
             other => panic!(
                 "expected Completed for {n_parents} direct generalizations, got {other:?} \
-                 (PR #167 review finding #2 regression: a genuinely contested wide \
-                 ancestry must resolve by dominance, not refuse conformance-depth)"
+                 (a genuinely contested wide ancestry must resolve by \
+                 dominance, not refuse conformance-depth)"
             ),
         };
 
@@ -1798,8 +1796,8 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
     }
 }
 
-/// PR #167 review finding #3: an operation-member redefinition record is
-/// charged by `normalize.redefinition-check` exactly like a field one, and
+/// An operation-member redefinition record is charged by
+/// `normalize.redefinition-check` exactly like a field one, and
 /// its owner's effective-member count `m` includes operation members —
 /// `apply_redefinitions` itself still skips operation-member redefinition
 /// for conflict *resolution* (see the module docs; `crate::model::conformance`
@@ -1824,7 +1822,7 @@ fn fixture_operation_redefinition() -> Bundle {
 /// `r = 0`, and `normalize.redefinition-check` charges exactly `2`.
 ///
 /// Revert probe: reverting the `m` computation to count only
-/// `member_counts_by_owner`'s pre-finding-#3 (field-only) tally, with no
+/// `member_counts_by_owner`'s pre-fix (field-only) tally, with no
 /// operation-member contribution, makes both assertions below fail: the
 /// total drops from `18` to `16` (the redefinition-check charge drops from
 /// `2` to `0`), and `work_units = 10` no longer denies at
@@ -1887,8 +1885,8 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
     }
 }
 
-/// PR #167 round-3 review finding #2, QSL #145: `B` declares two operation
-/// members, `B.op2` and `B.op3`, both redefining the identical inherited
+/// QSL #145: `B` declares two operation members, `B.op2` and `B.op3`, both
+/// redefining the identical inherited
 /// operation `A.op` — the operation-member analog of `fixture_n06_conflict`'s
 /// field contest, except `B` is the only owner (nothing dominates anything;
 /// this fixture is only about the `c >= 2` *charge*, never resolution).
@@ -1922,9 +1920,9 @@ fn fixture_operation_redefinition_conflict() -> Bundle {
 /// `A.op` has `c = 2` edges, both owned by `B`, so `Σ (c − 1) × f(o) = (2 −
 /// 1) × (f(B) + f(B)) = 1 × (2 + 2) = 4`.
 ///
-/// Revert-probe: removing the new operation-group charging loop in
-/// `apply_redefinitions` (the one added for this finding, which never
-/// touches `member_preimages`/`hidden`) drops the `NormalizeConflictCheck`
+/// Revert-probe: removing the operation-group charging loop in
+/// `apply_redefinitions` (which never touches `member_preimages`/`hidden`)
+/// drops the `NormalizeConflictCheck`
 /// count to `0` and the `work_units` floor below no longer denies at that
 /// charge point — confirmed by hand: removing the loop locally reproduces
 /// both failures, restoring it returns this test to green.
@@ -1974,9 +1972,9 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     }
 }
 
-/// PR #167 review round 5, finding #1: `value-accounting.md:456` prices
-/// every contested `(effective type, redefined member)` in one ascending
-/// pass "by effective member key" -- field and operation targets
+/// `value-accounting.md:456` prices every contested `(effective type,
+/// redefined member)` in one ascending pass "by effective member key" --
+/// field and operation targets
 /// interleaved by that one key, never field targets charged as a block
 /// before operation targets as a block. `C <= B <= A` (a two-step
 /// generalization chain, so `f(A) = 1`, `f(B) = 2`, `f(C) = 3`):
@@ -2004,11 +2002,10 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// `normalize.conflict-check` -- the operation group's `6`, not the field
 /// group's `5`.
 ///
-/// Revert probe: reverting the collect-sort-then-push fix in
-/// `apply_redefinitions` back to each loop pushing its own charge straight
-/// to `conflict_check_work` (this finding's pre-fix shape) makes the
-/// `work_units = 58` assertion fail -- `next_charge` becomes `5` (the field
-/// group, charged first again) instead of `6` -- confirmed by hand:
+/// Revert probe: reverting `apply_redefinitions` back to each loop pushing
+/// its own charge straight to `conflict_check_work` (the pre-fix shape)
+/// makes the `work_units = 58` assertion fail -- `next_charge` becomes `5`
+/// (the field group, charged first again) instead of `6` -- confirmed by hand:
 /// reverting the two loops to push directly, locally, reproduces the
 /// failure; restoring the collect-sort-push shape returns this test to
 /// green.
@@ -2067,8 +2064,8 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
     }
 }
 
-/// PR #167 review finding #4: a phase-3 refusal (`specialization-cycle`)
-/// wins over a phase-4 refusal (`derivation-conflict`) when a bundle has
+/// A phase-3 refusal (`specialization-cycle`) wins over a phase-4 refusal
+/// (`derivation-conflict`) when a bundle has
 /// both, matching FR-150's "each normalization phase ... reports every
 /// refusal it exposes in charge order; a phase that reports a refusal ends
 /// checking." `fixture_n06_conflict` (`B`/`C`, two undominated redefiners
