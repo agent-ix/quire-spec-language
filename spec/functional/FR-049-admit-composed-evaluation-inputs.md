@@ -49,9 +49,7 @@ and assessment-input contract at the accepted native-v1 baseline
 occurrence correlation, membership, observation anchors, progress and
 completeness. That accepted baseline's own observation contract additionally
 names a producer interface version for each assessment input; `StaticAuthority`
-carries no such member and this requirement never compares one. This
-requirement checks the static document, model, profile and configuration
-identity and digest independently of any producer interface version. The
+carries no such member and this requirement never compares one. The
 caller translates those authorities into this typed Rust view; field spelling,
 JSON shape or the offered protocol artifact cannot appoint them.
 
