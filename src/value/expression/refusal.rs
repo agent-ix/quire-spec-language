@@ -181,6 +181,19 @@ pub enum CheckCause {
         /// callee source-declaration order (FR-151's own listing order).
         edges: Vec<(String, String)>,
     },
+    /// `invalid_package` / `invalid-value` (finding #172-4): a supplied
+    /// [`super::DispatchTable`] or [`super::DispatchOperation`] is
+    /// malformed — an out-of-range table or function index, or a candidate
+    /// whose signature does not match its dispatch operation's declared
+    /// arity or types. Checked upfront in
+    /// [`super::PackageDeclarations::check`], before any node is typed, so
+    /// [`super::facts`]'s own call-graph walk can treat every table index it
+    /// reads as already valid; reuses the already-catalogued `invalid-value`
+    /// tag rather than minting a new one.
+    InvalidDispatchDeclaration {
+        /// What was malformed.
+        detail: String,
+    },
 }
 
 impl CheckCause {
@@ -192,7 +205,9 @@ impl CheckCause {
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::ResourceExhausted { .. } => Code::ResourceExhausted,
-            Self::IeeeProfileNotAdmitted | Self::DefinitionCycle { .. } => Code::InvalidPackage,
+            Self::IeeeProfileNotAdmitted
+            | Self::DefinitionCycle { .. }
+            | Self::InvalidDispatchDeclaration { .. } => Code::InvalidPackage,
             Self::UnrepresentableBound => Code::UnrepresentableConstraint,
         }
     }
@@ -213,6 +228,7 @@ impl CheckCause {
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
             Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
+            Self::InvalidDispatchDeclaration { .. } => Some("invalid-value"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound => None,
         }
     }

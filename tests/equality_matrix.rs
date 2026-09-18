@@ -16,7 +16,7 @@ use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
     AdmittedIeeeProfile, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage, CheckingLimits,
-    ClauseKind, CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
+    CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
     ConstructionCause, ConstructionRefusal, Decimal, DecimalType, DefinitionLock,
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
@@ -2137,14 +2137,13 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     .unwrap();
     let package = PackageDeclarations {
         types,
-        functions: vec![FunctionDeclaration {
-            name: "pick".to_owned(),
-            parameters: vec![("n".to_owned(), int_type(0, 1))],
-            result: ValueType::Integer,
-            measure: None,
-            body: operand("n"),
-            clause_kind: ClauseKind::Body,
-        }],
+        functions: vec![FunctionDeclaration::new(
+            "pick".to_owned(),
+            vec![("n".to_owned(), int_type(0, 1))],
+            ValueType::Integer,
+            None,
+            operand("n"),
+        )],
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())

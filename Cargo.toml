@@ -87,6 +87,11 @@ name = "model_reference_queries"
 path = "tests/model_reference_queries.rs"
 required-features = ["test-support"]
 
+[[test]]
+name = "dispatch_calls"
+path = "tests/dispatch_calls.rs"
+required-features = ["test-support"]
+
 [lints.rust]
 unsafe_code = "forbid"
 

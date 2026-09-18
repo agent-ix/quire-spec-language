@@ -46,19 +46,56 @@
 //!   checker [`ValueType`] is its own, separately-scoped piece of work
 //!   (needed well beyond dispatch), so this bridge accepts it pre-translated
 //!   exactly as `link_dispatch` accepts `bundle`/`view` pre-normalized.
+//!
+//! Effective-precondition semantics (FR-151
+//! `quire.model.conformance.refinement/v1`: "the disjunction of its own
+//! precondition clauses with the effective preconditions of the members it
+//! redefines... An absent precondition is `true`") are computed twice, for
+//! two different consumers, over the same redefinition ancestry:
+//!
+//! - [`effective_terms`] is the *runtime* computation: Boolean absorption
+//!   (`true ∨ X = true`) means the walk stops the instant any node in the
+//!   ancestry (starting at the candidate itself) has an absent own clause,
+//!   yielding [`DispatchCandidate::precondition`] — `None` exactly when the
+//!   effective precondition is unconditionally `true` (TC-196 D06: B.size's
+//!   own precondition is absent, so its guard is skipped even though A.size
+//!   still declares one).
+//! - [`ancestor_closure`] is the *static* FR-146 call-graph computation: it
+//!   walks the full ancestry unconditionally, regardless of runtime
+//!   short-circuiting, because the call-graph edge FR-151 requires ("an
+//!   edge... to every precondition clause of every candidate's effective
+//!   precondition, which the call evaluates") is a *reachability* fact, not
+//!   a runtime-value fact. TC-196 D08 depends on this: B.size's runtime
+//!   guard is skipped, but its static ancestry still reaches PS, so the
+//!   self-recursive call through `self.size()` inside PS still closes a
+//!   cycle back to PS.
+//!
+//! One shared checked [`FunctionDeclaration`] is built per *authored*
+//! (non-absent) precondition clause, reused by every candidate that inherits
+//! it by redefinition — never duplicated per candidate. A candidate's own
+//! [`DispatchCandidate::precondition`] reuses that shared function directly
+//! when its own clause is the only contributing term; a combinator function
+//! is synthesized only when a genuine multi-term disjunction is needed (the
+//! candidate's own clause and at least one ancestor both contribute a real,
+//! non-absent term), splicing each ancestor term inline via parameter
+//! substitution rather than a runtime call by name (every synthesized
+//! function here is built with [`FunctionDeclaration::clause`], so none of
+//! them is reachable through an ordinary named call in the first place —
+//! TC-196 D07's bypass).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::diagnostic::Code;
 use crate::model::accounting::Meter;
 use crate::model::bundle::{Bundle, BundleRecord, RedefinitionRecord};
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
 use crate::model::key::ProducerKey;
-use crate::model::normalize::EffectiveView;
+use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{
     BinaryOperator, ClauseKind, DispatchCandidate, DispatchOperation, DispatchTable, Expression,
-    FunctionDeclaration, NodeKey, PackageDeclarations, ValueType,
+    FieldInitializer, FunctionDeclaration, NodeKey, PackageDeclarations, ValueType,
 };
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
@@ -93,37 +130,82 @@ pub struct OperationClauses {
     pub own_body: BTreeMap<ProducerKey, Expression>,
 }
 
+/// Which [`OperationClauses`] field [`DispatchBridgeRefusal::MissingClauseData`]
+/// found no entry under, as a closed set the compiler checks rather than a
+/// free-text field name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MissingClauseField {
+    /// [`OperationClauses::member`].
+    Member,
+    /// [`OperationClauses::parameters`].
+    Parameters,
+    /// [`OperationClauses::result`].
+    Result,
+    /// [`OperationClauses::own_precondition`].
+    OwnPrecondition,
+    /// [`OperationClauses::own_body`].
+    OwnBody,
+}
+
 /// Why [`checked_dispatch_operation`] could not produce a checked
 /// [`PackageDeclarations`].
 #[derive(Clone, Debug)]
 pub enum DispatchBridgeRefusal {
     /// `link_dispatch` did not produce a linked table: ambiguous, refused,
     /// incomplete, or an open generalization closure. Boxed: `LinkCheckOutcome`
-    /// is far larger than the other variant, and this refusal is returned by
+    /// is far larger than the other variants, and this refusal is returned by
     /// value from every fallible step below.
     Unlinked(Box<LinkCheckOutcome>),
-    /// `clauses` (or `object_keys`) has no entry for this operation under
-    /// the named field. `operation` is boxed: [`ProducerKey`] itself is
-    /// larger than the rest of this refusal put together.
+    /// `clauses` has no entry for this operation under the named field.
+    /// `operation` is boxed: [`ProducerKey`] itself is larger than the rest
+    /// of this refusal put together.
     MissingClauseData {
-        /// The operation (or subtype) missing an entry.
+        /// The operation missing an entry.
         operation: Box<ProducerKey>,
         /// The field that was missing it.
-        field: &'static str,
+        field: MissingClauseField,
     },
+    /// `object_keys` has no entry for a linked table's subtype. A distinct
+    /// variant from [`Self::MissingClauseData`] (finding #172-9): the key
+    /// missing an entry here is a *subtype*, not an operation, so it earns
+    /// its own field name instead of overloading `operation`.
+    MissingObjectKey {
+        /// The subtype missing an entry.
+        subtype: Box<ProducerKey>,
+    },
+    /// The effective-precondition ancestor walk exceeded
+    /// [`MAX_ANCESTOR_DEPTH`] redefinition steps, built from
+    /// [`ModelRefusalCause::DispatchFamilyDepth`] exactly as
+    /// `crate::model::dispatch::build_family`'s own depth-exceeded refusal
+    /// is, rather than a bridge-only cause. Boxed: `ModelRefusal` is far
+    /// larger than the other variants.
+    AncestorDepthExceeded(Box<ModelRefusal>),
 }
 
-fn missing(operation: &ProducerKey, field: &'static str) -> DispatchBridgeRefusal {
+fn missing(operation: &ProducerKey, field: MissingClauseField) -> DispatchBridgeRefusal {
     DispatchBridgeRefusal::MissingClauseData {
         operation: Box::new(operation.clone()),
         field,
     }
 }
 
+fn depth_exceeded(candidate: &ProducerKey) -> DispatchBridgeRefusal {
+    DispatchBridgeRefusal::AncestorDepthExceeded(Box::new(ModelRefusal {
+        code: Code::ResourceExhausted,
+        cause: ModelRefusalCause::DispatchFamilyDepth {
+            original: candidate.clone(),
+        },
+        detail: format!(
+            "effective-precondition ancestry for {} exceeded {MAX_ANCESTOR_DEPTH} redefinition steps",
+            candidate.identity
+        ),
+    }))
+}
+
 fn require_expression(
     map: &BTreeMap<ProducerKey, Expression>,
     operation: &ProducerKey,
-    field: &'static str,
+    field: MissingClauseField,
 ) -> Result<Expression, DispatchBridgeRefusal> {
     map.get(operation)
         .cloned()
@@ -138,12 +220,12 @@ fn require_signature(
         .parameters
         .get(operation)
         .cloned()
-        .ok_or_else(|| missing(operation, "parameters"))?;
+        .ok_or_else(|| missing(operation, MissingClauseField::Parameters))?;
     let result = clauses
         .result
         .get(operation)
         .cloned()
-        .ok_or_else(|| missing(operation, "result"))?;
+        .ok_or_else(|| missing(operation, MissingClauseField::Result))?;
     Ok((parameters, result))
 }
 
@@ -161,6 +243,359 @@ pub struct DispatchRoot {
     /// Whether the generalization closure relevant to this operation is
     /// known closed.
     pub closure: GeneralizationClosure,
+}
+
+/// `bundle.records`'s own first-appearance index of every declared
+/// operation, keyed by its [`ProducerKey`] (`bundle.rs`: `records` is "in
+/// the producer's declared order"). [`ProducerKey`]'s own `Ord` sorts by
+/// `authority, identity, revision, digest`, unrelated to source order, so
+/// this — not a `BTreeSet<ProducerKey>` iteration — is FR-151's "source
+/// declaration order" for the D08 call-graph edge listing.
+fn declaration_order(bundle: &Bundle) -> BTreeMap<ProducerKey, usize> {
+    let mut order = BTreeMap::new();
+    for (index, record) in bundle.records.iter().enumerate() {
+        if let BundleRecord::OperationMember(operation) = record {
+            order.entry(operation.key.clone()).or_insert(index);
+        }
+    }
+    order
+}
+
+/// `candidate` together with every operation reaching it by any chain of
+/// [`RedefinitionRecord`]s, however many parents each step has (every
+/// matching record, not `.find()`'s first match alone — finding #172-5): the
+/// full static FR-146 reachability set [`ancestor_closure`] needs for
+/// [`DispatchCandidate::precondition_clauses`]. Bounded breadth-first walk
+/// over an explicit queue, never native recursion; refuses at the depth
+/// bound instead of silently truncating the closure.
+fn ancestor_closure(
+    redefinitions: &[RedefinitionRecord],
+    candidate: &ProducerKey,
+) -> Result<BTreeSet<ProducerKey>, DispatchBridgeRefusal> {
+    let mut closure = BTreeSet::new();
+    let mut pending: VecDeque<ProducerKey> = VecDeque::from([candidate.clone()]);
+    let mut steps: usize = 0;
+    while let Some(current) = pending.pop_front() {
+        if !closure.insert(current.clone()) {
+            continue;
+        }
+        steps += 1;
+        if steps > MAX_ANCESTOR_DEPTH {
+            return Err(depth_exceeded(candidate));
+        }
+        for redefinition in redefinitions
+            .iter()
+            .filter(|redefinition| redefinition.redefining == current)
+        {
+            pending.push_back(redefinition.redefined.clone());
+        }
+    }
+    Ok(closure)
+}
+
+/// The runtime effective-precondition terms of `candidate`, in `candidate`'s
+/// own parameter names: `None` where the effective precondition is
+/// unconditionally `true` (its own clause is absent, or absorption through
+/// any ancestor makes it so); `Some(terms)` where every term is a real,
+/// non-absent clause still contributing — `terms[0]` is always `candidate`'s
+/// own clause, and every later element is an ancestor's contributing clause,
+/// substituted from that ancestor's parameter names into `candidate`'s own
+/// (finding #172-5: "substitute parameters/receiver when importing an
+/// ancestor clause" — the receiver is `parameters[0]`, substituted the same
+/// way as every other parameter). Memoized per candidate, since a diamond of
+/// redefinitions can reach the same ancestor from several paths; bounded by
+/// a walk-wide step counter mirroring [`ancestor_closure`]'s own bound.
+fn effective_terms(
+    candidate: &ProducerKey,
+    clauses: &OperationClauses,
+    redefinitions: &[RedefinitionRecord],
+    memo: &mut BTreeMap<ProducerKey, Option<Vec<Expression>>>,
+    steps: &mut usize,
+) -> Result<Option<Vec<Expression>>, DispatchBridgeRefusal> {
+    if let Some(cached) = memo.get(candidate) {
+        return Ok(cached.clone());
+    }
+    *steps += 1;
+    if *steps > MAX_ANCESTOR_DEPTH {
+        return Err(depth_exceeded(candidate));
+    }
+    let Some(own_expression) = clauses.own_precondition.get(candidate).cloned() else {
+        memo.insert(candidate.clone(), None);
+        return Ok(None);
+    };
+    let (candidate_parameters, _) = require_signature(clauses, candidate)?;
+    let mut terms = vec![own_expression];
+    for redefinition in redefinitions
+        .iter()
+        .filter(|redefinition| &redefinition.redefining == candidate)
+    {
+        let parent = &redefinition.redefined;
+        match effective_terms(parent, clauses, redefinitions, memo, steps)? {
+            None => {
+                memo.insert(candidate.clone(), None);
+                return Ok(None);
+            }
+            Some(parent_terms) => {
+                let (parent_parameters, _) = require_signature(clauses, parent)?;
+                for term in parent_terms {
+                    terms.push(rename_parameters(
+                        &term,
+                        &parent_parameters,
+                        &candidate_parameters,
+                    ));
+                }
+            }
+        }
+    }
+    memo.insert(candidate.clone(), Some(terms.clone()));
+    Ok(Some(terms))
+}
+
+/// `expression` with every name bound positionally in `from` rewritten to
+/// its counterpart in `to`, leaving every shadowed occurrence (a `let`,
+/// query or accumulate/count/sum binder reusing the name) untouched.
+/// Short-circuits to a plain clone when every name already matches.
+fn rename_parameters(
+    expression: &Expression,
+    from: &[(String, ValueType)],
+    to: &[(String, ValueType)],
+) -> Expression {
+    let rename: BTreeMap<String, String> = from
+        .iter()
+        .zip(to)
+        .filter(|((from_name, _), (to_name, _))| from_name != to_name)
+        .map(|((from_name, _), (to_name, _))| (from_name.clone(), to_name.clone()))
+        .collect();
+    if rename.is_empty() {
+        return expression.clone();
+    }
+    let mut shadow = Vec::new();
+    substitute_names(expression, &rename, &mut shadow)
+}
+
+/// The full recursive rewrite [`rename_parameters`] applies: every
+/// [`Expression::Name`] not currently shadowed by an enclosing binder is
+/// looked up in `rename`; every other node is rebuilt with its children
+/// rewritten the same way. `shadow` tracks binder names currently in scope
+/// (`let`, a query's binder, or an accumulate/count/sum's accumulator and
+/// binder), pushed before recursing into their own scope and popped after.
+fn substitute_names(
+    expression: &Expression,
+    rename: &BTreeMap<String, String>,
+    shadow: &mut Vec<String>,
+) -> Expression {
+    match expression {
+        Expression::Boolean(_) | Expression::Integer(_) | Expression::Rational(..) => {
+            expression.clone()
+        }
+        Expression::Name(name) => {
+            if shadow.contains(name) {
+                expression.clone()
+            } else {
+                match rename.get(name) {
+                    Some(renamed) => Expression::Name(renamed.clone()),
+                    None => expression.clone(),
+                }
+            }
+        }
+        Expression::Let { name, value, body } => {
+            let value = Box::new(substitute_names(value, rename, shadow));
+            shadow.push(name.clone());
+            let body = Box::new(substitute_names(body, rename, shadow));
+            shadow.pop();
+            Expression::Let {
+                name: name.clone(),
+                value,
+                body,
+            }
+        }
+        Expression::If {
+            condition,
+            then,
+            otherwise,
+        } => Expression::If {
+            condition: Box::new(substitute_names(condition, rename, shadow)),
+            then: Box::new(substitute_names(then, rename, shadow)),
+            otherwise: Box::new(substitute_names(otherwise, rename, shadow)),
+        },
+        Expression::Binary {
+            operator,
+            left,
+            right,
+        } => Expression::Binary {
+            operator: *operator,
+            left: Box::new(substitute_names(left, rename, shadow)),
+            right: Box::new(substitute_names(right, rename, shadow)),
+        },
+        Expression::Negate(operand) => {
+            Expression::Negate(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Not(operand) => {
+            Expression::Not(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Field { operand, field } => Expression::Field {
+            operand: Box::new(substitute_names(operand, rename, shadow)),
+            field: field.clone(),
+        },
+        Expression::Present(operand) => {
+            Expression::Present(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Value(operand) => {
+            Expression::Value(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Deref(operand) => {
+            Expression::Deref(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Call { name, arguments } => Expression::Call {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| substitute_names(argument, rename, shadow))
+                .collect(),
+        },
+        Expression::Record { name, fields } => Expression::Record {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|(field, initializer)| {
+                    let initializer = match initializer {
+                        FieldInitializer::Value(value) => {
+                            FieldInitializer::Value(substitute_names(value, rename, shadow))
+                        }
+                        FieldInitializer::Null => FieldInitializer::Null,
+                    };
+                    (field.clone(), initializer)
+                })
+                .collect(),
+        },
+        Expression::Collection { kind, elements } => Expression::Collection {
+            kind: *kind,
+            elements: elements
+                .iter()
+                .map(|element| substitute_names(element, rename, shadow))
+                .collect(),
+        },
+        Expression::Convert { target, operand } => Expression::Convert {
+            target: target.clone(),
+            operand: Box::new(substitute_names(operand, rename, shadow)),
+        },
+        Expression::Query {
+            query,
+            binder,
+            source,
+            body,
+        } => {
+            let source = Box::new(substitute_names(source, rename, shadow));
+            shadow.push(binder.clone());
+            let body = Box::new(substitute_names(body, rename, shadow));
+            shadow.pop();
+            Expression::Query {
+                query: *query,
+                binder: binder.clone(),
+                source,
+                body,
+            }
+        }
+        Expression::Flatten(operand) => {
+            Expression::Flatten(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Accumulate {
+            form,
+            accumulator_type,
+            accumulator,
+            binder,
+            source,
+            step,
+            identity,
+        } => {
+            let source = Box::new(substitute_names(source, rename, shadow));
+            let identity = identity
+                .as_ref()
+                .map(|identity| Box::new(substitute_names(identity, rename, shadow)));
+            shadow.push(accumulator.clone());
+            shadow.push(binder.clone());
+            let step = Box::new(substitute_names(step, rename, shadow));
+            shadow.pop();
+            shadow.pop();
+            Expression::Accumulate {
+                form: *form,
+                accumulator_type: accumulator_type.clone(),
+                accumulator: accumulator.clone(),
+                binder: binder.clone(),
+                source,
+                step,
+                identity,
+            }
+        }
+        Expression::Count {
+            result_type,
+            binder,
+            source,
+            predicate,
+        } => {
+            let source = Box::new(substitute_names(source, rename, shadow));
+            shadow.push(binder.clone());
+            let predicate = Box::new(substitute_names(predicate, rename, shadow));
+            shadow.pop();
+            Expression::Count {
+                result_type: result_type.clone(),
+                binder: binder.clone(),
+                source,
+                predicate,
+            }
+        }
+        Expression::Sum {
+            result_type,
+            binder,
+            source,
+            summand,
+        } => {
+            let source = Box::new(substitute_names(source, rename, shadow));
+            shadow.push(binder.clone());
+            let summand = Box::new(substitute_names(summand, rename, shadow));
+            shadow.pop();
+            Expression::Sum {
+                result_type: result_type.clone(),
+                binder: binder.clone(),
+                source,
+                summand,
+            }
+        }
+        Expression::Size(operand) => {
+            Expression::Size(Box::new(substitute_names(operand, rename, shadow)))
+        }
+        Expression::Contains { collection, item } => Expression::Contains {
+            collection: Box::new(substitute_names(collection, rename, shadow)),
+            item: Box::new(substitute_names(item, rename, shadow)),
+        },
+        Expression::AllInstances { target, population } => Expression::AllInstances {
+            target: target.clone(),
+            population: Box::new(substitute_names(population, rename, shadow)),
+        },
+        Expression::Lookup {
+            target,
+            population,
+            reference,
+            absence,
+        } => Expression::Lookup {
+            target: target.clone(),
+            population: Box::new(substitute_names(population, rename, shadow)),
+            reference: Box::new(substitute_names(reference, rename, shadow)),
+            absence: *absence,
+        },
+        Expression::Dispatch {
+            receiver,
+            member,
+            arguments,
+        } => Expression::Dispatch {
+            receiver: Box::new(substitute_names(receiver, rename, shadow)),
+            member: member.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| substitute_names(argument, rename, shadow))
+                .collect(),
+        },
+    }
 }
 
 /// Types every linked candidate's effective precondition and body for one
@@ -189,63 +624,156 @@ pub fn checked_dispatch_operation(
             _ => None,
         })
         .collect();
+    let order = declaration_order(bundle);
+    let by_order = |key: &ProducerKey| order.get(key).copied().unwrap_or(usize::MAX);
 
     let mut distinct: BTreeSet<ProducerKey> = BTreeSet::new();
     for (_, candidate) in table.entries() {
         distinct.insert(candidate.clone());
     }
+    let mut ordered_candidates: Vec<ProducerKey> = distinct.iter().cloned().collect();
+    ordered_candidates.sort_by_key(|candidate| (by_order(candidate), candidate.clone()));
 
+    // Every member (candidate or redefinition ancestor) whose own
+    // precondition clause some candidate's static FR-146 call-graph ancestry
+    // reaches, regardless of runtime short-circuiting (TC-196 D08).
+    let mut closures: BTreeMap<ProducerKey, BTreeSet<ProducerKey>> = BTreeMap::new();
+    let mut every_member: BTreeSet<ProducerKey> = BTreeSet::new();
+    for candidate in &ordered_candidates {
+        let closure = ancestor_closure(&redefinitions, candidate)?;
+        every_member.extend(closure.iter().cloned());
+        closures.insert(candidate.clone(), closure);
+    }
+    let mut authored: Vec<ProducerKey> = every_member
+        .into_iter()
+        .filter(|member| clauses.own_precondition.contains_key(member))
+        .collect();
+    authored.sort_by_key(|member| (by_order(member), member.clone()));
+
+    // One shared checked function per authored clause, in source declaration
+    // order, built before any candidate body or combinator.
     let mut functions: Vec<FunctionDeclaration> = Vec::new();
+    let mut authored_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
+    for member in &authored {
+        let (parameters, _) = require_signature(clauses, member)?;
+        let body = require_expression(
+            &clauses.own_precondition,
+            member,
+            MissingClauseField::OwnPrecondition,
+        )?;
+        let index = functions.len();
+        functions.push(FunctionDeclaration::clause(
+            format!("{}.precondition", member.identity),
+            parameters,
+            ValueType::Boolean,
+            None,
+            body,
+            ClauseKind::Precondition,
+        ));
+        authored_index.insert(member.clone(), index);
+    }
+
+    let mut memo: BTreeMap<ProducerKey, Option<Vec<Expression>>> = BTreeMap::new();
+    let mut steps: usize = 0;
     let mut body_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
     let mut precondition_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
+    let mut precondition_clauses_index: BTreeMap<ProducerKey, Vec<usize>> = BTreeMap::new();
 
-    for candidate in &distinct {
+    for candidate in &ordered_candidates {
         let (parameters, result) = require_signature(clauses, candidate)?;
-        if let Some(effective) = effective_precondition(&redefinitions, clauses, candidate) {
-            let index = functions.len();
-            functions.push(FunctionDeclaration {
-                name: format!("{}.precondition", candidate.identity),
-                parameters: parameters.clone(),
-                result: ValueType::Boolean,
-                measure: None,
-                body: effective,
-                clause_kind: ClauseKind::Precondition,
-            });
-            precondition_index.insert(candidate.clone(), index);
+
+        let terms = effective_terms(candidate, clauses, &redefinitions, &mut memo, &mut steps)?;
+        if let Some(terms) = terms {
+            let precondition_function = if terms.len() == 1 {
+                // The candidate's own clause is the only contributing term:
+                // reuse the shared authored function directly, no combinator.
+                *authored_index
+                    .get(candidate)
+                    .ok_or_else(|| missing(candidate, MissingClauseField::OwnPrecondition))?
+            } else {
+                let combined = terms
+                    .into_iter()
+                    .reduce(|left, right| Expression::Binary {
+                        operator: BinaryOperator::Or,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    })
+                    .ok_or_else(|| missing(candidate, MissingClauseField::OwnPrecondition))?;
+                let index = functions.len();
+                functions.push(FunctionDeclaration::clause(
+                    format!("{}.precondition.effective", candidate.identity),
+                    parameters.clone(),
+                    ValueType::Boolean,
+                    None,
+                    combined,
+                    ClauseKind::Precondition,
+                ));
+                index
+            };
+            precondition_index.insert(candidate.clone(), precondition_function);
         }
-        let body = require_expression(&clauses.own_body, candidate, "own_body")?;
+
+        let closure = closures
+            .get(candidate)
+            .cloned()
+            .unwrap_or_else(|| BTreeSet::from([candidate.clone()]));
+        let mut clause_functions: Vec<usize> = closure
+            .into_iter()
+            .filter_map(|member| authored_index.get(&member).copied())
+            .collect();
+        clause_functions.sort_unstable();
+        clause_functions.dedup();
+        precondition_clauses_index.insert(candidate.clone(), clause_functions);
+
+        let own_body =
+            require_expression(&clauses.own_body, candidate, MissingClauseField::OwnBody)?;
         let index = functions.len();
-        functions.push(FunctionDeclaration {
-            name: candidate.identity.clone(),
+        functions.push(FunctionDeclaration::clause(
+            candidate.identity.clone(),
             parameters,
             result,
-            measure: None,
-            body,
-            clause_kind: ClauseKind::Body,
-        });
+            None,
+            own_body,
+            ClauseKind::Body,
+        ));
         body_index.insert(candidate.clone(), index);
     }
 
     let mut entries = Vec::with_capacity(table.entries().len());
     for (subtype, candidate) in table.entries() {
-        let subtype_key = object_keys
-            .get(subtype)
-            .copied()
-            .ok_or_else(|| missing(subtype, "object_keys"))?;
-        let Some(&body) = body_index.get(candidate) else {
-            return Err(missing(candidate, "own_body"));
-        };
+        let subtype_key = object_keys.get(subtype).copied().ok_or_else(|| {
+            DispatchBridgeRefusal::MissingObjectKey {
+                subtype: Box::new(subtype.clone()),
+            }
+        })?;
+        let &body = body_index
+            .get(candidate)
+            .ok_or_else(|| missing(candidate, MissingClauseField::OwnBody))?;
         let precondition = precondition_index.get(candidate).copied();
-        entries.push((subtype_key, DispatchCandidate { body, precondition }));
+        let precondition_clauses = precondition_clauses_index
+            .get(candidate)
+            .cloned()
+            .unwrap_or_default();
+        entries.push((
+            subtype_key,
+            DispatchCandidate {
+                body,
+                precondition,
+                precondition_clauses,
+            },
+        ));
     }
-    let candidate_count = distinct.len() as u64;
+    // `distinct.len()` is a real candidate count, never a value near
+    // `u64::MAX`; the fallback only avoids a lossy `as` cast (finding
+    // #172-9), it is not a reachable refusal path.
+    let candidate_count = u64::try_from(distinct.len()).unwrap_or(u64::MAX);
     let checked_table = DispatchTable::new(entries, candidate_count);
 
     let member = clauses
         .member
         .get(&root.key)
         .cloned()
-        .ok_or_else(|| missing(&root.key, "member"))?;
+        .ok_or_else(|| missing(&root.key, MissingClauseField::Member))?;
     let (parameters, result) = require_signature(clauses, &root.key)?;
     // `parameters` is receiver-first (see `OperationClauses::parameters`);
     // the call site's own argument types are everything after it.
@@ -269,42 +797,66 @@ pub fn checked_dispatch_operation(
     })
 }
 
-/// The disjunction of every declared precondition in `candidate`'s
-/// redefinition ancestry, nearest first: `candidate`'s own precondition (if
-/// it declares one) `or` its nearest ancestor's `or` ... `None` only when no
-/// member in the whole chain declares one (TC-196 D08: a redefinition with
-/// no own precondition inherits its ancestor's, disjoined). Bounded task
-/// walk, mirroring `crate::model::dispatch::build_family`'s own style.
-fn effective_precondition(
-    redefinitions: &[RedefinitionRecord],
-    clauses: &OperationClauses,
-    candidate: &ProducerKey,
-) -> Option<Expression> {
-    let mut chain: Vec<Expression> = Vec::new();
-    let mut current = candidate.clone();
-    let mut visited: BTreeSet<ProducerKey> = BTreeSet::new();
-    visited.insert(current.clone());
-    let mut steps: usize = 0;
-    loop {
-        if let Some(expression) = clauses.own_precondition.get(&current) {
-            chain.push(expression.clone());
+#[cfg(test)]
+mod tests {
+    use super::{ancestor_closure, DispatchBridgeRefusal, MAX_ANCESTOR_DEPTH};
+    use crate::model::bundle::RedefinitionRecord;
+    use crate::model::key::ProducerKey;
+    use crate::model::normalize::ModelRefusalCause;
+
+    /// Finding #172-5: `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
+    /// rather than silently truncating the closure. A straight redefinition
+    /// chain one step past the bound (`op[N]` redefines `op[N-1]`, ...,
+    /// `op[1]` redefines `op[0]`) must be refused
+    /// `AncestorDepthExceeded`/`DispatchFamilyDepth`, not truncated to a
+    /// partial, silently-wrong closure.
+    #[test]
+    fn ancestor_closure_refuses_past_the_depth_bound_instead_of_truncating() {
+        let chain_length = MAX_ANCESTOR_DEPTH + 1;
+        let keys: Vec<ProducerKey> = (0..=chain_length)
+            .map(|index| ProducerKey::fixture(format!("model.chain.op{index}")))
+            .collect();
+        let redefinitions: Vec<RedefinitionRecord> = (1..keys.len())
+            .map(|index| RedefinitionRecord {
+                key: ProducerKey::fixture(format!("model.chain.redef{index}")),
+                owner: keys[index].clone(),
+                redefining: keys[index].clone(),
+                redefined: keys[index - 1].clone(),
+            })
+            .collect();
+        let deepest = keys.last().unwrap();
+
+        let refusal = ancestor_closure(&redefinitions, deepest)
+            .expect_err("a redefinition chain past MAX_ANCESTOR_DEPTH must be refused");
+        match refusal {
+            DispatchBridgeRefusal::AncestorDepthExceeded(model_refusal) => {
+                assert_eq!(
+                    model_refusal.cause,
+                    ModelRefusalCause::DispatchFamilyDepth {
+                        original: deepest.clone(),
+                    }
+                );
+            }
+            other => panic!("expected AncestorDepthExceeded, got {other:?}"),
         }
-        steps += 1;
-        if steps > MAX_ANCESTOR_DEPTH {
-            break;
-        }
-        let parent = redefinitions
-            .iter()
-            .find(|redefinition| redefinition.redefining == current)
-            .map(|redefinition| redefinition.redefined.clone());
-        match parent {
-            Some(next) if visited.insert(next.clone()) => current = next,
-            _ => break,
-        }
+
+        // One step short of the bound must still succeed and reach the full
+        // closure — the guard fires exactly at the bound, not before it.
+        let shallow_chain = MAX_ANCESTOR_DEPTH - 1;
+        let shallow_keys: Vec<ProducerKey> = (0..=shallow_chain)
+            .map(|index| ProducerKey::fixture(format!("model.shallow-chain.op{index}")))
+            .collect();
+        let shallow_redefinitions: Vec<RedefinitionRecord> = (1..shallow_keys.len())
+            .map(|index| RedefinitionRecord {
+                key: ProducerKey::fixture(format!("model.shallow-chain.redef{index}")),
+                owner: shallow_keys[index].clone(),
+                redefining: shallow_keys[index].clone(),
+                redefined: shallow_keys[index - 1].clone(),
+            })
+            .collect();
+        let shallow_deepest = shallow_keys.last().unwrap();
+        let closure = ancestor_closure(&shallow_redefinitions, shallow_deepest)
+            .expect("a chain exactly at MAX_ANCESTOR_DEPTH must not be refused");
+        assert_eq!(closure.len(), shallow_keys.len());
     }
-    chain.into_iter().reduce(|left, right| Expression::Binary {
-        operator: BinaryOperator::Or,
-        left: Box::new(left),
-        right: Box::new(right),
-    })
 }

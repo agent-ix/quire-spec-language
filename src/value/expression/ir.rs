@@ -130,13 +130,25 @@ pub struct CollectionLoss {
 
 /// One [`DispatchTable`] entry (FR-151): a linked candidate's own function
 /// indices in the same checked package.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct DispatchCandidate {
     /// The candidate operation body's index in the package's function list.
     pub body: usize,
     /// The candidate's effective precondition's index, when it, or a
-    /// redefinition ancestor it disjoins with, declares one.
+    /// redefinition ancestor it disjoins with, declares one. This is the
+    /// *runtime*-evaluated function: Boolean absorption (`true ∨ X = true`)
+    /// means an absent own clause makes this `None` even when an ancestor
+    /// still contributes a clause, so this alone underclaims the FR-146
+    /// call-graph edges (TC-196 D08) — see
+    /// [`precondition_clauses`](Self::precondition_clauses) for those.
     pub precondition: Option<usize>,
+    /// Every authored (non-absent) precondition clause function index
+    /// reachable from this candidate's own precondition or any redefinition
+    /// ancestor's effective precondition, regardless of runtime
+    /// short-circuiting: the full static FR-146 dispatch call-graph edge set
+    /// FR-151 requires ("an edge... to every precondition clause of every
+    /// candidate's effective precondition, which the call evaluates").
+    pub precondition_clauses: Vec<usize>,
 }
 
 /// One FR-151 dispatch table, checked and ready for the evaluator: the
@@ -175,18 +187,24 @@ impl DispatchTable {
         self.candidate_count
     }
 
+    /// Every entry, in the order this table carries them.
+    pub(crate) fn entries(&self) -> &[(NodeKey, DispatchCandidate)] {
+        &self.entries
+    }
+
     /// Every distinct function index this table can reach: every entry's
-    /// body and effective precondition, deduplicated, ascending. These are
-    /// the FR-146 dispatch call-graph edges a dispatched call through this
-    /// table contributes, from every candidate, not only the one a
-    /// particular receiver's runtime type would select.
+    /// body and every clause in its full static effective-precondition
+    /// ancestry, deduplicated, ascending. These are the FR-146 dispatch
+    /// call-graph edges a dispatched call through this table contributes,
+    /// from every candidate, not only the one a particular receiver's
+    /// runtime type would select, and regardless of runtime short-circuiting
+    /// (TC-196 D08: both candidates' static ancestries reach a cycle even
+    /// though one candidate's runtime-evaluated precondition is absent).
     pub(crate) fn callees(&self) -> BTreeSet<usize> {
         let mut callees = BTreeSet::new();
         for (_, candidate) in &self.entries {
             callees.insert(candidate.body);
-            if let Some(precondition) = candidate.precondition {
-                callees.insert(precondition);
-            }
+            callees.extend(candidate.precondition_clauses.iter().copied());
         }
         callees
     }
