@@ -16,12 +16,16 @@
 //!    ([`TypeEnvironment::check_equality`]), FR-144 bounded
 //!    [`CollectionValue`]s ([`construct_collection`]) and FR-307 library
 //!    resolution [`resolve_libraries`] (QSL #119);
-//! 4. [`order_numbers`] compares [`Integer`]/[`Rational`]/[`Decimal`]
-//!    operands under one [`OrderingOperator`]; [`evaluate_integer_arithmetic`]
-//!    and [`evaluate_rational_arithmetic`] evaluate `+`, `-`, `*`, `/` over
-//!    [`IntegerArithmetic`]/[`RationalArithmetic`] operands, and
-//!    [`evaluate_boolean`] evaluates `&&`/`||`/`!` — all under
-//!    `quire.value.accounting/v1` (QSL #119);
+//! 4. [`order_numbers`] compares one [`OrderedOperands`] pair (`Integer`,
+//!    `Rational` or `Decimal`) under one [`OrderingOperator`];
+//!    [`evaluate_integer_arithmetic`] evaluates add/subtract/multiply/negate
+//!    over [`IntegerArithmetic`] operands (integer division is rational
+//!    division of `n`/`1`, so it has no `Divide` variant here) and
+//!    [`evaluate_rational_arithmetic`] evaluates add/subtract/multiply/divide/
+//!    negate over [`RationalArithmetic`] operands; [`evaluate_boolean`]
+//!    evaluates the QSL connectives `and`/`or`/`implies`/`not` over
+//!    [`BooleanConnective`] operands — all under `quire.value.accounting/v1`
+//!    (QSL #119);
 //! 5. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
 //! 6. `quire.value.accounting/v1` metering through [`Meter`].
