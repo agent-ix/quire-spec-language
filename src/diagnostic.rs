@@ -131,6 +131,9 @@ pub enum Code {
     Cancelled,
     /// Execution encountered a violated established typing or input invariant.
     RuntimeInvariant,
+    /// FR-151 dispatch linking found no, or several undominated, applicable
+    /// candidates for a closed subtype.
+    AmbiguousDispatch,
 }
 
 impl Code {
@@ -178,6 +181,7 @@ impl Code {
             Self::FrameViolation => "frame_violation",
             Self::Cancelled => "cancelled",
             Self::RuntimeInvariant => "runtime_invariant",
+            Self::AmbiguousDispatch => "ambiguous_dispatch",
         }
     }
 
@@ -225,6 +229,7 @@ impl Code {
             Self::FrameViolation,
             Self::Cancelled,
             Self::RuntimeInvariant,
+            Self::AmbiguousDispatch,
         ]
     }
 

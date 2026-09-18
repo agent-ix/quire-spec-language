@@ -108,12 +108,23 @@ impl LimitKind {
 
 /// A normative named model-normalization charge point.
 ///
-/// This rung charges the phase-1/2/3/5 points below, plus `normalize.record`/
+/// This rung charges the phase-1/2/3/5 points below, plus
 /// `normalize.unsupplied-item` for a producer interface `1.2.0` bundle's
-/// fixed `unsupplied-producer-record` refusal sequence (TC-195 N08). Phase
-/// 4's `normalize.redefinition-check`/`normalize.conflict-check` are not
-/// charged because phase 4 is not implemented in this rung (see
-/// `crate::model::normalize` module docs).
+/// fixed `unsupplied-producer-record` refusal sequence (TC-195 N08), and now
+/// phase 4's `normalize.redefinition-check`/`normalize.conflict-check`
+/// (`quire.model.normalize.redefine/v1`, TC-195 N06); see
+/// `crate::model::normalize` module docs for that pass's exact scope. FR-151
+/// adds `conformance.axis` (`crate::model::conformance`) and
+/// `dispatch.subtype`/`dispatch.candidate`/`dispatch.dominance`
+/// (`crate::model::dispatch`); see those modules' docs for their scope —
+/// notably, dispatch's own work-unit costing is this crate's own choice
+/// where FR-151's exact prose figures depend on authored operation bodies
+/// this rung does not model. FR-152 adds `systems.kind`,
+/// `systems.connection-condition` and `systems.allocation`
+/// (`crate::model::systems`); its own module docs record that this rung
+/// does not implement `systems.resolve`/`model.navigate` (static/runtime
+/// navigation), which need a qualified-name binder and an object
+/// population this crate does not build.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ChargePoint {
     /// `normalize.record`.
@@ -122,23 +133,50 @@ pub enum ChargePoint {
     NormalizeFact,
     /// `normalize.cycle-check`.
     NormalizeCycleCheck,
+    /// `normalize.redefinition-check`.
+    NormalizeRedefinitionCheck,
+    /// `normalize.conflict-check`.
+    NormalizeConflictCheck,
     /// `normalize.declaration`.
     NormalizeDeclaration,
     /// `normalize.hash`.
     NormalizeHash,
     /// `normalize.unsupplied-item`.
     NormalizeUnsuppliedItem,
+    /// `conformance.axis`.
+    ConformanceAxis,
+    /// `dispatch.subtype`.
+    DispatchSubtype,
+    /// `dispatch.candidate`.
+    DispatchCandidate,
+    /// `dispatch.dominance`.
+    DispatchDominance,
+    /// `systems.kind`.
+    SystemsKind,
+    /// `systems.connection-condition`.
+    SystemsConnectionCondition,
+    /// `systems.allocation`.
+    SystemsAllocation,
 }
 
 impl ChargePoint {
     /// Every named point this rung charges, in first-use order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 15] = [
         Self::NormalizeRecord,
         Self::NormalizeFact,
         Self::NormalizeCycleCheck,
+        Self::NormalizeRedefinitionCheck,
+        Self::NormalizeConflictCheck,
         Self::NormalizeDeclaration,
         Self::NormalizeHash,
         Self::NormalizeUnsuppliedItem,
+        Self::ConformanceAxis,
+        Self::DispatchSubtype,
+        Self::DispatchCandidate,
+        Self::DispatchDominance,
+        Self::SystemsKind,
+        Self::SystemsConnectionCondition,
+        Self::SystemsAllocation,
     ];
 
     /// Normative identifier.
@@ -147,9 +185,18 @@ impl ChargePoint {
             Self::NormalizeRecord => "normalize.record",
             Self::NormalizeFact => "normalize.fact",
             Self::NormalizeCycleCheck => "normalize.cycle-check",
+            Self::NormalizeRedefinitionCheck => "normalize.redefinition-check",
+            Self::NormalizeConflictCheck => "normalize.conflict-check",
             Self::NormalizeDeclaration => "normalize.declaration",
             Self::NormalizeHash => "normalize.hash",
             Self::NormalizeUnsuppliedItem => "normalize.unsupplied-item",
+            Self::ConformanceAxis => "conformance.axis",
+            Self::DispatchSubtype => "dispatch.subtype",
+            Self::DispatchCandidate => "dispatch.candidate",
+            Self::DispatchDominance => "dispatch.dominance",
+            Self::SystemsKind => "systems.kind",
+            Self::SystemsConnectionCondition => "systems.connection-condition",
+            Self::SystemsAllocation => "systems.allocation",
         }
     }
 }
