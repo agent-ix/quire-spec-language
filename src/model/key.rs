@@ -8,12 +8,12 @@
 //! (this crate selects no `preserve_order` feature), so `serde_json::to_vec`
 //! already emits ascending-key, whitespace-free bytes for every ASCII member
 //! name this schema defines, which is RFC 8785 JCS for these preimages.
-
 use std::fmt;
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::model::refusal::ModelRefusalCause;
 use crate::value::length_amount;
 
 /// Digest domain of every producer digest selection (`filament-canonical-json-1`).
@@ -340,11 +340,19 @@ impl EffectiveDeclarationPreimage {
     /// example one read back from a checked-package `model_correspondence`
     /// node), not a wire decode (PR #140 F5). Returns `(cause, detail)` on
     /// the first defect found, in derivation order.
-    pub fn validate_derivation(&self) -> Result<(), (&'static str, String)> {
+    #[allow(
+        clippy::result_large_err,
+        reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    )]
+    pub fn validate_derivation(&self) -> Result<(), (ModelRefusalCause, String)> {
         for (position, fact) in self.derivation.iter().enumerate() {
             if fact.ordinal != position {
                 return Err((
-                    "unsorted-derivation",
+                    ModelRefusalCause::UnsortedDerivation {
+                        original: self.original.clone(),
+                        position,
+                        ordinal: fact.ordinal,
+                    },
                     format!(
                         "{} derivation fact at position {position} has ordinal {}, not {position}",
                         self.original.identity, fact.ordinal
@@ -356,7 +364,11 @@ impl EffectiveDeclarationPreimage {
             for later in (earlier + 1)..self.derivation.len() {
                 if self.derivation[earlier].inputs == self.derivation[later].inputs {
                     return Err((
-                        "duplicate-path",
+                        ModelRefusalCause::DuplicatePath {
+                            original: self.original.clone(),
+                            earlier,
+                            later,
+                        },
                         format!(
                             "{} derivation retains the same input path at positions {earlier} and {later}",
                             self.original.identity
