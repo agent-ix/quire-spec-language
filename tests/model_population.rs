@@ -1297,7 +1297,8 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
 /// refuse rather than silently keep only the first entry: `values_of`'s
 /// `find` would otherwise discard the second `model.A.all` entry with no
 /// signal at all, so [`admit_binding`] refuses `invalid_runtime_input`/
-/// `duplicate-field-values` naming the object and the duplicated field.
+/// `duplicate-member` (FR-272's closed cause; there is no dedicated
+/// duplicate-field variant) naming the object and the duplicated field.
 #[test]
 #[trace("TC-196", "FR-151-AC-10")]
 fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
@@ -1332,12 +1333,12 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
     match outcome {
         AdmissionOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(refusal.cause, "duplicate-field-values");
+            assert_eq!(refusal.cause, "duplicate-member");
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("model.A.all"));
         }
         other => {
-            panic!("expected Refused(invalid_runtime_input/duplicate-field-values), got {other:?}")
+            panic!("expected Refused(invalid_runtime_input/duplicate-member), got {other:?}")
         }
     }
 }
