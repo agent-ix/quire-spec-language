@@ -46,7 +46,7 @@ impl Phase {
 }
 
 /// Stable native code vocabulary; see docs/native-error-codes.md.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum Code {
     /// A selected local file could not be read.

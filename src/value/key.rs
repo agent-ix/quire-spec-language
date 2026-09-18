@@ -115,7 +115,8 @@ fn leaf<'a>(
             | Value::Reference(_)
             | Value::Option(_)
             | Value::Composite(_)
-            | Value::Collection(_),
+            | Value::Collection(_)
+            | Value::Population(_),
             _,
         ) => return None,
     };

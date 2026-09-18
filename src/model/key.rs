@@ -233,6 +233,16 @@ impl Fact {
 pub struct EffectiveId([u8; 32]);
 
 impl EffectiveId {
+    /// An effective declaration identity from its raw 32-byte digest, with no
+    /// re-hash. FR-143's reference identity triple carries a
+    /// `quire.model.effective-declaration/v1` digest as a reference's
+    /// most-specific type, so the bridge between a model reference and a
+    /// `crate::value` `Reference<T>` (`crate::value::node::NodeKey`, the same
+    /// 32 raw bytes under a different domain tag) is a direct byte transfer.
+    pub(crate) fn from_digest_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     /// The raw 32-byte digest.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0

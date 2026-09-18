@@ -28,6 +28,7 @@ use super::quantity::{Quantity, QuantityUnit};
 use super::rational::{Rational, RationalDomain};
 use super::reference::ObjectReference;
 use super::text::{Text, TextType};
+use crate::model::population::PopulationBinding;
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.
@@ -59,6 +60,11 @@ pub enum ValueType {
     Collection(Box<CollectionType>),
     /// `Reference<T>` to an object of the model object type with this key.
     Reference(NodeKey),
+    /// FR-153's `Population<T>[N]` parameter type: `N` is the declared
+    /// maximum an admitted [`PopulationBinding`] must carry (never `T`
+    /// itself, which `allInstances<T>(p)`/`lookup<T>(p, r)` name separately
+    /// at each call, per FR-153's own table).
+    Population(u64),
 }
 
 impl ValueType {
@@ -95,6 +101,9 @@ impl ValueType {
             (Self::Reference(object_type), Value::Reference(reference)) => {
                 reference.object_type() == *object_type
             }
+            (Self::Population(maximum), Value::Population(binding)) => {
+                binding.declared_maximum() == Some(*maximum)
+            }
             (
                 Self::Boolean
                 | Self::Integer
@@ -108,7 +117,8 @@ impl ValueType {
                 | Self::Option(_)
                 | Self::Composite(_)
                 | Self::Collection(_)
-                | Self::Reference(_),
+                | Self::Reference(_)
+                | Self::Population(_),
                 _,
             ) => false,
         }
@@ -144,6 +154,8 @@ pub enum Value {
     Collection(Arc<CollectionValue>),
     /// A terminal object reference.
     Reference(ObjectReference),
+    /// An admitted FR-153 closed population binding.
+    Population(Arc<PopulationBinding>),
 }
 
 impl Value {
@@ -163,7 +175,8 @@ impl Value {
             | Self::Quantity(_)
             | Self::Text(_)
             | Self::Enum(_)
-            | Self::Reference(_) => Integer::one(),
+            | Self::Reference(_)
+            | Self::Population(_) => Integer::one(),
         }
     }
 }
@@ -200,6 +213,42 @@ impl OptionValue {
             payload: Some(payload),
             occ,
         })))
+    }
+
+    /// Materialize an already-admitted `payload` as `Option<payload_type>`,
+    /// checking no structural `admits()` match. FR-153's `lookup<T>(p, r)
+    /// absent empty` (`crate::value::model_query::evaluate_lookup`) calls
+    /// this for a present result `found`, whose `object_type` is `r`'s own
+    /// runtime most-specific type `F` (FR-143's own identity triple), not the
+    /// queried `T`. Soundness does not rest on
+    /// `crate::model::population::lookup`'s `type_conforms` call proving `F`
+    /// conforms to `T` directly -- it checks `r`'s *declared* static type `S`
+    /// against `T`, never `F` against `T`. It rests on chaining two
+    /// invariants: admission guarantees `F` conforms to `S`, never `F == S`
+    /// -- `S` is `r`'s declared static type, and `r` may itself be the
+    /// result of an earlier upcast lookup, so `S` can already be a proper
+    /// supertype of `F`. Example: `lookup<A>(p, lookup<A>(p, rb) absent
+    /// refused) absent empty` has `S = A` (the outer call's declared static
+    /// type) and `F = B` (`rb`'s own most-specific type, preserved through
+    /// the inner call by this same soundness chain). `lookup`'s
+    /// `type_conforms(S, T)` call then gives `S` conforms to `T`; so `F`
+    /// conforms to `T` transitively (`F` conforms to `S` conforms to `T`).
+    /// [`Self::present`]'s own `admits()` call cannot verify that chain
+    /// itself -- it is exact object-type equality with no model-conformance
+    /// knowledge, so it cannot tell a genuine upcast (`F` a proper subtype of
+    /// `T`) from a real type mismatch -- which is why this bypasses it.
+    /// Mirrors [`crate::value::collection::from_admitted`]'s same role for
+    /// `allInstances`.
+    pub(crate) fn from_admitted(payload_type: ValueType, payload: Option<Value>) -> Value {
+        let occ = match &payload {
+            Some(payload) => Integer::one().add(&payload.occ()),
+            None => Integer::one(),
+        };
+        Value::Option(Arc::new(Self {
+            payload_type,
+            payload,
+            occ,
+        }))
     }
 
     /// The declared payload type.
@@ -526,7 +575,8 @@ impl TypeEnvironment {
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
                 | ValueType::Enum(_)
-                | ValueType::Reference(_) => {}
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => {}
             }
         }
         false
@@ -546,6 +596,21 @@ impl TypeEnvironment {
                     } else {
                         DeclarationCause::UnknownDeclaration(*key)
                     });
+                }
+                // FR-153 names a population binding only as the direct
+                // operand of `allInstances`/`lookup` (checked by
+                // `Typer::all_instances`/`Typer::lookup` themselves, which
+                // never route the population expression's own type through
+                // this walk) and as a bare parameter type (bypassed by
+                // `bind_parameters`, the one caller allowed to name it).
+                // Every other named-type context -- an equality operand or
+                // `Convert` target (`TypeEnvironment::check_equality`'s own
+                // explicit refusal covers the former), an `Option` payload, a
+                // collection element, or a record/tuple/object-type member --
+                // refuses it here, never admitting a binding into a context
+                // FR-153 never gives it Outputs for.
+                ValueType::Population(_) => {
+                    return Some(DeclarationCause::Type(IllTypedCause::OperatorIneligible));
                 }
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => {
@@ -642,7 +707,8 @@ impl TypeEnvironment {
                     | ValueType::Quantity(_)
                     | ValueType::Text(_)
                     | ValueType::Enum(_)
-                    | ValueType::Reference(_) => {}
+                    | ValueType::Reference(_)
+                    | ValueType::Population(_) => {}
                 }
             }
         }
