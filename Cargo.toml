@@ -51,6 +51,37 @@ path = "src/main.rs"
 name = "fixture-audit"
 path = "tools/fixture-audit/main.rs"
 
+# These integration tests call the `test-support`-gated fixture constructors
+# (`ProducerKey::fixture`, `ModelSelection::fixture`, `ProducerDigest::of_identity`)
+# documented above `test-support`. Declaring `required-features` here — rather
+# than gating the calls inside each test file — keeps a default-feature
+# `cargo clippy --all-targets`/`cargo test` build (no `test-support`) skipping
+# these targets outright instead of failing to compile them (#154).
+[[test]]
+name = "model_conformance"
+path = "tests/model_conformance.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "model_dispatch"
+path = "tests/model_dispatch.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "model_normalization"
+path = "tests/model_normalization.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "model_population"
+path = "tests/model_population.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "model_systems"
+path = "tests/model_systems.rs"
+required-features = ["test-support"]
+
 [lints.rust]
 unsafe_code = "forbid"
 
