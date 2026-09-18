@@ -36,6 +36,15 @@ reads a working tree, and never adds a path by scanning a source tree.
 against `VENDOR.json` offline and flags any file present here that
 `VENDOR.json` does not mention.
 
+To move a pin, edit the affected source's `commit` (and its path list) in
+`VENDOR.json` by hand, then re-run `revendor`; it replaces the tree
+wholesale, removing any file the new pin no longer lists rather than leaving
+it behind. Reading the `external/quire-spec-language` selection needs this
+repository's own history for that commit, so a shallow clone (for example
+`git clone --depth 1`, or CI's default `actions/checkout@v4` checkout) must
+first be made non-shallow (`git fetch --unshallow`, or an explicit `fetch-depth: 0`)
+before running `revendor` for `native-v1` against it.
+
 The [closed registry](../../src/linking/composed/definition_source.rs) interprets
 this selected snapshot. Supplied content must match its embedded original bytes;
 the registry tests compare those bytes with the retained resource files.

@@ -74,6 +74,19 @@ fn is_full_commit_sha(commit: &str) -> bool {
     commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// A non-empty, tree-relative path: no leading `/`, no `\`, and no `.` or
+/// `..` component. Every `PinnedFile::path`, `ExternalFile::dest` and
+/// non-empty `dest_prefix` must satisfy this before it is ever joined onto a
+/// resource tree root, so a manifest can only ever name a destination inside
+/// that tree.
+fn is_safe_relative_path(text: &str) -> bool {
+    if text.is_empty() || text.starts_with('/') || text.contains('\\') {
+        return false;
+    }
+    text.split('/')
+        .all(|component| !component.is_empty() && component != "." && component != "..")
+}
+
 pub(crate) fn join_dest(dest_prefix: &str, path: &str) -> String {
     if dest_prefix.is_empty() {
         path.to_owned()
@@ -152,6 +165,53 @@ impl Manifest {
                     });
                 }
             }
+            match source {
+                Source::Qspec {
+                    dest_prefix, files, ..
+                }
+                | Source::SelfRepo {
+                    dest_prefix, files, ..
+                } => {
+                    if !dest_prefix.is_empty() && !is_safe_relative_path(dest_prefix) {
+                        return Err(Error::InvalidManifest {
+                            path: path.to_owned(),
+                            message: format!(
+                                "{dest_prefix}: dest_prefix is not a safe tree-relative path; \
+                                 an absolute path, a backslash and a \".\" or \"..\" component \
+                                 are refused"
+                            ),
+                        });
+                    }
+                    for file in files {
+                        if !is_safe_relative_path(&file.path) {
+                            return Err(Error::InvalidManifest {
+                                path: path.to_owned(),
+                                message: format!(
+                                    "{}: path is not a safe tree-relative path; an absolute \
+                                     path, a backslash and a \".\" or \"..\" component are \
+                                     refused",
+                                    file.path
+                                ),
+                            });
+                        }
+                    }
+                }
+                Source::ExternalUrl { files } => {
+                    for file in files {
+                        if !is_safe_relative_path(&file.dest) {
+                            return Err(Error::InvalidManifest {
+                                path: path.to_owned(),
+                                message: format!(
+                                    "{}: dest is not a safe tree-relative path; an absolute \
+                                     path, a backslash and a \".\" or \"..\" component are \
+                                     refused",
+                                    file.dest
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
         }
         let mut seen = std::collections::BTreeSet::new();
         for dest in self.dest_paths() {
@@ -174,6 +234,7 @@ impl Manifest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
     use std::io::Write;
     use std::path::PathBuf;
 
@@ -185,6 +246,8 @@ mod tests {
         (dir, path)
     }
 
+    /// Tracing: TC-150.
+    #[trace("TC-150", "NFR-011-AC-2")]
     #[test]
     fn dest_paths_apply_dest_prefix_per_source_kind() {
         let manifest = Manifest {
@@ -227,6 +290,8 @@ mod tests {
         );
     }
 
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
     #[test]
     fn load_refuses_a_short_or_non_hex_commit() {
         let text = format!(
@@ -243,6 +308,79 @@ mod tests {
         assert!(error.to_string().contains("40-character commit sha"));
     }
 
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
+    #[test]
+    fn load_refuses_a_pinned_file_path_that_is_absolute_or_escapes_the_tree() {
+        for bad_path in ["/etc/passwd", "../../etc/passwd", "a/../b", "a/./b"] {
+            let manifest = Manifest {
+                schema_version: SCHEMA_VERSION,
+                tree: "t".into(),
+                sources: vec![Source::Qspec {
+                    repo: "r".into(),
+                    commit: "a".repeat(40),
+                    dest_prefix: String::new(),
+                    files: vec![PinnedFile {
+                        path: bad_path.into(),
+                        sha256: "sha256:".to_owned() + &"0".repeat(64),
+                    }],
+                }],
+            };
+            let error = manifest.validate(Path::new("VENDOR.json")).unwrap_err();
+            assert!(
+                matches!(error, Error::InvalidManifest { .. }),
+                "{bad_path:?}: {error}"
+            );
+            assert!(
+                error.to_string().contains("safe tree-relative path"),
+                "{bad_path:?}: {error}"
+            );
+        }
+    }
+
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
+    #[test]
+    fn load_refuses_a_dest_prefix_that_is_absolute_or_escapes_the_tree() {
+        let manifest = Manifest {
+            schema_version: SCHEMA_VERSION,
+            tree: "t".into(),
+            sources: vec![Source::SelfRepo {
+                commit: "a".repeat(40),
+                dest_prefix: "../outside".into(),
+                files: vec![PinnedFile {
+                    path: "p".into(),
+                    sha256: "sha256:".to_owned() + &"0".repeat(64),
+                }],
+            }],
+        };
+        let error = manifest.validate(Path::new("VENDOR.json")).unwrap_err();
+        assert!(matches!(error, Error::InvalidManifest { .. }));
+        assert!(error.to_string().contains("dest_prefix is not a safe"));
+    }
+
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
+    #[test]
+    fn load_refuses_an_external_file_dest_that_is_absolute_or_escapes_the_tree() {
+        let manifest = Manifest {
+            schema_version: SCHEMA_VERSION,
+            tree: "t".into(),
+            sources: vec![Source::ExternalUrl {
+                files: vec![ExternalFile {
+                    dest: "/etc/passwd".into(),
+                    url: "https://example.invalid/a.txt".into(),
+                    sha256: "sha256:".to_owned() + &"0".repeat(64),
+                }],
+            }],
+        };
+        let error = manifest.validate(Path::new("VENDOR.json")).unwrap_err();
+        assert!(matches!(error, Error::InvalidManifest { .. }));
+        assert!(error.to_string().contains("dest is not a safe"));
+    }
+
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
     #[test]
     fn load_refuses_the_same_destination_from_two_sources() {
         let sha = "0".repeat(64);
@@ -264,6 +402,8 @@ mod tests {
         assert!(error.to_string().contains("more than one source"));
     }
 
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
     #[test]
     fn load_refuses_an_unsupported_schema_version() {
         let text = r#"{"schema_version":2,"tree":"t","sources":[]}"#;
@@ -272,6 +412,8 @@ mod tests {
         assert!(matches!(error, Error::InvalidManifest { .. }));
     }
 
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
     #[test]
     fn load_refuses_an_unknown_field() {
         let text = r#"{"schema_version":1,"tree":"t","sources":[],"extra":true}"#;
@@ -279,6 +421,8 @@ mod tests {
         assert!(matches!(Manifest::load(&path), Err(Error::Manifest { .. })));
     }
 
+    /// Tracing: TC-150.
+    #[trace("TC-150", "NFR-011-AC-2")]
     #[test]
     fn save_then_load_round_trips() {
         let manifest = Manifest {

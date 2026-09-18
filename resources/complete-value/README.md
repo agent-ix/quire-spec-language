@@ -57,7 +57,11 @@ digest against what is already here. `cargo xtask revendor-check`
 (`make revendor-check`, and `cargo test --workspace` via
 `xtask/tests/revendor.rs`) verifies every vendored byte against `VENDOR.json`
 offline and flags any file present here that `VENDOR.json` does not mention.
-A new pin replaces the vendored bytes wholesale via `revendor`, never by hand.
+A new pin replaces the vendored bytes wholesale via `revendor`, never by hand:
+edit the affected source's `commit` (and its path list, for a `unicode-17.0.0/`
+file its `url`/`sha256`) in `VENDOR.json`, then re-run `revendor`; it removes
+any file the new pin no longer lists rather than leaving it behind as a stray
+file.
 
 FR-148 IEEE profiles (TC-193) read the `quire.value.ieee754-2019-default/v1`
 definition, the FR-148 rule and the TC-193 procedure; `tests/ieee_profiles.rs`

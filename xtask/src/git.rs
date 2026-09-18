@@ -7,12 +7,31 @@ use crate::error::{Error, Result};
 use std::path::Path;
 use std::process::Command;
 
+/// Variables through which an ambient git invocation (for example one
+/// launched from inside a git hook) can redirect `-C <repo>` to a different
+/// repository or working tree. Every command this module runs clears them,
+/// so `-C` always wins.
+const GIT_ENV_OVERRIDES: [&str; 5] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+];
+
+fn git_command(repo: &Path) -> Command {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo);
+    for variable in GIT_ENV_OVERRIDES {
+        command.env_remove(variable);
+    }
+    command
+}
+
 /// `git -C <repo> cat-file -e <commit>^{commit}`: confirm the pinned commit
 /// is actually present, without downloading anything.
 pub fn commit_exists(repo: &Path, commit: &str) -> Result<bool> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo)
+    let output = git_command(repo)
         .arg("cat-file")
         .arg("-e")
         .arg(format!("{commit}^{{commit}}"))
@@ -27,9 +46,7 @@ pub fn commit_exists(repo: &Path, commit: &str) -> Result<bool> {
 /// `git -C <repo> show <commit>:<path>`: read one file's exact bytes at the
 /// pinned commit. Never resolves "latest", never touches the working tree.
 pub fn show(repo: &Path, commit: &str, path: &str) -> Result<Vec<u8>> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo)
+    let output = git_command(repo)
         .arg("show")
         .arg(format!("{commit}:{path}"))
         .output()

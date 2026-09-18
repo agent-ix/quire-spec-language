@@ -1,4 +1,5 @@
 [alias]
 # QSL #138: `cargo xtask revendor` / `cargo xtask revendor-check` wrap the
-# `xtask` workspace crate (see xtask/README topics in resources/*/README.md).
+# `xtask` workspace crate (see the "Re-vendoring" section in each of
+# resources/native-v1/README.md and resources/complete-value/README.md).
 xtask = "run --package xtask --"

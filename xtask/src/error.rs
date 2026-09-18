@@ -70,6 +70,8 @@ pub enum Error {
     UnknownCommit { repo: PathBuf, commit: String },
     #[error("no --qspec-clone was given; it is required to revendor pinned commit {commit}")]
     MissingClone { commit: String },
+    #[error("revendor-check does not take --qspec-clone; it checks recorded digests offline")]
+    CheckRefusesQspecClone,
     #[error(
         "{dest}: on-disk sha256 {actual} does not match the manifest's recorded {expected}; \
          external sources are never fetched, so re-download and update the manifest by hand"
@@ -93,7 +95,7 @@ impl Error {
 
     pub fn code(&self) -> Code {
         match self {
-            Self::Usage(_) => Code::Usage,
+            Self::Usage(_) | Self::CheckRefusesQspecClone => Code::Usage,
             Self::Io { .. } | Self::GitSpawn { .. } => Code::Io,
             Self::Manifest { .. } | Self::InvalidManifest { .. } => Code::Manifest,
             Self::Git { .. } | Self::UnknownCommit { .. } => Code::Git,

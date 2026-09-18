@@ -61,12 +61,16 @@ pub struct RevendorReport {
     pub unchanged: Vec<String>,
     /// External-source destination paths whose digest was confirmed.
     pub verified_external: Vec<String>,
+    /// Paths removed because the manifest no longer lists them: a new pin
+    /// replaces the tree wholesale, so a path dropped from `VENDOR.json`
+    /// does not linger on disk as an unexplained stray file.
+    pub removed: Vec<String>,
 }
 
 impl RevendorReport {
-    /// Idempotency: a second run at the same pin writes nothing.
+    /// Idempotency: a second run at the same pin writes and removes nothing.
     pub fn is_noop(&self) -> bool {
-        self.written.is_empty()
+        self.written.is_empty() && self.removed.is_empty()
     }
 }
 
@@ -159,7 +163,27 @@ pub fn revendor(
             }
         }
     }
+    remove_files_the_manifest_no_longer_lists(manifest, tree_root, &mut report)?;
     Ok(report)
+}
+
+/// A new pin replaces the tree wholesale: any entry under `tree_root` that
+/// `manifest` no longer lists (other than `VENDOR.json` and `README.md`) is
+/// removed rather than left behind as a stray file.
+fn remove_files_the_manifest_no_longer_lists(
+    manifest: &Manifest,
+    tree_root: &Path,
+    report: &mut RevendorReport,
+) -> Result<()> {
+    let known: BTreeSet<String> = manifest.dest_paths().into_iter().collect();
+    for rel in fsutil::walk_relative(tree_root)? {
+        if rel == "VENDOR.json" || rel == "README.md" || known.contains(&rel) {
+            continue;
+        }
+        fsutil::remove(tree_root, &rel)?;
+        report.removed.push(rel);
+    }
+    Ok(())
 }
 
 fn revendor_pinned(
