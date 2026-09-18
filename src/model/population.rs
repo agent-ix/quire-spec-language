@@ -1012,3 +1012,25 @@ pub fn lookup(
         }
     }
 }
+
+/// Whether `s` conforms to `t` under `binding`'s own admitted generalization
+/// graph -- a `pub(crate)` door onto [`type_conforms`], which stays
+/// `pub(super)`, because `binding.generals` is private to this module. Exists
+/// only for `crate::value::model_query`'s malformed-reference short-circuit
+/// (FR-153: a reference whose universe or object-identity bytes cannot be
+/// losslessly bridged into a well-formed [`LookupKey`] still has to decide
+/// `type_conforms(S, T)` *before any charge*, [`lookup`]'s own ordering,
+/// without ever substituting a derived value for the malformed bytes and
+/// risking it aliasing a real member -- see that module's docs). This is
+/// evaluation-time only: it does nothing for the check-time "TypeEnvironment
+/// island" gap tracked at
+/// <https://github.com/agent-ix/quire-spec-language/issues/164>, which is
+/// about the *checker* having no generalization data before any
+/// `PopulationBinding` exists.
+pub(crate) fn conforms(
+    binding: &PopulationBinding,
+    s: &ProducerKey,
+    t: &ProducerKey,
+) -> Result<bool, ModelRefusal> {
+    type_conforms(&binding.generals, s, t)
+}

@@ -224,16 +224,21 @@ impl OptionValue {
     /// `crate::model::population::lookup`'s `type_conforms` call proving `F`
     /// conforms to `T` directly -- it checks `r`'s *declared* static type `S`
     /// against `T`, never `F` against `T`. It rests on chaining two
-    /// invariants: exact-match parameter admission (`Self::present`'s own
-    /// structural `payload_type.admits`, applied wherever `r` was bound as a
-    /// `Reference<S>`) guarantees `F == S`; `lookup`'s `type_conforms(S, T)`
-    /// call then gives `S` conforms to `T`; so `F` conforms to `T` by
-    /// substitution. [`Self::present`]'s own `admits()` call cannot verify
-    /// that chain itself -- it is exact object-type equality with no
-    /// model-conformance knowledge, so it cannot tell a genuine upcast
-    /// (`F` a proper subtype of `T`) from a real type mismatch -- which is
-    /// why this bypasses it. Mirrors [`crate::value::collection::from_admitted`]'s
-    /// same role for `allInstances`.
+    /// invariants: admission guarantees `F` conforms to `S`, never `F == S`
+    /// -- `S` is `r`'s declared static type, and `r` may itself be the
+    /// result of an earlier upcast lookup, so `S` can already be a proper
+    /// supertype of `F`. Example: `lookup<A>(p, lookup<A>(p, rb) absent
+    /// refused) absent empty` has `S = A` (the outer call's declared static
+    /// type) and `F = B` (`rb`'s own most-specific type, preserved through
+    /// the inner call by this same soundness chain). `lookup`'s
+    /// `type_conforms(S, T)` call then gives `S` conforms to `T`; so `F`
+    /// conforms to `T` transitively (`F` conforms to `S` conforms to `T`).
+    /// [`Self::present`]'s own `admits()` call cannot verify that chain
+    /// itself -- it is exact object-type equality with no model-conformance
+    /// knowledge, so it cannot tell a genuine upcast (`F` a proper subtype of
+    /// `T`) from a real type mismatch -- which is why this bypasses it.
+    /// Mirrors [`crate::value::collection::from_admitted`]'s same role for
+    /// `allInstances`.
     pub(crate) fn from_admitted(payload_type: ValueType, payload: Option<Value>) -> Value {
         let occ = match &payload {
             Some(payload) => Integer::one().add(&payload.occ()),
