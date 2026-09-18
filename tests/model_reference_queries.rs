@@ -8,7 +8,7 @@
 //! `tests/model_population.rs`'s L01-L08 already back FR-153 at the
 //! `crate::model::population` layer; those calls never pass through
 //! `Expression::AllInstances`/`Expression::Lookup`, the `Typer`, `NodeKind`,
-//! `Machine` or `crate::value::model_query`'s FR-143 identity bridge — the
+//! `Machine` or `crate::value::model_query`'s own identity bridge — the
 //! layer QSL #120 slice 1a actually adds. This file is L12 onward: the same
 //! TC-195 F1 model (`model.A`, `model.B`, generalization `B -> A`) and TC-198
 //! P1 population document, run as real source expressions with a
@@ -34,9 +34,12 @@ use quire_spec_language::model::population::{
     PopulationBinding, PopulationDocument, PopulationMember,
 };
 use quire_spec_language::value::{
-    CheckMode, CheckedPackage, CheckingLimits, Expression, LimitKind, Meter, NodeKey,
-    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
-    PackageDeclarations, ScalarLimits, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    BinaryOperator, CardinalityBound, ChargePoint, CheckCause, CheckMode, CheckRefusal,
+    CheckedExpression, CheckedPackage, CheckingLimits, CollectionKind, CollectionType,
+    CompositeDeclaration, CompositeShape, DeclarationCause, Expression, FieldDeclaration,
+    IllTypedCause, Integer, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence, ScalarLimits,
+    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -154,7 +157,7 @@ fn admitted_binding(
     }
 }
 
-/// The direct FR-143 byte transfer of a model type/universe/object identity
+/// The direct byte transfer of a model type/universe/object identity
 /// into a checked `crate::value::ObjectReference`, exactly as
 /// `crate::value::model_query::to_object_reference` bridges a real
 /// `all_instances`/`lookup` result. Test-side construction of an argument
@@ -250,7 +253,7 @@ fn check(
     package: &CheckedPackage,
     parameters: &[(&str, ValueType)],
     expression: &Expression,
-) -> quire_spec_language::value::CheckedExpression {
+) -> CheckedExpression {
     let parameters = parameters
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
@@ -264,6 +267,43 @@ fn check(
             CheckingLimits::default(),
         )
         .unwrap()
+}
+
+/// Like [`check`], for a checked program findings 1/5 expect the checker to
+/// refuse outright -- `Population` named anywhere FR-153 does not give it
+/// Outputs, or a non-`Population` operand where `allInstances`/`lookup`
+/// require one.
+fn check_refusal(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+) -> CheckRefusal {
+    let parameters = parameters
+        .iter()
+        .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+        .collect();
+    match package.check_expression(
+        parameters,
+        expression,
+        None,
+        CheckMode::Kernel,
+        CheckingLimits::default(),
+    ) {
+        Err(refusal) => refusal,
+        Ok(checked) => panic!(
+            "expected a check refusal, got a checked {:?}",
+            checked.value_type()
+        ),
+    }
+}
+
+/// A stable `NodeKey` distinct from any `scenario()` type, for a declaration
+/// this file constructs but never admits into `fixture_f1`'s model -- finding
+/// 1's record-field/object-attribute cases (checked at
+/// `TypeEnvironment::new` time, never through an expression) and finding 2's
+/// package-declared-but-not-in-the-model case need one each.
+fn fixed_key(byte: u8) -> NodeKey {
+    NodeKey::from_hex(&format!("{byte:02x}").repeat(32)).unwrap()
 }
 
 fn run(
@@ -325,8 +365,8 @@ fn reference_elements(value: &Value) -> Vec<ObjectReference> {
 /// every current member whose most-specific type conforms to `M::A` —
 /// `b1` (via the closed `B -> A` generalization) then `a1`, `a2` — in
 /// canonical reference order, backing FR-153-AC-1 (closed population),
-/// AC-5 (bounded, typed `Set<Reference<T>>` result) directly through the
-/// checker/evaluator, and AC-6 (`b1`'s reference is identical whether
+/// FR-153-AC-5 (bounded, typed `Set<Reference<T>>` result) directly through
+/// the checker/evaluator, and FR-153-AC-6 (`b1`'s reference is identical whether
 /// selected under `M::A` or queried directly under `M::B`).
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
@@ -369,7 +409,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     assert_eq!(reference_elements(&value), expected);
     assert!(meter.consumed(LimitKind::WorkUnits) > 0);
 
-    // AC-6: the same object, `b1`, selected under `M::B` directly, is the
+    // FR-153-AC-6: the same object, `b1`, selected under `M::B` directly, is the
     // identical reference the `M::A` selection above already carries.
     let arguments_b = vec![Value::Population(Arc::new(scenario.binding.clone()))];
     let expression_b = all_instances(ValueType::Reference(node_key(&scenario.b)));
@@ -397,6 +437,14 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
 /// call already does (`tests/model_population.rs`'s
 /// `l01_all_instances_incomplete_at_result_retain`) — backing FR-153-AC-3
 /// (accounting) at the expression layer, not only at the model layer.
+///
+/// Pins the exact totals `tests/model_population.rs`'s L01 already proves at
+/// the model layer (3 `population.visit` + 1 `collection.bound` + 1
+/// `collection.result-retain` charge = 5 work units; the `n + 1 = 4`
+/// `result_units` the retain charge sizes for a 3-element selection), so a
+/// regression that adds or drops a charge at the expression layer -- rather
+/// than only at evaluation of the bridge around it -- fails here too, then
+/// pins the low-limit denial to the exact same charge point L01 denies at.
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
@@ -404,7 +452,21 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
     let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
-    let arguments = vec![Value::Population(Arc::new(scenario.binding.clone()))];
+
+    let (outcome, meter) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    match outcome {
+        Outcome::Completed(_) => {}
+        other => panic!("expected a completed collection under no limit, got {other:?}"),
+    }
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 5);
+    assert_eq!(meter.consumed(LimitKind::ResultUnits), 4);
 
     let limited = ScalarLimits {
         work_units: 4,
@@ -414,12 +476,18 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
         &package,
         &parameters,
         &expression,
-        arguments,
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
         limited,
         &ObjectEnvironment::default(),
     );
     match outcome {
-        Outcome::Incomplete(_) => {}
+        Outcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 4);
+            assert_eq!(incomplete.consumed, 4);
+            assert_eq!(incomplete.next_charge, Integer::from(1_u64));
+            assert_eq!(incomplete.charge_point, ChargePoint::CollectionResultRetain);
+        }
         other => panic!("expected Incomplete under a work_units:4 ceiling, got {other:?}"),
     }
 }
@@ -427,7 +495,7 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
 /// TC-198 L14: `lookup<M::A>(p, r) absent undefined` through the real
 /// checker/evaluator returns the present member's reference for a member
 /// key and `Outcome::Undefined` for an absent one, backing FR-153-AC-2
-/// (per-mode presence) and AC-4 (typed present-result Outputs) at the
+/// (per-mode presence) and FR-153-AC-4 (typed present-result Outputs) at the
 /// expression layer.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
@@ -482,14 +550,14 @@ fn l14_lookup_expression_undefined_mode() {
         &objects(&scenario),
     );
     match absent {
-        Outcome::Undefined(_) => {}
-        other => panic!("expected Undefined for an absent key, got {other:?}"),
+        Outcome::Undefined(reason) => assert_eq!(reason, Undefined::AbsentKey),
+        other => panic!("expected Undefined(AbsentKey) for an absent key, got {other:?}"),
     }
 }
 
 /// TC-198 L15: `lookup<M::A>(p, r) absent empty` wraps a present member's
 /// reference as `Option::present` and an absent key as `Option::none`,
-/// through the real checker/evaluator — backing FR-153-AC-2 and AC-4's
+/// through the real checker/evaluator — backing FR-153-AC-2 and FR-153-AC-4's
 /// `Option<Reference<T>>` Outputs shape for `empty` mode specifically.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
@@ -556,7 +624,7 @@ fn l15_lookup_expression_empty_mode() {
 /// exact same closed `code`/`cause` pair
 /// (`invalid_runtime_input`/`absent-key`) `crate::model::population::lookup`
 /// itself raises — backing FR-153-AC-2 (per-mode presence, `refused` mode)
-/// through the FR-143 identity bridge's refusal path
+/// through the identity bridge's refusal path
 /// (`crate::value::model_query::model_refusal`), not only its success path.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
@@ -588,5 +656,310 @@ fn l16_lookup_expression_refused_mode() {
             assert_eq!(refusal.cause(), Some("absent-key"));
         }
         other => panic!("expected a refused absent-key lookup, got {other:?}"),
+    }
+}
+
+/// FR-153 names a population binding only as the direct operand of
+/// `allInstances`/`lookup`, or a bare parameter's own declared type; every
+/// other named-type context refuses it, never merely leaving `p == p` (or an
+/// `Option`/collection/record/object-type context that names it) to reach
+/// `Refusal::CheckedInvariant` at evaluation for an admitted program.
+#[test]
+fn population_refused_as_equality_operand() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = Expression::Binary {
+        operator: BinaryOperator::Equal,
+        left: Box::new(population_name()),
+        right: Box::new(population_name()),
+    };
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
+}
+
+#[test]
+fn population_refused_as_option_payload() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = Expression::Convert {
+        target: ValueType::Option(Box::new(ValueType::Population(3))),
+        operand: Box::new(Expression::Boolean(true)),
+    };
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
+}
+
+#[test]
+fn population_refused_as_collection_element() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = Expression::Convert {
+        target: ValueType::collection(CollectionType::new(
+            CollectionKind::Set,
+            ValueType::Population(3),
+            CardinalityBound::new(0, 3).unwrap(),
+        )),
+        operand: Box::new(Expression::Boolean(true)),
+    };
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
+}
+
+/// Unlike the cases above, a record field or object-type attribute names its
+/// member types at declaration time, checked once by
+/// `TypeEnvironment::new`'s own `check_member_types` walk, never by
+/// `check_expression` -- this is a different entry point into the same
+/// `TypeEnvironment::type_refusal` this file's other `population_refused_*`
+/// cases exercise through the checker.
+#[test]
+fn population_refused_as_record_field() {
+    let scenario = scenario();
+    let declaration = CompositeDeclaration::new(
+        fixed_key(0xAA),
+        "Holder",
+        CompositeShape::Record(vec![FieldDeclaration::new(
+            "value",
+            ValueType::Population(3),
+            Presence::Required,
+        )]),
+    );
+    let result = TypeEnvironment::new(
+        [declaration],
+        [
+            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
+            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+        ],
+    );
+    match result {
+        Err(invalid) => assert_eq!(
+            invalid.cause,
+            DeclarationCause::Type(IllTypedCause::OperatorIneligible)
+        ),
+        Ok(_) => panic!("expected a refused declaration for a Population record field"),
+    }
+}
+
+#[test]
+fn population_refused_as_object_attribute() {
+    let scenario = scenario();
+    let declaration = ObjectTypeDeclaration::new(
+        fixed_key(0xBB),
+        "M::Holder",
+        vec![FieldDeclaration::new(
+            "value",
+            ValueType::Population(3),
+            Presence::Required,
+        )],
+    );
+    let result = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
+            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            declaration,
+        ],
+    );
+    match result {
+        Err(invalid) => assert_eq!(
+            invalid.cause,
+            DeclarationCause::Type(IllTypedCause::OperatorIneligible)
+        ),
+        Ok(_) => panic!("expected a refused declaration for a Population object attribute"),
+    }
+}
+
+/// FR-153/TC-198 L06: the population operand is the wrong *kind*, not merely
+/// the wrong type name, so both `allInstances`/`lookup` refuse it
+/// `ill_typed`/`operator-ineligible`, never `type-mismatch`.
+#[test]
+fn all_instances_refuses_non_population_operand_as_ineligible() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Integer)];
+    let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
+}
+
+#[test]
+fn lookup_refuses_non_population_operand_as_ineligible() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [
+        ("p", ValueType::Integer),
+        ("r", ValueType::Reference(node_key(&scenario.a))),
+    ];
+    let expression = lookup(
+        ValueType::Reference(node_key(&scenario.a)),
+        AbsenceMode::Undefined,
+    );
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
+}
+
+/// FR-153-AC-3: a package may declare an object type its checked
+/// `TypeEnvironment` admits that a particular runtime `PopulationBinding`'s
+/// model never exports -- the checker cannot decide that (the
+/// "TypeEnvironment island", `crate::value::model_query`'s module docs), so
+/// `crate::value::model_query::resolve_target` must itself refuse it at
+/// evaluation, `ill_typed`/`type-mismatch`, the same cause
+/// `crate::model::population::all_instances`'s own `is_object_type` gives a
+/// declared type the model doesn't recognize -- never
+/// `Refusal::CheckedInvariant`.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() {
+    let scenario = scenario();
+    let foreign_key = fixed_key(0xCC);
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
+            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            ObjectTypeDeclaration::new(foreign_key, "M::C", vec![]),
+        ],
+    )
+    .unwrap();
+    let package = PackageDeclarations {
+        types,
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .unwrap();
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = all_instances(ValueType::Reference(foreign_key));
+
+    let (outcome, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    match outcome {
+        Outcome::Refused(refusal) => {
+            assert_eq!(refusal.code(), Some("ill_typed"));
+            assert_eq!(refusal.cause(), Some("type-mismatch"));
+        }
+        other => {
+            panic!("expected a refused type-mismatch for an undeclared model type, got {other:?}")
+        }
+    }
+}
+
+/// FR-153-AC-3: `lookup`'s own `type_conforms(S, T)` runs "before any
+/// charge" (TC-198 L03), so a malformed reference cannot skip it -- the
+/// checked static type `S` (`M::B`) must still conform to the queried `T`
+/// (`M::A`) for this probe to reach the bridge at all. Once it does, a
+/// 5-byte universe (never this model's own 32-byte
+/// `quire.model.object-universe/v1` digest) can only be bridged into a value
+/// that provably is not this binding's own universe
+/// (`crate::value::model_query::bridged_universe`'s bit-complement), so the
+/// single real `crate::model::population::lookup` decides it exactly as it
+/// would a genuinely foreign reference: one `lookup.key` charge, then
+/// `foreign-universe`.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.b))),
+    ];
+    let expression = lookup(target, AbsenceMode::Undefined);
+
+    let malformed_reference = ObjectReference::new(
+        UniverseIdentity::new(&[1, 2, 3, 4, 5]).unwrap(),
+        node_key(&scenario.b),
+        ObjectIdentity::new(b"b1").unwrap(),
+    );
+    let object_world =
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+
+    let (outcome, meter) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(malformed_reference),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match outcome {
+        Outcome::Refused(refusal) => {
+            assert_eq!(refusal.code(), Some("foreign_reference"));
+            assert_eq!(refusal.cause(), Some("foreign-universe"));
+        }
+        other => panic!("expected a refused foreign-universe lookup, got {other:?}"),
+    }
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+}
+
+/// A reference whose object-identity bytes are not valid UTF-8 can never
+/// name a real population member (every member's own identity is a JSON
+/// string, `crate::model::population::PopulationDocument`), so
+/// `crate::value::model_query::bridged_object`'s lossy fallback still lets
+/// the single real `lookup` decide absence -- `none` in `empty` mode --
+/// rather than a checked invariant.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.a))),
+    ];
+    let expression = lookup(target.clone(), AbsenceMode::Empty);
+
+    let malformed_reference = ObjectReference::new(
+        UniverseIdentity::new(scenario.universe.as_bytes()).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
+    );
+    let object_world =
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+
+    let (outcome, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(malformed_reference),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match outcome {
+        Outcome::Completed(Value::Option(option)) => {
+            assert_eq!(option.payload_type(), &target);
+            assert!(option.payload().is_none());
+        }
+        other => panic!("expected a completed none option, got {other:?}"),
     }
 }

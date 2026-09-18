@@ -1476,8 +1476,11 @@ impl<'a> Typer<'a> {
             return Err(mismatch(location));
         }
         let population = self.infer(population, None, &location.child(0))?;
+        // FR-153 requires `p` to be a population binding with a declared
+        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
+        // the operand is the wrong kind, not merely the wrong type name.
         let ValueType::Population(maximum) = population.value_type else {
-            return Err(mismatch(&population.location));
+            return Err(ineligible(&population.location));
         };
         let collection_type = CollectionType::new(
             CollectionKind::Set,
@@ -1496,7 +1499,15 @@ impl<'a> Typer<'a> {
     /// `lookup<T>(p, r) absent m` (FR-153). `r`'s own checked static type `S`
     /// (never `T`) is `reference.value_type` at evaluation time
     /// (`crate::value::expression::evaluate`), so [`NodeKind::Lookup`] does
-    /// not restate it.
+    /// not restate it. FR-153 also refuses `ill_typed`/`type-mismatch` at
+    /// check time when `S` does not conform to `T` (TC-198 L03's last case,
+    /// "before any charge") -- this checker cannot decide that here without
+    /// the model's own generalization graph, which `TypeEnvironment` does not
+    /// carry (the "TypeEnvironment island", tracked at
+    /// <https://github.com/agent-ix/quire-spec-language/issues/164>), so that
+    /// refusal is deferred to evaluation, inside
+    /// `crate::model::population::lookup`'s own `type_conforms` call
+    /// (`crate::value::model_query::evaluate_lookup`).
     fn lookup(
         &mut self,
         target: &ValueType,
@@ -1510,8 +1521,11 @@ impl<'a> Typer<'a> {
             return Err(mismatch(location));
         }
         let population = self.infer(population, None, &location.child(0))?;
+        // FR-153 requires `p` to be a population binding with a declared
+        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
+        // the operand is the wrong kind, not merely the wrong type name.
         if !matches!(population.value_type, ValueType::Population(_)) {
-            return Err(mismatch(&population.location));
+            return Err(ineligible(&population.location));
         }
         let reference = self.infer(reference, None, &location.child(1))?;
         if !matches!(reference.value_type, ValueType::Reference(_)) {
@@ -1744,13 +1758,22 @@ fn catalogued_step(step: &Node, accumulator: Slot, value_type: &ValueType) -> bo
 }
 
 /// Check a function signature's declared types and bind its parameters.
+/// FR-153's `Population<T>[N]` parameter type (`ValueType::Population`) is
+/// the one context that names a population binding directly, so it bypasses
+/// [`Typer::check_declared_type`]: that walk (`TypeEnvironment::type_refusal`)
+/// refuses `Population` everywhere else (an equality operand, an `Option`
+/// payload, a collection element, a record/tuple/object-type member, or any
+/// other named type), since FR-153 gives it Outputs only as the direct
+/// operand of `allInstances`/`lookup`.
 pub(crate) fn bind_parameters(
     typer: &mut Typer<'_>,
     parameters: &[(String, ValueType)],
     location: &Location,
 ) -> Result<(), CheckRefusal> {
     for (name, value_type) in parameters {
-        typer.check_declared_type(value_type, location)?;
+        if !matches!(value_type, ValueType::Population(_)) {
+            typer.check_declared_type(value_type, location)?;
+        }
         typer.bind(name, value_type.clone(), location)?;
     }
     Ok(())

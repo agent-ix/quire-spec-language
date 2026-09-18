@@ -51,12 +51,15 @@
 //! Neither wraps its members as `crate::value::Value::Reference`
 //! (`ObjectReference`): that type's identity components
 //! (`NodeKey`/`UniverseIdentity`/`ObjectIdentity`, `crate::value::reference`)
-//! belong to FR-143's own closed object environment, and this crate defines
-//! no mapping from `crate::model`'s `EffectiveId`/`ProducerKey` identities
-//! into that byte space anywhere. Fabricating one here without a documented
-//! canonical encoding would risk a worse defect than the untyped result it
-//! replaces, so this rung's typed wrappers stay in `crate::model`'s own
-//! identity domain.
+//! belong to FR-143's own closed object environment, so this rung's typed
+//! wrappers stay in `crate::model`'s own identity domain rather than
+//! constructing that type themselves. `crate::value::model_query` is the
+//! documented canonical encoding this module's own module docs once called
+//! for: FR-143 defines a reference's `universe` and most-specific `type` as
+//! literally this crate's own `quire.model.object-universe/v1` and
+//! `quire.model.effective-declaration/v1` digests, so that bridge is a
+//! direct byte transfer between `EffectiveId`/`ProducerKey` and
+//! `NodeKey`/`UniverseIdentity`, never a re-hash.
 //!
 //! # Binding/bundle correspondence
 //!
