@@ -21,7 +21,15 @@ use super::reference::ObjectEnvironment;
 use check::{bind_parameters, Scope, Signature, Typer};
 use evaluate::{Callable, Machine};
 use facts::{CallSite, Definedness};
-use ir::Node;
+
+// `crate::model::conformance`'s FR-151 refinement obligation reuses this
+// crate's own FR-146 fact-derivation primitive rather than a second
+// implementation (see `established_field_fact`'s own doc); exposed
+// crate-internal-only, the same `pub(crate) use` pattern
+// `crate::value::mod`'s own `length_amount`/`Charge` re-export already uses
+// for `model`<->`value` reuse.
+pub(crate) use facts::{established_field_fact, Established};
+pub(crate) use ir::{Node, NodeKind, OrderedKind};
 
 pub use check::{
     CheckingLimits, DepthAboveMaximum, EnumBinding, PackageDeclarations, MAX_CHECKING_DEPTH,

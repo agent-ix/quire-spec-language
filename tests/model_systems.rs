@@ -128,7 +128,7 @@ fn operation_run() -> BundleRecord {
         result: None,
         effect: OperationEffect::default(),
         has_own_precondition: false,
-        own_postcondition_facts: vec![],
+        own_postcondition_clauses: vec![],
         has_body: true,
     })
 }

@@ -11,6 +11,7 @@
 //! through that value.
 
 use crate::model::key::{ProducerDigest, ProducerKey, Revision};
+use crate::value::OrderingOperator;
 
 /// The one contract version this rung normalizes (`model-complete.md`).
 pub const INTERFACE_VERSION_1_3_0: &str = "1.3.0";
@@ -118,41 +119,51 @@ pub struct OperationEffect {
     pub deletes: Vec<ProducerKey>,
 }
 
-/// A fact an operation's own postcondition clause establishes about
-/// `self.<field>`, exactly as FR-151's refinement obligation names it.
+/// One postcondition clause an operation's own postcondition declares about
+/// `self.<field>` — a single accepted FR-146 guard-fact form, exactly as
+/// FR-151's refinement obligation names it: `present(self.<field>)`, or one
+/// ordering between `self.<field>` and an integer literal.
 ///
-/// FR-146's stable-path/closed-guard-fact evaluator is out of scope for this
-/// rung ([`crate::model`] normalizes and checks a caller-constructed
-/// [`Bundle`] only; it has no expression evaluator). A postcondition clause
-/// is therefore not parsed here: the caller states which facts it
-/// establishes directly, as this typed value, and FR-151's refinement rule
-/// (`crate::model::conformance`) decides only whether a stated fact
-/// discharges the obligation for a given narrowing. This is a scope
-/// decision, not a silent approximation: nothing here infers a fact from
-/// prose or accepts an unstated one.
+/// FR-146's expression parser is out of scope for `crate::model`, which
+/// normalizes and checks a caller-constructed [`Bundle`] only and never
+/// parses producer-supplied expression text. A postcondition clause is
+/// therefore not parsed here: the caller states one accepted single-relation
+/// guard form directly, as this typed value. What that clause actually
+/// establishes is not caller-trusted, though: FR-151's refinement rule
+/// (`crate::model::conformance::check_field_refinement_obligation`) rebuilds
+/// the small synthetic guard tree the clause describes and runs it through
+/// `crate::value`'s own FR-146 fact-derivation primitive
+/// (`established_field_fact`) — the identical guard-fact propagation a real
+/// checked postcondition's `Definedness::walk` already uses — then decides
+/// discharge from what that derivation actually proves, never from the
+/// clause's own literal restated as already-true. A [`Comparison`] clause
+/// naming only a lower bound, for instance, does not by itself establish an
+/// upper bound the derivation did not also produce.
+///
+/// [`Comparison`]: Self::Comparison
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum EstablishedFact {
+pub enum PostconditionClause {
     /// `present(self.<field>)`.
     Presence {
         /// The field the postcondition establishes presence for.
         field: ProducerKey,
     },
-    /// `self.<field>` (or a two-sided form) constrained to `[lower, upper]`.
-    Interval {
-        /// The field the postcondition establishes the interval for.
+    /// `self.<field> <operator> <literal>`, e.g. `self.cs <= 5`.
+    Comparison {
+        /// The field the postcondition relates to `literal`.
         field: ProducerKey,
-        /// Inclusive lower bound the postcondition establishes.
-        lower: i64,
-        /// Inclusive upper bound the postcondition establishes.
-        upper: i64,
+        /// The stated ordering between `self.<field>` and `literal`.
+        operator: OrderingOperator,
+        /// The integer literal `self.<field>` is compared against.
+        literal: i64,
     },
 }
 
-impl EstablishedFact {
-    /// The field this fact is about.
+impl PostconditionClause {
+    /// The field this clause is about.
     pub fn field(&self) -> &ProducerKey {
         match self {
-            Self::Presence { field } | Self::Interval { field, .. } => field,
+            Self::Presence { field } | Self::Comparison { field, .. } => field,
         }
     }
 }
@@ -172,9 +183,9 @@ pub struct OperationMemberRecord {
     pub effect: OperationEffect,
     /// Whether this operation carries an own precondition clause.
     pub has_own_precondition: bool,
-    /// Facts this operation's own postcondition clause(s) establish, exactly
-    /// as the caller states them (see [`EstablishedFact`]).
-    pub own_postcondition_facts: Vec<EstablishedFact>,
+    /// This operation's own postcondition clause(s), exactly as the caller
+    /// states them (see [`PostconditionClause`]).
+    pub own_postcondition_clauses: Vec<PostconditionClause>,
     /// Whether an `operation-body` declaration supplies this member's body.
     /// FR-151's dispatch family (`crate::model::dispatch`) is the original
     /// declaration together with every redefining operation reaching a
