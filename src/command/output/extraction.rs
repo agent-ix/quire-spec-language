@@ -228,7 +228,7 @@ mod tests {
             request_digest: None,
             cause: RunCause::Extraction(Box::new(ExtractionError::Context(diagnostics))),
         };
-        assert_eq!(error.exit_code(), 1);
+        assert_eq!(error.exit_code(), 20);
         let value = error.value().unwrap();
         assert_eq!(value["stage"], "quire-context");
         assert_eq!(value["code"], "invalid-quire-context");

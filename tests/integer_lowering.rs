@@ -574,7 +574,7 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
         .args(["--target", "integer-ir/v1"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["code"], "unsupported_projection");

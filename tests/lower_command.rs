@@ -89,7 +89,7 @@ fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
         let path = directory.path().join(name);
         fixtures::write(&path, fixtures::Case::Integer(amount)).unwrap();
         let actual = invoke(&path, "run", "request.json");
-        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 1 }));
+        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 10 }));
         assert_eq!(
             serde_json::from_slice::<Value>(&actual.stdout).unwrap()["truth"],
             truth
@@ -222,7 +222,7 @@ fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefi
     assert_eq!(native.status.code(), Some(0));
 
     let output = invoke(directory.path(), "lower", "compile.json");
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["stage"], "lower");
@@ -281,21 +281,21 @@ fn projection_export_reuses_source_request_refusals_and_intake_limits() {
         let (exit, code) = match mutation {
             Mutation::Format => {
                 changed["format"] = json!("native-run/1");
-                (1, "unknown_wire")
+                (20, "unknown_wire")
             }
             Mutation::Runtime => {
                 changed["request"]["snapshots"] = json!([]);
-                (2, "invalid-request")
+                (20, "invalid-request")
             }
             Mutation::Stale => {
                 changed["request"]["program"]["source"]["digest"] =
                     json!(ByteDigest::of(b"foreign").to_string());
-                (1, "source_digest_mismatch")
+                (20, "source_digest_mismatch")
             }
             Mutation::Files => {
                 changed["request"]["models"] =
                     json!(vec![original["request"]["models"][0].clone(); 64]);
-                (3, "resource_exhausted")
+                (22, "resource_exhausted")
             }
         };
         save(directory.path(), &changed);

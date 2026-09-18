@@ -53,7 +53,7 @@ fn extraction_request_obeys_the_build_feature() {
         assert!(stdout);
         assert_eq!(result["truth"], true);
     } else {
-        assert_eq!(code, 2, "{result}");
+        assert_eq!(code, 20, "{result}");
         assert!(!stdout);
         assert_eq!(result["code"], "invalid-request");
         assert!(result.get("truth").is_none());
@@ -78,7 +78,7 @@ mod enabled {
         for crlf in [false, true] {
             for (case, code, truth) in [
                 (setup::Case::Aggregate(2), 0, Some(true)),
-                (setup::Case::Aggregate(1), 1, Some(false)),
+                (setup::Case::Aggregate(1), 10, Some(false)),
                 (
                     setup::Case::Operation {
                         violate_frame: false,
@@ -90,7 +90,7 @@ mod enabled {
                     setup::Case::Operation {
                         violate_frame: true,
                     },
-                    1,
+                    20,
                     None,
                 ),
             ] {
@@ -175,7 +175,7 @@ mod enabled {
             );
             replace(directory.path(), &mut job, &text);
             let (actual, result, stdout) = invoke(directory.path(), "run", &job);
-            assert_eq!(actual, 1, "{result}");
+            assert_eq!(actual, 20, "{result}");
             assert!(!stdout);
             assert_eq!(result["code"], code);
             assert_eq!(
@@ -222,7 +222,7 @@ mod enabled {
             let mut malformed = job.clone();
             malformed["request"]["program"]["extraction"] = bad;
             let (code, result, stdout) = invoke(directory.path(), "run", &malformed);
-            assert_eq!(code, 2, "{result}");
+            assert_eq!(code, 20, "{result}");
             assert!(!stdout);
             assert_eq!(result["code"], "invalid-request");
         }
@@ -240,7 +240,7 @@ mod enabled {
                 let mut malformed = job.clone();
                 malformed.pointer_mut(pointer).unwrap()[field] = bad;
                 let (code, result, stdout) = invoke(directory.path(), "run", &malformed);
-                assert_eq!(code, 2, "{pointer}/{field}: {result}");
+                assert_eq!(code, 20, "{pointer}/{field}: {result}");
                 assert!(!stdout);
                 assert_eq!(result["code"], "invalid-request");
             }
@@ -252,7 +252,7 @@ mod enabled {
             );
             let bytes = job.to_string().replacen(&descriptor, &duplicate, 1);
             let (code, result, stdout) = invoke_bytes(directory.path(), "run", bytes.as_bytes());
-            assert_eq!(code, 2, "{pointer}: {result}");
+            assert_eq!(code, 20, "{pointer}: {result}");
             assert!(!stdout);
             assert_eq!(result["code"], "invalid-request");
         }
@@ -271,7 +271,7 @@ mod enabled {
         let mut job = missing_model_job(directory.path());
         job["request"]["package"] = json!({"file":"missing-package.json","digest":"bad"});
         let (code, result, stdout) = invoke(directory.path(), "run", &job);
-        assert_eq!(code, 1);
+        assert_eq!(code, 20);
         assert!(!stdout);
         assert_eq!(result["stage"], "extraction-selection");
         assert_eq!(result["code"], "extraction-package-conflict");
@@ -288,7 +288,7 @@ mod enabled {
             changed["request"]["program"]["clauses"] =
                 json!(vec![job["request"]["program"]["clauses"][0].clone(); count]);
             let (code, result, stdout) = invoke(directory.path(), "run", &changed);
-            assert_eq!(code, 1);
+            assert_eq!(code, 20);
             assert!(!stdout);
             assert_eq!(result["stage"], "extraction-selection");
             assert_eq!(result["code"], "extraction-clause-count");
@@ -307,7 +307,7 @@ mod enabled {
         let compilation = json!({"format":"native-compile/1","request":{"models":job["request"]["models"],"program":job["request"]["program"]}});
         for command in ["compile", "lower"] {
             let (code, result, stdout) = invoke(directory.path(), command, &compilation);
-            assert_eq!(code, 1);
+            assert_eq!(code, 20);
             assert!(!stdout);
             assert_eq!(result["code"], "extraction-requires-run");
             assert_eq!(result["details"], json!({"kind":"compile_command"}));
@@ -327,7 +327,7 @@ mod enabled {
         )
         .unwrap();
         let (code, result, stdout) = invoke(directory.path(), "run", &job);
-        assert_eq!(code, 1);
+        assert_eq!(code, 20);
         assert!(!stdout);
         assert_eq!(result["code"], "source_digest_mismatch");
         let mut limited = job.clone();
@@ -337,7 +337,7 @@ mod enabled {
             &format!("{}{original}", "\n".repeat(4096)),
         );
         let (code, result, stdout) = invoke(directory.path(), "run", &limited);
-        assert_eq!(code, 3, "{result}");
+        assert_eq!(code, 22, "{result}");
         assert!(!stdout);
         assert_eq!(result["stage"], "quire");
         assert_eq!(result["code"], "resource_exhausted");
@@ -359,7 +359,7 @@ mod enabled {
             let mut limited = job.clone();
             limited["request"]["limits"] = json!({limit:0});
             let (code, result, stdout) = invoke(directory.path(), "run", &limited);
-            assert_eq!(code, 3, "{result}");
+            assert_eq!(code, 22, "{result}");
             assert!(stdout);
             assert_eq!(result["status"], "incomplete");
             assert!(result["extraction"].is_object());
