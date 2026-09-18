@@ -22,10 +22,16 @@
 //!   `conformance.axis` for both and never inspects their content.
 //! - The refinement obligation (`quire.model.conformance.refinement/v1`)
 //!   needs the writing operation's *established* postcondition facts.
-//!   FR-146's expression evaluator is out of scope for this rung, so
-//!   [`crate::model::bundle::EstablishedFact`] is the caller-stated
-//!   simplification `crate::model::bundle` already documents; this module
-//!   decides only whether a stated fact discharges a given narrowing.
+//!   `crate::model` has no FR-146 expression parser, so a postcondition
+//!   clause is not parsed from source: the caller states one accepted
+//!   single-relation guard form directly, as
+//!   [`crate::model::bundle::PostconditionClause`]. What a clause actually
+//!   establishes is not caller-trusted, though — [`check_field_refinement_obligation`]
+//!   rebuilds the small typed guard tree each clause describes and runs it
+//!   through `crate::value`'s own FR-146 fact-derivation primitive
+//!   (`established_field_fact`), the identical guard-fact propagation a real
+//!   checked postcondition's `Definedness::walk` already uses, then decides
+//!   discharge from what that derivation actually proves.
 //! - Exact per-axis work-unit costs (FR-151's `f(T)` formula, the length of
 //!   a type's own derivation array) are not reproduced: computing `f(T)`
 //!   here would require this module to re-walk `normalize`'s ancestor
@@ -36,18 +42,37 @@
 //! - `resolve_redefinition_target`'s ambiguity ruling (two valid, distinct
 //!   inherited targets for the same redefining member) is an interpretation
 //!   call: FR-151's own prose motivates it only informally. It is recorded
-//!   here, not asserted as unambiguous spec fidelity.
+//!   here, not asserted as unambiguous spec fidelity. TC-196 R07 reports
+//!   both the "zero valid targets" and "several distinct valid targets"
+//!   shapes under the identical `redefinition-target` cause ("the same
+//!   refusal"), so [`RedefinitionTargetOutcome::Refused`] keeps one cause
+//!   tag for both; its `valid_targets` field (QSL #146) still lets a caller
+//!   tell the two failure shapes apart from the outcome alone, without
+//!   recomputing `candidates` itself.
+//!
+//!   TC-196 R07's other shape — two distinct redefining members (e.g. `B/z`
+//!   and `B/z2`) contending for the identical single inherited target — is
+//!   *not* checked by `resolve_redefinition_target`: nothing in `src/`
+//!   called it, so per-redefiner queries here could never see the sibling
+//!   that contends with them. That shape is instead detected where a model
+//!   actually normalizes through it, `normalize`'s own phase 4
+//!   (`apply_redefinitions`'s undominated-edges branch), which already has
+//!   every sibling redefiner of a contended target in view.
 
 use std::collections::{BTreeMap, HashMap};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::bundle::{
-    Bundle, BundleRecord, EstablishedFact, FieldMemberRecord, GeneralizationRecord, Multiplicity,
-    OperationMemberRecord, RedefinitionRecord, SubsettingRecord,
+    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, Multiplicity,
+    OperationMemberRecord, PostconditionClause, RedefinitionRecord, SubsettingRecord,
 };
 use crate::model::key::ProducerKey;
 use crate::model::normalize::ModelRefusal;
+use crate::value::{
+    established_field_fact, Connective, Established, Integer, IntegerInterval, Location, Node,
+    NodeKind, OrderedKind, OrderingOperator, Origin, ProvedInterval, Value, ValueType,
+};
 
 /// Bounds the proper-descendant walk `type_conforms` performs: an explicit
 /// task stack over caller-supplied generalization records, never native
@@ -101,10 +126,18 @@ pub enum RedefinitionTargetOutcome {
     /// Zero or multiple valid inherited targets; every checked record and
     /// its named target, in bundle order.
     Refused {
-        /// FR-151's cause tag: always `"redefinition-target"`.
+        /// FR-151's cause tag: always `"redefinition-target"` — TC-196 R07
+        /// reports both failure shapes under "the same refusal" (see the
+        /// module docs).
         cause: &'static str,
         /// The record/target pairs considered.
         candidates: Vec<(ProducerKey, ProducerKey)>,
+        /// The distinct valid (genuinely inherited) targets among
+        /// `candidates`: empty for the "zero valid targets" shape, two or
+        /// more for the "several distinct valid targets" shape — the
+        /// distinction QSL #146 found collapsed into one cause with no way
+        /// to tell the two shapes apart from the outcome alone.
+        valid_targets: Vec<ProducerKey>,
     },
 }
 
@@ -609,10 +642,164 @@ pub fn check_operation_redefinition(
     }
 }
 
+/// `self`, bound as local slot 0, for every synthetic guard tree
+/// [`self_field_node`] builds — the one variable a [`PostconditionClause`]
+/// ever names.
+const CLAUSE_SELF_SLOT: usize = 0;
+
+fn clause_location() -> Location {
+    Location {
+        origin: Origin::Expression,
+        path: Vec::new(),
+    }
+}
+
+/// The synthetic `self.<field>` projection node every [`PostconditionClause`]
+/// guard is built over: `self` at [`CLAUSE_SELF_SLOT`], projected at stable
+/// path step zero (the one field a clause ever names, so the step index
+/// itself carries no further meaning), declared at `value_type`.
+fn self_field_node(value_type: ValueType) -> Node {
+    let self_node = Node {
+        kind: NodeKind::Local(CLAUSE_SELF_SLOT),
+        value_type: ValueType::Integer,
+        location: clause_location(),
+    };
+    Node {
+        kind: NodeKind::Field {
+            operand: Box::new(self_node),
+            index: 0,
+            optional: false,
+        },
+        value_type,
+        location: clause_location(),
+    }
+}
+
+/// `domain`'s value type: `None` (a non-scalar, or unknown, domain) is the
+/// unbounded `ValueType::Integer` fallback, per FR-146's rule that a
+/// projection onto the field a narrowing redefinition redefines carries the
+/// declared facts of the *redefined* parent member, never the narrowing
+/// type — so callers seed this from `redefined`'s own declared scalar
+/// bounds, not `redefining`'s. `Some((lower, upper))` is the closed interval
+/// type, or a [`ModelRefusal`] when a bundle's `ScalarTypeRecord` is
+/// malformed (its own lower greater than its upper) — a real defect in
+/// caller-supplied bundle data, refused rather than panicked on.
+fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefusal> {
+    match domain {
+        Some((lower, upper)) => {
+            let interval =
+                IntegerInterval::new(Integer::from(lower), Integer::from(upper)).map_err(|_| {
+                    ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        // FR-272's `invalid_model_binding` cause list is
+                        // closed; there is no dedicated scalar-domain
+                        // variant, so this is the catalogued
+                        // `malformed-declaration` (its own payload: "the IR
+                        // node identity and invalid member path" — here the
+                        // scalar type's own declaration).
+                        cause: "malformed-declaration",
+                        detail: format!(
+                            "a scalar type's declared domain has lower {lower} greater than its upper {upper}"
+                        ),
+                    }
+                })?;
+            Ok(ValueType::Int(interval))
+        }
+        None => Ok(ValueType::Integer),
+    }
+}
+
+/// The synthetic `present(self.<field>)` guard a [`PostconditionClause::Presence`]
+/// clause describes. Always unbounded (`ValueType::Integer`): presence
+/// never depends on a scalar domain, so this can never fail.
+fn presence_condition() -> Node {
+    Node {
+        kind: NodeKind::Present(Box::new(self_field_node(ValueType::Integer))),
+        value_type: ValueType::Boolean,
+        location: clause_location(),
+    }
+}
+
+/// The synthetic `self.<field> <operator> <literal>` guard a
+/// [`PostconditionClause::Comparison`] clause describes.
+fn comparison_condition(
+    domain: Option<(i64, i64)>,
+    operator: OrderingOperator,
+    literal: i64,
+) -> Result<Node, ModelRefusal> {
+    let field = self_field_node(field_domain_type(domain)?);
+    let literal_node = Node {
+        kind: NodeKind::Literal(Value::Integer(Integer::from(literal))),
+        value_type: ValueType::Integer,
+        location: clause_location(),
+    };
+    Ok(Node {
+        kind: NodeKind::Order(
+            operator,
+            OrderedKind::Integers,
+            Box::new(field),
+            Box::new(literal_node),
+        ),
+        value_type: ValueType::Boolean,
+        location: clause_location(),
+    })
+}
+
+/// Derives what `clauses` together actually establish about the field they
+/// all name, seeding each synthetic guard's declared domain from `domain`
+/// (the redefined parent member's own scalar bounds, when it has one). The
+/// effective postcondition is a conjunction (see the module docs), so every
+/// clause's guard is folded into one `Connective::And` tree and
+/// [`established_field_fact`] runs once over that tree — not once per
+/// clause with only the first surviving result kept — so a two-clause bound
+/// such as `cs >= 0` and `cs <= 5` is proved together instead of only
+/// whichever clause happened to be checked first. `Err` when `domain`
+/// itself is malformed (see [`field_domain_type`]).
+fn established_facts(
+    clauses: &[&PostconditionClause],
+    domain: Option<(i64, i64)>,
+) -> Result<Established, ModelRefusal> {
+    let condition = |clause: &&PostconditionClause| -> Result<Node, ModelRefusal> {
+        match clause {
+            PostconditionClause::Presence { .. } => Ok(presence_condition()),
+            PostconditionClause::Comparison {
+                operator, literal, ..
+            } => comparison_condition(domain, *operator, *literal),
+        }
+    };
+    let mut conditions = clauses.iter().map(condition);
+    let Some(first) = conditions.next() else {
+        return Ok(Established::default());
+    };
+    let mut folded = first?;
+    for next in conditions {
+        folded = Node {
+            kind: NodeKind::Connective(Connective::And, Box::new(folded), Box::new(next?)),
+            value_type: ValueType::Boolean,
+            location: clause_location(),
+        };
+    }
+    Ok(established_field_fact(&folded, CLAUSE_SELF_SLOT))
+}
+
+/// A human-readable `[lower, upper]` rendering of a [`ProvedInterval`], with
+/// an unbounded end spelled out rather than omitted.
+fn format_interval(interval: &ProvedInterval) -> String {
+    let lower = interval
+        .lower
+        .as_ref()
+        .map_or_else(|| "unbounded".to_owned(), Integer::to_string);
+    let upper = interval
+        .upper
+        .as_ref()
+        .map_or_else(|| "unbounded".to_owned(), Integer::to_string);
+    format!("[{lower}, {upper}]")
+}
+
 /// The FR-151 refinement obligation: a narrowing field redefinition must be
 /// established by a fact in the effective postcondition of the exposed
 /// operation (own or inherited) that writes the redefined field. See the
-/// module docs for the [`EstablishedFact`] scope decision this rests on.
+/// module docs for the [`PostconditionClause`] scope decision this rests on.
 pub fn check_field_refinement_obligation(
     bundle: &Bundle,
     record: &RedefinitionRecord,
@@ -666,13 +853,13 @@ pub fn check_field_refinement_obligation(
         return Ok(ConformanceOutcome::Compatible);
     };
 
-    let mut facts: Vec<&EstablishedFact> = writer.own_postcondition_facts.iter().collect();
+    let mut clauses: Vec<&PostconditionClause> = writer.own_postcondition_clauses.iter().collect();
     for redefinition in &index.redefinitions {
         if redefinition.redefined.identity == writer.key.identity
             && redefinition.owner.identity == record.owner.identity
         {
             if let Some(overriding) = index.operations.get(&redefinition.redefining) {
-                facts.extend(overriding.own_postcondition_facts.iter());
+                clauses.extend(overriding.own_postcondition_clauses.iter());
             }
         }
     }
@@ -680,11 +867,20 @@ pub fn check_field_refinement_obligation(
         key.identity == record.redefined.identity || key.identity == record.redefining.identity
     };
 
+    // FR-146's own rule: a projection onto the field a narrowing redefinition
+    // redefines carries the declared facts of the redefined PARENT member,
+    // never the narrowing type — so every synthetic guard below is seeded
+    // from `redefined`'s own declared scalar bounds, not `redefining`'s.
+    let domain = index.scalars.get(&redefined.value_type).copied();
+    let field_clauses: Vec<&PostconditionClause> = clauses
+        .iter()
+        .filter(|clause| names_field(clause.field()))
+        .copied()
+        .collect();
+    let established = established_facts(&field_clauses, domain)?;
+
     if raises_lower && single_valued {
-        let has_presence = facts
-            .iter()
-            .any(|fact| matches!(fact, EstablishedFact::Presence { field } if names_field(field)));
-        return if has_presence {
+        return if established.presence {
             Ok(ConformanceOutcome::Compatible)
         } else {
             Ok(ConformanceOutcome::Refused(vec![AxisFailure {
@@ -719,24 +915,29 @@ pub fn check_field_refinement_obligation(
         index.scalars.get(&redefined.value_type),
     ) {
         (Some(&(narrow_lower, narrow_upper)), Some(_)) => {
-            let interval = facts.iter().find_map(|fact| match fact {
-                EstablishedFact::Interval { field, lower, upper } if names_field(field) => {
-                    Some((*lower, *upper))
-                }
-                _ => None,
-            });
+            let interval = established.interval.clone();
+            let lower_bound = Integer::from(narrow_lower);
+            let upper_bound = Integer::from(narrow_upper);
             match interval {
-                Some((lower, upper)) if lower >= narrow_lower && upper <= narrow_upper => {
-                    Ok(ConformanceOutcome::Compatible)
+                Some(proved) => {
+                    let contained = match (&proved.lower, &proved.upper) {
+                        (Some(lower), Some(upper)) => *lower >= lower_bound && *upper <= upper_bound,
+                        _ => false,
+                    };
+                    if contained {
+                        Ok(ConformanceOutcome::Compatible)
+                    } else {
+                        Ok(ConformanceOutcome::Refused(vec![AxisFailure {
+                            axis: "refinement",
+                            code: Code::UndefinedExpression,
+                            cause: "unproved-refinement",
+                            detail: format!(
+                                "established interval {} is not contained in [{narrow_lower}, {narrow_upper}] (obligation field-domain)",
+                                format_interval(&proved)
+                            ),
+                        }]))
+                    }
                 }
-                Some((lower, upper)) => Ok(ConformanceOutcome::Refused(vec![AxisFailure {
-                    axis: "refinement",
-                    code: Code::UndefinedExpression,
-                    cause: "unproved-refinement",
-                    detail: format!(
-                        "established interval [{lower}, {upper}] is not contained in [{narrow_lower}, {narrow_upper}] (obligation field-domain)"
-                    ),
-                }])),
                 None => Ok(ConformanceOutcome::Refused(vec![AxisFailure {
                     axis: "refinement",
                     code: Code::UndefinedExpression,
@@ -765,6 +966,17 @@ pub fn check_field_refinement_obligation(
 /// `owner`, never `owner` itself. Zero or several distinct valid targets
 /// refuse `redefinition-target` naming every candidate — never an arbitrary
 /// pick among them.
+///
+/// This covers R07's *first* shape only: one redefining member queried in
+/// isolation, whose own stated records resolve to zero or multiple targets.
+/// It cannot see sibling redefiners of the same target (querying `B/z` alone
+/// has no visibility into `B/z2`), so it does not — and cannot — detect
+/// R07's *second* shape, several distinct members all redefining one shared
+/// inherited target. That contention check runs where the real boundary can
+/// see every redefiner at once: `normalize.rs`'s phase 4
+/// (`apply_redefinitions`), not here. This function is currently unwired
+/// from `src/`'s pipeline (like its `conformance.rs` siblings); QSL #165
+/// composes it into the real pipeline's `conformance.axis` accounting.
 pub fn resolve_redefinition_target(
     bundle: &Bundle,
     owner: &ProducerKey,
@@ -807,6 +1019,7 @@ pub fn resolve_redefinition_target(
         _ => Ok(RedefinitionTargetOutcome::Refused {
             cause: "redefinition-target",
             candidates,
+            valid_targets: distinct,
         }),
     }
 }

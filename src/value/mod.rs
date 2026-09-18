@@ -99,6 +99,14 @@ pub use expression::{
     FieldInitializer, FunctionDeclaration, InputRefusal, LocatedLoss, Location, MeasureObligation,
     Obligation, Origin, PackageDeclarations, ProvedInterval, ValueLoss, MAX_CHECKING_DEPTH,
 };
+// `crate::model::conformance`'s FR-151 refinement obligation reuses this
+// crate's own FR-146 fact-derivation primitive (see
+// `expression::established_field_fact`'s own doc) rather than a second
+// implementation; exposed crate-internal-only, the same pattern as
+// `length_amount`/`Charge` above.
+pub(crate) use expression::{
+    established_field_fact, Connective, Established, Node, NodeKind, OrderedKind,
+};
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,

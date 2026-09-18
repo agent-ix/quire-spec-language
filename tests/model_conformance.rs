@@ -8,10 +8,9 @@ use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
 use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, EstablishedFact, FieldMemberRecord, GeneralizationRecord, ModelSelection,
-    Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, RedefinitionRecord, ScalarTypeRecord,
-    SubsettingRecord,
+    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+    OperationResult, PostconditionClause, RedefinitionRecord, ScalarTypeRecord, SubsettingRecord,
 };
 use quire_spec_language::model::conformance::{
     check_field_redefinition, check_field_refinement_obligation, check_operation_redefinition,
@@ -22,6 +21,7 @@ use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
     normalize, EffectiveView, NormalizeOutcome, ViewEntry,
 };
+use quire_spec_language::value::OrderingOperator;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
@@ -91,7 +91,7 @@ fn operation(
     field_writes: Vec<&str>,
     creates: Vec<&str>,
     deletes: Vec<&str>,
-    own_postcondition_facts: Vec<EstablishedFact>,
+    own_postcondition_clauses: Vec<PostconditionClause>,
 ) -> BundleRecord {
     BundleRecord::OperationMember(OperationMemberRecord {
         key: ProducerKey::fixture(identity),
@@ -114,7 +114,7 @@ fn operation(
             deletes: deletes.into_iter().map(ProducerKey::fixture).collect(),
         },
         has_own_precondition: false,
-        own_postcondition_facts,
+        own_postcondition_clauses,
         has_body: true,
     })
 }
@@ -513,9 +513,17 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
         &ProducerKey::fixture("model.B"),
         &ProducerKey::fixture("model.B.z"),
     ) {
-        Ok(RedefinitionTargetOutcome::Refused { cause, candidates }) => {
+        Ok(RedefinitionTargetOutcome::Refused {
+            cause,
+            candidates,
+            valid_targets,
+        }) => {
             assert_eq!(cause, "redefinition-target");
             assert_eq!(candidates.len(), 1);
+            assert!(
+                valid_targets.is_empty(),
+                "zero-target shape must carry no valid targets, got {valid_targets:?}"
+            );
         }
         other => panic!("expected Refused(zero targets), got {other:?}"),
     }
@@ -539,13 +547,32 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
         &ProducerKey::fixture("model.B"),
         &ProducerKey::fixture("model.B.z"),
     ) {
-        Ok(RedefinitionTargetOutcome::Refused { cause, candidates }) => {
+        Ok(RedefinitionTargetOutcome::Refused {
+            cause,
+            candidates,
+            valid_targets,
+        }) => {
             assert_eq!(cause, "redefinition-target");
             assert_eq!(candidates.len(), 2);
+            assert_eq!(
+                valid_targets.len(),
+                2,
+                "ambiguous shape must carry both valid targets, got {valid_targets:?}"
+            );
         }
         other => panic!("expected Refused(ambiguous), got {other:?}"),
     }
 }
+
+// TC-196 R07's other shape — two distinct redefining members (`B/z` and
+// `B/z2`) contending for the identical single inherited target — is no
+// longer tested via `resolve_redefinition_target` directly: nothing in
+// `src/` calls that function, so a per-redefiner query here can never see
+// the sibling that contends with it (each of `B/z` and `B/z2` resolves, on
+// its own, to a single valid target — `Resolved`, not `Refused`). That
+// shape is covered instead where a model actually normalizes through it:
+// `r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize`
+// in `tests/model_normalization.rs`, against `normalize`'s own phase 4.
 
 /// R08's shared base: types `A`, `B` (`B` <= `A`); scalars `model.Count`
 /// `[0,9]` and `model.Small` `[0,5]`; field `model.A.x` typed `model.A`
@@ -630,7 +657,7 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         vec![],
         vec![],
         vec![],
-        vec![EstablishedFact::Presence {
+        vec![PostconditionClause::Presence {
             field: ProducerKey::fixture("model.B.xb"),
         }],
     ));
@@ -749,10 +776,10 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             vec![],
             vec![],
             vec![],
-            vec![EstablishedFact::Interval {
+            vec![PostconditionClause::Comparison {
                 field: ProducerKey::fixture("model.B.cs"),
-                lower: 0,
-                upper,
+                operator: OrderingOperator::LessOrEqual,
+                literal: upper,
             }],
         ));
         records.push(redefinition(
@@ -774,6 +801,207 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (f), got {other:?}"),
+    }
+}
+
+/// A postcondition clause that does not actually establish the narrowed
+/// domain (`model.B.cs >= 0`, which every value of a scalar with floor 0
+/// already satisfies) must still refuse: the obligation is discharged by
+/// real fact derivation over the declared clause, not by trusting that any
+/// clause naming the field is sufficient.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligation() {
+    let mut records = r08_base();
+    records.push(field_member(
+        "model.B.cs",
+        "model.B",
+        "model.Small",
+        mult(1, Some(1)),
+    ));
+    records.push(redefinition(
+        "model.redef.cs",
+        "model.B",
+        "model.B.cs",
+        "model.A.c",
+    ));
+    records.push(operation(
+        "model.B.set",
+        "model.B",
+        vec![],
+        None,
+        vec![],
+        vec![],
+        vec![],
+        vec![PostconditionClause::Comparison {
+            field: ProducerKey::fixture("model.B.cs"),
+            operator: OrderingOperator::GreaterOrEqual,
+            literal: 0,
+        }],
+    ));
+    records.push(redefinition(
+        "model.redef.set",
+        "model.B",
+        "model.B.set",
+        "model.A.set",
+    ));
+    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08g"), records);
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.cs"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.cs"),
+        redefined: ProducerKey::fixture("model.A.c"),
+    };
+    match check_field_refinement_obligation(&bundle, &record) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert!(failures[0].detail.contains("field-domain"));
+        }
+        other => panic!("expected Refused (g, unrelated clause), got {other:?}"),
+    }
+}
+
+/// Review of PR #157 finding #1 (and its re-review, finding #5): the
+/// effective postcondition is a conjunction, so two clauses over the same
+/// field must be proved *together*, not by keeping only whichever one
+/// happened to be derived first — and, unlike `r08_base`'s `Count [0,9]`,
+/// this test's own domain (`Count [-5,9]`) makes neither clause alone
+/// sufficient, in *either* declaration order: `model.B.cs >= 0` alone
+/// establishes only `[0,9]` (the domain's own upper bound, not narrowed by
+/// this clause) and `model.B.cs <= 5` alone establishes only `[-5,5]` (the
+/// domain's own lower bound, not narrowed by this clause) — neither is
+/// contained in `Small`'s `[0,5]`. Folded into one `cs >= 0 AND cs <= 5`
+/// guard, they establish exactly `[0,5]`, which is. The old `find_map`-first
+/// bug refused in both orders under this domain (a domain of `[0,9]` let
+/// `cs <= 5` alone slip through as already-sufficient when declared first,
+/// which is why this test does not reuse `r08_base`).
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
+    let ge_zero = PostconditionClause::Comparison {
+        field: ProducerKey::fixture("model.B.cs"),
+        operator: OrderingOperator::GreaterOrEqual,
+        literal: 0,
+    };
+    let le_five = PostconditionClause::Comparison {
+        field: ProducerKey::fixture("model.B.cs"),
+        operator: OrderingOperator::LessOrEqual,
+        literal: 5,
+    };
+
+    for (order, clauses) in [
+        ("ge-then-le", vec![ge_zero.clone(), le_five.clone()]),
+        ("le-then-ge", vec![le_five, ge_zero]),
+    ] {
+        let records = vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            scalar_type("model.Count", -5, 9),
+            scalar_type("model.Small", 0, 5),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
+            field_member("model.B.cs", "model.B", "model.Small", mult(1, Some(1))),
+            redefinition("model.redef.cs", "model.B", "model.B.cs", "model.A.c"),
+            operation(
+                "model.A.set",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x", "model.A.c"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            operation(
+                "model.B.set",
+                "model.B",
+                vec![],
+                None,
+                vec![],
+                vec![],
+                vec![],
+                clauses,
+            ),
+            redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
+        ];
+        let bundle = Bundle::new(ModelSelection::fixture("bundle.r08h"), records);
+        let record = RedefinitionRecord {
+            key: ProducerKey::fixture("model.redef.cs"),
+            owner: ProducerKey::fixture("model.B"),
+            redefining: ProducerKey::fixture("model.B.cs"),
+            redefined: ProducerKey::fixture("model.A.c"),
+        };
+        match check_field_refinement_obligation(&bundle, &record) {
+            Ok(ConformanceOutcome::Compatible) => {}
+            other => panic!(
+                "expected Compatible regardless of clause order ({order}): the two \
+                 clauses together establish [0,5], contained in Small's [0,5], \
+                 got {other:?}"
+            ),
+        }
+    }
+}
+
+/// Review of PR #157 finding #3: a malformed `ScalarTypeRecord` (its own
+/// lower greater than its upper) must refuse when a narrowing
+/// redefinition's obligation check seeds a synthetic guard from it, never
+/// panic on this caller-supplied bundle data.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
+    let records = vec![
+        object_type("model.A"),
+        object_type("model.B"),
+        generalization("model.gen.B-A", "model.B", "model.A"),
+        scalar_type("model.Count", 9, 0), // malformed: lower > upper.
+        scalar_type("model.Small", 0, 5),
+        field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+        field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
+        field_member("model.B.cs", "model.B", "model.Small", mult(1, Some(1))),
+        redefinition("model.redef.cs", "model.B", "model.B.cs", "model.A.c"),
+        operation(
+            "model.A.set",
+            "model.A",
+            vec![],
+            None,
+            vec!["model.A.x", "model.A.c"],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        operation(
+            "model.B.set",
+            "model.B",
+            vec![],
+            None,
+            vec![],
+            vec![],
+            vec![],
+            vec![PostconditionClause::Comparison {
+                field: ProducerKey::fixture("model.B.cs"),
+                operator: OrderingOperator::LessOrEqual,
+                literal: 5,
+            }],
+        ),
+        redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
+    ];
+    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08i"), records);
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.cs"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.cs"),
+        redefined: ProducerKey::fixture("model.A.c"),
+    };
+    match check_field_refinement_obligation(&bundle, &record) {
+        Err(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            // FR-272's `invalid_model_binding` cause list is closed; there
+            // is no dedicated scalar-domain variant, so this is the
+            // catalogued `malformed-declaration`.
+            assert_eq!(refusal.cause, "malformed-declaration");
+        }
+        other => panic!("expected Err(malformed-declaration), got {other:?}"),
     }
 }
 
