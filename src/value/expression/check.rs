@@ -365,23 +365,32 @@ impl<'a> Typer<'a> {
     /// a state root, captured *outside* this `pre(...)`'s own operand,
     /// re-anchored only because the read syntax happens to sit inside it.
     ///
-    /// `shadowed` tracks every name a `let` *within this same walk* (i.e.
-    /// within this `pre(...)`'s own operand) has since rebound, so a `let`
-    /// this operand introduces for itself -- never "outside" it -- does not
-    /// falsely trip this check inside its own body.
+    /// `bindings` tracks every name a `let` *within this same walk* (i.e.
+    /// within this `pre(...)`'s own operand) has since rebound, most recent
+    /// last, paired with whether *that* binding's own value is itself a
+    /// captured alias. A rebinding to a fresh, non-alias value (say,
+    /// `allInstances(other)`) is `false` -- this operand's own `let`
+    /// introducing it for itself, never "outside" it, so it does not falsely
+    /// trip this check inside its own body. A rebinding that is itself a
+    /// bare alias reference (`let r = q in ...`, `q` already a captured
+    /// alias) is `true`: aliasing an alias is still aliasing, transitively,
+    /// however many `let`s sit in between -- `is_captured_alias` below
+    /// resolves a name against `bindings` first (innermost within this walk
+    /// wins, matching ordinary shadowing) and only falls back to
+    /// [`Self::captured_before`] for a name this walk never rebound at all.
     fn contains_captured_pre_alias(
         &self,
         expression: &Expression,
         boundary: usize,
-        shadowed: &[String],
+        bindings: &[(String, bool)],
     ) -> bool {
-        let is_captured_alias = |operand: &Expression| {
-            matches!(
-                operand,
-                Expression::Name(name)
-                    if !shadowed.iter().any(|bound| bound == name)
-                        && self.captured_before(name, boundary)
-            )
+        let is_captured_alias = |operand: &Expression| match operand {
+            Expression::Name(name) => bindings
+                .iter()
+                .rev()
+                .find(|(bound, _)| bound == name)
+                .map_or_else(|| self.captured_before(name, boundary), |(_, alias)| *alias),
+            _ => false,
         };
         let direct = match expression {
             Expression::AllInstances { population, .. } => is_captured_alias(population),
@@ -392,17 +401,17 @@ impl<'a> Typer<'a> {
             return true;
         }
         if let Expression::Let { name, value, body } = expression {
-            if self.contains_captured_pre_alias(value, boundary, shadowed) {
+            if self.contains_captured_pre_alias(value, boundary, bindings) {
                 return true;
             }
-            let mut shadowed = shadowed.to_vec();
-            shadowed.push(name.clone());
-            return self.contains_captured_pre_alias(body, boundary, &shadowed);
+            let mut bindings = bindings.to_vec();
+            bindings.push((name.clone(), is_captured_alias(value)));
+            return self.contains_captured_pre_alias(body, boundary, &bindings);
         }
         expression
             .children()
             .into_iter()
-            .any(|child| self.contains_captured_pre_alias(child, boundary, shadowed))
+            .any(|child| self.contains_captured_pre_alias(child, boundary, bindings))
     }
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {

@@ -1651,6 +1651,106 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
     );
 }
 
+/// PR #168 review round 3, finding 1 (alias-of-alias): `let q = p in
+/// pre(let r = q in size(allInstances(r)))` must refuse the same way
+/// `pre(size(allInstances(q)))` itself does -- `r` is a `let` introduced
+/// *inside* the `pre(...)` operand, but its own value is a bare reference to
+/// `q`, itself a captured alias of the parameter `p`. Aliasing an alias is
+/// still aliasing, transitively, however many `let`s sit in between:
+/// `contains_captured_pre_alias` must carry `q`'s alias status onto `r`,
+/// never treat `r`'s binding as a fresh, unrelated shadow the way a `let`
+/// over a genuinely fresh value (say `allInstances(other)`) would be.
+///
+/// Mutation used: in `contains_captured_pre_alias`'s `Expression::Let` arm,
+/// changed `bindings.push((name.clone(), is_captured_alias(value)))` to
+/// always push `false` (as the original, pre-round-3 code effectively did,
+/// treating every `let` introduced inside the operand as a fresh, safe
+/// shadow regardless of its own value). This test went red as expected (a
+/// checked, evaluated `Completed(Integer(3))`, the pre population's size,
+/// instead of a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let q = p in pre(let r = q in size(allInstances(r)))
+    let expression = Expression::Let {
+        name: "q".to_owned(),
+        value: Box::new(population_name()),
+        body: Box::new(pre(Expression::Let {
+            name: "r".to_owned(),
+            value: Box::new(Expression::Name("q".to_owned())),
+            body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
+                target,
+                population: Box::new(Expression::Name("r".to_owned())),
+            }))),
+        })),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// PR #168 review round 3, finding 2: QSpec FR-012-AC-4's positive
+/// retention half -- "a captured post reference retains its observation
+/// inside `pre`" -- stays legal and correct, the complement to the
+/// capture-drift refusals above. `let v = size(allInstances(p)) in
+/// pre(size(allInstances(p)) != v)`: `v` is bound to the *post* population's
+/// size (2) before `pre(...)` is ever reached, and is not itself a bare
+/// alias of a raw population (its value is already a computed `Integer`,
+/// not a `Name`), so referencing `v` inside `pre(...)` never re-anchors it
+/// -- it keeps observing exactly the post value it captured. The sibling
+/// `size(allInstances(p))` written directly inside `pre(...)` does read the
+/// *pre* population (3), so the comparison is `3 != 2`, `true`.
+///
+/// Mutation used: in `select_anchor`, changed the `Anchor::Pre` arm to
+/// `Ok(binding)` (the same binding `Anchor::Post` already returns), so
+/// `pre(...)` would silently read the post population instead of the pre
+/// one. `v` (2, the post size) is unaffected either way -- it was already
+/// resolved before `pre(...)` ran -- but the sibling `size(allInstances(p))`
+/// written directly inside `pre(...)` then also reads 2, so the comparison
+/// becomes `2 != 2`, `false`. This test went red as expected; reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_of_a_captured_post_reference_retains_its_post_observation() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let v = size(allInstances(p)) in pre(size(allInstances(p)) != v)
+    let expression = Expression::Let {
+        name: "v".to_owned(),
+        value: Box::new(Expression::Size(Box::new(all_instances(target.clone())))),
+        body: Box::new(pre(Expression::Binary {
+            operator: BinaryOperator::NotEqual,
+            left: Box::new(Expression::Size(Box::new(all_instances(target)))),
+            right: Box::new(Expression::Name("v".to_owned())),
+        })),
+    };
+    let (outcome, _) = run_postcondition(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    match outcome {
+        Outcome::Completed(Value::Boolean(result)) => assert!(
+            result,
+            "v must keep observing the post population's size (2) even though it is read \
+             inside pre(...), so pre's own size(allInstances(p)) (3) must compare unequal"
+        ),
+        other => panic!("expected a completed boolean, got {other:?}"),
+    }
+}
+
 /// Item 1's second capture-drift shape: `pre(p)` itself (a bare population
 /// *parameter*, not a direct `allInstances`/`lookup` call) refuses -- FR-042
 /// refuses `pre` on a bare parameter/constant/capture directly, never only
