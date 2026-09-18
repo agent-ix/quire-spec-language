@@ -12,5 +12,6 @@ pub use input::{
     EvaluationRequest, FieldInput, FieldValue, InputSlot, MissingInput, ObjectInput, ObjectKey,
     ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView,
     StaticAuthority, Value, ValueKind, ValuePathSegment, OBSERVATION_CONTRACT_REVISION,
+    STATIC_AUTHORITY_INTERFACE_VERSION,
 };
 pub use work::{Dimension, Exhaustion, ExhaustionCause, Limits, Usage, ACCOUNTING_VERSION};
