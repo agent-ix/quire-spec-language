@@ -245,11 +245,17 @@ pub enum ChargePoint {
     OrderingResultRetain,
     /// `boolean.result-retain`.
     BooleanResultRetain,
+    /// `lookup.key`.
+    LookupKey,
+    /// `lookup.result-retain`.
+    LookupResultRetain,
+    /// `population.visit`.
+    PopulationVisit,
 }
 
 impl ChargePoint {
     /// Every named point, grouped by family in normative order.
-    pub const ALL: [Self; 52] = [
+    pub const ALL: [Self; 55] = [
         Self::DecimalOperands,
         Self::DecimalScaleExpansion,
         Self::DecimalArithmetic,
@@ -302,6 +308,9 @@ impl ChargePoint {
         Self::OrderingArithmetic,
         Self::OrderingResultRetain,
         Self::BooleanResultRetain,
+        Self::LookupKey,
+        Self::LookupResultRetain,
+        Self::PopulationVisit,
     ];
 
     /// Normative identifier.
@@ -359,6 +368,9 @@ impl ChargePoint {
             Self::OrderingArithmetic => "ordering.arithmetic",
             Self::OrderingResultRetain => "ordering.result-retain",
             Self::BooleanResultRetain => "boolean.result-retain",
+            Self::LookupKey => "lookup.key",
+            Self::LookupResultRetain => "lookup.result-retain",
+            Self::PopulationVisit => "population.visit",
         }
     }
 

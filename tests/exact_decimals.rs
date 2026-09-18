@@ -742,12 +742,17 @@ const VALUE_ACCOUNTING: &str = include_str!(
     "../resources/complete-value/quire-specification/proposals/quire-v1/definitions/value-accounting.md"
 );
 
-/// Charge-point families of the FR-150–FR-153 model domain, deferred to #120.
-const DEFERRED_FAMILIES: [&str; 9] = [
+/// Charge-point families of the FR-150–FR-153 model domain still deferred
+/// past #120's FR-153 rung. FR-153 itself implemented `lookup.*` and
+/// `population.visit` (`src/model/population.rs`), so those two families are
+/// no longer listed here; `binding.member`/`binding.subset-value` remain
+/// deferred from this enum's perspective because they belong to FR-153's own
+/// independent `PopulationAdmissionLimitsV1` schedule
+/// (`model::population::AdmissionChargePoint`), never to
+/// `quire.value.accounting/v1`'s `ChargePoint`.
+const DEFERRED_FAMILIES: [&str; 7] = [
     "model",
     "graph",
-    "lookup",
-    "population",
     "dispatch",
     "normalize",
     "systems",
@@ -756,7 +761,7 @@ const DEFERRED_FAMILIES: [&str; 9] = [
 ];
 
 /// Every deferred charge point the vendored document names, in ascending order.
-const DEFERRED_POINTS: [&str; 27] = [
+const DEFERRED_POINTS: [&str; 24] = [
     "binding.member",
     "binding.subset-value",
     "conformance.axis",
@@ -767,8 +772,6 @@ const DEFERRED_POINTS: [&str; 27] = [
     "graph.edge",
     "graph.expand",
     "graph.result-retain",
-    "lookup.key",
-    "lookup.result-retain",
     "model.deref",
     "model.navigate",
     "normalize.conflict-check",
@@ -779,7 +782,6 @@ const DEFERRED_POINTS: [&str; 27] = [
     "normalize.record",
     "normalize.redefinition-check",
     "normalize.unsupplied-item",
-    "population.visit",
     "systems.allocation",
     "systems.connection-condition",
     "systems.kind",
