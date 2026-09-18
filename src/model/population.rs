@@ -38,8 +38,34 @@
 //! subsetting (F1/P1/P2/P3 declare no [`crate::model::bundle::SubsettingRecord`]).
 //! Wiring it needs the same evaluator bridge tracked for QSL #147's
 //! FR-151/FR-152 criteria, not this rung.
+//!
+//! # Typed, bounded Outputs
+//!
+//! FR-153's own Outputs clause promises "a typed reference, option, or
+//! bounded collection", never a bare, unbounded container. [`all_instances`]
+//! returns a [`ReferenceSet`] (its element type `T` plus a
+//! [`CardinalityBound`] `[0, N]`, reusing `crate::value`'s own FR-144 bound
+//! type rather than a plain comparison) and [`lookup`] returns a
+//! [`TypedReference`] (the queried type `T` alongside the realized key).
+//! Neither wraps its members as `crate::value::Value::Reference`
+//! (`ObjectReference`): that type's identity components
+//! (`NodeKey`/`UniverseIdentity`/`ObjectIdentity`, `crate::value::reference`)
+//! belong to FR-143's own closed object environment, and this crate defines
+//! no mapping from `crate::model`'s `EffectiveId`/`ProducerKey` identities
+//! into that byte space anywhere. Fabricating one here without a documented
+//! canonical encoding would risk a worse defect than the untyped result it
+//! replaces, so this rung's typed wrappers stay in `crate::model`'s own
+//! identity domain.
+//!
+//! # Binding/bundle correspondence
+//!
+//! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
+//! only constructor. [`all_instances`] and [`lookup`] both check the
+//! supplied `bundle` against the binding's own recorded `modelIdentity` and
+//! object universe before doing anything else, so a binding admitted against
+//! one bundle is refused, not silently answered, against a different one.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::Code;
 use crate::model::bundle::{Bundle, BundleRecord};
@@ -48,8 +74,8 @@ use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
 use crate::model::normalize::{object_universe, EffectiveView, ModelRefusal};
 use crate::value::{
-    Charge as ScalarCharge, ChargePoint as ScalarChargePoint, Incomplete as ScalarIncomplete,
-    Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
+    length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
+    Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
 };
 
 // ---------------------------------------------------------------------------
@@ -131,6 +157,15 @@ impl AdmissionChargePoint {
             Self::BindingMember => "binding.member",
             Self::BindingSubsetValue => "binding.subset-value",
         }
+    }
+
+    /// Whether this rung's [`admit_binding`] ever charges this point.
+    /// `false` only for [`Self::BindingSubsetValue`] — declared here for
+    /// schedule completeness, never charged (see the module docs' scope
+    /// boundary). Exposed so the declared-but-uncharged state is checkable
+    /// in code, not only in a doc comment.
+    pub fn is_charged(self) -> bool {
+        !matches!(self, Self::BindingSubsetValue)
     }
 }
 
@@ -327,15 +362,84 @@ pub enum AbsenceMode {
 /// [`ReferenceKey`] (so iteration is already canonical reference-key order),
 /// with each member's original most-specific type retained for conformance
 /// checking.
+///
+/// Every field is private; [`admit_binding`] is this type's only
+/// constructor, so a caller cannot assemble a binding that was never checked
+/// against a bundle's `modelIdentity`, object closure or subtype closure.
+/// [`all_instances`] and [`lookup`] both re-check `model_identity` and
+/// `universe` against their own `bundle` argument before answering, so a
+/// binding admitted against one bundle is refused, not silently answered,
+/// against a different one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
+    /// The `ModelSelection` export identity this binding was admitted
+    /// against.
+    model_identity: String,
     /// This binding's own object universe.
-    pub universe: EffectiveId,
+    universe: EffectiveId,
     /// Every admitted member, ascending by [`ReferenceKey`].
-    pub members: BTreeMap<ReferenceKey, ProducerKey>,
+    members: BTreeMap<ReferenceKey, ProducerKey>,
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
-    pub declared_maximum: Option<u64>,
+    declared_maximum: Option<u64>,
+}
+
+impl PopulationBinding {
+    /// The `ModelSelection` export identity this binding was admitted
+    /// against.
+    pub fn model_identity(&self) -> &str {
+        &self.model_identity
+    }
+
+    /// This binding's own object universe.
+    pub fn universe(&self) -> &EffectiveId {
+        &self.universe
+    }
+
+    /// Every admitted member, ascending by [`ReferenceKey`].
+    pub fn members(&self) -> &BTreeMap<ReferenceKey, ProducerKey> {
+        &self.members
+    }
+
+    /// The binding's declared maximum, or `None` for a binding with no
+    /// declared maximum (`allInstances` is then `operator-ineligible`).
+    pub fn declared_maximum(&self) -> Option<u64> {
+        self.declared_maximum
+    }
+}
+
+/// Refuse a query whose `bundle` argument does not match `binding`'s own
+/// recorded `modelIdentity` or object universe. Uncharged, checked first, by
+/// both [`all_instances`] and [`lookup`] — the same defect class
+/// [`admit_binding`]'s own `modelIdentity` check names, applied at query time
+/// instead of admission time.
+fn require_bundle_matches(
+    bundle: &Bundle,
+    binding: &PopulationBinding,
+) -> Result<(), ModelRefusal> {
+    if bundle.model_selection.export.identity != binding.model_identity {
+        return Err(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: "foreign-model-selection",
+            detail: format!(
+                "query bundle names modelIdentity {}, not the binding's {}",
+                bundle.model_selection.export.identity, binding.model_identity
+            ),
+        });
+    }
+    let universe = object_universe(bundle)?.identity();
+    if universe != binding.universe {
+        return Err(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: "foreign-binding",
+            detail: format!(
+                "query bundle's object universe {} does not match the binding's {}",
+                universe.hex(),
+                binding.universe.hex()
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// The outcome of one [`admit_binding`] attempt.
@@ -407,19 +511,28 @@ pub fn admit_binding(
         Err(refusal) => return AdmissionOutcome::Refused(refusal),
     };
 
+    // Indexed once, not re-scanned per member: `view.declarations` and
+    // `admitted` would otherwise each be linearly searched per member,
+    // making admission O(n^2) against the O(n) `binding.member` charges it
+    // records.
+    let type_lookup: BTreeMap<ProducerKey, EffectiveId> = view
+        .declarations
+        .iter()
+        .filter(|entry| entry.preimage.owner_effective_type.is_none())
+        .map(|entry| (entry.preimage.original.clone(), entry.effective_id.clone()))
+        .collect();
+
     let mut admitted: BTreeMap<ReferenceKey, ProducerKey> = BTreeMap::new();
+    let mut by_object: BTreeMap<String, ReferenceKey> = BTreeMap::new();
     for (position, member) in document.members.iter().enumerate() {
-        let k = (position + 1) as u64;
+        let k = length_amount(position + 1);
         if let Err(incomplete) =
             meter.charge(AdmissionCharge::new(AdmissionChargePoint::BindingMember).size(k))
         {
             return AdmissionOutcome::Incomplete(incomplete);
         }
 
-        let Some(effective_type) = view.declarations.iter().find(|entry| {
-            entry.preimage.owner_effective_type.is_none()
-                && entry.preimage.original == member.type_identity
-        }) else {
+        let Some(effective_type) = type_lookup.get(&member.type_identity) else {
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::ForeignReference,
                 cause: "foreign-type",
@@ -432,16 +545,13 @@ pub fn admit_binding(
 
         let key = ReferenceKey {
             universe: universe.clone(),
-            type_identity: effective_type.effective_id.clone(),
+            type_identity: effective_type.clone(),
             object: member.object.clone(),
         };
-        if admitted.contains_key(&key) {
-            continue; // exact duplicate: equal key, equal record content, collapses.
-        }
-        if let Some(existing) = admitted
-            .keys()
-            .find(|existing| existing.object == key.object)
-        {
+        if let Some(existing) = by_object.get(&key.object) {
+            if *existing == key {
+                continue; // exact duplicate: equal key, equal record content, collapses.
+            }
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
                 cause: "conflicting-identity",
@@ -453,6 +563,7 @@ pub fn admit_binding(
                 ),
             });
         }
+        by_object.insert(key.object.clone(), key.clone());
         admitted.insert(key, member.type_identity.clone());
     }
 
@@ -460,6 +571,7 @@ pub fn admit_binding(
     // docs' scope boundary.
 
     AdmissionOutcome::Admitted(PopulationBinding {
+        model_identity: bundle.model_selection.export.identity.clone(),
         universe,
         members: admitted,
         declared_maximum,
@@ -470,12 +582,52 @@ pub fn admit_binding(
 // allInstances
 // ---------------------------------------------------------------------------
 
+/// `allInstances<T>(p)`'s own typed, bounded Outputs form:
+/// `Set<Reference<T>>[0,N]`, never a bare unbounded collection. `bound` is a
+/// real [`CardinalityBound`] (`[0, N]`, `N` the binding's own declared
+/// maximum), reusing `crate::value`'s FR-144 bound type rather than a plain
+/// comparison; see the module docs for why members stay [`ReferenceKey`]s
+/// rather than `crate::value::Value::Reference`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReferenceSet {
+    element_type: ProducerKey,
+    bound: CardinalityBound,
+    members: BTreeSet<ReferenceKey>,
+}
+
+impl ReferenceSet {
+    /// The queried type `T`.
+    pub fn element_type(&self) -> &ProducerKey {
+        &self.element_type
+    }
+
+    /// The declared bound `[0, N]`.
+    pub fn bound(&self) -> CardinalityBound {
+        self.bound
+    }
+
+    /// Every selected member, ascending by [`ReferenceKey`].
+    pub fn members(&self) -> &BTreeSet<ReferenceKey> {
+        &self.members
+    }
+
+    /// The selected count.
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+
+    /// Whether no member was selected.
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+}
+
 /// The outcome of one [`all_instances`] evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AllInstancesOutcome {
     /// Every and only member whose most-specific type conforms to `T`, once
     /// by reference key, in canonical reference-key order.
-    Completed(std::collections::BTreeSet<ReferenceKey>),
+    Completed(ReferenceSet),
     /// A real defect refused the query outright; no collection.
     Refused(ModelRefusal),
     /// A `ScalarLimitsV1` counter was exhausted; no collection.
@@ -491,14 +643,17 @@ fn is_object_type(bundle: &Bundle, key: &ProducerKey) -> bool {
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
 /// conforms to `t`, once by reference key, in canonical reference-key order.
-/// `binding.members` already iterates in that order.
+/// `binding.members()` already iterates in that order.
 pub fn all_instances(
     bundle: &Bundle,
     binding: &PopulationBinding,
     t: &ProducerKey,
     meter: &mut ScalarMeter,
 ) -> AllInstancesOutcome {
-    let Some(declared_maximum) = binding.declared_maximum else {
+    if let Err(refusal) = require_bundle_matches(bundle, binding) {
+        return AllInstancesOutcome::Refused(refusal);
+    }
+    let Some(declared_maximum) = binding.declared_maximum() else {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
             cause: "operator-ineligible",
@@ -514,8 +669,8 @@ pub fn all_instances(
     }
 
     let generals = generals_by_specific(bundle);
-    let mut selected: std::collections::BTreeSet<ReferenceKey> = std::collections::BTreeSet::new();
-    for (key, original_type) in &binding.members {
+    let mut selected: BTreeSet<ReferenceKey> = BTreeSet::new();
+    for (key, original_type) in binding.members() {
         if let Err(incomplete) = meter.charge(ScalarCharge::new(ScalarChargePoint::PopulationVisit))
         {
             return AllInstancesOutcome::Incomplete(incomplete);
@@ -529,7 +684,7 @@ pub fn all_instances(
         }
     }
 
-    let n = selected.len() as u64;
+    let n = length_amount(selected.len());
     if let Err(incomplete) = meter.charge(
         ScalarCharge::new(ScalarChargePoint::CollectionBound)
             .size(ScalarLimitKind::ValueOccurrences, n),
@@ -560,24 +715,58 @@ pub fn all_instances(
         return AllInstancesOutcome::Incomplete(incomplete);
     }
 
-    AllInstancesOutcome::Completed(selected)
+    let bound =
+        CardinalityBound::new(0, declared_maximum).expect("0 is always <= a declared u64 maximum");
+    AllInstancesOutcome::Completed(ReferenceSet {
+        element_type: t.clone(),
+        bound,
+        members: selected,
+    })
 }
 
 // ---------------------------------------------------------------------------
 // lookup
 // ---------------------------------------------------------------------------
 
+/// `lookup<T>(p, r)`'s own typed Outputs form: the realized [`ReferenceKey`]
+/// paired with the queried type `T`, never a bare [`ReferenceKey`] alone
+/// (which carries only the referenced object's own most-specific type, not
+/// the query's declared static type `T`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedReference {
+    queried_type: ProducerKey,
+    key: ReferenceKey,
+}
+
+impl TypedReference {
+    /// A reference to `key`, typed as `queried_type` (`T`).
+    pub fn new(queried_type: ProducerKey, key: ReferenceKey) -> Self {
+        Self { queried_type, key }
+    }
+
+    /// The queried type `T`.
+    pub fn queried_type(&self) -> &ProducerKey {
+        &self.queried_type
+    }
+
+    /// The realized reference key.
+    pub fn key(&self) -> &ReferenceKey {
+        &self.key
+    }
+}
+
 /// The outcome of one [`lookup`] evaluation, mirroring AD-005's four-way
 /// shape (`crate::value::outcome::Outcome`) with this operation's own payload
-/// and refusal types. `Completed(Some(_))` is `r`'s realized reference key
-/// when present, for every mode alike; `Completed(None)` only ever occurs
-/// under [`AbsenceMode::Empty`] (the other two modes route absence to
+/// and refusal types. `Completed(Some(_))` is `r`'s realized reference,
+/// typed by the queried `T`, when present, for every mode alike;
+/// `Completed(None)` only ever occurs under [`AbsenceMode::Empty`] (the other
+/// two modes route absence to
 /// [`LookupOutcome::Undefined`]/[`LookupOutcome::Refused`] instead, per
 /// FR-153's own table, never to a `None` payload).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LookupOutcome {
     /// A completed value: present, or (`empty` mode only) absent-as-`none`.
-    Completed(Option<ReferenceKey>),
+    Completed(Option<TypedReference>),
     /// `absent undefined`'s catalogued `absent-key` reason: the operation has
     /// no mathematical value.
     Undefined,
@@ -611,6 +800,9 @@ pub fn lookup(
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
+    if let Err(refusal) = require_bundle_matches(bundle, binding) {
+        return LookupOutcome::Refused(refusal);
+    }
     let generals = generals_by_specific(bundle);
     match type_conforms(&generals, &r.static_type, t) {
         Ok(true) => {}
@@ -633,19 +825,19 @@ pub fn lookup(
         return LookupOutcome::Incomplete(incomplete);
     }
 
-    if r.key.universe != binding.universe {
+    if r.key.universe != *binding.universe() {
         return LookupOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: "foreign-universe",
             detail: format!(
                 "reference key names universe {}, not the binding's {}",
                 r.key.universe.hex(),
-                binding.universe.hex()
+                binding.universe().hex()
             ),
         });
     }
 
-    if binding.members.contains_key(&r.key) {
+    if binding.members().contains_key(&r.key) {
         let occ = if matches!(mode, AbsenceMode::Empty) {
             2
         } else {
@@ -654,7 +846,7 @@ pub fn lookup(
         if let Err(incomplete) = charge_result_retain(meter, occ) {
             return LookupOutcome::Incomplete(incomplete);
         }
-        return LookupOutcome::Completed(Some(r.key.clone()));
+        return LookupOutcome::Completed(Some(TypedReference::new(t.clone(), r.key.clone())));
     }
 
     match mode {
