@@ -183,7 +183,7 @@ impl CheckCause {
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::ResourceExhausted { .. } => Code::ResourceExhausted,
             Self::IeeeProfileNotAdmitted => Code::InvalidPackage,
-            Self::UnrepresentableBound => Code::UnsupportedConstruct,
+            Self::UnrepresentableBound => Code::UnrepresentableConstraint,
         }
     }
 

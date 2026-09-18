@@ -387,7 +387,7 @@ fn write_job(directory: &Path, native: &NativePackage<'_>, model: &NativeModel) 
 }
 
 #[test]
-#[trace("TC-111", "FR-033-AC-4", "IT-010-SC-02")]
+#[trace("TC-111", "FR-033-AC-4", "IT-010-SC-02", "FR-010-AC-9")]
 fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() {
     let directory = tempfile::tempdir().unwrap();
     let models = [model(false, 1000)];
@@ -564,7 +564,7 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
         .args(["lower", "/missing/input.json", "--target", "future/v9"])
         .output()
         .unwrap();
-    assert_eq!(invalid.status.code(), Some(2));
+    assert_eq!(invalid.status.code(), Some(21));
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("unknown lowering target"));
     let unsupported = package(&models, "self.n < 7", ClauseKind::Invariant);
     write_job(directory.path(), &unsupported, &models[0]);
@@ -574,7 +574,7 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
         .args(["--target", "integer-ir/v1"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["code"], "unsupported_projection");
@@ -610,7 +610,7 @@ fn target_names_round_trip_and_command_usage_precedes_input_reads() {
             .args(&arguments)
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         assert_eq!(
             String::from_utf8(output.stderr).unwrap(),
@@ -629,7 +629,7 @@ fn non_utf8_target_refuses_before_a_missing_request_is_opened() {
         .arg(OsString::from_vec(vec![0xff]))
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     assert_eq!(output.stderr, b"lowering target must be UTF-8\n");
 }

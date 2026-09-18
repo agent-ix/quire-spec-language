@@ -83,7 +83,12 @@ fn assert_outcome(case: Case, actual: &Run, extracted: bool) {
     let value = &actual.value;
     match expected(case) {
         Expected::Completed(truth) => {
-            assert_eq!(actual.exit, i32::from(!truth), "{}: {value}", case.id());
+            assert_eq!(
+                actual.exit,
+                if truth { 0 } else { 10 },
+                "{}: {value}",
+                case.id()
+            );
             assert!(actual.stdout);
             assert_eq!(value["status"], "completed");
             assert_eq!(value["stage"], "evaluate");
@@ -92,7 +97,7 @@ fn assert_outcome(case: Case, actual: &Run, extracted: bool) {
             assert!(value.get("diagnostic").is_none());
         }
         Expected::Validation { code, incomplete } => {
-            assert_eq!(actual.exit, if incomplete { 3 } else { 1 });
+            assert_eq!(actual.exit, if incomplete { 22 } else { 20 });
             assert!(actual.stdout);
             assert_eq!(
                 value["status"],
@@ -112,7 +117,7 @@ fn assert_outcome(case: Case, actual: &Run, extracted: bool) {
             assert_eq!(codes, BTreeSet::from([code]), "{}: {value}", case.id());
         }
         Expected::MissingModel => {
-            assert_eq!(actual.exit, 1);
+            assert_eq!(actual.exit, 20);
             assert!(!actual.stdout);
             assert_eq!(value["status"], "refused");
             assert_eq!(value["stage"], if extracted { "quire" } else { "link" });
@@ -122,7 +127,7 @@ fn assert_outcome(case: Case, actual: &Run, extracted: bool) {
             assert!(value.get("extraction").is_none());
         }
         Expected::Exhausted => {
-            assert_eq!(actual.exit, 3);
+            assert_eq!(actual.exit, 22);
             assert!(actual.stdout);
             assert_eq!(value["status"], "incomplete");
             assert_eq!(value["stage"], "evaluate");

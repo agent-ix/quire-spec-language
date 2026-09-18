@@ -117,13 +117,13 @@ mod tests {
             ),
         );
         for (code, expected_code, exit) in [
-            (LoweringCode::Unsupported, "unsupported_projection", 1),
-            (LoweringCode::ResourceExhausted, "resource_exhausted", 3),
-            (LoweringCode::Binding, "projection_binding", 1),
+            (LoweringCode::Unsupported, "unsupported_projection", 21),
+            (LoweringCode::ResourceExhausted, "resource_exhausted", 22),
+            (LoweringCode::Binding, "projection_binding", 20),
             (
                 LoweringCode::InvalidCorrespondence,
                 "invalid_projection_correspondence",
-                1,
+                20,
             ),
         ] {
             for (span, expected_status) in [

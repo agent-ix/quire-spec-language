@@ -214,7 +214,7 @@ still explicitly refuses LLVM 3.1.0; that downstream capability is not inferred
 from the fixture-specific check. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
-returns usage exit 2. File operands remain OS paths. JSON paths are display text,
+returns usage exit 20. File operands remain OS paths. JSON paths are display text,
 which may contain replacement characters; exact labels and the actual byte
 digest carry the separate source correspondence. See the
 [native diagnostic catalog](docs/native-error-codes.md) for stable outcomes.
