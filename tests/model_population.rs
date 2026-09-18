@@ -21,7 +21,7 @@ use quire_spec_language::model::bundle::{
     ObjectTypeRecord,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::{EffectiveId, ProducerKey};
+use quire_spec_language::model::key::{EffectiveId, ProducerDigest, ProducerKey};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
@@ -383,7 +383,7 @@ fn admitted_binding(
         Some(3),
         &mut admission,
     ) {
-        AdmissionOutcome::Admitted(binding) => binding,
+        AdmissionOutcome::Admitted(binding) => *binding,
         other => panic!("expected an admitted binding, got {other:?}"),
     }
 }
@@ -849,32 +849,46 @@ fn l06_cardinality_bound_and_incomplete() {
     }
 }
 
-/// A bundle sharing F1's `ModelSelection` export identity (`bundle.n01`) but
-/// declaring only `model.C` — a different structural universe under the same
-/// `modelIdentity`, isolating `require_bundle_matches`'s second check
-/// (`foreign-binding`, universe mismatch) from its first (`foreign-model-
-/// selection`, identity mismatch).
-fn fixture_f1_same_identity_different_universe() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.n01"),
-        vec![object_type("model.C")],
-    )
+/// F1, but with its `ModelSelection` export's declared identity kept
+/// (`bundle.n01`) while its `digest` is a different value —
+/// `require_bundle_matches` now compares the whole admitted header, not just
+/// `export.identity`, so a query bundle whose declared identity collides
+/// with an admitted binding's, but whose digest does not, still refuses.
+fn fixture_f1_with_foreign_digest() -> Bundle {
+    let mut model_selection = ModelSelection::fixture("bundle.n01");
+    model_selection.export.digest = ProducerDigest::of_identity("bundle.n01-imposter");
+    Bundle::new(model_selection, fixture_f1().records)
 }
 
 /// Review finding (PR #148): a [`PopulationBinding`] admitted against one
 /// bundle answered queries made with a different bundle's identity —
 /// `all_instances`/`lookup` never checked the query's own `bundle` argument
 /// against the binding they were handed. `require_bundle_matches` closes
-/// this: both a foreign `modelIdentity` (a different bundle entirely) and a
-/// foreign object universe (the same declared `modelIdentity`, different
-/// structural content) are refused before either function does anything
-/// else, and never place a charge.
+/// this by comparing the whole admitted `ModelSelection` header
+/// (`{authority, export: {identity, revision, digest}, contract_version}`),
+/// not just `export.identity`: both a foreign `modelIdentity` (a different
+/// bundle entirely) and a same-identity, foreign-header bundle (a colliding
+/// declared identity with a different `digest`) are refused before either
+/// function does anything else, and never place a charge. This is a header
+/// comparison, not a re-derived object universe: `require_bundle_matches`
+/// never calls `object_universe`/`build` on the query's own `bundle`, so a
+/// query never pays to re-normalize a bundle it may reject outright — see
+/// `require_bundle_matches`'s own doc comment for why an exact header match
+/// already implies an identical universe.
 ///
-/// Mutation used: deleted the `require_bundle_matches(bundle, binding)?`
-/// call from the head of `all_instances`, which let the foreign-bundle query
-/// fall through to `AllInstancesOutcome::Completed` instead of refusing —
-/// the `Refused(foreign_reference/foreign-model-selection)` assertion went
-/// red as expected, reverted.
+/// Mutation used (guard removed): deleted the
+/// `require_bundle_matches(bundle, binding)?` call from the head of
+/// `all_instances`, which let the foreign-bundle query fall through to
+/// `AllInstancesOutcome::Completed` instead of refusing — the
+/// `Refused(foreign_reference/foreign-model-selection)` assertion went red
+/// as expected, reverted.
+///
+/// Mutation used (identity-only comparison): in `require_bundle_matches`,
+/// narrowed `bundle.model_selection != binding.model_selection` to
+/// `bundle.model_selection.export.identity !=
+/// binding.model_selection.export.identity` — the same-identity,
+/// foreign-digest block below (`fixture_f1_with_foreign_digest`) went red as
+/// expected (returned `Completed` instead of `Refused`), reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l04_binding_admitted_against_one_bundle_refuses_a_foreign_bundle_query() {
@@ -930,28 +944,31 @@ fn l04_binding_admitted_against_one_bundle_refuses_a_foreign_bundle_query() {
     }
     assert_eq!(meter_lookup.consumed(LimitKind::WorkUnits), 0);
 
-    // Same declared `modelIdentity`, different structural universe —
-    // `require_bundle_matches`'s second check, distinct from the first.
-    let same_identity_bundle = fixture_f1_same_identity_different_universe();
+    // Same declared `modelIdentity`, different `ModelSelection` header (a
+    // foreign `digest`) — `require_bundle_matches` compares the whole header,
+    // not just `export.identity`, so this still refuses.
+    let foreign_digest_bundle = fixture_f1_with_foreign_digest();
     assert_eq!(
-        same_identity_bundle.model_selection.export.identity,
+        foreign_digest_bundle.model_selection.export.identity,
         bundle.model_selection.export.identity
     );
-    let mut meter_universe = Meter::new(SCALAR_UNLIMITED);
-    let universe_outcome = all_instances(
-        &same_identity_bundle,
+    let mut meter_digest = Meter::new(SCALAR_UNLIMITED);
+    let digest_outcome = all_instances(
+        &foreign_digest_bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
-        &mut meter_universe,
+        &mut meter_digest,
     );
-    match universe_outcome {
+    match digest_outcome {
         AllInstancesOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-binding");
+            assert_eq!(refusal.cause, "foreign-model-selection");
         }
-        other => panic!("expected Refused(foreign_reference/foreign-binding), got {other:?}"),
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
     }
-    assert_eq!(meter_universe.consumed(LimitKind::WorkUnits), 0);
+    assert_eq!(meter_digest.consumed(LimitKind::WorkUnits), 0);
 }
 
 /// TC-198's own admission-time `modelIdentity` check (distinct from
@@ -1108,3 +1125,63 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
 // documents, never an actual `pre()` anchor over one operation's effect).
 // It backed no AC uniquely; FR-153-AC-7 stays unbacked here and is tracked
 // on QSL #147.
+
+/// Review finding (PR #148): every other `Completed` test in this file admits
+/// P1 (3 members: `a1`, `a2`, `b1`) with `declared_maximum: Some(3)`, so a
+/// hard-coded `3` and P1's own member count are indistinguishable from the
+/// binding's actual declared maximum — both give the right answer for the
+/// wrong reason. This admits P1 the same way but with `declared_maximum:
+/// Some(5)`, a value equal to neither the constant `3` nor `binding.members()
+/// .len()` (still 3), so `bound().maximum()` can only be `5` if
+/// `all_instances` is genuinely reading the binding's own declared maximum.
+///
+/// Mutation used (constant): in `all_instances`, changed
+/// `CardinalityBound::new(0, declared_maximum)` to
+/// `CardinalityBound::new(0, 3)` — `selected_a.bound().maximum() == 5` went
+/// red as expected (got `3`), reverted.
+///
+/// Mutation used (member count): in `all_instances`, changed
+/// `CardinalityBound::new(0, declared_maximum)` to
+/// `CardinalityBound::new(0, length_amount(binding.members().len()))` —
+/// `selected_a.bound().maximum() == 5` went red as expected (got `3`),
+/// reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5")]
+fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &bundle,
+        &view,
+        &p1("bundle.n01"),
+        GeneralizationClosure::Closed,
+        Some(5),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    assert_eq!(binding.declared_maximum(), Some(5));
+    assert_eq!(binding.members().len(), 3);
+
+    let mut meter_a = Meter::new(SCALAR_UNLIMITED);
+    let selected_a = match all_instances(
+        &bundle,
+        &binding,
+        &ProducerKey::fixture("model.A"),
+        &mut meter_a,
+    ) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected a completed M::A selection, got {other:?}"),
+    };
+    assert_eq!(selected_a.len(), 3);
+    assert_eq!(selected_a.bound().minimum(), 0);
+    assert_eq!(
+        selected_a.bound().maximum(),
+        5,
+        "bound().maximum() must be the binding's own declared maximum (5), \
+         not the constant 3 or the 3-member selection count"
+    );
+}
