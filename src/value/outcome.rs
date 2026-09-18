@@ -71,6 +71,12 @@ pub enum Undefined {
     /// reason: `r` is not a member of the bound population, and the query
     /// names no mathematical value for that case.
     AbsentKey,
+    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
+    /// linked candidate's effective precondition (its own, or the nearest
+    /// redefinition ancestor's, disjoined per FR-151-AC's redefinition rule)
+    /// evaluated to `false`; the call's result is not a mathematical value
+    /// for that receiver.
+    PreconditionFalse,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.

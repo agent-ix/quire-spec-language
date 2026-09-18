@@ -70,6 +70,7 @@ struct CheckedFunction {
 pub struct CheckedPackage {
     scope: Scope,
     functions: Vec<CheckedFunction>,
+    dispatch_tables: Vec<DispatchTable>,
 }
 
 /// A checked standalone expression over named parameters.
@@ -199,6 +200,7 @@ impl PackageDeclarations {
             ieee_profile: self.ieee_profile,
             dispatch_operations: self.dispatch_operations,
         };
+        let dispatch_tables = self.dispatch_tables;
         let signatures: Vec<Signature> = self
             .functions
             .iter()
@@ -299,7 +301,11 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        Ok(CheckedPackage { scope, functions })
+        Ok(CheckedPackage {
+            scope,
+            functions,
+            dispatch_tables,
+        })
     }
 }
 
@@ -455,12 +461,14 @@ impl CheckedPackage {
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_owned()))?;
         Self::validate(&checked.signature.parameters, &arguments, objects)?;
         let callables = self.callables();
-        Ok(Machine::new(&self.scope, &callables, objects, meter).run(
-            &checked.body,
-            checked.slots,
-            arguments,
-            true,
-        ))
+        Ok(Machine::new(
+            &self.scope,
+            &callables,
+            objects,
+            meter,
+            &self.dispatch_tables,
+        )
+        .run(&checked.body, checked.slots, arguments, true))
     }
 
     /// Evaluate a checked expression with `arguments` for its parameters.
@@ -473,11 +481,13 @@ impl CheckedPackage {
     ) -> Result<Evaluation, InputRefusal> {
         Self::validate(&expression.parameters, &arguments, objects)?;
         let callables = self.callables();
-        Ok(Machine::new(&self.scope, &callables, objects, meter).run(
-            &expression.root,
-            expression.slots,
-            arguments,
-            false,
-        ))
+        Ok(Machine::new(
+            &self.scope,
+            &callables,
+            objects,
+            meter,
+            &self.dispatch_tables,
+        )
+        .run(&expression.root, expression.slots, arguments, false))
     }
 }

@@ -28,7 +28,8 @@ use quire_spec_language::value::{
     CheckCause, CheckMode, CheckingLimits, ClauseKind, DispatchCandidate, DispatchOperation,
     DispatchTable, Expression, FunctionDeclaration, IllTypedCause, Integer, LimitKind, Meter,
     NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
-    PackageDeclarations, ScalarLimits, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    PackageDeclarations, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -197,6 +198,96 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
         refusal.cause,
         CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
     );
+}
+
+/// D06 (FR-151-AC-2): `dispatch.select` charges once, sized by the table's
+/// candidate count (`value_occurrences`), then the selected candidate's
+/// effective precondition decides `true`, and the evaluator proceeds to
+/// charge `function.call` and run the candidate body.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn d06_dispatch_select_evaluates_effective_precondition_true_then_runs_the_body() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let package = one_candidate_package(
+        receiver_type,
+        Some(Expression::Boolean(true)),
+        ValueType::Integer,
+    )
+    .check(CheckingLimits::default())
+    .unwrap();
+    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
+    let checked = package
+        .check_clause_expression(
+            parameters,
+            &dispatch_expression(),
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+
+    let objects = objects(receiver_type, "r1");
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
+            &objects,
+            &mut meter,
+        )
+        .unwrap();
+    match evaluation.outcome {
+        Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(1_i64)),
+        other => panic!("expected a completed Integer(1), got {other:?}"),
+    }
+    // `dispatch.select` sizes `value_occurrences` by the table's one
+    // distinct candidate; `function.call` (the candidate body) then charges
+    // one work unit on top of `dispatch.select`'s own.
+    assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 1);
+    assert!(meter.consumed(LimitKind::WorkUnits) >= 2);
+}
+
+/// D06 (FR-151-AC-2): a `false` effective precondition undefines the call
+/// (`Undefined::PreconditionFalse`) instead of running the candidate body —
+/// the candidate body's own `function.call`/`1` never evaluates.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn d06_dispatch_select_evaluates_effective_precondition_false_is_undefined() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let package = one_candidate_package(
+        receiver_type,
+        Some(Expression::Boolean(false)),
+        ValueType::Integer,
+    )
+    .check(CheckingLimits::default())
+    .unwrap();
+    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
+    let checked = package
+        .check_clause_expression(
+            parameters,
+            &dispatch_expression(),
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+
+    let objects = objects(receiver_type, "r1");
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
+            &objects,
+            &mut meter,
+        )
+        .unwrap();
+    match evaluation.outcome {
+        Outcome::Undefined(reason) => assert_eq!(reason, Undefined::PreconditionFalse),
+        other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
+    }
 }
 
 // --- Bridge integration: crate::model::checked_dispatch -------------------
