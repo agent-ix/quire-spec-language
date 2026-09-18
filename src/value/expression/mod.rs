@@ -38,7 +38,7 @@ pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use ir::{CollectionLoss, CollectionProperty};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval,
+    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
 };
 pub use syntax::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
@@ -210,7 +210,10 @@ impl PackageDeclarations {
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let typed = (|| {
-                let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes);
+                // A function body is never an operation's postcondition, so
+                // `pre(...)` refuses here (see `Typer::postcondition`'s own
+                // doc).
+                let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes, false);
                 bind_parameters(&mut typer, &function.parameters, &location)?;
                 typer.check_declared_type(&function.result, &location)?;
                 let body = typer.check_as(&function.body, &function.result, &location)?;
@@ -221,7 +224,7 @@ impl PackageDeclarations {
                             function: function.name.clone(),
                             index,
                         });
-                        let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes);
+                        let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes, false);
                         bind_parameters(&mut typer, &function.parameters, &at)?;
                         Some(typer.infer(measure, None, &at)?)
                     }
@@ -290,7 +293,10 @@ impl PackageDeclarations {
 
 impl CheckedPackage {
     /// Check a standalone expression over `parameters`, against `expected`
-    /// when given.
+    /// when given. `pre(...)` refuses `wrong_snapshot`/`wrong-anchor` here:
+    /// this is not an operation's postcondition, the only clause FR-153's
+    /// anchor table admits it in. Use [`Self::check_postcondition_expression`]
+    /// to check a real postcondition, where `pre(...)` is legal.
     pub fn check_expression(
         &self,
         parameters: Vec<(String, ValueType)>,
@@ -299,6 +305,47 @@ impl CheckedPackage {
         mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedExpression, CheckRefusal> {
+        self.check_expression_as(parameters, expression, expected, mode, limits, false)
+    }
+
+    /// Check a standalone expression as an operation's postcondition:
+    /// identical to [`Self::check_expression`], except `pre(...)` is legal
+    /// (FR-153's own anchor table; shared-grammar.md's caller-side anchor
+    /// operations), subject to its own eligible-operand rule (FR-042's
+    /// Behavior clause, `Typer`'s `Expression::Pre` arm).
+    ///
+    /// `self`/`result`, shared-grammar.md's other two caller-side anchor
+    /// operations (line 500/604, alongside `pre(...)`), are out of scope
+    /// here: this method takes no declared operation (no result type, no
+    /// receiver type) to bind either one to, [`Expression`] itself
+    /// (`syntax.rs`) has no `Self_`/`Result` variant to even lower a
+    /// reference to either into, and nothing in this crate's own value
+    /// layer defines a checked "operation" declaration with a result-type
+    /// binding contract (`crate::model::bundle`'s `PostconditionClause` is
+    /// a different, model-layer structure, never lowered through this
+    /// `Expression`/`Typer`/`Node` pipeline). Binding `result` needs that
+    /// missing declaration shape first; this method is deliberately silent
+    /// on it rather than guessing one.
+    pub fn check_postcondition_expression(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        expected: Option<&ValueType>,
+        mode: CheckMode,
+        limits: CheckingLimits,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        self.check_expression_as(parameters, expression, expected, mode, limits, true)
+    }
+
+    fn check_expression_as(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        expected: Option<&ValueType>,
+        mode: CheckMode,
+        limits: CheckingLimits,
+        postcondition: bool,
+    ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let signatures: Vec<Signature> = self
             .functions
@@ -306,7 +353,7 @@ impl CheckedPackage {
             .map(|function| function.signature.clone())
             .collect();
         let mut nodes = 0_u64;
-        let mut typer = Typer::new(&self.scope, &signatures, limits, &mut nodes);
+        let mut typer = Typer::new(&self.scope, &signatures, limits, &mut nodes, postcondition);
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {
