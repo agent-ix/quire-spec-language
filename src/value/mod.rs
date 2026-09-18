@@ -52,6 +52,7 @@ mod ieee;
 mod integer;
 mod key;
 mod library;
+mod model_query;
 mod node;
 mod numeric;
 mod outcome;

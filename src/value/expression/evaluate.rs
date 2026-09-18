@@ -26,6 +26,7 @@ use super::super::ieee::{
 };
 use super::super::integer::{Integer, IntegerInterval};
 use super::super::key::compare_keys;
+use super::super::model_query::{evaluate_all_instances, evaluate_lookup};
 use super::super::numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
@@ -779,6 +780,43 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                 }
                 retain_scalar(Value::Boolean(found), self.meter)?
+            }
+            NodeKind::AllInstances { .. } => {
+                let Value::Population(binding) = self.pop()? else {
+                    return Err(invariant());
+                };
+                let ValueType::Collection(collection_type) = &node.value_type else {
+                    return Err(invariant());
+                };
+                evaluate_all_instances(&binding, collection_type, self.meter)?
+            }
+            NodeKind::Lookup {
+                reference, absence, ..
+            } => {
+                let reference_value = self.pop()?;
+                let Value::Population(binding) = self.pop()? else {
+                    return Err(invariant());
+                };
+                let ValueType::Reference(static_key) = &reference.value_type else {
+                    return Err(invariant());
+                };
+                let target_key = match &node.value_type {
+                    ValueType::Reference(key) => *key,
+                    ValueType::Option(payload) => match &**payload {
+                        ValueType::Reference(key) => *key,
+                        _ => return Err(invariant()),
+                    },
+                    _ => return Err(invariant()),
+                };
+                evaluate_lookup(
+                    &binding,
+                    target_key,
+                    *static_key,
+                    reference_value,
+                    *absence,
+                    &node.value_type,
+                    self.meter,
+                )?
             }
         };
         self.values.push(value);
