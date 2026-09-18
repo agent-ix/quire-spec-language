@@ -122,8 +122,13 @@ enum Unbridgeable {
     /// Not valid UTF-8: every real population member's own object identity
     /// (`crate::model::population::PopulationDocument`'s member records) is a
     /// JSON string, so a `reference` whose identity bytes are not valid UTF-8
-    /// can never name one.
-    Identity,
+    /// can never name one. Carries the reference's own universe -- already
+    /// losslessly parsed by `bridge_reference` -- so
+    /// `evaluate_unresolvable_lookup` can check it against `binding`'s own
+    /// universe before deciding absence, exactly as `lookup` checks the
+    /// universe before membership. Never re-derived or re-parsed: this is
+    /// the same bytes `bridge_reference` already validated once.
+    Identity { universe: EffectiveId },
 }
 
 /// The reverse FR-143 byte transfer of an [`ObjectReference`] into a model
@@ -138,10 +143,14 @@ fn bridge_reference(reference: &ObjectReference) -> Result<ReferenceKey, Unbridg
         .as_bytes()
         .try_into()
         .map_err(|_| Unbridgeable::Universe)?;
-    let object = String::from_utf8(reference.identity().as_bytes().to_vec())
-        .map_err(|_| Unbridgeable::Identity)?;
+    let universe = EffectiveId::from_digest_bytes(universe);
+    let object = String::from_utf8(reference.identity().as_bytes().to_vec()).map_err(|_| {
+        Unbridgeable::Identity {
+            universe: universe.clone(),
+        }
+    })?;
     Ok(ReferenceKey {
-        universe: EffectiveId::from_digest_bytes(universe),
+        universe,
         type_identity: EffectiveId::from_digest_bytes(*reference.object_type().as_bytes()),
         object,
     })
@@ -301,9 +310,12 @@ fn hex_bytes(bytes: &[u8]) -> String {
 /// would reach for a structurally-absent member, without ever constructing a
 /// key that could alias a real one. Mirrors [`lookup`]'s own ordering
 /// exactly: `type_conforms(S, T)` before any charge, then `lookup.key`, then
-/// the outcome -- `foreign-universe` for a malformed universe, or the mode's
-/// own absence outcome (with `empty` mode's extra `lookup.result-retain`)
-/// for a malformed identity.
+/// the universe check, then the outcome -- `foreign-universe` for a
+/// malformed universe, or for a malformed identity naming another universe
+/// (`bridge_reference` still parses the universe on that path), or the
+/// mode's own absence outcome (with `empty` mode's extra
+/// `lookup.result-retain`) for a malformed identity naming this binding's
+/// own universe.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_unresolvable_lookup(
     binding: &PopulationBinding,
@@ -346,7 +358,18 @@ fn evaluate_unresolvable_lookup(
                 binding.universe().hex()
             ),
         })),
-        Unbridgeable::Identity => match absence {
+        Unbridgeable::Identity { universe } if universe != *binding.universe() => {
+            Err(model_refusal(ModelRefusal {
+                code: Code::ForeignReference,
+                cause: "foreign-universe",
+                detail: format!(
+                    "reference key names universe {}, not the binding's {}",
+                    universe.hex(),
+                    binding.universe().hex()
+                ),
+            }))
+        }
+        Unbridgeable::Identity { .. } => match absence {
             AbsenceMode::Undefined => Err(Stop::Undefined(Undefined::AbsentKey)),
             AbsenceMode::Refused => Err(model_refusal(ModelRefusal {
                 code: Code::InvalidRuntimeInput,

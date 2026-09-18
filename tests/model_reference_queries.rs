@@ -1075,6 +1075,65 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
     }
 }
 
+/// PR #158 round-3 review finding (MEDIUM): `evaluate_unresolvable_lookup`'s
+/// `Unbridgeable::Identity` arm answered an absence outcome without first
+/// checking the malformed reference's own universe against the binding's,
+/// unlike the real `population::lookup` (FR-153 L04), which checks the
+/// universe immediately after `lookup.key` and before membership. A
+/// malformed (non-UTF-8) identity naming a universe that is not this
+/// binding's own must refuse `foreign_reference`/`foreign-universe`, exactly
+/// like a well-formed reference naming that same foreign universe, in every
+/// absence mode -- never fall through to that mode's absence outcome.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
+fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_absent() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.a))),
+    ];
+
+    // 32 repeats of 0x07: well-formed length, but not `scenario.universe`.
+    let foreign_universe = UniverseIdentity::new(&[0x07; 32]).unwrap();
+    let malformed_reference = ObjectReference::new(
+        foreign_universe,
+        node_key(&scenario.a),
+        ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
+    );
+    let object_world =
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+
+    for absence in [
+        AbsenceMode::Undefined,
+        AbsenceMode::Refused,
+        AbsenceMode::Empty,
+    ] {
+        let (outcome, meter) = run(
+            &package,
+            &parameters,
+            &lookup(target.clone(), absence),
+            vec![
+                Value::Population(Arc::new(scenario.binding.clone())),
+                Value::Reference(malformed_reference.clone()),
+            ],
+            SCALAR_UNLIMITED,
+            &object_world,
+        );
+        match outcome {
+            Outcome::Refused(refusal) => {
+                assert_eq!(refusal.code(), Some("foreign_reference"));
+                assert_eq!(refusal.cause(), Some("foreign-universe"));
+            }
+            other => panic!(
+                "expected a refused foreign-universe lookup in {absence:?} mode, got {other:?}"
+            ),
+        }
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+    }
+}
+
 /// PR #158 re-review finding 3 (LOW): `set[lookup<M::A>(p, r) absent
 /// refused]` preserves the looked-up reference's own runtime most-specific
 /// type inside the checked `Set<Reference<M::A>>` -- the collection's single
