@@ -54,10 +54,19 @@
 //!   and `B/z2`) contending for the identical single inherited target — is
 //!   *not* checked by `resolve_redefinition_target`: nothing in `src/`
 //!   called it, so per-redefiner queries here could never see the sibling
-//!   that contends with them. That shape is instead detected where a model
-//!   actually normalizes through it, `normalize`'s own phase 4
-//!   (`apply_redefinitions`'s undominated-edges branch), which already has
-//!   every sibling redefiner of a contended target in view.
+//!   that contends with them. For **field** members that shape is instead
+//!   detected where a model actually normalizes through it, `normalize`'s
+//!   own phase 4 (`apply_redefinitions`'s undominated-edges branch), which
+//!   already has every sibling redefiner of a contended target in view.
+//!   `normalize`'s phase 4 is field-only, though (see its own module doc),
+//!   so the identical shape for **operation** members is priced — a
+//!   contested operation target's `normalize.conflict-check` charge is not
+//!   skipped — but detected and resolved nowhere at all: no dominance
+//!   search decides which competing operation redefiner wins, and no
+//!   refusal reports an undominated operation contest the way
+//!   `derivation-conflict`/`redefinition-target` do for fields. This
+//!   predates this PR and is outside QSL #145's own scope. Remaining work:
+//!   #173.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
@@ -67,7 +76,8 @@
     reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::ControlFlow;
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
@@ -231,11 +241,69 @@ impl ConformanceIndex {
     }
 }
 
+/// The one bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
+/// ceiling) proper-descendant DFS [`type_conforms`] needs. Previously also
+/// shared with a phase-4 dominance helper (`ancestor_closure`, QSL #145 /
+/// PR #144 review finding #4) that collected a full ancestor set rather
+/// than breaking on a target match; that helper is gone (QSL #145 — phase 4
+/// now derives each owner's ancestor set from `crate::model::normalize`'s
+/// own phase-3 paths instead of a second, separately bounded walk here),
+/// so `visit` only ever breaks or continues
+/// with `()` now, but the shape is kept generic in case a future caller
+/// needs a different break payload.
+///
+/// Calls `visit(current, general)` once per direct-generalization edge
+/// discovered, in DFS pre-order: `current` is the node being expanded,
+/// `general` its direct generalization. `visit` returns
+/// [`ControlFlow::Break`] to stop the walk immediately —
+/// [`type_conforms`]'s early exit on a target match — or
+/// [`ControlFlow::Continue`] to keep walking and push `general` onto the
+/// stack. The walk's own early termination is returned as this function's
+/// `Ok` payload; a `Break` short-circuits before any further nodes are
+/// popped.
+///
+/// `label` is the refusal detail's own subject phrase (`"conformance check
+/// from"`).
+fn walk_ancestors<B>(
+    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    s: &ProducerKey,
+    label: &str,
+    mut visit: impl FnMut(&ProducerKey, &ProducerKey) -> ControlFlow<B>,
+) -> Result<ControlFlow<B>, ModelRefusal> {
+    let mut stack: Vec<ProducerKey> = vec![s.clone()];
+    let mut visited: HashSet<ProducerKey> = HashSet::new();
+    let mut steps: usize = 0;
+    while let Some(current) = stack.pop() {
+        if !visited.insert(current.clone()) {
+            continue;
+        }
+        steps += 1;
+        if steps > MAX_CONFORMANCE_DEPTH {
+            return Err(ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::ConformanceDepth { from: s.clone() },
+                detail: format!(
+                    "{label} {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
+                    s.identity
+                ),
+            });
+        }
+        for general in generals_by_specific.get(&current).into_iter().flatten() {
+            match visit(&current, &general.general) {
+                ControlFlow::Break(value) => return Ok(ControlFlow::Break(value)),
+                ControlFlow::Continue(()) => stack.push(general.general.clone()),
+            }
+        }
+    }
+    Ok(ControlFlow::Continue(()))
+}
+
 /// Whether `s` conforms to `t`: the same identity, or a chain of supplied
-/// generalization records from `s` to `t`. Explicit task stack over
-/// caller-supplied records, bounded by [`MAX_CONFORMANCE_DEPTH`] and a
-/// visited set, so a cycle or an adversarial chain refuses instead of
-/// looping or overflowing a native call stack.
+/// generalization records from `s` to `t`. Delegates to [`walk_ancestors`]
+/// for the bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
+/// ceiling) DFS itself, breaking as soon as `t` is found so a cycle or an
+/// adversarial chain refuses instead of looping or overflowing a native
+/// call stack.
 ///
 /// `pub(super)` so [`crate::model::dispatch`]'s own bounded walks (subtype
 /// applicability and dominance) reuse this one implementation rather than a
@@ -248,34 +316,19 @@ pub(super) fn type_conforms(
     if s == t {
         return Ok(true);
     }
-    let mut stack: Vec<ProducerKey> = vec![s.clone()];
-    let mut visited: std::collections::HashSet<ProducerKey> = std::collections::HashSet::new();
-    let mut steps: usize = 0;
-    while let Some(current) = stack.pop() {
-        if !visited.insert(current.clone()) {
-            continue;
-        }
-        steps += 1;
-        if steps > MAX_CONFORMANCE_DEPTH {
-            return Err(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::ConformanceDepth {
-                    from: s.clone(),
-                },
-                detail: format!(
-                    "conformance check from {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
-                    s.identity
-                ),
-            });
-        }
-        for general in generals_by_specific.get(&current).into_iter().flatten() {
-            if &general.general == t {
-                return Ok(true);
+    let found = walk_ancestors(
+        generals_by_specific,
+        s,
+        "conformance check from",
+        |_current, general| {
+            if general == t {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
             }
-            stack.push(general.general.clone());
-        }
-    }
-    Ok(false)
+        },
+    )?;
+    Ok(matches!(found, ControlFlow::Break(())))
 }
 
 /// `quire.model.conformance.multiplicity/v1`: does `from` conform to `to`?
