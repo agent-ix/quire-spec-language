@@ -12,8 +12,13 @@
 
 use crate::model::key::{ProducerDigest, ProducerKey, Revision};
 
-/// The one contract version this rung admits (`model-complete.md`).
+/// The one contract version this rung normalizes (`model-complete.md`).
 pub const INTERFACE_VERSION_1_3_0: &str = "1.3.0";
+
+/// The prior contract version this rung recognizes but cannot normalize: it
+/// yields the fixed `unsupplied-producer-record` refusal sequence FR-150
+/// defines (TC-195 N08), not an `unknown_wire` refusal (PR #140 F4).
+pub const INTERFACE_VERSION_1_2_0: &str = "1.2.0";
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -177,6 +182,9 @@ impl ModelSelection {
     /// A `filament-core-data` model selection for a bundle export named
     /// `identity` (e.g. `bundle.n01`), following TC-195/196/197/198's
     /// fixture convention.
+    ///
+    /// Test-only (PR #140 F13): see [`ProducerDigest::of_identity`].
+    #[cfg(any(test, feature = "test-support"))]
     pub fn fixture(identity: impl Into<String>) -> Self {
         let identity = identity.into();
         Self {

@@ -14,6 +14,8 @@ use std::fmt;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::value::length_amount;
+
 /// Digest domain of every producer digest selection (`filament-canonical-json-1`).
 pub const PRODUCER_DIGEST_DOMAIN: &str = "filament-canonical-json-1";
 
@@ -96,6 +98,13 @@ pub struct ProducerDigest {
 impl ProducerDigest {
     /// A `filament-canonical-json-1` digest over `identity`'s exact UTF-8 bytes,
     /// following TC-195's fixture convention.
+    ///
+    /// Test-only (PR #140 F13): this derives a digest from a display
+    /// identity, which is exactly the name-derived-identity defect this
+    /// engine exists to exclude. Gated behind `test-support` so a production
+    /// caller cannot reach it; `cargo test --all-features` enables it for
+    /// `tests/model_normalization.rs`.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn of_identity(identity: &str) -> Self {
         Self {
             domain: PRODUCER_DIGEST_DOMAIN.to_owned(),
@@ -141,6 +150,9 @@ pub struct ProducerKey {
 impl ProducerKey {
     /// A `filament-core-data` key over `identity`, following TC-195/196/197/198's
     /// fixture convention: revision value `"1"`, digest over `identity`'s bytes.
+    ///
+    /// Test-only (PR #140 F13): see [`ProducerDigest::of_identity`].
+    #[cfg(any(test, feature = "test-support"))]
     pub fn fixture(identity: impl Into<String>) -> Self {
         let identity = identity.into();
         Self {
@@ -268,7 +280,10 @@ pub struct EffectiveDeclarationPreimage {
 }
 
 impl EffectiveDeclarationPreimage {
-    fn to_json(&self) -> Value {
+    /// This preimage's schema-valid JSON form (PR #140 F10: `pub(super)` so
+    /// `crate::model::normalize` can reuse it directly instead of
+    /// round-tripping through JCS bytes and back).
+    pub(super) fn to_json(&self) -> Value {
         let mut object = Map::new();
         object.insert(
             "version".to_owned(),
@@ -298,6 +313,50 @@ impl EffectiveDeclarationPreimage {
     pub fn jcs_bytes(&self) -> Vec<u8> {
         jcs_bytes(&self.to_json())
     }
+
+    /// This preimage's identity and its JCS byte length, from one `to_json`
+    /// build rather than two (PR #140 F10: `identity()` and `jcs_bytes()`
+    /// each independently rebuilt the same JSON value).
+    pub(super) fn identity_and_jcs_len(&self) -> (EffectiveId, u64) {
+        let bytes = jcs_bytes(&self.to_json());
+        (digest_of_bytes(&bytes), length_amount(bytes.len()))
+    }
+
+    /// Whether `derivation` is well-formed: every fact's `ordinal` matches
+    /// its array position (`unsorted-derivation`), and no two facts retain
+    /// the same input path twice (`duplicate-path`) — TC-195 N10's
+    /// `invalid_mutations` named these "refused by the semantic check", i.e.
+    /// this engine's own job over an already-constructed preimage (for
+    /// example one read back from a checked-package `model_correspondence`
+    /// node), not a wire decode (PR #140 F5). Returns `(cause, detail)` on
+    /// the first defect found, in derivation order.
+    pub fn validate_derivation(&self) -> Result<(), (&'static str, String)> {
+        for (position, fact) in self.derivation.iter().enumerate() {
+            if fact.ordinal != position {
+                return Err((
+                    "unsorted-derivation",
+                    format!(
+                        "{} derivation fact at position {position} has ordinal {}, not {position}",
+                        self.original.identity, fact.ordinal
+                    ),
+                ));
+            }
+        }
+        for earlier in 0..self.derivation.len() {
+            for later in (earlier + 1)..self.derivation.len() {
+                if self.derivation[earlier].inputs == self.derivation[later].inputs {
+                    return Err((
+                        "duplicate-path",
+                        format!(
+                            "{} derivation retains the same input path at positions {earlier} and {later}",
+                            self.original.identity
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A lowercase hex encoding of `bytes`.
@@ -313,5 +372,10 @@ pub(super) fn jcs_bytes(value: &Value) -> Vec<u8> {
 
 /// The SHA-256 digest of `value`'s JCS bytes, as an [`EffectiveId`].
 pub(super) fn digest_of(value: &Value) -> EffectiveId {
-    EffectiveId(Sha256::digest(jcs_bytes(value)).into())
+    digest_of_bytes(&jcs_bytes(value))
+}
+
+/// The SHA-256 digest of already-serialized JCS `bytes`, as an [`EffectiveId`].
+fn digest_of_bytes(bytes: &[u8]) -> EffectiveId {
+    EffectiveId(Sha256::digest(bytes).into())
 }
