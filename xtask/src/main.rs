@@ -19,7 +19,7 @@ use xtask::{
     revendor, revendor_check, Sources, Tree,
 };
 
-const USAGE: &str = "usage: cargo xtask revendor --tree <native-v1|complete-value|all> [--qspec-clone <path>]\n       cargo xtask revendor-check [--tree <native-v1|complete-value|all>] [--qspec-clone <path>]";
+const USAGE: &str = "usage: cargo xtask revendor --tree <native-v1|complete-value|all> [--qspec-clone <path>]\n       cargo xtask revendor-check [--tree <native-v1|complete-value|all>]";
 
 struct Args {
     tree: Option<Tree>,
@@ -71,14 +71,18 @@ fn run_revendor(workspace_root: &Path, args: &Args) -> Result<String> {
         let report = revendor(&mut manifest, &tree.root(workspace_root), &sources)?;
         manifest.save(&manifest_path)?;
         summary.push_str(&format!(
-            "{}: {} written, {} unchanged, {} external verified\n",
+            "{}: {} written, {} unchanged, {} external verified, {} removed\n",
             tree.dir_name(),
             report.written.len(),
             report.unchanged.len(),
-            report.verified_external.len()
+            report.verified_external.len(),
+            report.removed.len()
         ));
         for dest in &report.written {
             summary.push_str(&format!("  wrote {dest}\n"));
+        }
+        for dest in &report.removed {
+            summary.push_str(&format!("  removed {dest} (no longer in VENDOR.json)\n"));
         }
     }
     Ok(summary)
@@ -90,9 +94,7 @@ fn run_check(workspace_root: &Path, args: &Args) -> Result<String> {
         // against the manifest's own recorded digest, never against a live
         // clone, so it stays safe to run from `cargo test` with no clone
         // present. `--qspec-clone` has no effect here.
-        return Err(Error::Usage(
-            "revendor-check does not take --qspec-clone; it checks recorded digests offline",
-        ));
+        return Err(Error::CheckRefusesQspecClone);
     }
     let mut summary = String::new();
     let mut clean = true;
@@ -157,5 +159,41 @@ fn main() -> ExitCode {
             let _ = writeln!(io::stderr().lock(), "{error}");
             ExitCode::from(error.exit_code())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
+    #[test]
+    fn tc_149_usage_text_never_offers_qspec_clone_for_revendor_check() {
+        let check_line = USAGE
+            .lines()
+            .find(|line| line.contains("revendor-check"))
+            .expect("USAGE documents revendor-check");
+        assert!(
+            !check_line.contains("--qspec-clone"),
+            "revendor-check refuses --qspec-clone at runtime; USAGE must not advertise it: {check_line}"
+        );
+    }
+
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
+    #[test]
+    fn tc_149_check_refuses_a_qspec_clone_flag_with_its_own_error_variant() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let args = Args {
+            tree: None,
+            qspec_clone: Some(PathBuf::from("/nonexistent")),
+        };
+        let error = run_check(&workspace_root, &args).unwrap_err();
+        assert!(matches!(error, Error::CheckRefusesQspecClone));
     }
 }
