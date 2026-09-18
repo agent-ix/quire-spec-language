@@ -84,7 +84,7 @@ fn exported_job(directory: &Path, case: setup::Case) -> Value {
 fn selected_exports_reach_real_state_and_operation_outcomes() {
     for (case, code, truth) in [
         (setup::Case::Aggregate(2), 0, Some(true)),
-        (setup::Case::Aggregate(1), 1, Some(false)),
+        (setup::Case::Aggregate(1), 10, Some(false)),
         (
             setup::Case::Operation {
                 violate_frame: false,
@@ -96,7 +96,7 @@ fn selected_exports_reach_real_state_and_operation_outcomes() {
             setup::Case::Operation {
                 violate_frame: true,
             },
-            1,
+            20,
             None,
         ),
     ] {
@@ -218,7 +218,7 @@ fn selected_package_failures_preserve_reader_details_without_compilation_fallbac
         }
         save(directory.path(), &job);
         let (exit, result, stdout) = invoke(directory.path());
-        assert_eq!(exit, 1, "{mutation:?}: {result}");
+        assert_eq!(exit, 20, "{mutation:?}: {result}");
         assert!(!stdout);
         assert_eq!(result["stage"], "selected_package");
         assert_eq!(result["code"], code, "{result}");
@@ -260,7 +260,7 @@ fn malformed_package_selections_refuse_at_request_intake() {
         malformed["request"]["package"] = selection;
         save(directory.path(), &malformed);
         let (exit, result, _) = invoke(directory.path());
-        assert_eq!(exit, 2);
+        assert_eq!(exit, 20);
         assert_eq!(result["code"], expected_code);
     }
 }
@@ -275,7 +275,7 @@ fn selected_package_intake_and_runtime_limits_stop_with_fresh_retry() {
         stopped["request"]["limits"] = limits;
         save(directory.path(), &stopped);
         let (code, result, stdout) = invoke(directory.path());
-        assert_eq!(code, 3, "{result}");
+        assert_eq!(code, 22, "{result}");
         assert!(stdout);
         assert_eq!(result["status"], "incomplete");
         assert!(result.get("truth").is_none());
@@ -288,7 +288,7 @@ fn selected_package_intake_and_runtime_limits_stop_with_fresh_retry() {
     count["request"]["snapshots"] = json!(vec![job["request"]["snapshots"][0].clone(); 62]);
     save(directory.path(), &count);
     let (code, result, _) = invoke(directory.path());
-    assert_eq!(code, 3);
+    assert_eq!(code, 22);
     assert_eq!(result["details"]["limit"], "selected files");
     assert_eq!(result["details"]["category"], "packages");
     assert_eq!(result["details"]["requested"], 1);
@@ -298,7 +298,7 @@ fn selected_package_intake_and_runtime_limits_stop_with_fresh_retry() {
     let bytes = std::fs::read(&path).unwrap();
     std::fs::write(&path, vec![b' '; 8_388_609]).unwrap();
     let (code, result, _) = invoke(directory.path());
-    assert_eq!(code, 3);
+    assert_eq!(code, 22);
     assert_eq!(result["stage"], "intake");
     std::fs::write(path, bytes).unwrap();
     let (code, result, _) = invoke(directory.path());
@@ -314,7 +314,7 @@ fn aggregate_files_produce_actual_truth_identities_work_and_events() {
         let (job, package_digest) =
             setup::write(directory.path(), setup::Case::Aggregate(number)).unwrap();
         let (code, result, stdout) = invoke(directory.path());
-        assert_eq!(code, i32::from(!expected), "{result}");
+        assert_eq!(code, if expected { 0 } else { 10 }, "{result}");
         assert!(stdout);
         assert_eq!(result["status"], "completed");
         assert_eq!(result["truth"], expected);
@@ -371,7 +371,7 @@ fn recorded_operation_files_preserve_captures_and_frame_refusal() {
         );
         assert_eq!(result["inputs"]["snapshots"].as_array().unwrap().len(), 2);
         if bad_frame {
-            assert_eq!(code, 1);
+            assert_eq!(code, 20);
             assert_eq!(result["stage"], "validate");
             assert!(result.get("truth").is_none());
             let error = result["diagnostics"]
@@ -395,39 +395,39 @@ fn stale_bytes_closed_requests_and_missing_files_keep_actual_failure_stage() {
     let directory = tempfile::tempdir().unwrap();
     let (job, _) = setup::write(directory.path(), setup::Case::Aggregate(2)).unwrap();
     for (pointer, replacement, expected_exit, stage, code) in [
-        ("/format", json!("unknown"), 1, "envelope", "unknown_wire"),
+        ("/format", json!("unknown"), 20, "envelope", "unknown_wire"),
         (
             "/request/program/source/digest",
             json!(ByteDigest::of(b"foreign").to_string()),
-            1,
+            20,
             "source",
             "source_digest_mismatch",
         ),
         (
             "/request/snapshots/0/reference/digest",
             json!("0".repeat(64)),
-            1,
+            20,
             "input",
             "stale_dependency",
         ),
         (
             "/request/program/source/file",
             json!("missing.native"),
-            2,
+            20,
             "file",
             "io-error",
         ),
         (
             "/request/selection/owner/revision",
             json!(0),
-            2,
+            20,
             "request",
             "invalid-identifier",
         ),
         (
             "/request/models/0/source",
             json!([]),
-            2,
+            20,
             "request",
             "invalid-request",
         ),
@@ -469,7 +469,7 @@ fn stale_bytes_closed_requests_and_missing_files_keep_actual_failure_stage() {
     ] {
         std::fs::write(directory.path().join("request.json"), malformed).unwrap();
         let (code, result, _) = invoke(directory.path());
-        assert_eq!(code, 2);
+        assert_eq!(code, 20);
         assert_eq!(result["code"], "invalid-request");
     }
 }
@@ -489,7 +489,7 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
         save(directory.path(), &stopped);
         let (code, result, stdout) = invoke(directory.path());
         assert!(stdout);
-        assert_eq!(code, 3, "{result}");
+        assert_eq!(code, 22, "{result}");
         assert_eq!(result["status"], "incomplete");
         assert!(result.get("truth").is_none());
         if result["stage"] == "evaluate" {
@@ -505,7 +505,7 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
     );
     std::fs::write(directory.path().join("request.json"), vec![b' '; 1_048_577]).unwrap();
     let (code, result, _) = invoke(directory.path());
-    assert_eq!(code, 3);
+    assert_eq!(code, 22);
     assert_eq!(result["request_digest"], Value::Null);
     save(directory.path(), &job);
     let original = std::fs::read(directory.path().join("program.native")).unwrap();
@@ -514,7 +514,7 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
         vec![b' '; 1_048_577],
     )
     .unwrap();
-    assert_eq!(invoke(directory.path()).0, 3);
+    assert_eq!(invoke(directory.path()).0, 22);
     std::fs::write(directory.path().join("program.native"), original).unwrap();
     let snapshot_path = directory.path().join("snapshot-0.json");
     let snapshot = std::fs::read(&snapshot_path).unwrap();
@@ -530,7 +530,7 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
     aggregate["request"]["snapshots"] = json!(vec![selected; 42]);
     save(directory.path(), &aggregate);
     let (code, result, _) = invoke(directory.path());
-    assert_eq!(code, 3, "{result}");
+    assert_eq!(code, 22, "{result}");
     assert_eq!(result["stage"], "intake");
     assert_eq!(result["details"]["limit"], "file bytes");
     std::fs::write(&snapshot_path, snapshot).unwrap();
@@ -547,8 +547,8 @@ fn typed_package_failure_retains_incomplete_classification() {
     use quire_spec_language::package::{PackageError, PackageStage, PackageUsage};
     use quire_spec_language::Code;
     for (code, expected, status) in [
-        (Code::Cancelled, 3, "incomplete"),
-        (Code::InvalidPackage, 1, "refused"),
+        (Code::Cancelled, 22, "incomplete"),
+        (Code::InvalidPackage, 20, "refused"),
     ] {
         let error = RunError {
             request_digest: Some(ByteDigest::of(b"selected request")),
@@ -564,7 +564,7 @@ fn typed_package_failure_retains_incomplete_classification() {
         let RunCause::Package(package) = &error.cause else {
             unreachable!()
         };
-        assert_eq!(package.is_incomplete(), expected == 3);
+        assert_eq!(package.is_incomplete(), expected == 22);
         assert_eq!(error.exit_code(), expected);
         let value = error.value().unwrap();
         assert!(result_schema().is_valid(&value));

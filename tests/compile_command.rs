@@ -115,23 +115,23 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
         let (expected, code) = match change {
             Change::Format => {
                 changed["format"] = json!("native-run/1");
-                (1, "unknown_wire")
+                (20, "unknown_wire")
             }
             Change::Runtime => {
                 changed["request"]["snapshots"] = json!([]);
-                (2, "invalid-request")
+                (20, "invalid-request")
             }
             Change::Stale => {
                 changed["request"]["program"]["source"]["digest"] =
                     json!(ByteDigest::of(b"foreign").to_string());
-                (1, "source_digest_mismatch")
+                (20, "source_digest_mismatch")
             }
             Change::Syntax => {
                 let broken = b"language ?";
                 std::fs::write(directory.path().join("program.native"), broken).unwrap();
                 changed["request"]["program"]["source"]["digest"] =
                     json!(ByteDigest::of(broken).to_string());
-                (1, "invalid_syntax")
+                (20, "invalid_syntax")
             }
         };
         std::fs::write(
@@ -189,7 +189,7 @@ fn failed_artifact_output_is_an_io_exit() {
         .stdout(std::process::Stdio::from(full))
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(30));
     assert!(std::str::from_utf8(&output.stderr)
         .unwrap()
         .starts_with("output failed:"));
@@ -220,7 +220,7 @@ fn file_count_refusals_name_the_exhausted_group_before_file_io() {
             .arg(directory.path().join("request.json"))
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(3), "{field}");
+        assert_eq!(output.status.code(), Some(22), "{field}");
         assert!(output.stdout.is_empty());
         let value: Value = serde_json::from_slice(&output.stderr).unwrap();
         assert_eq!(value["code"], "resource_exhausted");

@@ -69,7 +69,9 @@ enum Output {
 fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String) {
     match error.value() {
         Ok(value) => (error.exit_code(), value.to_string()),
-        Err(output) => (2, format!("output failed: {output}")),
+        // FR-301's contract: serializing the outcome is a tool failure (30),
+        // distinct from the request-level disposition it failed to encode.
+        Err(output) => (30, format!("output failed: {output}")),
     }
 }
 
@@ -116,7 +118,9 @@ fn main() -> ExitCode {
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(code),
         Err(error) => {
             let _ = writeln!(io::stderr().lock(), "output failed: {error}");
-            ExitCode::from(2)
+            // FR-301's contract: a stdout/stderr write failure is a tool
+            // failure (30), not a request-level disposition.
+            ExitCode::from(30)
         }
     }
 }

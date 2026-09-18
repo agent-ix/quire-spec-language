@@ -256,8 +256,8 @@ pub(super) fn report(
     let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
             let (code, status) = match failure.status {
-                ValidationStatus::Refused => (1, types::FailureStatus::Refused),
-                ValidationStatus::Incomplete => (3, types::FailureStatus::Incomplete),
+                ValidationStatus::Refused => (20, types::FailureStatus::Refused),
+                ValidationStatus::Incomplete => (22, types::FailureStatus::Incomplete),
             };
             (
                 code,
@@ -276,17 +276,17 @@ pub(super) fn report(
         } => {
             let (code, result) = match result {
                 EvaluationOutcome::Completed(truth) => (
-                    u8::from(!truth),
+                    if *truth { 0 } else { 10 },
                     types::Evaluation::Completed { truth: *truth },
                 ),
                 EvaluationOutcome::Refused(error) => (
-                    1,
+                    20,
                     types::Evaluation::Refused {
                         diagnostic: diagnostic(error),
                     },
                 ),
                 EvaluationOutcome::Incomplete(error) => (
-                    3,
+                    22,
                     types::Evaluation::Incomplete {
                         diagnostic: diagnostic(error),
                     },

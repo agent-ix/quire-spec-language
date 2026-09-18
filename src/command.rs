@@ -109,7 +109,8 @@ impl std::fmt::Display for LimitKind {
 /// JSON result of the local command, distinct from a portable evidence envelope.
 #[derive(Debug)]
 pub struct RunResult {
-    /// 0 completed true, 1 completed false/refused, or 3 incomplete.
+    /// FR-301's contract: 0 completed true, 10 completed false (logical
+    /// violation), 20 refused, or 22 incomplete.
     pub exit_code: u8,
     /// Structured native-run-result/1 observations.
     pub value: NativeResult,
@@ -222,14 +223,15 @@ impl RunCause {
         self.code().is_incomplete()
     }
 
-    /// Native command exit status, with usage/I/O distinct from refusal.
+    /// Native command exit status, on FR-301's six-code contract: request
+    /// intake and identifier/digest failures are invalid input (20); a
+    /// disposition's incomplete/exhausted classification promotes it to
+    /// incomplete (22) in place of invalid input (20); writing the outcome
+    /// out is a tool failure (30).
     pub fn exit_code(&self) -> u8 {
         match self {
-            Self::Io { .. }
-            | Self::Json(_)
-            | Self::Output(_)
-            | Self::Digest(_)
-            | Self::Identifier(_) => 2,
+            Self::Output(_) => 30,
+            Self::Io { .. } | Self::Json(_) | Self::Digest(_) | Self::Identifier(_) => 20,
             Self::Format
             | Self::Limit(_)
             | Self::Native(_)
@@ -239,17 +241,17 @@ impl RunCause {
             | Self::Lowering { .. }
             | Self::Input(_) => {
                 if self.is_incomplete() {
-                    3
+                    22
                 } else {
-                    1
+                    20
                 }
             }
             #[cfg(feature = "quire-extraction")]
             Self::Extraction(error) => {
                 if error.code().is_incomplete() {
-                    3
+                    22
                 } else {
-                    1
+                    20
                 }
             }
         }

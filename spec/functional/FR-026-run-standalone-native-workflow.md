@@ -11,6 +11,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-023
     type: references
+  - target: "ix://agent-ix/quire-specification/FR-301"
+    type: depends_on
 ---
 ## Description
 
@@ -40,9 +42,9 @@ One native-run-result/1 JSON result on stdout with request digest, compiled
 package byte/static identities, original source/model/runtime identities,
 selected authored clause, actual stage status, diagnostics, work counters and
 ordered implication events. Only completed execution has Boolean truth.
-Exit 0 means completed true; 1 means completed false or refused; 3 means
-incomplete. Invalid command usage exits 20. Request syntax, identifier, I/O
-and output failure exit 2.
+On FR-301's six-code contract, exit 0 means completed true; 10 means completed
+false (a logical violation); 20 means refused, invalid command usage, request
+syntax, identifier or I/O failure; 22 means incomplete. Output failure exits 30.
 Intake failures use a JSON error on stderr with request digest when read, typed
 stage/code and relevant original source/reference details. Existing parse/format
 commands preserve their behavior. Broken pipes end quietly with the computed
