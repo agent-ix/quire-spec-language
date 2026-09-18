@@ -1255,3 +1255,259 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
         }
     }
 }
+
+/// PR #167 review finding #3(a): F2 plus a single, uncontested redefiner
+/// owned by `B2` (`B2 <= A`, `B2.x2 redefines A.x`) -- exactly
+/// `fixture_n06_resolved`'s own diamond, reused so the exact `m + r` here
+/// (`value-accounting.md:455`) is cross-checked against N06's own already
+/// hand-verified `f(o)`/`m` values below, not derived from a fresh fixture.
+fn fixture_single_redefiner_no_conflict() -> Bundle {
+    let mut records = fixture_f1().records;
+    records.push(object_type("model.B2"));
+    records.push(generalization("model.gen.B2-A", "model.B2", "model.A"));
+    records.push(field_member("model.B2.x2", "model.B2", "model.A"));
+    records.push(redefinition(
+        "model.redef.single",
+        "model.B2",
+        "model.B2.x2",
+        "model.A.x",
+    ));
+    Bundle::new(ModelSelection::fixture("bundle.single-redefiner"), records)
+}
+
+/// PR #167 review finding #1's own regression shape: `Owner` declares
+/// `n_parents` direct generalizations (one to `Base`, the rest to
+/// unrelated, ancestor-less filler types) and a single field
+/// (`Owner.x2 redefines Base.x`) with no other redefiner contesting
+/// `Base.x` -- an uncontested redefinition group (`edges.len() == 1`) whose
+/// owner's own breadth alone, before this fix, was enough to exceed
+/// `MAX_CONFORMANCE_DEPTH` (128) computing a dominance closure no single
+/// redefiner ever needs.
+fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> Bundle {
+    let mut records = vec![
+        object_type("model.Base"),
+        field_member("model.Base.x", "model.Base", "model.Base"),
+    ];
+    for i in 0..n_parents.saturating_sub(1) {
+        records.push(object_type(&format!("model.P{i}")));
+    }
+    records.push(object_type("model.Owner"));
+    records.push(generalization(
+        "model.gen.Owner-Base",
+        "model.Owner",
+        "model.Base",
+    ));
+    for i in 0..n_parents.saturating_sub(1) {
+        records.push(generalization(
+            &format!("model.gen.Owner-P{i}"),
+            "model.Owner",
+            &format!("model.P{i}"),
+        ));
+    }
+    records.push(field_member("model.Owner.x2", "model.Owner", "model.Base"));
+    records.push(redefinition(
+        "model.redef.wide",
+        "model.Owner",
+        "model.Owner.x2",
+        "model.Base.x",
+    ));
+    Bundle::new(
+        ModelSelection::fixture(format!("bundle.wide-{n_parents}")),
+        records,
+    )
+}
+
+/// PR #167 review finding #3(a): TC-195 N06's own resolved diamond
+/// (`fixture_n06_resolved`, three redefiners of `A.x` -- `B`, `C`, and the
+/// dominating winner `D` -- own owners `B`/`C`/`D`) charges exactly one
+/// `normalize.conflict-check` at `Σ (c − 1) × f(o)`
+/// (`value-accounting.md:456`), not a flat one work unit per group:
+///
+/// - `c = 3` (three redefiners of `A.x` reachable at `D`'s own effective
+///   view: `redef.B`, `redef.C`, `redef.D`).
+/// - `f(B) = 2`: `B`'s own type-level derivation is one `qualify` fact plus
+///   one `inherit` fact for its single ancestor path `B -> A`.
+/// - `f(C) = 2`: symmetric to `B`, one ancestor path `C -> A`.
+/// - `f(D) = 5`: one `qualify` fact plus four `inherit` facts, one per
+///   distinct ancestor path (`D -> B`, `D -> C`, `D -> A` via `B`, `D -> A`
+///   via `C` -- the same four paths TC-195 N02's own ground truth charges
+///   four of its six `normalize.cycle-check` charges against).
+/// - `Σ (c − 1) × f(o) = (3 − 1) × (f(B) + f(C) + f(D)) = 2 × (2 + 2 + 5)
+///   = 18`.
+///
+/// Cross-checked against the crate by running it directly: with every
+/// other limit unlimited, `work_units = 58` (43 for every phase-2/3
+/// `normalize.record`/`normalize.fact`/`normalize.cycle-check` charge, plus
+/// the five `normalize.redefinition-check` charges' own `2 + 2 + 2 + 3 + 6
+/// = 15` work) is exactly enough to admit every charge up to and including
+/// the last `normalize.redefinition-check`, denying only the
+/// `normalize.conflict-check` that follows it -- and its reported
+/// `next_charge` is exactly `18`.
+///
+/// Revert probe: reverting the `Σ (c − 1) × f(o)` charge back to a flat,
+/// unconditional `Charge::new(ChargePoint::NormalizeConflictCheck)` (no
+/// `.work(...)` override, i.e. PR #167's own pre-fix shape) makes both
+/// assertions below fail -- the exact-bound one because `work_units = 58`
+/// then completes outright (a flat charge of 1 fits), and the total
+/// because `104` no longer matches. Confirmed by hand: reintroducing that
+/// exact one-line regression locally reproduces both failures, then
+/// removing it again restores this test to green.
+#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[test]
+fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
+    let bundle = fixture_n06_resolved();
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeRedefinitionCheck)
+            .count(),
+        5,
+        "one normalize.redefinition-check per redefinition record examined \
+         at each type whose own effective view reaches it: redef.B and \
+         redef.C are each examined at their own owner's pass and again at \
+         D's, redef.D only at D's"
+    );
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        1,
+        "exactly one contested group (A.x, reachable at D) across the whole build"
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 104);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 58;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 58);
+            assert_eq!(incomplete.consumed, 58);
+            assert_eq!(incomplete.next_charge, 18);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+        }
+        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
+    }
+}
+
+/// PR #167 review finding #1: a redefinition target with only one
+/// redefiner reaching it (`c = 1`) admits zero `normalize.conflict-check`
+/// charges -- `value-accounting.md:456`'s own `c >= 2` condition -- and no
+/// dominance closure is ever computed for it, rather than the pre-fix
+/// shape that walked one unconditionally regardless of `edges.len()`.
+///
+/// Cross-checked by running the crate directly: with every other limit
+/// unlimited, this bundle completes at exactly `work_units = 37`, and its
+/// one `normalize.redefinition-check` charge is exactly `2` (`m = 2`:
+/// `B2`'s own effective members are `A.x`, inherited, and `B2.x2`, direct;
+/// `r = 0`: the only redefinition record examined in this build).
+///
+/// Revert probe: reverting the `edges.len() < 2` guard in
+/// `apply_redefinitions` back to computing `ensure_owner_closures` and a
+/// `Σ (c − 1) × f(o)` charge unconditionally makes the conflict-check-count
+/// assertion fail (it becomes 1, charged at `(1 − 1) × f(B2) = 0` work
+/// units under the new formula, or a flat 1 under the older pre-#167
+/// shape) -- confirmed by hand: removing the guard locally reproduces the
+/// failure, restoring it returns this test to green.
+#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[test]
+fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
+    let bundle = fixture_single_redefiner_no_conflict();
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeRedefinitionCheck)
+            .count(),
+        1
+    );
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        0,
+        "a single redefiner has nothing to dominate and admits no conflict-check charge"
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 37);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 19;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.consumed, 19);
+            assert_eq!(incomplete.next_charge, 2);
+            assert_eq!(
+                incomplete.charge_point,
+                ChargePoint::NormalizeRedefinitionCheck
+            );
+        }
+        other => panic!("expected Incomplete at normalize.redefinition-check, got {other:?}"),
+    }
+}
+
+/// PR #167 review finding #1's own regression: before this fix, resolving
+/// a redefinition group unconditionally computed every contesting owner's
+/// ancestor-dominance closure -- even a group with a single, uncontested
+/// redefiner, which has nothing to dominate. A redefiner's owner with 128
+/// or more *direct* generalizations (never a deep chain; a single wide
+/// fan-out is enough) hit `crate::model::conformance`'s own
+/// `MAX_CONFORMANCE_DEPTH` (128) ceiling computing that unneeded closure,
+/// wrongly refusing `conformance-depth` on a bundle with no actual
+/// dominance question to resolve. Both 128 (the exact boundary: 128 direct
+/// generalizations plus the owner itself is the 129th node the walk would
+/// visit) and 200 (comfortably over) must complete cleanly and quickly.
+///
+/// Revert probe: reverting the `edges.len() < 2` guard in
+/// `apply_redefinitions` (skipping `ensure_owner_closures` entirely for a
+/// single-edge group) back to calling it unconditionally reproduces the
+/// original refusal at both widths -- confirmed by hand: removing the
+/// guard locally makes this test fail with a `conformance-depth` refusal
+/// at both 128 and 200, restoring it returns this test to green.
+#[trace("TC-195", "TC-196", "FR-151-AC-2")]
+#[test]
+fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
+    for n_parents in [128usize, 200usize] {
+        let bundle = fixture_wide_ancestry_single_redefiner(n_parents);
+        let start = std::time::Instant::now();
+        let outcome = normalize(&bundle, ModelNormalizationLimits::UNLIMITED);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "normalize took {elapsed:?} for {n_parents} direct generalizations \
+             with a single uncontested redefiner"
+        );
+        let view = match outcome {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!(
+                "expected Completed for {n_parents} direct generalizations, got {other:?} \
+                 (PR #167 review finding #1 regression: an uncontested redefiner's owner \
+                 breadth alone must never force a dominance-closure walk)"
+            ),
+        };
+
+        let winner = view
+            .declarations
+            .iter()
+            .find(|entry| {
+                entry.preimage.original.identity == "model.Owner.x2"
+                    && entry.preimage.owner_effective_type.is_some()
+            })
+            .unwrap_or_else(|| {
+                panic!("no declaration for model.Owner.x2 in {n_parents}-parent view")
+            });
+        assert!(
+            winner.visible,
+            "Owner.x2 is the only redefiner and must win outright"
+        );
+    }
+}
