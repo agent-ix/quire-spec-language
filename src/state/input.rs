@@ -50,15 +50,14 @@ pub struct CanonicalDigest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservationDigest(pub String);
 
-/// Producer-owned static identities required by composed evaluation.
+/// Static document, model, profile and configuration identity and digest
+/// required by composed evaluation.
 ///
-/// Carries no interface version: FR-049 identifies the domain package by
-/// FR-056 identity, not by a producer interface revision. An earlier
-/// revision of this struct pinned `interface_version` to the superseded
-/// producer interface `1.2.0` (#139); FR-150-AC-7 refuses that interface
-/// outright, so the pin named a version no caller could ever produce.
-/// Deleted rather than re-pinned, per this repository's prerelease
-/// no-compatibility-layer policy.
+/// Every field here comes from the admitted domain package's FR-056
+/// identity (see FR-049's Inputs section); none is a producer interface
+/// version. `StaticAuthority` is not a wire or schema shape -- it is a
+/// plain Rust struct the caller builds directly, and it carries no such
+/// member.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StaticAuthority {
     pub document_identity: String,
