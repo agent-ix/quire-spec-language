@@ -53,6 +53,9 @@ mod text;
 mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
+// `crate::model` reuses this crate-wide `usize -> u64` persistence/wire
+// conversion (PR #140 F7) rather than a bare `as u64` at its own charge sites.
+pub(crate) use accounting::length_amount;
 pub use collection::{
     construct_collection, form_collection, CardinalityBound, CollectionKind, CollectionType,
     CollectionValue, EmptyCardinalityBound,
