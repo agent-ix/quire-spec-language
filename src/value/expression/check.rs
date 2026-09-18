@@ -365,10 +365,10 @@ impl<'a> Typer<'a> {
 
     /// FR-042-AC-3's `let s = self in pre(s.version)` analogue, generalized
     /// to `allInstances`/`lookup`: whether `expression`'s own syntax reads
-    /// one of them over a population operand that is a bare [`Expression::
-    /// Name`] [`Self::captured_before`] `boundary` -- a `let`-bound alias of
-    /// a state root, captured *outside* this `pre(...)`'s own operand,
-    /// re-anchored only because the read syntax happens to sit inside it.
+    /// one of them over a population operand that [`Self::resolves_to_captured_alias`]
+    /// resolves to a `let`-bound alias of a state root, captured *outside*
+    /// this `pre(...)`'s own operand, re-anchored only because the read
+    /// syntax happens to sit inside it.
     ///
     /// `bindings` tracks every name a `let` *within this same walk* (i.e.
     /// within this `pre(...)`'s own operand) has since rebound, most recent
@@ -377,29 +377,31 @@ impl<'a> Typer<'a> {
     /// `allInstances(other)`) is `false` -- this operand's own `let`
     /// introducing it for itself, never "outside" it, so it does not falsely
     /// trip this check inside its own body. A rebinding that is itself a
-    /// bare alias reference (`let r = q in ...`, `q` already a captured
-    /// alias) is `true`: aliasing an alias is still aliasing, transitively,
-    /// however many `let`s sit in between -- `is_captured_alias` below
-    /// resolves a name against `bindings` first (innermost within this walk
-    /// wins, matching ordinary shadowing) and only falls back to
-    /// [`Self::captured_before`] for a name this walk never rebound at all.
+    /// captured alias, however it is spelled -- a bare reference
+    /// (`let r = q in ...`), an `if` with an aliasing arm (`let r = if c
+    /// then q else q in ...`), or a further nested `let` resolving to one
+    /// (`let r = (let s = q in s) in ...`) -- is `true`: aliasing an alias
+    /// is still aliasing, transitively, through any of the shapes FR-153
+    /// lets a population-typed expression take between `let`s, however many
+    /// sit in between (PR #168 review round 4, finding 1). Neither FR-042
+    /// nor FR-153's vendored spec text states a "bare identifier only"
+    /// restriction for this specific alias-capture rule -- `bind_parameters`'s
+    /// own FR-153 "direct operand" doc governs the unrelated `Population`
+    /// *value-type* placement, not this syntactic alias check -- so this
+    /// resolves the general case rather than special-casing one syntax.
     fn contains_captured_pre_alias(
         &self,
         expression: &Expression,
         boundary: usize,
         bindings: &[(String, bool)],
     ) -> bool {
-        let is_captured_alias = |operand: &Expression| match operand {
-            Expression::Name(name) => bindings
-                .iter()
-                .rev()
-                .find(|(bound, _)| bound == name)
-                .map_or_else(|| self.captured_before(name, boundary), |(_, alias)| *alias),
-            _ => false,
-        };
         let direct = match expression {
-            Expression::AllInstances { population, .. } => is_captured_alias(population),
-            Expression::Lookup { population, .. } => is_captured_alias(population),
+            Expression::AllInstances { population, .. } => {
+                self.resolves_to_captured_alias(population, boundary, bindings)
+            }
+            Expression::Lookup { population, .. } => {
+                self.resolves_to_captured_alias(population, boundary, bindings)
+            }
             _ => false,
         };
         if direct {
@@ -410,13 +412,62 @@ impl<'a> Typer<'a> {
                 return true;
             }
             let mut bindings = bindings.to_vec();
-            bindings.push((name.clone(), is_captured_alias(value)));
+            bindings.push((
+                name.clone(),
+                self.resolves_to_captured_alias(value, boundary, &bindings),
+            ));
             return self.contains_captured_pre_alias(body, boundary, &bindings);
         }
         expression
             .children()
             .into_iter()
             .any(|child| self.contains_captured_pre_alias(child, boundary, bindings))
+    }
+
+    /// Whether `operand` -- a population-typed sub-expression this walk is
+    /// considering as `allInstances`/`lookup`'s direct operand, or as a
+    /// `let`'s own value -- resolves to a captured alias of a state root
+    /// bound outside this `pre(...)`'s operand, however many `let`s or `if`
+    /// branches it is spelled through.
+    ///
+    /// - [`Expression::Name`] resolves against `bindings` first (innermost
+    ///   within this walk wins, matching ordinary shadowing), falling back
+    ///   to [`Self::captured_before`] for a name this walk never rebound.
+    /// - [`Expression::Let`] resolves its own value first (recursively --
+    ///   the value may itself be a further `let`/`if`), pushes that result
+    ///   as `name`'s own binding, and resolves through its body under that
+    ///   extended `bindings`.
+    /// - [`Expression::If`] resolves `true` when *either* branch does: a
+    ///   checker refusing statically cannot rule out the branch that
+    ///   escapes, so both must be clear.
+    /// - Every other shape is not itself alias-bearing syntax and resolves
+    ///   `false`.
+    fn resolves_to_captured_alias(
+        &self,
+        operand: &Expression,
+        boundary: usize,
+        bindings: &[(String, bool)],
+    ) -> bool {
+        match operand {
+            Expression::Name(name) => bindings
+                .iter()
+                .rev()
+                .find(|(bound, _)| bound == name)
+                .map_or_else(|| self.captured_before(name, boundary), |(_, alias)| *alias),
+            Expression::Let { name, value, body } => {
+                let alias = self.resolves_to_captured_alias(value, boundary, bindings);
+                let mut bindings = bindings.to_vec();
+                bindings.push((name.clone(), alias));
+                self.resolves_to_captured_alias(body, boundary, &bindings)
+            }
+            Expression::If {
+                then, otherwise, ..
+            } => {
+                self.resolves_to_captured_alias(then, boundary, bindings)
+                    || self.resolves_to_captured_alias(otherwise, boundary, bindings)
+            }
+            _ => false,
+        }
     }
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {

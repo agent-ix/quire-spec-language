@@ -1696,6 +1696,197 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
     );
 }
 
+/// PR #168 review round 4, finding 1, shape 1: the alias can hide behind a
+/// `let` written *directly as* `allInstances`'s own operand, not only
+/// behind a `let` that wraps the whole `pre(...)` body the way the
+/// alias-of-alias test above does. `let q = p in
+/// pre(size(allInstances(let s = q in s)))`: `allInstances`'s operand is
+/// itself `let s = q in s`, not a bare `Name`, so the old direct check
+/// (`Expression::Name` only) never looked inside it at all.
+/// `resolves_to_captured_alias`'s own `Expression::Let` arm now resolves
+/// through the operand's value (`q`, a captured alias) and carries that
+/// status onto `s`, so the operand as a whole still resolves to a captured
+/// alias.
+///
+/// Mutation used: in `resolves_to_captured_alias`'s `Expression::Let` arm,
+/// forced `alias` to always be `false` rather than
+/// `self.resolves_to_captured_alias(value, boundary, bindings)` (treating a
+/// `let` value as never itself an alias, the same blind spot the
+/// alias-of-alias fix closed for `contains_captured_pre_alias`'s own `Let`
+/// arm, but here inside the operand-resolution helper instead). This test
+/// went red as expected (a checked, evaluated `Completed(Integer(3))`
+/// instead of a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let q = p in pre(size(allInstances(let s = q in s)))
+    let expression = Expression::Let {
+        name: "q".to_owned(),
+        value: Box::new(population_name()),
+        body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
+            target,
+            population: Box::new(Expression::Let {
+                name: "s".to_owned(),
+                value: Box::new(Expression::Name("q".to_owned())),
+                body: Box::new(Expression::Name("s".to_owned())),
+            }),
+        })))),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// PR #168 review round 4, finding 1, shape 2: the alias can hide behind an
+/// `if` written directly as `allInstances`'s own operand, both arms naming
+/// the same captured alias. `let q = p in
+/// pre(size(allInstances(if true then q else q)))`: `resolves_to_captured_-
+/// alias`'s own `Expression::If` arm resolves `true` when either branch
+/// does, so an operand that is an `if` over a captured alias on both arms
+/// still resolves to one.
+///
+/// Mutation used: removed `resolves_to_captured_alias`'s `Expression::If`
+/// arm entirely, so an `if` operand falls through to the catch-all `_ =>
+/// false` arm instead (recreating the exact pre-fix blind spot: the old
+/// helper only ever recognized a bare `Expression::Name`). This test went
+/// red as expected (a checked, evaluated `Completed(Integer(3))` instead of
+/// a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let q = p in pre(size(allInstances(if true then q else q)))
+    let expression = Expression::Let {
+        name: "q".to_owned(),
+        value: Box::new(population_name()),
+        body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
+            target,
+            population: Box::new(Expression::If {
+                condition: Box::new(Expression::Boolean(true)),
+                then: Box::new(Expression::Name("q".to_owned())),
+                otherwise: Box::new(Expression::Name("q".to_owned())),
+            }),
+        })))),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// PR #168 review round 4, finding 1, shape 3: the alias can hide behind an
+/// `if` whose result is then bound by a `let` introduced *inside* the
+/// `pre(...)` operand, one level removed from `allInstances`'s own operand
+/// (a bare `Name`). `let q = p in pre(let r = if true then q else q in
+/// size(allInstances(r)))`: `contains_captured_pre_alias`'s own
+/// `Expression::Let` arm now computes `r`'s own alias status via
+/// `resolves_to_captured_alias(value, ..)`, where `value` is the `if`
+/// expression -- resolving `true` via the same `Expression::If` arm shape 2
+/// exercises -- and carries it onto `r`, so `allInstances(r)`'s direct
+/// check (`r` looked up in `bindings`) still finds the alias.
+///
+/// Mutation used: same as
+/// `pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand`'s
+/// own (removing `resolves_to_captured_alias`'s `Expression::If` arm
+/// entirely) -- `r`'s own value resolution goes through the same helper and
+/// the same `If` arm, one call site further out than the direct-operand
+/// case. This test went red as expected (a checked, evaluated
+/// `Completed(Integer(3))` instead of a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let q = p in pre(let r = if true then q else q in size(allInstances(r)))
+    let expression = Expression::Let {
+        name: "q".to_owned(),
+        value: Box::new(population_name()),
+        body: Box::new(pre(Expression::Let {
+            name: "r".to_owned(),
+            value: Box::new(Expression::If {
+                condition: Box::new(Expression::Boolean(true)),
+                then: Box::new(Expression::Name("q".to_owned())),
+                otherwise: Box::new(Expression::Name("q".to_owned())),
+            }),
+            body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
+                target,
+                population: Box::new(Expression::Name("r".to_owned())),
+            }))),
+        })),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// PR #168 review round 4, finding 1, shape 4: the alias can hide behind a
+/// further nested `let`, itself the value of a `let` introduced inside the
+/// `pre(...)` operand. `let q = p in pre(let r = (let s = q in s) in
+/// size(allInstances(r)))`: `r`'s own value is `let s = q in s`, so
+/// resolving `r`'s alias status requires `resolves_to_captured_alias`'s own
+/// `Expression::Let` arm to recurse into a nested `Let`, not just a bare
+/// `Name` -- the same recursive shape shape 1 exercises for `allInstances`'s
+/// own operand, exercised here one level further out.
+///
+/// Mutation used: same as
+/// `pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand`'s
+/// own (`resolves_to_captured_alias`'s `Expression::Let` arm's own `alias`
+/// computation forced to `false` instead of recursing) -- `r`'s value
+/// resolution goes through the same helper and the same `Let` arm, one call
+/// site further out than shape 1's direct-operand case (`contains_captured_-
+/// pre_alias`'s own `Let` arm, computing `r`'s pushed binding, versus
+/// `resolves_to_captured_alias`'s own `Let` arm, computing `s`'s). This test
+/// went red as expected (a checked, evaluated `Completed(Integer(3))`
+/// instead of a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let q = p in pre(let r = (let s = q in s) in size(allInstances(r)))
+    let expression = Expression::Let {
+        name: "q".to_owned(),
+        value: Box::new(population_name()),
+        body: Box::new(pre(Expression::Let {
+            name: "r".to_owned(),
+            value: Box::new(Expression::Let {
+                name: "s".to_owned(),
+                value: Box::new(Expression::Name("q".to_owned())),
+                body: Box::new(Expression::Name("s".to_owned())),
+            }),
+            body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
+                target,
+                population: Box::new(Expression::Name("r".to_owned())),
+            }))),
+        })),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
 /// PR #168 review round 3, finding 2: QSpec FR-012-AC-4's positive
 /// retention half -- "a captured post reference retains its observation
 /// inside `pre`" -- stays legal and correct, the complement to the
@@ -1716,7 +1907,7 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
 /// written directly inside `pre(...)` then also reads 2, so the comparison
 /// becomes `2 != 2`, `false`. This test went red as expected; reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("FR-042-AC-2")]
 fn pre_of_a_captured_post_reference_retains_its_post_observation() {
     let scenario = l07_scenario();
     let package = package(&scenario);
