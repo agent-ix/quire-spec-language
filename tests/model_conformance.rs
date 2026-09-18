@@ -18,7 +18,10 @@ use quire_spec_language::model::conformance::{
     check_subsetting, resolve_redefinition_target, ConformanceCheckOutcome, ConformanceOutcome,
     RedefinitionTargetOutcome,
 };
-use quire_spec_language::model::key::ProducerKey;
+use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
+use quire_spec_language::model::normalize::{
+    normalize, EffectiveView, NormalizeOutcome, ViewEntry,
+};
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
@@ -145,11 +148,146 @@ fn bundle_h(mut records: Vec<BundleRecord>) -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.h"), records)
 }
 
-// FR-151-AC-1 dropped (retagged, PR #144 review finding #1): AC-1 is about
-// an effective member's provenance, and `check_operation_redefinition`
-// never builds or exposes one — `normalize.rs`'s own module doc says
-// operation redefinition builds no phase there. AC-4 is this test's real
-// subject: every variance axis admitting independently.
+/// Finds the effective TYPE entry (no owner) declared with original identity
+/// `identity` — mirrors `tests/model_normalization.rs`'s own helper, which
+/// this integration-test binary cannot import directly.
+fn find_type<'a>(view: &'a EffectiveView, identity: &str) -> &'a ViewEntry {
+    view.declarations
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.is_none()
+                && entry.preimage.original.identity == identity
+        })
+        .unwrap_or_else(|| panic!("no effective type {identity} in {view:?}"))
+}
+
+/// Finds the effective MEMBER entry declared with original identity
+/// `original_identity` under owner effective type `owner`, regardless of its
+/// `visible` bit — phase 4 retains hidden entries in the view.
+fn find_member<'a>(
+    view: &'a EffectiveView,
+    owner: &EffectiveId,
+    original_identity: &str,
+) -> &'a ViewEntry {
+    view.declarations
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner)
+                && entry.preimage.original.identity == original_identity
+        })
+        .unwrap_or_else(|| panic!("no member {original_identity} owned by {owner:?} in {view:?}"))
+}
+
+/// A compatible field redefinition (FR-151's own variance rule admits it)
+/// must fold, under FR-150's phase 4, to exactly one visible effective
+/// member at the redefining owner — with complete provenance: the winner's
+/// derivation names both the redefinition record and what it redefines, and
+/// the redefined original is retained (for provenance) but hidden. This is
+/// FR-151-AC-1's own language ("one effective member with complete
+/// provenance"), checked as the join of `check_field_redefinition`'s
+/// Compatible outcome and `normalize`'s resulting view — distinct from
+/// FR-150-AC-1's own test (`tests/model_normalization.rs`'s n06 case),
+/// which exercises a *conflict* resolved by dominance, not a single
+/// uncontested redefiner.
+#[trace("TC-196", "FR-151-AC-1")]
+#[test]
+fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete_provenance() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.r01"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.n", "model.A", "model.A", mult(0, Some(5))),
+            field_member("model.B.n", "model.B", "model.A", mult(1, Some(3))),
+            redefinition("model.redef.B.n", "model.B", "model.B.n", "model.A.n"),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.B.n"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.n"),
+        redefined: ProducerKey::fixture("model.A.n"),
+    };
+
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    match check_field_redefinition(&bundle, &record, &mut meter) {
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
+        other => panic!("expected Compatible ({{1,3}} conforms to {{0,5}}), got {other:?}"),
+    }
+
+    let view = match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("expected a completed view, got {other:?}"),
+    };
+    let owner_b = find_type(&view, "model.B").effective_id.clone();
+
+    let winner = find_member(&view, &owner_b, "model.B.n");
+    assert!(
+        winner.visible,
+        "B.n is the sole, uncontested redefiner of A.n at B: it must win outright"
+    );
+    let winner_redefine: Vec<_> = winner
+        .preimage
+        .derivation
+        .iter()
+        .filter(|fact| fact.rule == RULE_REDEFINE)
+        .collect();
+    assert_eq!(
+        winner_redefine.len(),
+        1,
+        "exactly one redefine fact links B.n to what it redefines"
+    );
+    assert_eq!(
+        winner_redefine[0].inputs,
+        vec![
+            ProducerKey::fixture("model.redef.B.n"),
+            ProducerKey::fixture("model.A.n"),
+        ]
+    );
+
+    let hidden = find_member(&view, &owner_b, "model.A.n");
+    assert!(
+        !hidden.visible,
+        "A.n is retained at B for provenance but is not the effective member there"
+    );
+    let hidden_redefine: Vec<_> = hidden
+        .preimage
+        .derivation
+        .iter()
+        .filter(|fact| fact.rule == RULE_REDEFINE)
+        .collect();
+    assert_eq!(
+        hidden_redefine.len(),
+        1,
+        "exactly one redefine fact, from B.n's own edge"
+    );
+    assert_eq!(
+        hidden_redefine[0].inputs,
+        vec![
+            ProducerKey::fixture("model.redef.B.n"),
+            ProducerKey::fixture("model.A.n"),
+        ]
+    );
+
+    let visible_members_at_b: Vec<_> = view
+        .declarations
+        .iter()
+        .filter(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(&owner_b) && entry.visible
+        })
+        .collect();
+    assert_eq!(
+        visible_members_at_b.len(),
+        1,
+        "B has exactly one visible effective member for this slot: B.n, never a second silently-surviving one"
+    );
+}
+
+// AC-1 is `r01`'s own subject (`check_operation_redefinition` builds no
+// effective member — `normalize.rs`'s own module doc says operation
+// redefinition builds no phase there). AC-4 is this test's real subject:
+// every variance axis admitting independently.
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r02_a_compatible_operation_redefinition_admits_every_axis() {
