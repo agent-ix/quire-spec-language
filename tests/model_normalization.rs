@@ -141,6 +141,33 @@ fn fixture_r07_same_owner_contending_redefiners() -> Bundle {
     )
 }
 
+/// Re-review of PR #157's round-3 fix: `C <= A` with `C/w` (owned by `C`)
+/// `redefines: A/x`; `B <= C` with `B/z` and `B/z2` (both owned by `B`)
+/// also `redefines: A/x`. `B`'s edges already dominate `C`'s single edge
+/// (a more-derived owner beating a less-derived one, exactly as it would
+/// if `B` had only one redefiner), so `C`'s edge takes no part in the
+/// "one owner, several redefiners" test — only `B`'s two edges do, and
+/// they share the identical owner.
+fn fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.r07d"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.C-A", "model.C", "model.A"),
+            generalization("model.gen.B-C", "model.B", "model.C"),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.C.w", "model.C", "model.A"),
+            field_member("model.B.z", "model.B", "model.A"),
+            field_member("model.B.z2", "model.B", "model.A"),
+            redefinition("model.redef.w", "model.C", "model.C.w", "model.A.x"),
+            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
+            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+        ],
+    )
+}
+
 /// Finds the effective member declared with original identity
 /// `original_identity` under owner effective type `owner`, regardless of
 /// its `visible` bit — phase 4 retains hidden entries in the view.
@@ -574,6 +601,48 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
             assert!(
                 refusal.detail.contains("model.B.z") && !refusal.detail.contains("model.redef.z"),
                 "detail must name the redefining members' own keys, not the redefinition records' keys: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.A.x"),
+                "detail must name the contended target: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
+}
+
+/// Re-review of PR #157's round-3 fix: the same-owner test must look only
+/// at the *most-derived* owners among the undominated edges, not every
+/// edge's owner. `C/w` (owner `C`) and `B/z`/`B/z2` (owner `B <= C`) all
+/// redefine `A/x`: `C`'s edge is already dominated by `B`'s (either of
+/// them), so it takes no part in the ambiguity test, leaving only `B`'s
+/// two edges — one owner, refuses `redefinition-target`, not
+/// `derivation-conflict`.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
+    match normalize(
+        &fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "redefinition-target");
+            assert!(
+                refusal.detail.contains("model.B.z") && refusal.detail.contains("model.B.z2"),
+                "detail must name both of B's own redefining members: {}",
+                refusal.detail
+            );
+            assert!(
+                !refusal.detail.contains("model.C.w"),
+                "C's already-dominated edge must take no part in the ambiguity: {}",
                 refusal.detail
             );
             assert!(

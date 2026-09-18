@@ -966,6 +966,17 @@ pub fn check_field_refinement_obligation(
 /// `owner`, never `owner` itself. Zero or several distinct valid targets
 /// refuse `redefinition-target` naming every candidate — never an arbitrary
 /// pick among them.
+///
+/// This covers R07's *first* shape only: one redefining member queried in
+/// isolation, whose own stated records resolve to zero or multiple targets.
+/// It cannot see sibling redefiners of the same target (querying `B/z` alone
+/// has no visibility into `B/z2`), so it does not — and cannot — detect
+/// R07's *second* shape, several distinct members all redefining one shared
+/// inherited target. That contention check runs where the real boundary can
+/// see every redefiner at once: `normalize.rs`'s phase 4
+/// (`apply_redefinitions`), not here. This function is currently unwired
+/// from `src/`'s pipeline (like its `conformance.rs` siblings); QSL #165
+/// composes it into the real pipeline's `conformance.axis` accounting.
 pub fn resolve_redefinition_target(
     bundle: &Bundle,
     owner: &ProducerKey,

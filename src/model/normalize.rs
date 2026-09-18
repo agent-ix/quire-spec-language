@@ -1029,21 +1029,49 @@ fn apply_redefinitions(
         }
 
         let Some(winner_index) = winner else {
-            // TC-196 R07's second shape: every undominated edge is declared
-            // by the identical owner — contending redefiners of one
-            // inherited target (e.g. `B/z` and `B/z2` both `redefines: A/x`)
-            // — rather than by distinct sibling lineages neither of which
-            // dominates the other (a genuine diamond, `derivation-conflict`
-            // below). A caller cannot resolve either shape by an arbitrary
-            // pick, but they are different ambiguities with different
-            // FR-272 causes: this one refuses `redefinition-target`, naming
-            // every redefining member's own declaration key (never its
+            // TC-196 R07's second shape: among the undominated edges, the
+            // most-derived owners (those no *other* edge's owner properly
+            // descends from) are all the identical owner — contending
+            // redefiners of one inherited target (e.g. `B/z` and `B/z2`
+            // both `redefines: A/x`) — rather than distinct sibling
+            // lineages neither of which dominates the other (a genuine
+            // diamond, `derivation-conflict` below).
+            //
+            // Restricted to the most-derived owners, not every edge's
+            // owner: a less-derived owner's edge (e.g. `C/w` where
+            // `B <= C`) has already lost to any more-derived owner's edge
+            // (`B`'s) in the winner search above exactly as it would if
+            // `B` had only one redefiner, so it takes no part in deciding
+            // whether the *remaining* ambiguity is "one owner, several
+            // redefiners" or "two genuinely different lineages."
+            //
+            // A caller cannot resolve either shape by an arbitrary pick,
+            // but they are different ambiguities with different FR-272
+            // causes: this one refuses `redefinition-target`, naming every
+            // redefining member's own declaration key (never its
             // redefinition record's key) and the one contended target.
-            let same_owner = edges
-                .iter()
-                .all(|edge| edge.owner.identity == edges[0].owner.identity);
+            let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
+            for edge in &edges {
+                let mut dominated_by_another = false;
+                for other in &edges {
+                    if other.owner.identity == edge.owner.identity {
+                        continue;
+                    }
+                    if dominates(&other.owner, &edge.owner, index, limits)? {
+                        dominated_by_another = true;
+                        break;
+                    }
+                }
+                if !dominated_by_another {
+                    most_derived.push(edge);
+                }
+            }
+            let same_owner = !most_derived.is_empty()
+                && most_derived
+                    .iter()
+                    .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
             if same_owner {
-                let mut redefiners: Vec<String> = edges
+                let mut redefiners: Vec<String> = most_derived
                     .iter()
                     .map(|edge| edge.redefining.identity.clone())
                     .collect();
@@ -1053,8 +1081,8 @@ fn apply_redefinitions(
                     cause: "redefinition-target",
                     detail: format!(
                         "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                        edges[0].owner.identity,
-                        edges.len(),
+                        most_derived[0].owner.identity,
+                        most_derived.len(),
                         redefiners.join(", "),
                         target_key.identity
                     ),
