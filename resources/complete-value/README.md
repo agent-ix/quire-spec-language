@@ -42,6 +42,23 @@ This private snapshot applies no new license to those documents, and the
 compiler's AGPL license does not relicense them. A changed interpretation
 requires re-vendoring from a newer merged revision, never editing these bytes.
 
+## Re-vendoring
+
+[`VENDOR.json`](VENDOR.json) is the pin for this directory: the `quire-specification`
+files above and their commit (currently `7d7943ab1482e091f6d126401ada38957c4a1ccf`),
+and the six `unicode-17.0.0/` files, each pinned by origin URL and digest since
+they have no git revision to read from. `cargo xtask revendor --tree
+complete-value --qspec-clone <path to a local quire-specification checkout>`
+(`make revendor TREE=complete-value QSPEC_CLONE=<path>`) reads every listed
+`quire-specification` path with `git show <commit>:<path>` against that clone
+and writes exactly those bytes; it never resolves "latest" and never fetches
+the Unicode files over the network, so it only ever verifies their recorded
+digest against what is already here. `cargo xtask revendor-check`
+(`make revendor-check`, and `cargo test --workspace` via
+`xtask/tests/revendor.rs`) verifies every vendored byte against `VENDOR.json`
+offline and flags any file present here that `VENDOR.json` does not mention.
+A new pin replaces the vendored bytes wholesale via `revendor`, never by hand.
+
 FR-148 IEEE profiles (TC-193) read the `quire.value.ieee754-2019-default/v1`
 definition, the FR-148 rule and the TC-193 procedure; `tests/ieee_profiles.rs`
 reads the procedure's vector ids.
