@@ -25,7 +25,21 @@
 //! grow [`EffectiveView`] itself — has nothing to add for operations. This
 //! split is a scope decision recorded here, not a silent gap: extending
 //! this pass to also normalize operation-member redefinition into the view
-//! is future work, tracked by the PR that made this decision.
+//! is future work, tracked by the PR that made this decision. This scope
+//! decision covers only the *view* this pass grows: the `m + r`
+//! `normalize.redefinition-check` charge below still prices every
+//! redefinition record and every effective member the spec names,
+//! operation and field alike (QSL #145), and the
+//! `Σ (c − 1) × f(o)` `normalize.conflict-check` charge below prices a
+//! contested operation target (`c >= 2` operation-redefinition records
+//! reaching the same target) exactly as it prices a contested field target
+//! (QSL #145) — neither charge is itself
+//! an operation-redefinition normalization pass. Detecting and *resolving*
+//! a contested operation target — deciding which of several competing
+//! operation redefiners wins, the way this pass's own field-redefinition
+//! dominance search does — is not implemented anywhere in this crate today:
+//! `crate::model::conformance`'s own module doc names the same gap for its
+//! side of this split. Remaining work: #173.
 //!
 //! This engine takes a [`Bundle`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
@@ -66,13 +80,75 @@
 //! Phase 4's own dominance check (deciding which of several redefiners of
 //! the same target wins) asks a different question than phase 3's own
 //! [`ancestor_paths`]: only *reachability* between two specific owners, never
-//! every path between them. It reuses [`ancestor_paths`] rather than a
-//! second traversal primitive, but under the same `limits`-derived budget
-//! (PR #140 F1's own discipline, not a second unbounded walk introduced
-//! alongside it), and phase 3's own already-computed ancestor paths for
-//! `type_key` are reused verbatim for `apply_redefinitions`'s owner-path
-//! bookkeeping rather than recomputed a second time (PR #140 F10's same
-//! "don't walk the identical DFS twice" lesson, applied to phase 4 too).
+//! every path between them. Two earlier attempts got this wrong: reusing
+//! [`ancestor_paths`] itself under a budget that silently reset on every
+//! call (PR #144 review finding #4, QSL #145), and then delegating to
+//! [`crate::model::conformance::ancestor_closure`]'s bounded
+//! (`MAX_CONFORMANCE_DEPTH`-ceiling) walk, which counts *breadth* (total
+//! distinct nodes visited) against a ceiling named for depth — a wide but
+//! uncontested ancestry (128+ direct generalizations) could exhaust it on a
+//! single owner with nothing to dominate, and, once the `edges.len() < 2`
+//! guard below fixed that uncontested case, a wide ancestry with a genuine
+//! *contest* (`edges.len() >= 2`) still could (QSL #145). Phase 4 now
+//! derives each owner's ancestor set from
+//! `owner_ancestor_sets`, built once in `build()` from every type's own
+//! phase-3 `type_paths` (`ancestor_key`, one entry per distinct proper
+//! ancestor) — data `build()` already produced walking every type exactly
+//! once for its own derivation facts, so this needs no second walk and has
+//! no breadth ceiling of its own to exceed. Because those paths can be
+//! truncated under a tight fact budget, `build()` skips phase 4
+//! *resolution* entirely whenever `fact_budget_exceeded(limits,
+//! facts_so_far)` is already true once every type's phase 2/3 has run: a
+//! truncated path set could otherwise derive a false `derivation-conflict`
+//! from an owner ancestry that looks incomplete rather than merely
+//! unresolved, where the correct outcome is the `Incomplete`
+//! [`charge_all`]'s own replay already reports for the phase 2/3 facts that
+//! triggered the truncation, reached in charge order well before phase 4's
+//! own charges. The pairwise dominance loop itself is still `O(|edges|^2)`
+//! in the worst case, but each contesting redefinition edge's *owner* — not
+//! the edge — is what `owner_ancestor_sets` is keyed on, and TC-196 R07
+//! documents the case where several edges share one owner; looking up each
+//! distinct owner's already-built set (`O(distinct owners)` build-wide,
+//! computed once regardless of how many (type, target) groups query it —
+//! QSL #145) rather than re-deriving it per group
+//! leaves only cheap `O(1)` set lookups inside the pair enumeration. A
+//! target group with fewer than two contesting edges has nothing to
+//! dominate and needs no ancestor-set lookup at all — `apply_redefinitions`
+//! skips it and both `normalize.conflict-check` charges entirely whenever a
+//! group's `edges.len() < 2`, matching `value-accounting.md:456`'s own
+//! `c >= 2` condition below. Phase 3's own already-computed ancestor paths
+//! for `type_key` are still reused verbatim for `apply_redefinitions`'s
+//! owner-path bookkeeping rather than recomputed a second time (PR #140
+//! F10's "don't walk the identical DFS twice" lesson).
+//!
+//! Phase 4's two charge points price this work exactly as
+//! `proposals/quire-v1/definitions/value-accounting.md` states, not a flat
+//! one work unit (QSL #145 scope item 2):
+//! `normalize.redefinition-check` (`:455`) charges `m + r` once per
+//! redefinition record in the *entire bundle* — field or operation alike —
+//! ascending by the record's own producer key, where `m` is the number of
+//! the record's own owning type's effective members (field and operation
+//! together) and `r` is the count of redefinition records already checked
+//! before it in that same ascending, bundle-wide sequence. This is computed
+//! exactly once, in `build()`, before the per-type phase-4 loop runs at
+//! all: the unit the spec prices is the record itself, tested once against
+//! its own owning type, never once per (record, effective type reaching
+//! it) pair the previous per-type loop recomputed it at, which overcharged
+//! any record reachable from more than one effective type and reset `r` at
+//! each type instead of counting across the whole bundle.
+//! `normalize.conflict-check` (`:456`) charges `Σ (c − 1) × f(o)` per
+//! contested target with `c >= 2` redefiners, summed once per redefining
+//! edge (not once per *distinct* owner: the memoization above is this
+//! rung's own optimization, never a change to what is priced), where `f(o)`
+//! is owner `o`'s own count of type derivation facts (qualify plus
+//! inherit). `m` and `f(o)` are read directly from `build`'s own phase 2/3
+//! results (`member_preimages`/`type_preimages`, extended for `m` with the
+//! bundle's own directly-declared and inherited operation members), which
+//! is why phase 4 now runs as its own pass only after every type's phase
+//! 2/3 has finished, rather than interleaved per type as before: a
+//! redefinition's owner can sort after the type currently being processed
+//! in `type_keys`' ascending order, and its own member/fact counts must
+//! already exist regardless.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
@@ -82,7 +158,7 @@
     reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{
@@ -92,6 +168,7 @@ use crate::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection,
     INTERFACE_VERSION_1_2_0, INTERFACE_VERSION_1_3_0,
 };
+use crate::model::conformance::generals_by_specific;
 use crate::model::key::{
     digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey,
     PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
@@ -317,7 +394,11 @@ impl Index {
     fn build(bundle: &Bundle) -> Self {
         let mut types = std::collections::BTreeSet::new();
         let mut fields_by_owner: HashMap<ProducerKey, Vec<_>> = HashMap::new();
-        let mut generals_by_specific: HashMap<ProducerKey, Vec<_>> = HashMap::new();
+        // Built once by the one shared function every bounded proper-descendant
+        // walk in `crate::model` uses (`crate::model::conformance`'s own doc),
+        // rather than a second, independent accumulation of the identical
+        // `specific -> generalization records` map.
+        let generals_by_specific = generals_by_specific(bundle);
         let mut non_root = std::collections::HashSet::new();
         let mut known_scalars = std::collections::HashSet::new();
         let mut field_member_keys = std::collections::HashSet::new();
@@ -336,10 +417,6 @@ impl Index {
                 }
                 BundleRecord::Generalization(g) => {
                     non_root.insert(g.specific.clone());
-                    generals_by_specific
-                        .entry(g.specific.clone())
-                        .or_default()
-                        .push(g.clone());
                 }
                 BundleRecord::ScalarType(s) => {
                     known_scalars.insert(s.key.clone());
@@ -565,14 +642,21 @@ struct Built {
     declarations: Vec<PendingDeclaration>,
     view: EffectiveView,
     universe: ObjectUniverse,
-    /// Total phase-4 redefinition edges examined across every type, in
-    /// `apply_redefinitions` call order; replayed by `charge_all` as
-    /// `normalize.redefinition-check` charges.
-    redefinition_edges: u64,
-    /// Total phase-4 target groups (contested `redefined` keys) resolved
-    /// across every type; replayed by `charge_all` as
-    /// `normalize.conflict-check` charges.
-    conflict_groups: u64,
+    /// Every phase-4 `normalize.redefinition-check` charge's own exact
+    /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
+    /// per redefinition record in the entire bundle (field and operation
+    /// alike), ascending by the record's own producer key — computed once,
+    /// bundle-wide, in `build()` itself, never once per (record, effective
+    /// type reaching it) pair; replayed by
+    /// `charge_all`.
+    redefinition_check_work: Vec<u64>,
+    /// Every phase-4 `normalize.conflict-check` charge's own exact
+    /// `work_units` amount (`Σ (c − 1) × f(o)`, `value-accounting.md:456`),
+    /// one entry per (effective type, redefined member) group with `c >= 2`
+    /// redefiners resolved across every type — a group with a single
+    /// redefiner needs no entry at all (`value-accounting.md:456`'s own
+    /// `c >= 2` condition); replayed by `charge_all`.
+    conflict_check_work: Vec<u64>,
 }
 
 /// Refuses a [`BundleRecord`] that names a type key absent from the bundle's
@@ -806,8 +890,12 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     let mut hidden: std::collections::HashSet<(ProducerKey, ProducerKey)> =
         std::collections::HashSet::new();
     let mut facts_so_far: u64 = 0;
-    let mut redefinition_edges: u64 = 0;
-    let mut conflict_groups: u64 = 0;
+    // Phase 3's own ancestor paths, retained per type (rather than dropped
+    // at the end of each iteration below) so phase 4 -- now its own pass,
+    // run only after every type's phase 2/3 has finished -- can reuse them
+    // without recomputing (PR #140 F10) for a `type_key` whose own
+    // iteration already ran.
+    let mut type_paths: HashMap<ProducerKey, Vec<AncestorPath>> = HashMap::new();
 
     for type_key in &type_keys {
         phase2_facts.push(PendingFact {
@@ -917,17 +1005,136 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
             }
         }
 
-        let (type_edges, type_groups) = apply_redefinitions(
-            bundle,
-            &index,
-            limits,
-            type_key,
-            &paths,
-            &mut member_preimages,
-            &mut hidden,
-        )?;
-        redefinition_edges += type_edges;
-        conflict_groups += type_groups;
+        type_paths.insert(type_key.clone(), paths);
+    }
+
+    // Phase 4: every type's own field-redefinition conflicts, run only now
+    // that every type's phase 2/3 has finished (see the module docs): a
+    // redefinition's owner can sort after `type_key` in `type_keys`'
+    // ascending order, and its own effective member count (`m`,
+    // `value-accounting.md:455`) and type derivation-fact count (`f(o)`,
+    // `:456`) -- both read directly out of `member_preimages`/
+    // `type_preimages` below -- must already exist regardless of which
+    // type's turn happens to reach it first.
+    let mut member_counts_by_owner: HashMap<ProducerKey, u64> = HashMap::new();
+    for (owner, _member) in member_preimages.keys() {
+        *member_counts_by_owner.entry(owner.clone()).or_insert(0) += 1;
+    }
+    // `m` counts *every* effective member, not only fields (QSL #145): each
+    // type's own directly-declared operation
+    // members, plus every operation directly declared on a proper ancestor
+    // reached along that type's own phase-3 `type_paths` -- the same
+    // "direct at this type, or direct at some ancestor `type_paths` already
+    // reaches" shape `member_preimages` above builds for fields, just
+    // counted rather than given a full preimage (no phase 5 view entry, no
+    // redefinition resolution, exists here for `m` alone).
+    let mut operations_by_owner: HashMap<ProducerKey, Vec<ProducerKey>> = HashMap::new();
+    for record in &bundle.records {
+        if let BundleRecord::OperationMember(operation) = record {
+            operations_by_owner
+                .entry(operation.owner.clone())
+                .or_default()
+                .push(operation.key.clone());
+        }
+    }
+    for type_key in &type_keys {
+        let mut effective_operations: HashSet<ProducerKey> = HashSet::new();
+        if let Some(direct) = operations_by_owner.get(type_key) {
+            effective_operations.extend(direct.iter().cloned());
+        }
+        if let Some(paths) = type_paths.get(type_key) {
+            for ancestor in paths {
+                if let Some(inherited) = operations_by_owner.get(&ancestor.ancestor_key) {
+                    effective_operations.extend(inherited.iter().cloned());
+                }
+            }
+        }
+        if !effective_operations.is_empty() {
+            *member_counts_by_owner.entry(type_key.clone()).or_insert(0) +=
+                length_amount(effective_operations.len());
+        }
+    }
+    let type_fact_counts: HashMap<ProducerKey, u64> = type_preimages
+        .iter()
+        .map(|(key, preimage)| (key.clone(), length_amount(preimage.derivation.len())))
+        .collect();
+    // Every owner's own proper-ancestor set, derived from phase 3's own
+    // `type_paths` (populated above for every type in the bundle) rather
+    // than a fresh, separately-bounded walk (QSL #145): `ancestor_key` is
+    // exactly the proper-ancestor identity
+    // `crate::model::conformance::ancestor_closure` used to compute with its
+    // own `MAX_CONFORMANCE_DEPTH` breadth ceiling, so deduplicating those
+    // same keys here needs no walk of its own and has no ceiling to exceed.
+    // Computed once, build-wide (QSL #145), not once per (type, target)
+    // group.
+    let owner_ancestor_sets: HashMap<ProducerKey, HashSet<ProducerKey>> = type_paths
+        .iter()
+        .map(|(owner, paths)| {
+            let ancestors: HashSet<ProducerKey> =
+                paths.iter().map(|path| path.ancestor_key.clone()).collect();
+            (owner.clone(), ancestors)
+        })
+        .collect();
+
+    // `normalize.redefinition-check` (`value-accounting.md:455`) charges
+    // `m + r` once per redefinition record in the *entire bundle* -- field
+    // and operation alike -- ascending by the record's own producer key,
+    // `r` the count of records already checked before it in this same
+    // bundle-wide sequence. Computed once here, before the per-type phase-4
+    // loop below even starts: the record is the spec's own priced unit,
+    // tested once against its own owning type, never once per (record,
+    // effective type reaching it) pair a per-type loop would recompute it
+    // at.
+    let mut all_redefinition_records: Vec<_> = bundle
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            BundleRecord::Redefinition(redefinition) => Some(redefinition),
+            _ => None,
+        })
+        .collect();
+    all_redefinition_records.sort_by(|a, b| a.key.cmp(&b.key));
+    let mut redefinition_check_work: Vec<u64> = Vec::new();
+    for (r, redefinition) in all_redefinition_records.iter().enumerate() {
+        let m = member_counts_by_owner
+            .get(&redefinition.owner)
+            .copied()
+            .unwrap_or(0);
+        redefinition_check_work.push(m.saturating_add(length_amount(r)));
+    }
+
+    let mut conflict_check_work: Vec<u64> = Vec::new();
+    let mut accounting = Phase4Accounting {
+        type_fact_counts: &type_fact_counts,
+        owner_ancestor_sets: &owner_ancestor_sets,
+        conflict_check_work: &mut conflict_check_work,
+    };
+    // A truncated phase-3 path set (a tight fact budget already exceeded by
+    // the time every type's own phase 2/3 above has run) cannot resolve
+    // phase-4 dominance honestly: an owner ancestry `owner_ancestor_sets`
+    // built from it could look incomplete rather than merely undominated,
+    // and wrongly derive a `derivation-conflict` refusal no complete build
+    // would report. Skipping phase-4 resolution here is safe exactly
+    // because `charge_all`'s own replay of the phase 2/3 facts that
+    // triggered the truncation runs, in charge order, before it ever
+    // reaches phase 4's own charges below -- it already reports the correct
+    // `Incomplete` there, never consulting `redefinition_check_work`/
+    // `conflict_check_work` computed from truncated data (QSL #145).
+    if !fact_budget_exceeded(limits, facts_so_far) {
+        for type_key in &type_keys {
+            let paths = type_paths
+                .get(type_key)
+                .expect("populated in the loop above");
+            apply_redefinitions(
+                bundle,
+                &index,
+                type_key,
+                paths,
+                &mut member_preimages,
+                &mut hidden,
+                &mut accounting,
+            )?;
+        }
     }
 
     // Phase 5 (identities only; charging is replayed separately).
@@ -985,8 +1192,8 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         declarations,
         view,
         universe,
-        redefinition_edges,
-        conflict_groups,
+        redefinition_check_work,
+        conflict_check_work,
     })
 }
 
@@ -999,6 +1206,22 @@ struct RedefinitionEdge {
     record_key: ProducerKey,
     target: ProducerKey,
     path: Vec<ProducerKey>,
+}
+
+/// Every cross-type input and output `apply_redefinitions` needs beyond its
+/// own `type_key`'s local bookkeeping, grouped into one `&mut` borrow
+/// (rather than three separate parameters) so the function stays within
+/// clippy's `too_many_arguments` ceiling. `type_fact_counts`/
+/// `owner_ancestor_sets` are build-wide, read-only lookups (`f(o)`,
+/// `value-accounting.md:456`, and each owner's own proper-ancestor set);
+/// `conflict_check_work` is a build-wide accumulator mutated across every
+/// `type_key`'s own call. `normalize.redefinition-check`'s own charge
+/// sequence — and the `m` it needs — is not built here at all: `build`
+/// computes it once, bundle-wide, before any `apply_redefinitions` call.
+struct Phase4Accounting<'a> {
+    type_fact_counts: &'a HashMap<ProducerKey, u64>,
+    owner_ancestor_sets: &'a HashMap<ProducerKey, HashSet<ProducerKey>>,
+    conflict_check_work: &'a mut Vec<u64>,
 }
 
 /// Phase 4 (TC-195 N06): field redefinition only — operation-member
@@ -1019,15 +1242,28 @@ struct RedefinitionEdge {
 /// every losing redefiner) gains its own edge's redefine fact and is marked
 /// hidden, retained in the view for provenance but not the declaration its
 /// `(owner, original)` key resolves to.
+///
+/// Also appends this contested target group's own `normalize.conflict-check`
+/// charge amount (`value-accounting.md:456`) to `conflict_check_work`,
+/// replayed later by `charge_all` — `normalize.redefinition-check`'s own
+/// charge sequence is `build`'s own bundle-wide pass, not this function's.
+/// `type_fact_counts` supplies `f(o)` for any owner in the bundle, not just
+/// `type_key` itself — `build` computes it
+/// only after every type's own phase 2/3 has run (see the module docs) so
+/// this is always a lookup, never a fresh walk. `owner_ancestor_sets` is
+/// `build`'s own build-wide map of every owner's proper-ancestor set,
+/// derived from phase 3's own `type_paths` (QSL #145) rather than a second,
+/// separately bounded walk, and likewise computed once, build-wide, not
+/// once per (type, target) group.
 fn apply_redefinitions(
     bundle: &Bundle,
     index: &Index,
-    limits: &ModelNormalizationLimits,
     type_key: &ProducerKey,
     paths: &[AncestorPath],
     member_preimages: &mut HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage>,
-    hidden: &mut std::collections::HashSet<(ProducerKey, ProducerKey)>,
-) -> Result<(u64, u64), ModelRefusal> {
+    hidden: &mut HashSet<(ProducerKey, ProducerKey)>,
+    accounting: &mut Phase4Accounting<'_>,
+) -> Result<(), ModelRefusal> {
     let mut owner_paths: HashMap<ProducerKey, Vec<ProducerKey>> = HashMap::new();
     owner_paths.insert(type_key.clone(), Vec::new());
     for ancestor in paths {
@@ -1036,153 +1272,243 @@ fn apply_redefinitions(
             .or_insert_with(|| ancestor.path.clone());
     }
 
-    let mut groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    // Every redefinition record reachable at `type_key`, gathered flat (not
+    // yet grouped by target) and split by member kind.
+    // `normalize.redefinition-check`'s own charge sequence does not come
+    // from either list: it is `build`'s own bundle-wide pass over every
+    // redefinition record, field and operation alike; `all_edges`
+    // (field-only) is scoped purely to this type's own conflict
+    // *resolution*, exactly as the module docs describe. `operation_edges`
+    // feeds only the contention *charge* below (QSL #145): operation-member
+    // redefinition is still never resolved here —
+    // `crate::model::conformance` resolves it
+    // directly (see the module docs) — but a contested operation target
+    // (`c >= 2`) still owes `normalize.conflict-check`'s own
+    // `value-accounting.md:456` price, exactly as a contested field target
+    // does.
+    let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
+    let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
     for record in &bundle.records {
         let BundleRecord::Redefinition(redefinition) = record else {
             continue;
         };
-        if !index.field_member_keys.contains(&redefinition.redefining)
-            || !index.field_member_keys.contains(&redefinition.redefined)
-        {
-            // Operation-member redefinition: out of scope for this pass.
+        let is_field = index.field_member_keys.contains(&redefinition.redefining)
+            && index.field_member_keys.contains(&redefinition.redefined);
+        let is_operation = index
+            .operation_member_keys
+            .contains(&redefinition.redefining)
+            && index
+                .operation_member_keys
+                .contains(&redefinition.redefined);
+        if !is_field && !is_operation {
             continue;
         }
         let Some(path) = owner_paths.get(&redefinition.owner) else {
             // This redefinition's owner does not reach `type_key`.
             continue;
         };
-        groups
-            .entry(redefinition.redefined.clone())
-            .or_default()
-            .push(RedefinitionEdge {
-                owner: redefinition.owner.clone(),
-                redefining: redefinition.redefining.clone(),
-                record_key: redefinition.key.clone(),
-                target: redefinition.redefined.clone(),
-                path: path.clone(),
-            });
+        let edge = RedefinitionEdge {
+            owner: redefinition.owner.clone(),
+            redefining: redefinition.redefining.clone(),
+            record_key: redefinition.key.clone(),
+            target: redefinition.redefined.clone(),
+            path: path.clone(),
+        };
+        if is_field {
+            all_edges.push(edge);
+        } else {
+            operation_edges.push(edge);
+        }
+    }
+
+    let mut groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    for edge in all_edges {
+        groups.entry(edge.target.clone()).or_default().push(edge);
     }
 
     let mut target_keys: Vec<ProducerKey> = groups.keys().cloned().collect();
     target_keys.sort();
 
-    let mut edge_total: u64 = 0;
-    let mut group_total: u64 = 0;
+    // `value-accounting.md:456`'s own charge order is a single ascending
+    // pass "by effective member key" over every contested `(effective type,
+    // redefined member)` reached by `c >= 2` records -- field and operation
+    // targets interleaved by that one key, never field targets as a block
+    // followed by operation targets as a block. Each loop below still
+    // resolves (and, for fields, hides/derives) its own kind in its own
+    // pass, but neither pushes its charge amount straight to
+    // `accounting.conflict_check_work`; both collect `(target key, amount)`
+    // here, and charges from both loops are sorted by effective member key
+    // before being pushed, once, after both loops
+    // (`value-accounting.md:456`).
+    let mut conflict_charges: Vec<(ProducerKey, u64)> = Vec::new();
 
     for target_key in target_keys {
         let mut edges = groups.remove(&target_key).expect("just listed");
-        group_total += 1;
-        edge_total += edges.len() as u64;
         edges.sort_by(|a, b| {
             a.owner
                 .cmp(&b.owner)
                 .then_with(|| a.record_key.cmp(&b.record_key))
         });
 
-        let mut winner: Option<usize> = None;
-        for i in 0..edges.len() {
-            let mut dominates_all = true;
-            for j in 0..edges.len() {
-                if i == j {
-                    continue;
-                }
-                if !dominates(&edges[i].owner, &edges[j].owner, index, limits)? {
-                    dominates_all = false;
-                    break;
-                }
-            }
-            if dominates_all {
-                winner = Some(i);
-                break;
-            }
-        }
+        let winner_index = if edges.len() < 2 {
+            // A single redefiner has nothing to dominate: no ancestor
+            // closure is computed at all, and no `normalize.conflict-check`
+            // charge either (`value-accounting.md:456`'s own `c >= 2`
+            // condition; QSL #145): computing a closure regardless of
+            // `edges.len()` is what made a wide
+            // (128+ direct generalizations) but uncontested bundle wrongly
+            // refuse `conformance-depth`.
+            0
+        } else {
+            let c = length_amount(edges.len());
 
-        let Some(winner_index) = winner else {
-            // TC-196 R07's second shape: among the undominated edges, the
-            // most-derived owners (those no *other* edge's owner properly
-            // descends from) are all the identical owner — contending
-            // redefiners of one inherited target (e.g. `B/z` and `B/z2`
-            // both `redefines: A/x`) — rather than distinct sibling
-            // lineages neither of which dominates the other (a genuine
-            // diamond, `derivation-conflict` below).
-            //
-            // Restricted to the most-derived owners, not every edge's
-            // owner: a less-derived owner's edge (e.g. `C/w` where
-            // `B <= C`) has already lost to any more-derived owner's edge
-            // (`B`'s) in the winner search above exactly as it would if
-            // `B` had only one redefiner, so it takes no part in deciding
-            // whether the *remaining* ambiguity is "one owner, several
-            // redefiners" or "two genuinely different lineages."
-            //
-            // A caller cannot resolve either shape by an arbitrary pick,
-            // but they are different ambiguities with different FR-272
-            // causes: this one refuses `redefinition-target`, naming every
-            // redefining member's own declaration key (never its
-            // redefinition record's key) and the one contended target.
-            let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
-            for edge in &edges {
-                let mut dominated_by_another = false;
-                for other in &edges {
-                    if other.owner.identity == edge.owner.identity {
+            // `value-accounting.md:456`: `work_units += Σ (c − 1) × f(o)`,
+            // summed over the `c` redefining owners `o` -- once per edge,
+            // repeating a shared owner's own `f(o)` once for every edge it
+            // owns exactly as written, not once per *distinct* owner (the
+            // `owner_ancestor_sets` lookup below is this rung's own
+            // optimization of the *walk*, never a change to what is
+            // priced).
+            let fact_total: u64 = edges
+                .iter()
+                .map(|edge| {
+                    accounting
+                        .type_fact_counts
+                        .get(&edge.owner)
+                        .copied()
+                        .unwrap_or(0)
+                })
+                .sum();
+            conflict_charges.push((
+                target_key.clone(),
+                fact_total.saturating_mul(c.saturating_sub(1)),
+            ));
+
+            // `owner_ancestor_sets` already holds every owner in the bundle's
+            // own proper-ancestor set (QSL #145: derived once, build-wide,
+            // from phase 3's own `type_paths` rather than a fresh,
+            // separately bounded walk here) -- the
+            // winner search and its undominated-owner fallback below each
+            // compare every edge's owner against every other edge's owner,
+            // but TC-196 R07's own documented shape — several redefining
+            // members sharing one contending owner — means distinct owners
+            // are frequently far fewer than edges, and the same owner
+            // recurs across many types and targets within one build; both
+            // are plain `O(1)` set lookups against the already-built map.
+            let mut winner: Option<usize> = None;
+            for i in 0..edges.len() {
+                let mut dominates_all = true;
+                for j in 0..edges.len() {
+                    if i == j {
                         continue;
                     }
-                    if dominates(&other.owner, &edge.owner, index, limits)? {
-                        dominated_by_another = true;
+                    if !owner_dominates(
+                        accounting.owner_ancestor_sets,
+                        &edges[i].owner,
+                        &edges[j].owner,
+                    ) {
+                        dominates_all = false;
                         break;
                     }
                 }
-                if !dominated_by_another {
-                    most_derived.push(edge);
+                if dominates_all {
+                    winner = Some(i);
+                    break;
                 }
             }
-            let same_owner = !most_derived.is_empty()
-                && most_derived
+
+            let Some(winner_index) = winner else {
+                // TC-196 R07's second shape: among the undominated edges, the
+                // most-derived owners (those no *other* edge's owner properly
+                // descends from) are all the identical owner — contending
+                // redefiners of one inherited target (e.g. `B/z` and `B/z2`
+                // both `redefines: A/x`) — rather than distinct sibling
+                // lineages neither of which dominates the other (a genuine
+                // diamond, `derivation-conflict` below).
+                //
+                // Restricted to the most-derived owners, not every edge's
+                // owner: a less-derived owner's edge (e.g. `C/w` where
+                // `B <= C`) has already lost to any more-derived owner's edge
+                // (`B`'s) in the winner search above exactly as it would if
+                // `B` had only one redefiner, so it takes no part in deciding
+                // whether the *remaining* ambiguity is "one owner, several
+                // redefiners" or "two genuinely different lineages."
+                //
+                // A caller cannot resolve either shape by an arbitrary pick,
+                // but they are different ambiguities with different FR-272
+                // causes: this one refuses `redefinition-target`, naming every
+                // redefining member's own declaration key (never its
+                // redefinition record's key) and the one contended target.
+                let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
+                for edge in &edges {
+                    let mut dominated_by_another = false;
+                    for other in &edges {
+                        if other.owner.identity == edge.owner.identity {
+                            continue;
+                        }
+                        if owner_dominates(
+                            accounting.owner_ancestor_sets,
+                            &other.owner,
+                            &edge.owner,
+                        ) {
+                            dominated_by_another = true;
+                            break;
+                        }
+                    }
+                    if !dominated_by_another {
+                        most_derived.push(edge);
+                    }
+                }
+                let same_owner = !most_derived.is_empty()
+                    && most_derived
+                        .iter()
+                        .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
+                if same_owner {
+                    let mut redefiners: Vec<String> = most_derived
+                        .iter()
+                        .map(|edge| edge.redefining.identity.clone())
+                        .collect();
+                    redefiners.sort();
+                    return Err(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::RedefinitionTarget,
+                        detail: format!(
+                            "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
+                            most_derived[0].owner.identity,
+                            most_derived.len(),
+                            redefiners.join(", "),
+                            target_key.identity
+                        ),
+                    });
+                }
+
+                let edge_paths: Vec<String> = edges
                     .iter()
-                    .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
-            if same_owner {
-                let mut redefiners: Vec<String> = most_derived
-                    .iter()
-                    .map(|edge| edge.redefining.identity.clone())
+                    .map(|edge| {
+                        let mut path: Vec<String> =
+                            edge.path.iter().map(|key| key.identity.clone()).collect();
+                        path.push(edge.record_key.identity.clone());
+                        path.push(target_key.identity.clone());
+                        format!("[{}]", path.join(", "))
+                    })
                     .collect();
-                redefiners.sort();
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::RedefinitionTarget,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: type_key.clone(),
+                        member: target_key.clone(),
+                        redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                    },
                     detail: format!(
-                        "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                        most_derived[0].owner.identity,
-                        most_derived.len(),
-                        redefiners.join(", "),
-                        target_key.identity
+                        "type {} has {} undominated redefinitions of {}: {}",
+                        type_key.identity,
+                        edges.len(),
+                        target_key.identity,
+                        edge_paths.join(" and ")
                     ),
                 });
-            }
-
-            let paths: Vec<String> = edges
-                .iter()
-                .map(|edge| {
-                    let mut path: Vec<String> =
-                        edge.path.iter().map(|key| key.identity.clone()).collect();
-                    path.push(edge.record_key.identity.clone());
-                    path.push(target_key.identity.clone());
-                    format!("[{}]", path.join(", "))
-                })
-                .collect();
-            return Err(ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::DerivationConflict {
-                    type_: type_key.clone(),
-                    member: target_key.clone(),
-                    redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
-                },
-                detail: format!(
-                    "type {} has {} undominated redefinitions of {}: {}",
-                    type_key.identity,
-                    edges.len(),
-                    target_key.identity,
-                    paths.join(" and ")
-                ),
-            });
+            };
+            winner_index
         };
 
         let member_key = (type_key.clone(), target_key.clone());
@@ -1242,32 +1568,72 @@ fn apply_redefinitions(
         hidden.insert(member_key);
     }
 
-    Ok((edge_total, group_total))
+    // Operation-member redefinition contention: never resolved here (see
+    // the module docs — `crate::model::conformance` decides which operation
+    // redefiner wins), but a contested operation target still owes
+    // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
+    // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
+    // contested field target (QSL #145).
+    // No `member_preimages`/`hidden` state is touched here: operation
+    // members never enter `member_preimages` (see the module docs), so
+    // there is nothing here for this loop to resolve or hide.
+    let mut operation_groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    for edge in operation_edges {
+        operation_groups
+            .entry(edge.target.clone())
+            .or_default()
+            .push(edge);
+    }
+    let mut operation_target_keys: Vec<ProducerKey> = operation_groups.keys().cloned().collect();
+    operation_target_keys.sort();
+    for target_key in operation_target_keys {
+        let edges = operation_groups.remove(&target_key).expect("just listed");
+        if edges.len() < 2 {
+            // A single redefiner has nothing to contest: no charge, matching
+            // `value-accounting.md:456`'s own `c >= 2` condition.
+            continue;
+        }
+        let c = length_amount(edges.len());
+        let fact_total: u64 = edges
+            .iter()
+            .map(|edge| {
+                accounting
+                    .type_fact_counts
+                    .get(&edge.owner)
+                    .copied()
+                    .unwrap_or(0)
+            })
+            .sum();
+        conflict_charges.push((
+            target_key.clone(),
+            fact_total.saturating_mul(c.saturating_sub(1)),
+        ));
+    }
+
+    conflict_charges.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_, amount) in conflict_charges {
+        accounting.conflict_check_work.push(amount);
+    }
+
+    Ok(())
 }
 
-/// Whether `descendant` has `ancestor` among its own generalization
-/// ancestors (a proper-descendant test, never reflexive). Reuses
-/// [`ancestor_paths`] under a `limits`-derived budget, never left unbounded
-/// just because it is "only" a reachability check — but that budget starts
-/// fresh at zero facts consumed on every call (`remaining_fact_budget(limits,
-/// 0)`), unlike `build`'s own phase-3 walk, which threads its real
-/// `facts_so_far` through. Each individual call is bounded; phase 4's
-/// `O(|edges|^2)` loop over this function is not metered cumulatively across
-/// calls the way `build`'s own walk is. Tracked as a performance/consolidation
-/// follow-up, not fixed here (PR #144 review finding #4).
-fn dominates(
-    descendant: &ProducerKey,
-    ancestor: &ProducerKey,
-    index: &Index,
-    limits: &ModelNormalizationLimits,
-) -> Result<bool, ModelRefusal> {
-    if descendant == ancestor {
-        return Ok(false);
-    }
-    let budget = remaining_fact_budget(limits, 0);
-    Ok(ancestor_paths(descendant, index, budget)?
-        .iter()
-        .any(|candidate| &candidate.ancestor_key == ancestor))
+/// Whether `p_owner` strictly dominates `q_owner`: `p_owner` is a proper
+/// descendant of `q_owner` in `closures` (`build`'s own `owner_ancestor_sets`,
+/// derived from phase 3's own `type_paths` — QSL #145). An `O(1)` set
+/// lookup against an already-computed set, never
+/// a fresh graph walk — the `O(|edges|^2)` pair enumeration this function is
+/// called from stays cheap because `closures` was already built once,
+/// build-wide, before any `apply_redefinitions` call.
+fn owner_dominates(
+    closures: &HashMap<ProducerKey, HashSet<ProducerKey>>,
+    p_owner: &ProducerKey,
+    q_owner: &ProducerKey,
+) -> bool {
+    p_owner != q_owner
+        && closures
+            .get(p_owner)
+            .is_some_and(|ancestors| ancestors.contains(q_owner))
 }
 
 fn sort_facts(facts: &mut [PendingFact]) {
@@ -1316,11 +1682,11 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
         )?;
     }
 
-    for _ in 0..built.redefinition_edges {
-        meter.charge(Charge::new(ChargePoint::NormalizeRedefinitionCheck))?;
+    for work in &built.redefinition_check_work {
+        meter.charge(Charge::new(ChargePoint::NormalizeRedefinitionCheck).work(*work))?;
     }
-    for _ in 0..built.conflict_groups {
-        meter.charge(Charge::new(ChargePoint::NormalizeConflictCheck))?;
+    for work in &built.conflict_check_work {
+        meter.charge(Charge::new(ChargePoint::NormalizeConflictCheck).work(*work))?;
     }
 
     let mut decl_count: u64 = 0;
