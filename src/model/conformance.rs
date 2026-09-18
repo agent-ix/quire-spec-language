@@ -54,10 +54,19 @@
 //!   and `B/z2`) contending for the identical single inherited target — is
 //!   *not* checked by `resolve_redefinition_target`: nothing in `src/`
 //!   called it, so per-redefiner queries here could never see the sibling
-//!   that contends with them. That shape is instead detected where a model
-//!   actually normalizes through it, `normalize`'s own phase 4
-//!   (`apply_redefinitions`'s undominated-edges branch), which already has
-//!   every sibling redefiner of a contended target in view.
+//!   that contends with them. For **field** members that shape is instead
+//!   detected where a model actually normalizes through it, `normalize`'s
+//!   own phase 4 (`apply_redefinitions`'s undominated-edges branch), which
+//!   already has every sibling redefiner of a contended target in view.
+//!   `normalize`'s phase 4 is field-only, though (see its own module doc),
+//!   so the identical shape for **operation** members is priced — a
+//!   contested operation target's `normalize.conflict-check` charge is not
+//!   skipped — but detected and resolved nowhere at all: no dominance
+//!   search decides which competing operation redefiner wins, and no
+//!   refusal reports an undominated operation contest the way
+//!   `derivation-conflict`/`redefinition-target` do for fields. This
+//!   predates this PR and is outside QSL #145's own scope. Remaining work:
+//!   #173.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
