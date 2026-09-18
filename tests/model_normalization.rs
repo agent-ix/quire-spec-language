@@ -120,6 +120,54 @@ fn fixture_n06_resolved() -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.n06"), records)
 }
 
+/// TC-196 R07's second shape (origin/main, after QSpec #86): `B` itself
+/// (not two sibling lineages) declares two distinct redefining members,
+/// `B/z` and `B/z2`, both `redefines: A/x` — the identical single inherited
+/// target contended by two redefiners under one owner, distinct from N06's
+/// diamond conflict (two different owners, neither dominating the other).
+fn fixture_r07_same_owner_contending_redefiners() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.r07"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.B.z", "model.B", "model.A"),
+            field_member("model.B.z2", "model.B", "model.A"),
+            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
+            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+        ],
+    )
+}
+
+/// Re-review of PR #157's round-3 fix: `C <= A` with `C/w` (owned by `C`)
+/// `redefines: A/x`; `B <= C` with `B/z` and `B/z2` (both owned by `B`)
+/// also `redefines: A/x`. `B`'s edges already dominate `C`'s single edge
+/// (a more-derived owner beating a less-derived one, exactly as it would
+/// if `B` had only one redefiner), so `C`'s edge takes no part in the
+/// "one owner, several redefiners" test — only `B`'s two edges do, and
+/// they share the identical owner.
+fn fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.r07d"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.C-A", "model.C", "model.A"),
+            generalization("model.gen.B-C", "model.B", "model.C"),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.C.w", "model.C", "model.A"),
+            field_member("model.B.z", "model.B", "model.A"),
+            field_member("model.B.z2", "model.B", "model.A"),
+            redefinition("model.redef.w", "model.C", "model.C.w", "model.A.x"),
+            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
+            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+        ],
+    )
+}
+
 /// Finds the effective member declared with original identity
 /// `original_identity` under owner effective type `owner`, regardless of
 /// its `visible` bit — phase 4 retains hidden entries in the view.
@@ -522,6 +570,90 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
             assert!(refusal.detail.contains("model.A.x"));
         }
         other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+/// TC-196 R07's second shape, run through `normalize`'s own phase 4
+/// (`apply_redefinitions`) rather than `model::conformance`'s
+/// `resolve_redefinition_target` in isolation — the real boundary a model
+/// actually normalizes through. Two redefining members owned by the
+/// identical type both redefine the same inherited target: refuses
+/// `redefinition-target`, not `derivation-conflict` (N06's diamond shape
+/// above uses two different owners, neither dominating the other).
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize() {
+    match normalize(
+        &fixture_r07_same_owner_contending_redefiners(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "redefinition-target");
+            assert!(
+                refusal.detail.contains("model.B.z2"),
+                "detail must name B/z2's own declaration key: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.B.z") && !refusal.detail.contains("model.redef.z"),
+                "detail must name the redefining members' own keys, not the redefinition records' keys: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.A.x"),
+                "detail must name the contended target: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
+}
+
+/// Re-review of PR #157's round-3 fix: the same-owner test must look only
+/// at the *most-derived* owners among the undominated edges, not every
+/// edge's owner. `C/w` (owner `C`) and `B/z`/`B/z2` (owner `B <= C`) all
+/// redefine `A/x`: `C`'s edge is already dominated by `B`'s (either of
+/// them), so it takes no part in the ambiguity test, leaving only `B`'s
+/// two edges — one owner, refuses `redefinition-target`, not
+/// `derivation-conflict`.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
+    match normalize(
+        &fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "redefinition-target");
+            assert!(
+                refusal.detail.contains("model.B.z") && refusal.detail.contains("model.B.z2"),
+                "detail must name both of B's own redefining members: {}",
+                refusal.detail
+            );
+            assert!(
+                !refusal.detail.contains("model.C.w"),
+                "C's already-dominated edge must take no part in the ambiguity: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.A.x"),
+                "detail must name the contended target: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
     }
 }
 
@@ -1036,4 +1168,90 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 50);
     assert_eq!(meter.consumed(LimitKind::HashedBytes), 27969);
+}
+
+/// TC-196 R01: a closing generalization cycle (`model.A` -> `model.B` ->
+/// `model.A`) refuses `invalid_model_binding`/`specialization-cycle` naming
+/// every contributing declaration in the cycle, rotated to start at its
+/// least key (`model.A`), regardless of which type's own walk closes it
+/// first — see `src/model/normalize.rs`'s module docs for this rung's own
+/// recorded scope decision (the refusal's shape is reproduced exactly; the
+/// exact six-`normalize.cycle-check`-charge accounting across both types'
+/// walks is not).
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.r01"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.A-B", "model.A", "model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+        ],
+    );
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "specialization-cycle");
+            assert!(
+                refusal.detail.contains("[model.A, model.B]"),
+                "the chain must be rotated to start at its least key regardless of \
+                 which type's own walk closes the cycle first, got: {}",
+                refusal.detail
+            );
+            assert!(refusal.detail.contains("generalizes back to itself via"));
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
+        }
+    }
+}
+
+/// TC-196 R01, the prefix-plus-rotation shape review found the R01 test above
+/// cannot catch: `model.A` -> `model.C`, `model.C` -> `model.B`,
+/// `model.B` -> `model.C`. `model.A` is not part of the cycle at all — it is
+/// only how the walk *reaches* it — so the listing must name just the cycle
+/// itself, `[model.B, model.C]`, never the whole path from the walk's root
+/// (`[model.A, model.C, model.B]`).
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.r01b"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.A-C", "model.A", "model.C"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            generalization("model.gen.B-C", "model.B", "model.C"),
+        ],
+    );
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "specialization-cycle");
+            assert!(
+                refusal.detail.contains("[model.B, model.C]"),
+                "the listing must name only the cycle itself, excluding model.A, \
+                 which only leads into it, got: {}",
+                refusal.detail
+            );
+            assert!(
+                !refusal.detail.contains("model.A"),
+                "model.A is not part of the cycle and must not be named, got: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
+        }
+    }
 }

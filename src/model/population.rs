@@ -23,21 +23,22 @@
 //! (`crate::value`'s `Meter`/`ChargePoint`), charging the `lookup.*`,
 //! `population.visit` and `collection.*` schedules that module already owns.
 //!
-//! # Scope boundary: `binding.subset-value`
+//! # `binding.subset-value`
 //!
-//! `value-accounting.md` charges `binding.subset-value` for "each value of
-//! the subsetted feature of that object", which requires evaluating real
-//! object field values against an FR-151 subsetting record. `crate::model`
-//! has no FR-146 expression evaluator and this rung's [`PopulationMember`]
-//! carries no field values at all (only its declared most-specific type and
-//! object identity) — the same boundary
-//! [`crate::model::conformance::check_subsetting`]'s own module doc already
-//! records for the static case. [`AdmissionChargePoint::BindingSubsetValue`]
-//! is declared for schedule completeness, but [`admit_binding`] never charges
-//! it: no FR-153 acceptance criterion and no TC-198 vector exercises
-//! subsetting (F1/P1/P2/P3 declare no [`crate::model::bundle::SubsettingRecord`]).
-//! Wiring it needs the same evaluator bridge tracked for QSL #147's
-//! FR-151/FR-152 criteria, not this rung.
+//! `value-accounting.md` charges `binding.subset-value` once per admitted
+//! member's subsetting-feature value, in canonical reference-key order,
+//! then each subsetting field reaching that member's most-specific type
+//! ascending by declaration key, then each value of the subsetting feature
+//! in its declared order; `work_units += max(1, n)` where `n` is the number
+//! of values of the *subsetted* feature the check scans, and a value absent
+//! from the subsetted feature's values refuses `invalid_runtime_input`/
+//! `subsetting-violation`. Unlike a real FR-146 postcondition clause (which
+//! `crate::model::conformance`'s own refinement-obligation check derives via
+//! that crate's fact machinery, see its module docs), a population
+//! document's field values are not an expression to evaluate at all — they
+//! are declared runtime data (FCD FR-121), exactly like [`PopulationMember`]'s
+//! existing `object`/`type_identity` — so [`PopulationMember::field_values`]
+//! carries them directly and this check needs no expression evaluator.
 //!
 //! # Typed, bounded Outputs
 //!
@@ -72,7 +73,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::diagnostic::Code;
-use crate::model::bundle::{Bundle, BundleRecord, GeneralizationRecord, ModelSelection};
+use crate::model::bundle::{
+    Bundle, BundleRecord, GeneralizationRecord, ModelSelection, SubsettingRecord,
+};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
@@ -146,8 +149,7 @@ impl AdmissionLimitKind {
 pub enum AdmissionChargePoint {
     /// `binding.member`.
     BindingMember,
-    /// `binding.subset-value`. Declared for schedule completeness; see the
-    /// module docs — never charged by this rung.
+    /// `binding.subset-value`; see the module docs.
     BindingSubsetValue,
 }
 
@@ -161,15 +163,6 @@ impl AdmissionChargePoint {
             Self::BindingMember => "binding.member",
             Self::BindingSubsetValue => "binding.subset-value",
         }
-    }
-
-    /// Whether this rung's [`admit_binding`] ever charges this point.
-    /// `false` only for [`Self::BindingSubsetValue`] — declared here for
-    /// schedule completeness, never charged (see the module docs' scope
-    /// boundary). Exposed so the declared-but-uncharged state is checkable
-    /// in code, not only in a doc comment.
-    pub fn is_charged(self) -> bool {
-        !matches!(self, Self::BindingSubsetValue)
     }
 }
 
@@ -206,6 +199,13 @@ impl AdmissionCharge {
 
     fn size(mut self, amount: u64) -> Self {
         self.size = Some(amount);
+        self
+    }
+
+    /// Overrides the default one work unit, for a charge whose cost is not
+    /// flat (`binding.subset-value`'s own `max(1, n)`).
+    fn work(mut self, amount: u64) -> Self {
+        self.work_units = amount;
         self
     }
 }
@@ -315,14 +315,30 @@ pub struct ReferenceKey {
     pub object: String,
 }
 
-/// One member of an FCD FR-121 population document: `{object, type_identity}`.
-/// This rung carries no field values (see the module docs' scope boundary).
+/// One reference-valued field's runtime values on a population member: the
+/// declared identities of the other population members it names, in the
+/// document's declared order. `binding.subset-value` (see the module docs)
+/// is this rung's only consumer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberFieldValues {
+    /// The field's own original producer key.
+    pub field: ProducerKey,
+    /// The named objects' own declared identities, in declared order.
+    pub values: Vec<String>,
+}
+
+/// One member of an FCD FR-121 population document:
+/// `{object, type_identity, field_values}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationMember {
     /// The object's own declared identity.
     pub object: String,
     /// The member's declared most-specific type, as its original producer key.
     pub type_identity: ProducerKey,
+    /// This member's declared reference-valued field values, for FR-151's
+    /// runtime subsetting check. Empty for a member that declares no
+    /// subsetting-relevant field.
+    pub field_values: Vec<MemberFieldValues>,
 }
 
 /// An FCD FR-121 population document: `{closed_world, model_identity, members}`.
@@ -581,8 +597,108 @@ pub fn admit_binding(
         admitted.insert(key, member.type_identity.clone());
     }
 
-    // `binding.subset-value` is deliberately not walked here; see the module
-    // docs' scope boundary.
+    // `binding.subset-value`: once per admitted member's subsetting-feature
+    // value, in canonical reference-key order (`admitted` iterates in that
+    // order already), then each subsetting field reaching that member's
+    // most-specific type ascending by declaration key, then each value of
+    // the subsetting feature in its declared order (see the module docs).
+    /// The declared values of `member`'s `field`, or an empty slice when
+    /// `member` declares no values for it.
+    fn values_of<'a>(member: &'a PopulationMember, field: &ProducerKey) -> &'a [String] {
+        member
+            .field_values
+            .iter()
+            .find(|entry| &entry.field == field)
+            .map_or(&[][..], |entry| entry.values.as_slice())
+    }
+
+    /// The first field named by more than one of `member`'s own
+    /// `field_values` entries, or `None` when every named field is unique.
+    /// [`values_of`]'s `find` keeps only the first matching entry, so an
+    /// unrejected duplicate would silently discard the others rather than
+    /// refusing.
+    fn duplicate_field(member: &PopulationMember) -> Option<&ProducerKey> {
+        let mut seen: Vec<&ProducerKey> = Vec::new();
+        for entry in &member.field_values {
+            if seen.iter().any(|existing| **existing == entry.field) {
+                return Some(&entry.field);
+            }
+            seen.push(&entry.field);
+        }
+        None
+    }
+
+    let subsetting_records: Vec<&SubsettingRecord> = bundle
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            BundleRecord::Subsetting(subsetting) => Some(subsetting),
+            _ => None,
+        })
+        .collect();
+    if !subsetting_records.is_empty() {
+        let member_by_object: HashMap<&str, &PopulationMember> = document
+            .members
+            .iter()
+            .map(|member| (member.object.as_str(), member))
+            .collect();
+
+        for (key, original_type) in &admitted {
+            let Some(&member) = member_by_object.get(key.object.as_str()) else {
+                continue;
+            };
+            if let Some(field) = duplicate_field(member) {
+                return AdmissionOutcome::Refused(ModelRefusal {
+                    code: Code::InvalidRuntimeInput,
+                    // FR-272's `invalid_runtime_input` cause list is
+                    // closed; there is no dedicated duplicate-field
+                    // variant, so this is the catalogued `duplicate-member`.
+                    cause: "duplicate-member",
+                    detail: format!(
+                        "object {} declares field {} more than once in its field_values",
+                        key.object, field.identity
+                    ),
+                });
+            }
+            let mut applicable: Vec<&SubsettingRecord> = Vec::new();
+            for record in &subsetting_records {
+                match type_conforms(&generals, original_type, &record.owner) {
+                    Ok(true) => applicable.push(record),
+                    Ok(false) => {}
+                    Err(refusal) => return AdmissionOutcome::Refused(refusal),
+                }
+            }
+            applicable.sort_by(|a, b| a.key.cmp(&b.key));
+
+            for record in applicable {
+                let subsetting_values = values_of(member, &record.subsetting);
+                let subsetted_values = values_of(member, &record.subsetted);
+                for value in subsetting_values {
+                    let n = length_amount(subsetted_values.len());
+                    if let Err(incomplete) = meter.charge(
+                        AdmissionCharge::new(AdmissionChargePoint::BindingSubsetValue)
+                            .work(n.max(1)),
+                    ) {
+                        return AdmissionOutcome::Incomplete(incomplete);
+                    }
+                    if !subsetted_values.iter().any(|other| other == value) {
+                        return AdmissionOutcome::Refused(ModelRefusal {
+                            code: Code::InvalidRuntimeInput,
+                            cause: "subsetting-violation",
+                            detail: format!(
+                                "object {}'s {} names {value}, not among its {} values \
+                                 (subsetting record {})",
+                                key.object,
+                                record.subsetting.identity,
+                                record.subsetted.identity,
+                                record.key.identity
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     AdmissionOutcome::Admitted(PopulationBinding {
         bundle: Arc::new(bundle.clone()),
