@@ -257,7 +257,7 @@ impl LibraryRefusal {
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. } => Code::InvalidPackage,
-            Self::UnsupportedExport { .. } => Code::UnsupportedConstruct,
+            Self::UnsupportedExport { .. } => Code::MissingDeclaration,
         }
     }
 

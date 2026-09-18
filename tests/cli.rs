@@ -174,6 +174,37 @@ fn parse_of_a_recognized_but_unsupported_construct_exits_21() {
     assert_eq!(value["status"], "refused");
 }
 
+// Sibling to the 21 case above: a recognized-but-unsupported token (`/`)
+// takes the `unsupported` half of `Parser::unexpected`'s split, but an
+// expression position holding a token the grammar never admits at all (a
+// stray `}`) must still take the `invalid syntax` half and exit 20. If the
+// unsupported-token set at src/parser.rs's `unexpected` were ever widened to
+// include `CloseBrace`, this assertion would fail against 21 instead.
+#[trace("TC-015", "FR-010-AC-2", "FR-010-AC-9")]
+#[test]
+fn parse_of_genuinely_malformed_syntax_exits_20_not_21() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("malformed.native");
+    std::fs::write(
+        &path,
+        "language \"ix:native\" edition \"0-draft\";\n\
+         profile \"state-finite/0-draft\";\n\
+         model M = \"test/model\" version \"1\" digest \"unresolved\";\n\
+         invariant Test on M::Thing at current { }\n",
+    )
+    .unwrap();
+    let refused = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args(["parse", "test:malformed", "fixture:1"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(20));
+    assert!(refused.stdout.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
+    assert_eq!(value["code"], "invalid_syntax");
+    assert_eq!(value["status"], "refused");
+}
+
 #[test]
 #[trace("TC-104", "FR-026-AC-5")]
 fn malformed_operands_report_the_selected_command_before_io() {

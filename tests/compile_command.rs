@@ -176,7 +176,7 @@ fn compile_arity_is_checked_before_opening_any_request() {
 #[cfg(target_os = "linux")]
 #[test]
 #[trace("TC-105", "FR-027-AC-3")]
-fn failed_artifact_output_is_an_io_exit() {
+fn failed_artifact_output_is_a_tool_failure_exit() {
     let directory = tempfile::tempdir().unwrap();
     fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
     let full = std::fs::OpenOptions::new()

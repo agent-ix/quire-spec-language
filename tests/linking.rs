@@ -466,7 +466,7 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
             .unwrap()
             .span;
         let error = link(parsed, &envs, LinkLimits::default()).unwrap_err();
-        assert_eq!(error.code, Code::UnsupportedConstruct);
+        assert_eq!(error.code, Code::IllTyped);
         assert_eq!(error.span.start.byte, expected.start);
         assert_eq!(error.span.end.byte, expected.end);
     }
@@ -479,7 +479,7 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
             link(read(&text), &envs, LinkLimits::default())
                 .unwrap_err()
                 .code,
-            Code::UnsupportedConstruct
+            Code::InvalidModelBinding
         );
     }
     for expression in [

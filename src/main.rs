@@ -44,8 +44,11 @@ fn syntax(
     let file = std::fs::File::open(path)
         .map_err(|error| (20, format!("cannot open {display_path}: {error}")))?;
     let mut bytes = Vec::new();
+    // Unreachable on any 64-bit target: usize -> u64 cannot overflow. A
+    // platform where it did would be a build/platform defect, not invalid
+    // input, so FR-301's tool-failure code (30) is the truer classification.
     let ceiling = u64::try_from(limits.source_bytes)
-        .map_err(|error| (20, format!("invalid source ceiling: {error}")))?;
+        .map_err(|error| (30, format!("invalid source ceiling: {error}")))?;
     file.take(ceiling.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|error| (20, format!("cannot read {display_path}: {error}")))?;

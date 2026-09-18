@@ -17,8 +17,8 @@ target/debug/quire-spec run /tmp/native-workflow-example/refused/request.json
 The generator writes named files inside the selected directory. Build the CLI
 with `cargo build --locked --offline --target-dir target -j 1 --bin quire-spec`
 if it has not been built. Cases respectively return completed true (exit 0),
-completed false (exit 1), completed operation true (exit 0) and a frame refusal
-(exit 1). Refused/incomplete outputs have no predicate truth field.
+completed false (exit 10), completed operation true (exit 0) and a frame
+refusal (exit 20). Refused/incomplete outputs have no predicate truth field.
 
 Each request is a closed JSON envelope with `format: native-run/1` and a
 `request` object. The generated request is the complete example of these fields:
@@ -40,8 +40,11 @@ reads at 8 MiB, plus the existing compiler/runtime ceilings.
 
 Results on stdout include exact request/package/source/model/input identities,
 selected clause, stage, diagnostics and actual work/events. Intake errors are
-JSON on stderr. Exit 2 identifies malformed requests, identifier or I/O failures;
-unknown formats and semantic refusals exit 1; budget stops exit 3. Broken pipes
+JSON on stderr. On FR-301's six-code contract, exit 20 identifies malformed
+requests, invalid command usage, identifier or I/O failures and semantic
+refusals; exit 21 identifies a construct the parser recognizes but the
+admitted profile does not support, or a native package naming an unknown or
+unavailable required feature; exit 22 identifies budget stops. Broken pipes
 end quietly with the computed status. Each run starts fresh budgets. The native
 result is local execution output; portable evidence and Quire extraction remain
 separately owned integration work. Contract: FR-026; actual binary tests: TC-103/104.
@@ -58,8 +61,9 @@ Successful stdout is the exact native-linked-package/1 byte artifact, with no
 wrapper or extra newline. The existing `NativePackage::read_verified` API reads
 it with explicit source/model bindings and a selected digest. Static failures
 leave stdout empty and use the same command-error JSON/exit convention as run.
-An output I/O failure can leave a partial prefix; exit 2 and digest verification
-distinguish that from a complete artifact. Contract: FR-027; binary tests: TC-105.
+An output I/O failure can leave a partial prefix; exit 30 and digest
+verification distinguish that from a complete artifact. Contract: FR-027;
+binary tests: TC-105.
 
 The generator also writes `package.json` and `package-run.json` in each case
 directory. Run the latter to verify and execute that selected artifact:
