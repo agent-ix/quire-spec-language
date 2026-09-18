@@ -8,10 +8,9 @@ use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
 use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, EstablishedFact, FieldMemberRecord, GeneralizationRecord, ModelSelection,
-    Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, RedefinitionRecord, ScalarTypeRecord,
-    SubsettingRecord,
+    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+    OperationResult, PostconditionClause, RedefinitionRecord, ScalarTypeRecord, SubsettingRecord,
 };
 use quire_spec_language::model::conformance::{
     check_field_redefinition, check_field_refinement_obligation, check_operation_redefinition,
@@ -22,6 +21,7 @@ use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
     normalize, EffectiveView, NormalizeOutcome, ViewEntry,
 };
+use quire_spec_language::value::OrderingOperator;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
@@ -91,7 +91,7 @@ fn operation(
     field_writes: Vec<&str>,
     creates: Vec<&str>,
     deletes: Vec<&str>,
-    own_postcondition_facts: Vec<EstablishedFact>,
+    own_postcondition_clauses: Vec<PostconditionClause>,
 ) -> BundleRecord {
     BundleRecord::OperationMember(OperationMemberRecord {
         key: ProducerKey::fixture(identity),
@@ -114,7 +114,7 @@ fn operation(
             deletes: deletes.into_iter().map(ProducerKey::fixture).collect(),
         },
         has_own_precondition: false,
-        own_postcondition_facts,
+        own_postcondition_clauses,
         has_body: true,
     })
 }
@@ -513,9 +513,17 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
         &ProducerKey::fixture("model.B"),
         &ProducerKey::fixture("model.B.z"),
     ) {
-        Ok(RedefinitionTargetOutcome::Refused { cause, candidates }) => {
+        Ok(RedefinitionTargetOutcome::Refused {
+            cause,
+            candidates,
+            valid_targets,
+        }) => {
             assert_eq!(cause, "redefinition-target");
             assert_eq!(candidates.len(), 1);
+            assert!(
+                valid_targets.is_empty(),
+                "zero-target shape must carry no valid targets, got {valid_targets:?}"
+            );
         }
         other => panic!("expected Refused(zero targets), got {other:?}"),
     }
@@ -539,9 +547,18 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
         &ProducerKey::fixture("model.B"),
         &ProducerKey::fixture("model.B.z"),
     ) {
-        Ok(RedefinitionTargetOutcome::Refused { cause, candidates }) => {
+        Ok(RedefinitionTargetOutcome::Refused {
+            cause,
+            candidates,
+            valid_targets,
+        }) => {
             assert_eq!(cause, "redefinition-target");
             assert_eq!(candidates.len(), 2);
+            assert_eq!(
+                valid_targets.len(),
+                2,
+                "ambiguous shape must carry both valid targets, got {valid_targets:?}"
+            );
         }
         other => panic!("expected Refused(ambiguous), got {other:?}"),
     }
@@ -630,7 +647,7 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         vec![],
         vec![],
         vec![],
-        vec![EstablishedFact::Presence {
+        vec![PostconditionClause::Presence {
             field: ProducerKey::fixture("model.B.xb"),
         }],
     ));
@@ -749,10 +766,10 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             vec![],
             vec![],
             vec![],
-            vec![EstablishedFact::Interval {
+            vec![PostconditionClause::Comparison {
                 field: ProducerKey::fixture("model.B.cs"),
-                lower: 0,
-                upper,
+                operator: OrderingOperator::LessOrEqual,
+                literal: upper,
             }],
         ));
         records.push(redefinition(
@@ -774,6 +791,63 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (f), got {other:?}"),
+    }
+}
+
+/// A postcondition clause that does not actually establish the narrowed
+/// domain (`model.B.cs >= 0`, which every value of a scalar with floor 0
+/// already satisfies) must still refuse: the obligation is discharged by
+/// real fact derivation over the declared clause, not by trusting that any
+/// clause naming the field is sufficient.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligation() {
+    let mut records = r08_base();
+    records.push(field_member(
+        "model.B.cs",
+        "model.B",
+        "model.Small",
+        mult(1, Some(1)),
+    ));
+    records.push(redefinition(
+        "model.redef.cs",
+        "model.B",
+        "model.B.cs",
+        "model.A.c",
+    ));
+    records.push(operation(
+        "model.B.set",
+        "model.B",
+        vec![],
+        None,
+        vec![],
+        vec![],
+        vec![],
+        vec![PostconditionClause::Comparison {
+            field: ProducerKey::fixture("model.B.cs"),
+            operator: OrderingOperator::GreaterOrEqual,
+            literal: 0,
+        }],
+    ));
+    records.push(redefinition(
+        "model.redef.set",
+        "model.B",
+        "model.B.set",
+        "model.A.set",
+    ));
+    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08g"), records);
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.cs"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.cs"),
+        redefined: ProducerKey::fixture("model.A.c"),
+    };
+    match check_field_refinement_obligation(&bundle, &record) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(failures[0].cause, "unproved-refinement");
+            assert!(failures[0].detail.contains("field-domain"));
+        }
+        other => panic!("expected Refused (g, unrelated clause), got {other:?}"),
     }
 }
 

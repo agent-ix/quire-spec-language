@@ -876,3 +876,45 @@ impl Definedness {
         }
     }
 }
+
+/// One fact a guard's true outcome establishes about a field, as
+/// [`established_field_fact`] reports it to `crate::model`'s FR-151
+/// refinement-obligation check.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Established {
+    /// `present(self.<field>)` held on the true outcome.
+    Presence,
+    /// The proved integer interval on `self.<field>` on the true outcome.
+    Interval(ProvedInterval),
+}
+
+/// Derives the fact `condition`'s true outcome establishes about
+/// `self.<field>` (`self` bound at `self_slot`, `field` projected at stable
+/// path step zero), by running the exact guard-fact propagation `walk`
+/// itself uses (`outcomes`), not a bespoke re-implementation. `None` when
+/// the true outcome establishes neither an FR-146 presence nor interval fact
+/// about that path.
+///
+/// `crate::model` has no FR-146 expression parser, so `condition` is not
+/// parsed from producer-supplied source; the caller
+/// (`crate::model::conformance`) builds the small typed guard tree a single
+/// accepted `PostconditionClause` form describes and hands it here, so what
+/// that clause actually proves is decided by this same arithmetic a real
+/// checked postcondition already runs, never restated from the clause's own
+/// literal.
+pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Option<Established> {
+    let checker = Definedness::new(self_slot + 1);
+    let (when_true, _) = checker.outcomes(condition, &Facts::default());
+    let facts = when_true?;
+    let path = StablePath {
+        root: self_slot,
+        steps: vec![Step::Field(0)],
+    };
+    if facts.present.contains(&path) {
+        return Some(Established::Presence);
+    }
+    facts
+        .intervals
+        .get(&Subject::Value(path))
+        .map(|interval| Established::Interval(interval.clone()))
+}

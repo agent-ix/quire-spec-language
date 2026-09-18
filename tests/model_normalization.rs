@@ -1037,3 +1037,44 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 50);
     assert_eq!(meter.consumed(LimitKind::HashedBytes), 27969);
 }
+
+/// TC-196 R01: a closing generalization cycle (`model.A` -> `model.B` ->
+/// `model.A`) refuses `invalid_model_binding`/`specialization-cycle` naming
+/// every contributing declaration in the cycle, rotated to start at its
+/// least key (`model.A`), regardless of which type's own walk closes it
+/// first — see `src/model/normalize.rs`'s module docs for this rung's own
+/// recorded scope decision (the refusal's shape is reproduced exactly; the
+/// exact six-`normalize.cycle-check`-charge accounting across both types'
+/// walks is not).
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.r01"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.A-B", "model.A", "model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+        ],
+    );
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "specialization-cycle");
+            assert!(
+                refusal.detail.contains("[model.A, model.B]"),
+                "the chain must be rotated to start at its least key regardless of \
+                 which type's own walk closes the cycle first, got: {}",
+                refusal.detail
+            );
+            assert!(refusal.detail.contains("generalizes back to itself via"));
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
+        }
+    }
+}

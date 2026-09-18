@@ -18,7 +18,7 @@ use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord,
+    ObjectTypeRecord, SubsettingRecord,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
@@ -28,8 +28,8 @@ use quire_spec_language::model::normalize::{
 use quire_spec_language::model::population::{
     admit_binding, all_instances, lookup, AbsenceMode, AdmissionChargePoint, AdmissionLimitKind,
     AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, LookupKey, LookupOutcome,
-    PopulationAdmissionLimits, PopulationBinding, PopulationDocument, PopulationMember,
-    ReferenceKey, TypedReference,
+    MemberFieldValues, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
+    PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
@@ -69,11 +69,40 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> BundleRecord {
     })
 }
 
+fn field_member_mult(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    lower: u64,
+    upper: Option<u64>,
+) -> BundleRecord {
+    BundleRecord::FieldMember(FieldMemberRecord {
+        key: ProducerKey::fixture(identity),
+        owner: ProducerKey::fixture(owner),
+        value_type: ProducerKey::fixture(value_type),
+        multiplicity: Multiplicity {
+            lower,
+            upper,
+            ordered: false,
+            unique: true,
+        },
+    })
+}
+
 fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord {
     BundleRecord::Generalization(GeneralizationRecord {
         key: ProducerKey::fixture(identity),
         specific: ProducerKey::fixture(specific),
         general: ProducerKey::fixture(general),
+    })
+}
+
+fn subsetting(identity: &str, owner: &str, subsetting: &str, subsetted: &str) -> BundleRecord {
+    BundleRecord::Subsetting(SubsettingRecord {
+        key: ProducerKey::fixture(identity),
+        owner: ProducerKey::fixture(owner),
+        subsetting: ProducerKey::fixture(subsetting),
+        subsetted: ProducerKey::fixture(subsetted),
     })
 }
 
@@ -133,6 +162,27 @@ fn member(object: &str, type_identity: &str) -> PopulationMember {
     PopulationMember {
         object: object.to_owned(),
         type_identity: ProducerKey::fixture(type_identity),
+        field_values: Vec::new(),
+    }
+}
+
+/// [`member`], plus declared field values (FCD FR-121 data, not
+/// expressions): each `(field, values)` pair becomes one
+/// [`MemberFieldValues`] entry.
+fn member_with_fields(
+    object: &str,
+    type_identity: &str,
+    fields: Vec<(&str, Vec<&str>)>,
+) -> PopulationMember {
+    PopulationMember {
+        field_values: fields
+            .into_iter()
+            .map(|(field, values)| MemberFieldValues {
+                field: ProducerKey::fixture(field),
+                values: values.into_iter().map(str::to_owned).collect(),
+            })
+            .collect(),
+        ..member(object, type_identity)
     }
 }
 
@@ -1100,4 +1150,140 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
         "bound().maximum() must be the binding's own declared maximum (5), \
          not the constant 3 or the 3-member selection count"
     );
+}
+
+/// TC-196 R06's admission-binding half: types `A`, `B <= A`; field
+/// `model.A.all` typed `model.A` `{0,5}`; field `model.A.some` typed
+/// `model.B` `{0,3}` with a subsetting record (`A`, `A.some` subsets
+/// `A.all`); a closed population where `a1.all = [a2]` and `a1.some = [a3]`.
+/// `a3` is not among `a1.all`'s values, so binding admission refuses
+/// `invalid_runtime_input`/`subsetting-violation` naming the record, `a1` and
+/// `a3`, after three `binding.member` charges and one `binding.subset-value`
+/// charge for `a1`'s one `some` value (`n = 1`): four admission work units.
+/// The type-level axes (multiplicity-narrowing, subsetting-type, admitted)
+/// are already covered by `model_conformance.rs`'s
+/// `r06_subsetting_type_and_multiplicity_axes`; this backs only the runtime
+/// `binding.subset-value` charge and refusal FR-151-AC-10 adds.
+fn r06_bundle() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.r06pop"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member_mult("model.A.all", "model.A", "model.A", 0, Some(5)),
+            field_member_mult("model.A.some", "model.A", "model.B", 0, Some(3)),
+            subsetting(
+                "model.subset.some-all",
+                "model.A",
+                "model.A.some",
+                "model.A.all",
+            ),
+        ],
+    )
+}
+
+#[test]
+#[trace("TC-196", "FR-151-AC-10")]
+fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
+    let bundle = r06_bundle();
+    let view = view_of(&bundle);
+    let document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.r06pop".to_owned(),
+        members: vec![
+            member_with_fields(
+                "a1",
+                "model.A",
+                vec![("model.A.all", vec!["a2"]), ("model.A.some", vec!["a3"])],
+            ),
+            member("a2", "model.A"),
+            member("a3", "model.A"),
+        ],
+    };
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &document,
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "subsetting-violation");
+            assert!(refusal.detail.contains("a1"));
+            assert!(refusal.detail.contains("a3"));
+            assert!(refusal.detail.contains("model.A.some"));
+            assert!(refusal.detail.contains("model.A.all"));
+        }
+        other => {
+            panic!("expected Refused(invalid_runtime_input/subsetting-violation), got {other:?}")
+        }
+    }
+    assert_eq!(
+        admission
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == AdmissionChargePoint::BindingMember)
+            .count(),
+        3
+    );
+    assert_eq!(
+        admission
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == AdmissionChargePoint::BindingSubsetValue)
+            .count(),
+        1
+    );
+    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
+}
+
+/// R06's satisfying counterpart: `a1.some = [a2]`, and `a2` is among
+/// `a1.all`'s one value, so the same one `binding.subset-value` charge
+/// (`n = 1`) discharges instead of refusing, and admission completes.
+#[test]
+#[trace("TC-196", "FR-151-AC-10")]
+fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
+    let bundle = r06_bundle();
+    let view = view_of(&bundle);
+    let document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.r06pop".to_owned(),
+        members: vec![
+            member_with_fields(
+                "a1",
+                "model.A",
+                vec![("model.A.all", vec!["a2"]), ("model.A.some", vec!["a2"])],
+            ),
+            member("a2", "model.A"),
+        ],
+    };
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &document,
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Admitted(binding) => assert_eq!(binding.members().len(), 2),
+        other => panic!("expected an admitted binding, got {other:?}"),
+    }
+    assert_eq!(
+        admission
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == AdmissionChargePoint::BindingSubsetValue)
+            .count(),
+        1
+    );
+    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 3);
 }

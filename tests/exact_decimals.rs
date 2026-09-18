@@ -757,9 +757,8 @@ const VALUE_ACCOUNTING: &str = include_str!(
 /// `crate::value::accounting::ChargePoint` itself. `binding.member` IS
 /// genuinely charged, just by that other schedule
 /// (`IMPLEMENTED_ELSEWHERE_POINTS` below asserts this directly rather than
-/// merely omitting it); `binding.subset-value` is declared there for
-/// schedule completeness but never charged anywhere in this crate yet (needs
-/// the FR-146 evaluator bridge QSL #147 also needs).
+/// merely omitting it); so is `binding.subset-value`, as of #120 slice 4
+/// (`model::population::admit_binding`'s subsetting-runtime loop).
 const DEFERRED_FAMILIES: [&str; 7] = [
     "model",
     "graph",
@@ -777,12 +776,11 @@ const DEFERRED_FAMILIES: [&str; 7] = [
 /// implements) and asserted directly against that other enum in
 /// `every_vendored_charge_point_is_named_in_table_order`, so the registry
 /// test can tell "implemented elsewhere" apart from "unimplemented anywhere".
-const IMPLEMENTED_ELSEWHERE_POINTS: [&str; 1] = ["binding.member"];
+const IMPLEMENTED_ELSEWHERE_POINTS: [&str; 2] = ["binding.member", "binding.subset-value"];
 
 /// Every charge point genuinely unimplemented anywhere in this crate, in
 /// ascending order.
-const DEFERRED_POINTS: [&str; 23] = [
-    "binding.subset-value",
+const DEFERRED_POINTS: [&str; 22] = [
     "conformance.axis",
     "dispatch.candidate",
     "dispatch.dominance",
@@ -877,9 +875,9 @@ fn every_vendored_charge_point_is_named_in_table_order() {
         .iter()
         .all(|code| ChargePoint::from_code(code).is_none()));
 
-    // `binding.member` must be distinguishable from `binding.subset-value`:
-    // one is genuinely charged (by a different schedule), the other is
-    // declared but never charged anywhere.
+    // `binding.member` and `binding.subset-value` are both genuinely charged
+    // by `model::population::AdmissionChargePoint`'s own independent
+    // schedule, just not by `crate::value::accounting::ChargePoint`.
     for &code in &IMPLEMENTED_ELSEWHERE_POINTS {
         assert!(
             is_deferred(code),
@@ -889,23 +887,13 @@ fn every_vendored_charge_point_is_named_in_table_order() {
             ChargePoint::from_code(code).is_none(),
             "{code} must never be quire.value.accounting/v1's own ChargePoint"
         );
-        let point = AdmissionChargePoint::ALL
-            .iter()
-            .find(|point| point.as_str() == code)
-            .unwrap_or_else(|| panic!("{code} must be a real AdmissionChargePoint"));
         assert!(
-            point.is_charged(),
-            "{code} must be genuinely charged, not merely declared"
+            AdmissionChargePoint::ALL
+                .iter()
+                .any(|point| point.as_str() == code),
+            "{code} must be a real AdmissionChargePoint"
         );
     }
-    let subset_value = AdmissionChargePoint::ALL
-        .iter()
-        .find(|point| point.as_str() == "binding.subset-value")
-        .expect("binding.subset-value must be a declared AdmissionChargePoint");
-    assert!(
-        !subset_value.is_charged(),
-        "binding.subset-value is declared for schedule completeness but never charged yet"
-    );
 }
 
 #[trace("TC-185", "FR-140-AC-1")]

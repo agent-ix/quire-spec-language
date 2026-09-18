@@ -54,6 +54,15 @@
 //! found, so the reported outcome is still the correct `Incomplete`, matching
 //! FR-150's "exhaustion ends checking" rule.
 //!
+//! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
+//! every contributing declaration in the cycle, rotated to start at its
+//! least key, from the one type whose own walk finds it first
+//! ([`ancestor_paths`]'s own `?`-propagated `Err`) — this rung does not also
+//! continue walking every remaining type to reproduce R01's exact
+//! six-`normalize.cycle-check`-charge, deduplicated-across-both-walks
+//! accounting; only the refusal's own shape is reproduced, a recorded scope
+//! choice like phase 4's own dominance-check reuse above.
+//!
 //! Phase 4's own dominance check (deciding which of several redefiners of
 //! the same target wins) asks a different question than phase 3's own
 //! [`ancestor_paths`]: only *reachability* between two specific owners, never
@@ -446,12 +455,36 @@ fn ancestor_paths(
         new_path.push(record.key.clone());
         let ancestor_key = record.general.clone();
         if frame.visited.contains(&ancestor_key) {
+            // Every contributing declaration, not just the closing edge: the
+            // full visited chain already names every type the cycle passes
+            // through (`ancestor_key` duplicates its first entry), rotated
+            // to start at its least key so the same cycle reports identically
+            // regardless of which type's own walk closes it first (TC-196
+            // R01: "listing [A, B], rotated to start at the least key A").
+            // Scope decision: this rung stops at the first cycle a type's
+            // own walk finds (line ~723's `?`) rather than continuing to
+            // walk every remaining type and deduplicating repeated closures,
+            // so it does not reproduce R01's exact six-`normalize.cycle-check`
+            // charge count across both types' walks — only the refusal's own
+            // code/cause/contributing-declarations shape.
+            let mut chain = frame.visited.clone();
+            if let Some(least) = chain
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, key)| (*key).clone())
+                .map(|(index, _)| index)
+            {
+                chain.rotate_left(least);
+            }
+            let listing: Vec<&str> = chain.iter().map(|key| key.identity.as_str()).collect();
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: "specialization-cycle",
                 detail: format!(
-                    "{} generalizes back to itself via {}",
-                    ancestor_key.identity, record.key.identity
+                    "{} generalizes back to itself via {}, through the cycle [{}]",
+                    ancestor_key.identity,
+                    record.key.identity,
+                    listing.join(", ")
                 ),
             });
         }
