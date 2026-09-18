@@ -397,7 +397,8 @@ impl CheckedPackage {
                     | Value::Float(_)
                     | Value::Quantity(_)
                     | Value::Text(_)
-                    | Value::Enum(_) => {}
+                    | Value::Enum(_)
+                    | Value::Population(_) => {}
                 }
             }
         }

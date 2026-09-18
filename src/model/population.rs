@@ -411,6 +411,16 @@ pub struct PopulationBinding {
     /// instead of once per lookup" move [`admit_binding`] already makes for
     /// `type_lookup`/`by_object` below.
     generals: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    /// Every declared object type of `bundle`'s effective view, `ProducerKey`
+    /// to its FR-150-derived [`EffectiveId`]. Computed once here from
+    /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
+    /// rather than discarded): the FR-143 reference-identity bridge
+    /// (`crate::value::expression::model_query`) needs this exact
+    /// correspondence to translate a checked `Reference<T>`'s `T`
+    /// (a `crate::value::NodeKey`, the same 32 bytes as an `EffectiveId`)
+    /// back into the `ProducerKey` [`all_instances`]/[`lookup`] take, for
+    /// every declared type, not only ones a current member happens to name.
+    type_catalog: BTreeMap<ProducerKey, EffectiveId>,
 }
 
 impl PopulationBinding {
@@ -439,6 +449,13 @@ impl PopulationBinding {
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     pub fn declared_maximum(&self) -> Option<u64> {
         self.declared_maximum
+    }
+
+    /// Every declared object type of the admitted effective view,
+    /// `ProducerKey` to its FR-150-derived [`EffectiveId`]; see the field's
+    /// own doc comment.
+    pub fn type_catalog(&self) -> &BTreeMap<ProducerKey, EffectiveId> {
+        &self.type_catalog
     }
 }
 
@@ -706,6 +723,7 @@ pub fn admit_binding(
         members: admitted,
         declared_maximum,
         generals,
+        type_catalog: type_lookup,
     })
 }
 

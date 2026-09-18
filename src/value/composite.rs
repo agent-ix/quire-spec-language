@@ -28,6 +28,7 @@ use super::quantity::{Quantity, QuantityUnit};
 use super::rational::{Rational, RationalDomain};
 use super::reference::ObjectReference;
 use super::text::{Text, TextType};
+use crate::model::population::PopulationBinding;
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.
@@ -59,6 +60,11 @@ pub enum ValueType {
     Collection(Box<CollectionType>),
     /// `Reference<T>` to an object of the model object type with this key.
     Reference(NodeKey),
+    /// FR-153's `Population<T>[N]` parameter type: `N` is the declared
+    /// maximum an admitted [`PopulationBinding`] must carry (never `T`
+    /// itself, which `allInstances<T>(p)`/`lookup<T>(p, r)` name separately
+    /// at each call, per FR-153's own table).
+    Population(u64),
 }
 
 impl ValueType {
@@ -95,6 +101,9 @@ impl ValueType {
             (Self::Reference(object_type), Value::Reference(reference)) => {
                 reference.object_type() == *object_type
             }
+            (Self::Population(maximum), Value::Population(binding)) => {
+                binding.declared_maximum() == Some(*maximum)
+            }
             (
                 Self::Boolean
                 | Self::Integer
@@ -108,7 +117,8 @@ impl ValueType {
                 | Self::Option(_)
                 | Self::Composite(_)
                 | Self::Collection(_)
-                | Self::Reference(_),
+                | Self::Reference(_)
+                | Self::Population(_),
                 _,
             ) => false,
         }
@@ -144,6 +154,8 @@ pub enum Value {
     Collection(Arc<CollectionValue>),
     /// A terminal object reference.
     Reference(ObjectReference),
+    /// An admitted FR-153 closed population binding.
+    Population(Arc<PopulationBinding>),
 }
 
 impl Value {
@@ -163,7 +175,8 @@ impl Value {
             | Self::Quantity(_)
             | Self::Text(_)
             | Self::Enum(_)
-            | Self::Reference(_) => Integer::one(),
+            | Self::Reference(_)
+            | Self::Population(_) => Integer::one(),
         }
     }
 }
@@ -200,6 +213,29 @@ impl OptionValue {
             payload: Some(payload),
             occ,
         })))
+    }
+
+    /// Materialize an already-admitted `payload` as `Option<payload_type>`,
+    /// checking no structural `admits()` match: FR-153's `lookup<T>(p, r)
+    /// absent empty` (`crate::value::model_query::evaluate_lookup`) already
+    /// proved a present result conforms to the queried `T` through
+    /// `crate::model::population::lookup`'s own `type_conforms` check before
+    /// calling this, so [`Self::present`]'s structural `payload_type.admits`
+    /// would wrongly refuse it: that check is exact object-type equality with
+    /// no model-conformance knowledge, so it cannot tell a genuine upcast
+    /// (a subtype reference held as its declared supertype) from a real type
+    /// mismatch. Mirrors [`crate::value::collection::from_admitted`]'s same
+    /// role for `allInstances`.
+    pub(crate) fn from_admitted(payload_type: ValueType, payload: Option<Value>) -> Value {
+        let occ = match &payload {
+            Some(payload) => Integer::one().add(&payload.occ()),
+            None => Integer::one(),
+        };
+        Value::Option(Arc::new(Self {
+            payload_type,
+            payload,
+            occ,
+        }))
     }
 
     /// The declared payload type.
@@ -526,7 +562,8 @@ impl TypeEnvironment {
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
                 | ValueType::Enum(_)
-                | ValueType::Reference(_) => {}
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => {}
             }
         }
         false
@@ -566,7 +603,8 @@ impl TypeEnvironment {
                 | ValueType::Text(_)
                 | ValueType::Enum(_)
                 | ValueType::Composite(_)
-                | ValueType::Reference(_) => {}
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => {}
             }
         }
         None
@@ -642,7 +680,8 @@ impl TypeEnvironment {
                     | ValueType::Quantity(_)
                     | ValueType::Text(_)
                     | ValueType::Enum(_)
-                    | ValueType::Reference(_) => {}
+                    | ValueType::Reference(_)
+                    | ValueType::Population(_) => {}
                 }
             }
         }
