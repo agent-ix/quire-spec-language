@@ -32,10 +32,11 @@ pub(crate) use facts::{established_field_fact, Established};
 pub(crate) use ir::{Connective, Node, NodeKind, OrderedKind};
 
 pub use check::{
-    CheckingLimits, DepthAboveMaximum, EnumBinding, PackageDeclarations, MAX_CHECKING_DEPTH,
+    CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
+    MAX_CHECKING_DEPTH,
 };
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
-pub use ir::{CollectionLoss, CollectionProperty};
+pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, MeasureObligation,
     Obligation, Origin, ProvedInterval,
@@ -195,6 +196,7 @@ impl PackageDeclarations {
             aliases: self.aliases,
             model_operations: self.model_operations,
             ieee_profile: self.ieee_profile,
+            dispatch_operations: self.dispatch_operations,
         };
         let signatures: Vec<Signature> = self
             .functions

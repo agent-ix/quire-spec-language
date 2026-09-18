@@ -12,6 +12,7 @@ use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::rational::RationalDomain;
 use super::refusal::Location;
 use crate::model::population::AbsenceMode;
+use std::collections::BTreeSet;
 
 /// A local slot of one function frame or checked expression.
 pub(crate) type Slot = usize;
@@ -125,6 +126,70 @@ pub struct CollectionLoss {
     /// The discarded properties in the order `order`, `uniqueness`,
     /// `multiplicity`.
     pub discarded: Vec<CollectionProperty>,
+}
+
+/// One [`DispatchTable`] entry (FR-151): a linked candidate's own function
+/// indices in the same checked package.
+#[derive(Clone, Copy, Debug)]
+pub struct DispatchCandidate {
+    /// The candidate operation body's index in the package's function list.
+    pub body: usize,
+    /// The candidate's effective precondition's index, when it, or a
+    /// redefinition ancestor it disjoins with, declares one.
+    pub precondition: Option<usize>,
+}
+
+/// One FR-151 dispatch table, checked and ready for the evaluator: the
+/// receiver's most-specific runtime type mapped to its linked candidate, plus
+/// the table's own distinct-candidate count for `dispatch.select`'s charge
+/// (`value-accounting.md`: `c` is "the number of linked candidates of the
+/// called effective operation"). Built by the caller (the `crate::model`
+/// bridge) before checking, from `crate::model::dispatch::link_dispatch`'s
+/// own `ProducerKey`-keyed table translated into this package's own function
+/// indices; the checker only threads it through unchanged.
+#[derive(Clone, Debug)]
+pub struct DispatchTable {
+    entries: Vec<(NodeKey, DispatchCandidate)>,
+    candidate_count: u64,
+}
+
+impl DispatchTable {
+    /// Build a table from its linked entries and total candidate count.
+    pub fn new(entries: Vec<(NodeKey, DispatchCandidate)>, candidate_count: u64) -> Self {
+        Self {
+            entries,
+            candidate_count,
+        }
+    }
+
+    /// The linked candidate for the receiver's most-specific runtime type.
+    pub(crate) fn linked_for(&self, subtype: &NodeKey) -> Option<&DispatchCandidate> {
+        self.entries
+            .iter()
+            .find(|(key, _)| key == subtype)
+            .map(|(_, candidate)| candidate)
+    }
+
+    /// The table's own distinct-candidate count, for `dispatch.select`.
+    pub(crate) fn candidate_count(&self) -> u64 {
+        self.candidate_count
+    }
+
+    /// Every distinct function index this table can reach: every entry's
+    /// body and effective precondition, deduplicated, ascending. These are
+    /// the FR-146 dispatch call-graph edges a dispatched call through this
+    /// table contributes, from every candidate, not only the one a
+    /// particular receiver's runtime type would select.
+    pub(crate) fn callees(&self) -> BTreeSet<usize> {
+        let mut callees = BTreeSet::new();
+        for (_, candidate) in &self.entries {
+            callees.insert(candidate.body);
+            if let Some(precondition) = candidate.precondition {
+                callees.insert(precondition);
+            }
+        }
+        callees
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -250,6 +315,15 @@ pub(crate) enum NodeKind {
         reference: Box<Node>,
         absence: AbsenceMode,
     },
+    /// `receiver.member(args)` (FR-151), resolved at check time to one
+    /// checked dispatch table (identified by `table`, an index into the
+    /// package's own `dispatch_tables`), selected at runtime by the
+    /// receiver's most-specific type (TC-196 D06).
+    Dispatch {
+        receiver: Box<Node>,
+        table: usize,
+        arguments: Vec<Node>,
+    },
 }
 
 impl Node {
@@ -319,6 +393,15 @@ impl Node {
                 reference,
                 ..
             } => vec![population, reference],
+            NodeKind::Dispatch {
+                receiver,
+                arguments,
+                ..
+            } => {
+                let mut children: Vec<&Node> = vec![receiver];
+                children.extend(arguments);
+                children
+            }
         }
     }
 
