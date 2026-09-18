@@ -20,7 +20,10 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
             "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}},
         "message": value.message })
     .to_string();
-    (if incomplete { 3 } else { 1 }, output)
+    // FR-301's contract, via Code::exit_code(): a recognized construct this
+    // profile does not admit is unsupported (21); other incomplete work is
+    // 22; a refused syntax request is otherwise invalid input (20).
+    (value.exit_code(), output)
 }
 
 fn syntax(
@@ -32,13 +35,16 @@ fn syntax(
     let limits = Limits::default();
     let display_path = path.to_string_lossy();
     let file = std::fs::File::open(path)
-        .map_err(|error| (2, format!("cannot open {display_path}: {error}")))?;
+        .map_err(|error| (20, format!("cannot open {display_path}: {error}")))?;
     let mut bytes = Vec::new();
+    // Unreachable on any 64-bit target: usize -> u64 cannot overflow. A
+    // platform where it did would be a build/platform defect, not invalid
+    // input, so FR-301's tool-failure code (30) is the truer classification.
     let ceiling = u64::try_from(limits.source_bytes)
-        .map_err(|error| (2, format!("invalid source ceiling: {error}")))?;
+        .map_err(|error| (30, format!("invalid source ceiling: {error}")))?;
     file.take(ceiling.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|error| (2, format!("cannot read {display_path}: {error}")))?;
+        .map_err(|error| (20, format!("cannot read {display_path}: {error}")))?;
     let unit = parse(
         SourceIdentity {
             identity: identity.into(),
@@ -67,7 +73,9 @@ enum Output {
 fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String) {
     match error.value() {
         Ok(value) => (error.exit_code(), value.to_string()),
-        Err(output) => (2, format!("output failed: {output}")),
+        // FR-301's contract: serializing the outcome is a tool failure (30),
+        // distinct from the request-level disposition it failed to encode.
+        Err(output) => (30, format!("output failed: {output}")),
     }
 }
 
@@ -96,7 +104,18 @@ fn main() -> ExitCode {
     // reject excess arguments without collecting an unbounded process argument list.
     let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
     let outcome = Command::try_from(arguments.as_slice())
-        .map_err(|error| (2, error.to_string()))
+        .map_err(|error| {
+            // FR-301's contract: an unrecognized lowering target names a
+            // real, catalogued capability this build does not implement,
+            // unsupported (21); every other usage failure is invalid
+            // input (20).
+            let code = if matches!(error, cli::UsageError::UnknownTarget(_)) {
+                21
+            } else {
+                20
+            };
+            (code, error.to_string())
+        })
         .and_then(execute);
     let (code, result) = match outcome {
         Ok((code, output)) => {
@@ -114,7 +133,9 @@ fn main() -> ExitCode {
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(code),
         Err(error) => {
             let _ = writeln!(io::stderr().lock(), "output failed: {error}");
-            ExitCode::from(2)
+            // FR-301's contract: a stdout/stderr write failure is a tool
+            // failure (30), not a request-level disposition.
+            ExitCode::from(30)
         }
     }
 }

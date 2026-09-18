@@ -89,7 +89,7 @@ fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
         let path = directory.path().join(name);
         fixtures::write(&path, fixtures::Case::Integer(amount)).unwrap();
         let actual = invoke(&path, "run", "request.json");
-        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 1 }));
+        assert_eq!(actual.status.code(), Some(if truth { 0 } else { 10 }));
         assert_eq!(
             serde_json::from_slice::<Value>(&actual.stdout).unwrap()["truth"],
             truth
@@ -200,6 +200,28 @@ fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_populat
     assert_eq!(ByteDigest::of(&compiled.stdout), native.digest());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+#[trace("TC-107", "FR-029-AC-4")]
+fn failed_projection_output_is_a_tool_failure_exit() {
+    let directory = tempfile::tempdir().unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("lower")
+        .arg(directory.path().join("compile.json"))
+        .stdout(std::process::Stdio::from(full))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(30));
+    assert!(std::str::from_utf8(&output.stderr)
+        .unwrap()
+        .starts_with("output failed:"));
+}
+
 #[test]
 #[trace("TC-107", "FR-029-AC-2")]
 fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefix() {
@@ -222,7 +244,7 @@ fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefi
     assert_eq!(native.status.code(), Some(0));
 
     let output = invoke(directory.path(), "lower", "compile.json");
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["stage"], "lower");
@@ -281,21 +303,21 @@ fn projection_export_reuses_source_request_refusals_and_intake_limits() {
         let (exit, code) = match mutation {
             Mutation::Format => {
                 changed["format"] = json!("native-run/1");
-                (1, "unknown_wire")
+                (20, "unknown_wire")
             }
             Mutation::Runtime => {
                 changed["request"]["snapshots"] = json!([]);
-                (2, "invalid-request")
+                (20, "invalid-request")
             }
             Mutation::Stale => {
                 changed["request"]["program"]["source"]["digest"] =
                     json!(ByteDigest::of(b"foreign").to_string());
-                (1, "source_digest_mismatch")
+                (20, "source_digest_mismatch")
             }
             Mutation::Files => {
                 changed["request"]["models"] =
                     json!(vec![original["request"]["models"][0].clone(); 64]);
-                (3, "resource_exhausted")
+                (22, "resource_exhausted")
             }
         };
         save(directory.path(), &changed);
@@ -321,7 +343,7 @@ fn lower_arity_refuses_before_opening_a_request() {
             .args(arguments)
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         assert_eq!(
             std::str::from_utf8(&output.stderr).unwrap(),

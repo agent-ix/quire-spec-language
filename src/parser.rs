@@ -576,11 +576,18 @@ impl Parser {
                 };
                 self.take();
                 if self.is(K::OpenParen) {
+                    // Same concept as native_model/admission.rs's pure-function
+                    // check, met here at parse time instead of model admission:
+                    // the native profile does not admit user-defined functions
+                    // at all, as a call form or as a declaration. That is a
+                    // form this profile's package structure excludes outright,
+                    // not a real, catalogued capability this build lacks, so
+                    // both land on InvalidPackage rather than UnsupportedConstruct.
                     return Err(self.failure(
-                        Code::UnsupportedConstruct,
+                        Code::InvalidPackage,
                         Phase::Profile,
                         token.span,
-                        "user helper calls are unsupported by this profile",
+                        "user function calls are outside the native model profile",
                     ));
                 }
                 if self.eat(K::Qualify) {

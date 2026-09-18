@@ -97,13 +97,13 @@ fn source_sequence_maxima_are_checked_at_native_admission() {
                 assert_eq!(model.source().source().digest(), binding.source().digest());
             } else {
                 let error = result.unwrap_err();
-                assert_eq!(error.code(), Code::UnsupportedConstruct);
+                assert_eq!(error.code(), Code::UnrepresentableConstraint);
                 assert!(!error.is_incomplete());
                 assert_eq!(error.source().source().digest(), binding.source().digest());
                 let ModelSourceCause::Admission(cause) = error.cause else {
                     panic!("native admission must own the sequence refusal");
                 };
-                assert_eq!(cause.code, Code::UnsupportedConstruct);
+                assert_eq!(cause.code, Code::UnrepresentableConstraint);
                 assert_eq!(cause.source, *binding.source().identity());
             }
         }

@@ -9,6 +9,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-019
     type: references
+  - target: "ix://agent-ix/quire-specification/FR-301"
+    type: depends_on
 ---
 ## Description
 
@@ -32,9 +34,13 @@ those bytes by their SHA-256 digest and may reread them using the existing
 NativePackage::read_verified API with explicit source/model bindings.
 Intake and static failures emit no package bytes and use FR-026's existing native-run-result/1
 command-error envelope on stderr, including the original request digest and
-stage/code when available. Refusal, malformed/I/O and incomplete exits remain
-1, 2 and 3 respectively. Broken pipes end quietly; other write errors exit 2
-and may leave a partial stdout prefix, which is not a complete selected artifact.
+stage/code when available. On FR-301's six-code contract, refusal, malformed
+requests, I/O failures and invalid command usage all exit 20; a selected model
+naming a real, profile-gated capability this build does not admit — a later
+native model profile or a rational scalar/value declared outside its admitting
+profile — exits 21; incomplete (exhausted) failures exit 22. Broken pipes end
+quietly; other write and output-serialization failures exit 30 and may leave a
+partial stdout prefix, which is not a complete selected artifact.
 
 ## Behavior
 
@@ -54,7 +60,7 @@ typed failure without a successful artifact.
 | --- | --- | --- |
 | FR-027-AC-1 | CLI output matches the existing public static pipeline byte-for-byte and is accepted by the existing verified package reader with explicit bindings. | Test |
 | FR-027-AC-2 | A directory containing only selected sources and its compile request produces the package; native-run/1 and unexpected runtime fields refuse at the command boundary. | Test |
-| FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; file-count exhaustion identifies its category; compile arity errors precede I/O and output failures exit 2; existing run and parse/format tests still pass. | Test |
+| FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; file-count exhaustion identifies its category; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test |
 
 ## Dependencies
 

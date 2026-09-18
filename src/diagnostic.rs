@@ -85,6 +85,10 @@ pub enum Code {
     InvalidSyntax,
     /// Recognized syntax is outside the admitted profile.
     UnsupportedConstruct,
+    /// A native declaration or expression violates a fixed representability
+    /// limit or required policy of the admitted profile, rather than naming
+    /// a real capability outside it.
+    UnrepresentableConstraint,
     /// Language label is not admitted.
     UnknownLanguage,
     /// Edition label is not admitted.
@@ -158,6 +162,7 @@ impl Code {
             Self::InvalidUtf8 => "invalid_utf8",
             Self::InvalidSyntax => "invalid_syntax",
             Self::UnsupportedConstruct => "unsupported_construct",
+            Self::UnrepresentableConstraint => "unrepresentable_constraint",
             Self::UnknownLanguage => "unknown_language",
             Self::UnknownEdition => "unknown_edition",
             Self::UnknownProfile => "unknown_profile",
@@ -206,6 +211,7 @@ impl Code {
             Self::InvalidUtf8,
             Self::InvalidSyntax,
             Self::UnsupportedConstruct,
+            Self::UnrepresentableConstraint,
             Self::UnknownLanguage,
             Self::UnknownEdition,
             Self::UnknownProfile,
@@ -250,6 +256,31 @@ impl Code {
                 | Self::IncompletePopulation
                 | Self::UnavailableObservation
         )
+    }
+
+    /// Whether this code records a well-formed request naming a real,
+    /// catalogued capability this build does not implement, rather than
+    /// input that is itself invalid. FR-301's contract reports these as
+    /// unsupported (21), distinct from invalid or refused input (20).
+    pub fn is_unsupported(self) -> bool {
+        matches!(
+            self,
+            Self::UnsupportedProjection | Self::UnsupportedConstruct | Self::UnknownRequiredFeature
+        )
+    }
+
+    /// FR-301's single-code ladder: unsupported (21) before incomplete (22)
+    /// before invalid or refused input (20). The sole source of this
+    /// mapping; every exit-code site routes through it rather than
+    /// re-deriving it from `is_unsupported`/`is_incomplete`.
+    pub fn exit_code(self) -> u8 {
+        if self.is_unsupported() {
+            21
+        } else if self.is_incomplete() {
+            22
+        } else {
+            20
+        }
     }
 }
 
@@ -296,6 +327,24 @@ impl Diagnostic {
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
+    }
+    /// Whether this diagnostic names a real, catalogued capability this
+    /// build does not implement, rather than input that is itself invalid.
+    pub fn is_unsupported(&self) -> bool {
+        self.code.is_unsupported()
+    }
+    /// FR-301's exit code for this diagnostic alone, always one of
+    /// {20, 21, 22} (asserted over `Code::all()` in
+    /// tests/native_boundaries.rs). Within exactly that range, ascending
+    /// exit code happens to be ascending severity (20 invalid, 21
+    /// unsupported, 22 incomplete), so a caller combining several
+    /// diagnostics into one report resolves the group's code by taking the
+    /// numeric minimum over this method — see command/output.rs's `report`.
+    /// This does not generalize past {20, 21, 22}; FR-301's full order
+    /// (tool failure, invalid, unsupported, incomplete, violation, success)
+    /// is not ascending-numeric across 0/10/20/21/22/30.
+    pub fn exit_code(&self) -> u8 {
+        self.code.exit_code()
     }
 }
 

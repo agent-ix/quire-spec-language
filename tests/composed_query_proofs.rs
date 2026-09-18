@@ -590,13 +590,16 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
     let excess = setup::try_model_with_maximum("ExcessQueryMaximum", 10_001).unwrap_err();
     assert_eq!(
         excess.code(),
-        quire_spec_language::Code::UnsupportedConstruct
+        quire_spec_language::Code::UnrepresentableConstraint
     );
     assert!(!excess.is_incomplete());
     let model_source::ModelSourceCause::Admission(cause) = &excess.cause else {
         panic!("native admission must own the sequence refusal: {excess}")
     };
-    assert_eq!(cause.code, quire_spec_language::Code::UnsupportedConstruct);
+    assert_eq!(
+        cause.code,
+        quire_spec_language::Code::UnrepresentableConstraint
+    );
     assert_eq!(cause.phase, quire_spec_language::Phase::Link);
     assert_eq!(cause.source.identity, "model:ExcessQueryMaximum");
     assert_eq!(cause.source.revision, "authored");

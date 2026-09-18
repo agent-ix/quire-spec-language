@@ -266,30 +266,39 @@ fn tc_041_incomplete_or_inconsistent_scalar_assignments_refuse() {
 #[trace("TC-041", "FR-015-AC-2")]
 fn tc_041_unsupported_representations_include_unused_ir_declarations() {
     let unsupported = [
-        ir::ValueType::integer(
-            ir::IntegerType::new(
-                ir::IntegerDomain::Unsigned,
-                0,
-                1000,
-                ir::OverflowPolicy::Reject,
-            )
-            .unwrap(),
+        (
+            ir::ValueType::integer(
+                ir::IntegerType::new(
+                    ir::IntegerDomain::Unsigned,
+                    0,
+                    1000,
+                    ir::OverflowPolicy::Reject,
+                )
+                .unwrap(),
+            ),
+            Code::UnrepresentableConstraint,
         ),
-        ir::ValueType::integer(
-            ir::IntegerType::new(
-                ir::IntegerDomain::Signed,
-                0,
-                1000,
-                ir::OverflowPolicy::Saturate,
-            )
-            .unwrap(),
+        (
+            ir::ValueType::integer(
+                ir::IntegerType::new(
+                    ir::IntegerDomain::Signed,
+                    0,
+                    1000,
+                    ir::OverflowPolicy::Saturate,
+                )
+                .unwrap(),
+            ),
+            Code::UnrepresentableConstraint,
         ),
-        ir::ValueType::rational(ir::RationalType::new(-10, 10, 3).unwrap()),
+        (
+            ir::ValueType::rational(ir::RationalType::new(-10, 10, 3).unwrap()),
+            Code::UnsupportedConstruct,
+        ),
     ];
-    for ty in unsupported {
+    for (ty, code) in unsupported {
         let mut used = parts();
         replace_field_type(&mut used, "Node", "n", ty.clone());
-        refuse(used, Code::UnsupportedConstruct);
+        refuse(used, code);
         let mut unused = parts();
         add_value(
             &mut unused,
@@ -297,7 +306,7 @@ fn tc_041_unsupported_representations_include_unused_ir_declarations() {
             ir::ValueDeclarationKind::State,
             ir::ValueType::option(ty),
         );
-        refuse(unused, Code::UnsupportedConstruct);
+        refuse(unused, code);
     }
     let mut input = parts();
     let function = ir::PureFunctionDeclaration::new(
@@ -314,7 +323,7 @@ fn tc_041_unsupported_representations_include_unused_ir_declarations() {
         vec![function],
     )
     .unwrap();
-    refuse(input, Code::UnsupportedConstruct);
+    refuse(input, Code::InvalidPackage);
 }
 
 #[test]
@@ -346,7 +355,7 @@ fn tc_041_sequence_field_maxima_are_profile_bounded() {
                     .unwrap();
                 assert_eq!(selected.value_type(), &ty);
             } else {
-                refuse(input, Code::UnsupportedConstruct);
+                refuse(input, Code::UnrepresentableConstraint);
             }
         }
     }
@@ -401,7 +410,7 @@ fn tc_041_nested_sequence_value_maxima_cannot_be_raised_with_work_limits() {
                 assert_eq!(selected.value_type(), &ty);
             } else {
                 let error = result.unwrap_err();
-                assert_eq!(error.code, Code::UnsupportedConstruct);
+                assert_eq!(error.code, Code::UnrepresentableConstraint);
                 assert_eq!(error.phase, Phase::Link);
                 assert!(!error.is_incomplete());
                 assert_eq!(error.source, *source.identity());
