@@ -138,6 +138,13 @@ pub enum Code {
     /// FR-151 dispatch linking found no, or several undominated, applicable
     /// candidates for a closed subtype.
     AmbiguousDispatch,
+    /// FR-153: a population document's `modelIdentity`, a lookup key's
+    /// universe, or a population member's declared type names something
+    /// outside the bound closed environment.
+    ForeignReference,
+    /// FR-153: a formed population selection's count is outside its declared
+    /// `allInstances<T>(p)` bound.
+    CardinalityOutOfBound,
 }
 
 impl Code {
@@ -187,6 +194,8 @@ impl Code {
             Self::Cancelled => "cancelled",
             Self::RuntimeInvariant => "runtime_invariant",
             Self::AmbiguousDispatch => "ambiguous_dispatch",
+            Self::ForeignReference => "foreign_reference",
+            Self::CardinalityOutOfBound => "cardinality_out_of_bound",
         }
     }
 
@@ -236,6 +245,8 @@ impl Code {
             Self::Cancelled,
             Self::RuntimeInvariant,
             Self::AmbiguousDispatch,
+            Self::ForeignReference,
+            Self::CardinalityOutOfBound,
         ]
     }
 
