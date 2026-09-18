@@ -3,9 +3,13 @@
 //!
 //! Fixtures reuse TC-195 F1 (`model.A`, `model.B`, generalization `B -> A`)
 //! exactly as TC-198 imports it as `M`, and population documents P1/P2 as
-//! TC-198 states them. L08 (FR-149 reference equality/upcast) and L10/L11
-//! (`reaches`/`deref`, FR-043's graph navigation) are out of this rung's
-//! scope; see the crate's `src/model/population.rs` module docs.
+//! TC-198 states them. L07 (`pre(allInstances<T>(p))` in a postcondition),
+//! L08 (FR-149 reference equality/upcast) and L10/L11 (`reaches`/`deref`,
+//! FR-043's graph navigation) are out of this rung's scope: L07's
+//! pre/post-state anchor needs real operation-effect execution this crate
+//! has no evaluator for yet, so FR-153-AC-7 stays unbacked here and is
+//! tracked on QSL #147 instead; see the crate's `src/model/population.rs`
+//! module docs.
 
 use std::collections::BTreeSet;
 
@@ -22,9 +26,10 @@ use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
 use quire_spec_language::model::population::{
-    admit_binding, all_instances, lookup, AbsenceMode, AdmissionMeter, AdmissionOutcome,
-    AllInstancesOutcome, LookupKey, LookupOutcome, PopulationAdmissionLimits, PopulationDocument,
-    PopulationMember, ReferenceKey,
+    admit_binding, all_instances, lookup, AbsenceMode, AdmissionChargePoint, AdmissionLimitKind,
+    AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, LookupKey, LookupOutcome,
+    PopulationAdmissionLimits, PopulationBinding, PopulationDocument, PopulationMember,
+    ReferenceKey, TypedReference,
 };
 use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
@@ -150,11 +155,21 @@ fn reference_key(
 /// the selected typed population, once, in canonical reference-key order,
 /// including the subtype `B` population under `M::A` — and `b1`'s reference
 /// key is identical whether queried through `M::A` or its own type `M::B`.
+/// Also backs FR-153's Outputs clause directly: the result is a typed,
+/// bounded [`ReferenceSet`], not a bare unbounded set — `element_type()`
+/// names the queried type and `bound()` carries `[0, declared_maximum]`.
 ///
-/// Mutation used: in `all_instances`, inverted the `type_conforms` match
-/// (`Ok(true) => selected.insert(...)` swapped to fire on `Ok(false)`),
-/// which drove the `M::A` selection empty instead of `{b1, a1, a2}` — red as
-/// expected, reverted.
+/// Mutation used (selection): in `all_instances`, inverted the
+/// `type_conforms` match (`Ok(true) => selected.insert(...)` swapped to fire
+/// on `Ok(false)`), which drove the `M::A` selection empty instead of
+/// `{b1, a1, a2}` — red as expected, reverted.
+///
+/// Mutation used (bound): in `all_instances`, changed the returned
+/// `ReferenceSet`'s `bound` from `CardinalityBound::new(0, declared_maximum)`
+/// to `CardinalityBound::new(0, u64::MAX)`, which left the binding's own
+/// declared maximum unreflected in the Outputs — the
+/// `selected_a.bound().maximum() == 3` assertion went red as expected,
+/// reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
 fn l01_all_instances_selects_subtype_population_once() {
@@ -194,9 +209,9 @@ fn l01_all_instances_selects_subtype_population_once() {
     ]
     .into_iter()
     .collect();
-    assert_eq!(selected_a, expected_a);
+    assert_eq!(selected_a.members(), &expected_a);
     assert_eq!(
-        selected_a.iter().collect::<Vec<_>>(),
+        selected_a.members().iter().collect::<Vec<_>>(),
         [
             &reference_key(&universe, &b, "b1"),
             &reference_key(&universe, &a, "a1"),
@@ -204,6 +219,13 @@ fn l01_all_instances_selects_subtype_population_once() {
         ],
         "canonical reference-key order: every B member precedes every A member"
     );
+    // Outputs clause: a typed reference to the queried type, bounded [0, 3]
+    // (this binding's declared_maximum), never a bare unbounded set.
+    assert_eq!(selected_a.element_type(), &ProducerKey::fixture("model.A"));
+    assert_eq!(selected_a.bound().minimum(), 0);
+    assert_eq!(selected_a.bound().maximum(), 3);
+    assert_eq!(selected_a.len(), 3);
+    assert!(!selected_a.is_empty());
     assert_eq!(meter_a.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_a.consumed(LimitKind::ResultUnits), 4);
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 4);
@@ -228,14 +250,17 @@ fn l01_all_instances_selects_subtype_population_once() {
     };
     let b1_via_b = reference_key(&universe, &b, "b1");
     assert_eq!(
-        selected_b,
-        [b1_via_b.clone()].into_iter().collect::<BTreeSet<_>>()
+        selected_b.members(),
+        &[b1_via_b.clone()].into_iter().collect::<BTreeSet<_>>()
     );
+    assert_eq!(selected_b.element_type(), &ProducerKey::fixture("model.B"));
+    assert_eq!(selected_b.bound().maximum(), 3);
     assert_eq!(meter_b.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_b.consumed(LimitKind::ResultUnits), 2);
 
     // AC-6: one reference key, identical, regardless of which type queried it.
     let b1_via_a = selected_a
+        .members()
         .iter()
         .find(|key| key.object == "b1")
         .expect("b1 selected under M::A");
@@ -348,7 +373,7 @@ fn admitted_binding(
     bundle: &Bundle,
     view: &EffectiveView,
     document: &PopulationDocument,
-) -> quire_spec_language::model::population::PopulationBinding {
+) -> PopulationBinding {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     match admit_binding(
         bundle,
@@ -365,10 +390,19 @@ fn admitted_binding(
 
 /// TC-198 L03's `undefined` mode: present returns the member reference;
 /// absent returns `LookupOutcome::Undefined` with no result-retain charge.
+/// The present result also backs FR-153's Outputs clause: a typed
+/// [`TypedReference`] naming the queried type `T`, not a bare `ReferenceKey`.
 ///
-/// Mutation used: in `lookup`, changed the `AbsenceMode::Undefined` arm to
-/// return `LookupOutcome::Completed(None)` instead of `Undefined` — the
-/// absent-`rc` assertion went red as expected, reverted.
+/// Mutation used (absence): in `lookup`, changed the `AbsenceMode::Undefined`
+/// arm to return `LookupOutcome::Completed(None)` instead of `Undefined` —
+/// the absent-`rc` assertion went red as expected, reverted.
+///
+/// Mutation used (typed result): in `lookup`, changed the present branch's
+/// `TypedReference::new(t.clone(), r.key.clone())` to
+/// `TypedReference::new(r.static_type.clone(), r.key.clone())`, swapping the
+/// queried type `M::A` for the reference key's own static type `M::B` — the
+/// `Completed(Some(TypedReference::new(ProducerKey::fixture("model.A"), ...)))`
+/// assertion went red as expected, reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
 fn l03_lookup_undefined_mode() {
@@ -394,7 +428,10 @@ fn l03_lookup_undefined_mode() {
     );
     assert_eq!(
         present,
-        LookupOutcome::Completed(Some(reference_key(&universe, &b, "b1")))
+        LookupOutcome::Completed(Some(TypedReference::new(
+            ProducerKey::fixture("model.A"),
+            reference_key(&universe, &b, "b1")
+        )))
     );
     assert_eq!(meter_present.consumed(LimitKind::WorkUnits), 2);
     assert_eq!(meter_present.consumed(LimitKind::ResultUnits), 1);
@@ -421,11 +458,15 @@ fn l03_lookup_undefined_mode() {
 
 /// TC-198 L03's `empty` mode: a present result retains two occurrences (the
 /// `Option` wrapper plus the reference); an absent result is `none`, still
-/// retaining one occurrence (the wrapper alone).
+/// retaining one occurrence (the wrapper alone). The present result also
+/// backs the same typed-Outputs property as `l03_lookup_undefined_mode`.
 ///
-/// Mutation used: in `lookup`, hardcoded the present-branch retain amount to
-/// `1` regardless of mode instead of `2` for `Empty` — the
+/// Mutation used (retain count): in `lookup`, hardcoded the present-branch
+/// retain amount to `1` regardless of mode instead of `2` for `Empty` — the
 /// `meter.consumed(ResultUnits) == 2` assertion went red as expected, reverted.
+///
+/// Mutation used (typed result): same as `l03_lookup_undefined_mode`'s typed-
+/// result mutation, confirmed independently red here too, reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
 fn l03_lookup_empty_mode() {
@@ -451,7 +492,10 @@ fn l03_lookup_empty_mode() {
     );
     assert_eq!(
         present,
-        LookupOutcome::Completed(Some(reference_key(&universe, &b, "b1")))
+        LookupOutcome::Completed(Some(TypedReference::new(
+            ProducerKey::fixture("model.A"),
+            reference_key(&universe, &b, "b1")
+        )))
     );
     assert_eq!(meter_present.consumed(LimitKind::WorkUnits), 2);
     assert_eq!(meter_present.consumed(LimitKind::ResultUnits), 2);
@@ -572,7 +616,7 @@ fn l04_lookup_foreign_universe_refuses() {
 
     let other = fixture_other_universe();
     let foreign_universe = object_universe(&other).unwrap().identity();
-    assert_ne!(foreign_universe, binding.universe);
+    assert_ne!(&foreign_universe, binding.universe());
 
     let rx = LookupKey {
         static_type: ProducerKey::fixture("model.A"),
@@ -636,8 +680,7 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
         admission
             .admitted_charges()
             .iter()
-            .filter(|point| **point
-                == quire_spec_language::model::population::AdmissionChargePoint::BindingMember)
+            .filter(|point| **point == AdmissionChargePoint::BindingMember)
             .count(),
         4
     );
@@ -673,20 +716,12 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         other => panic!("expected an admitted binding, got {other:?}"),
     };
     assert_eq!(
-        binding.members.len(),
+        binding.members().len(),
         3,
         "the exact duplicate collapses, not a fourth member"
     );
-    assert_eq!(
-        admission.consumed(
-            quire_spec_language::model::population::AdmissionLimitKind::PopulationMembers
-        ),
-        4
-    );
-    assert_eq!(
-        admission.consumed(quire_spec_language::model::population::AdmissionLimitKind::WorkUnits),
-        4
-    );
+    assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
+    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(
@@ -814,90 +849,262 @@ fn l06_cardinality_bound_and_incomplete() {
     }
 }
 
-/// TC-198 L07: `pre(allInstances<M::A>(p))` in a postcondition reads the pre
-/// population, and a deleted object's pre `lookup` still reports it present
-/// with its pre type — modeled here as two independently admitted bindings
-/// over pre/post population documents, since this rung carries no operation-
-/// effect execution.
+/// A bundle sharing F1's `ModelSelection` export identity (`bundle.n01`) but
+/// declaring only `model.C` — a different structural universe under the same
+/// `modelIdentity`, isolating `require_bundle_matches`'s second check
+/// (`foreign-binding`, universe mismatch) from its first (`foreign-model-
+/// selection`, identity mismatch).
+fn fixture_f1_same_identity_different_universe() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.n01"),
+        vec![object_type("model.C")],
+    )
+}
+
+/// Review finding (PR #148): a [`PopulationBinding`] admitted against one
+/// bundle answered queries made with a different bundle's identity —
+/// `all_instances`/`lookup` never checked the query's own `bundle` argument
+/// against the binding they were handed. `require_bundle_matches` closes
+/// this: both a foreign `modelIdentity` (a different bundle entirely) and a
+/// foreign object universe (the same declared `modelIdentity`, different
+/// structural content) are refused before either function does anything
+/// else, and never place a charge.
 ///
-/// Mutation used: in `lookup`, changed the presence test
-/// `binding.members.contains_key(&r.key)` to always `true`, which made the
-/// post-population lookup for the deleted `a2` report present instead of
-/// `none` — the `LookupOutcome::Completed(None)` assertion went red as
-/// expected, reverted.
+/// Mutation used: deleted the `require_bundle_matches(bundle, binding)?`
+/// call from the head of `all_instances`, which let the foreign-bundle query
+/// fall through to `AllInstancesOutcome::Completed` instead of refusing —
+/// the `Refused(foreign_reference/foreign-model-selection)` assertion went
+/// red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-7")]
-fn l07_postcondition_pre_population_reads_pre_state() {
+#[trace("TC-198", "FR-153-AC-3")]
+fn l04_binding_admitted_against_one_bundle_refuses_a_foreign_bundle_query() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
+    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+
+    // A different bundle's `modelIdentity` entirely (TC-198's own F1/other
+    // pairing) — the reviewer's own exploit shape: an admitted binding
+    // queried against a bundle it was never admitted against.
+    let foreign_bundle = fixture_other_universe();
+    let mut meter_all = Meter::new(SCALAR_UNLIMITED);
+    let all_outcome = all_instances(
+        &foreign_bundle,
+        &binding,
+        &ProducerKey::fixture("model.A"),
+        &mut meter_all,
+    );
+    match all_outcome {
+        AllInstancesOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(refusal.cause, "foreign-model-selection");
+        }
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
+    }
+    assert_eq!(meter_all.consumed(LimitKind::WorkUnits), 0);
+
     let universe = object_universe(&bundle).unwrap().identity();
     let a = type_id(&view, "model.A");
-
-    let pre = p1("bundle.n01");
-    let mut post = p1("bundle.n01");
-    post.members.retain(|member| member.object != "a2");
-
-    let pre_binding = admitted_binding(&bundle, &view, &pre);
-    let post_binding = admitted_binding(&bundle, &view, &post);
-
-    let mut meter_pre = Meter::new(SCALAR_UNLIMITED);
-    let pre_selection = match all_instances(
-        &bundle,
-        &pre_binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter_pre,
-    ) {
-        AllInstancesOutcome::Completed(set) => set,
-        other => panic!("expected a completed pre selection, got {other:?}"),
-    };
-    assert_eq!(
-        pre_selection.len(),
-        3,
-        "pre(allInstances) still includes the deleted a2"
-    );
-
-    let mut meter_post = Meter::new(SCALAR_UNLIMITED);
-    let post_selection = match all_instances(
-        &bundle,
-        &post_binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter_post,
-    ) {
-        AllInstancesOutcome::Completed(set) => set,
-        other => panic!("expected a completed post selection, got {other:?}"),
-    };
-    assert_eq!(
-        post_selection.len(),
-        2,
-        "post allInstances excludes the deleted a2"
-    );
-
-    let r2 = LookupKey {
+    let rq = LookupKey {
         static_type: ProducerKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "a2"),
+        key: reference_key(&universe, &a, "a1"),
     };
-    let mut meter_post_lookup = Meter::new(SCALAR_UNLIMITED);
-    let post_lookup = lookup(
-        &bundle,
-        &post_binding,
+    let mut meter_lookup = Meter::new(SCALAR_UNLIMITED);
+    let lookup_outcome = lookup(
+        &foreign_bundle,
+        &binding,
         &ProducerKey::fixture("model.A"),
-        &r2,
+        &rq,
         AbsenceMode::Empty,
-        &mut meter_post_lookup,
+        &mut meter_lookup,
     );
-    assert_eq!(post_lookup, LookupOutcome::Completed(None));
+    match lookup_outcome {
+        LookupOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(refusal.cause, "foreign-model-selection");
+        }
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
+    }
+    assert_eq!(meter_lookup.consumed(LimitKind::WorkUnits), 0);
 
-    let mut meter_pre_lookup = Meter::new(SCALAR_UNLIMITED);
-    let pre_lookup = lookup(
-        &bundle,
-        &pre_binding,
-        &ProducerKey::fixture("model.A"),
-        &r2,
-        AbsenceMode::Empty,
-        &mut meter_pre_lookup,
-    );
+    // Same declared `modelIdentity`, different structural universe —
+    // `require_bundle_matches`'s second check, distinct from the first.
+    let same_identity_bundle = fixture_f1_same_identity_different_universe();
     assert_eq!(
-        pre_lookup,
-        LookupOutcome::Completed(Some(reference_key(&universe, &a, "a2")))
+        same_identity_bundle.model_selection.export.identity,
+        bundle.model_selection.export.identity
+    );
+    let mut meter_universe = Meter::new(SCALAR_UNLIMITED);
+    let universe_outcome = all_instances(
+        &same_identity_bundle,
+        &binding,
+        &ProducerKey::fixture("model.A"),
+        &mut meter_universe,
+    );
+    match universe_outcome {
+        AllInstancesOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(refusal.cause, "foreign-binding");
+        }
+        other => panic!("expected Refused(foreign_reference/foreign-binding), got {other:?}"),
+    }
+    assert_eq!(meter_universe.consumed(LimitKind::WorkUnits), 0);
+}
+
+/// TC-198's own admission-time `modelIdentity` check (distinct from
+/// `require_bundle_matches`'s query-time check above): a population document
+/// naming a `modelIdentity` other than the admitting bundle's own refuses
+/// before any `binding.member` charge. Every other test in this file admits
+/// `p1("bundle.n01")` against `fixture_f1()`, whose own `modelIdentity` is
+/// also `bundle.n01`, so this path was untested.
+///
+/// Mutation used: in `admit_binding`, changed the `modelIdentity` guard's
+/// condition from `document.model_identity != bundle.model_selection.export.
+/// identity` to `false` (never fires), which let the mismatched document
+/// proceed to `AdmissionOutcome::Admitted` instead of refusing — the
+/// `Refused(foreign_reference/foreign-model-selection)` assertion went red
+/// as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l05_foreign_model_selection_refuses_at_admission() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let mismatched = p1("bundle.other");
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &mismatched,
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(refusal.cause, "foreign-model-selection");
+        }
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
+    }
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// TC-198 AC-3's "a denied charge is incomplete", `population_members`
+/// dimension: every prior test in this file left both
+/// `PopulationAdmissionLimits` counters `UNLIMITED`, so this dimension was
+/// never actually driven to denial. P1's third member (`b1`) charges
+/// `binding.member` sized `3` (the running high-water member count);
+/// `population_members: 2` admits the first two charges (sizes `1`, `2`)
+/// and denies the third.
+///
+/// Mutation used: in `AdmissionMeter::charge`, changed `amount >
+/// kind.limit(&self.limits)` to `false` (the `population_members` check
+/// never fires), which let the third `b1` charge succeed and the whole
+/// document admit instead of denying — the `AdmissionOutcome::Incomplete`
+/// assertion went red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l02_population_members_limit_denies_the_third_member_charge() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let limits = PopulationAdmissionLimits {
+        population_members: 2,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    let mut admission = AdmissionMeter::new(limits);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &p1("bundle.n01"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, AdmissionLimitKind::PopulationMembers);
+            assert_eq!(incomplete.limit, 2);
+            assert_eq!(incomplete.consumed, 2);
+            assert_eq!(incomplete.next_charge, 3);
+            assert_eq!(incomplete.charge_point, AdmissionChargePoint::BindingMember);
+        }
+        other => panic!(
+            "expected Incomplete(population_members, limit 2, consumed 2, next 3), got {other:?}"
+        ),
+    }
+    assert_eq!(
+        admission
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == AdmissionChargePoint::BindingMember)
+            .count(),
+        2
     );
 }
+
+/// TC-198 AC-3's "a denied charge is incomplete", `work_units` dimension:
+/// each `binding.member` charge costs exactly one work unit regardless of
+/// its `population_members` size, so `work_units: 2` admits P1's first two
+/// members and denies the third on work units alone (its
+/// `population_members` size, `3`, is within an otherwise-`UNLIMITED`
+/// counter).
+///
+/// Mutation used: in `AdmissionMeter::charge`, changed
+/// `total <= self.limits.work_units` to `true` (the `work_units` check
+/// never denies), which let the third `b1` charge succeed and the whole
+/// document admit instead of denying — the `AdmissionOutcome::Incomplete`
+/// assertion went red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l02_work_units_limit_denies_the_third_member_charge() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let limits = PopulationAdmissionLimits {
+        work_units: 2,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    let mut admission = AdmissionMeter::new(limits);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &p1("bundle.n01"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, AdmissionLimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 2);
+            assert_eq!(incomplete.consumed, 2);
+            assert_eq!(incomplete.next_charge, 1);
+            assert_eq!(incomplete.charge_point, AdmissionChargePoint::BindingMember);
+        }
+        other => {
+            panic!("expected Incomplete(work_units, limit 2, consumed 2, next 1), got {other:?}")
+        }
+    }
+    assert_eq!(
+        admission
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == AdmissionChargePoint::BindingMember)
+            .count(),
+        2
+    );
+}
+
+// L07 (`pre(allInstances<M::A>(p))` reading pre-population state under a
+// postcondition) is deleted here, not retagged: FR-153-AC-7 needs a real
+// pre/post operation-effect evaluator this crate does not have (the
+// two-independent-bindings model above only exercised L01's selection-count
+// and L03's Empty-mode lookup behavior over two separately admitted
+// documents, never an actual `pre()` anchor over one operation's effect).
+// It backed no AC uniquely; FR-153-AC-7 stays unbacked here and is tracked
+// on QSL #147.
