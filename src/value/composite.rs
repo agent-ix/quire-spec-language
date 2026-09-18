@@ -216,16 +216,24 @@ impl OptionValue {
     }
 
     /// Materialize an already-admitted `payload` as `Option<payload_type>`,
-    /// checking no structural `admits()` match: FR-153's `lookup<T>(p, r)
-    /// absent empty` (`crate::value::model_query::evaluate_lookup`) already
-    /// proved a present result conforms to the queried `T` through
-    /// `crate::model::population::lookup`'s own `type_conforms` check before
-    /// calling this, so [`Self::present`]'s structural `payload_type.admits`
-    /// would wrongly refuse it: that check is exact object-type equality with
-    /// no model-conformance knowledge, so it cannot tell a genuine upcast
-    /// (a subtype reference held as its declared supertype) from a real type
-    /// mismatch. Mirrors [`crate::value::collection::from_admitted`]'s same
-    /// role for `allInstances`.
+    /// checking no structural `admits()` match. FR-153's `lookup<T>(p, r)
+    /// absent empty` (`crate::value::model_query::evaluate_lookup`) calls
+    /// this for a present result `found`, whose `object_type` is `r`'s own
+    /// runtime most-specific type `F` (FR-143's own identity triple), not the
+    /// queried `T`. Soundness does not rest on
+    /// `crate::model::population::lookup`'s `type_conforms` call proving `F`
+    /// conforms to `T` directly -- it checks `r`'s *declared* static type `S`
+    /// against `T`, never `F` against `T`. It rests on chaining two
+    /// invariants: exact-match parameter admission (`Self::present`'s own
+    /// structural `payload_type.admits`, applied wherever `r` was bound as a
+    /// `Reference<S>`) guarantees `F == S`; `lookup`'s `type_conforms(S, T)`
+    /// call then gives `S` conforms to `T`; so `F` conforms to `T` by
+    /// substitution. [`Self::present`]'s own `admits()` call cannot verify
+    /// that chain itself -- it is exact object-type equality with no
+    /// model-conformance knowledge, so it cannot tell a genuine upcast
+    /// (`F` a proper subtype of `T`) from a real type mismatch -- which is
+    /// why this bypasses it. Mirrors [`crate::value::collection::from_admitted`]'s
+    /// same role for `allInstances`.
     pub(crate) fn from_admitted(payload_type: ValueType, payload: Option<Value>) -> Value {
         let occ = match &payload {
             Some(payload) => Integer::one().add(&payload.occ()),
@@ -584,6 +592,21 @@ impl TypeEnvironment {
                         DeclarationCause::UnknownDeclaration(*key)
                     });
                 }
+                // FR-153 names a population binding only as the direct
+                // operand of `allInstances`/`lookup` (checked by
+                // `Typer::all_instances`/`Typer::lookup` themselves, which
+                // never route the population expression's own type through
+                // this walk) and as a bare parameter type (bypassed by
+                // `bind_parameters`, the one caller allowed to name it).
+                // Every other named-type context -- an equality operand or
+                // `Convert` target (`TypeEnvironment::check_equality`'s own
+                // explicit refusal covers the former), an `Option` payload, a
+                // collection element, or a record/tuple/object-type member --
+                // refuses it here, never admitting a binding into a context
+                // FR-153 never gives it Outputs for.
+                ValueType::Population(_) => {
+                    return Some(DeclarationCause::Type(IllTypedCause::OperatorIneligible));
+                }
                 ValueType::Option(payload) => pending.push(payload),
                 ValueType::Collection(collection) => {
                     if collection.kind() != CollectionKind::Sequence
@@ -603,8 +626,7 @@ impl TypeEnvironment {
                 | ValueType::Text(_)
                 | ValueType::Enum(_)
                 | ValueType::Composite(_)
-                | ValueType::Reference(_)
-                | ValueType::Population(_) => {}
+                | ValueType::Reference(_) => {}
             }
         }
         None

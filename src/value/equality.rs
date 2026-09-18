@@ -135,6 +135,14 @@ impl TypeEnvironment {
                 return ill_typed(IllTypedCause::DistinctUnits)
             }
             (ValueType::Quantity(_), ValueType::Quantity(_)) => EqualitySchedule::Quantity,
+            // FR-153 names a population binding only as the direct operand of
+            // `allInstances`/`lookup`, never as an equality operand: refuse it
+            // here rather than falling into the `l == r` plan schedule below,
+            // which would otherwise accept `p == p` and only fail at
+            // evaluation (`plan_pairs`'s own checked-invariant catch-all).
+            (ValueType::Population(_), _) | (_, ValueType::Population(_)) => {
+                return ill_typed(IllTypedCause::OperatorIneligible)
+            }
             (l, r) if l == r => EqualitySchedule::Plan,
             _ => return ill_typed(IllTypedCause::TypeMismatch),
         };
