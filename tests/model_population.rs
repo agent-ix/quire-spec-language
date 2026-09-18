@@ -2152,6 +2152,73 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     }
 }
 
+/// PR #168 review round 5: `check_declared_delta`'s own `DuplicateDeclaredIdentity`
+/// branch (FR-046: "no duplicate within either list") had no test of its
+/// own -- every other `delta_mismatch` branch (overlap, full-set mismatch)
+/// was exercised, but declaring the *same* identity twice in one list
+/// (`created = ["o1", "o1"]`) never was. `Code::PopulationDeltaMismatch`/
+/// cause `delta-disagreement`, the typed `DuplicateDeclaredIdentity {
+/// identity: "o1" }` variant specifically.
+///
+/// Mutation used: in `check_declared_delta`, deleted the
+/// `if !identities.insert(identity.clone()) { return Err(delta_mismatch(...)); }`
+/// block entirely (the whole `DuplicateDeclaredIdentity` branch), leaving
+/// only the overlap and full-set-equality checks below it. This test went
+/// red as expected (`Admitted` instead of `Refused` -- `o1` is created and
+/// the duplicate declaration collapses into the same single-membered set
+/// the complete computed set already agrees with, once nothing catches the
+/// duplicate itself); reverted.
+#[test]
+#[trace("FR-046-AC-3")]
+fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let effect = OperationEffect {
+        field_writes: Vec::new(),
+        creates: vec![ProducerKey::fixture("model.A")],
+        deletes: Vec::new(),
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![
+            member("a1", "model.A"),
+            member("a2", "model.A"),
+            member("b1", "model.B"),
+            member("o1", "model.A"),
+        ],
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &["o1".to_owned(), "o1".to_owned()],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &p1("bundle.n01"),
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::PopulationDeltaMismatch);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DuplicateDeclaredIdentity {
+                    identity: "o1".to_owned(),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(population_delta_mismatch/delta-disagreement), got {other:?}")
+        }
+    }
+}
+
 /// Item 4 (FR-046): the invocation's own declared created/deleted identity
 /// lists must equal the complete computed sets [`enforce_frame`] derives
 /// from the two documents. Here the operation's own frame authorizes
