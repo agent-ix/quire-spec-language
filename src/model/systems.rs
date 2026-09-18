@@ -42,7 +42,7 @@ use crate::model::bundle::{
 };
 use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
 use crate::model::key::ProducerKey;
-use crate::model::normalize::ModelRefusal;
+use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 
 /// FR-152's five disjoint systems-model kinds, plus `None` for a record
 /// that resolved to no kind at all (missing a capability, cascaded from a
@@ -141,7 +141,7 @@ impl SystemsClassification {
 fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: "wrong-export",
+        cause: ModelRefusalCause::WrongExport,
         detail: format!(
             "{item}: required kind {}, actual kind {}",
             required.as_str(),
@@ -153,7 +153,7 @@ fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
 fn unsupplied(capability: &'static str, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: "unsupplied-producer-record",
+        cause: ModelRefusalCause::UnsuppliedProducerRecord,
         detail: format!("{item} does not supply the {capability} capability"),
     }
 }
@@ -162,7 +162,7 @@ fn unsupplied(capability: &'static str, item: &str) -> ModelRefusal {
 /// key absent from the bundle entirely (finding #6): distinct from a key
 /// that IS declared but resolves to [`Kind::None`], which is a real
 /// [`wrong_export`] refusal, not a dangling one.
-fn dangling(cause: &'static str, missing: &str, item: &str) -> ModelRefusal {
+fn dangling(cause: ModelRefusalCause, missing: &str, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::DanglingReference,
         cause,
@@ -235,7 +235,7 @@ pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassificat
             Some(_) => match component_kinds.get(&endpoint.owning_component) {
                 None => {
                     refusals.push(dangling(
-                        "unknown-component",
+                        ModelRefusalCause::UnknownComponent,
                         &endpoint.owning_component.identity,
                         &endpoint.key.identity,
                     ));
@@ -269,7 +269,7 @@ pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassificat
                     match endpoint_kinds.get(&end.type_identity) {
                         None => {
                             refusals.push(dangling(
-                                "unknown-endpoint",
+                                ModelRefusalCause::UnknownEndpoint,
                                 &end.type_identity.identity,
                                 &format!("{} end of {}", label, relationship.key.identity),
                             ));
@@ -359,7 +359,7 @@ pub fn resolve_kind(
 fn unsupplied_or_wrong(required: Kind, key: &ProducerKey) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: "unsupplied-producer-record",
+        cause: ModelRefusalCause::UnsuppliedProducerRecord,
         detail: format!(
             "{} does not resolve to the required kind {}",
             key.identity,
@@ -377,7 +377,7 @@ pub struct ConditionFailure {
     /// The stable top-level code.
     pub code: Code,
     /// The FR-152-specific cause tag.
-    pub cause: &'static str,
+    pub cause: ModelRefusalCause,
     /// A human-readable detail naming the offending declarations.
     pub detail: String,
 }
@@ -424,7 +424,7 @@ pub fn check_connection(
     if classification.actual_kind(relationship_key) != Kind::Connection {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: "wrong-export",
+            cause: ModelRefusalCause::WrongExport,
             detail: format!(
                 "{} is not a Connection; the connection rule does not apply",
                 relationship_key.identity
@@ -434,7 +434,7 @@ pub fn check_connection(
     let Some(relationship) = classification.relationships.get(relationship_key) else {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: "unknown-relationship",
+            cause: ModelRefusalCause::UnknownRelationship,
             detail: format!(
                 "{} is not a declared relationship",
                 relationship_key.identity
@@ -444,7 +444,7 @@ pub fn check_connection(
     let Some(source_port) = end_port(classification, &relationship.source.type_identity) else {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: "unknown-source-port",
+            cause: ModelRefusalCause::UnknownSourcePort,
             detail: format!(
                 "{} names an end that is not a declared endpoint",
                 relationship.source.type_identity.identity
@@ -454,7 +454,7 @@ pub fn check_connection(
     let Some(target_port) = end_port(classification, &relationship.target.type_identity) else {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: "unknown-target-port",
+            cause: ModelRefusalCause::UnknownTargetPort,
             detail: format!(
                 "{} names an end that is not a declared endpoint",
                 relationship.target.type_identity.identity
@@ -505,7 +505,7 @@ pub fn check_connection(
         failures.push(ConditionFailure {
             condition: "port-direction",
             code: Code::InvalidModelBinding,
-            cause: "port-direction",
+            cause: ModelRefusalCause::PortDirection,
             detail: format!(
                 "direction {:?}: source {} is not compatible with target {}",
                 relationship.direction, source_port.key.identity, target_port.key.identity
@@ -534,7 +534,7 @@ pub fn check_connection(
         failures.push(ConditionFailure {
             condition: "interface-type",
             code: Code::IllTyped,
-            cause: "type-mismatch",
+            cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "{} does not conform to {}",
                 flow_source.value_type.identity, flow_target.value_type.identity
@@ -555,7 +555,7 @@ pub fn check_connection(
             failures.push(ConditionFailure {
                 condition: "multiplicity",
                 code: Code::IllTyped,
-                cause: "multiplicity-narrowing",
+                cause: ModelRefusalCause::MultiplicityNarrowing,
                 detail: format!(
                     "{label} end {:?} does not conform to port {:?}",
                     end.multiplicity, port.multiplicity
@@ -595,7 +595,7 @@ pub fn check_allocation(
     if classification.actual_kind(relationship_key) != Kind::Allocation {
         return AllocationCheckOutcome::Refused(ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: "wrong-export",
+            cause: ModelRefusalCause::WrongExport,
             detail: format!(
                 "{} is not an Allocation; the allocation rule does not apply",
                 relationship_key.identity
@@ -608,7 +608,7 @@ pub fn check_allocation(
     let Some(relationship) = classification.relationships.get(relationship_key) else {
         return AllocationCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: "unknown-relationship",
+            cause: ModelRefusalCause::UnknownRelationship,
             detail: format!(
                 "{} is not a declared relationship",
                 relationship_key.identity

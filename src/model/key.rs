@@ -14,6 +14,7 @@ use std::fmt;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::model::normalize::ModelRefusalCause;
 use crate::value::length_amount;
 
 /// Digest domain of every producer digest selection (`filament-canonical-json-1`).
@@ -340,11 +341,11 @@ impl EffectiveDeclarationPreimage {
     /// example one read back from a checked-package `model_correspondence`
     /// node), not a wire decode (PR #140 F5). Returns `(cause, detail)` on
     /// the first defect found, in derivation order.
-    pub fn validate_derivation(&self) -> Result<(), (&'static str, String)> {
+    pub fn validate_derivation(&self) -> Result<(), (ModelRefusalCause, String)> {
         for (position, fact) in self.derivation.iter().enumerate() {
             if fact.ordinal != position {
                 return Err((
-                    "unsorted-derivation",
+                    ModelRefusalCause::UnsortedDerivation,
                     format!(
                         "{} derivation fact at position {position} has ordinal {}, not {position}",
                         self.original.identity, fact.ordinal
@@ -356,7 +357,7 @@ impl EffectiveDeclarationPreimage {
             for later in (earlier + 1)..self.derivation.len() {
                 if self.derivation[earlier].inputs == self.derivation[later].inputs {
                     return Err((
-                        "duplicate-path",
+                        ModelRefusalCause::DuplicatePath,
                         format!(
                             "{} derivation retains the same input path at positions {earlier} and {later}",
                             self.original.identity

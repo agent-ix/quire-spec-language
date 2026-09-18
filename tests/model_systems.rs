@@ -18,7 +18,7 @@ use quire_spec_language::model::bundle::{
     RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
 use quire_spec_language::model::key::ProducerKey;
-use quire_spec_language::model::normalize::ModelRefusal;
+use quire_spec_language::model::normalize::{ModelRefusal, ModelRefusalCause};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
     ConnectionCheckOutcome, ConnectionOutcome, Kind,
@@ -305,7 +305,7 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     )
     .expect_err("model.Sys.pump is a Part, not a Port");
     assert_eq!(refusal.code, Code::InvalidModelBinding);
-    assert_eq!(refusal.cause, "wrong-export");
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
     assert!(refusal.detail.contains("required kind Port"));
     assert!(refusal.detail.contains("actual kind Part"));
 
@@ -316,7 +316,7 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     )
     .expect_err("model.Sys.pipe is a Connection, not an Allocation");
     assert_eq!(refusal.code, Code::InvalidModelBinding);
-    assert_eq!(refusal.cause, "wrong-export");
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
     assert!(refusal.detail.contains("required kind Allocation"));
     assert!(refusal.detail.contains("actual kind Connection"));
 
@@ -333,7 +333,7 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     ) {
         AllocationCheckOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidModelBinding);
-            assert_eq!(refusal.cause, "wrong-export");
+            assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
             assert!(refusal.detail.contains("required kind Part"));
             assert!(refusal.detail.contains("actual kind Port"));
         }
@@ -363,7 +363,7 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].condition, "port-direction");
-            assert_eq!(failures[0].cause, "port-direction");
+            assert_eq!(failures[0].cause, ModelRefusalCause::PortDirection);
         }
         other => panic!("expected a port-direction refusal, got {other:?}"),
     }
@@ -487,7 +487,7 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
                 .find(|f| f.condition == "interface-type")
                 .expect("an interface-type failure");
             assert_eq!(interface_failure.code, Code::IllTyped);
-            assert_eq!(interface_failure.cause, "type-mismatch");
+            assert_eq!(interface_failure.cause, ModelRefusalCause::TypeMismatch);
             assert!(interface_failure.detail.contains("model.Flow"));
             assert!(interface_failure.detail.contains("model.Flow2"));
         }
@@ -547,7 +547,7 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
                 .find(|f| f.condition == "multiplicity")
                 .expect("a multiplicity failure");
             assert_eq!(failure.code, Code::IllTyped);
-            assert_eq!(failure.cause, "multiplicity-narrowing");
+            assert_eq!(failure.cause, ModelRefusalCause::MultiplicityNarrowing);
         }
         other => panic!("expected a multiplicity refusal (no connection exposed), got {other:?}"),
     }
@@ -569,7 +569,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     let classification = classify(&bundle, &mut meter).expect("classify admitted");
 
     assert_eq!(classification.refusals.len(), 3);
-    let cascade: Vec<(&Code, &str)> = classification
+    let cascade: Vec<(&Code, ModelRefusalCause)> = classification
         .refusals
         .iter()
         .map(|r: &ModelRefusal| (&r.code, r.cause))
@@ -577,9 +577,12 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     assert_eq!(
         cascade,
         vec![
-            (&Code::InvalidModelBinding, "unsupplied-producer-record"),
-            (&Code::InvalidModelBinding, "wrong-export"),
-            (&Code::InvalidModelBinding, "wrong-export"),
+            (
+                &Code::InvalidModelBinding,
+                ModelRefusalCause::UnsuppliedProducerRecord
+            ),
+            (&Code::InvalidModelBinding, ModelRefusalCause::WrongExport),
+            (&Code::InvalidModelBinding, ModelRefusalCause::WrongExport),
         ]
     );
     assert!(classification.refusals[0].detail.contains("model.Sys.pump"));
@@ -602,7 +605,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     ) {
         AllocationCheckOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::InvalidModelBinding);
-            assert_eq!(refusal.cause, "wrong-export");
+            assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
             assert!(refusal.detail.contains("model.Sys.pump"));
             assert!(refusal.detail.contains("required kind Part"));
             assert!(refusal.detail.contains("actual kind none"));
@@ -616,7 +619,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
         &ProducerKey::fixture("model.Sys.pump"),
     )
     .expect_err("model.Sys.pump no longer resolves to any kind");
-    assert_eq!(refusal.cause, "unsupplied-producer-record");
+    assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
 }
 
 /// PR #144 review finding #2 regression: two components sharing a display
@@ -663,5 +666,5 @@ fn f2_components_sharing_an_identity_but_differing_in_revision_both_survive() {
 
     let refusal = resolve_kind(&classification, Kind::Part, &revision_2)
         .expect_err("revision \"2\" does not have the part-signature capability");
-    assert_eq!(refusal.cause, "unsupplied-producer-record");
+    assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
 }

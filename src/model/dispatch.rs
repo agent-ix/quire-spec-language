@@ -42,7 +42,7 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter
 use crate::model::bundle::{Bundle, BundleRecord, OperationMemberRecord, RedefinitionRecord};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::key::ProducerKey;
-use crate::model::normalize::{EffectiveView, ModelRefusal};
+use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 
 /// Bounds the family-closure walk `link_dispatch` performs over
 /// caller-supplied redefinition records: an explicit task stack, never
@@ -79,8 +79,9 @@ pub struct SubtypeRefusal {
     pub subtype: ProducerKey,
     /// Always `Code::AmbiguousDispatch` (FR-151-AC-3 names it explicitly).
     pub code: Code,
-    /// FR-151's cause tag: `"no-applicable"` or `"multiple-undominated"`.
-    pub cause: &'static str,
+    /// FR-151's cause tag: [`ModelRefusalCause::NoApplicable`] or
+    /// [`ModelRefusalCause::MultipleUndominated`].
+    pub cause: ModelRefusalCause,
     /// Every applicable candidate's own original key, in enumeration order.
     pub candidates: Vec<ProducerKey>,
     /// Every strict dominance pair found among the applicable candidates
@@ -122,8 +123,8 @@ impl DispatchTable {
 pub struct UnclosedMethodSet {
     /// Always `Code::IncompletePopulation`.
     pub code: Code,
-    /// Always `"unclosed-method-set"`.
-    pub cause: &'static str,
+    /// Always [`ModelRefusalCause::UnclosedMethodSet`].
+    pub cause: ModelRefusalCause,
     /// The operation this incomplete linking attempt was for.
     pub operation: ProducerKey,
 }
@@ -209,7 +210,7 @@ fn build_family(
         if steps > MAX_DISPATCH_DEPTH {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: "dispatch-family-depth",
+                cause: ModelRefusalCause::DispatchFamilyDepth,
                 detail: format!(
                     "dispatch family for {} exceeded {MAX_DISPATCH_DEPTH} redefinition steps",
                     original.identity
@@ -254,7 +255,7 @@ pub fn link_dispatch(
     if matches!(closure, GeneralizationClosure::Open) {
         return LinkCheckOutcome::OpenClosure(UnclosedMethodSet {
             code: Code::IncompletePopulation,
-            cause: "unclosed-method-set",
+            cause: ModelRefusalCause::UnclosedMethodSet,
             operation: original.clone(),
         });
     }
@@ -263,7 +264,7 @@ pub fn link_dispatch(
     let Some(receiver_operation) = index.operations.get(original) else {
         return LinkCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: "unknown-original",
+            cause: ModelRefusalCause::UnknownOriginal,
             detail: format!("{} is not a declared operation member", original.identity),
         });
     };
@@ -320,7 +321,7 @@ pub fn link_dispatch(
             let Some(candidate_record) = index.operations.get(candidate) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-candidate",
+                    cause: ModelRefusalCause::UnknownCandidate,
                     detail: format!("{} is not a declared operation member", candidate.identity),
                 });
             };
@@ -336,7 +337,7 @@ pub fn link_dispatch(
             refusals.push(SubtypeRefusal {
                 subtype: subtype.clone(),
                 code: Code::AmbiguousDispatch,
-                cause: "no-applicable",
+                cause: ModelRefusalCause::NoApplicable,
                 candidates: Vec::new(),
                 dominance_pairs: Vec::new(),
             });
@@ -357,7 +358,7 @@ pub fn link_dispatch(
             let Some(p_record) = index.operations.get(p) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
-                    cause: "unknown-candidate",
+                    cause: ModelRefusalCause::UnknownCandidate,
                     detail: format!("{} is not a declared operation member", p.identity),
                 });
             };
@@ -369,7 +370,7 @@ pub fn link_dispatch(
                 let Some(q_record) = index.operations.get(q) else {
                     return LinkCheckOutcome::Refused(ModelRefusal {
                         code: Code::DanglingReference,
-                        cause: "unknown-candidate",
+                        cause: ModelRefusalCause::UnknownCandidate,
                         detail: format!("{} is not a declared operation member", q.identity),
                     });
                 };
@@ -399,7 +400,7 @@ pub fn link_dispatch(
             refusals.push(SubtypeRefusal {
                 subtype: subtype.clone(),
                 code: Code::AmbiguousDispatch,
-                cause: "multiple-undominated",
+                cause: ModelRefusalCause::MultipleUndominated,
                 candidates: applicable,
                 dominance_pairs,
             });
