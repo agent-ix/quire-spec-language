@@ -281,7 +281,7 @@ impl<'a> Resolver<'_, 'a> {
         if self.models[self.current].native.is_none() {
             return Err(failure(
                 self.unit,
-                Code::UnsupportedConstruct,
+                Code::IllTyped,
                 span,
                 "native references need a concrete formal mapping",
             ));
@@ -289,7 +289,7 @@ impl<'a> Resolver<'_, 'a> {
         let Shape::Reference(environment, role) = self.visit(argument, depth)? else {
             return Err(failure(
                 self.unit,
-                Code::UnsupportedConstruct,
+                Code::IllTyped,
                 span,
                 "dereference requires an explicitly mapped native reference",
             ));
@@ -330,7 +330,7 @@ impl<'a> Resolver<'_, 'a> {
         if self.models[self.current].native.is_none() {
             return Err(failure(
                 self.unit,
-                Code::UnsupportedConstruct,
+                Code::IllTyped,
                 span,
                 "native reachability needs a concrete reference/population mapping",
             ));
@@ -341,7 +341,7 @@ impl<'a> Resolver<'_, 'a> {
             Shape::Formal(..) | Shape::Boolean | Shape::Integer | Shape::Text | Shape::Unknown => {
                 return Err(failure(
                     self.unit,
-                    Code::UnsupportedConstruct,
+                    Code::IllTyped,
                     span,
                     "reachability requires an explicit object or reference mapping",
                 ));
@@ -364,7 +364,7 @@ impl<'a> Resolver<'_, 'a> {
         if !mapped {
             return Err(failure(
                 self.unit,
-                Code::UnsupportedConstruct,
+                Code::IllTyped,
                 field.span,
                 "reachability edge requires an optional reference to its object type",
             ));

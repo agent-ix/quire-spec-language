@@ -480,9 +480,12 @@ fn resolve_clauses(
             ));
         }
         if profile == BindingProfile::Formal && clause.kind != ClauseKind::Invariant {
+            // A strict equality check against one admitted clause kind, not a
+            // catalog of admitted operation-clause forms: invalid binding, not
+            // an unsupported construct.
             return Err(failure(
                 unit,
-                Code::UnsupportedConstruct,
+                Code::InvalidModelBinding,
                 clause.span,
                 "operation clauses need an explicit native operation mapping",
             ));
@@ -756,7 +759,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
             Shape::Reference(..) => {
                 return Err(failure(
                     self.unit,
-                    Code::UnsupportedConstruct,
+                    Code::IllTyped,
                     name.span,
                     "reference carrier fields are not native field-access syntax",
                 ))

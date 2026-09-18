@@ -96,7 +96,7 @@ fn preflight(
     if !environment.functions().is_empty() {
         return Err(failure(
             source,
-            Code::UnsupportedConstruct,
+            Code::UnrepresentableConstraint,
             "pure function signatures are outside the native model profile",
         ));
     }
@@ -167,7 +167,7 @@ fn check_type(
             {
                 return Err(failure(
                     source,
-                    Code::UnsupportedConstruct,
+                    Code::UnrepresentableConstraint,
                     "native integers require signed reject-overflow semantics",
                 ));
             }
@@ -189,7 +189,7 @@ fn check_type(
             if value.maximum_items() > MAX_SEQUENCE_ITEMS {
                 return Err(failure(
                     source,
-                    Code::UnsupportedConstruct,
+                    Code::UnrepresentableConstraint,
                     format!(
                         "native sequence maximum {} exceeds {MAX_SEQUENCE_ITEMS}",
                         value.maximum_items()

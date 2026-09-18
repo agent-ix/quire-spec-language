@@ -255,7 +255,17 @@ pub(super) fn report(
 ) -> super::Result<RunResult> {
     let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
+            // FR-301's exit ladder is decided off each retained diagnostic's own
+            // Code (is_unsupported before is_incomplete), never a separate
+            // classification; ValidationStatus only carries the wire-schema's
+            // binary refused/incomplete distinction, unchanged here.
+            let unsupported = failure
+                .diagnostics
+                .iter()
+                .chain(failure.terminal.as_deref())
+                .any(Diagnostic::is_unsupported);
             let (code, status) = match failure.status {
+                ValidationStatus::Refused if unsupported => (21, types::FailureStatus::Refused),
                 ValidationStatus::Refused => (20, types::FailureStatus::Refused),
                 ValidationStatus::Incomplete => (22, types::FailureStatus::Incomplete),
             };
@@ -280,7 +290,7 @@ pub(super) fn report(
                     types::Evaluation::Completed { truth: *truth },
                 ),
                 EvaluationOutcome::Refused(error) => (
-                    20,
+                    if error.is_unsupported() { 21 } else { 20 },
                     types::Evaluation::Refused {
                         diagnostic: diagnostic(error),
                     },

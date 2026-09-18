@@ -83,8 +83,15 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
         assert!(seen.insert(code.as_str()), "duplicate code {code}");
         assert_eq!(Code::from_code(code.as_str()), Some(code));
         assert_eq!(code.to_string(), code.as_str());
+        // FR-301's exit-code ladder checks is_unsupported() before
+        // is_incomplete(); that ordering is only meaningful if the two
+        // categories never both claim one code.
+        assert!(
+            !(code.is_unsupported() && code.is_incomplete()),
+            "{code} claims both unsupported and incomplete"
+        );
     }
-    assert_eq!(seen.len(), 41);
+    assert_eq!(seen.len(), 42);
     assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");
     assert_eq!(
         Code::from_code("invalid_runtime_input"),

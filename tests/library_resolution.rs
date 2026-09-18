@@ -825,7 +825,7 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
         assert_library_refusal(
             resolve_libraries(&root, &[library]),
             &expected,
-            Code::UnsupportedConstruct,
+            Code::MissingDeclaration,
             LibraryCause::DeclarationForm,
         );
         assert_eq!(LibraryCause::DeclarationForm.as_str(), "declaration-form");

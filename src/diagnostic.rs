@@ -85,6 +85,10 @@ pub enum Code {
     InvalidSyntax,
     /// Recognized syntax is outside the admitted profile.
     UnsupportedConstruct,
+    /// A native declaration or expression violates a fixed representability
+    /// limit or required policy of the admitted profile, rather than naming
+    /// a real capability outside it.
+    UnrepresentableConstraint,
     /// Language label is not admitted.
     UnknownLanguage,
     /// Edition label is not admitted.
@@ -155,6 +159,7 @@ impl Code {
             Self::InvalidUtf8 => "invalid_utf8",
             Self::InvalidSyntax => "invalid_syntax",
             Self::UnsupportedConstruct => "unsupported_construct",
+            Self::UnrepresentableConstraint => "unrepresentable_constraint",
             Self::UnknownLanguage => "unknown_language",
             Self::UnknownEdition => "unknown_edition",
             Self::UnknownProfile => "unknown_profile",
@@ -202,6 +207,7 @@ impl Code {
             Self::InvalidUtf8,
             Self::InvalidSyntax,
             Self::UnsupportedConstruct,
+            Self::UnrepresentableConstraint,
             Self::UnknownLanguage,
             Self::UnknownEdition,
             Self::UnknownProfile,
@@ -302,6 +308,11 @@ impl Diagnostic {
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
+    }
+    /// Whether this diagnostic names a real, catalogued capability this
+    /// build does not implement, rather than input that is itself invalid.
+    pub fn is_unsupported(&self) -> bool {
+        self.code.is_unsupported()
     }
 }
 

@@ -44,7 +44,10 @@ selected authored clause, actual stage status, diagnostics, work counters and
 ordered implication events. Only completed execution has Boolean truth.
 On FR-301's six-code contract, exit 0 means completed true; 10 means completed
 false (a logical violation); 20 means refused, invalid command usage, request
-syntax, identifier or I/O failure; 22 means incomplete. Output failure exits 30.
+syntax, identifier or I/O failure; 21 means a construct the parser recognizes
+but the admitted profile does not support, or a native package naming an
+unknown or unavailable required feature; 22 means incomplete. Output failure
+exits 30.
 Intake failures use a JSON error on stderr with request digest when read, typed
 stage/code and relevant original source/reference details. Existing parse/format
 commands preserve their behavior. Broken pipes end quietly with the computed

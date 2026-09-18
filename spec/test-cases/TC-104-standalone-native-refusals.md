@@ -24,5 +24,7 @@ file selections in a request stored separately from the current working director
 ## Expected Results
 
 On FR-301's six-code contract, malformed requests, I/O, invalid command usage
-and semantic refusals all exit 20; budget exhaustion exits 22 without truth.
-Fresh requests recover and no hosted service is needed.
+and semantic refusals other than a real, profile-gated capability this build
+does not admit all exit 20; that capability disposition exits 21; budget
+exhaustion exits 22 without truth. Fresh requests recover and no hosted
+service is needed.

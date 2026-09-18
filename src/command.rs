@@ -223,6 +223,26 @@ impl RunCause {
         self.code().is_incomplete()
     }
 
+    /// The shared unsupported/incomplete/invalid-input ladder off this
+    /// cause's own `code()`, used by every disposition that does not have
+    /// its own fixed exit code (`Output`'s tool failure, `Io`/`Json`/
+    /// `Digest`/`Identifier`'s fixed invalid input). `is_unsupported()` and
+    /// `is_incomplete()` are disjoint (asserted in
+    /// tests/native_boundaries.rs), so this ladder's 21-before-22 ordering
+    /// never actually competes for one cause; the order is still fixed
+    /// here as the contract, not an accident. `RunCause::code()` already
+    /// resolves the quire-extraction arm (`Self::Extraction(error) =>
+    /// error.code()`), so callers need no separate re-derivation.
+    fn ladder(&self) -> u8 {
+        if self.code().is_unsupported() {
+            21
+        } else if self.is_incomplete() {
+            22
+        } else {
+            20
+        }
+    }
+
     /// Native command exit status, on FR-301's six-code contract: request
     /// intake and identifier/digest failures are invalid input (20); a
     /// disposition naming a real, catalogued capability this build does
@@ -233,6 +253,8 @@ impl RunCause {
         match self {
             Self::Output(_) => 30,
             Self::Io { .. } | Self::Json(_) | Self::Digest(_) | Self::Identifier(_) => 20,
+            #[cfg(feature = "quire-extraction")]
+            Self::Extraction(_) => self.ladder(),
             Self::Format
             | Self::Limit(_)
             | Self::Native(_)
@@ -240,25 +262,7 @@ impl RunCause {
             | Self::Package(_)
             | Self::SelectedPackage { .. }
             | Self::Lowering { .. }
-            | Self::Input(_) => {
-                if self.code().is_unsupported() {
-                    21
-                } else if self.is_incomplete() {
-                    22
-                } else {
-                    20
-                }
-            }
-            #[cfg(feature = "quire-extraction")]
-            Self::Extraction(error) => {
-                if error.code().is_unsupported() {
-                    21
-                } else if error.code().is_incomplete() {
-                    22
-                } else {
-                    20
-                }
-            }
+            | Self::Input(_) => self.ladder(),
         }
     }
 }

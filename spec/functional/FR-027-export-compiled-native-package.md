@@ -35,10 +35,12 @@ NativePackage::read_verified API with explicit source/model bindings.
 Intake and static failures emit no package bytes and use FR-026's existing native-run-result/1
 command-error envelope on stderr, including the original request digest and
 stage/code when available. On FR-301's six-code contract, refusal, malformed
-requests, I/O failures and invalid command usage all exit 20; incomplete
-(exhausted) failures exit 22. Broken pipes end quietly; other write and
-output-serialization failures exit 30 and may leave a partial stdout prefix,
-which is not a complete selected artifact.
+requests, I/O failures and invalid command usage all exit 20; a selected model
+naming a real, profile-gated capability this build does not admit — a later
+native model profile or a rational scalar/value declared outside its admitting
+profile — exits 21; incomplete (exhausted) failures exit 22. Broken pipes end
+quietly; other write and output-serialization failures exit 30 and may leave a
+partial stdout prefix, which is not a complete selected artifact.
 
 ## Behavior
 
