@@ -22,6 +22,7 @@ use super::super::rational::Rational;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
+    WrongSnapshotCause,
 };
 use super::syntax::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
@@ -146,6 +147,13 @@ pub(crate) struct Typer<'a> {
     depth: u64,
     locals: Vec<Local>,
     slots: usize,
+    /// Whether this declaration is an operation's postcondition, the only
+    /// clause kind `pre(...)` is legal in (FR-153's own anchor table;
+    /// shared-grammar.md's "self, result and pre(...) are caller-side anchor
+    /// operations"). `false` for a function body, its `decreases` measure,
+    /// or a standalone `check_expression` call; `pre(...)` refuses
+    /// `wrong_snapshot`/`wrong-anchor` in every one of those.
+    postcondition: bool,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -173,6 +181,41 @@ fn node(kind: NodeKind, value_type: ValueType, location: &Location) -> Node {
 
 fn is_integer(value_type: &ValueType) -> bool {
     matches!(value_type, ValueType::Integer | ValueType::Int(_))
+}
+
+/// Whether `expression`'s own syntax contains a form `pre(...)`'s anchor can
+/// act on: `allInstances`/`lookup` (the only reads FR-153 anchors), a nested
+/// `pre(...)` (idempotent by construction: a nested `pre` with no eligible
+/// read of its own is refused independently when *it* is checked), or a
+/// `Call` -- a call's own body is a separate declaration this checker cannot
+/// see (`Expression::children` never exposes it, only the call's own
+/// arguments), so it is opaque rather than a bare capture: FR-042's Behavior
+/// clause refuses `pre(...)` "on bare parameters/constants/captures", and a
+/// `Call` is none of those. Treating `Call` as eligible is also what keeps
+/// `pre(F(p))` legal syntax at all -- its actual anchor-leak protection is
+/// `evaluate.rs`'s `NodeKind::Call` resetting the machine's anchor to
+/// `Anchor::Post` before running `F`'s body, per shared-grammar.md's "self,
+/// result and pre(...) are ... unavailable ... inside a reusable predicate".
+///
+/// This is a syntactic, pre-typing check on purpose: `let v = allInstances(p)
+/// in pre(v)` and `let q = pre(p) in allInstances(q)` (FR-042-AC-3's capture-
+/// drift shapes) both fail it, because `pre(...)`'s own operand in each case
+/// is nothing but a bare `Name` -- the eligible read that produced `v`, or
+/// the population `pre(p)` never actually reads, sits in a sibling/ancestor
+/// `Let`, not in this `pre(...)`'s own subtree. `pre(1)` and `pre(delta)`
+/// (a bare parameter) fail it for the same reason: a literal or a `Name`
+/// alone is never itself an eligible read.
+fn contains_pre_eligible_read(expression: &Expression) -> bool {
+    matches!(
+        expression,
+        Expression::AllInstances { .. }
+            | Expression::Lookup { .. }
+            | Expression::Pre(_)
+            | Expression::Call { .. }
+    ) || expression
+        .children()
+        .into_iter()
+        .any(contains_pre_eligible_read)
 }
 
 /// Whether an expression takes its type from its context.
@@ -229,6 +272,7 @@ impl<'a> Typer<'a> {
         signatures: &'a [Signature],
         limits: CheckingLimits,
         nodes: &'a mut u64,
+        postcondition: bool,
     ) -> Self {
         Self {
             scope,
@@ -238,6 +282,7 @@ impl<'a> Typer<'a> {
             depth: 0,
             locals: Vec::new(),
             slots: 0,
+            postcondition,
         }
     }
 
@@ -552,6 +597,30 @@ impl<'a> Typer<'a> {
                 Err(mismatch(location))
             }
             Expression::Pre(operand) => {
+                // FR-153/FR-042: `pre(...)` is legal only in an operation's
+                // postcondition -- every other clause kind (a function body,
+                // its measure, an invariant, a precondition, or a bare
+                // `check_expression` call) refuses it here, before looking at
+                // `operand` at all.
+                if !self.postcondition {
+                    return Err(refuse(
+                        location,
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::WrongAnchor),
+                    ));
+                }
+                // FR-042's Behavior clause: "Pre is refused ... on bare
+                // parameters/constants/captures". `operand` must contain, in
+                // its own syntax, at least one form `pre(...)`'s anchor can
+                // actually act on -- see `contains_pre_eligible_read`'s own
+                // doc for exactly which forms count and why a bare `Name`
+                // (a parameter, or a `let` bound outside this very
+                // `pre(...)`) never does.
+                if !contains_pre_eligible_read(operand) {
+                    return Err(refuse(
+                        location,
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+                    ));
+                }
                 // FR-153: `pre(e)` is identity-typed; only the anchor that
                 // `allInstances`/`lookup` read underneath it changes.
                 let operand = self.infer(operand, hint, &location.child(0))?;

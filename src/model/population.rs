@@ -71,6 +71,55 @@
 //! guard against at query time: a query can only ever be evaluated against
 //! the exact bundle [`admit_binding`] admitted, by construction, not by a
 //! runtime comparison.
+//!
+//! # Invocation admission
+//!
+//! [`admit_invocation`] admits one operation invocation's pre and post
+//! [`PopulationDocument`]s (via two independent [`admit_binding`] calls,
+//! each metered by its own [`AdmissionMeter`]) and attaches the pre binding
+//! to the post binding as its FR-153 [`PopulationBinding::pre_anchor`], so a
+//! `pre(..)`-anchored `allInstances`/`lookup` reads exactly the admitted pre
+//! population (`tests/model_reference_queries.rs`'s `l07_pre_*` tests). It
+//! then runs two distinct checks over the two admitted bindings, both by
+//! [`enforce_frame`]:
+//!
+//! - the FR-151 operation frame (`quire.model.conformance.effect/v1`):
+//!   every created and deleted object identity's most-specific type must
+//!   conform to a declared `creates`/`deletes` grant, and every changed
+//!   field on a surviving object must be a declared `fieldWrites` member
+//!   (directly, or reaching one through a redefinition record — FR-151's own
+//!   effect-inclusion rule). A field's declared collection kind
+//!   (`Multiplicity::ordered`) decides whether its pre/post values compare
+//!   by exact sequence or by order-insensitive multiset, so re-serializing
+//!   an unordered field in a different order is never itself a write. An
+//!   object whose most-specific type differs between pre and post is
+//!   refused outright — FR-151's effect vocabulary has no "retype" grant,
+//!   and FR-143 binds the most-specific type into an object reference's own
+//!   identity, so a type change is never silently reinterpreted as an
+//!   unrelated delete-plus-create;
+//! - FR-046's own delta agreement: the invocation's caller-supplied
+//!   created/deleted identity lists (declared once per invocation, outside
+//!   any operation's own effect) must be internally consistent (no
+//!   duplicate, no identity declared both created and deleted) and must
+//!   equal the complete created/deleted sets [`enforce_frame`] computed from
+//!   the two documents.
+//!
+//! A frame violation is `Refused` with `Code::FrameViolation`/cause
+//! `unauthorized-change`; a delta disagreement is `Refused` with
+//! `Code::PopulationDeltaMismatch`/cause `delta-disagreement` — both the
+//! catalogued `native-diagnostics.md` causes for their codes, and the exact
+//! causes the native runtime's own `src/runtime/validation/frames.rs` uses
+//! for the equivalent violations over its own budget-metered types (see
+//! [`admit_invocation`]'s own "Native duplication" doc for why that module's
+//! decision logic is mirrored here rather than called into directly).
+//!
+//! Switching a `pre(..)` expression's evaluation anchor between pre and post
+//! (`crate::value::expression::evaluate`'s `Anchor`/`Task::RestoreAnchor`) is
+//! not itself a charge: `value-accounting.md`'s "Model and graph evaluation"
+//! paragraph charges only static resolution, conformance, closure and
+//! foreign checks, and binding admission; selecting which already-admitted
+//! binding a query reads is a structural dispatch over that already-charged
+//! data, not a new evaluation step.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -778,20 +827,51 @@ pub struct InvocationContext<'a> {
     pub declared_maximum: Option<u64>,
 }
 
+/// The operation's own declared frame and recorded population delta for one
+/// invocation. `effect` is the operation's authored frame
+/// (`quire.model.conformance.effect/v1`), enforced by [`enforce_frame`].
+/// `declared_created`/`declared_deleted` are the invocation's own recorded
+/// created/deleted object identities for this population role -- FR-046's
+/// "caller-supplied lists must match" (the native runtime's own
+/// `declared_deltas`/`inspect_frames`, `src/runtime/validation/frames.rs`),
+/// applied here at the model-population layer. Object identity only: this
+/// call's own universe is implicit (both admitted bindings share it), and
+/// per [`enforce_frame`]'s own docs, identity for delta purposes is
+/// `(universe, object)`, never the most-specific type.
+#[derive(Clone, Copy)]
+pub struct InvocationDelta<'a> {
+    /// The operation's authored frame.
+    pub effect: &'a OperationEffect,
+    /// The invocation's own recorded created-object identities.
+    pub declared_created: &'a [String],
+    /// The invocation's own recorded deleted-object identities.
+    pub declared_deleted: &'a [String],
+}
+
 /// Admits one operation invocation's pre and post [`PopulationDocument`]s
 /// against the same `bundle`/`view`/`subtype_closure`/`declared_maximum`
 /// (the same population role, at the invocation's two instants), then
-/// enforces `effect`'s FR-151 frame (`quire.model.conformance.effect/v1`)
-/// against the two bindings' created and deleted identities and their
-/// surviving members' declared field values.
+/// enforces `declared.effect`'s FR-151 frame
+/// (`quire.model.conformance.effect/v1`) against the two bindings' created
+/// and deleted identities and their surviving members' declared field
+/// values, and separately compares those same computed created/deleted sets
+/// against `declared.declared_created`/`declared_deleted` (FR-046's
+/// caller-supplied delta).
 ///
 /// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`) is
 /// returned as-is; a frame violation is `Refused` with
-/// `Code::FrameViolation`/cause `unauthorized-change` (the catalogued
-/// `native-diagnostics.md` cause for that code). On success, the returned
-/// binding is the post binding with `pre` attached as its
-/// [`PopulationBinding::pre_anchor`], so `allInstances`/`lookup` underneath
-/// a `pre(..)` anchor read exactly the admitted pre population.
+/// `Code::FrameViolation`/cause `unauthorized-change`, and a delta
+/// disagreement (a duplicate or intersecting declared identity, or a
+/// declared set that differs from the complete computed one) is `Refused`
+/// with `Code::PopulationDeltaMismatch`/cause `delta-disagreement` -- both
+/// the catalogued `native-diagnostics.md` causes for their codes, and both
+/// the exact causes the native runtime's own `src/runtime/validation/
+/// frames.rs` already uses for the equivalent violations (see this
+/// function's own "Native duplication" paragraph for why that module's own
+/// code is not called directly). On success, the returned binding is the
+/// post binding with `pre` attached as its [`PopulationBinding::pre_anchor`],
+/// so `allInstances`/`lookup` underneath a `pre(..)` anchor read exactly the
+/// admitted pre population.
 ///
 /// `pre_meter`/`post_meter` are two independent [`AdmissionMeter`]s, one per
 /// admitted binding: this module's own "Two independent meters" docs already
@@ -801,25 +881,37 @@ pub struct InvocationContext<'a> {
 /// against its own meter (rather than inventing an unspecified combined
 /// schedule) is the conservative reading.
 ///
-/// Deciding created/deleted-identity and field-write frame membership is,
-/// like the object/subtype-closure and `modelIdentity` checks
+/// Deciding created/deleted-identity, field-write frame membership and delta
+/// agreement is, like the object/subtype-closure and `modelIdentity` checks
 /// [`admit_binding`] already makes, a structural admission decision over
-/// already-charged data, not itself a new charge point: FR-151's model
-/// module does not define one, and the two admitted bindings' own
-/// `binding.member`/`binding.subset-value` charges already measured the
-/// data this check reads.
+/// already-charged data, not itself a new charge point: neither FR-151's nor
+/// FR-153's model module defines one, and the two admitted bindings' own
+/// `binding.member`/`binding.subset-value` charges already measured the data
+/// this check reads.
 ///
-/// Out of scope for this function (tracked, not silently dropped):
-/// `Code::PopulationDeltaMismatch`/cause `delta-disagreement` compares an
-/// operation's *recorded* created/deleted delta against the complete
-/// pre/post difference; FR-153's Inputs clause defines no recorded-delta
-/// input to compare against, so this function only enforces the *frame*
-/// (what identities/fields an operation may touch), never a delta record.
+/// # Native duplication
+///
+/// `src/runtime/validation/frames.rs`'s `inspect_frames`/`object_frame`/
+/// `declared_deltas` decide the identical two violations
+/// (`FrameViolation`/`PopulationDeltaMismatch`) this function does, over the
+/// native runtime's own budget-metered `Validator`, `ValueId` value arena and
+/// `ObjectIdentity`/`FieldBinding` snapshot types. Those types are foreign to
+/// `crate::model`: `Validator` is `impl`-private to that module and tightly
+/// coupled to its own `budget`/arena plumbing, so there is no call this
+/// function could make into it, only a parallel decision over this crate's
+/// own `PopulationDocument`/`PopulationMember`/`AdmissionMeter` types. What is
+/// shared, deliberately, is every cause: this function reuses
+/// `Code::FrameViolation`/`"unauthorized-change"` and
+/// `Code::PopulationDeltaMismatch`/`"delta-disagreement"` for the same
+/// violations frames.rs names them for, and applies the equivalent decision
+/// (declared-identity duplicate, declared-set intersection, computed-vs-
+/// declared mismatch; created/deleted-identity and field-write frame
+/// coverage) rather than a differently shaped one.
 pub fn admit_invocation(
     context: InvocationContext<'_>,
     pre_document: &PopulationDocument,
     post_document: &PopulationDocument,
-    effect: &OperationEffect,
+    declared: &InvocationDelta<'_>,
     pre_meter: &mut AdmissionMeter,
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
@@ -845,10 +937,10 @@ pub fn admit_invocation(
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    if let Err(refusal) = enforce_frame(&pre, &post, pre_document, post_document, effect) {
-        return AdmissionOutcome::Refused(refusal);
+    match enforce_frame(&pre, &post, pre_document, post_document, declared) {
+        Ok(()) => AdmissionOutcome::Admitted(post.with_pre_anchor(pre)),
+        Err(refusal) => AdmissionOutcome::Refused(refusal),
     }
-    AdmissionOutcome::Admitted(post.with_pre_anchor(pre))
 }
 
 /// One [`ModelRefusal`]/`Code::FrameViolation` for `detail`, cause
@@ -862,89 +954,205 @@ fn frame_violation(detail: String) -> ModelRefusal {
     }
 }
 
-/// Enforces `effect`'s frame against `pre`/`post`'s created and deleted
-/// identities and their surviving members' declared field values. `pre`,
-/// `post` are the two admitted bindings; `pre_document`, `post_document` are
-/// the raw documents they were admitted from (needed here only for their
-/// `field_values`, which [`PopulationBinding`] does not retain).
+/// One [`ModelRefusal`]/`Code::PopulationDeltaMismatch` for `detail`, cause
+/// `delta-disagreement` (the catalogued cause for this code; see
+/// `admit_invocation`'s own docs).
+fn delta_mismatch(detail: String) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::PopulationDeltaMismatch,
+        cause: "delta-disagreement",
+        detail,
+    }
+}
+
+/// Whether `field`'s declared multiplicity is `ordered` (`Sequence`/
+/// `OrderedSet`); `Bag`/`Set` fields compare by value multiset, ignoring
+/// declared order, so a producer that re-serializes an unordered field in a
+/// different order between pre and post is not a frame violation. Defaults
+/// to `true` (order-sensitive) when `field` has no `FieldMemberRecord` in
+/// `bundle` -- the strict, pre-existing comparison -- since an absent record
+/// gives this function no positive basis to relax it.
+fn field_ordered(bundle: &Bundle, field: &ProducerKey) -> bool {
+    bundle
+        .records
+        .iter()
+        .find_map(|record| match record {
+            BundleRecord::FieldMember(member) if member.key == *field => {
+                Some(member.multiplicity.ordered)
+            }
+            _ => None,
+        })
+        .unwrap_or(true)
+}
+
+/// Whether `pre_values`/`post_values` (`field`'s declared values on the same
+/// member, pre and post) are the same collection, per `field`'s own declared
+/// collection kind: exact sequence equality when ordered, multiset equality
+/// (order-insensitive, duplicate-count-sensitive) otherwise. A `Set` field's
+/// values are already unique by construction, so multiset equality reduces
+/// to set equality for it without a separate case.
+fn field_values_equal(
+    bundle: &Bundle,
+    field: &ProducerKey,
+    pre: &[String],
+    post: &[String],
+) -> bool {
+    if field_ordered(bundle, field) {
+        return pre == post;
+    }
+    let mut pre = pre.to_vec();
+    let mut post = post.to_vec();
+    pre.sort();
+    post.sort();
+    pre == post
+}
+
+/// Whether `field` (the field a runtime population document names on some
+/// member) is covered by `effect.field_writes`, directly or because it
+/// "reaches one through redefinition records" -- FR-151's own effect-
+/// inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
+/// operation's own declared writes rather than to a redefining operation's
+/// writes against its redefined ancestor's (`crate::model::conformance`'s
+/// `check_operation_redefinition` uses the identical one-hop redefinition-
+/// record lookup for that comparison; `bundle`'s redefinition records are
+/// already FR-150-normalized/closed, so one hop is enough -- no further
+/// transitive walk is needed here either).
+fn field_write_covered(bundle: &Bundle, effect: &OperationEffect, field: &ProducerKey) -> bool {
+    if effect.field_writes.contains(field) {
+        return true;
+    }
+    bundle.records.iter().any(|record| match record {
+        BundleRecord::Redefinition(redefinition) => {
+            redefinition.redefining == *field
+                && effect.field_writes.contains(&redefinition.redefined)
+        }
+        _ => false,
+    })
+}
+
+/// Enforces `declared.effect`'s frame against `pre`/`post`'s created and
+/// deleted identities and their surviving members' declared field values,
+/// then compares the computed created/deleted sets against
+/// `declared.declared_created`/`declared_deleted` (FR-046's caller-supplied
+/// delta). `pre`, `post` are the two admitted bindings; `pre_document`,
+/// `post_document` are the raw documents they were admitted from (needed
+/// here only for their `field_values`, which [`PopulationBinding`] does not
+/// retain).
+///
+/// Created/deleted classification is by *object identity* (the declared
+/// object identity alone), never by [`ReferenceKey`] (which also carries the
+/// most-specific type): an object present under the same identity in both
+/// `pre` and `post` but with a *different* most-specific type is a type
+/// change, decided before either classification runs, immediately below.
+/// FR-151's effect vocabulary grants exactly three kinds of authorized
+/// change -- `fieldWrites`, `creates`, `deletes` -- and none of them is a
+/// retype; FR-143's own "Object references" clause additionally treats the
+/// most-specific type as part of a reference's snapshot-supplied identity
+/// triple, alongside the universe and declared object identity, never a
+/// mutable per-object attribute. A type change therefore has no
+/// authorization path under any declared frame and always refuses
+/// `FrameViolation`/`unauthorized-change`, regardless of whether `creates`/
+/// `deletes` grants happen to cover both the pre and post type -- silently
+/// admitting it as an unrelated delete-plus-create would hide exactly the
+/// violation this check exists to catch.
 fn enforce_frame(
     pre: &PopulationBinding,
     post: &PopulationBinding,
     pre_document: &PopulationDocument,
     post_document: &PopulationDocument,
-    effect: &OperationEffect,
+    declared: &InvocationDelta<'_>,
 ) -> Result<(), ModelRefusal> {
-    // Created: members of `post` absent from `pre`. Each one's
-    // most-specific type must conform to a declared `creates` grant.
-    for (key, created_type) in post.members() {
-        if pre.members().contains_key(key) {
+    let bundle = &pre.bundle;
+    let pre_by_object: BTreeMap<&str, (&ReferenceKey, &ProducerKey)> = pre
+        .members()
+        .iter()
+        .map(|(key, type_identity)| (key.object.as_str(), (key, type_identity)))
+        .collect();
+    let post_by_object: BTreeMap<&str, (&ReferenceKey, &ProducerKey)> = post
+        .members()
+        .iter()
+        .map(|(key, type_identity)| (key.object.as_str(), (key, type_identity)))
+        .collect();
+
+    let mut computed_created: BTreeSet<String> = BTreeSet::new();
+    let mut computed_deleted: BTreeSet<String> = BTreeSet::new();
+
+    for (object, (_, post_type)) in &post_by_object {
+        let Some((_, pre_type)) = pre_by_object.get(object) else {
+            // Created: absent from `pre`. Its most-specific type must
+            // conform to a declared `creates` grant.
+            let mut allowed = false;
+            for grant in &declared.effect.creates {
+                if conforms(post, post_type, grant)? {
+                    allowed = true;
+                    break;
+                }
+            }
+            if !allowed {
+                return Err(frame_violation(format!(
+                    "invocation creates object {object} of type {}, outside the operation's \
+                     declared creates frame",
+                    post_type.identity
+                )));
+            }
+            computed_created.insert((*object).to_owned());
             continue;
+        };
+        if *pre_type != *post_type {
+            return Err(frame_violation(format!(
+                "invocation changes object {object}'s most-specific type from {} to {} between \
+                 pre and post, which no operation frame may authorize (FR-151's effect grants \
+                 cover fieldWrites/creates/deletes only)",
+                pre_type.identity, post_type.identity
+            )));
         }
+    }
+
+    for (object, (_, pre_type)) in &pre_by_object {
+        if post_by_object.contains_key(object) {
+            continue; // Survivor or type change; already decided above.
+        }
+        // Deleted: absent from `post`. Its pre most-specific type must
+        // conform to a declared `deletes` grant.
         let mut allowed = false;
-        for grant in &effect.creates {
-            if conforms(post, created_type, grant)? {
+        for grant in &declared.effect.deletes {
+            if conforms(pre, pre_type, grant)? {
                 allowed = true;
                 break;
             }
         }
         if !allowed {
             return Err(frame_violation(format!(
-                "invocation creates object {} of type {}, outside the operation's declared \
-                 creates frame",
-                key.object, created_type.identity
+                "invocation deletes object {object} of type {}, outside the operation's \
+                 declared deletes frame",
+                pre_type.identity
             )));
         }
+        computed_deleted.insert((*object).to_owned());
     }
 
-    // Deleted: members of `pre` absent from `post`. Each one's pre
-    // most-specific type must conform to a declared `deletes` grant.
-    for (key, deleted_type) in pre.members() {
-        if post.members().contains_key(key) {
-            continue;
-        }
-        let mut allowed = false;
-        for grant in &effect.deletes {
-            if conforms(pre, deleted_type, grant)? {
-                allowed = true;
-                break;
-            }
-        }
-        if !allowed {
-            return Err(frame_violation(format!(
-                "invocation deletes object {} of type {}, outside the operation's declared \
-                 deletes frame",
-                key.object, deleted_type.identity
-            )));
-        }
-    }
-
-    // Field writes: members present in both documents (survivors). A
-    // surviving member's field whose declared values differ pre to post
-    // must be a declared `fieldWrites` member.
-    let post_by_object: HashMap<&str, &PopulationMember> = post_document
+    // Field writes: members present in both documents under the same
+    // identity and the same most-specific type (survivors; a type change
+    // already refused above).
+    let post_members_by_object: HashMap<&str, &PopulationMember> = post_document
         .members
         .iter()
         .map(|member| (member.object.as_str(), member))
         .collect();
     for pre_member in &pre_document.members {
-        let Some(&post_member) = post_by_object.get(pre_member.object.as_str()) else {
+        let Some(&post_member) = post_members_by_object.get(pre_member.object.as_str()) else {
             continue; // Deleted; already decided above.
         };
-        let mut fields: Vec<&ProducerKey> = Vec::new();
-        for entry in pre_member
-            .field_values
-            .iter()
-            .chain(&post_member.field_values)
-        {
-            if !fields.iter().any(|existing| **existing == entry.field) {
-                fields.push(&entry.field);
-            }
-        }
+        let mut fields: BTreeSet<&ProducerKey> = BTreeSet::new();
+        fields.extend(pre_member.field_values.iter().map(|entry| &entry.field));
+        fields.extend(post_member.field_values.iter().map(|entry| &entry.field));
         for field in fields {
-            if values_of(pre_member, field) == values_of(post_member, field) {
+            let pre_values = values_of(pre_member, field);
+            let post_values = values_of(post_member, field);
+            if field_values_equal(bundle, field, pre_values, post_values) {
                 continue;
             }
-            if effect.field_writes.iter().any(|write| write == field) {
+            if field_write_covered(bundle, declared.effect, field) {
                 continue;
             }
             return Err(frame_violation(format!(
@@ -955,6 +1163,48 @@ fn enforce_frame(
         }
     }
 
+    check_declared_delta(&computed_created, &computed_deleted, declared)
+}
+
+/// FR-046's "caller-supplied lists must match": decides `declared`'s own
+/// created/deleted identity lists internally consistent (no duplicate within
+/// either list, no identity in both), then compares them against the
+/// complete computed sets [`enforce_frame`] derived from `pre`/`post`. Any
+/// disagreement is `Code::PopulationDeltaMismatch`/cause
+/// `delta-disagreement` -- mirroring the native runtime's own
+/// `declared_deltas`/`inspect_frames` (see `admit_invocation`'s own
+/// "Native duplication" doc).
+fn check_declared_delta(
+    computed_created: &BTreeSet<String>,
+    computed_deleted: &BTreeSet<String>,
+    declared: &InvocationDelta<'_>,
+) -> Result<(), ModelRefusal> {
+    let mut declared_created = BTreeSet::new();
+    let mut declared_deleted = BTreeSet::new();
+    for (declared_list, identities) in [
+        (declared.declared_created, &mut declared_created),
+        (declared.declared_deleted, &mut declared_deleted),
+    ] {
+        for identity in declared_list {
+            if !identities.insert(identity.clone()) {
+                return Err(delta_mismatch(format!(
+                    "invocation declares {identity} more than once in the same delta list"
+                )));
+            }
+        }
+    }
+    if let Some(overlap) = declared_created.intersection(&declared_deleted).next() {
+        return Err(delta_mismatch(format!(
+            "invocation declares {overlap} as both created and deleted"
+        )));
+    }
+    if declared_created != *computed_created || declared_deleted != *computed_deleted {
+        return Err(delta_mismatch(format!(
+            "declared population delta (created {declared_created:?}, deleted \
+             {declared_deleted:?}) differs from the complete pre/post populations (created \
+             {computed_created:?}, deleted {computed_deleted:?})"
+        )));
+    }
     Ok(())
 }
 

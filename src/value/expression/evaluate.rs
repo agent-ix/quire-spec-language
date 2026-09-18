@@ -145,13 +145,20 @@ enum Task<'a> {
     ChargeElement(&'a Node),
     Return,
     Iterate(Box<Iteration<'a>>),
-    /// Restore the anchor `pre(..)` had saved before evaluating its operand.
+    /// Restore the anchor a `pre(..)` or a `Call` saved before evaluating its
+    /// operand/callee body.
     RestoreAnchor(Anchor),
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
 /// population, or (underneath a `pre(..)`) the invocation's pre population.
-/// FR-153.
+/// FR-153. Switching this counter is a structural evaluator decision, like
+/// the closure/foreign checks `value-accounting.md`'s "Model and graph
+/// evaluation" paragraph already names as making no evaluation charge; that
+/// document defines no charge point for an anchor at all, so `Task::
+/// RestoreAnchor` and every `self.anchor` assignment below are uncharged by
+/// the conservative reading the same paragraph already establishes for this
+/// module's other structural decisions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Anchor {
     Post,
@@ -331,9 +338,18 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// the current anchor -- `binding` itself when reading the ambient post
     /// population, or `binding`'s attached pre population underneath
     /// `pre(..)`. A `Pre` anchor with no attached pre population is a
-    /// checked invariant: the checker only admits `pre(..)` where the
-    /// population operand carries one (a postcondition's parameter, bound
-    /// to an admitted invocation).
+    /// checked invariant, not a normal refusal: the *checker* only admits
+    /// `pre(..)` in a postcondition, over an operand with an eligible read
+    /// underneath it (`check.rs`'s `contains_pre_eligible_read`), but it has
+    /// no way to see whether the `Value::Population` a caller supplies at
+    /// evaluation time was actually admitted through [`admit_invocation`]
+    /// (the only constructor that attaches a `pre_anchor`) rather than
+    /// [`admit_binding`] directly -- so this is still a real, reachable
+    /// runtime check, and a binding with no attached pre population reaching
+    /// here is a caller-input defect this evaluator declines to paper over.
+    ///
+    /// [`admit_invocation`]: crate::model::population::admit_invocation
+    /// [`admit_binding`]: crate::model::population::admit_binding
     fn select_anchor<'x>(
         &self,
         binding: &'x PopulationBinding,
@@ -678,6 +694,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
                 self.frames.push(frame);
+                // shared-grammar.md: "self, result and pre(...) are ...
+                // unavailable ... inside a reusable predicate" -- a callee's
+                // own body is never anchored by its caller's `pre(..)`, so
+                // `pre(F(p))` never lets the anchor leak into `F`'s body.
+                // Reset to `Post` for the callee, then restore the caller's
+                // anchor once its own `Task::Eval`/`Task::Return` complete
+                // (mirrors `NodeKind::Pre`'s own save/restore pair).
+                self.tasks.push(Task::RestoreAnchor(self.anchor));
+                self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);
                 self.tasks.push(Task::Eval(callable.body));
                 return Ok(());

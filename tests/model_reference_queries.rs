@@ -31,16 +31,17 @@ use quire_spec_language::model::normalize::{
 };
 use quire_spec_language::model::population::{
     admit_binding, admit_invocation, AbsenceMode, AdmissionMeter, AdmissionOutcome,
-    InvocationContext, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
-    PopulationMember,
+    InvocationContext, InvocationDelta, PopulationAdmissionLimits, PopulationBinding,
+    PopulationDocument, PopulationMember,
 };
 use quire_spec_language::value::{
     BinaryOperator, CardinalityBound, ChargePoint, CheckCause, CheckMode, CheckRefusal,
     CheckedExpression, CheckedPackage, CheckingLimits, CollectionKind, CollectionType,
     CompositeDeclaration, CompositeShape, DeclarationCause, Expression, FieldDeclaration,
-    IllTypedCause, Integer, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence, ScalarLimits,
-    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    FunctionDeclaration, IllTypedCause, Integer, LimitKind, Meter, NodeKey, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence,
+    Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -234,13 +235,18 @@ fn l07_scenario() -> Scenario {
         subtype_closure: GeneralizationClosure::Closed,
         declared_maximum: Some(3),
     };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &["a2".to_owned()],
+    };
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_invocation(
         context,
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
-        &effect,
+        &declared,
         &mut pre_meter,
         &mut post_meter,
     ) {
@@ -274,6 +280,32 @@ fn types(scenario: &Scenario) -> TypeEnvironment {
 fn package(scenario: &Scenario) -> CheckedPackage {
     PackageDeclarations {
         types: types(scenario),
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .unwrap()
+}
+
+/// Like [`package`], plus one declared function `F(p: Population<M::A>[3]):
+/// Integer { size(allInstances<M::A>(p)) }` -- for item 2's `pre(F(p))`
+/// test. `F`'s own body is never itself a postcondition (a function body is
+/// checked with `postcondition: false`, `CheckedPackage::check`'s own
+/// comment at its `Typer::new` call sites), so this package alone already
+/// proves a function body cannot see `pre(...)`; the `pre(F(p))` test below
+/// proves the complementary runtime half, that calling `F` from inside a
+/// `pre(...)` operand does not leak the caller's pre anchor into `F`'s own
+/// body.
+fn package_with_function(scenario: &Scenario) -> CheckedPackage {
+    let target = ValueType::Reference(node_key(&scenario.a));
+    PackageDeclarations {
+        types: types(scenario),
+        functions: vec![FunctionDeclaration {
+            name: "F".to_owned(),
+            parameters: vec![("p".to_owned(), ValueType::Population(3))],
+            result: ValueType::Integer,
+            measure: None,
+            body: Expression::Size(Box::new(all_instances(target))),
+        }],
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
@@ -353,6 +385,63 @@ fn check_refusal(
     }
 }
 
+/// Like [`check`], but as an operation's postcondition (`pre(...)` legal;
+/// see [`CheckedPackage::check_postcondition_expression`]'s own docs) --
+/// every `pre(..)` test in this file needs this instead of [`check`], since
+/// [`check`] itself must stay a non-postcondition context (it backs every
+/// other test in this file, several of which now double as negative
+/// coverage that `pre` is refused outside a postcondition).
+fn check_postcondition(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+) -> CheckedExpression {
+    let parameters = parameters
+        .iter()
+        .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+        .collect();
+    package
+        .check_postcondition_expression(
+            parameters,
+            expression,
+            None,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap()
+}
+
+/// Like [`check_refusal`], but as an operation's postcondition (via
+/// [`CheckedPackage::check_postcondition_expression`]) -- every negative
+/// `pre(...)`-eligibility test in this file needs this instead of
+/// [`check_refusal`], since a plain [`check`]/[`check_refusal`] context
+/// already refuses `pre(...)` outright on clause context alone (see
+/// `pre_refuses_outside_a_postcondition_context`), which would mask the
+/// eligible-operand refusal these tests exist to pin.
+fn check_refusal_as_postcondition(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+) -> CheckRefusal {
+    let parameters = parameters
+        .iter()
+        .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+        .collect();
+    match package.check_postcondition_expression(
+        parameters,
+        expression,
+        None,
+        CheckMode::Kernel,
+        CheckingLimits::default(),
+    ) {
+        Err(refusal) => refusal,
+        Ok(checked) => panic!(
+            "expected a check refusal, got a checked {:?}",
+            checked.value_type()
+        ),
+    }
+}
+
 /// A stable `NodeKey` distinct from any `scenario()` type, for a declaration
 /// this file constructs but never admits into `fixture_f1`'s model -- finding
 /// 1's record-field/object-attribute cases (checked at
@@ -371,6 +460,24 @@ fn run(
     objects: &ObjectEnvironment,
 ) -> (Outcome<Value>, Meter) {
     let checked = check(package, parameters, expression);
+    let mut meter = Meter::new(limits);
+    let evaluation = package
+        .evaluate(&checked, arguments, objects, &mut meter)
+        .unwrap();
+    (evaluation.outcome, meter)
+}
+
+/// Like [`run`], checked as a postcondition (via [`check_postcondition`])
+/// so `pre(...)` is legal.
+fn run_postcondition(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+    objects: &ObjectEnvironment,
+) -> (Outcome<Value>, Meter) {
+    let checked = check_postcondition(package, parameters, expression);
     let mut meter = Meter::new(limits);
     let evaluation = package
         .evaluate(&checked, arguments, objects, &mut meter)
@@ -1301,7 +1408,7 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         other => panic!("expected a completed post-anchored collection, got {other:?}"),
     }
 
-    let (pre_outcome, _) = run(
+    let (pre_outcome, _) = run_postcondition(
         &package,
         &parameters,
         &pre(all_instances(target)),
@@ -1352,7 +1459,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
         other => panic!("expected a completed none option for the deleted a2, got {other:?}"),
     }
 
-    let (pre_outcome, _) = run(
+    let (pre_outcome, _) = run_postcondition(
         &package,
         &parameters,
         &pre(lookup(target.clone(), AbsenceMode::Empty)),
@@ -1411,7 +1518,7 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
         }),
     };
 
-    let (outcome, _) = run(
+    let (outcome, _) = run_postcondition(
         &package,
         &parameters,
         &expression,
@@ -1427,4 +1534,228 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
         ),
         other => panic!("expected a completed boolean, got {other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// PR #168 review: `pre(...)`'s eligible-operand rule, clause-context gating
+// and `Call`'s anchor reset (FR-042, shared-grammar.md).
+// ---------------------------------------------------------------------------
+
+/// Item 1's first capture-drift shape: `let v = allInstances(p) in pre(v)`
+/// must refuse -- `v`'s own value was already read eagerly against the
+/// *post* population before `pre(..)` ever runs, so re-tagging it `pre`
+/// would return post data under a `pre` label (FR-042-AC-3's capture-drift
+/// refusal) rather than actually re-evaluating the query against the pre
+/// population. `pre`'s operand here is a bare `Name`, which
+/// `contains_pre_eligible_read` never treats as eligible (only a direct
+/// `allInstances`/`lookup`/`pre`/`Call` node is).
+///
+/// Mutation used: in `Typer::infer_form`'s `Expression::Pre` arm, removed
+/// the `contains_pre_eligible_read` guard (keeping only the postcondition
+/// guard). This test went red as expected (a checked expression instead of
+/// a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_let_bound_query_result_capture_drift() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let v = allInstances(p) in pre(v)
+    let expression = Expression::Let {
+        name: "v".to_owned(),
+        value: Box::new(all_instances(target)),
+        body: Box::new(pre(Expression::Name("v".to_owned()))),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// Item 1's second capture-drift shape: `pre(p)` itself (a bare population
+/// *parameter*, not a direct `allInstances`/`lookup` call) refuses -- FR-042
+/// refuses `pre` on a bare parameter/constant/capture directly, never only
+/// on what a later query does with it. `let q = pre(p) in allInstances(q)`
+/// (the review's own literal shape) never gets past this same check: `q`'s
+/// own initializer, `pre(p)`, already refuses before the `let`'s body is
+/// even considered.
+///
+/// Mutation used: same as
+/// `pre_refuses_a_let_bound_query_result_capture_drift`'s own (removing
+/// `contains_pre_eligible_read`'s guard from `Typer::infer_form`'s
+/// `Expression::Pre` arm). This test went red the same way (a checked
+/// `Population(3)` instead of a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_bare_population_parameter() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+
+    let expression = pre(Expression::Name("p".to_owned()));
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// Item 1's third shape: `pre(1)`, a bare integer literal, refuses the same
+/// way -- FR-042's Behavior clause never gives `pre` a bare constant
+/// operand.
+///
+/// Mutation used: same as
+/// `pre_refuses_a_let_bound_query_result_capture_drift`'s own. This test
+/// went red the same way (a checked `Integer` instead of a refusal);
+/// reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_of_an_integer_literal_is_refused() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let parameters: [(&str, ValueType); 0] = [];
+
+    let expression = pre(Expression::Integer(Integer::from(1_u64)));
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// Item 2: `pre(...)` is refused anywhere outside a postcondition context --
+/// [`check`] (unlike [`check_postcondition`]) checks as a non-postcondition
+/// expression, so `pre(allInstances(p))`, otherwise eligible, still refuses
+/// here purely on clause context.
+///
+/// Mutation used: in `CheckedPackage::check_expression`, changed its
+/// delegating `check_expression_as(..., false)` call to pass `true`
+/// (treating every plain `check_expression` call as a postcondition). This
+/// test went red as expected (a checked expression instead of a refusal);
+/// reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_outside_a_postcondition_context() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    let refusal = check_refusal(&package, &parameters, &pre(all_instances(target)));
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::WrongAnchor)
+    );
+}
+
+/// Item 1/2: nested `pre` is idempotent (FR-042-AC-5) -- `pre(pre(e))`
+/// checks (the outer `pre`'s operand is itself a `Pre` node, which
+/// `contains_pre_eligible_read` always treats as eligible) and evaluates to
+/// exactly the same result as the single `pre(e)`.
+#[test]
+#[trace("FR-042-AC-3", "TC-198", "FR-153-AC-7")]
+fn nested_pre_is_idempotent() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    let (single, _) = run_postcondition(
+        &package,
+        &parameters,
+        &pre(all_instances(target.clone())),
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    let (nested, _) = run_postcondition(
+        &package,
+        &parameters,
+        &pre(pre(all_instances(target))),
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    match (single, nested) {
+        (Outcome::Completed(single), Outcome::Completed(nested)) => {
+            assert_eq!(reference_elements(&single), reference_elements(&nested));
+        }
+        other => panic!("expected two completed collections, got {other:?}"),
+    }
+}
+
+/// Item 2: `pre(F(p))` never leaks the caller's pre anchor into `F`'s own
+/// body -- `NodeKind::Call` resets the evaluation anchor to `Post` for the
+/// callee's body (`shared-grammar.md`'s own caller-side-anchor rule: a
+/// reusable declaration is never handed ambient anchor state), so `F(p)`'s
+/// `size(allInstances(p))` reads the *post* population (2 members) exactly
+/// as it would outside any `pre(..)`, even though the whole call is wrapped
+/// in `pre(...)` here.
+///
+/// Mutation used: in `Machine::apply`'s `NodeKind::Call` arm, dropped the
+/// `Task::RestoreAnchor(self.anchor)`/`self.anchor = Anchor::Post` pair
+/// (leaving the caller's `Pre` anchor in place for the callee body). This
+/// test went red as expected (`3`, the pre population's size, instead of
+/// `2`); reverted.
+#[test]
+#[trace("FR-042-AC-3", "TC-198", "FR-153-AC-7")]
+fn pre_of_a_function_call_resets_the_callee_to_the_post_anchor() {
+    let scenario = l07_scenario();
+    let package = package_with_function(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+
+    let expression = pre(Expression::Call {
+        name: "F".to_owned(),
+        arguments: vec![population_name()],
+    });
+    let (outcome, _) = run_postcondition(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    match outcome {
+        Outcome::Completed(Value::Integer(size)) => assert_eq!(
+            size,
+            Integer::from(2_u64),
+            "F's own body must read the post population (2 members), never the caller's pre \
+             anchor (3 members)"
+        ),
+        other => panic!("expected a completed integer, got {other:?}"),
+    }
+}
+
+/// Item 2: evaluating `pre(allInstances(p))` against a population admitted
+/// directly by [`admit_binding`] (never through [`admit_invocation`], so it
+/// carries no `pre_anchor` at all) is `Refusal::CheckedInvariant` -- the
+/// checker only gates `pre(...)`'s legality/eligibility (this file's
+/// `check_postcondition`), never whether the runtime argument was actually
+/// admitted as an invocation's post binding; `select_anchor`'s own doc names
+/// this as the runtime's own responsibility.
+#[test]
+#[trace("FR-042-AC-3", "TC-198", "FR-153-AC-7")]
+fn pre_of_a_binding_with_no_pre_anchor_is_a_checked_invariant_refusal() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    let (outcome, _) = run_postcondition(
+        &package,
+        &parameters,
+        &pre(all_instances(target)),
+        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        SCALAR_UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    assert!(
+        matches!(outcome, Outcome::Refused(Refusal::CheckedInvariant)),
+        "expected Refused(CheckedInvariant) for a pre(..) anchor with no admitted pre binding, \
+         got {outcome:?}"
+    );
 }

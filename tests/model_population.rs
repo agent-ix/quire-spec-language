@@ -19,7 +19,7 @@ use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord, OperationEffect, SubsettingRecord,
+    ObjectTypeRecord, OperationEffect, RedefinitionRecord, SubsettingRecord,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
@@ -29,8 +29,8 @@ use quire_spec_language::model::normalize::{
 use quire_spec_language::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AbsenceMode, AdmissionChargePoint,
     AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
-    LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits, PopulationBinding,
-    PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
+    InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
+    PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
@@ -104,6 +104,15 @@ fn subsetting(identity: &str, owner: &str, subsetting: &str, subsetted: &str) ->
         owner: ProducerKey::fixture(owner),
         subsetting: ProducerKey::fixture(subsetting),
         subsetted: ProducerKey::fixture(subsetted),
+    })
+}
+
+fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> BundleRecord {
+    BundleRecord::Redefinition(RedefinitionRecord {
+        key: ProducerKey::fixture(identity),
+        owner: ProducerKey::fixture(owner),
+        redefining: ProducerKey::fixture(redefining),
+        redefined: ProducerKey::fixture(redefined),
     })
 }
 
@@ -1089,15 +1098,6 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     );
 }
 
-// L07 (`pre(allInstances<M::A>(p))` reading pre-population state under a
-// postcondition) is deleted here, not retagged: FR-153-AC-7 needs a real
-// pre/post operation-effect evaluator this crate does not have (the
-// two-independent-bindings model above only exercised L01's selection-count
-// and L03's Empty-mode lookup behavior over two separately admitted
-// documents, never an actual `pre()` anchor over one operation's effect).
-// It backed no AC uniquely; FR-153-AC-7 stays unbacked here and is tracked
-// on QSL #147.
-
 /// Review finding (PR #148): every other `Completed` test in this file admits
 /// P1 (3 members: `a1`, `a2`, `b1`) with `declared_maximum: Some(3)`, so a
 /// hard-coded `3` and P1's own member count are indistinguishable from the
@@ -1415,11 +1415,16 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &["a2".to_owned()],
+    };
     let post = match admit_invocation(
         invocation_context(&bundle, &view),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
-        &effect,
+        &declared,
         &mut pre_meter,
         &mut post_meter,
     ) {
@@ -1446,11 +1451,16 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
 /// scenario (deleting `a2`), but under `empty_effect()`'s empty `deletes:
 /// []`.
 #[test]
-#[trace("TC-198", "FR-151", "FR-153-AC-7")]
+#[trace("TC-198", "FR-046-AC-3", "FR-153-AC-7")]
 fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
     let effect = empty_effect();
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &["a2".to_owned()],
+    };
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
@@ -1458,7 +1468,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
         invocation_context(&bundle, &view),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
-        &effect,
+        &declared,
         &mut pre_meter,
         &mut post_meter,
     );
@@ -1476,7 +1486,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
 /// way: post names `a9` (of `model.A`), absent from pre, under an effect
 /// declaring no `creates` grant at all.
 #[test]
-#[trace("FR-151", "FR-153-AC-7")]
+#[trace("FR-046-AC-3", "FR-153-AC-7")]
 fn invocation_refuses_a_create_outside_the_declared_frame() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1491,6 +1501,11 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
             member("a9", "model.A"),
         ],
     };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &["a9".to_owned()],
+        declared_deleted: &[],
+    };
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
@@ -1498,7 +1513,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
         invocation_context(&bundle, &view),
         &p1("bundle.n01"),
         &post_document,
-        &effect,
+        &declared,
         &mut pre_meter,
         &mut post_meter,
     );
@@ -1517,7 +1532,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
 /// and admits when it does -- both over the identical pre/post pair, so only
 /// the declared frame decides the outcome.
 #[test]
-#[trace("FR-151", "FR-153-AC-7")]
+#[trace("FR-046-AC-3", "FR-153-AC-7")]
 fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admits() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
@@ -1541,13 +1556,18 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     };
 
     let undeclared = empty_effect();
+    let undeclared_delta = InvocationDelta {
+        effect: &undeclared,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
         invocation_context(&bundle, &view),
         &pre_document,
         &post_document,
-        &undeclared,
+        &undeclared_delta,
         &mut pre_meter,
         &mut post_meter,
     );
@@ -1561,10 +1581,15 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
         other => panic!("expected Refused(frame_violation/unauthorized-change), got {other:?}"),
     }
 
-    let declared = OperationEffect {
+    let declared_effect = OperationEffect {
         field_writes: vec![ProducerKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &declared_effect,
+        declared_created: &[],
+        declared_deleted: &[],
     };
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -1581,5 +1606,460 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
         other => panic!(
             "expected Admitted once model.A.x is a declared fieldWrites member, got {other:?}"
         ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PR #168 review: object identity vs. type, ordered/unordered field
+// comparison, redefinition-reaching field-write coverage, subtype
+// created/deleted under a supertype grant, and FR-046 delta agreement.
+// ---------------------------------------------------------------------------
+
+/// A dedicated bundle for the ordered/unordered field-comparison tests:
+/// `model.A.ordered` (declared `ordered: true`, so pre/post comparison is
+/// exact-sequence) and `model.A.unordered` (declared `ordered: false`, so
+/// comparison is order-insensitive), both fields of `model.A`.
+fn ordering_bundle() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.ordering"),
+        vec![
+            object_type("model.A"),
+            BundleRecord::FieldMember(FieldMemberRecord {
+                key: ProducerKey::fixture("model.A.ordered"),
+                owner: ProducerKey::fixture("model.A"),
+                value_type: ProducerKey::fixture("model.A"),
+                multiplicity: Multiplicity {
+                    lower: 0,
+                    upper: Some(5),
+                    ordered: true,
+                    unique: true,
+                },
+            }),
+            BundleRecord::FieldMember(FieldMemberRecord {
+                key: ProducerKey::fixture("model.A.unordered"),
+                owner: ProducerKey::fixture("model.A"),
+                value_type: ProducerKey::fixture("model.A"),
+                multiplicity: Multiplicity {
+                    lower: 0,
+                    upper: Some(5),
+                    ordered: false,
+                    unique: true,
+                },
+            }),
+        ],
+    )
+}
+
+/// Item 6: reordering an *unordered* field's values between pre and post is
+/// not a write at all -- `enforce_frame` compares by the field's own
+/// declared collection kind (`Multiplicity::ordered`), never by `Vec`
+/// sequence, for a field declared unordered. `empty_effect()` (no declared
+/// `fieldWrites`) still admits, because there is no write to authorize.
+///
+/// Mutation used: in `field_values_equal`, removed the `if
+/// field_ordered(...)` branch entirely (always comparing `pre == post` as
+/// plain sequences). This test went red as expected (`Refused(
+/// frame_violation/unauthorized-change)` instead of `Admitted`); reverted.
+#[test]
+#[trace("FR-151", "FR-153-AC-7")]
+fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
+    let bundle = ordering_bundle();
+    let view = view_of(&bundle);
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.ordering".to_owned(),
+        members: vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.unordered", vec!["a1", "a2"])],
+        )],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.ordering".to_owned(),
+        members: vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.unordered", vec!["a2", "a1"])],
+        )],
+    };
+    let effect = empty_effect();
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Admitted(_) => {}
+        other => panic!(
+            "expected Admitted -- an unordered field's reordered values are not a write, got \
+             {other:?}"
+        ),
+    }
+}
+
+/// Item 6's other half: the identical reorder over the *ordered* sibling
+/// field is a write (an ordered field's declared sequence is exact, so a
+/// different order is a different sequence), and `empty_effect()` declares
+/// no `fieldWrites`, so it refuses.
+///
+/// Mutation used: in `field_ordered`, replaced the body with an
+/// unconditional `false` (treating every field, including this one's own
+/// declared-`ordered: true` field, as order-insensitive). This test went
+/// red as expected (`Admitted` instead of `Refused`); reverted.
+#[test]
+#[trace("FR-151", "FR-153-AC-7")]
+fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
+    let bundle = ordering_bundle();
+    let view = view_of(&bundle);
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.ordering".to_owned(),
+        members: vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.ordered", vec!["a1", "a2"])],
+        )],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.ordering".to_owned(),
+        members: vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.ordered", vec!["a2", "a1"])],
+        )],
+    };
+    let effect = empty_effect();
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause, "unauthorized-change");
+            assert!(refusal.detail.contains("model.A.ordered"));
+        }
+        other => panic!(
+            "expected Refused(frame_violation/unauthorized-change) -- an ordered field's \
+             reordered values are a write, got {other:?}"
+        ),
+    }
+}
+
+/// A dedicated bundle for item 7's redefinition-reaching field-write test:
+/// `model.B.x` redefines `model.A.x` (`B` a subtype of `A`).
+fn redefinition_bundle() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.redef"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.B.x", "model.B", "model.A"),
+            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+        ],
+    )
+}
+
+/// Item 7: a field write is covered by `effect.field_writes` when it
+/// "reaches one through redefinition records" (FR-151's own effect-
+/// inclusion rule), not only by an exact key match. The operation declares
+/// only the redefined ancestor member, `model.A.x`; the population document
+/// writes the redefining member, `model.B.x` -- admitted because it reaches
+/// `model.A.x` through the one `RedefinitionRecord` above.
+///
+/// Mutation used: in `field_write_covered`, removed the `bundle.records...`
+/// redefinition-reaching branch (direct match only). This test went red as
+/// expected (`Refused(frame_violation/unauthorized-change)` instead of
+/// `Admitted`); reverted.
+#[test]
+#[trace("FR-151", "FR-153-AC-7")]
+fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_redefinition() {
+    let bundle = redefinition_bundle();
+    let view = view_of(&bundle);
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.redef".to_owned(),
+        members: vec![member_with_fields(
+            "b1",
+            "model.B",
+            vec![("model.B.x", vec!["a1"])],
+        )],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.redef".to_owned(),
+        members: vec![member_with_fields(
+            "b1",
+            "model.B",
+            vec![("model.B.x", vec!["a9"])],
+        )],
+    };
+    let effect = OperationEffect {
+        field_writes: vec![ProducerKey::fixture("model.A.x")],
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Admitted(_) => {}
+        other => panic!(
+            "expected Admitted -- model.B.x reaches the declared model.A.x grant through \
+             redefinition, got {other:?}"
+        ),
+    }
+}
+
+/// Item 5: an object that changes its most-specific type between pre and
+/// post (`a1: model.A -> a1: model.B`) has no authorization path under any
+/// declared frame -- FR-151's effect vocabulary grants only `fieldWrites`/
+/// `creates`/`deletes`, never a retype, and FR-143 binds the most-specific
+/// type into an object reference's own identity -- so it always refuses,
+/// even though `model.A`/`model.B` both appear in `creates`/`deletes` (which
+/// would admit it if it were silently reinterpreted as an unrelated
+/// delete-plus-create rather than caught as a type change).
+///
+/// Mutation used: in `enforce_frame`, replaced the type-change condition
+/// (`*pre_type != *post_type`) with `false` (never refusing a type change).
+/// This test went red as expected (`Admitted` instead of `Refused` -- the
+/// invocation was silently admitted, `a1` ending up typed `model.B` in the
+/// returned post binding); reverted.
+#[test]
+#[trace("FR-151", "FR-153-AC-7")]
+fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![member("a1", "model.A"), member("b1", "model.B")],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![member("a1", "model.B"), member("b1", "model.B")],
+    };
+    let effect = OperationEffect {
+        field_writes: Vec::new(),
+        creates: vec![
+            ProducerKey::fixture("model.A"),
+            ProducerKey::fixture("model.B"),
+        ],
+        deletes: vec![
+            ProducerKey::fixture("model.A"),
+            ProducerKey::fixture("model.B"),
+        ],
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause, "unauthorized-change");
+            assert!(refusal.detail.contains("a1"));
+        }
+        other => panic!(
+            "expected Refused(frame_violation/unauthorized-change) -- a mid-lifetime type \
+             change has no authorization path, got {other:?}"
+        ),
+    }
+}
+
+/// Item 8: a subtype (`model.B`) created and deleted under a supertype
+/// (`model.A`) grant admits -- `enforce_frame` decides `creates`/`deletes`
+/// membership by conformance (`crate::model::conformance::type_conforms`),
+/// not exact type equality, exactly like `all_instances`'s own subtype
+/// selection (`tests/model_population.rs`'s `l01_*` test).
+#[test]
+#[trace("TC-198", "FR-151", "FR-153-AC-7")]
+fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let pre_document = p1("bundle.n01"); // a1, a2, b1
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![
+            member("a1", "model.A"),
+            member("a2", "model.A"),
+            member("b9", "model.B"),
+        ],
+    };
+    let effect = OperationEffect {
+        field_writes: Vec::new(),
+        creates: vec![ProducerKey::fixture("model.A")],
+        deletes: vec![ProducerKey::fixture("model.A")],
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &["b9".to_owned()],
+        declared_deleted: &["b1".to_owned()],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Admitted(_) => {}
+        other => panic!(
+            "expected Admitted -- model.B conforms to the declared model.A creates/deletes \
+             grant, got {other:?}"
+        ),
+    }
+}
+
+/// Item 4 (FR-046): the invocation's own declared created/deleted identity
+/// lists must equal the complete computed sets [`enforce_frame`] derives
+/// from the two documents. Here the operation's own frame authorizes
+/// deleting `a2` (so the frame check itself passes), but the invocation
+/// declares no delta at all -- `Code::PopulationDeltaMismatch`/cause
+/// `delta-disagreement`, the same cause the native runtime's own
+/// `declared_deltas` uses for this violation.
+///
+/// Mutation used: in `admit_invocation`, replaced the `enforce_frame(...)`
+/// call's `Err` arm with an unconditional fallthrough to
+/// `AdmissionOutcome::Admitted(...)` (never propagating a delta refusal).
+/// This test went red as expected (`Admitted` instead of `Refused`);
+/// reverted.
+#[test]
+#[trace("FR-046-AC-3", "FR-153-AC-7")]
+fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populations() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let effect = deletes_a_effect();
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[], // wrong: a2 is actually deleted
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &p1("bundle.n01"),
+        &p1_minus_a2("bundle.n01"),
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::PopulationDeltaMismatch);
+            assert_eq!(refusal.cause, "delta-disagreement");
+        }
+        other => {
+            panic!("expected Refused(population_delta_mismatch/delta-disagreement), got {other:?}")
+        }
+    }
+}
+
+/// FR-046's other declared-delta requirement: the same identity may not be
+/// declared both created and deleted in one invocation, regardless of what
+/// the two documents actually show (here, pre and post are identical, so
+/// there is no real change at all).
+///
+/// No isolated mutation pins this test to `check_declared_delta`'s own
+/// overlap check specifically: `computed_created`/`computed_deleted` are
+/// always disjoint by construction (an object can only be classified
+/// created *or* deleted, never both, in `enforce_frame`'s own loops), so a
+/// declared pair that overlaps can never coincidentally equal both computed
+/// sets either -- the final full-set-equality check below the overlap check
+/// already refuses this same input on its own. Disabling only the overlap
+/// check (removing its `if let Some(overlap) = ...` block) leaves this test
+/// green, still refused via the equality check, with an unchanged code/cause
+/// (`PopulationDeltaMismatch`/`delta-disagreement`) but a different detail
+/// message. The overlap check is kept for a clearer diagnostic message and
+/// to mirror the native runtime's own `declared_deltas` shape, not because
+/// this test independently proves it fires.
+#[test]
+#[trace("FR-046-AC-3", "FR-153-AC-7")]
+fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_and_deleted() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let effect = OperationEffect {
+        field_writes: Vec::new(),
+        creates: vec![ProducerKey::fixture("model.A")],
+        deletes: vec![ProducerKey::fixture("model.A")],
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &["a2".to_owned()],
+        declared_deleted: &["a2".to_owned()],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &p1("bundle.n01"),
+        &p1("bundle.n01"),
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::PopulationDeltaMismatch);
+            assert_eq!(refusal.cause, "delta-disagreement");
+        }
+        other => {
+            panic!("expected Refused(population_delta_mismatch/delta-disagreement), got {other:?}")
+        }
     }
 }
