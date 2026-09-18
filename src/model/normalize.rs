@@ -1,16 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-150 model normalization: phases 1 (decode), 2 (qualify), 3 (inherit)
-//! and 5 (canonicalize).
+//! FR-150 model normalization: phases 1 (decode), 2 (qualify), 3 (inherit),
+//! 4 (`quire.model.normalize.redefine/v1`, explicit field redefinition) and
+//! 5 (canonicalize).
 //!
-//! Phase 4 (`quire.model.normalize.subset/v1` and
-//! `quire.model.normalize.redefine/v1`: explicit subsetting, redefinition
-//! and their conflict/redefinition-target checks, TC-195 N06) is not
-//! implemented in this rung: [`crate::model::bundle`] carries no subsetting
-//! or redefinition records, and `ChargePoint` has no
-//! `normalize.redefinition-check`/`normalize.conflict-check`. This is a
-//! scope decision reported in the delivering PR, not a silent gap: a bundle
-//! with a redefinition or subsetting record is simply not representable
-//! yet, so nothing here can silently approximate one.
+//! Phase 4 here covers exactly TC-195 N06's shape: explicit
+//! [`crate::model::bundle::RedefinitionRecord`]s over **field** members,
+//! resolved by the same proper-descendant dominance FR-151 dispatch later
+//! reuses (a redefining owner that is a proper descendant of every other
+//! contesting owner wins outright; two or more undominated owners refuse
+//! `derivation-conflict`). `quire.model.normalize.subset/v1` (explicit
+//! subsetting) derives no replacement member — FR-150 says so explicitly
+//! ("subsetting never conflicts with redefinition because it derives no
+//! replacement") — so [`crate::model::bundle::SubsettingRecord`] carries no
+//! normalization derivation at all; it is checked directly by
+//! `crate::model::conformance` (the static `subsetting-type` axis) and by
+//! `crate::model::environment` (the runtime `binding.subset-value` charge).
+//! **Operation-member** redefinition (TC-196 R02–R08) also builds no phase
+//! here: `crate::model::conformance` constructs its own
+//! [`EffectiveDeclarationPreimage`] directly over the bundle's
+//! [`crate::model::bundle::OperationMemberRecord`]/`RedefinitionRecord`
+//! values for FR-151's conformance checking, so this pass — which exists to
+//! grow [`EffectiveView`] itself — has nothing to add for operations. This
+//! split is a scope decision recorded here, not a silent gap: extending
+//! this pass to also normalize operation-member redefinition into the view
+//! is future work, tracked by the PR that made this decision.
 //!
 //! This engine takes a [`Bundle`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
@@ -38,6 +51,17 @@
 //! denied at or before this type regardless of what a deeper walk would have
 //! found, so the reported outcome is still the correct `Incomplete`, matching
 //! FR-150's "exhaustion ends checking" rule.
+//!
+//! Phase 4's own dominance check (deciding which of several redefiners of
+//! the same target wins) asks a different question than phase 3's own
+//! [`ancestor_paths`]: only *reachability* between two specific owners, never
+//! every path between them. It reuses [`ancestor_paths`] rather than a
+//! second traversal primitive, but under the same `limits`-derived budget
+//! (PR #140 F1's own discipline, not a second unbounded walk introduced
+//! alongside it), and phase 3's own already-computed ancestor paths for
+//! `type_key` are reused verbatim for `apply_redefinitions`'s owner-path
+//! bookkeeping rather than recomputed a second time (PR #140 F10's same
+//! "don't walk the identical DFS twice" lesson, applied to phase 4 too).
 
 use std::collections::HashMap;
 
@@ -51,7 +75,7 @@ use crate::model::bundle::{
 };
 use crate::model::key::{
     digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey,
-    PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY,
+    PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
 
@@ -82,13 +106,26 @@ pub enum NormalizeOutcome {
     Incomplete(Incomplete),
 }
 
-/// One entry of an [`EffectiveView`]: `{effective_id, preimage}`.
+/// One entry of an [`EffectiveView`]: `{effective_id, preimage}`, plus this
+/// pass's own `visible` bit.
+///
+/// `visible` is never part of `preimage`'s identity bytes — the effective
+/// view's serialized shape and every `quire.model.effective-view/v1`
+/// identity this rung already ships (TC-195 N01/N02) are unchanged by phase
+/// 4. A phase-4 redefinition contest can still mark an entry hidden: the
+/// member is a real effective declaration FR-150 requires the view to
+/// retain for provenance, but it lost the redefinition contest for its
+/// (owner, original) key, so it is not the declaration a name resolves to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewEntry {
     /// This declaration's computed identity.
     pub effective_id: EffectiveId,
     /// The preimage that identity was computed from.
     pub preimage: EffectiveDeclarationPreimage,
+    /// Whether this declaration is the active one for its `(owner,
+    /// original)` key. `false` only for a member phase 4 dominated away by
+    /// a redefinition elsewhere reaching the same owner.
+    pub visible: bool,
 }
 
 /// A `quire.model.effective-view/v1` result: every effective declaration a
@@ -222,12 +259,21 @@ struct Index {
     /// Every declared object type, keyed by its own full producer key (PR
     /// #140 F2): two `ObjectType` records that share a display identity but
     /// differ in revision or digest are distinct original declarations and
-    /// must both survive, never merge.
+    /// must both survive, never merge. Also serves phase 4's and this
+    /// module's other passes' "is this a declared type" dangling-reference
+    /// checks — a second, redundant `known_types` set would only ever
+    /// duplicate this one.
     types: std::collections::BTreeSet<ProducerKey>,
     fields_by_owner: HashMap<ProducerKey, Vec<FieldMemberRecord>>,
     generals_by_specific: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
     /// Every type that is some record's `specific`, i.e. not a root.
     non_root: std::collections::HashSet<ProducerKey>,
+    /// Every declared scalar type's own full key.
+    known_scalars: std::collections::HashSet<ProducerKey>,
+    /// Every field member's own key.
+    field_member_keys: std::collections::HashSet<ProducerKey>,
+    /// Every operation member's own key.
+    operation_member_keys: std::collections::HashSet<ProducerKey>,
 }
 
 impl Index {
@@ -236,12 +282,16 @@ impl Index {
         let mut fields_by_owner: HashMap<ProducerKey, Vec<_>> = HashMap::new();
         let mut generals_by_specific: HashMap<ProducerKey, Vec<_>> = HashMap::new();
         let mut non_root = std::collections::HashSet::new();
+        let mut known_scalars = std::collections::HashSet::new();
+        let mut field_member_keys = std::collections::HashSet::new();
+        let mut operation_member_keys = std::collections::HashSet::new();
         for record in &bundle.records {
             match record {
                 BundleRecord::ObjectType(t) => {
                     types.insert(t.key.clone());
                 }
                 BundleRecord::FieldMember(m) => {
+                    field_member_keys.insert(m.key.clone());
                     fields_by_owner
                         .entry(m.owner.clone())
                         .or_default()
@@ -254,6 +304,25 @@ impl Index {
                         .or_default()
                         .push(g.clone());
                 }
+                BundleRecord::ScalarType(s) => {
+                    known_scalars.insert(s.key.clone());
+                }
+                BundleRecord::OperationMember(o) => {
+                    operation_member_keys.insert(o.key.clone());
+                }
+                // Redefinition bookkeeping is scanned per type directly from
+                // `bundle.records` by `apply_redefinitions`, so it needs no
+                // index bucket here.
+                BundleRecord::Redefinition(_) => {}
+                // Subsetting derives no normalization fact (see module
+                // docs); it needs no bookkeeping here at all.
+                BundleRecord::Subsetting(_) => {}
+                // FR-152 systems-model records (crate::model::systems) are
+                // not FR-150 normalization inputs: they neither declare a
+                // type nor derive an effective declaration here.
+                BundleRecord::Component(_)
+                | BundleRecord::Endpoint(_)
+                | BundleRecord::Relationship(_) => {}
             }
         }
         Self {
@@ -261,6 +330,9 @@ impl Index {
             fields_by_owner,
             generals_by_specific,
             non_root,
+            known_scalars,
+            field_member_keys,
+            operation_member_keys,
         }
     }
 
@@ -420,6 +492,14 @@ struct Built {
     declarations: Vec<PendingDeclaration>,
     view: EffectiveView,
     universe: ObjectUniverse,
+    /// Total phase-4 redefinition edges examined across every type, in
+    /// `apply_redefinitions` call order; replayed by `charge_all` as
+    /// `normalize.redefinition-check` charges.
+    redefinition_edges: u64,
+    /// Total phase-4 target groups (contested `redefined` keys) resolved
+    /// across every type; replayed by `charge_all` as
+    /// `normalize.conflict-check` charges.
+    conflict_groups: u64,
 }
 
 /// Refuses a [`BundleRecord`] that names a type key absent from the bundle's
@@ -463,7 +543,130 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     ),
                 });
             }
+            BundleRecord::ScalarType(_) => {}
+            BundleRecord::OperationMember(op) if !index.types.contains(&op.owner) => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-owner",
+                    detail: format!(
+                        "operation member {} names owner {}, which is not a declared object type",
+                        op.key.identity, op.owner.identity
+                    ),
+                });
+            }
+            BundleRecord::OperationMember(op) => {
+                for parameter in &op.parameters {
+                    if !index.types.contains(&parameter.value_type)
+                        && !index.known_scalars.contains(&parameter.value_type)
+                    {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: "unknown-value-type",
+                            detail: format!(
+                                "operation {} parameter {} names value type {}, which is not a declared type",
+                                op.key.identity,
+                                parameter.key.identity,
+                                parameter.value_type.identity
+                            ),
+                        });
+                    }
+                }
+                if let Some(result) = &op.result {
+                    if !index.types.contains(&result.value_type)
+                        && !index.known_scalars.contains(&result.value_type)
+                    {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: "unknown-value-type",
+                            detail: format!(
+                                "operation {} result names value type {}, which is not a declared type",
+                                op.key.identity, result.value_type.identity
+                            ),
+                        });
+                    }
+                }
+                for field in &op.effect.field_writes {
+                    if !index.field_member_keys.contains(field) {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: "unknown-field-write",
+                            detail: format!(
+                                "operation {} effect writes {}, which is not a declared field member",
+                                op.key.identity, field.identity
+                            ),
+                        });
+                    }
+                }
+                for target in op.effect.creates.iter().chain(&op.effect.deletes) {
+                    if !index.types.contains(target) {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: "unknown-effect-type",
+                            detail: format!(
+                                "operation {} effect names type {}, which is not a declared object type",
+                                op.key.identity, target.identity
+                            ),
+                        });
+                    }
+                }
+            }
+            BundleRecord::Redefinition(redefinition) if !index.types.contains(&redefinition.owner) => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-owner",
+                    detail: format!(
+                        "redefinition {} names owner {}, which is not a declared object type",
+                        redefinition.key.identity, redefinition.owner.identity
+                    ),
+                });
+            }
+            BundleRecord::Redefinition(redefinition) => {
+                for member in [&redefinition.redefining, &redefinition.redefined] {
+                    if !index.field_member_keys.contains(member)
+                        && !index.operation_member_keys.contains(member)
+                    {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: "unknown-member",
+                            detail: format!(
+                                "redefinition {} names {}, which is not a declared field or operation member",
+                                redefinition.key.identity, member.identity
+                            ),
+                        });
+                    }
+                }
+            }
+            BundleRecord::Subsetting(subsetting) if !index.types.contains(&subsetting.owner) => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "unknown-owner",
+                    detail: format!(
+                        "subsetting {} names owner {}, which is not a declared object type",
+                        subsetting.key.identity, subsetting.owner.identity
+                    ),
+                });
+            }
+            BundleRecord::Subsetting(subsetting) => {
+                for member in [&subsetting.subsetting, &subsetting.subsetted] {
+                    if !index.field_member_keys.contains(member)
+                        && !index.operation_member_keys.contains(member)
+                    {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: "unknown-member",
+                            detail: format!(
+                                "subsetting {} names {}, which is not a declared field or operation member",
+                                subsetting.key.identity, member.identity
+                            ),
+                        });
+                    }
+                }
+            }
             BundleRecord::FieldMember(_) | BundleRecord::Generalization(_) => {}
+            // FR-152 systems-model records validate their own references
+            // independently (crate::model::systems); FR-150's phase 1 does
+            // not concern itself with them.
+            BundleRecord::Component(_) | BundleRecord::Endpoint(_) | BundleRecord::Relationship(_) => {}
         }
     }
     Ok(())
@@ -485,7 +688,11 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     let mut type_jcs_lens: HashMap<ProducerKey, u64> = HashMap::new();
     let mut member_preimages: HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage> =
         HashMap::new();
+    let mut hidden: std::collections::HashSet<(ProducerKey, ProducerKey)> =
+        std::collections::HashSet::new();
     let mut facts_so_far: u64 = 0;
+    let mut redefinition_edges: u64 = 0;
+    let mut conflict_groups: u64 = 0;
 
     for type_key in &type_keys {
         phase2_facts.push(PendingFact {
@@ -504,7 +711,8 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         // Ancestor paths are computed once per type and reused for both the
         // type's own derivation and its inherited members below (PR #140
         // F10: the original two-loop shape recomputed this identical DFS
-        // twice per type).
+        // twice per type), and again for phase 4's own owner-path
+        // bookkeeping just below (the same F10 lesson applied there too).
         let budget = remaining_fact_budget(limits, facts_so_far);
         let paths = ancestor_paths(type_key, &index, budget)?;
         for ancestor in &paths {
@@ -593,6 +801,18 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
                 }
             }
         }
+
+        let (type_edges, type_groups) = apply_redefinitions(
+            bundle,
+            &index,
+            limits,
+            type_key,
+            &paths,
+            &mut member_preimages,
+            &mut hidden,
+        )?;
+        redefinition_edges += type_edges;
+        conflict_groups += type_groups;
     }
 
     // Phase 5 (identities only; charging is replayed separately).
@@ -607,6 +827,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         entries.push(ViewEntry {
             effective_id,
             preimage,
+            visible: true,
         });
     }
     let mut member_keys: Vec<(ProducerKey, ProducerKey)> =
@@ -615,12 +836,14 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         owner_a.cmp(owner_b).then_with(|| decl_a.cmp(decl_b))
     });
     for key in member_keys {
+        let visible = !hidden.contains(&key);
         let preimage = member_preimages.remove(&key).expect("built above");
         let (effective_id, jcs_len) = preimage.identity_and_jcs_len();
         declarations.push(PendingDeclaration { jcs_len });
         entries.push(ViewEntry {
             effective_id,
             preimage,
+            visible,
         });
     }
     entries.sort_by(|a, b| a.effective_id.cmp(&b.effective_id));
@@ -647,7 +870,215 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         declarations,
         view,
         universe,
+        redefinition_edges,
+        conflict_groups,
     })
+}
+
+/// One redefinition record's contest for its `redefined` target, reachable
+/// at `type_key` along `path` (the ancestor-generalization keys from
+/// `type_key` to `owner`, empty when `owner` is `type_key` itself).
+struct RedefinitionEdge {
+    owner: ProducerKey,
+    redefining: ProducerKey,
+    record_key: ProducerKey,
+    target: ProducerKey,
+    path: Vec<ProducerKey>,
+}
+
+/// Phase 4 (TC-195 N06): field redefinition only — operation-member
+/// redefinition is out of scope here (see the module docs); `conformance`
+/// resolves that case directly against its own [`EffectiveDeclarationPreimage`]
+/// values instead of this pass's exposure bookkeeping.
+///
+/// For every field redefinition record reachable at `type_key` (declared on
+/// `type_key` itself or a generalization ancestor, per `paths` — already
+/// computed by `build` for this same `type_key`, not recomputed here), groups
+/// the competing redefiners of the same `redefined` target and resolves a
+/// unique winner: the one whose owner is a proper descendant of every other
+/// competing owner. A target with no competing redefiner needs no
+/// resolution. Two or more competing redefiners with no owner dominating
+/// every other is a typed `derivation-conflict` refusal naming every
+/// competing path — never an arbitrary pick. The winner gains one redefine
+/// fact citing its own edge; every other contender (the target itself, and
+/// every losing redefiner) gains its own edge's redefine fact and is marked
+/// hidden, retained in the view for provenance but not the declaration its
+/// `(owner, original)` key resolves to.
+fn apply_redefinitions(
+    bundle: &Bundle,
+    index: &Index,
+    limits: &ModelNormalizationLimits,
+    type_key: &ProducerKey,
+    paths: &[AncestorPath],
+    member_preimages: &mut HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage>,
+    hidden: &mut std::collections::HashSet<(ProducerKey, ProducerKey)>,
+) -> Result<(u64, u64), ModelRefusal> {
+    let mut owner_paths: HashMap<ProducerKey, Vec<ProducerKey>> = HashMap::new();
+    owner_paths.insert(type_key.clone(), Vec::new());
+    for ancestor in paths {
+        owner_paths
+            .entry(ancestor.ancestor_key.clone())
+            .or_insert_with(|| ancestor.path.clone());
+    }
+
+    let mut groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    for record in &bundle.records {
+        let BundleRecord::Redefinition(redefinition) = record else {
+            continue;
+        };
+        if !index.field_member_keys.contains(&redefinition.redefining)
+            || !index.field_member_keys.contains(&redefinition.redefined)
+        {
+            // Operation-member redefinition: out of scope for this pass.
+            continue;
+        }
+        let Some(path) = owner_paths.get(&redefinition.owner) else {
+            // This redefinition's owner does not reach `type_key`.
+            continue;
+        };
+        groups
+            .entry(redefinition.redefined.clone())
+            .or_default()
+            .push(RedefinitionEdge {
+                owner: redefinition.owner.clone(),
+                redefining: redefinition.redefining.clone(),
+                record_key: redefinition.key.clone(),
+                target: redefinition.redefined.clone(),
+                path: path.clone(),
+            });
+    }
+
+    let mut target_keys: Vec<ProducerKey> = groups.keys().cloned().collect();
+    target_keys.sort();
+
+    let mut edge_total: u64 = 0;
+    let mut group_total: u64 = 0;
+
+    for target_key in target_keys {
+        let mut edges = groups.remove(&target_key).expect("just listed");
+        group_total += 1;
+        edge_total += edges.len() as u64;
+        edges.sort_by(|a, b| {
+            a.owner
+                .cmp(&b.owner)
+                .then_with(|| a.record_key.cmp(&b.record_key))
+        });
+
+        let mut winner: Option<usize> = None;
+        for i in 0..edges.len() {
+            let mut dominates_all = true;
+            for j in 0..edges.len() {
+                if i == j {
+                    continue;
+                }
+                if !dominates(&edges[i].owner, &edges[j].owner, index, limits)? {
+                    dominates_all = false;
+                    break;
+                }
+            }
+            if dominates_all {
+                winner = Some(i);
+                break;
+            }
+        }
+
+        let Some(winner_index) = winner else {
+            let paths: Vec<String> = edges
+                .iter()
+                .map(|edge| {
+                    let mut path: Vec<String> =
+                        edge.path.iter().map(|key| key.identity.clone()).collect();
+                    path.push(edge.record_key.identity.clone());
+                    path.push(target_key.identity.clone());
+                    format!("[{}]", path.join(", "))
+                })
+                .collect();
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: "derivation-conflict",
+                detail: format!(
+                    "type {} has {} undominated redefinitions of {}: {}",
+                    type_key.identity,
+                    edges.len(),
+                    target_key.identity,
+                    paths.join(" and ")
+                ),
+            });
+        };
+
+        let member_key = (type_key.clone(), target_key.clone());
+        if !member_preimages.contains_key(&member_key) {
+            return Err(ModelRefusal {
+                code: Code::DanglingReference,
+                cause: "redefinition-unreachable",
+                detail: format!(
+                    "redefinition target {} is not an effective member of {}",
+                    target_key.identity, type_key.identity
+                ),
+            });
+        }
+
+        for (i, edge) in edges.iter().enumerate() {
+            let mut inputs = edge.path.clone();
+            inputs.push(edge.record_key.clone());
+            inputs.push(edge.target.clone());
+
+            let redefining_key = (type_key.clone(), edge.redefining.clone());
+            let entry = member_preimages
+                .get_mut(&redefining_key)
+                .ok_or_else(|| ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: "redefinition-unreachable",
+                    detail: format!(
+                        "redefining member {} is not an effective member of {}",
+                        edge.redefining.identity, type_key.identity
+                    ),
+                })?;
+            let ordinal = entry.derivation.len();
+            entry.derivation.push(Fact {
+                ordinal,
+                rule: RULE_REDEFINE,
+                inputs: inputs.clone(),
+            });
+            if i != winner_index {
+                hidden.insert(redefining_key);
+            }
+
+            let target_entry = member_preimages
+                .get_mut(&member_key)
+                .expect("checked reachable above");
+            let ordinal = target_entry.derivation.len();
+            target_entry.derivation.push(Fact {
+                ordinal,
+                rule: RULE_REDEFINE,
+                inputs,
+            });
+        }
+        hidden.insert(member_key);
+    }
+
+    Ok((edge_total, group_total))
+}
+
+/// Whether `descendant` has `ancestor` among its own generalization
+/// ancestors (a proper-descendant test, never reflexive). Reuses
+/// [`ancestor_paths`] under a fresh `limits`-derived budget (PR #140 F1's
+/// own discipline: this is a second, independent enumeration from `build`'s
+/// own phase-3 walk, so it must be bounded the same way, never left
+/// unbounded just because it is "only" a reachability check).
+fn dominates(
+    descendant: &ProducerKey,
+    ancestor: &ProducerKey,
+    index: &Index,
+    limits: &ModelNormalizationLimits,
+) -> Result<bool, ModelRefusal> {
+    if descendant == ancestor {
+        return Ok(false);
+    }
+    let budget = remaining_fact_budget(limits, 0);
+    Ok(ancestor_paths(descendant, index, budget)?
+        .iter()
+        .any(|candidate| &candidate.ancestor_key == ancestor))
 }
 
 fn sort_facts(facts: &mut [PendingFact]) {
@@ -700,6 +1131,13 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
         )?;
     }
 
+    for _ in 0..built.redefinition_edges {
+        meter.charge(Charge::new(ChargePoint::NormalizeRedefinitionCheck))?;
+    }
+    for _ in 0..built.conflict_groups {
+        meter.charge(Charge::new(ChargePoint::NormalizeConflictCheck))?;
+    }
+
     let mut decl_count: u64 = 0;
     for declaration in &built.declarations {
         decl_count += 1;
@@ -731,6 +1169,53 @@ fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
         BundleRecord::FieldMember(record) => vec![&record.key, &record.owner, &record.value_type],
         BundleRecord::Generalization(record) => {
             vec![&record.key, &record.specific, &record.general]
+        }
+        BundleRecord::ScalarType(record) => vec![&record.key],
+        BundleRecord::OperationMember(record) => {
+            let mut keys = vec![&record.key, &record.owner];
+            for parameter in &record.parameters {
+                keys.push(&parameter.key);
+                keys.push(&parameter.value_type);
+            }
+            if let Some(result) = &record.result {
+                keys.push(&result.value_type);
+            }
+            for field in &record.effect.field_writes {
+                keys.push(field);
+            }
+            for target in record.effect.creates.iter().chain(&record.effect.deletes) {
+                keys.push(target);
+            }
+            keys
+        }
+        BundleRecord::Redefinition(record) => {
+            vec![
+                &record.key,
+                &record.owner,
+                &record.redefining,
+                &record.redefined,
+            ]
+        }
+        BundleRecord::Subsetting(record) => {
+            vec![
+                &record.key,
+                &record.owner,
+                &record.subsetting,
+                &record.subsetted,
+            ]
+        }
+        BundleRecord::Component(record) => {
+            vec![&record.key, &record.owning_type, &record.value_type]
+        }
+        BundleRecord::Endpoint(record) => {
+            vec![&record.key, &record.owning_component, &record.value_type]
+        }
+        BundleRecord::Relationship(record) => {
+            vec![
+                &record.key,
+                &record.source.type_identity,
+                &record.target.type_identity,
+            ]
         }
     }
 }
@@ -864,7 +1349,7 @@ fn unsupported_capability_refusals(
     Ok(refusals)
 }
 
-/// Normalize `bundle` under `limits`: FR-150 phases 1, 2, 3 and 5.
+/// Normalize `bundle` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
 pub fn normalize(bundle: &Bundle, limits: ModelNormalizationLimits) -> NormalizeOutcome {
     let (outcome, _meter) = normalize_with_meter(bundle, limits);
     outcome

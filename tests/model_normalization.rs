@@ -10,9 +10,9 @@ use ix_trace_rs::trace;
 use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord,
+    ObjectTypeRecord, RedefinitionRecord,
 };
-use quire_spec_language::model::key::ProducerKey;
+use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{normalize, normalize_with_meter, NormalizeOutcome};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -25,6 +25,7 @@ const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
 fn object_type(identity: &str) -> BundleRecord {
     BundleRecord::ObjectType(ObjectTypeRecord {
         key: ProducerKey::fixture(identity),
+        interface_features: None,
     })
 }
 
@@ -42,6 +43,15 @@ fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord
         key: ProducerKey::fixture(identity),
         specific: ProducerKey::fixture(specific),
         general: ProducerKey::fixture(general),
+    })
+}
+
+fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> BundleRecord {
+    BundleRecord::Redefinition(RedefinitionRecord {
+        key: ProducerKey::fixture(identity),
+        owner: ProducerKey::fixture(owner),
+        redefining: ProducerKey::fixture(redefining),
+        redefined: ProducerKey::fixture(redefined),
     })
 }
 
@@ -70,6 +80,63 @@ fn fixture_f2() -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.n02"), records)
 }
 
+/// F2 plus field members `B.x2`/`C.x3` of type `A` (both of `A`'s own value
+/// type) and redefinition records `redef.B` (`B`, `B.x2` redefines `A.x`)
+/// and `redef.C` (`C`, `C.x3` redefines `A.x`) — TC-195 N06's first stage:
+/// two undominated redefiners of `A.x` reach `D` through sibling owners `B`
+/// and `C`.
+fn fixture_n06_conflict() -> Bundle {
+    let mut records = fixture_f2().records;
+    records.push(field_member("model.B.x2", "model.B", "model.A"));
+    records.push(field_member("model.C.x3", "model.C", "model.A"));
+    records.push(redefinition(
+        "model.redef.B",
+        "model.B",
+        "model.B.x2",
+        "model.A.x",
+    ));
+    records.push(redefinition(
+        "model.redef.C",
+        "model.C",
+        "model.C.x3",
+        "model.A.x",
+    ));
+    Bundle::new(ModelSelection::fixture("bundle.n06"), records)
+}
+
+/// TC-195 N06's second stage: `fixture_n06_conflict` plus field `D.x4` of
+/// `A`'s value type and record `redef.D` (`D`, `D.x4` redefines `A.x`). `D`
+/// is a proper descendant of both `B` and `C`, so `D.x4` dominates every
+/// other redefiner of `A.x` and the conflict resolves.
+fn fixture_n06_resolved() -> Bundle {
+    let mut records = fixture_n06_conflict().records;
+    records.push(field_member("model.D.x4", "model.D", "model.A"));
+    records.push(redefinition(
+        "model.redef.D",
+        "model.D",
+        "model.D.x4",
+        "model.A.x",
+    ));
+    Bundle::new(ModelSelection::fixture("bundle.n06"), records)
+}
+
+/// Finds the effective member declared with original identity
+/// `original_identity` under owner effective type `owner`, regardless of
+/// its `visible` bit — phase 4 retains hidden entries in the view.
+fn find_member<'a>(
+    view: &'a quire_spec_language::model::normalize::EffectiveView,
+    owner: &EffectiveId,
+    original_identity: &str,
+) -> &'a quire_spec_language::model::normalize::ViewEntry {
+    view.declarations
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner)
+                && entry.preimage.original.identity == original_identity
+        })
+        .unwrap_or_else(|| panic!("no member {original_identity} owned by {owner:?} in {view:?}"))
+}
+
 fn completed(
     bundle: &Bundle,
     limits: ModelNormalizationLimits,
@@ -89,7 +156,6 @@ fn find<'a>(
         .find(|entry| entry.effective_id.short_hex() == short_hex)
         .unwrap_or_else(|| panic!("no declaration with identity {short_hex} in {view:?}"))
 }
-
 #[trace("TC-195", "FR-150-AC-1", "FR-150-AC-3")]
 #[test]
 fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
@@ -432,6 +498,159 @@ fn unsupported_interface_version_refuses_before_any_charge() {
     }
 }
 
+#[trace("TC-195", "FR-150-AC-1")]
+#[test]
+fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
+    match normalize(&fixture_n06_conflict(), ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "derivation-conflict");
+            assert!(refusal.detail.contains("model.gen.D-B"));
+            assert!(refusal.detail.contains("model.redef.B"));
+            assert!(refusal.detail.contains("model.gen.D-C"));
+            assert!(refusal.detail.contains("model.redef.C"));
+            assert!(refusal.detail.contains("model.A.x"));
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+#[trace("TC-195", "FR-150-AC-4")]
+#[test]
+fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender() {
+    let view = completed(&fixture_n06_resolved(), ModelNormalizationLimits::UNLIMITED);
+
+    // Type-level identities are unaffected by phase 4 (field-only): D's
+    // identity is exactly N02's ground-truth "51796212" type.
+    let type_d = find(&view, "51796212");
+    let owner_d = type_d.effective_id.clone();
+
+    let winner = find_member(&view, &owner_d, "model.D.x4");
+    assert!(
+        winner.visible,
+        "D.x4 must win outright: D is a descendant of both B and C"
+    );
+    let winner_redefine: Vec<_> = winner
+        .preimage
+        .derivation
+        .iter()
+        .filter(|fact| fact.rule == RULE_REDEFINE)
+        .collect();
+    assert_eq!(winner_redefine.len(), 1);
+    assert_eq!(
+        winner_redefine[0].inputs,
+        vec![
+            ProducerKey::fixture("model.redef.D"),
+            ProducerKey::fixture("model.A.x"),
+        ]
+    );
+
+    let target = find_member(&view, &owner_d, "model.A.x");
+    assert!(!target.visible, "A.x is retained for provenance but hidden");
+    let target_redefine: Vec<_> = target
+        .preimage
+        .derivation
+        .iter()
+        .filter(|fact| fact.rule == RULE_REDEFINE)
+        .collect();
+    assert_eq!(
+        target_redefine.len(),
+        3,
+        "one redefine fact per competing redefiner: B, C, D"
+    );
+    assert_eq!(
+        target_redefine[0].inputs,
+        vec![
+            ProducerKey::fixture("model.gen.D-B"),
+            ProducerKey::fixture("model.redef.B"),
+            ProducerKey::fixture("model.A.x"),
+        ]
+    );
+    assert_eq!(
+        target_redefine[1].inputs,
+        vec![
+            ProducerKey::fixture("model.gen.D-C"),
+            ProducerKey::fixture("model.redef.C"),
+            ProducerKey::fixture("model.A.x"),
+        ]
+    );
+    assert_eq!(
+        target_redefine[2].inputs,
+        vec![
+            ProducerKey::fixture("model.redef.D"),
+            ProducerKey::fixture("model.A.x"),
+        ]
+    );
+
+    let loser_b = find_member(&view, &owner_d, "model.B.x2");
+    assert!(
+        !loser_b.visible,
+        "B.x2 loses to D.x4's more-derived redefinition"
+    );
+    let loser_b_redefine: Vec<_> = loser_b
+        .preimage
+        .derivation
+        .iter()
+        .filter(|fact| fact.rule == RULE_REDEFINE)
+        .collect();
+    assert_eq!(loser_b_redefine.len(), 1, "only B.x2's own edge, not D's");
+    assert_eq!(
+        loser_b_redefine[0].inputs,
+        vec![
+            ProducerKey::fixture("model.gen.D-B"),
+            ProducerKey::fixture("model.redef.B"),
+            ProducerKey::fixture("model.A.x"),
+        ]
+    );
+
+    let loser_c = find_member(&view, &owner_d, "model.C.x3");
+    assert!(
+        !loser_c.visible,
+        "C.x3 loses to D.x4's more-derived redefinition"
+    );
+    let loser_c_redefine: Vec<_> = loser_c
+        .preimage
+        .derivation
+        .iter()
+        .filter(|fact| fact.rule == RULE_REDEFINE)
+        .collect();
+    assert_eq!(loser_c_redefine.len(), 1, "only C.x3's own edge, not D's");
+    assert_eq!(
+        loser_c_redefine[0].inputs,
+        vec![
+            ProducerKey::fixture("model.gen.D-C"),
+            ProducerKey::fixture("model.redef.C"),
+            ProducerKey::fixture("model.A.x"),
+        ]
+    );
+}
+
+#[trace("TC-195", "FR-150-AC-1")]
+#[test]
+fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() {
+    let mut bundle = fixture_f2();
+    bundle.records.push(redefinition(
+        "model.redef.orphan",
+        "model.B",
+        "model.B.no-such-member",
+        "model.A.x",
+    ));
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::DanglingReference
+            );
+            assert_eq!(refusal.cause, "unknown-member");
+            assert!(refusal.detail.contains("model.B.no-such-member"));
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
 /// PR #140 F2 regression: two `ObjectType` records that share a display
 /// identity but differ in revision are distinct original declarations under
 /// `ProducerKey`'s full-key equality and must both survive as distinguishable
@@ -450,9 +669,11 @@ fn f2_producer_keys_sharing_an_identity_but_differing_in_revision_both_survive()
         vec![
             BundleRecord::ObjectType(ObjectTypeRecord {
                 key: ProducerKey::fixture("model.T"),
+                interface_features: None,
             }),
             BundleRecord::ObjectType(ObjectTypeRecord {
                 key: second_revision,
+                interface_features: None,
             }),
         ],
     );
