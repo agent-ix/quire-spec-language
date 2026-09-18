@@ -75,6 +75,10 @@
     clippy::large_enum_variant,
     reason = "ModelRefusalCause is a closed typed cause vocabulary retaining complete producer/effective identities without heap allocation"
 )]
+#![allow(
+    clippy::result_large_err,
+    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -1013,7 +1017,7 @@ pub fn lookup(
         return LookupOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignUniverse {
-                actual: r.key.universe.clone(),
+                actual: r.key.universe.as_bytes().to_vec(),
                 expected: binding.universe().clone(),
             },
             detail: format!(
@@ -1041,7 +1045,7 @@ pub fn lookup(
         AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
             cause: ModelRefusalCause::AbsentKey {
-                key: r.key.object.clone(),
+                key: r.key.object.clone().into_bytes(),
             },
             detail: format!("{} is not a member of the bound population", r.key.object),
         }),

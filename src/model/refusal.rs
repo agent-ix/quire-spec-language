@@ -276,16 +276,25 @@ pub enum ModelRefusalCause {
     },
     /// A reference key names a universe other than the binding's.
     ForeignUniverse {
-        /// The reference key's universe.
-        actual: EffectiveId,
+        /// The reference key's raw universe bytes, exactly as supplied. Not
+        /// always a well-formed 32-byte identity: a reference whose universe
+        /// component is some other length is also refused under this cause
+        /// (`crate::value::model_query`'s own malformed-universe case),
+        /// reporting the bytes the caller actually supplied rather than a
+        /// substituted or truncated identity.
+        actual: Vec<u8>,
         /// The binding's universe.
         expected: EffectiveId,
     },
     /// A reference key is not a member of the bound population.
     AbsentKey {
-        /// The absent key. A reference key's plain `object` string, not a
-        /// [`ProducerKey`].
-        key: String,
+        /// The absent key's raw object bytes, exactly as supplied. A
+        /// reference key's plain `object` string as UTF-8 bytes, not a
+        /// [`ProducerKey`] -- not always valid UTF-8 itself
+        /// (`crate::value::model_query`'s own malformed-identity case),
+        /// reporting the bytes the caller actually supplied rather than a
+        /// substituted or lossily-decoded string.
+        key: Vec<u8>,
     },
     /// A bundle record does not export the required [`crate::model::key`]
     /// kind for its role.
@@ -688,10 +697,10 @@ mod tests {
                 maximum: 0,
             },
             ModelRefusalCause::ForeignUniverse {
-                actual: effective_id(),
+                actual: effective_id().as_bytes().to_vec(),
                 expected: effective_id(),
             },
-            ModelRefusalCause::AbsentKey { key: String::new() },
+            ModelRefusalCause::AbsentKey { key: Vec::new() },
             ModelRefusalCause::WrongExport,
             ModelRefusalCause::UnknownRelationship {
                 relationship: key("p"),
