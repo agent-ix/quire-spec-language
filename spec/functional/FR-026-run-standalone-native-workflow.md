@@ -41,7 +41,8 @@ package byte/static identities, original source/model/runtime identities,
 selected authored clause, actual stage status, diagnostics, work counters and
 ordered implication events. Only completed execution has Boolean truth.
 Exit 0 means completed true; 1 means completed false or refused; 3 means
-incomplete; 2 means command/request syntax, identifier, I/O or output failure.
+incomplete. Invalid command usage exits 20. Request syntax, identifier, I/O
+and output failure exit 2.
 Intake failures use a JSON error on stderr with request digest when read, typed
 stage/code and relevant original source/reference details. Existing parse/format
 commands preserve their behavior. Broken pipes end quietly with the computed

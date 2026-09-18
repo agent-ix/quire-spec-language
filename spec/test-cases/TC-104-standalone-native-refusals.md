@@ -23,5 +23,6 @@ file selections in a request stored separately from the current working director
 
 ## Expected Results
 
-Malformed requests and I/O exit 2; semantic refusals exit 1; budget exhaustion
-exits 3 without truth. Fresh requests recover and no hosted service is needed.
+Malformed requests and I/O exit 2; invalid command usage exits 20; semantic
+refusals exit 1; budget exhaustion exits 3 without truth. Fresh requests
+recover and no hosted service is needed.
