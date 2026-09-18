@@ -235,7 +235,10 @@ pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassificat
             Some(_) => match component_kinds.get(&endpoint.owning_component) {
                 None => {
                     refusals.push(dangling(
-                        ModelRefusalCause::UnknownComponent,
+                        ModelRefusalCause::UnknownComponent {
+                            item: endpoint.key.identity.clone(),
+                            missing: endpoint.owning_component.identity.clone(),
+                        },
                         &endpoint.owning_component.identity,
                         &endpoint.key.identity,
                     ));
@@ -269,7 +272,10 @@ pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassificat
                     match endpoint_kinds.get(&end.type_identity) {
                         None => {
                             refusals.push(dangling(
-                                ModelRefusalCause::UnknownEndpoint,
+                                ModelRefusalCause::UnknownEndpoint {
+                                    item: format!("{} end of {}", label, relationship.key.identity),
+                                    missing: end.type_identity.identity.clone(),
+                                },
                                 &end.type_identity.identity,
                                 &format!("{} end of {}", label, relationship.key.identity),
                             ));
@@ -434,7 +440,9 @@ pub fn check_connection(
     let Some(relationship) = classification.relationships.get(relationship_key) else {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownRelationship,
+            cause: ModelRefusalCause::UnknownRelationship {
+                relationship: relationship_key.identity.clone(),
+            },
             detail: format!(
                 "{} is not a declared relationship",
                 relationship_key.identity
@@ -444,7 +452,9 @@ pub fn check_connection(
     let Some(source_port) = end_port(classification, &relationship.source.type_identity) else {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownSourcePort,
+            cause: ModelRefusalCause::UnknownSourcePort {
+                port: relationship.source.type_identity.identity.clone(),
+            },
             detail: format!(
                 "{} names an end that is not a declared endpoint",
                 relationship.source.type_identity.identity
@@ -454,7 +464,9 @@ pub fn check_connection(
     let Some(target_port) = end_port(classification, &relationship.target.type_identity) else {
         return ConnectionCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownTargetPort,
+            cause: ModelRefusalCause::UnknownTargetPort {
+                port: relationship.target.type_identity.identity.clone(),
+            },
             detail: format!(
                 "{} names an end that is not a declared endpoint",
                 relationship.target.type_identity.identity
@@ -505,7 +517,10 @@ pub fn check_connection(
         failures.push(ConditionFailure {
             condition: "port-direction",
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::PortDirection,
+            cause: ModelRefusalCause::PortDirection {
+                source: source_port.key.identity.clone(),
+                target: target_port.key.identity.clone(),
+            },
             detail: format!(
                 "direction {:?}: source {} is not compatible with target {}",
                 relationship.direction, source_port.key.identity, target_port.key.identity
@@ -608,7 +623,9 @@ pub fn check_allocation(
     let Some(relationship) = classification.relationships.get(relationship_key) else {
         return AllocationCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownRelationship,
+            cause: ModelRefusalCause::UnknownRelationship {
+                relationship: relationship_key.identity.clone(),
+            },
             detail: format!(
                 "{} is not a declared relationship",
                 relationship_key.identity

@@ -363,7 +363,10 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].condition, "port-direction");
-            assert_eq!(failures[0].cause, ModelRefusalCause::PortDirection);
+            assert!(matches!(
+                failures[0].cause,
+                ModelRefusalCause::PortDirection { .. }
+            ));
         }
         other => panic!("expected a port-direction refusal, got {other:?}"),
     }
@@ -572,7 +575,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     let cascade: Vec<(&Code, ModelRefusalCause)> = classification
         .refusals
         .iter()
-        .map(|r: &ModelRefusal| (&r.code, r.cause))
+        .map(|r: &ModelRefusal| (&r.code, r.cause.clone()))
         .collect();
     assert_eq!(
         cascade,

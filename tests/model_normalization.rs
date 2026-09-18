@@ -432,7 +432,10 @@ fn n05_digest_domain_mismatch_refuses_before_any_effective_view() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::StaleDependency
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::DigestDomainMismatch);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::DigestDomainMismatch { .. }
+            ));
             assert!(refusal.detail.contains("model.A.x"));
             assert!(refusal.detail.contains("filament-canonical-json-1"));
             assert!(refusal.detail.contains("quire-native-bytes-1"));
@@ -481,7 +484,10 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::UnknownOwner);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::UnknownOwner { .. }
+            ));
             assert!(refusal.detail.contains("model.orphan.x"));
             assert!(refusal.detail.contains("model.no-such-type"));
         }
@@ -504,7 +510,10 @@ fn a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignor
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::UnknownSpecific);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::UnknownSpecific { .. }
+            ));
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -525,7 +534,10 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::UnknownGeneral);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::UnknownGeneral { .. }
+            ));
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -542,7 +554,10 @@ fn unsupported_interface_version_refuses_before_any_charge() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::UnknownWire
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::UnsupportedWire);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::UnsupportedWire { .. }
+            ));
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -793,7 +808,10 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::UnknownMember);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::UnknownMember { .. }
+            ));
             assert!(refusal.detail.contains("model.B.no-such-member"));
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -957,7 +975,10 @@ fn n04_absent_revision_refuses_wrong_model_selection() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::WrongModelSelection);
+            assert!(matches!(
+                refusal.cause,
+                ModelRefusalCause::WrongModelSelection { .. }
+            ));
             assert!(refusal.detail.contains("model.gen.B-A"));
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -1077,7 +1098,10 @@ fn n10_unsorted_view_refuses_by_the_semantic_check() {
     let refusal = view
         .validate_order()
         .expect_err("a view whose declarations are no longer ascending must be refused");
-    assert_eq!(refusal.cause, ModelRefusalCause::UnsortedView);
+    assert!(matches!(
+        refusal.cause,
+        ModelRefusalCause::UnsortedView { .. }
+    ));
     assert_eq!(
         refusal.code,
         quire_spec_language::diagnostic::Code::InvalidModelBinding

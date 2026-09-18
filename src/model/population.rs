@@ -509,7 +509,10 @@ pub fn admit_binding(
     if view.model_selection != bundle.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: ModelRefusalCause::ForeignModelSelection,
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: view.model_selection.export.identity.clone(),
+                expected: bundle.model_selection.export.identity.clone(),
+            },
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting bundle's {}",
                 view.model_selection.export.identity, bundle.model_selection.export.identity
@@ -519,7 +522,10 @@ pub fn admit_binding(
     if document.model_identity != bundle.model_selection.export.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: ModelRefusalCause::ForeignModelSelection,
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: document.model_identity.clone(),
+                expected: bundle.model_selection.export.identity.clone(),
+            },
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",
                 document.model_identity, bundle.model_selection.export.identity
@@ -529,7 +535,9 @@ pub fn admit_binding(
     if !document.closed_world {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
-            cause: ModelRefusalCause::IncompleteScope,
+            cause: ModelRefusalCause::IncompleteScope {
+                selection: bundle.model_selection.export.identity.clone(),
+            },
             detail: format!(
                 "population document for {} does not declare closedWorld: true",
                 bundle.model_selection.export.identity
@@ -539,7 +547,15 @@ pub fn admit_binding(
     if matches!(subtype_closure, GeneralizationClosure::Open) {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
-            cause: ModelRefusalCause::UnclosedSubtypes,
+            cause: ModelRefusalCause::UnclosedSubtypes {
+                selection: bundle.model_selection.export.identity.clone(),
+                type_name: document
+                    .members
+                    .first()
+                    .map(|member| member.type_identity.identity.as_str())
+                    .unwrap_or("<no members>")
+                    .to_owned(),
+            },
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
                 bundle.model_selection.export.identity,
@@ -585,7 +601,10 @@ pub fn admit_binding(
         let Some(effective_type) = type_lookup.get(&member.type_identity) else {
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::ForeignReference,
-                cause: ModelRefusalCause::ForeignType,
+                cause: ModelRefusalCause::ForeignType {
+                    member: member.object.clone(),
+                    type_name: member.type_identity.identity.clone(),
+                },
                 detail: format!(
                     "member {} names type {}, absent from the effective view",
                     member.object, member.type_identity.identity
@@ -604,7 +623,11 @@ pub fn admit_binding(
             }
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
-                cause: ModelRefusalCause::ConflictingIdentity,
+                cause: ModelRefusalCause::ConflictingIdentity {
+                    object: key.object.clone(),
+                    existing_type: existing.type_identity.hex(),
+                    declared_type: key.type_identity.hex(),
+                },
                 detail: format!(
                     "object {} is declared with conflicting types {} and {}",
                     key.object,
@@ -976,7 +999,10 @@ pub fn lookup(
     if r.key.universe != *binding.universe() {
         return LookupOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
-            cause: ModelRefusalCause::ForeignUniverse,
+            cause: ModelRefusalCause::ForeignUniverse {
+                actual: r.key.universe.hex(),
+                expected: binding.universe().hex(),
+            },
             detail: format!(
                 "reference key names universe {}, not the binding's {}",
                 r.key.universe.hex(),
@@ -1001,7 +1027,9 @@ pub fn lookup(
         AbsenceMode::Undefined => LookupOutcome::Undefined,
         AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
-            cause: ModelRefusalCause::AbsentKey,
+            cause: ModelRefusalCause::AbsentKey {
+                key: r.key.object.clone(),
+            },
             detail: format!("{} is not a member of the bound population", r.key.object),
         }),
         AbsenceMode::Empty => {

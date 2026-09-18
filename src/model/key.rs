@@ -14,7 +14,7 @@ use std::fmt;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::model::normalize::ModelRefusalCause;
+use crate::model::refusal::ModelRefusalCause;
 use crate::value::length_amount;
 
 /// Digest domain of every producer digest selection (`filament-canonical-json-1`).

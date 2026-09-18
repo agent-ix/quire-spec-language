@@ -251,7 +251,9 @@ pub(super) fn type_conforms(
         if steps > MAX_CONFORMANCE_DEPTH {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::ConformanceDepth,
+                cause: ModelRefusalCause::ConformanceDepth {
+                    from: s.identity.clone(),
+                },
                 detail: format!(
                     "conformance check from {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
                     s.identity
@@ -309,14 +311,18 @@ pub fn check_field_redefinition(
     let index = ConformanceIndex::build(bundle);
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            ModelRefusalCause::UnknownRedefining,
+            ModelRefusalCause::UnknownRedefining {
+                member: record.redefining.identity.clone(),
+            },
             &record.redefining.identity,
             "redefining field",
         ));
     };
     let Some(redefined) = index.fields.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            ModelRefusalCause::UnknownRedefined,
+            ModelRefusalCause::UnknownRedefined {
+                member: record.redefined.identity.clone(),
+            },
             &record.redefined.identity,
             "redefined field",
         ));
@@ -380,14 +386,18 @@ pub fn check_subsetting(
     let index = ConformanceIndex::build(bundle);
     let Some(subsetting) = index.fields.get(&record.subsetting) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            ModelRefusalCause::UnknownSubsetting,
+            ModelRefusalCause::UnknownSubsetting {
+                member: record.subsetting.identity.clone(),
+            },
             &record.subsetting.identity,
             "subsetting field",
         ));
     };
     let Some(subsetted) = index.fields.get(&record.subsetted) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            ModelRefusalCause::UnknownSubsetted,
+            ModelRefusalCause::UnknownSubsetted {
+                member: record.subsetted.identity.clone(),
+            },
             &record.subsetted.identity,
             "subsetted field",
         ));
@@ -407,7 +417,10 @@ pub fn check_subsetting(
         Ok(false) => failures.push(AxisFailure {
             axis: "subsetting-type",
             code: Code::IllTyped,
-            cause: ModelRefusalCause::SubsettingType,
+            cause: ModelRefusalCause::SubsettingType {
+                subsetting: subsetting.value_type.identity.clone(),
+                subsetted: subsetted.value_type.identity.clone(),
+            },
             detail: format!(
                 "{} does not conform to {}",
                 subsetting.value_type.identity, subsetted.value_type.identity
@@ -449,14 +462,18 @@ pub fn check_operation_redefinition(
     let index = ConformanceIndex::build(bundle);
     let Some(redefining) = index.operations.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            ModelRefusalCause::UnknownRedefining,
+            ModelRefusalCause::UnknownRedefining {
+                member: record.redefining.identity.clone(),
+            },
             &record.redefining.identity,
             "redefining operation",
         ));
     };
     let Some(redefined) = index.operations.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
-            ModelRefusalCause::UnknownRedefined,
+            ModelRefusalCause::UnknownRedefined {
+                member: record.redefined.identity.clone(),
+            },
             &record.redefined.identity,
             "redefined operation",
         ));
@@ -497,7 +514,11 @@ pub fn check_operation_redefinition(
                 Ok(false) => failures.push(AxisFailure {
                     axis: "parameter-type",
                     code: Code::IllTyped,
-                    cause: ModelRefusalCause::VarianceParameter,
+                    cause: ModelRefusalCause::VarianceParameter {
+                        index: display_index,
+                        declared: dp.value_type.identity.clone(),
+                        redefined: rp.value_type.identity.clone(),
+                    },
                     detail: format!(
                         "parameter {display_index}: expected {} to conform to {}",
                         dp.value_type.identity, rp.value_type.identity
@@ -592,7 +613,9 @@ pub fn check_operation_redefinition(
             failures.push(AxisFailure {
                 axis: "effect",
                 code: Code::IllTyped,
-                cause: ModelRefusalCause::EffectEscape,
+                cause: ModelRefusalCause::EffectEscape {
+                    field: write.identity.clone(),
+                },
                 detail: format!(
                     "write {} is not covered by the redefined effect",
                     write.identity
@@ -620,7 +643,9 @@ pub fn check_operation_redefinition(
                 failures.push(AxisFailure {
                     axis: "effect",
                     code: Code::IllTyped,
-                    cause: ModelRefusalCause::EffectEscape,
+                    cause: ModelRefusalCause::EffectEscape {
+                        field: entry.identity.clone(),
+                    },
                     detail: format!("{} is not covered by the redefined effect", entry.identity),
                 });
             }
@@ -807,14 +832,18 @@ pub fn check_field_refinement_obligation(
     let index = ConformanceIndex::build(bundle);
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return Err(missing_member(
-            ModelRefusalCause::UnknownRedefining,
+            ModelRefusalCause::UnknownRedefining {
+                member: record.redefining.identity.clone(),
+            },
             &record.redefining.identity,
             "redefining field",
         ));
     };
     let Some(redefined) = index.fields.get(&record.redefined) else {
         return Err(missing_member(
-            ModelRefusalCause::UnknownRedefined,
+            ModelRefusalCause::UnknownRedefined {
+                member: record.redefined.identity.clone(),
+            },
             &record.redefined.identity,
             "redefined field",
         ));
