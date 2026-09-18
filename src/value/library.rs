@@ -12,7 +12,7 @@
 //! the `node_id` of the `identity_projection` node whose nominal
 //! `qualified_declaration` spells the exported name. QSpec 7d7943a gives no
 //! other node an explicit declared name, so an export no nominal declaration
-//! spells is `unsupported_construct` with cause `declaration-form`, never a
+//! spells is `missing_declaration` with cause `undeclared-export`, never a
 //! guessed node. A package's local declarations are exactly its exports.
 
 use std::collections::BTreeMap;
@@ -133,8 +133,9 @@ pub enum LibraryCause {
     DefinitionCycle,
     /// A member value is invalid at its member path.
     InvalidValue,
-    /// A declaration form the selected profile does not support.
-    DeclarationForm,
+    /// An export name matches no nominal declaration in the package's
+    /// identity projection.
+    UndeclaredExport,
 }
 
 impl LibraryCause {
@@ -149,7 +150,7 @@ impl LibraryCause {
             Self::ConflictingDefinition => "conflicting-definition",
             Self::DefinitionCycle => "definition-cycle",
             Self::InvalidValue => "invalid-value",
-            Self::DeclarationForm => "declaration-form",
+            Self::UndeclaredExport => "undeclared-export",
         }
     }
 }
@@ -194,8 +195,8 @@ pub enum LibraryRefusal {
     /// An export is not spelled by a nominal `qualified_declaration` in the
     /// package's identity projection, so no explicit declaration names its
     /// node.
-    #[error("unsupported export declaration form")]
-    UnsupportedExport {
+    #[error("export names no declaration")]
+    UndeclaredExport {
         /// The package's identity.
         library: LibraryName,
         /// The exported name.
@@ -257,7 +258,7 @@ impl LibraryRefusal {
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. } => Code::InvalidPackage,
-            Self::UnsupportedExport { .. } => Code::UnsupportedConstruct,
+            Self::UndeclaredExport { .. } => Code::MissingDeclaration,
         }
     }
 
@@ -268,7 +269,7 @@ impl LibraryRefusal {
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. } => LibraryCause::InvalidValue,
-            Self::UnsupportedExport { .. } => LibraryCause::DeclarationForm,
+            Self::UndeclaredExport { .. } => LibraryCause::UndeclaredExport,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
             Self::ImportCycle { .. } => LibraryCause::DefinitionCycle,
             Self::StaleDependency {
@@ -289,7 +290,7 @@ impl LibraryRefusal {
             Self::PackageIdMismatch { .. } | Self::DuplicatePackageId(_) => Some(PACKAGE_ID_PATH),
             Self::InvalidPreimage { .. } => Some(IDENTITY_PREIMAGE_PATH),
             Self::InvalidQualifier { .. }
-            | Self::UnsupportedExport { .. }
+            | Self::UndeclaredExport { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. }
             | Self::StaleDependency { .. }
@@ -315,7 +316,7 @@ fn verify_package(package: &LibraryPackage) -> Result<ProjectedDeclarations, Lib
             defect,
         })?
         .select(&package.exports)
-        .map_err(|export| LibraryRefusal::UnsupportedExport {
+        .map_err(|export| LibraryRefusal::UndeclaredExport {
             library: package.library.clone(),
             export: export.to_owned(),
         })

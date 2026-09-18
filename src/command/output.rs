@@ -255,10 +255,36 @@ pub(super) fn report(
 ) -> super::Result<RunResult> {
     let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
-            let (code, status) = match failure.status {
-                ValidationStatus::Refused => (1, types::FailureStatus::Refused),
-                ValidationStatus::Incomplete => (3, types::FailureStatus::Incomplete),
+            // FR-301's exit ladder is the highest-severity code present
+            // across every retained diagnostic (including the terminal one,
+            // when present): invalid (20) outranks unsupported (21)
+            // outranks incomplete (22). `Code::exit_code()`'s range is
+            // exactly {20, 21, 22} (asserted over `Code::all()` in
+            // tests/native_boundaries.rs), and FR-301's ordering over that
+            // three-code range happens to coincide with ascending numeric
+            // order, so the minimum over `Diagnostic::exit_code` is exactly
+            // the highest-severity code present; a single unsupported
+            // diagnostic never promotes a report that also holds an invalid
+            // one. This is not general — FR-301's full order (tool failure,
+            // invalid, unsupported, incomplete, violation, success) is not
+            // ascending-numeric across 0/10/20/21/22/30, only within the
+            // three codes a diagnostic can actually carry here. ValidationStatus
+            // only carries the wire-schema's binary refused/incomplete
+            // distinction and does not drive the exit code.
+            let status = match failure.status {
+                ValidationStatus::Refused => types::FailureStatus::Refused,
+                ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
             };
+            let code = failure
+                .diagnostics
+                .iter()
+                .chain(failure.terminal.as_deref())
+                .map(Diagnostic::exit_code)
+                .min()
+                .unwrap_or(match failure.status {
+                    ValidationStatus::Incomplete => 22,
+                    ValidationStatus::Refused => 20,
+                });
             (
                 code,
                 types::Outcome::Validate {
@@ -276,17 +302,17 @@ pub(super) fn report(
         } => {
             let (code, result) = match result {
                 EvaluationOutcome::Completed(truth) => (
-                    u8::from(!truth),
+                    if *truth { 0 } else { 10 },
                     types::Evaluation::Completed { truth: *truth },
                 ),
                 EvaluationOutcome::Refused(error) => (
-                    1,
+                    error.exit_code(),
                     types::Evaluation::Refused {
                         diagnostic: diagnostic(error),
                     },
                 ),
                 EvaluationOutcome::Incomplete(error) => (
-                    3,
+                    22,
                     types::Evaluation::Incomplete {
                         diagnostic: diagnostic(error),
                     },

@@ -181,12 +181,9 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
             invariant("deref(self.peer).missing"),
             Code::MissingDeclaration,
         ),
-        (invariant("self.peer.id"), Code::UnsupportedConstruct),
-        (
-            invariant("value(self.parent).id"),
-            Code::UnsupportedConstruct,
-        ),
-        (invariant("deref(self)"), Code::UnsupportedConstruct),
+        (invariant("self.peer.id"), Code::IllTyped),
+        (invariant("value(self.parent).id"), Code::IllTyped),
+        (invariant("deref(self)"), Code::IllTyped),
         (invariant("result"), Code::WrongSnapshot),
         (
             "post Rule on M::Node::step { step_result }".into(),
@@ -196,10 +193,7 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
             invariant("reaches(self, other, missing)"),
             Code::MissingDeclaration,
         ),
-        (
-            invariant("reaches(self, other, n)"),
-            Code::UnsupportedConstruct,
-        ),
+        (invariant("reaches(self, other, n)"), Code::IllTyped),
     ] {
         let error =
             link_native(unit(&models[0], &clause), &models, LinkLimits::default()).unwrap_err();
@@ -237,10 +231,16 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
     assert!(legacy.models()[0].native_model().is_none());
     assert_eq!(legacy.models()[0].digest(), digest);
     assert_ne!(digest, models[0].digest());
-    for clause in [
-        invariant("deref(self.peer).n"),
-        invariant("reaches(self, other, parent)"),
-        "post Rule on M::Node::step { true }".into(),
+    for (clause, code) in [
+        (invariant("deref(self.peer).n"), Code::InvalidModelBinding),
+        (
+            invariant("reaches(self, other, parent)"),
+            Code::InvalidModelBinding,
+        ),
+        (
+            "post Rule on M::Node::step { true }".into(),
+            Code::InvalidModelBinding,
+        ),
     ] {
         assert_eq!(
             link(
@@ -250,7 +250,8 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
             )
             .unwrap_err()
             .code,
-            Code::UnsupportedConstruct
+            code,
+            "{clause}"
         );
     }
 }
@@ -349,8 +350,8 @@ fn tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped()
                 if location.identity.key == DeclarationKey::Value(symbol("request"))
         )));
     for (expression, code) in [
-        ("deref(M::Flag::On)", Code::UnsupportedConstruct),
-        ("deref(mode)", Code::UnsupportedConstruct),
+        ("deref(M::Flag::On)", Code::IllTyped),
+        ("deref(mode)", Code::IllTyped),
         ("request", Code::MissingDeclaration),
     ] {
         assert_eq!(

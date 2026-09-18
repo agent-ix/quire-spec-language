@@ -203,7 +203,6 @@ fn unicode_crlf_and_checked_regions() {
 fn malformed_and_unsupported_are_distinct_and_located() {
     for expression in [
         "helper(x)",
-        "customHelper(x)",
         "always(true)",
         "[1,2]",
         "1 / 2",
@@ -219,6 +218,19 @@ fn malformed_and_unsupported_are_distinct_and_located() {
             e.span.start.byte,
             text.find(expression).unwrap() + if expression == "1 / 2" { 2 } else { 0 }
         );
+        assert!(e.span.end.byte > e.span.start.byte);
+        assert_eq!(e.source.revision, "test:revision-7");
+    }
+    // A user-named call target is a declaration/call form this profile
+    // excludes outright (the same concept as native_model/admission.rs's
+    // pure-function check), not a real capability the parser recognizes but
+    // this build lacks: InvalidPackage, not UnsupportedConstruct.
+    {
+        let expression = "customHelper(x)";
+        let text = document(expression);
+        let e = read(text.as_bytes(), Limits::default()).unwrap_err();
+        assert_eq!(e.code, Code::InvalidPackage, "{expression}: {e:?}");
+        assert_eq!(e.span.start.byte, text.find(expression).unwrap());
         assert!(e.span.end.byte > e.span.start.byte);
         assert_eq!(e.source.revision, "test:revision-7");
     }

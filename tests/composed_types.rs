@@ -549,14 +549,17 @@ fn aggregate_domain_checks_are_distinct_from_pending_prefix_proofs() {
     let excess = setup::try_model_with_maximum("ExcessTypeMaximum", 10_001).unwrap_err();
     assert_eq!(
         excess.code(),
-        quire_spec_language::Code::UnsupportedConstruct
+        quire_spec_language::Code::UnrepresentableConstraint
     );
     assert!(!excess.is_incomplete());
     let quire_spec_language::model_source::ModelSourceCause::Admission(cause) = &excess.cause
     else {
         panic!("native admission must own the sequence refusal: {excess}")
     };
-    assert_eq!(cause.code, quire_spec_language::Code::UnsupportedConstruct);
+    assert_eq!(
+        cause.code,
+        quire_spec_language::Code::UnrepresentableConstraint
+    );
     assert_eq!(cause.phase, quire_spec_language::Phase::Link);
     assert_eq!(cause.source.identity, "model:ExcessTypeMaximum");
     assert_eq!(cause.source.revision, "authored");

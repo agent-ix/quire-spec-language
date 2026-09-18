@@ -109,7 +109,8 @@ impl std::fmt::Display for LimitKind {
 /// JSON result of the local command, distinct from a portable evidence envelope.
 #[derive(Debug)]
 pub struct RunResult {
-    /// 0 completed true, 1 completed false/refused, or 3 incomplete.
+    /// FR-301's contract: 0 completed true, 10 completed false (logical
+    /// violation), 20 refused, or 22 incomplete.
     pub exit_code: u8,
     /// Structured native-run-result/1 observations.
     pub value: NativeResult,
@@ -222,36 +223,14 @@ impl RunCause {
         self.code().is_incomplete()
     }
 
-    /// Native command exit status, with usage/I/O distinct from refusal.
+    /// Native command exit status, on FR-301's six-code contract: writing
+    /// the outcome out is a tool failure (30); every other disposition
+    /// resolves through `Code::exit_code()`, the one place the
+    /// unsupported(21)/incomplete(22)/invalid(20) ladder is written down.
     pub fn exit_code(&self) -> u8 {
         match self {
-            Self::Io { .. }
-            | Self::Json(_)
-            | Self::Output(_)
-            | Self::Digest(_)
-            | Self::Identifier(_) => 2,
-            Self::Format
-            | Self::Limit(_)
-            | Self::Native(_)
-            | Self::Model(_)
-            | Self::Package(_)
-            | Self::SelectedPackage { .. }
-            | Self::Lowering { .. }
-            | Self::Input(_) => {
-                if self.is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
-            #[cfg(feature = "quire-extraction")]
-            Self::Extraction(error) => {
-                if error.code().is_incomplete() {
-                    3
-                } else {
-                    1
-                }
-            }
+            Self::Output(_) => 30,
+            _ => self.code().exit_code(),
         }
     }
 }
@@ -268,7 +247,7 @@ pub struct RunError {
 }
 
 impl RunError {
-    /// Existing usage/refusal/incomplete exit convention, derived from the cause.
+    /// FR-301's six-code exit contract, derived from the cause.
     pub fn exit_code(&self) -> u8 {
         self.cause.exit_code()
     }

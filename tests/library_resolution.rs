@@ -817,7 +817,7 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
     // no node carries: none is guessed from a binding body.
     for export in ["Pair", "limit", "twice", "absent"] {
         let (root, library) = supply(bytes.clone(), export);
-        let expected = LibraryRefusal::UnsupportedExport {
+        let expected = LibraryRefusal::UndeclaredExport {
             library: name("K"),
             export: export.to_owned(),
         };
@@ -825,10 +825,10 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
         assert_library_refusal(
             resolve_libraries(&root, &[library]),
             &expected,
-            Code::UnsupportedConstruct,
-            LibraryCause::DeclarationForm,
+            Code::MissingDeclaration,
+            LibraryCause::UndeclaredExport,
         );
-        assert_eq!(LibraryCause::DeclarationForm.as_str(), "declaration-form");
+        assert_eq!(LibraryCause::UndeclaredExport.as_str(), "undeclared-export");
     }
 
     let index = nodes
