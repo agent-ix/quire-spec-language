@@ -72,7 +72,7 @@ use std::collections::HashMap;
 
 use crate::diagnostic::Code;
 use crate::model::key::{EffectiveId, ProducerKey};
-use crate::model::normalize::ModelRefusal;
+use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     all_instances, conforms, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,
     PopulationBinding, ReferenceKey,
@@ -94,7 +94,7 @@ fn invariant() -> Stop {
 fn model_refusal(refusal: ModelRefusal) -> Stop {
     Stop::Refused(Refusal::Model(ModelQueryRefusal {
         code: refusal.code,
-        cause: refusal.cause,
+        cause: refusal.cause.as_str(),
     }))
 }
 
@@ -187,7 +187,7 @@ fn resolve_target(
     catalog.get(&target_id).cloned().ok_or_else(|| {
         model_refusal(ModelRefusal {
             code: Code::IllTyped,
-            cause: "type-mismatch",
+            cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "{} is not a declared type of this population's model",
                 target_id.hex()
@@ -332,7 +332,7 @@ fn evaluate_unresolvable_lookup(
         Ok(false) => {
             return Err(model_refusal(ModelRefusal {
                 code: Code::IllTyped,
-                cause: "type-mismatch",
+                cause: ModelRefusalCause::TypeMismatch,
                 detail: format!(
                     "{} does not conform to {}",
                     static_type.identity, target.identity
@@ -351,7 +351,10 @@ fn evaluate_unresolvable_lookup(
     match failure {
         Unbridgeable::Universe => Err(model_refusal(ModelRefusal {
             code: Code::ForeignReference,
-            cause: "foreign-universe",
+            cause: ModelRefusalCause::ForeignUniverse {
+                actual: reference.universe().as_bytes().to_vec(),
+                expected: binding.universe().clone(),
+            },
             detail: format!(
                 "reference key names universe {}, not the binding's {}",
                 hex_bytes(reference.universe().as_bytes()),
@@ -361,7 +364,10 @@ fn evaluate_unresolvable_lookup(
         Unbridgeable::Identity { universe } if universe != *binding.universe() => {
             Err(model_refusal(ModelRefusal {
                 code: Code::ForeignReference,
-                cause: "foreign-universe",
+                cause: ModelRefusalCause::ForeignUniverse {
+                    actual: universe.as_bytes().to_vec(),
+                    expected: binding.universe().clone(),
+                },
                 detail: format!(
                     "reference key names universe {}, not the binding's {}",
                     universe.hex(),
@@ -373,7 +379,9 @@ fn evaluate_unresolvable_lookup(
             AbsenceMode::Undefined => Err(Stop::Undefined(Undefined::AbsentKey)),
             AbsenceMode::Refused => Err(model_refusal(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
-                cause: "absent-key",
+                cause: ModelRefusalCause::AbsentKey {
+                    key: reference.identity().as_bytes().to_vec(),
+                },
                 detail: format!(
                     "{} is not a member of the bound population",
                     hex_bytes(reference.identity().as_bytes())
