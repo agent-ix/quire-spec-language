@@ -108,9 +108,11 @@ impl LimitKind {
 
 /// A normative named model-normalization charge point.
 ///
-/// This rung charges the phase-1/2/3/5 points below; `normalize.redefine`'s
-/// `normalize.redefinition-check`/`normalize.conflict-check` (phase 4) are
-/// not charged because phase 4 is not implemented in this rung (see
+/// This rung charges the phase-1/2/3/5 points below, plus `normalize.record`/
+/// `normalize.unsupplied-item` for a producer interface `1.2.0` bundle's
+/// fixed `unsupplied-producer-record` refusal sequence (TC-195 N08). Phase
+/// 4's `normalize.redefinition-check`/`normalize.conflict-check` are not
+/// charged because phase 4 is not implemented in this rung (see
 /// `crate::model::normalize` module docs).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ChargePoint {
@@ -124,16 +126,19 @@ pub enum ChargePoint {
     NormalizeDeclaration,
     /// `normalize.hash`.
     NormalizeHash,
+    /// `normalize.unsupplied-item`.
+    NormalizeUnsuppliedItem,
 }
 
 impl ChargePoint {
     /// Every named point this rung charges, in first-use order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::NormalizeRecord,
         Self::NormalizeFact,
         Self::NormalizeCycleCheck,
         Self::NormalizeDeclaration,
         Self::NormalizeHash,
+        Self::NormalizeUnsuppliedItem,
     ];
 
     /// Normative identifier.
@@ -144,6 +149,7 @@ impl ChargePoint {
             Self::NormalizeCycleCheck => "normalize.cycle-check",
             Self::NormalizeDeclaration => "normalize.declaration",
             Self::NormalizeHash => "normalize.hash",
+            Self::NormalizeUnsuppliedItem => "normalize.unsupplied-item",
         }
     }
 }
