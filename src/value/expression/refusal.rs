@@ -171,6 +171,16 @@ pub enum CheckCause {
     IeeeProfileNotAdmitted,
     /// A derived collection bound exceeds the representable cardinality range.
     UnrepresentableBound,
+    /// `invalid_package` / `definition-cycle` (FR-151, TC-196 D08): an
+    /// FR-146 call-graph strongly connected component containing an FR-151
+    /// dispatch edge. Operation bodies and contract clauses have no
+    /// `decreases` form, so such a component is refused outright, never
+    /// measure-checked.
+    DefinitionCycle {
+        /// Every dispatch edge in the component, ascending by caller then
+        /// callee source-declaration order (FR-151's own listing order).
+        edges: Vec<(String, String)>,
+    },
 }
 
 impl CheckCause {
@@ -182,7 +192,7 @@ impl CheckCause {
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::ResourceExhausted { .. } => Code::ResourceExhausted,
-            Self::IeeeProfileNotAdmitted => Code::InvalidPackage,
+            Self::IeeeProfileNotAdmitted | Self::DefinitionCycle { .. } => Code::InvalidPackage,
             Self::UnrepresentableBound => Code::UnrepresentableConstraint,
         }
     }
@@ -202,6 +212,7 @@ impl CheckCause {
             ) => Some("unproved-range"),
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
             Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
+            Self::DefinitionCycle { .. } => Some("definition-cycle"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound => None,
         }
     }

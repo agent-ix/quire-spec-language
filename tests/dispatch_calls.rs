@@ -25,11 +25,11 @@ use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::ProducerKey;
 use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use quire_spec_language::value::{
-    CheckCause, CheckMode, CheckingLimits, ClauseKind, DispatchCandidate, DispatchOperation,
-    DispatchTable, Expression, FunctionDeclaration, IllTypedCause, Integer, LimitKind, Meter,
-    NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
-    PackageDeclarations, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind, DispatchCandidate,
+    DispatchOperation, DispatchTable, Expression, FunctionDeclaration, IllTypedCause, Integer,
+    LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Outcome, PackageDeclarations, ScalarLimits, TypeEnvironment, Undefined,
+    UniverseIdentity, Value, ValueType,
 };
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -288,6 +288,33 @@ fn d06_dispatch_select_evaluates_effective_precondition_false_is_undefined() {
         Outcome::Undefined(reason) => assert_eq!(reason, Undefined::PreconditionFalse),
         other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
     }
+}
+
+/// D08 (FR-151-AC-4): a strongly connected component reached only through a
+/// dispatch edge is refused `invalid_package`/`definition-cycle` — here the
+/// candidate's own effective precondition dispatches back to itself, the
+/// smallest possible dispatch cycle — before the measure-decrease
+/// obligation (which this pseudo-function, having no `decreases` clause,
+/// would otherwise fail on `missing-measure`) is even attempted.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let package = one_candidate_package(
+        receiver_type,
+        Some(dispatch_expression()),
+        ValueType::Boolean,
+    );
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a dispatch-edge cycle must be refused");
+    assert!(
+        refusals.iter().any(|refusal: &CheckRefusal| matches!(
+            refusal.cause,
+            CheckCause::DefinitionCycle { .. }
+        )),
+        "expected a DefinitionCycle refusal, got {refusals:?}"
+    );
 }
 
 // --- Bridge integration: crate::model::checked_dispatch -------------------

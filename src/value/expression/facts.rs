@@ -16,7 +16,7 @@ use super::super::equality::EqualityOperator;
 use super::super::integer::{Integer, IntegerInterval};
 use super::super::numeric::ArithmeticOperator;
 use super::super::numeric::OrderingOperator;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, Slot, Visit};
+use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, Slot, Visit};
 use super::refusal::{CheckCause, CheckRefusal, Location, Obligation, ProvedInterval};
 
 /// One step of a stable path.
@@ -63,12 +63,23 @@ pub(crate) enum ArgumentShape {
     Other,
 }
 
+/// Whether a call-graph edge is an ordinary named call or an FR-151 dispatch
+/// edge (TC-196 D08). A cycle containing a dispatch edge is refused
+/// `definition-cycle` before the measure logic runs; an ordinary cycle keeps
+/// its existing measure-decrease obligations unaffected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EdgeKind {
+    Ordinary,
+    Dispatch,
+}
+
 /// One reachable call.
 #[derive(Clone, Debug)]
 pub(crate) struct CallSite {
     pub(crate) callee: usize,
     pub(crate) location: Location,
     pub(crate) arguments: Vec<ArgumentShape>,
+    pub(crate) kind: EdgeKind,
 }
 
 /// One end of an extended integer interval.
@@ -356,16 +367,18 @@ impl Relation {
 }
 
 /// The definedness walker of one declaration.
-pub(crate) struct Definedness {
+pub(crate) struct Definedness<'a> {
     pub(crate) calls: Vec<CallSite>,
     parameters: usize,
+    dispatch_tables: &'a [DispatchTable],
 }
 
-impl Definedness {
-    pub(crate) fn new(parameters: usize) -> Self {
+impl<'a> Definedness<'a> {
+    pub(crate) fn new(parameters: usize, dispatch_tables: &'a [DispatchTable]) -> Self {
         Self {
             calls: Vec::new(),
             parameters,
+            dispatch_tables,
         }
     }
 
@@ -864,7 +877,32 @@ impl Definedness {
                     callee: *function,
                     location: node.location.clone(),
                     arguments,
+                    kind: EdgeKind::Ordinary,
                 });
+                Ok(())
+            }
+            NodeKind::Dispatch {
+                receiver,
+                table,
+                arguments,
+            } => {
+                self.walk(receiver, facts)?;
+                for argument in arguments {
+                    self.walk(argument, facts)?;
+                }
+                let callees = self
+                    .dispatch_tables
+                    .get(*table)
+                    .map(DispatchTable::callees)
+                    .unwrap_or_default();
+                for callee in callees {
+                    self.calls.push(CallSite {
+                        callee,
+                        location: node.location.clone(),
+                        arguments: Vec::new(),
+                        kind: EdgeKind::Dispatch,
+                    });
+                }
                 Ok(())
             }
             _ => {
@@ -910,7 +948,7 @@ pub(crate) struct Established {
 /// they actually prove is decided by this same arithmetic a real checked
 /// postcondition already runs, never restated from a clause's own literal.
 pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Established {
-    let checker = Definedness::new(self_slot + 1);
+    let checker = Definedness::new(self_slot + 1, &[]);
     let (when_true, _) = checker.outcomes(condition, &Facts::default());
     let Some(facts) = when_true else {
         return Established::default();
