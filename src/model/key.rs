@@ -8,11 +8,6 @@
 //! (this crate selects no `preserve_order` feature), so `serde_json::to_vec`
 //! already emits ascending-key, whitespace-free bytes for every ASCII member
 //! name this schema defines, which is RFC 8785 JCS for these preimages.
-#![allow(
-    clippy::result_large_err,
-    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
-)]
-
 use std::fmt;
 
 use serde_json::{Map, Value};
@@ -345,6 +340,10 @@ impl EffectiveDeclarationPreimage {
     /// example one read back from a checked-package `model_correspondence`
     /// node), not a wire decode (PR #140 F5). Returns `(cause, detail)` on
     /// the first defect found, in derivation order.
+    #[allow(
+        clippy::result_large_err,
+        reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    )]
     pub fn validate_derivation(&self) -> Result<(), (ModelRefusalCause, String)> {
         for (position, fact) in self.derivation.iter().enumerate() {
             if fact.ordinal != position {

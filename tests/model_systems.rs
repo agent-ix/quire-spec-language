@@ -363,10 +363,13 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].condition, "port-direction");
-            assert!(matches!(
+            assert_eq!(
                 failures[0].cause,
-                ModelRefusalCause::PortDirection { .. }
-            ));
+                ModelRefusalCause::PortDirection {
+                    source: ProducerKey::fixture("model.Sys.tank.in"),
+                    target: ProducerKey::fixture("model.Sys.pump.out"),
+                }
+            );
         }
         other => panic!("expected a port-direction refusal, got {other:?}"),
     }

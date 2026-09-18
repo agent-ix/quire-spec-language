@@ -509,10 +509,13 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     match check_subsetting(&bundle, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
-            assert!(matches!(
+            assert_eq!(
                 failures[0].cause,
-                ModelRefusalCause::SubsettingType { .. }
-            ));
+                ModelRefusalCause::SubsettingType {
+                    subsetting: ProducerKey::fixture("model.C"),
+                    subsetted: ProducerKey::fixture("model.A"),
+                }
+            );
         }
         other => panic!("expected Refused, got {other:?}"),
     }
