@@ -21,7 +21,7 @@ use quire_spec_language::model::bundle::{
     ObjectTypeRecord,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::{EffectiveId, ProducerKey};
+use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
@@ -98,6 +98,16 @@ fn fixture_other_universe() -> Bundle {
         ModelSelection::fixture("bundle.n02"),
         vec![object_type("model.A")],
     )
+}
+
+/// A revision-only variant of [`fixture_f1`], for the view/bundle
+/// correspondence test below: same `export.identity` and, since
+/// `ModelSelection::fixture` derives its digest from the identity string
+/// alone, the same `export.digest` too — only `export.revision` differs.
+fn fixture_f1_with_revision(revision: &str) -> Bundle {
+    let mut bundle = fixture_f1();
+    bundle.model_selection.export.revision = Revision::producer_object(revision);
+    bundle
 }
 
 fn view_of(bundle: &Bundle) -> EffectiveView {
@@ -368,7 +378,7 @@ fn admitted_binding(
         Some(3),
         &mut admission,
     ) {
-        AdmissionOutcome::Admitted(binding) => *binding,
+        AdmissionOutcome::Admitted(binding) => binding,
         other => panic!("expected an admitted binding, got {other:?}"),
     }
 }
@@ -866,6 +876,47 @@ fn l05_foreign_model_selection_refuses_at_admission() {
         &bundle,
         &view,
         &mismatched,
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(refusal.cause, "foreign-model-selection");
+        }
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
+    }
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// Round-3 review finding (PR #148): `admit_binding` takes `view` and
+/// `bundle` separately and, before this test, never checked that they
+/// correspond — the same mismatch class removed from `all_instances`/
+/// `lookup` themselves, just moved one level up. Pins the check with a
+/// revision-only divergence (same `export.identity` and `export.digest` as
+/// `fixture_f1()` — `ModelSelection::fixture` derives the digest from the
+/// identity string alone, so an identity-only comparison would miss this)
+/// to prove the check compares the full `ModelSelection` header, not just
+/// `export.identity`.
+///
+/// Mutation used: narrowed the check from `view.model_selection !=
+/// bundle.model_selection` to `view.model_selection.export.identity !=
+/// bundle.model_selection.export.identity`, which let this revision-only
+/// mismatch admit instead of refusing — red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
+    let view = view_of(&fixture_f1_with_revision("1"));
+    let bundle = fixture_f1_with_revision("2");
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &p1("bundle.n01"),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
