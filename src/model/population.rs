@@ -71,6 +71,10 @@
 //! guard against at query time: a query can only ever be evaluated against
 //! the exact bundle [`admit_binding`] admitted, by construction, not by a
 //! runtime comparison.
+#![allow(
+    clippy::large_enum_variant,
+    reason = "ModelRefusalCause is a closed typed cause vocabulary retaining complete producer/effective identities without heap allocation"
+)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -552,9 +556,7 @@ pub fn admit_binding(
                 type_name: document
                     .members
                     .first()
-                    .map(|member| member.type_identity.identity.as_str())
-                    .unwrap_or("<no members>")
-                    .to_owned(),
+                    .map(|member| member.type_identity.clone()),
             },
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
@@ -603,7 +605,7 @@ pub fn admit_binding(
                 code: Code::ForeignReference,
                 cause: ModelRefusalCause::ForeignType {
                     member: member.object.clone(),
-                    type_name: member.type_identity.identity.clone(),
+                    type_name: member.type_identity.clone(),
                 },
                 detail: format!(
                     "member {} names type {}, absent from the effective view",
@@ -625,8 +627,8 @@ pub fn admit_binding(
                 code: Code::InvalidRuntimeInput,
                 cause: ModelRefusalCause::ConflictingIdentity {
                     object: key.object.clone(),
-                    existing_type: existing.type_identity.hex(),
-                    declared_type: key.type_identity.hex(),
+                    existing_type: existing.type_identity.clone(),
+                    declared_type: key.type_identity.clone(),
                 },
                 detail: format!(
                     "object {} is declared with conflicting types {} and {}",
@@ -696,7 +698,10 @@ pub fn admit_binding(
                     // FR-272's `invalid_runtime_input` cause list is
                     // closed; there is no dedicated duplicate-field
                     // variant, so this is the catalogued `duplicate-member`.
-                    cause: "duplicate-member",
+                    cause: ModelRefusalCause::DuplicateMember {
+                        object: key.object.clone(),
+                        field: field.clone(),
+                    },
                     detail: format!(
                         "object {} declares field {} more than once in its field_values",
                         key.object, field.identity
@@ -727,7 +732,12 @@ pub fn admit_binding(
                     if !subsetted_values.iter().any(|other| other == value) {
                         return AdmissionOutcome::Refused(ModelRefusal {
                             code: Code::InvalidRuntimeInput,
-                            cause: "subsetting-violation",
+                            cause: ModelRefusalCause::SubsettingViolation {
+                                object: key.object.clone(),
+                                record: record.key.clone(),
+                                subsetting: record.subsetting.clone(),
+                                subsetted: record.subsetted.clone(),
+                            },
                             detail: format!(
                                 "object {}'s {} names {value}, not among its {} values \
                                  (subsetting record {})",
@@ -867,7 +877,10 @@ pub fn all_instances(
     if n > declared_maximum {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::CardinalityOutOfBound,
-            cause: ModelRefusalCause::AboveMaximum,
+            cause: ModelRefusalCause::AboveMaximum {
+                selected: selected.len(),
+                maximum: usize::try_from(declared_maximum).unwrap_or(usize::MAX),
+            },
             detail: format!(
                 "selected count {n} is above the declared maximum [0,{declared_maximum}]"
             ),
@@ -1000,8 +1013,8 @@ pub fn lookup(
         return LookupOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignUniverse {
-                actual: r.key.universe.hex(),
-                expected: binding.universe().hex(),
+                actual: r.key.universe.clone(),
+                expected: binding.universe().clone(),
             },
             detail: format!(
                 "reference key names universe {}, not the binding's {}",

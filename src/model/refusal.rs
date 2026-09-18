@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! [`ModelRefusalCause`]: the closed FR-150/151/152/153 cause vocabulary.
+//! [`ModelRefusalCause`]: the closed FR-150/151/152/153/272 cause vocabulary.
 //!
 //! Lives in its own module, lower-level than [`crate::model::normalize`],
 //! because [`crate::model::key`] needs the type too and `key` is itself a
 //! dependency of `normalize` — defining the enum in `normalize` made `key`'s
 //! import of it a module cycle (#141 finding 4). `normalize` re-exports this
 //! type at its own path (`crate::model::normalize::ModelRefusalCause`), so
-//! nothing outside this crate's module tree observes a rename.
+//! nothing outside this crate's module tree observes a rename. This module
+//! imports [`crate::model::key::ProducerKey`]/[`crate::model::key::EffectiveId`]
+//! back from `key`: a mutual `use` between sibling modules is not a cycle
+//! Rust's compiler rejects (#163 re-review ruling 3) — only a real cyclic
+//! type/const definition would be.
 
-/// The closed FR-150/151/152/153 cause of a [`crate::model::normalize::ModelRefusal`]
-/// (#141 F9a): each variant is one condition a caller must distinguish,
-/// checked by the compiler rather than compared by string.
+use crate::model::bundle::Multiplicity;
+use crate::model::key::{EffectiveId, ProducerKey};
+
+/// The closed FR-150/151/152/153/272 cause of a
+/// [`crate::model::normalize::ModelRefusal`] (#141 F9a): each variant is one
+/// condition a caller must distinguish, checked by the compiler rather than
+/// compared by string.
 ///
 /// Shared by every `crate::model` rung that refuses through `ModelRefusal`
 /// (`normalize`, `population`, `dispatch`, `conformance`, `systems`) and by
@@ -20,30 +28,33 @@
 ///
 /// Variants carry a typed field for every identity/path/name their `detail`
 /// text names, wherever every construction site for that variant supplies
-/// the same shape of data (#141 F9a, review finding 3). A variant with no
-/// natural data, or whose construction sites disagree in shape (a plain
-/// count instead of an identity, or a different number of identities), stays
-/// a unit variant; `detail`'s free text is still the full account there.
-/// [`ModelRefusalCause::as_str`] returns the same tag either way, and no
-/// `detail` string changed: this is a structural change only.
+/// the same shape of data (#141 F9a, review finding 3), and the *real* type
+/// of the underlying value — [`ProducerKey`] or [`EffectiveId`], not a
+/// pre-formatted `String` — wherever the call site holds one (#163 re-review
+/// ruling 3). A variant with no natural data, or whose construction sites
+/// disagree in shape (a plain count instead of an identity, or a different
+/// number of identities), stays a unit variant; `detail`'s free text is
+/// still the full account there. [`ModelRefusalCause::as_str`] returns the
+/// same tag either way, and no `detail` string changed: this is a
+/// structural change only.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelRefusalCause {
     /// A dispatch family's redefinition chain exceeded `MAX_DISPATCH_DEPTH`.
     DispatchFamilyDepth {
         /// The dispatch original the family was built from.
-        original: String,
+        original: ProducerKey,
     },
     /// An operation family closes over an unresolved or unproved method set.
     UnclosedMethodSet,
     /// A dispatch original names an operation absent from the bundle.
     UnknownOriginal {
         /// The absent original.
-        original: String,
+        original: ProducerKey,
     },
     /// A dispatch candidate names an operation absent from the bundle.
     UnknownCandidate {
         /// The absent candidate.
-        candidate: String,
+        candidate: ProducerKey,
     },
     /// No candidate in a dispatch family is applicable to the call.
     NoApplicable,
@@ -52,96 +63,113 @@ pub enum ModelRefusalCause {
     /// View declarations are not sorted ascending by effective identity.
     UnsortedView {
         /// The effective identity at the out-of-order position.
-        at: String,
+        at: EffectiveId,
     },
     /// An ancestor path exceeded [`crate::model::normalize::MAX_GENERALIZATION_DEPTH`]
     /// generalization records.
     GeneralizationDepthExceeded {
         /// The ancestor path's root.
-        root: String,
+        root: ProducerKey,
     },
     /// A type generalizes back to itself through its own ancestor path.
     SpecializationCycle {
         /// The ancestor that closes the cycle.
-        ancestor: String,
+        ancestor: ProducerKey,
         /// The generalization record the cycle is discovered via.
-        via: String,
+        via: ProducerKey,
     },
     /// A field, operation, redefinition or subsetting record names an owner
     /// that is not a declared object type.
     UnknownOwner {
         /// The record naming the owner.
-        member: String,
+        member: ProducerKey,
         /// The absent owner.
-        owner: String,
+        owner: ProducerKey,
     },
     /// A generalization record names a specific that is not a declared
     /// object type.
     UnknownSpecific {
         /// The generalization record.
-        generalization: String,
+        generalization: ProducerKey,
         /// The absent specific.
-        specific: String,
+        specific: ProducerKey,
     },
     /// A generalization record names a general that is not a declared
     /// object type.
     UnknownGeneral {
         /// The generalization record.
-        generalization: String,
+        generalization: ProducerKey,
         /// The absent general.
-        general: String,
+        general: ProducerKey,
     },
     /// An operation parameter or result names a value type that is not
     /// declared.
-    UnknownValueType,
+    UnknownValueType {
+        /// The operation naming the value type.
+        operation: ProducerKey,
+        /// The parameter naming it, or `None` when a result names it
+        /// instead — the two construction sites' only difference in shape.
+        parameter: Option<ProducerKey>,
+        /// The absent value type.
+        value_type: ProducerKey,
+    },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
         /// The operation whose effect writes the field.
-        operation: String,
+        operation: ProducerKey,
         /// The absent field.
-        field: String,
+        field: ProducerKey,
     },
     /// An operation effect names a type that is not a declared object type.
     UnknownEffectType {
         /// The operation whose effect names the type.
-        operation: String,
+        operation: ProducerKey,
         /// The absent type.
-        type_name: String,
+        type_name: ProducerKey,
     },
     /// A redefinition or subsetting record names a member absent from its
     /// owner.
     UnknownMember {
         /// The redefinition or subsetting record.
-        record: String,
+        record: ProducerKey,
         /// The absent member.
-        member: String,
+        member: ProducerKey,
     },
     /// A type has two or more undominated redefinitions of one member.
-    DerivationConflict,
+    DerivationConflict {
+        /// The type with the conflicting redefinitions.
+        type_: ProducerKey,
+        /// The contended redefinition target.
+        member: ProducerKey,
+        /// The undominated redefining members, in bundle order.
+        redefiners: Vec<ProducerKey>,
+    },
     /// A redefinition edge's target or redefining member is not an
     /// effective member of its owner.
     RedefinitionUnreachable {
         /// The unreachable member.
-        member: String,
+        member: ProducerKey,
         /// The owner it is not an effective member of.
-        owner: String,
+        owner: ProducerKey,
     },
     /// A bundle record's producer interface is neither normalized nor a
     /// recognized refusal (outside FR-150's supported wire range).
     UnsupportedWire {
-        /// The unsupported producer interface version.
+        /// The unsupported producer interface version. A wire version
+        /// string, not a [`ProducerKey`]: every site supplies the plain
+        /// `interface_version` field, not a producer key.
         version: String,
     },
     /// A bundle record has no producer revision to select.
     WrongModelSelection {
         /// The record with no producer revision.
-        key: String,
+        key: ProducerKey,
     },
     /// A producer key's digest domain does not match
     /// [`crate::model::key::PRODUCER_DIGEST_DOMAIN`].
     DigestDomainMismatch {
         /// The producer key.
-        key: String,
+        key: ProducerKey,
         /// Its actual (wrong) digest domain.
         domain: String,
     },
@@ -152,21 +180,28 @@ pub enum ModelRefusalCause {
     /// `MAX_CONFORMANCE_DEPTH`.
     ConformanceDepth {
         /// The conformance check's starting specific.
-        from: String,
+        from: ProducerKey,
     },
     /// A redefining or subsetting result/effect does not conform to the
     /// redefined/subsetted one under FR-151 variance.
     VarianceResult,
     /// A redefining or subsetting multiplicity does not conform to the
     /// redefined/subsetted one.
-    MultiplicityNarrowing,
+    MultiplicityNarrowing {
+        /// The redefining/subsetting/parameter/result/connection-end
+        /// multiplicity.
+        from: Multiplicity,
+        /// The redefined/subsetted/port multiplicity it does not conform
+        /// to.
+        to: Multiplicity,
+    },
     /// A subsetting field's value type does not conform to the subsetted
     /// field's value type.
     SubsettingType {
         /// The subsetting field's value type.
-        subsetting: String,
+        subsetting: ProducerKey,
         /// The subsetted field's value type.
-        subsetted: String,
+        subsetted: ProducerKey,
     },
     /// Two compared items disagree in kind, arity or declared type where
     /// FR-151/FR-152 require agreement.
@@ -177,15 +212,15 @@ pub enum ModelRefusalCause {
         /// The parameter's position.
         index: usize,
         /// The redefining (declared) parameter's value type.
-        declared: String,
+        declared: ProducerKey,
         /// The redefined parameter's value type.
-        redefined: String,
+        redefined: ProducerKey,
     },
     /// A redefining operation's effect writes a field the redefined
     /// operation's effect does not cover.
     EffectEscape {
         /// The uncovered write.
-        field: String,
+        field: ProducerKey,
     },
     /// A redefinition narrows a fact FR-146 has no proof form to establish,
     /// or narrows past an established fact with no supporting proof.
@@ -210,40 +245,46 @@ pub enum ModelRefusalCause {
     UnclosedSubtypes {
         /// The model selection.
         selection: String,
-        /// A member's type identity from the population document (or a
-        /// fixed placeholder when the document declares no members).
-        type_name: String,
+        /// A member's type from the population document's first member, or
+        /// `None` when the document declares no members.
+        type_name: Option<ProducerKey>,
     },
     /// A population member names a type absent from the effective view.
     ForeignType {
         /// The member.
         member: String,
         /// The absent type.
-        type_name: String,
+        type_name: ProducerKey,
     },
     /// One object is declared with two conflicting types.
     ConflictingIdentity {
         /// The object.
         object: String,
         /// Its already-recorded type.
-        existing_type: String,
+        existing_type: EffectiveId,
         /// The newly declared, conflicting type.
-        declared_type: String,
+        declared_type: EffectiveId,
     },
     /// A population binding has no declared maximum to select against.
     OperatorIneligible,
     /// A selected population count exceeds its declared maximum.
-    AboveMaximum,
+    AboveMaximum {
+        /// The selected count.
+        selected: usize,
+        /// The declared maximum it exceeds.
+        maximum: usize,
+    },
     /// A reference key names a universe other than the binding's.
     ForeignUniverse {
         /// The reference key's universe.
-        actual: String,
+        actual: EffectiveId,
         /// The binding's universe.
-        expected: String,
+        expected: EffectiveId,
     },
     /// A reference key is not a member of the bound population.
     AbsentKey {
-        /// The absent key.
+        /// The absent key. A reference key's plain `object` string, not a
+        /// [`ProducerKey`].
         key: String,
     },
     /// A bundle record does not export the required [`crate::model::key`]
@@ -252,76 +293,124 @@ pub enum ModelRefusalCause {
     /// A systems relationship names an endpoint absent from the bundle.
     UnknownRelationship {
         /// The absent relationship.
-        relationship: String,
+        relationship: ProducerKey,
     },
     /// A connection's source end names a port that is not a declared
     /// endpoint.
     UnknownSourcePort {
         /// The absent source port.
-        port: String,
+        port: ProducerKey,
     },
     /// A connection's target end names a port that is not a declared
     /// endpoint.
     UnknownTargetPort {
         /// The absent target port.
-        port: String,
+        port: ProducerKey,
     },
     /// A connection's direction is not compatible with its source/target
     /// ports.
     PortDirection {
         /// The source port.
-        source: String,
+        source: ProducerKey,
         /// The target port.
-        target: String,
+        target: ProducerKey,
     },
     /// A conformance redefinition record names a redefining member absent
     /// from the bundle.
     UnknownRedefining {
         /// The absent redefining member.
-        member: String,
+        member: ProducerKey,
     },
     /// A conformance redefinition record names a redefined member absent
     /// from the bundle.
     UnknownRedefined {
         /// The absent redefined member.
-        member: String,
+        member: ProducerKey,
     },
     /// A conformance subsetting record names a subsetting member absent
     /// from the bundle.
     UnknownSubsetting {
         /// The absent subsetting member.
-        member: String,
+        member: ProducerKey,
     },
     /// A conformance subsetting record names a subsetted member absent
     /// from the bundle.
     UnknownSubsetted {
         /// The absent subsetted member.
-        member: String,
+        member: ProducerKey,
     },
     /// An endpoint's owning component names a key absent from the bundle.
     UnknownComponent {
         /// The endpoint naming the owning component.
-        item: String,
+        item: ProducerKey,
         /// The absent component.
-        missing: String,
+        missing: ProducerKey,
     },
     /// A relationship end names a type identity absent from the bundle.
     UnknownEndpoint {
-        /// The relationship end.
-        item: String,
-        /// The absent endpoint.
-        missing: String,
+        /// Which end: `"source"` or `"target"`.
+        end: &'static str,
+        /// The relationship naming the endpoint.
+        relationship: ProducerKey,
+        /// The absent endpoint (#163 re-review ruling 3: structured data —
+        /// `end`/`relationship`/`missing` — not the prose
+        /// `"{end} end of {relationship}"` `item` string the original PR
+        /// carried).
+        missing: ProducerKey,
     },
     /// An [`crate::model::key::EffectiveDeclarationPreimage`]'s derivation
     /// fact has an `ordinal` that does not match its array position.
-    UnsortedDerivation,
+    UnsortedDerivation {
+        /// The preimage's own original declaration.
+        original: ProducerKey,
+        /// The out-of-order fact's array position.
+        position: usize,
+        /// The fact's actual (wrong) ordinal.
+        ordinal: usize,
+    },
     /// An [`crate::model::key::EffectiveDeclarationPreimage`]'s derivation
     /// retains the same input path at two positions.
-    DuplicatePath,
+    DuplicatePath {
+        /// The preimage's own original declaration.
+        original: ProducerKey,
+        /// The earlier position retaining the path.
+        earlier: usize,
+        /// The later position retaining the same path.
+        later: usize,
+    },
+    /// A scalar type's declared domain has a lower bound greater than its
+    /// upper bound. FR-272's `invalid_model_binding` cause list is closed;
+    /// there is no dedicated scalar-domain variant, so this is the
+    /// catalogued `malformed-declaration` (#157). Stays a unit variant: its
+    /// one construction site's data is the domain's own numeric
+    /// lower/upper bounds, not an identity/path/name.
+    MalformedDeclaration,
+    /// A population member declares the same field twice in its
+    /// `field_values`. FR-272's `invalid_runtime_input` cause list is
+    /// closed; there is no dedicated duplicate-field variant, so this is
+    /// the catalogued `duplicate-member` (#157).
+    DuplicateMember {
+        /// The object declaring the field twice.
+        object: String,
+        /// The duplicated field.
+        field: ProducerKey,
+    },
+    /// A population member's subsetting-feature value is not among its
+    /// subsetted feature's values (#157).
+    SubsettingViolation {
+        /// The object whose subsetting feature is violated.
+        object: String,
+        /// The subsetting record.
+        record: ProducerKey,
+        /// The subsetting field.
+        subsetting: ProducerKey,
+        /// The subsetted field.
+        subsetted: ProducerKey,
+    },
 }
 
 impl ModelRefusalCause {
-    /// The cause tag (the exact spelling every FR-150/151/152/153 test
+    /// The cause tag (the exact spelling every FR-150/151/152/153/272 test
     /// tracing and every prior wire-visible string used before #141).
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -337,11 +426,11 @@ impl ModelRefusalCause {
             Self::UnknownOwner { .. } => "unknown-owner",
             Self::UnknownSpecific { .. } => "unknown-specific",
             Self::UnknownGeneral { .. } => "unknown-general",
-            Self::UnknownValueType => "unknown-value-type",
+            Self::UnknownValueType { .. } => "unknown-value-type",
             Self::UnknownFieldWrite { .. } => "unknown-field-write",
             Self::UnknownEffectType { .. } => "unknown-effect-type",
             Self::UnknownMember { .. } => "unknown-member",
-            Self::DerivationConflict => "derivation-conflict",
+            Self::DerivationConflict { .. } => "derivation-conflict",
             Self::RedefinitionUnreachable { .. } => "redefinition-unreachable",
             Self::UnsupportedWire { .. } => "unsupported-wire",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
@@ -349,7 +438,7 @@ impl ModelRefusalCause {
             Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
             Self::ConformanceDepth { .. } => "conformance-depth",
             Self::VarianceResult => "variance-result",
-            Self::MultiplicityNarrowing => "multiplicity-narrowing",
+            Self::MultiplicityNarrowing { .. } => "multiplicity-narrowing",
             Self::SubsettingType { .. } => "subsetting-type",
             Self::TypeMismatch => "type-mismatch",
             Self::VarianceParameter { .. } => "variance-parameter",
@@ -362,7 +451,7 @@ impl ModelRefusalCause {
             Self::ForeignType { .. } => "foreign-type",
             Self::ConflictingIdentity { .. } => "conflicting-identity",
             Self::OperatorIneligible => "operator-ineligible",
-            Self::AboveMaximum => "above-maximum",
+            Self::AboveMaximum { .. } => "above-maximum",
             Self::ForeignUniverse { .. } => "foreign-universe",
             Self::AbsentKey { .. } => "absent-key",
             Self::WrongExport => "wrong-export",
@@ -376,8 +465,11 @@ impl ModelRefusalCause {
             Self::UnknownSubsetted { .. } => "unknown-subsetted",
             Self::UnknownComponent { .. } => "unknown-component",
             Self::UnknownEndpoint { .. } => "unknown-endpoint",
-            Self::UnsortedDerivation => "unsorted-derivation",
-            Self::DuplicatePath => "duplicate-path",
+            Self::UnsortedDerivation { .. } => "unsorted-derivation",
+            Self::DuplicatePath { .. } => "duplicate-path",
+            Self::MalformedDeclaration => "malformed-declaration",
+            Self::DuplicateMember { .. } => "duplicate-member",
+            Self::SubsettingViolation { .. } => "subsetting-violation",
         }
     }
 }
@@ -390,288 +482,265 @@ impl std::fmt::Display for ModelRefusalCause {
 
 #[cfg(test)]
 mod tests {
-    use super::ModelRefusalCause;
+    use serde_json::Value;
 
-    /// #141 review finding 1: the wire spellings had no test naming every
-    /// variant's exact tag. These are the literal strings that shipped
-    /// before #141's refactor (from `as_str`'s match arms on `origin/main`),
-    /// asserted here so a future edit cannot silently change a wire-visible
-    /// tag. Field values are placeholders: `as_str`/`Display` depend only on
-    /// the discriminant.
+    use super::ModelRefusalCause;
+    use crate::model::bundle::Multiplicity;
+    use crate::model::key::{digest_of, ProducerKey};
+
+    fn key(identity: &str) -> ProducerKey {
+        ProducerKey::fixture(identity)
+    }
+
+    fn effective_id() -> crate::model::key::EffectiveId {
+        digest_of(&Value::Null)
+    }
+
+    fn multiplicity() -> Multiplicity {
+        Multiplicity {
+            lower: 0,
+            upper: None,
+            ordered: false,
+            unique: true,
+        }
+    }
+
+    /// #141 review finding 1, #163 re-review fix 4: the wire spellings had
+    /// no test naming every variant's exact tag. This match has no
+    /// wildcard arm, so a new variant added to [`ModelRefusalCause`]
+    /// without a row here fails to compile (E0004), rather than silently
+    /// passing an incomplete test.
+    ///
+    /// The expected strings are the literal `&'static str` cause values
+    /// every construction site assigned directly on `origin/main` before
+    /// #141's refactor introduced `as_str` at all (#163 re-review fix 5:
+    /// not "`as_str`'s match arms on `origin/main`" — there was no
+    /// `as_str` before this PR).
+    fn expected_tag(cause: &ModelRefusalCause) -> &'static str {
+        match cause {
+            ModelRefusalCause::DispatchFamilyDepth { .. } => "dispatch-family-depth",
+            ModelRefusalCause::UnclosedMethodSet => "unclosed-method-set",
+            ModelRefusalCause::UnknownOriginal { .. } => "unknown-original",
+            ModelRefusalCause::UnknownCandidate { .. } => "unknown-candidate",
+            ModelRefusalCause::NoApplicable => "no-applicable",
+            ModelRefusalCause::MultipleUndominated => "multiple-undominated",
+            ModelRefusalCause::UnsortedView { .. } => "unsorted-view",
+            ModelRefusalCause::GeneralizationDepthExceeded { .. } => {
+                "generalization-depth-exceeded"
+            }
+            ModelRefusalCause::SpecializationCycle { .. } => "specialization-cycle",
+            ModelRefusalCause::UnknownOwner { .. } => "unknown-owner",
+            ModelRefusalCause::UnknownSpecific { .. } => "unknown-specific",
+            ModelRefusalCause::UnknownGeneral { .. } => "unknown-general",
+            ModelRefusalCause::UnknownValueType { .. } => "unknown-value-type",
+            ModelRefusalCause::UnknownFieldWrite { .. } => "unknown-field-write",
+            ModelRefusalCause::UnknownEffectType { .. } => "unknown-effect-type",
+            ModelRefusalCause::UnknownMember { .. } => "unknown-member",
+            ModelRefusalCause::DerivationConflict { .. } => "derivation-conflict",
+            ModelRefusalCause::RedefinitionUnreachable { .. } => "redefinition-unreachable",
+            ModelRefusalCause::UnsupportedWire { .. } => "unsupported-wire",
+            ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
+            ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
+            ModelRefusalCause::UnsuppliedProducerRecord => "unsupplied-producer-record",
+            ModelRefusalCause::ConformanceDepth { .. } => "conformance-depth",
+            ModelRefusalCause::VarianceResult => "variance-result",
+            ModelRefusalCause::MultiplicityNarrowing { .. } => "multiplicity-narrowing",
+            ModelRefusalCause::SubsettingType { .. } => "subsetting-type",
+            ModelRefusalCause::TypeMismatch => "type-mismatch",
+            ModelRefusalCause::VarianceParameter { .. } => "variance-parameter",
+            ModelRefusalCause::EffectEscape { .. } => "effect-escape",
+            ModelRefusalCause::UnprovedRefinement => "unproved-refinement",
+            ModelRefusalCause::RedefinitionTarget => "redefinition-target",
+            ModelRefusalCause::ForeignModelSelection { .. } => "foreign-model-selection",
+            ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
+            ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
+            ModelRefusalCause::ForeignType { .. } => "foreign-type",
+            ModelRefusalCause::ConflictingIdentity { .. } => "conflicting-identity",
+            ModelRefusalCause::OperatorIneligible => "operator-ineligible",
+            ModelRefusalCause::AboveMaximum { .. } => "above-maximum",
+            ModelRefusalCause::ForeignUniverse { .. } => "foreign-universe",
+            ModelRefusalCause::AbsentKey { .. } => "absent-key",
+            ModelRefusalCause::WrongExport => "wrong-export",
+            ModelRefusalCause::UnknownRelationship { .. } => "unknown-relationship",
+            ModelRefusalCause::UnknownSourcePort { .. } => "unknown-source-port",
+            ModelRefusalCause::UnknownTargetPort { .. } => "unknown-target-port",
+            ModelRefusalCause::PortDirection { .. } => "port-direction",
+            ModelRefusalCause::UnknownRedefining { .. } => "unknown-redefining",
+            ModelRefusalCause::UnknownRedefined { .. } => "unknown-redefined",
+            ModelRefusalCause::UnknownSubsetting { .. } => "unknown-subsetting",
+            ModelRefusalCause::UnknownSubsetted { .. } => "unknown-subsetted",
+            ModelRefusalCause::UnknownComponent { .. } => "unknown-component",
+            ModelRefusalCause::UnknownEndpoint { .. } => "unknown-endpoint",
+            ModelRefusalCause::UnsortedDerivation { .. } => "unsorted-derivation",
+            ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
+            ModelRefusalCause::MalformedDeclaration => "malformed-declaration",
+            ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
+            ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
+        }
+    }
+
     #[test]
     fn as_str_covers_every_variant_with_its_original_tag() {
-        let cases: Vec<(ModelRefusalCause, &str)> = vec![
-            (
-                ModelRefusalCause::DispatchFamilyDepth {
-                    original: String::new(),
-                },
-                "dispatch-family-depth",
-            ),
-            (ModelRefusalCause::UnclosedMethodSet, "unclosed-method-set"),
-            (
-                ModelRefusalCause::UnknownOriginal {
-                    original: String::new(),
-                },
-                "unknown-original",
-            ),
-            (
-                ModelRefusalCause::UnknownCandidate {
-                    candidate: String::new(),
-                },
-                "unknown-candidate",
-            ),
-            (ModelRefusalCause::NoApplicable, "no-applicable"),
-            (
-                ModelRefusalCause::MultipleUndominated,
-                "multiple-undominated",
-            ),
-            (
-                ModelRefusalCause::UnsortedView { at: String::new() },
-                "unsorted-view",
-            ),
-            (
-                ModelRefusalCause::GeneralizationDepthExceeded {
-                    root: String::new(),
-                },
-                "generalization-depth-exceeded",
-            ),
-            (
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: String::new(),
-                    via: String::new(),
-                },
-                "specialization-cycle",
-            ),
-            (
-                ModelRefusalCause::UnknownOwner {
-                    member: String::new(),
-                    owner: String::new(),
-                },
-                "unknown-owner",
-            ),
-            (
-                ModelRefusalCause::UnknownSpecific {
-                    generalization: String::new(),
-                    specific: String::new(),
-                },
-                "unknown-specific",
-            ),
-            (
-                ModelRefusalCause::UnknownGeneral {
-                    generalization: String::new(),
-                    general: String::new(),
-                },
-                "unknown-general",
-            ),
-            (ModelRefusalCause::UnknownValueType, "unknown-value-type"),
-            (
-                ModelRefusalCause::UnknownFieldWrite {
-                    operation: String::new(),
-                    field: String::new(),
-                },
-                "unknown-field-write",
-            ),
-            (
-                ModelRefusalCause::UnknownEffectType {
-                    operation: String::new(),
-                    type_name: String::new(),
-                },
-                "unknown-effect-type",
-            ),
-            (
-                ModelRefusalCause::UnknownMember {
-                    record: String::new(),
-                    member: String::new(),
-                },
-                "unknown-member",
-            ),
-            (ModelRefusalCause::DerivationConflict, "derivation-conflict"),
-            (
-                ModelRefusalCause::RedefinitionUnreachable {
-                    member: String::new(),
-                    owner: String::new(),
-                },
-                "redefinition-unreachable",
-            ),
-            (
-                ModelRefusalCause::UnsupportedWire {
-                    version: String::new(),
-                },
-                "unsupported-wire",
-            ),
-            (
-                ModelRefusalCause::WrongModelSelection { key: String::new() },
-                "wrong-model-selection",
-            ),
-            (
-                ModelRefusalCause::DigestDomainMismatch {
-                    key: String::new(),
-                    domain: String::new(),
-                },
-                "digest-domain-mismatch",
-            ),
-            (
-                ModelRefusalCause::UnsuppliedProducerRecord,
-                "unsupplied-producer-record",
-            ),
-            (
-                ModelRefusalCause::ConformanceDepth {
-                    from: String::new(),
-                },
-                "conformance-depth",
-            ),
-            (ModelRefusalCause::VarianceResult, "variance-result"),
-            (
-                ModelRefusalCause::MultiplicityNarrowing,
-                "multiplicity-narrowing",
-            ),
-            (
-                ModelRefusalCause::SubsettingType {
-                    subsetting: String::new(),
-                    subsetted: String::new(),
-                },
-                "subsetting-type",
-            ),
-            (ModelRefusalCause::TypeMismatch, "type-mismatch"),
-            (
-                ModelRefusalCause::VarianceParameter {
-                    index: 0,
-                    declared: String::new(),
-                    redefined: String::new(),
-                },
-                "variance-parameter",
-            ),
-            (
-                ModelRefusalCause::EffectEscape {
-                    field: String::new(),
-                },
-                "effect-escape",
-            ),
-            (ModelRefusalCause::UnprovedRefinement, "unproved-refinement"),
-            (ModelRefusalCause::RedefinitionTarget, "redefinition-target"),
-            (
-                ModelRefusalCause::ForeignModelSelection {
-                    actual: String::new(),
-                    expected: String::new(),
-                },
-                "foreign-model-selection",
-            ),
-            (
-                ModelRefusalCause::IncompleteScope {
-                    selection: String::new(),
-                },
-                "incomplete-scope",
-            ),
-            (
-                ModelRefusalCause::UnclosedSubtypes {
-                    selection: String::new(),
-                    type_name: String::new(),
-                },
-                "unclosed-subtypes",
-            ),
-            (
-                ModelRefusalCause::ForeignType {
-                    member: String::new(),
-                    type_name: String::new(),
-                },
-                "foreign-type",
-            ),
-            (
-                ModelRefusalCause::ConflictingIdentity {
-                    object: String::new(),
-                    existing_type: String::new(),
-                    declared_type: String::new(),
-                },
-                "conflicting-identity",
-            ),
-            (ModelRefusalCause::OperatorIneligible, "operator-ineligible"),
-            (ModelRefusalCause::AboveMaximum, "above-maximum"),
-            (
-                ModelRefusalCause::ForeignUniverse {
-                    actual: String::new(),
-                    expected: String::new(),
-                },
-                "foreign-universe",
-            ),
-            (
-                ModelRefusalCause::AbsentKey { key: String::new() },
-                "absent-key",
-            ),
-            (ModelRefusalCause::WrongExport, "wrong-export"),
-            (
-                ModelRefusalCause::UnknownRelationship {
-                    relationship: String::new(),
-                },
-                "unknown-relationship",
-            ),
-            (
-                ModelRefusalCause::UnknownSourcePort {
-                    port: String::new(),
-                },
-                "unknown-source-port",
-            ),
-            (
-                ModelRefusalCause::UnknownTargetPort {
-                    port: String::new(),
-                },
-                "unknown-target-port",
-            ),
-            (
-                ModelRefusalCause::PortDirection {
-                    source: String::new(),
-                    target: String::new(),
-                },
-                "port-direction",
-            ),
-            (
-                ModelRefusalCause::UnknownRedefining {
-                    member: String::new(),
-                },
-                "unknown-redefining",
-            ),
-            (
-                ModelRefusalCause::UnknownRedefined {
-                    member: String::new(),
-                },
-                "unknown-redefined",
-            ),
-            (
-                ModelRefusalCause::UnknownSubsetting {
-                    member: String::new(),
-                },
-                "unknown-subsetting",
-            ),
-            (
-                ModelRefusalCause::UnknownSubsetted {
-                    member: String::new(),
-                },
-                "unknown-subsetted",
-            ),
-            (
-                ModelRefusalCause::UnknownComponent {
-                    item: String::new(),
-                    missing: String::new(),
-                },
-                "unknown-component",
-            ),
-            (
-                ModelRefusalCause::UnknownEndpoint {
-                    item: String::new(),
-                    missing: String::new(),
-                },
-                "unknown-endpoint",
-            ),
-            (ModelRefusalCause::UnsortedDerivation, "unsorted-derivation"),
-            (ModelRefusalCause::DuplicatePath, "duplicate-path"),
+        let cases: Vec<ModelRefusalCause> = vec![
+            ModelRefusalCause::DispatchFamilyDepth { original: key("p") },
+            ModelRefusalCause::UnclosedMethodSet,
+            ModelRefusalCause::UnknownOriginal { original: key("p") },
+            ModelRefusalCause::UnknownCandidate {
+                candidate: key("p"),
+            },
+            ModelRefusalCause::NoApplicable,
+            ModelRefusalCause::MultipleUndominated,
+            ModelRefusalCause::UnsortedView { at: effective_id() },
+            ModelRefusalCause::GeneralizationDepthExceeded { root: key("p") },
+            ModelRefusalCause::SpecializationCycle {
+                ancestor: key("p"),
+                via: key("p"),
+            },
+            ModelRefusalCause::UnknownOwner {
+                member: key("p"),
+                owner: key("p"),
+            },
+            ModelRefusalCause::UnknownSpecific {
+                generalization: key("p"),
+                specific: key("p"),
+            },
+            ModelRefusalCause::UnknownGeneral {
+                generalization: key("p"),
+                general: key("p"),
+            },
+            ModelRefusalCause::UnknownValueType {
+                operation: key("p"),
+                parameter: Some(key("p")),
+                value_type: key("p"),
+            },
+            ModelRefusalCause::UnknownFieldWrite {
+                operation: key("p"),
+                field: key("p"),
+            },
+            ModelRefusalCause::UnknownEffectType {
+                operation: key("p"),
+                type_name: key("p"),
+            },
+            ModelRefusalCause::UnknownMember {
+                record: key("p"),
+                member: key("p"),
+            },
+            ModelRefusalCause::DerivationConflict {
+                type_: key("p"),
+                member: key("p"),
+                redefiners: vec![key("p")],
+            },
+            ModelRefusalCause::RedefinitionUnreachable {
+                member: key("p"),
+                owner: key("p"),
+            },
+            ModelRefusalCause::UnsupportedWire {
+                version: String::new(),
+            },
+            ModelRefusalCause::WrongModelSelection { key: key("p") },
+            ModelRefusalCause::DigestDomainMismatch {
+                key: key("p"),
+                domain: String::new(),
+            },
+            ModelRefusalCause::UnsuppliedProducerRecord,
+            ModelRefusalCause::ConformanceDepth { from: key("p") },
+            ModelRefusalCause::VarianceResult,
+            ModelRefusalCause::MultiplicityNarrowing {
+                from: multiplicity(),
+                to: multiplicity(),
+            },
+            ModelRefusalCause::SubsettingType {
+                subsetting: key("p"),
+                subsetted: key("p"),
+            },
+            ModelRefusalCause::TypeMismatch,
+            ModelRefusalCause::VarianceParameter {
+                index: 0,
+                declared: key("p"),
+                redefined: key("p"),
+            },
+            ModelRefusalCause::EffectEscape { field: key("p") },
+            ModelRefusalCause::UnprovedRefinement,
+            ModelRefusalCause::RedefinitionTarget,
+            ModelRefusalCause::ForeignModelSelection {
+                actual: String::new(),
+                expected: String::new(),
+            },
+            ModelRefusalCause::IncompleteScope {
+                selection: String::new(),
+            },
+            ModelRefusalCause::UnclosedSubtypes {
+                selection: String::new(),
+                type_name: Some(key("p")),
+            },
+            ModelRefusalCause::ForeignType {
+                member: String::new(),
+                type_name: key("p"),
+            },
+            ModelRefusalCause::ConflictingIdentity {
+                object: String::new(),
+                existing_type: effective_id(),
+                declared_type: effective_id(),
+            },
+            ModelRefusalCause::OperatorIneligible,
+            ModelRefusalCause::AboveMaximum {
+                selected: 0,
+                maximum: 0,
+            },
+            ModelRefusalCause::ForeignUniverse {
+                actual: effective_id(),
+                expected: effective_id(),
+            },
+            ModelRefusalCause::AbsentKey { key: String::new() },
+            ModelRefusalCause::WrongExport,
+            ModelRefusalCause::UnknownRelationship {
+                relationship: key("p"),
+            },
+            ModelRefusalCause::UnknownSourcePort { port: key("p") },
+            ModelRefusalCause::UnknownTargetPort { port: key("p") },
+            ModelRefusalCause::PortDirection {
+                source: key("p"),
+                target: key("p"),
+            },
+            ModelRefusalCause::UnknownRedefining { member: key("p") },
+            ModelRefusalCause::UnknownRedefined { member: key("p") },
+            ModelRefusalCause::UnknownSubsetting { member: key("p") },
+            ModelRefusalCause::UnknownSubsetted { member: key("p") },
+            ModelRefusalCause::UnknownComponent {
+                item: key("p"),
+                missing: key("p"),
+            },
+            ModelRefusalCause::UnknownEndpoint {
+                end: "source",
+                relationship: key("p"),
+                missing: key("p"),
+            },
+            ModelRefusalCause::UnsortedDerivation {
+                original: key("p"),
+                position: 0,
+                ordinal: 0,
+            },
+            ModelRefusalCause::DuplicatePath {
+                original: key("p"),
+                earlier: 0,
+                later: 0,
+            },
+            ModelRefusalCause::MalformedDeclaration,
+            ModelRefusalCause::DuplicateMember {
+                object: String::new(),
+                field: key("p"),
+            },
+            ModelRefusalCause::SubsettingViolation {
+                object: String::new(),
+                record: key("p"),
+                subsetting: key("p"),
+                subsetted: key("p"),
+            },
         ];
-        assert_eq!(
-            cases.len(),
-            53,
-            "expected exactly the 53 ModelRefusalCause variants"
-        );
-        for (cause, expected) in &cases {
-            assert_eq!(cause.as_str(), *expected);
-            assert_eq!(cause.to_string(), *expected);
+        for cause in &cases {
+            let expected = expected_tag(cause);
+            assert_eq!(cause.as_str(), expected);
+            assert_eq!(cause.to_string(), expected);
         }
     }
 }

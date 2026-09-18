@@ -8,6 +8,10 @@
 //! (this crate selects no `preserve_order` feature), so `serde_json::to_vec`
 //! already emits ascending-key, whitespace-free bytes for every ASCII member
 //! name this schema defines, which is RFC 8785 JCS for these preimages.
+#![allow(
+    clippy::result_large_err,
+    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::fmt;
 
@@ -345,7 +349,11 @@ impl EffectiveDeclarationPreimage {
         for (position, fact) in self.derivation.iter().enumerate() {
             if fact.ordinal != position {
                 return Err((
-                    ModelRefusalCause::UnsortedDerivation,
+                    ModelRefusalCause::UnsortedDerivation {
+                        original: self.original.clone(),
+                        position,
+                        ordinal: fact.ordinal,
+                    },
                     format!(
                         "{} derivation fact at position {position} has ordinal {}, not {position}",
                         self.original.identity, fact.ordinal
@@ -357,7 +365,11 @@ impl EffectiveDeclarationPreimage {
             for later in (earlier + 1)..self.derivation.len() {
                 if self.derivation[earlier].inputs == self.derivation[later].inputs {
                     return Err((
-                        ModelRefusalCause::DuplicatePath,
+                        ModelRefusalCause::DuplicatePath {
+                            original: self.original.clone(),
+                            earlier,
+                            later,
+                        },
                         format!(
                             "{} derivation retains the same input path at positions {earlier} and {later}",
                             self.original.identity

@@ -58,6 +58,14 @@
 //!   actually normalizes through it, `normalize`'s own phase 4
 //!   (`apply_redefinitions`'s undominated-edges branch), which already has
 //!   every sibling redefiner of a contended target in view.
+#![allow(
+    clippy::large_enum_variant,
+    reason = "ModelRefusalCause is a closed typed cause vocabulary retaining complete producer/effective identities without heap allocation"
+)]
+#![allow(
+    clippy::result_large_err,
+    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+)]
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -252,7 +260,7 @@ pub(super) fn type_conforms(
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::ConformanceDepth {
-                    from: s.identity.clone(),
+                    from: s.clone(),
                 },
                 detail: format!(
                     "conformance check from {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
@@ -312,7 +320,7 @@ pub fn check_field_redefinition(
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
-                member: record.redefining.identity.clone(),
+                member: record.redefining.clone(),
             },
             &record.redefining.identity,
             "redefining field",
@@ -321,7 +329,7 @@ pub fn check_field_redefinition(
     let Some(redefined) = index.fields.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefined {
-                member: record.redefined.identity.clone(),
+                member: record.redefined.clone(),
             },
             &record.redefined.identity,
             "redefined field",
@@ -358,7 +366,10 @@ pub fn check_field_redefinition(
         failures.push(AxisFailure {
             axis: "multiplicity",
             code: Code::IllTyped,
-            cause: ModelRefusalCause::MultiplicityNarrowing,
+            cause: ModelRefusalCause::MultiplicityNarrowing {
+                from: redefining.multiplicity,
+                to: redefined.multiplicity,
+            },
             detail: format!(
                 "{:?} does not conform to {:?}",
                 redefining.multiplicity, redefined.multiplicity
@@ -387,7 +398,7 @@ pub fn check_subsetting(
     let Some(subsetting) = index.fields.get(&record.subsetting) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetting {
-                member: record.subsetting.identity.clone(),
+                member: record.subsetting.clone(),
             },
             &record.subsetting.identity,
             "subsetting field",
@@ -396,7 +407,7 @@ pub fn check_subsetting(
     let Some(subsetted) = index.fields.get(&record.subsetted) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetted {
-                member: record.subsetted.identity.clone(),
+                member: record.subsetted.clone(),
             },
             &record.subsetted.identity,
             "subsetted field",
@@ -418,8 +429,8 @@ pub fn check_subsetting(
             axis: "subsetting-type",
             code: Code::IllTyped,
             cause: ModelRefusalCause::SubsettingType {
-                subsetting: subsetting.value_type.identity.clone(),
-                subsetted: subsetted.value_type.identity.clone(),
+                subsetting: subsetting.value_type.clone(),
+                subsetted: subsetted.value_type.clone(),
             },
             detail: format!(
                 "{} does not conform to {}",
@@ -436,7 +447,10 @@ pub fn check_subsetting(
         failures.push(AxisFailure {
             axis: "multiplicity",
             code: Code::IllTyped,
-            cause: ModelRefusalCause::MultiplicityNarrowing,
+            cause: ModelRefusalCause::MultiplicityNarrowing {
+                from: subsetting.multiplicity,
+                to: subsetted.multiplicity,
+            },
             detail: format!(
                 "{:?} does not conform to {:?}",
                 subsetting.multiplicity, subsetted.multiplicity
@@ -463,7 +477,7 @@ pub fn check_operation_redefinition(
     let Some(redefining) = index.operations.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
-                member: record.redefining.identity.clone(),
+                member: record.redefining.clone(),
             },
             &record.redefining.identity,
             "redefining operation",
@@ -472,7 +486,7 @@ pub fn check_operation_redefinition(
     let Some(redefined) = index.operations.get(&record.redefined) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefined {
-                member: record.redefined.identity.clone(),
+                member: record.redefined.clone(),
             },
             &record.redefined.identity,
             "redefined operation",
@@ -516,8 +530,8 @@ pub fn check_operation_redefinition(
                     code: Code::IllTyped,
                     cause: ModelRefusalCause::VarianceParameter {
                         index: display_index,
-                        declared: dp.value_type.identity.clone(),
-                        redefined: rp.value_type.identity.clone(),
+                        declared: dp.value_type.clone(),
+                        redefined: rp.value_type.clone(),
                     },
                     detail: format!(
                         "parameter {display_index}: expected {} to conform to {}",
@@ -534,7 +548,10 @@ pub fn check_operation_redefinition(
                 failures.push(AxisFailure {
                     axis: "parameter-multiplicity",
                     code: Code::IllTyped,
-                    cause: ModelRefusalCause::MultiplicityNarrowing,
+                    cause: ModelRefusalCause::MultiplicityNarrowing {
+                        from: dp.multiplicity,
+                        to: rp.multiplicity,
+                    },
                     detail: format!(
                         "parameter {display_index}: {:?} does not conform to {:?}",
                         dp.multiplicity, rp.multiplicity
@@ -582,7 +599,10 @@ pub fn check_operation_redefinition(
             failures.push(AxisFailure {
                 axis: "result-multiplicity",
                 code: Code::IllTyped,
-                cause: ModelRefusalCause::MultiplicityNarrowing,
+                cause: ModelRefusalCause::MultiplicityNarrowing {
+                    from: rr.multiplicity,
+                    to: dr.multiplicity,
+                },
                 detail: format!(
                     "{:?} does not conform to {:?}",
                     rr.multiplicity, dr.multiplicity
@@ -614,7 +634,7 @@ pub fn check_operation_redefinition(
                 axis: "effect",
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::EffectEscape {
-                    field: write.identity.clone(),
+                    field: write.clone(),
                 },
                 detail: format!(
                     "write {} is not covered by the redefined effect",
@@ -644,7 +664,7 @@ pub fn check_operation_redefinition(
                     axis: "effect",
                     code: Code::IllTyped,
                     cause: ModelRefusalCause::EffectEscape {
-                        field: entry.identity.clone(),
+                        field: entry.clone(),
                     },
                     detail: format!("{} is not covered by the redefined effect", entry.identity),
                 });
@@ -722,7 +742,7 @@ fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefus
                         // `malformed-declaration` (its own payload: "the IR
                         // node identity and invalid member path" — here the
                         // scalar type's own declaration).
-                        cause: "malformed-declaration",
+                        cause: ModelRefusalCause::MalformedDeclaration,
                         detail: format!(
                             "a scalar type's declared domain has lower {lower} greater than its upper {upper}"
                         ),
@@ -833,7 +853,7 @@ pub fn check_field_refinement_obligation(
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefining {
-                member: record.redefining.identity.clone(),
+                member: record.redefining.clone(),
             },
             &record.redefining.identity,
             "redefining field",
@@ -842,7 +862,7 @@ pub fn check_field_refinement_obligation(
     let Some(redefined) = index.fields.get(&record.redefined) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefined {
-                member: record.redefined.identity.clone(),
+                member: record.redefined.clone(),
             },
             &record.redefined.identity,
             "redefined field",
