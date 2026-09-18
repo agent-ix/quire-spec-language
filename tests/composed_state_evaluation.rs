@@ -862,10 +862,8 @@ fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
     });
 }
 
-/// Tracing: TC-136. Also FR-049-AC-2's proof that evaluation completes from
-/// `StaticAuthority` alone: `postcondition_view`'s authority below sets only
-/// its document/model/profile/configuration identity and `sha256`
-/// `filament-canonical-json-1` digest fields, and evaluation still
+/// Tracing: TC-136. The authority below sets document/model/profile/configuration
+/// identity with `sha256` `filament-canonical-json-1` digests, and evaluation
 /// completes.
 #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-4", "FR-049-AC-5")]
 #[test]
