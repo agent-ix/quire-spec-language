@@ -38,13 +38,20 @@ recovery value handles retained by [FR-048](FR-048-preserve-native-choreography-
 The domain package admitted under
 [FR-056](FR-056-admit-domain-package-model-declarations.md) supplies model,
 object-type, relationship and population-declaration identity as declaration
-keys. F's selected observation binding and
-assessment-input contract at the accepted native-v1 baseline
+keys. `StaticAuthority`'s document, model, profile and configuration identity
+and digest are checked independently of that domain-package identity: each is
+a static identity paired with a `sha256` digest in the
+`filament-canonical-json-1` domain, which the evaluator's `valid_digest` check
+enforces. Moving these identities to the FR-056 domain package's `sha256-jcs`
+digests is tracked separately (refs #131). F's selected observation binding
+and assessment-input contract at the accepted native-v1 baseline
 `4d6230eb8aa9766ff3017360962f2d6368d74cb3` supplies concrete records,
 occurrence correlation, membership, observation anchors, progress and
-completeness. The caller translates those authorities into this typed Rust
-view; field spelling, JSON shape or the offered protocol artifact cannot appoint
-them.
+completeness. That accepted baseline's own observation contract additionally
+names a producer interface version for each assessment input; `StaticAuthority`
+carries no such member and this requirement never compares one. The
+caller translates those authorities into this typed Rust view; field spelling,
+JSON shape or the offered protocol artifact cannot appoint them.
 
 At the observation boundary, a concrete population document uses
 `ArtifactRef(kind="population")` and a concrete finite window document uses
