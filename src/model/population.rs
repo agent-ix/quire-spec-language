@@ -60,15 +60,19 @@
 //! # Binding/bundle correspondence
 //!
 //! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
-//! only constructor. [`all_instances`] and [`lookup`] both check the
-//! supplied `bundle` against the binding's own recorded `modelIdentity` and
-//! object universe before doing anything else, so a binding admitted against
-//! one bundle is refused, not silently answered, against a different one.
+//! only constructor, and it stores the full admitted `ModelSelection` header
+//! alongside the universe that header's bundle normalized to.
+//! [`all_instances`] and [`lookup`] both check the supplied `bundle`'s own
+//! `model_selection` header against that recorded one before doing anything
+//! else ([`require_bundle_matches`]), so a binding admitted against one
+//! bundle is refused, not silently answered, against a different one — and
+//! without re-normalizing the query bundle to do it (see
+//! `require_bundle_matches`'s own doc comment).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::Code;
-use crate::model::bundle::{Bundle, BundleRecord};
+use crate::model::bundle::{Bundle, BundleRecord, ModelSelection};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
@@ -366,16 +370,19 @@ pub enum AbsenceMode {
 /// Every field is private; [`admit_binding`] is this type's only
 /// constructor, so a caller cannot assemble a binding that was never checked
 /// against a bundle's `modelIdentity`, object closure or subtype closure.
-/// [`all_instances`] and [`lookup`] both re-check `model_identity` and
-/// `universe` against their own `bundle` argument before answering, so a
-/// binding admitted against one bundle is refused, not silently answered,
-/// against a different one.
+/// [`all_instances`] and [`lookup`] both re-check the binding's own recorded
+/// [`ModelSelection`] header against their own `bundle` argument before
+/// answering, so a binding admitted against one bundle is refused, not
+/// silently answered, against a different one — see
+/// [`require_bundle_matches`] for why this is a header comparison, not a
+/// re-derived universe.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
-    /// The `ModelSelection` export identity this binding was admitted
+    /// The full `ModelSelection` header (`{authority, export, contract_version}`,
+    /// export being `{identity, revision, digest}`) this binding was admitted
     /// against.
-    model_identity: String,
-    /// This binding's own object universe.
+    model_selection: ModelSelection,
+    /// This binding's own object universe, computed once at admission.
     universe: EffectiveId,
     /// Every admitted member, ascending by [`ReferenceKey`].
     members: BTreeMap<ReferenceKey, ProducerKey>,
@@ -385,10 +392,15 @@ pub struct PopulationBinding {
 }
 
 impl PopulationBinding {
+    /// The full `ModelSelection` header this binding was admitted against.
+    pub fn model_selection(&self) -> &ModelSelection {
+        &self.model_selection
+    }
+
     /// The `ModelSelection` export identity this binding was admitted
     /// against.
     pub fn model_identity(&self) -> &str {
-        &self.model_identity
+        &self.model_selection.export.identity
     }
 
     /// This binding's own object universe.
@@ -409,33 +421,41 @@ impl PopulationBinding {
 }
 
 /// Refuse a query whose `bundle` argument does not match `binding`'s own
-/// recorded `modelIdentity` or object universe. Uncharged, checked first, by
-/// both [`all_instances`] and [`lookup`] — the same defect class
-/// [`admit_binding`]'s own `modelIdentity` check names, applied at query time
-/// instead of admission time.
+/// admitted [`ModelSelection`] header. Uncharged, checked first, by both
+/// [`all_instances`] and [`lookup`].
+///
+/// This compares `bundle.model_selection` (the query's own header —
+/// `{authority, export: {identity, revision, digest}, contract_version}`,
+/// already present on `Bundle`, no computation) directly against the header
+/// [`admit_binding`] recorded, rather than calling [`object_universe`] again
+/// to re-derive and compare a fresh universe: that would re-run `build`'s
+/// full, unbounded normalization on every query, uncharged — the same class
+/// of hole `quire.value.accounting/v1` exists to close, just moved onto the
+/// query path. `export.digest` is `filament-canonical-json-1`'s digest of the
+/// bundle's actual content, so an exact header match already implies an
+/// identical universe without rebuilding one; this crate already extends the
+/// same trust to `export.identity` alone at [`admit_binding`]'s own
+/// `modelIdentity` check, so trusting the full header here is a strengthening
+/// of that same boundary, not a new one. A caller presenting a bundle whose
+/// declared header collides with an admitted one while actually supplying
+/// different records is a producer-side integrity defect this crate does not
+/// independently re-verify anywhere, admission included.
 fn require_bundle_matches(
     bundle: &Bundle,
     binding: &PopulationBinding,
 ) -> Result<(), ModelRefusal> {
-    if bundle.model_selection.export.identity != binding.model_identity {
+    if bundle.model_selection != binding.model_selection {
         return Err(ModelRefusal {
             code: Code::ForeignReference,
             cause: "foreign-model-selection",
             detail: format!(
-                "query bundle names modelIdentity {}, not the binding's {}",
-                bundle.model_selection.export.identity, binding.model_identity
-            ),
-        });
-    }
-    let universe = object_universe(bundle)?.identity();
-    if universe != binding.universe {
-        return Err(ModelRefusal {
-            code: Code::ForeignReference,
-            cause: "foreign-binding",
-            detail: format!(
-                "query bundle's object universe {} does not match the binding's {}",
-                universe.hex(),
-                binding.universe.hex()
+                "query bundle's model selection {} (revision {}, digest {:?}) does not match the binding's admitted selection {} (revision {}, digest {:?})",
+                bundle.model_selection.export.identity,
+                bundle.model_selection.export.revision.value,
+                bundle.model_selection.export.digest,
+                binding.model_selection.export.identity,
+                binding.model_selection.export.revision.value,
+                binding.model_selection.export.digest,
             ),
         });
     }
@@ -445,8 +465,11 @@ fn require_bundle_matches(
 /// The outcome of one [`admit_binding`] attempt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdmissionOutcome {
-    /// Every member was charged and admitted.
-    Admitted(PopulationBinding),
+    /// Every member was charged and admitted. Boxed: `PopulationBinding` now
+    /// carries the full `ModelSelection` header, not just an identity
+    /// `String`, which otherwise makes this the dominant variant by size
+    /// (`clippy::large_enum_variant`).
+    Admitted(Box<PopulationBinding>),
     /// A real defect refused admission outright; no binding.
     Refused(ModelRefusal),
     /// Object or subtype closure is not established. Not a refusal
@@ -570,12 +593,12 @@ pub fn admit_binding(
     // `binding.subset-value` is deliberately not walked here; see the module
     // docs' scope boundary.
 
-    AdmissionOutcome::Admitted(PopulationBinding {
-        model_identity: bundle.model_selection.export.identity.clone(),
+    AdmissionOutcome::Admitted(Box::new(PopulationBinding {
+        model_selection: bundle.model_selection.clone(),
         universe,
         members: admitted,
         declared_maximum,
-    })
+    }))
 }
 
 // ---------------------------------------------------------------------------
