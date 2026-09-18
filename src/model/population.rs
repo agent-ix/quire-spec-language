@@ -612,6 +612,22 @@ pub fn admit_binding(
             .map_or(&[][..], |entry| entry.values.as_slice())
     }
 
+    /// The first field named by more than one of `member`'s own
+    /// `field_values` entries, or `None` when every named field is unique.
+    /// [`values_of`]'s `find` keeps only the first matching entry, so an
+    /// unrejected duplicate would silently discard the others rather than
+    /// refusing.
+    fn duplicate_field(member: &PopulationMember) -> Option<&ProducerKey> {
+        let mut seen: Vec<&ProducerKey> = Vec::new();
+        for entry in &member.field_values {
+            if seen.iter().any(|existing| **existing == entry.field) {
+                return Some(&entry.field);
+            }
+            seen.push(&entry.field);
+        }
+        None
+    }
+
     let subsetting_records: Vec<&SubsettingRecord> = bundle
         .records
         .iter()
@@ -631,6 +647,16 @@ pub fn admit_binding(
             let Some(&member) = member_by_object.get(key.object.as_str()) else {
                 continue;
             };
+            if let Some(field) = duplicate_field(member) {
+                return AdmissionOutcome::Refused(ModelRefusal {
+                    code: Code::InvalidRuntimeInput,
+                    cause: "duplicate-field-values",
+                    detail: format!(
+                        "object {} declares field {} more than once in its field_values",
+                        key.object, field.identity
+                    ),
+                });
+            }
             let mut applicable: Vec<&SubsettingRecord> = Vec::new();
             for record in &subsetting_records {
                 match type_conforms(&generals, original_type, &record.owner) {
@@ -657,8 +683,12 @@ pub fn admit_binding(
                             code: Code::InvalidRuntimeInput,
                             cause: "subsetting-violation",
                             detail: format!(
-                                "object {}'s {} names {value}, not among its {} values",
-                                key.object, record.subsetting.identity, record.subsetted.identity
+                                "object {}'s {} names {value}, not among its {} values \
+                                 (subsetting record {})",
+                                key.object,
+                                record.subsetting.identity,
+                                record.subsetted.identity,
+                                record.key.identity
                             ),
                         });
                     }

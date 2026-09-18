@@ -564,6 +564,67 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
     }
 }
 
+/// TC-196 R07's second shape (origin/main, after QSpec #86): `B/z` and
+/// `B/z2`, two distinct redefining members, both `redefines: A/x` — each
+/// resolves, on its own, to the identical single inherited target, so
+/// resolving either one must refuse `redefinition-target` naming both
+/// redefiners' own candidates and the one contended target `A/x`, the same
+/// refusal from either query.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07b_two_redefiners_contending_for_the_same_inherited_target_refuse_redefinition_target() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.r07c"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.B.z", "model.B", "model.A", mult(0, Some(1))),
+            field_member("model.B.z2", "model.B", "model.A", mult(0, Some(1))),
+            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
+            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+        ],
+    );
+
+    for redefiner in ["model.B.z", "model.B.z2"] {
+        match resolve_redefinition_target(
+            &bundle,
+            &ProducerKey::fixture("model.B"),
+            &ProducerKey::fixture(redefiner),
+        ) {
+            Ok(RedefinitionTargetOutcome::Refused {
+                cause,
+                candidates,
+                valid_targets,
+            }) => {
+                assert_eq!(cause, "redefinition-target");
+                assert_eq!(
+                    candidates.len(),
+                    2,
+                    "must list both B/z's and B/z2's own candidate, got {candidates:?}"
+                );
+                let redefiners: std::collections::BTreeSet<&str> = candidates
+                    .iter()
+                    .map(|(key, _)| key.identity.as_str())
+                    .collect();
+                assert!(
+                    redefiners.contains("model.redef.z") && redefiners.contains("model.redef.z2"),
+                    "must name both B/z's and B/z2's redefinition records, got {candidates:?}"
+                );
+                assert_eq!(
+                    valid_targets,
+                    vec![ProducerKey::fixture("model.A.x")],
+                    "must carry the one contended target A/x"
+                );
+            }
+            other => {
+                panic!("expected Refused(contending redefiners) for {redefiner}, got {other:?}")
+            }
+        }
+    }
+}
+
 /// R08's shared base: types `A`, `B` (`B` <= `A`); scalars `model.Count`
 /// `[0,9]` and `model.Small` `[0,5]`; field `model.A.x` typed `model.A`
 /// `{0,1}`; field `model.A.c` typed `model.Count` `{1,1}`; operation
@@ -848,6 +909,132 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
             assert!(failures[0].detail.contains("field-domain"));
         }
         other => panic!("expected Refused (g, unrelated clause), got {other:?}"),
+    }
+}
+
+/// Review of PR #157 finding #1: the effective postcondition is a
+/// conjunction, so two clauses over the same field must be proved
+/// *together*, not by keeping only whichever one happened to be derived
+/// first. Neither `model.B.cs >= 0` nor `model.B.cs <= 5` alone establishes
+/// an interval contained in `Small`'s `[0,5]` (the first gives the
+/// unbounded-above `[0, unbounded]`; the second alone is not even reachable
+/// from `Facts::default()`'s own unbounded interval without the first's
+/// lower bound), but folded into one `cs >= 0 AND cs <= 5` guard they
+/// establish exactly `[0,5]`, which is contained.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
+    let mut records = r08_base();
+    records.push(field_member(
+        "model.B.cs",
+        "model.B",
+        "model.Small",
+        mult(1, Some(1)),
+    ));
+    records.push(redefinition(
+        "model.redef.cs",
+        "model.B",
+        "model.B.cs",
+        "model.A.c",
+    ));
+    records.push(operation(
+        "model.B.set",
+        "model.B",
+        vec![],
+        None,
+        vec![],
+        vec![],
+        vec![],
+        vec![
+            PostconditionClause::Comparison {
+                field: ProducerKey::fixture("model.B.cs"),
+                operator: OrderingOperator::GreaterOrEqual,
+                literal: 0,
+            },
+            PostconditionClause::Comparison {
+                field: ProducerKey::fixture("model.B.cs"),
+                operator: OrderingOperator::LessOrEqual,
+                literal: 5,
+            },
+        ],
+    ));
+    records.push(redefinition(
+        "model.redef.set",
+        "model.B",
+        "model.B.set",
+        "model.A.set",
+    ));
+    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08h"), records);
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.cs"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.cs"),
+        redefined: ProducerKey::fixture("model.A.c"),
+    };
+    match check_field_refinement_obligation(&bundle, &record) {
+        Ok(ConformanceOutcome::Compatible) => {}
+        other => panic!(
+            "expected Compatible: the two clauses together establish [0,5], \
+             contained in Small's [0,5], got {other:?}"
+        ),
+    }
+}
+
+/// Review of PR #157 finding #3: a malformed `ScalarTypeRecord` (its own
+/// lower greater than its upper) must refuse when a narrowing
+/// redefinition's obligation check seeds a synthetic guard from it, never
+/// panic on this caller-supplied bundle data.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
+    let records = vec![
+        object_type("model.A"),
+        object_type("model.B"),
+        generalization("model.gen.B-A", "model.B", "model.A"),
+        scalar_type("model.Count", 9, 0), // malformed: lower > upper.
+        scalar_type("model.Small", 0, 5),
+        field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+        field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
+        field_member("model.B.cs", "model.B", "model.Small", mult(1, Some(1))),
+        redefinition("model.redef.cs", "model.B", "model.B.cs", "model.A.c"),
+        operation(
+            "model.A.set",
+            "model.A",
+            vec![],
+            None,
+            vec!["model.A.x", "model.A.c"],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        operation(
+            "model.B.set",
+            "model.B",
+            vec![],
+            None,
+            vec![],
+            vec![],
+            vec![],
+            vec![PostconditionClause::Comparison {
+                field: ProducerKey::fixture("model.B.cs"),
+                operator: OrderingOperator::LessOrEqual,
+                literal: 5,
+            }],
+        ),
+        redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
+    ];
+    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08i"), records);
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.cs"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.cs"),
+        redefined: ProducerKey::fixture("model.A.c"),
+    };
+    match check_field_refinement_obligation(&bundle, &record) {
+        Err(refusal) => {
+            assert_eq!(refusal.cause, "invalid-scalar-domain");
+        }
+        other => panic!("expected Err(invalid-scalar-domain), got {other:?}"),
     }
 }
 

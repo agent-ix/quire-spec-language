@@ -1078,3 +1078,48 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
         }
     }
 }
+
+/// TC-196 R01, the prefix-plus-rotation shape review found the R01 test above
+/// cannot catch: `model.A` -> `model.C`, `model.C` -> `model.B`,
+/// `model.B` -> `model.C`. `model.A` is not part of the cycle at all — it is
+/// only how the walk *reaches* it — so the listing must name just the cycle
+/// itself, `[model.B, model.C]`, never the whole path from the walk's root
+/// (`[model.A, model.C, model.B]`).
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.r01b"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.A-C", "model.A", "model.C"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            generalization("model.gen.B-C", "model.B", "model.C"),
+        ],
+    );
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "specialization-cycle");
+            assert!(
+                refusal.detail.contains("[model.B, model.C]"),
+                "the listing must name only the cycle itself, excluding model.A, \
+                 which only leads into it, got: {}",
+                refusal.detail
+            );
+            assert!(
+                !refusal.detail.contains("model.A"),
+                "model.A is not part of the cycle and must not be named, got: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
+        }
+    }
+}

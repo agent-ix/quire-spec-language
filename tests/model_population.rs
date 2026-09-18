@@ -1219,6 +1219,11 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
             assert!(refusal.detail.contains("a3"));
             assert!(refusal.detail.contains("model.A.some"));
             assert!(refusal.detail.contains("model.A.all"));
+            assert!(
+                refusal.detail.contains("model.subset.some-all"),
+                "the detail must name the subsetting record, got: {}",
+                refusal.detail
+            );
         }
         other => {
             panic!("expected Refused(invalid_runtime_input/subsetting-violation), got {other:?}")
@@ -1286,4 +1291,53 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
         1
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 3);
+}
+
+/// A member declaring the same field twice in its own `field_values` must
+/// refuse rather than silently keep only the first entry: `values_of`'s
+/// `find` would otherwise discard the second `model.A.all` entry with no
+/// signal at all, so [`admit_binding`] refuses `invalid_runtime_input`/
+/// `duplicate-field-values` naming the object and the duplicated field.
+#[test]
+#[trace("TC-196", "FR-151-AC-10")]
+fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
+    let bundle = r06_bundle();
+    let view = view_of(&bundle);
+    let document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.r06pop".to_owned(),
+        members: vec![
+            member_with_fields(
+                "a1",
+                "model.A",
+                vec![
+                    ("model.A.all", vec!["a2"]),
+                    ("model.A.all", vec!["a9"]),
+                    ("model.A.some", vec!["a2"]),
+                ],
+            ),
+            member("a2", "model.A"),
+        ],
+    };
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &bundle,
+        &view,
+        &document,
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "duplicate-field-values");
+            assert!(refusal.detail.contains("a1"));
+            assert!(refusal.detail.contains("model.A.all"));
+        }
+        other => {
+            panic!("expected Refused(invalid_runtime_input/duplicate-field-values), got {other:?}")
+        }
+    }
 }
