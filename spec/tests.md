@@ -47,7 +47,8 @@ operational validation remains outside this audit-only plan.
 
 ## Six coverage rules
 
-All nine FR-012 ACs and both NFR-005 metric obligations are verified above.
+All nine FR-012 ACs, both NFR-005 metric obligations and all five NFR-011 ACs
+are verified above.
 Modes are mutually exclusive, not combinable options. Valid/unknown modes,
 missing/extra arguments, contained/foreign paths, zero/exact/over resource
 limits, malformed fields and identity changes are covered. No asynchronous

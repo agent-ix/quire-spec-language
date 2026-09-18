@@ -26,11 +26,11 @@ untracked file offline with no clone and no network access.
 
 This applies to `resources/native-v1` and `resources/complete-value`, their
 `VENDOR.json` manifests, and the `xtask` `revendor`/`revendor-check` commands
-that read and check them. It does not resolve a branch, tag or "latest"
-ref, fetch over the network, or change how the closed registry
-(`src/linking/composed/definition_source.rs`) interprets the resulting
-bytes; `resources/native-v1` remains a historical selection, not a mirror of
-a current source tree.
+that read and check them. Every source is named by a full commit sha read
+from a local clone or by a recorded digest, and the closed registry
+(`src/linking/composed/definition_source.rs`) interprets the resulting bytes
+under its own rules. `resources/native-v1` is a historical selection pinned
+at its recorded commits.
 
 ## Measurement and Evaluation
 
