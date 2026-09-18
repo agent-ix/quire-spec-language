@@ -15,7 +15,7 @@ use quire_spec_language::state::{
     EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
     ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
     PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
-    OBSERVATION_CONTRACT_REVISION, STATIC_AUTHORITY_INTERFACE_VERSION,
+    OBSERVATION_CONTRACT_REVISION,
 };
 use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
@@ -279,7 +279,6 @@ fn authority(
         .artifact
         .clone();
     let static_selection = StaticAuthority {
-        interface_version: STATIC_AUTHORITY_INTERFACE_VERSION.into(),
         document_identity: "document:selected".into(),
         document_digest: canonical('1'),
         model_identity: "model:selected".into(),
@@ -863,7 +862,11 @@ fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
     });
 }
 
-/// Tracing: TC-136.
+/// Tracing: TC-136. Also FR-049-AC-2's proof that `StaticAuthority` needs no
+/// interface version (#139: the field was vestigial, pinned to a producer
+/// interface FR-150-AC-7 refuses outright, and was deleted rather than
+/// re-pinned) -- `postcondition_view`'s authority below never sets one, and
+/// evaluation still completes.
 #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-4", "FR-049-AC-5")]
 #[test]
 fn tc_136_pre_reads_the_exact_invocation_pre_observation_and_binding() {
@@ -1820,33 +1823,6 @@ fn tc_129_130_131_full_occurrences_authority_and_graph_limits_are_exact() {
             )
             .outcome(),
             EvaluationOutcome::Refused(Refusal::Authority(_))
-        ));
-
-        let mut wrong_interface_version = view.clone();
-        wrong_interface_version.binders[0]
-            .authority
-            .as_mut()
-            .expect("binder authority")
-            .static_selection
-            .interface_version = "9.9.9".into();
-        assert_ne!(
-            wrong_interface_version.binders[0]
-                .authority
-                .as_ref()
-                .expect("binder authority")
-                .static_selection
-                .interface_version,
-            STATIC_AUTHORITY_INTERFACE_VERSION
-        );
-        assert!(matches!(
-            state::evaluate(
-                package,
-                request.clone(),
-                &wrong_interface_version,
-                Limits::default()
-            )
-            .outcome(),
-            EvaluationOutcome::Refused(Refusal::AuthorityRevision)
         ));
 
         let mut raw_digest_in_canonical_domain = view.clone();
