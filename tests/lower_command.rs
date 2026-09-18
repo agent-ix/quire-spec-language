@@ -222,7 +222,7 @@ fn later_unsupported_clause_preserves_native_authority_and_never_exports_a_prefi
     assert_eq!(native.status.code(), Some(0));
 
     let output = invoke(directory.path(), "lower", "compile.json");
-    assert_eq!(output.status.code(), Some(20));
+    assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["stage"], "lower");

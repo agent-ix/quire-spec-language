@@ -20,9 +20,17 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
             "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}},
         "message": value.message })
     .to_string();
-    // FR-301's contract: incomplete is 22, a refused syntax request is invalid
-    // input (20).
-    (if incomplete { 22 } else { 20 }, output)
+    // FR-301's contract: a recognized construct this profile does not admit
+    // is unsupported (21); other incomplete work is 22; a refused syntax
+    // request is otherwise invalid input (20).
+    let code = if value.code.is_unsupported() {
+        21
+    } else if incomplete {
+        22
+    } else {
+        20
+    };
+    (code, output)
 }
 
 fn syntax(
@@ -100,7 +108,18 @@ fn main() -> ExitCode {
     // reject excess arguments without collecting an unbounded process argument list.
     let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
     let outcome = Command::try_from(arguments.as_slice())
-        .map_err(|error| (20, error.to_string()))
+        .map_err(|error| {
+            // FR-301's contract: an unrecognized lowering target names a
+            // real, catalogued capability this build does not implement,
+            // unsupported (21); every other usage failure is invalid
+            // input (20).
+            let code = if matches!(error, cli::UsageError::UnknownTarget(_)) {
+                21
+            } else {
+                20
+            };
+            (code, error.to_string())
+        })
         .and_then(execute);
     let (code, result) = match outcome {
         Ok((code, output)) => {

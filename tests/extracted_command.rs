@@ -161,9 +161,9 @@ mod enabled {
     #[test]
     #[trace("TC-109", "FR-031-AC-2")]
     fn extraction_and_native_failures_retain_original_selection() {
-        for (replacement, code) in [
-            ("@", "invalid_syntax"),
-            ("collect(self.items)", "unsupported_construct"),
+        for (replacement, code, exit) in [
+            ("@", "invalid_syntax", 20),
+            ("collect(self.items)", "unsupported_construct", 21),
         ] {
             let directory = tempfile::tempdir().unwrap();
             let mut job =
@@ -175,7 +175,7 @@ mod enabled {
             );
             replace(directory.path(), &mut job, &text);
             let (actual, result, stdout) = invoke(directory.path(), "run", &job);
-            assert_eq!(actual, 20, "{result}");
+            assert_eq!(actual, exit, "{result}");
             assert!(!stdout);
             assert_eq!(result["code"], code);
             assert_eq!(

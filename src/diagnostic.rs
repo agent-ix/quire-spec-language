@@ -246,6 +246,17 @@ impl Code {
                 | Self::UnavailableObservation
         )
     }
+
+    /// Whether this code records a well-formed request naming a real,
+    /// catalogued capability this build does not implement, rather than
+    /// input that is itself invalid. FR-301's contract reports these as
+    /// unsupported (21), distinct from invalid or refused input (20).
+    pub fn is_unsupported(self) -> bool {
+        matches!(
+            self,
+            Self::UnsupportedProjection | Self::UnsupportedConstruct | Self::UnknownRequiredFeature
+        )
+    }
 }
 
 impl std::fmt::Display for Code {
