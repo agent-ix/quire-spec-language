@@ -40,20 +40,24 @@
 //!   charge costs a flat one work unit; this is a recorded scope choice,
 //!   not silent drift from the spec's numbers.
 //! - `resolve_redefinition_target`'s ambiguity ruling (two valid, distinct
-//!   inherited targets for the same redefining member, or two distinct
-//!   redefining members contending for the identical single inherited
-//!   target) is an interpretation call: FR-151's own prose motivates it
-//!   only informally. It is recorded here, not asserted as unambiguous spec
-//!   fidelity. TC-196 R07 reports the "zero valid targets" shape and the
-//!   "several distinct valid targets"/"contending redefiners" shapes under
-//!   the identical `redefinition-target` cause ("the same refusal"), so
-//!   [`RedefinitionTargetOutcome::Refused`] keeps one cause tag for all of
-//!   them; its `valid_targets` field (QSL #146) still lets a caller tell
-//!   the "zero" and "several" shapes apart from the outcome alone, without
-//!   recomputing `candidates` itself — a "contending redefiners" refusal
-//!   carries the one contended target there instead, since unlike the
-//!   other two shapes its own ambiguity is about which *redefiner* wins,
-//!   not which *target* is valid.
+//!   inherited targets for the same redefining member) is an interpretation
+//!   call: FR-151's own prose motivates it only informally. It is recorded
+//!   here, not asserted as unambiguous spec fidelity. TC-196 R07 reports
+//!   both the "zero valid targets" and "several distinct valid targets"
+//!   shapes under the identical `redefinition-target` cause ("the same
+//!   refusal"), so [`RedefinitionTargetOutcome::Refused`] keeps one cause
+//!   tag for both; its `valid_targets` field (QSL #146) still lets a caller
+//!   tell the two failure shapes apart from the outcome alone, without
+//!   recomputing `candidates` itself.
+//!
+//!   TC-196 R07's other shape — two distinct redefining members (e.g. `B/z`
+//!   and `B/z2`) contending for the identical single inherited target — is
+//!   *not* checked by `resolve_redefinition_target`: nothing in `src/`
+//!   called it, so per-redefiner queries here could never see the sibling
+//!   that contends with them. That shape is instead detected where a model
+//!   actually normalizes through it, `normalize`'s own phase 4
+//!   (`apply_redefinitions`'s undominated-edges branch), which already has
+//!   every sibling redefiner of a contended target in view.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -117,16 +121,13 @@ pub enum ConformanceCheckOutcome {
 /// redefinition record(s) actually target.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RedefinitionTargetOutcome {
-    /// Exactly one valid inherited target, uncontended by any sibling
-    /// redefiner.
+    /// Exactly one valid inherited target.
     Resolved(ProducerKey),
-    /// Zero or multiple valid inherited targets for the queried redefining
-    /// member, or exactly one contended by another redefining member under
-    /// the same owner (TC-196 R07's second shape); every checked record and
+    /// Zero or multiple valid inherited targets; every checked record and
     /// its named target, in bundle order.
     Refused {
         /// FR-151's cause tag: always `"redefinition-target"` — TC-196 R07
-        /// reports every failure shape under "the same refusal" (see the
+        /// reports both failure shapes under "the same refusal" (see the
         /// module docs).
         cause: &'static str,
         /// The record/target pairs considered.
@@ -135,10 +136,7 @@ pub enum RedefinitionTargetOutcome {
         /// `candidates`: empty for the "zero valid targets" shape, two or
         /// more for the "several distinct valid targets" shape — the
         /// distinction QSL #146 found collapsed into one cause with no way
-        /// to tell the shapes apart from the outcome alone — or exactly one
-        /// (the contended target itself) for the "contending redefiners"
-        /// shape, where the ambiguity is about which redefiner wins, not
-        /// which target is valid.
+        /// to tell the two shapes apart from the outcome alone.
         valid_targets: Vec<ProducerKey>,
     },
 }
@@ -693,7 +691,13 @@ fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefus
                 IntegerInterval::new(Integer::from(lower), Integer::from(upper)).map_err(|_| {
                     ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: "invalid-scalar-domain",
+                        // FR-272's `invalid_model_binding` cause list is
+                        // closed; there is no dedicated scalar-domain
+                        // variant, so this is the catalogued
+                        // `malformed-declaration` (its own payload: "the IR
+                        // node identity and invalid member path" — here the
+                        // scalar type's own declaration).
+                        cause: "malformed-declaration",
                         detail: format!(
                             "a scalar type's declared domain has lower {lower} greater than its upper {upper}"
                         ),
@@ -957,19 +961,18 @@ pub fn check_field_refinement_obligation(
     }
 }
 
-/// One `(redefinition record key, named target)` candidate pair.
-type RedefinitionCandidate = (ProducerKey, ProducerKey);
-
-/// `redefining`'s own stated redefinition records under `owner`: every
-/// candidate `(record key, named target)` pair, and the distinct targets
-/// among them that are genuinely inherited — declared on a proper ancestor
-/// of `owner`, never `owner` itself.
-fn redefining_targets(
-    index: &ConformanceIndex,
+/// Resolves which of `redefining`'s stated redefinition records name a
+/// genuinely inherited target: a member declared on a proper ancestor of
+/// `owner`, never `owner` itself. Zero or several distinct valid targets
+/// refuse `redefinition-target` naming every candidate — never an arbitrary
+/// pick among them.
+pub fn resolve_redefinition_target(
+    bundle: &Bundle,
     owner: &ProducerKey,
     redefining: &ProducerKey,
-) -> Result<(Vec<RedefinitionCandidate>, Vec<ProducerKey>), ModelRefusal> {
-    let mut candidates: Vec<RedefinitionCandidate> = Vec::new();
+) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
+    let index = ConformanceIndex::build(bundle);
+    let mut candidates: Vec<(ProducerKey, ProducerKey)> = Vec::new();
     let mut valid: Vec<ProducerKey> = Vec::new();
 
     for record in &index.redefinitions {
@@ -997,76 +1000,6 @@ fn redefining_targets(
             .any(|existing| existing.identity == target.identity)
         {
             distinct.push(target.clone());
-        }
-    }
-    Ok((candidates, distinct))
-}
-
-/// Resolves which of `redefining`'s stated redefinition records name a
-/// genuinely inherited target: a member declared on a proper ancestor of
-/// `owner`, never `owner` itself. Zero or several distinct valid targets for
-/// `redefining` itself refuse `redefinition-target` naming every candidate —
-/// never an arbitrary pick among them (TC-196 R07's first shape).
-///
-/// A single valid target is not enough on its own, though: TC-196 R07's
-/// second shape has two distinct redefining members (`B/z` and `B/z2`) each
-/// resolving, on their own, to the identical single inherited target
-/// (`A/x`) — a mirror-image ambiguity a caller cannot resolve by an
-/// arbitrary pick any more than the zero/several-targets shape can, so it
-/// refuses under the identical cause, naming every contending redefiner's
-/// own candidate and the one contended target (`valid_targets` then carries
-/// that one target, not the "empty"/"two or more" shapes the first
-/// ambiguity form produces).
-pub fn resolve_redefinition_target(
-    bundle: &Bundle,
-    owner: &ProducerKey,
-    redefining: &ProducerKey,
-) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
-    let index = ConformanceIndex::build(bundle);
-    let (candidates, mut distinct) = redefining_targets(&index, owner, redefining)?;
-
-    if distinct.len() == 1 {
-        let contended = distinct[0].clone();
-        let mut sibling_redefiners: Vec<ProducerKey> = Vec::new();
-        for record in &index.redefinitions {
-            if record.owner.identity != owner.identity
-                || record.redefining.identity == redefining.identity
-            {
-                continue;
-            }
-            if sibling_redefiners
-                .iter()
-                .any(|existing| existing.identity == record.redefining.identity)
-            {
-                continue;
-            }
-            sibling_redefiners.push(record.redefining.clone());
-        }
-
-        let mut contenders: Vec<RedefinitionCandidate> = candidates.clone();
-        let mut contending_redefiners = false;
-        for sibling in &sibling_redefiners {
-            let (sibling_candidates, sibling_distinct) =
-                redefining_targets(&index, owner, sibling)?;
-            if sibling_distinct
-                .iter()
-                .any(|target| target.identity == contended.identity)
-            {
-                contending_redefiners = true;
-                contenders.extend(
-                    sibling_candidates
-                        .into_iter()
-                        .filter(|(_, target)| target.identity == contended.identity),
-                );
-            }
-        }
-
-        if contending_redefiners {
-            return Ok(RedefinitionTargetOutcome::Refused {
-                cause: "redefinition-target",
-                candidates: contenders,
-                valid_targets: vec![contended],
-            });
         }
     }
 

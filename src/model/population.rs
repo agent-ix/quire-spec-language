@@ -650,7 +650,10 @@ pub fn admit_binding(
             if let Some(field) = duplicate_field(member) {
                 return AdmissionOutcome::Refused(ModelRefusal {
                     code: Code::InvalidRuntimeInput,
-                    cause: "duplicate-field-values",
+                    // FR-272's `invalid_runtime_input` cause list is
+                    // closed; there is no dedicated duplicate-field
+                    // variant, so this is the catalogued `duplicate-member`.
+                    cause: "duplicate-member",
                     detail: format!(
                         "object {} declares field {} more than once in its field_values",
                         key.object, field.identity

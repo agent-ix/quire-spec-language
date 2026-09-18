@@ -1029,6 +1029,38 @@ fn apply_redefinitions(
         }
 
         let Some(winner_index) = winner else {
+            // TC-196 R07's second shape: every undominated edge is declared
+            // by the identical owner — contending redefiners of one
+            // inherited target (e.g. `B/z` and `B/z2` both `redefines: A/x`)
+            // — rather than by distinct sibling lineages neither of which
+            // dominates the other (a genuine diamond, `derivation-conflict`
+            // below). A caller cannot resolve either shape by an arbitrary
+            // pick, but they are different ambiguities with different
+            // FR-272 causes: this one refuses `redefinition-target`, naming
+            // every redefining member's own declaration key (never its
+            // redefinition record's key) and the one contended target.
+            let same_owner = edges
+                .iter()
+                .all(|edge| edge.owner.identity == edges[0].owner.identity);
+            if same_owner {
+                let mut redefiners: Vec<String> = edges
+                    .iter()
+                    .map(|edge| edge.redefining.identity.clone())
+                    .collect();
+                redefiners.sort();
+                return Err(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: "redefinition-target",
+                    detail: format!(
+                        "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
+                        edges[0].owner.identity,
+                        edges.len(),
+                        redefiners.join(", "),
+                        target_key.identity
+                    ),
+                });
+            }
+
             let paths: Vec<String> = edges
                 .iter()
                 .map(|edge| {

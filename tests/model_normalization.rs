@@ -120,6 +120,27 @@ fn fixture_n06_resolved() -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.n06"), records)
 }
 
+/// TC-196 R07's second shape (origin/main, after QSpec #86): `B` itself
+/// (not two sibling lineages) declares two distinct redefining members,
+/// `B/z` and `B/z2`, both `redefines: A/x` — the identical single inherited
+/// target contended by two redefiners under one owner, distinct from N06's
+/// diamond conflict (two different owners, neither dominating the other).
+fn fixture_r07_same_owner_contending_redefiners() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.r07"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.B.z", "model.B", "model.A"),
+            field_member("model.B.z2", "model.B", "model.A"),
+            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
+            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+        ],
+    )
+}
+
 /// Finds the effective member declared with original identity
 /// `original_identity` under owner effective type `owner`, regardless of
 /// its `visible` bit — phase 4 retains hidden entries in the view.
@@ -522,6 +543,48 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
             assert!(refusal.detail.contains("model.A.x"));
         }
         other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+/// TC-196 R07's second shape, run through `normalize`'s own phase 4
+/// (`apply_redefinitions`) rather than `model::conformance`'s
+/// `resolve_redefinition_target` in isolation — the real boundary a model
+/// actually normalizes through. Two redefining members owned by the
+/// identical type both redefine the same inherited target: refuses
+/// `redefinition-target`, not `derivation-conflict` (N06's diamond shape
+/// above uses two different owners, neither dominating the other).
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize() {
+    match normalize(
+        &fixture_r07_same_owner_contending_redefiners(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, "redefinition-target");
+            assert!(
+                refusal.detail.contains("model.B.z2"),
+                "detail must name B/z2's own declaration key: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.B.z") && !refusal.detail.contains("model.redef.z"),
+                "detail must name the redefining members' own keys, not the redefinition records' keys: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.A.x"),
+                "detail must name the contended target: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
     }
 }
 
