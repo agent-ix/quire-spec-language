@@ -268,6 +268,60 @@ pub(super) fn type_conforms(
     Ok(false)
 }
 
+/// Every proper ancestor of `s` reachable through `generals_by_specific`:
+/// the full set `{ t | type_conforms(s, t) && t != s }`. The same bounded
+/// (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`] ceiling) walk
+/// [`type_conforms`] performs, but collecting every reachable node instead
+/// of stopping at one target's first match.
+///
+/// Deliberately not implemented by calling [`type_conforms`] once per
+/// candidate ancestor, nor by having [`type_conforms`] delegate to this
+/// function: the two answer different questions with different early-exit
+/// shapes. `type_conforms` is queried once per (subtype, candidate) pair
+/// across this crate's hottest loops ([`crate::model::dispatch`]'s
+/// applicability/subtype enumeration, this module's own axis checks) where
+/// stopping at the first match matters; folding it through a full-closure
+/// computation would make every one of those single-target queries pay for
+/// the whole reachable set and could newly exhaust
+/// [`MAX_CONFORMANCE_DEPTH`] on a wide graph a first-match query would
+/// never have walked far enough to hit. This function exists instead for a
+/// caller that already knows it needs the same source's answer against many
+/// candidates — [`crate::model::normalize`]'s phase-4 dominance resolution
+/// (QSL #145 / PR #144 review finding #4), which compares every contesting
+/// redefinition edge's owner against every other edge's owner and would
+/// otherwise re-walk this identical graph once per pair.
+pub(super) fn ancestor_closure(
+    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    s: &ProducerKey,
+) -> Result<std::collections::HashSet<ProducerKey>, ModelRefusal> {
+    let mut closure = std::collections::HashSet::new();
+    let mut stack: Vec<ProducerKey> = vec![s.clone()];
+    let mut visited: std::collections::HashSet<ProducerKey> = std::collections::HashSet::new();
+    let mut steps: usize = 0;
+    while let Some(current) = stack.pop() {
+        if !visited.insert(current.clone()) {
+            continue;
+        }
+        steps += 1;
+        if steps > MAX_CONFORMANCE_DEPTH {
+            return Err(ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: "conformance-depth",
+                detail: format!(
+                    "ancestor closure of {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
+                    s.identity
+                ),
+            });
+        }
+        for general in generals_by_specific.get(&current).into_iter().flatten() {
+            if closure.insert(general.general.clone()) {
+                stack.push(general.general.clone());
+            }
+        }
+    }
+    Ok(closure)
+}
+
 /// `quire.model.conformance.multiplicity/v1`: does `from` conform to `to`?
 /// `[l1,u1] = to`, `[l2,u2] = from`: conforms exactly when `l1 <= l2` and
 /// `u2 <= u1` (`None` is unbounded, greater than every finite value), and
