@@ -23,6 +23,7 @@ pub mod linking;
 pub mod located_json;
 pub mod lowering;
 pub mod mapped;
+pub mod model;
 pub mod model_source;
 pub mod native_model;
 pub mod package;
