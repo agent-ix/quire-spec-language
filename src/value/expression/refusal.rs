@@ -131,25 +131,40 @@ pub enum CheckingLimitKind {
 
 /// FR-272's closed `wrong_snapshot` cause list this crate decides for
 /// `pre(...)` (native-diagnostics.md: `wrong-observation`, `wrong-invocation`,
-/// `wrong-anchor` or `forbidden-pre-read`). Only the two causes a `pre(...)`
-/// checking refusal can actually name are represented; `wrong-observation`
-/// and `wrong-invocation` are catalogued for the native runtime's own
-/// snapshot-selection refusals (`src/runtime`), not this checker.
+/// `wrong-anchor` or `forbidden-pre-read`). Only the two causes `pre(...)`
+/// itself can name are represented; `wrong-observation` and
+/// `wrong-invocation` are catalogued for the native runtime's own
+/// snapshot-selection refusals (`src/runtime`), not this crate.
+///
+/// The two represented causes split by *layer*, not by clause: every
+/// checking-time refusal this crate's `Typer` decides over `pre(...)`'s own
+/// syntax -- wrong clause, ineligible operand, or a captured `let` alias
+/// (FR-208 applies FR-042 to invariants/preconditions and names this same
+/// cause explicitly) -- is [`Self::ForbiddenPreRead`]. [`Self::WrongAnchor`]
+/// is reserved for the one case the checker cannot see at all: a
+/// postcondition it did admit, evaluated at runtime
+/// (`evaluate.rs`'s `select_anchor`) over a population value with no
+/// attached pre binding.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum WrongSnapshotCause {
-    /// `pre(...)` written where the checked declaration does not admit it
-    /// (anywhere but an operation's postcondition) -- shared-grammar.md's
-    /// "self, result and pre(...) are caller-side anchor operations,
-    /// unavailable as implicit ambient state inside a reusable predicate",
-    /// generalized to every non-postcondition clause kind FR-042 refuses
-    /// `pre(...)` in (invariants, preconditions, a plain function body).
+    /// A postcondition's `pre(...)` evaluated over a `Value::Population`
+    /// with no attached pre anchor -- the caller supplied a population
+    /// admitted through `admit_binding` directly rather than through
+    /// `admit_invocation` (the only constructor that attaches one). A
+    /// runtime-only cause: the checker has no way to see, at checking time,
+    /// which admission path a caller's runtime argument will take.
     WrongAnchor,
-    /// `pre(...)`'s own operand has no eligible state read for it to anchor
-    /// (FR-042's Behavior clause: "Pre is refused ... on bare parameters/
-    /// constants/captures"): a bare `Name`, literal, or a value already
-    /// captured/computed outside this `pre(...)`'s own operand (so
-    /// re-anchoring it would silently do nothing rather than replay it under
-    /// the pre observation).
+    /// `pre(...)` written where the checked declaration does not admit it
+    /// at all (anywhere but an operation's postcondition -- shared-
+    /// grammar.md's "self, result and pre(...) are caller-side anchor
+    /// operations, unavailable as implicit ambient state inside a reusable
+    /// predicate"), or admitted but refused over its own operand: a bare
+    /// `Name`, literal, or a value already captured/computed outside this
+    /// `pre(...)`'s own operand (FR-042's Behavior clause: "Pre is refused
+    /// ... on bare parameters/constants/captures"; FR-042-AC-3's `let s =
+    /// self in pre(s.version)` analogue for a `let`-aliased state root) --
+    /// re-anchoring any of these would silently do nothing rather than
+    /// replay a real read under the pre observation.
     ForbiddenPreRead,
 }
 

@@ -1007,26 +1007,63 @@ fn field_values_equal(
     pre == post
 }
 
+/// Walks `field`'s redefinition chain (`redefining -> redefined`, one
+/// `BundleRecord::Redefinition` hop at a time), returning `true` as soon as
+/// `admits` accepts `field` itself or some ancestor it reaches, `false` once
+/// the chain ends with no accepted link. model-complete.md:56: the
+/// redefining feature replaces "the *one* inherited redefined feature", so a
+/// chain -- `C.x` redefines `B.x`, `B.x` redefines `A.x`, with no direct
+/// `C.x -> A.x` record -- is legal and normal, not an edge case; a single
+/// hop only ever reaches an immediate redefinition target, never a
+/// grandparent one. `redefinitionClosure: closed` (model-complete.md:64)
+/// means every redefinition edge in the model is *listed* here, not that
+/// the chain is pre-flattened into direct edges to every ancestor -- this
+/// walk is what actually flattens it, at each call site that needs to know.
+///
+/// Bounded by `bundle.records.len()` hops (an acyclic chain can never visit
+/// more distinct fields than there are records at all) and refuses -- stops
+/// and returns `false`, never loops -- past that bound, so a malformed
+/// bundle with a redefinition cycle cannot hang this walk.
+///
+/// Written to be shared: `crate::model::conformance`'s own effect-escape
+/// check (`check_operation_redefinition`, `conformance.rs:583`) has the
+/// identical one-hop gap this function fixes here, and can call this same
+/// walk once it needs the fix (tracked, not fixed in this change: QSL #171).
+fn redefinition_reaches(
+    bundle: &Bundle,
+    field: &ProducerKey,
+    admits: impl Fn(&ProducerKey) -> bool,
+) -> bool {
+    let mut current = field.clone();
+    let bound = bundle.records.len();
+    for _ in 0..=bound {
+        if admits(&current) {
+            return true;
+        }
+        let Some(redefined) = bundle.records.iter().find_map(|record| match record {
+            BundleRecord::Redefinition(redefinition) if redefinition.redefining == current => {
+                Some(redefinition.redefined.clone())
+            }
+            _ => None,
+        }) else {
+            return false;
+        };
+        current = redefined;
+    }
+    false // Cycle: exceeded the maximum possible acyclic chain length.
+}
+
 /// Whether `field` (the field a runtime population document names on some
 /// member) is covered by `effect.field_writes`, directly or because it
 /// "reaches one through redefinition records" -- FR-151's own effect-
 /// inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
 /// operation's own declared writes rather than to a redefining operation's
-/// writes against its redefined ancestor's (`crate::model::conformance`'s
-/// `check_operation_redefinition` uses the identical one-hop redefinition-
-/// record lookup for that comparison; `bundle`'s redefinition records are
-/// already FR-150-normalized/closed, so one hop is enough -- no further
-/// transitive walk is needed here either).
+/// writes against its redefined ancestor's. Walks the full chain
+/// ([`redefinition_reaches`]), not just one hop: `field_writes: [model.A.x]`
+/// covers a write to `model.C.x` through `model.C.x -> model.B.x -> model.A.x`.
 fn field_write_covered(bundle: &Bundle, effect: &OperationEffect, field: &ProducerKey) -> bool {
-    if effect.field_writes.contains(field) {
-        return true;
-    }
-    bundle.records.iter().any(|record| match record {
-        BundleRecord::Redefinition(redefinition) => {
-            redefinition.redefining == *field
-                && effect.field_writes.contains(&redefinition.redefined)
-        }
-        _ => false,
+    redefinition_reaches(bundle, field, |candidate| {
+        effect.field_writes.contains(candidate)
     })
 }
 

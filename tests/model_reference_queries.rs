@@ -312,6 +312,38 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
     .unwrap()
 }
 
+/// Like [`package`], plus one declared function `F2(elements:
+/// Set<Reference<M::A>>[0,3]): Integer { size(elements) }` -- the review's
+/// required positive counterpart to the finding-1 refusal test: `elements`'
+/// declared type is exactly `allInstances<M::A>(p)`'s own checked result
+/// type, so `pre(F2(allInstances(p)))` passes an eligible read (the
+/// `AllInstances` node itself, not the bare parameter `p`) as the call's
+/// argument -- FR-042-AC-1's `pre(P(self.version, delta))` analogue, legal
+/// because the eligible read happens before the call, not inside `F2`'s own
+/// body (which, like `F`'s, is checked with `postcondition: false` and could
+/// never see `pre(...)` regardless).
+fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
+    let element = ValueType::Reference(node_key(&scenario.a));
+    let elements_type = ValueType::collection(CollectionType::new(
+        CollectionKind::Set,
+        element,
+        CardinalityBound::new(0, 3).unwrap(),
+    ));
+    PackageDeclarations {
+        types: types(scenario),
+        functions: vec![FunctionDeclaration {
+            name: "F2".to_owned(),
+            parameters: vec![("elements".to_owned(), elements_type)],
+            result: ValueType::Integer,
+            measure: None,
+            body: Expression::Size(Box::new(Expression::Name("elements".to_owned()))),
+        }],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .unwrap()
+}
+
 /// A real object world containing every object these tests pass as a
 /// `lookup<T>(p, r)` argument, `b1` (a member of the closed population `p`)
 /// and `c9` (not a member of `p`, but still a real object of the wider
@@ -1575,6 +1607,50 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
     );
 }
 
+/// PR #168 review round 2, finding 4: `let q = p in pre(size(allInstances(q)))`
+/// must refuse the same way `pre(p)` itself does -- FR-042-AC-3's own `let s
+/// = self in pre(s.version)` analogue. `q` is a `let`-bound alias of the
+/// parameter `p`, captured *before* `pre(...)`'s own boundary; re-anchoring
+/// a query over `q` inside `pre(...)` would look eligible to a purely
+/// syntactic reader (`allInstances(q)` is a direct `AllInstances` node,
+/// exactly the shape `contains_pre_eligible_read` treats as eligible), but
+/// `q` was never re-bound at the `pre(...)` boundary, so this must still
+/// refuse: `contains_captured_pre_alias` walks `size(allInstances(q))`,
+/// finds `allInstances`'s `population` operand is the bare `Name("q")`, and
+/// resolves `q` against `Typer`'s own local scope to a `let`-bound
+/// (`LocalKind::Bound`) alias whose slot predates the `pre(...)`'s boundary
+/// -- a captured alias, not a parameter reference (`pre(p)`'s own bare-name
+/// case) and not a `let` introduced inside the `pre(...)` operand itself
+/// (which `contains_captured_pre_alias`'s shadowing tracking exempts).
+///
+/// Mutation used: in `Typer`'s `Expression::Pre` arm, dropped the
+/// `contains_captured_pre_alias` check (keeping only the `contains_pre_-
+/// eligible_read` guard). This test went red as expected (a checked
+/// expression instead of a refusal); reverted.
+#[test]
+#[trace("FR-042-AC-3")]
+fn pre_refuses_a_let_bound_population_alias_capture_drift() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    // let q = p in pre(size(allInstances(q)))
+    let expression = Expression::Let {
+        name: "q".to_owned(),
+        value: Box::new(population_name()),
+        body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
+            target,
+            population: Box::new(Expression::Name("q".to_owned())),
+        })))),
+    };
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
 /// Item 1's second capture-drift shape: `pre(p)` itself (a bare population
 /// *parameter*, not a direct `allInstances`/`lookup` call) refuses -- FR-042
 /// refuses `pre` on a bare parameter/constant/capture directly, never only
@@ -1589,7 +1665,7 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
 /// `Expression::Pre` arm). This test went red the same way (a checked
 /// `Population(3)` instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("FR-042-AC-4")]
 fn pre_refuses_a_bare_population_parameter() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -1612,7 +1688,7 @@ fn pre_refuses_a_bare_population_parameter() {
 /// went red the same way (a checked `Integer` instead of a refusal);
 /// reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("FR-042-AC-4")]
 fn pre_of_an_integer_literal_is_refused() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -1629,7 +1705,11 @@ fn pre_of_an_integer_literal_is_refused() {
 /// Item 2: `pre(...)` is refused anywhere outside a postcondition context --
 /// [`check`] (unlike [`check_postcondition`]) checks as a non-postcondition
 /// expression, so `pre(allInstances(p))`, otherwise eligible, still refuses
-/// here purely on clause context.
+/// here purely on clause context. FR-208 applies FR-042 to invariants and
+/// preconditions and names this same wrong-clause case `forbidden-pre-read`
+/// explicitly -- this is a checker-decided refusal over `pre(...)`'s own
+/// syntax, never the runtime-only `wrong-anchor` cause `select_anchor`
+/// reserves for a population value with no attached pre binding.
 ///
 /// Mutation used: in `CheckedPackage::check_expression`, changed its
 /// delegating `check_expression_as(..., false)` call to pass `true`
@@ -1637,7 +1717,7 @@ fn pre_of_an_integer_literal_is_refused() {
 /// test went red as expected (a checked expression instead of a refusal);
 /// reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("FR-042-AC-4")]
 fn pre_refuses_outside_a_postcondition_context() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -1647,16 +1727,16 @@ fn pre_refuses_outside_a_postcondition_context() {
     let refusal = check_refusal(&package, &parameters, &pre(all_instances(target)));
     assert_eq!(
         refusal.cause,
-        CheckCause::WrongSnapshot(WrongSnapshotCause::WrongAnchor)
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
     );
 }
 
-/// Item 1/2: nested `pre` is idempotent (FR-042-AC-5) -- `pre(pre(e))`
+/// Item 1/2: nested `pre` is idempotent (FR-042-AC-2) -- `pre(pre(e))`
 /// checks (the outer `pre`'s operand is itself a `Pre` node, which
 /// `contains_pre_eligible_read` always treats as eligible) and evaluates to
 /// exactly the same result as the single `pre(e)`.
 #[test]
-#[trace("FR-042-AC-3", "TC-198", "FR-153-AC-7")]
+#[trace("FR-042-AC-2", "TC-198", "FR-153-AC-7")]
 fn nested_pre_is_idempotent() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -1687,22 +1767,26 @@ fn nested_pre_is_idempotent() {
     }
 }
 
-/// Item 2: `pre(F(p))` never leaks the caller's pre anchor into `F`'s own
-/// body -- `NodeKind::Call` resets the evaluation anchor to `Post` for the
-/// callee's body (`shared-grammar.md`'s own caller-side-anchor rule: a
-/// reusable declaration is never handed ambient anchor state), so `F(p)`'s
-/// `size(allInstances(p))` reads the *post* population (2 members) exactly
-/// as it would outside any `pre(..)`, even though the whole call is wrapped
-/// in `pre(...)` here.
+/// PR #168 review round 2, finding 1: `pre(F(p))` -- a bare population
+/// *parameter* passed as a call argument, never itself an eligible read --
+/// must refuse the same way a bare `pre(p)` does. `contains_pre_eligible_read`
+/// no longer treats `Expression::Call` itself as eligible (only
+/// `AllInstances`/`Lookup`/`Pre` are direct-eligible); a call's own
+/// arguments are still reached through `Expression::children()`'s ordinary
+/// recursion, but here the sole argument is the bare `Name("p")`, which is
+/// never eligible on its own. Admitting `pre(F(p))` here would have silently
+/// returned `F`'s *post*-anchored result (`F`'s own body is checked with
+/// `postcondition: false` and always reads the post population, per
+/// `package_with_function`'s own doc) under a `pre(...)` label, exactly the
+/// silent-no-op hazard FR-042 exists to refuse.
 ///
-/// Mutation used: in `Machine::apply`'s `NodeKind::Call` arm, dropped the
-/// `Task::RestoreAnchor(self.anchor)`/`self.anchor = Anchor::Post` pair
-/// (leaving the caller's `Pre` anchor in place for the callee body). This
-/// test went red as expected (`3`, the pre population's size, instead of
-/// `2`); reverted.
+/// Mutation used: in `contains_pre_eligible_read`, re-added
+/// `Expression::Call { .. }` to the direct `matches!` arm. This test went
+/// red as expected (a checked, evaluated `Completed(Integer(2))` instead of
+/// a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3", "TC-198", "FR-153-AC-7")]
-fn pre_of_a_function_call_resets_the_callee_to_the_post_anchor() {
+#[trace("FR-042-AC-4", "TC-198")]
+fn pre_of_a_function_call_over_a_bare_parameter_argument_refuses_forbidden_pre_read() {
     let scenario = l07_scenario();
     let package = package_with_function(&scenario);
     let parameters = [("p", ValueType::Population(3))];
@@ -1710,6 +1794,40 @@ fn pre_of_a_function_call_resets_the_callee_to_the_post_anchor() {
     let expression = pre(Expression::Call {
         name: "F".to_owned(),
         arguments: vec![population_name()],
+    });
+    let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
+    );
+}
+
+/// PR #168 review round 2, finding 1's positive counterpart: `pre(F2(elements))`
+/// where `elements` is itself an eligible read (`allInstances(p)`, passed as
+/// the call's argument, not `p` itself) stays legal -- FR-042-AC-1's
+/// `pre(P(self.version, delta))` analogue. `Expression::children()`'s
+/// ordinary recursion into `Call`'s `arguments` still finds this eligible
+/// read even though `Call` itself is no longer direct-eligible, so
+/// `pre(F2(allInstances(p)))` checks and evaluates `allInstances(p)` against
+/// the *pre* population (3 members) before handing that already-pre-read
+/// collection into `F2`'s own (always post-anchored) body, which merely
+/// takes its `size`.
+///
+/// Mutation used: in `contains_pre_eligible_read`, changed the direct
+/// `matches!` arm to always return `false` (as if no read were ever
+/// eligible). This test went red as expected (a refusal instead of a
+/// completed integer); reverted.
+#[test]
+#[trace("FR-042-AC-1", "TC-198", "FR-153-AC-7")]
+fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
+    let scenario = l07_scenario();
+    let package = package_with_collection_function(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [("p", ValueType::Population(3))];
+
+    let expression = pre(Expression::Call {
+        name: "F2".to_owned(),
+        arguments: vec![all_instances(target)],
     });
     let (outcome, _) = run_postcondition(
         &package,
@@ -1722,24 +1840,28 @@ fn pre_of_a_function_call_resets_the_callee_to_the_post_anchor() {
     match outcome {
         Outcome::Completed(Value::Integer(size)) => assert_eq!(
             size,
-            Integer::from(2_u64),
-            "F's own body must read the post population (2 members), never the caller's pre \
-             anchor (3 members)"
+            Integer::from(3_u64),
+            "F2's argument must read the pre population (3 members) before F2's own always- \
+             post-anchored body takes its size"
         ),
         other => panic!("expected a completed integer, got {other:?}"),
     }
 }
 
-/// Item 2: evaluating `pre(allInstances(p))` against a population admitted
-/// directly by [`admit_binding`] (never through [`admit_invocation`], so it
-/// carries no `pre_anchor` at all) is `Refusal::CheckedInvariant` -- the
-/// checker only gates `pre(...)`'s legality/eligibility (this file's
-/// `check_postcondition`), never whether the runtime argument was actually
-/// admitted as an invocation's post binding; `select_anchor`'s own doc names
-/// this as the runtime's own responsibility.
+/// PR #168 review round 2, finding 2: evaluating `pre(allInstances(p))`
+/// against a population admitted directly by [`admit_binding`] (never
+/// through [`admit_invocation`], so it carries no `pre_anchor` at all) is a
+/// real, caller-input-reachable `Refusal::WrongSnapshot(WrongAnchor)` --
+/// never `Refusal::CheckedInvariant`, which is reserved for a genuinely
+/// broken evaluator invariant. The checker only gates `pre(...)`'s own
+/// syntax (clause context, operand eligibility -- this file's
+/// `check_postcondition`); it has no way to see, at checking time, which
+/// admission path a caller's runtime population argument will actually
+/// take, so `select_anchor`'s missing-pre-anchor case is exactly the one
+/// `wrong-anchor` case this crate's checker cannot decide for itself.
 #[test]
-#[trace("FR-042-AC-3", "TC-198", "FR-153-AC-7")]
-fn pre_of_a_binding_with_no_pre_anchor_is_a_checked_invariant_refusal() {
+#[trace("FR-042-AC-4", "TC-198")]
+fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
     let scenario = scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(node_key(&scenario.a));
@@ -1754,8 +1876,11 @@ fn pre_of_a_binding_with_no_pre_anchor_is_a_checked_invariant_refusal() {
         &ObjectEnvironment::default(),
     );
     assert!(
-        matches!(outcome, Outcome::Refused(Refusal::CheckedInvariant)),
-        "expected Refused(CheckedInvariant) for a pre(..) anchor with no admitted pre binding, \
-         got {outcome:?}"
+        matches!(
+            outcome,
+            Outcome::Refused(Refusal::WrongSnapshot(WrongSnapshotCause::WrongAnchor))
+        ),
+        "expected Refused(WrongSnapshot(WrongAnchor)) for a pre(..) anchor with no admitted pre \
+         binding, got {outcome:?}"
     );
 }

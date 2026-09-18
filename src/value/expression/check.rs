@@ -127,12 +127,24 @@ pub(crate) struct Signature {
     pub(crate) result: ValueType,
 }
 
+/// Whether a [`Local`] is an operation/function parameter (bound once, for
+/// the whole declaration, never re-bound) or an ordinary bound local (a
+/// `let`, or a query/count/sum/accumulate binder) -- the distinction
+/// [`Typer::captured_before`] needs for FR-042-AC-3's let-alias rule: only a
+/// `Bound` local, never a `Parameter`, counts as "captured" by a `let`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocalKind {
+    Parameter,
+    Bound,
+}
+
 /// A local name in scope.
 struct Local {
     name: String,
     value_type: ValueType,
     slot: Slot,
     location: Location,
+    kind: LocalKind,
 }
 
 /// Two typed operands, each with its per-operator extra.
@@ -184,18 +196,22 @@ fn is_integer(value_type: &ValueType) -> bool {
 }
 
 /// Whether `expression`'s own syntax contains a form `pre(...)`'s anchor can
-/// act on: `allInstances`/`lookup` (the only reads FR-153 anchors), a nested
-/// `pre(...)` (idempotent by construction: a nested `pre` with no eligible
-/// read of its own is refused independently when *it* is checked), or a
-/// `Call` -- a call's own body is a separate declaration this checker cannot
-/// see (`Expression::children` never exposes it, only the call's own
-/// arguments), so it is opaque rather than a bare capture: FR-042's Behavior
-/// clause refuses `pre(...)` "on bare parameters/constants/captures", and a
-/// `Call` is none of those. Treating `Call` as eligible is also what keeps
-/// `pre(F(p))` legal syntax at all -- its actual anchor-leak protection is
-/// `evaluate.rs`'s `NodeKind::Call` resetting the machine's anchor to
-/// `Anchor::Post` before running `F`'s body, per shared-grammar.md's "self,
-/// result and pre(...) are ... unavailable ... inside a reusable predicate".
+/// act on: `allInstances`/`lookup` (the only reads FR-153 anchors), or a
+/// nested `pre(...)` (idempotent by construction: a nested `pre` with no
+/// eligible read of its own is refused independently when *it* is checked).
+///
+/// `Call` is deliberately *not* one of these forms, even though a call's own
+/// body is legitimately anchor-sensitive: `Expression::Call` itself is never
+/// eligible, but `Expression::children()` still walks into its own
+/// `arguments`, so `pre(F(allInstances(p)))` stays eligible (the eligible
+/// read lives in the argument, exactly as FR-042-AC-1's own example,
+/// `pre(P(self.version, delta))`, needs), while `pre(F(p))` -- bare-name
+/// arguments only -- is not: `F`'s callee body is a separate declaration
+/// this checker cannot see into (`children()` never exposes it), so treating
+/// the call itself as eligible would accept a `pre(...)` whose own visible
+/// syntax is nothing but a bare parameter, silently returning `F`'s *post*
+/// value (its own body runs at `Anchor::Post`, `evaluate.rs`'s
+/// `NodeKind::Call` reset) under a `pre` label.
 ///
 /// This is a syntactic, pre-typing check on purpose: `let v = allInstances(p)
 /// in pre(v)` and `let q = pre(p) in allInstances(q)` (FR-042-AC-3's capture-
@@ -208,10 +224,7 @@ fn is_integer(value_type: &ValueType) -> bool {
 fn contains_pre_eligible_read(expression: &Expression) -> bool {
     matches!(
         expression,
-        Expression::AllInstances { .. }
-            | Expression::Lookup { .. }
-            | Expression::Pre(_)
-            | Expression::Call { .. }
+        Expression::AllInstances { .. } | Expression::Lookup { .. } | Expression::Pre(_)
     ) || expression
         .children()
         .into_iter()
@@ -297,6 +310,7 @@ impl<'a> Typer<'a> {
         name: &str,
         value_type: ValueType,
         location: &Location,
+        kind: LocalKind,
     ) -> Result<Slot, CheckRefusal> {
         if let Some(existing) = self.locals.iter().find(|local| local.name == name) {
             return Err(refuse(
@@ -314,6 +328,7 @@ impl<'a> Typer<'a> {
             value_type,
             slot,
             location: location.clone(),
+            kind,
         });
         Ok(slot)
     }
@@ -321,6 +336,73 @@ impl<'a> Typer<'a> {
     fn unbind(&mut self, count: usize) {
         let keep = self.locals.len().saturating_sub(count);
         self.locals.truncate(keep);
+    }
+
+    /// Whether `name` resolves (innermost binding first, matching ordinary
+    /// shadowing) to a [`LocalKind::Bound`] local -- never a
+    /// [`LocalKind::Parameter`] -- whose own slot was allocated before
+    /// `boundary`. `boundary` is `self.slots` at the point this `pre(...)`'s
+    /// own operand began checking, so a slot below it was bound outside that
+    /// operand: a `let`, or a query/count/sum/accumulate binder, introduced
+    /// before this `pre(...)` was ever reached. A parameter never counts,
+    /// even though it is also always bound before `boundary`: it is bound
+    /// once, for the whole declaration, and FR-042-AC-3's own analogue
+    /// (`let s = self in pre(s.version)`) is specifically about a `let`
+    /// re-binding a state root, never about the root parameter itself
+    /// (`pre(self.version)`/`pre(allInstances(p))` stay legal).
+    fn captured_before(&self, name: &str, boundary: usize) -> bool {
+        self.locals
+            .iter()
+            .rev()
+            .find(|local| local.name == name)
+            .is_some_and(|local| local.kind == LocalKind::Bound && local.slot < boundary)
+    }
+
+    /// FR-042-AC-3's `let s = self in pre(s.version)` analogue, generalized
+    /// to `allInstances`/`lookup`: whether `expression`'s own syntax reads
+    /// one of them over a population operand that is a bare [`Expression::
+    /// Name`] [`Self::captured_before`] `boundary` -- a `let`-bound alias of
+    /// a state root, captured *outside* this `pre(...)`'s own operand,
+    /// re-anchored only because the read syntax happens to sit inside it.
+    ///
+    /// `shadowed` tracks every name a `let` *within this same walk* (i.e.
+    /// within this `pre(...)`'s own operand) has since rebound, so a `let`
+    /// this operand introduces for itself -- never "outside" it -- does not
+    /// falsely trip this check inside its own body.
+    fn contains_captured_pre_alias(
+        &self,
+        expression: &Expression,
+        boundary: usize,
+        shadowed: &[String],
+    ) -> bool {
+        let is_captured_alias = |operand: &Expression| {
+            matches!(
+                operand,
+                Expression::Name(name)
+                    if !shadowed.iter().any(|bound| bound == name)
+                        && self.captured_before(name, boundary)
+            )
+        };
+        let direct = match expression {
+            Expression::AllInstances { population, .. } => is_captured_alias(population),
+            Expression::Lookup { population, .. } => is_captured_alias(population),
+            _ => false,
+        };
+        if direct {
+            return true;
+        }
+        if let Expression::Let { name, value, body } = expression {
+            if self.contains_captured_pre_alias(value, boundary, shadowed) {
+                return true;
+            }
+            let mut shadowed = shadowed.to_vec();
+            shadowed.push(name.clone());
+            return self.contains_captured_pre_alias(body, boundary, &shadowed);
+        }
+        expression
+            .children()
+            .into_iter()
+            .any(|child| self.contains_captured_pre_alias(child, boundary, shadowed))
     }
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {
@@ -460,7 +542,7 @@ impl<'a> Typer<'a> {
             Expression::Let { name, value, body } => {
                 self.enter(location)?;
                 let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location)?;
+                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
                 let body = self.check_as(body, required, &location.child(1))?;
                 self.unbind(1);
                 self.leave();
@@ -518,7 +600,7 @@ impl<'a> Typer<'a> {
             Expression::Name(name) => self.name(name, location),
             Expression::Let { name, value, body } => {
                 let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location)?;
+                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
                 let body = self.infer(body, hint, &location.child(1))?;
                 self.unbind(1);
                 let value_type = body.value_type.clone();
@@ -597,15 +679,22 @@ impl<'a> Typer<'a> {
                 Err(mismatch(location))
             }
             Expression::Pre(operand) => {
-                // FR-153/FR-042: `pre(...)` is legal only in an operation's
-                // postcondition -- every other clause kind (a function body,
-                // its measure, an invariant, a precondition, or a bare
-                // `check_expression` call) refuses it here, before looking at
-                // `operand` at all.
+                // FR-153/FR-042 (FR-208 applies FR-042 to invariants and
+                // preconditions, naming this same cause explicitly): `pre(...)`
+                // is legal only in an operation's postcondition -- every other
+                // clause kind (a function body, its measure, an invariant, a
+                // precondition, or a bare `check_expression` call) refuses it
+                // here, before looking at `operand` at all, as
+                // `wrong_snapshot`/`forbidden-pre-read`. `wrong-anchor` is a
+                // different, catalogued cause for a different case this
+                // checker cannot see: a postcondition it does admit, evaluated
+                // at runtime over a population with no attached pre anchor
+                // (`evaluate.rs`'s `select_anchor`) -- never a `pre(...)`
+                // written in the wrong clause.
                 if !self.postcondition {
                     return Err(refuse(
                         location,
-                        CheckCause::WrongSnapshot(WrongSnapshotCause::WrongAnchor),
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
                     ));
                 }
                 // FR-042's Behavior clause: "Pre is refused ... on bare
@@ -616,6 +705,17 @@ impl<'a> Typer<'a> {
                 // (a parameter, or a `let` bound outside this very
                 // `pre(...)`) never does.
                 if !contains_pre_eligible_read(operand) {
+                    return Err(refuse(
+                        location,
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+                    ));
+                }
+                // FR-042-AC-3's `let s = self in pre(s.version)` analogue:
+                // an eligible read this operand does contain must not take
+                // its population operand from a `let` local captured before
+                // this `pre(...)` was reached -- see
+                // `contains_captured_pre_alias`'s own doc.
+                if self.contains_captured_pre_alias(operand, self.slots, &[]) {
                     return Err(refuse(
                         location,
                         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
@@ -673,7 +773,7 @@ impl<'a> Typer<'a> {
                 }
                 let source = self.infer(source, None, &location.child(0))?;
                 let element = self.element_type(&source)?;
-                let slot = self.bind(binder, element, location)?;
+                let slot = self.bind(binder, element, location, LocalKind::Bound)?;
                 let predicate =
                     self.check_as(predicate, &ValueType::Boolean, &location.child(1))?;
                 self.unbind(1);
@@ -700,7 +800,7 @@ impl<'a> Typer<'a> {
                 }
                 let source = self.infer(source, None, &location.child(0))?;
                 let element = self.element_type(&source)?;
-                let slot = self.bind(binder, element, location)?;
+                let slot = self.bind(binder, element, location, LocalKind::Bound)?;
                 let summand = self.infer(summand, None, &location.child(1))?;
                 self.unbind(1);
                 if !is_integer(&summand.value_type) {
@@ -1634,7 +1734,12 @@ impl<'a> Typer<'a> {
         let ValueType::Collection(source_type) = source.value_type.clone() else {
             return Err(mismatch(location));
         };
-        let slot = self.bind(binder, source_type.element().clone(), location)?;
+        let slot = self.bind(
+            binder,
+            source_type.element().clone(),
+            location,
+            LocalKind::Bound,
+        )?;
         let body_location = location.child(1);
         let typed = match query {
             BinderQuery::Map | BinderQuery::FlatMap => {
@@ -1775,8 +1880,14 @@ impl<'a> Typer<'a> {
         if form == Accumulation::Reduce && source_type.element() != &value_type {
             return Err(mismatch(location));
         }
-        let accumulator_slot = self.bind(accumulator, value_type.clone(), location)?;
-        let binder_slot = self.bind(binder, source_type.element().clone(), location)?;
+        let accumulator_slot =
+            self.bind(accumulator, value_type.clone(), location, LocalKind::Bound)?;
+        let binder_slot = self.bind(
+            binder,
+            source_type.element().clone(),
+            location,
+            LocalKind::Bound,
+        )?;
         let raw = self.infer(step, Some(&value_type), &location.child(1))?;
         self.unbind(2);
         let catalogued = catalogued_step(&raw, accumulator_slot, &value_type);
@@ -1850,7 +1961,7 @@ pub(crate) fn bind_parameters(
         if !matches!(value_type, ValueType::Population(_)) {
             typer.check_declared_type(value_type, location)?;
         }
-        typer.bind(name, value_type.clone(), location)?;
+        typer.bind(name, value_type.clone(), location, LocalKind::Parameter)?;
     }
     Ok(())
 }
