@@ -131,14 +131,6 @@ pub enum Code {
     Cancelled,
     /// Execution encountered a violated established typing or input invariant.
     RuntimeInvariant,
-    /// FR-151 dispatch linking found no, or several undominated, applicable
-    /// candidates for a closed subtype.
-    AmbiguousDispatch,
-    /// FR-152/FR-153 resolution named an element outside the bound
-    /// correspondence bundle, ModelSelection or reference universe.
-    ForeignReference,
-    /// FR-153 a selected or bound count is outside its declared inclusive bound.
-    CardinalityOutOfBound,
 }
 
 impl Code {
@@ -186,9 +178,6 @@ impl Code {
             Self::FrameViolation => "frame_violation",
             Self::Cancelled => "cancelled",
             Self::RuntimeInvariant => "runtime_invariant",
-            Self::AmbiguousDispatch => "ambiguous_dispatch",
-            Self::ForeignReference => "foreign_reference",
-            Self::CardinalityOutOfBound => "cardinality_out_of_bound",
         }
     }
 
@@ -236,9 +225,6 @@ impl Code {
             Self::FrameViolation,
             Self::Cancelled,
             Self::RuntimeInvariant,
-            Self::AmbiguousDispatch,
-            Self::ForeignReference,
-            Self::CardinalityOutOfBound,
         ]
     }
 
