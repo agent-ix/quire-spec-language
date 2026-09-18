@@ -25,6 +25,7 @@ use super::ir::{
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
+    WrongSnapshotCause,
 };
 use super::syntax::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -169,12 +170,24 @@ pub(crate) struct Signature {
     pub(crate) callable_by_name: bool,
 }
 
+/// Whether a [`Local`] is an operation/function parameter (bound once, for
+/// the whole declaration, never re-bound) or an ordinary bound local (a
+/// `let`, or a query/count/sum/accumulate binder) -- the distinction
+/// [`Typer::captured_before`] needs for FR-042-AC-3's let-alias rule: only a
+/// `Bound` local, never a `Parameter`, counts as "captured" by a `let`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocalKind {
+    Parameter,
+    Bound,
+}
+
 /// A local name in scope.
 struct Local {
     name: String,
     value_type: ValueType,
     slot: Slot,
     location: Location,
+    kind: LocalKind,
 }
 
 /// Two typed operands, each with its per-operator extra.
@@ -189,6 +202,12 @@ pub(crate) struct Typer<'a> {
     depth: u64,
     locals: Vec<Local>,
     slots: usize,
+    /// The clause this declaration is (FR-151's dispatch-call restriction;
+    /// also the only signal `pre(...)` needs: `pre(...)` is legal exactly in
+    /// [`ClauseKind::Postcondition`] -- FR-153's own anchor table;
+    /// shared-grammar.md's "self, result and pre(...) are caller-side anchor
+    /// operations" -- and refused `wrong_snapshot`/`wrong-anchor` in every
+    /// other clause kind, including a standalone `check_expression` call).
     clause_kind: ClauseKind,
 }
 
@@ -217,6 +236,42 @@ fn node(kind: NodeKind, value_type: ValueType, location: &Location) -> Node {
 
 fn is_integer(value_type: &ValueType) -> bool {
     matches!(value_type, ValueType::Integer | ValueType::Int(_))
+}
+
+/// Whether `expression`'s own syntax contains a form `pre(...)`'s anchor can
+/// act on: `allInstances`/`lookup` (the only reads FR-153 anchors), or a
+/// nested `pre(...)` (idempotent by construction: a nested `pre` with no
+/// eligible read of its own is refused independently when *it* is checked).
+///
+/// `Call` is deliberately *not* one of these forms, even though a call's own
+/// body is legitimately anchor-sensitive: `Expression::Call` itself is never
+/// eligible, but `Expression::children()` still walks into its own
+/// `arguments`, so `pre(F(allInstances(p)))` stays eligible (the eligible
+/// read lives in the argument, exactly as FR-042-AC-1's own example,
+/// `pre(P(self.version, delta))`, needs), while `pre(F(p))` -- bare-name
+/// arguments only -- is not: `F`'s callee body is a separate declaration
+/// this checker cannot see into (`children()` never exposes it), so treating
+/// the call itself as eligible would accept a `pre(...)` whose own visible
+/// syntax is nothing but a bare parameter, silently returning `F`'s *post*
+/// value (its own body runs at `Anchor::Post`, `evaluate.rs`'s
+/// `NodeKind::Call` reset) under a `pre` label.
+///
+/// This is a syntactic, pre-typing check on purpose: `let v = allInstances(p)
+/// in pre(v)` and `let q = pre(p) in allInstances(q)` (FR-042-AC-3's capture-
+/// drift shapes) both fail it, because `pre(...)`'s own operand in each case
+/// is nothing but a bare `Name` -- the eligible read that produced `v`, or
+/// the population `pre(p)` never actually reads, sits in a sibling/ancestor
+/// `Let`, not in this `pre(...)`'s own subtree. `pre(1)` and `pre(delta)`
+/// (a bare parameter) fail it for the same reason: a literal or a `Name`
+/// alone is never itself an eligible read.
+fn contains_pre_eligible_read(expression: &Expression) -> bool {
+    matches!(
+        expression,
+        Expression::AllInstances { .. } | Expression::Lookup { .. } | Expression::Pre(_)
+    ) || expression
+        .children()
+        .into_iter()
+        .any(contains_pre_eligible_read)
 }
 
 /// Whether an expression takes its type from its context.
@@ -298,6 +353,7 @@ impl<'a> Typer<'a> {
         name: &str,
         value_type: ValueType,
         location: &Location,
+        kind: LocalKind,
     ) -> Result<Slot, CheckRefusal> {
         if let Some(existing) = self.locals.iter().find(|local| local.name == name) {
             return Err(refuse(
@@ -315,6 +371,7 @@ impl<'a> Typer<'a> {
             value_type,
             slot,
             location: location.clone(),
+            kind,
         });
         Ok(slot)
     }
@@ -322,6 +379,133 @@ impl<'a> Typer<'a> {
     fn unbind(&mut self, count: usize) {
         let keep = self.locals.len().saturating_sub(count);
         self.locals.truncate(keep);
+    }
+
+    /// Whether `name` resolves (innermost binding first, matching ordinary
+    /// shadowing) to a [`LocalKind::Bound`] local -- never a
+    /// [`LocalKind::Parameter`] -- whose own slot was allocated before
+    /// `boundary`. `boundary` is `self.slots` at the point this `pre(...)`'s
+    /// own operand began checking, so a slot below it was bound outside that
+    /// operand: a `let`, or a query/count/sum/accumulate binder, introduced
+    /// before this `pre(...)` was ever reached. A parameter never counts,
+    /// even though it is also always bound before `boundary`: it is bound
+    /// once, for the whole declaration, and FR-042-AC-3's own analogue
+    /// (`let s = self in pre(s.version)`) is specifically about a `let`
+    /// re-binding a state root, never about the root parameter itself
+    /// (`pre(self.version)`/`pre(allInstances(p))` stay legal).
+    fn captured_before(&self, name: &str, boundary: usize) -> bool {
+        self.locals
+            .iter()
+            .rev()
+            .find(|local| local.name == name)
+            .is_some_and(|local| local.kind == LocalKind::Bound && local.slot < boundary)
+    }
+
+    /// FR-042-AC-3's `let s = self in pre(s.version)` analogue, generalized
+    /// to `allInstances`/`lookup`: whether `expression`'s own syntax reads
+    /// one of them over a population operand that [`Self::resolves_to_captured_alias`]
+    /// resolves to a `let`-bound alias of a state root, captured *outside*
+    /// this `pre(...)`'s own operand, re-anchored only because the read
+    /// syntax happens to sit inside it.
+    ///
+    /// `bindings` tracks every name a `let` *within this same walk* (i.e.
+    /// within this `pre(...)`'s own operand) has since rebound, most recent
+    /// last, paired with whether *that* binding's own value is itself a
+    /// captured alias. A rebinding to a fresh, non-alias value (say,
+    /// `allInstances(other)`) is `false` -- this operand's own `let`
+    /// introducing it for itself, never "outside" it, so it does not falsely
+    /// trip this check inside its own body. A rebinding that is itself a
+    /// captured alias, however it is spelled -- a bare reference
+    /// (`let r = q in ...`), an `if` with an aliasing arm (`let r = if c
+    /// then q else q in ...`), or a further nested `let` resolving to one
+    /// (`let r = (let s = q in s) in ...`) -- is `true`: aliasing an alias
+    /// is still aliasing, transitively, through any of the shapes FR-153
+    /// lets a population-typed expression take between `let`s, however many
+    /// sit in between (PR #168 review round 4, finding 1). Neither FR-042
+    /// nor FR-153's vendored spec text states a "bare identifier only"
+    /// restriction for this specific alias-capture rule -- `bind_parameters`'s
+    /// own FR-153 "direct operand" doc governs the unrelated `Population`
+    /// *value-type* placement, not this syntactic alias check -- so this
+    /// resolves the general case rather than special-casing one syntax.
+    fn contains_captured_pre_alias(
+        &self,
+        expression: &Expression,
+        boundary: usize,
+        bindings: &[(String, bool)],
+    ) -> bool {
+        let direct = match expression {
+            Expression::AllInstances { population, .. } => {
+                self.resolves_to_captured_alias(population, boundary, bindings)
+            }
+            Expression::Lookup { population, .. } => {
+                self.resolves_to_captured_alias(population, boundary, bindings)
+            }
+            _ => false,
+        };
+        if direct {
+            return true;
+        }
+        if let Expression::Let { name, value, body } = expression {
+            if self.contains_captured_pre_alias(value, boundary, bindings) {
+                return true;
+            }
+            let mut bindings = bindings.to_vec();
+            bindings.push((
+                name.clone(),
+                self.resolves_to_captured_alias(value, boundary, &bindings),
+            ));
+            return self.contains_captured_pre_alias(body, boundary, &bindings);
+        }
+        expression
+            .children()
+            .into_iter()
+            .any(|child| self.contains_captured_pre_alias(child, boundary, bindings))
+    }
+
+    /// Whether `operand` -- a population-typed sub-expression this walk is
+    /// considering as `allInstances`/`lookup`'s direct operand, or as a
+    /// `let`'s own value -- resolves to a captured alias of a state root
+    /// bound outside this `pre(...)`'s operand, however many `let`s or `if`
+    /// branches it is spelled through.
+    ///
+    /// - [`Expression::Name`] resolves against `bindings` first (innermost
+    ///   within this walk wins, matching ordinary shadowing), falling back
+    ///   to [`Self::captured_before`] for a name this walk never rebound.
+    /// - [`Expression::Let`] resolves its own value first (recursively --
+    ///   the value may itself be a further `let`/`if`), pushes that result
+    ///   as `name`'s own binding, and resolves through its body under that
+    ///   extended `bindings`.
+    /// - [`Expression::If`] resolves `true` when *either* branch does: a
+    ///   checker refusing statically cannot rule out the branch that
+    ///   escapes, so both must be clear.
+    /// - Every other shape is not itself alias-bearing syntax and resolves
+    ///   `false`.
+    fn resolves_to_captured_alias(
+        &self,
+        operand: &Expression,
+        boundary: usize,
+        bindings: &[(String, bool)],
+    ) -> bool {
+        match operand {
+            Expression::Name(name) => bindings
+                .iter()
+                .rev()
+                .find(|(bound, _)| bound == name)
+                .map_or_else(|| self.captured_before(name, boundary), |(_, alias)| *alias),
+            Expression::Let { name, value, body } => {
+                let alias = self.resolves_to_captured_alias(value, boundary, bindings);
+                let mut bindings = bindings.to_vec();
+                bindings.push((name.clone(), alias));
+                self.resolves_to_captured_alias(body, boundary, &bindings)
+            }
+            Expression::If {
+                then, otherwise, ..
+            } => {
+                self.resolves_to_captured_alias(then, boundary, bindings)
+                    || self.resolves_to_captured_alias(otherwise, boundary, bindings)
+            }
+            _ => false,
+        }
     }
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {
@@ -461,7 +645,7 @@ impl<'a> Typer<'a> {
             Expression::Let { name, value, body } => {
                 self.enter(location)?;
                 let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location)?;
+                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
                 let body = self.check_as(body, required, &location.child(1))?;
                 self.unbind(1);
                 self.leave();
@@ -519,7 +703,7 @@ impl<'a> Typer<'a> {
             Expression::Name(name) => self.name(name, location),
             Expression::Let { name, value, body } => {
                 let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location)?;
+                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
                 let body = self.infer(body, hint, &location.child(1))?;
                 self.unbind(1);
                 let value_type = body.value_type.clone();
@@ -597,6 +781,55 @@ impl<'a> Typer<'a> {
                 self.infer(operand, None, &location.child(0))?;
                 Err(mismatch(location))
             }
+            Expression::Pre(operand) => {
+                // FR-153/FR-042 (FR-208 applies FR-042 to invariants and
+                // preconditions, naming this same cause explicitly): `pre(...)`
+                // is legal only in an operation's postcondition -- every other
+                // clause kind (a function body, its measure, an invariant, a
+                // precondition, or a bare `check_expression` call) refuses it
+                // here, before looking at `operand` at all, as
+                // `wrong_snapshot`/`forbidden-pre-read`. `wrong-anchor` is a
+                // different, catalogued cause for a different case this
+                // checker cannot see: a postcondition it does admit, evaluated
+                // at runtime over a population with no attached pre anchor
+                // (`evaluate.rs`'s `select_anchor`) -- never a `pre(...)`
+                // written in the wrong clause.
+                if self.clause_kind != ClauseKind::Postcondition {
+                    return Err(refuse(
+                        location,
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+                    ));
+                }
+                // FR-042's Behavior clause: "Pre is refused ... on bare
+                // parameters/constants/captures". `operand` must contain, in
+                // its own syntax, at least one form `pre(...)`'s anchor can
+                // actually act on -- see `contains_pre_eligible_read`'s own
+                // doc for exactly which forms count and why a bare `Name`
+                // (a parameter, or a `let` bound outside this very
+                // `pre(...)`) never does.
+                if !contains_pre_eligible_read(operand) {
+                    return Err(refuse(
+                        location,
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+                    ));
+                }
+                // FR-042-AC-3's `let s = self in pre(s.version)` analogue:
+                // an eligible read this operand does contain must not take
+                // its population operand from a `let` local captured before
+                // this `pre(...)` was reached -- see
+                // `contains_captured_pre_alias`'s own doc.
+                if self.contains_captured_pre_alias(operand, self.slots, &[]) {
+                    return Err(refuse(
+                        location,
+                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+                    ));
+                }
+                // FR-153: `pre(e)` is identity-typed; only the anchor that
+                // `allInstances`/`lookup` read underneath it changes.
+                let operand = self.infer(operand, hint, &location.child(0))?;
+                let value_type = operand.value_type.clone();
+                Ok(node(NodeKind::Pre(Box::new(operand)), value_type, location))
+            }
             Expression::Call { name, arguments } => self.call(name, arguments, location),
             Expression::Record { name, fields } => self.record(name, fields, location),
             Expression::Collection { kind, elements } => {
@@ -643,7 +876,7 @@ impl<'a> Typer<'a> {
                 }
                 let source = self.infer(source, None, &location.child(0))?;
                 let element = self.element_type(&source)?;
-                let slot = self.bind(binder, element, location)?;
+                let slot = self.bind(binder, element, location, LocalKind::Bound)?;
                 let predicate =
                     self.check_as(predicate, &ValueType::Boolean, &location.child(1))?;
                 self.unbind(1);
@@ -670,7 +903,7 @@ impl<'a> Typer<'a> {
                 }
                 let source = self.infer(source, None, &location.child(0))?;
                 let element = self.element_type(&source)?;
-                let slot = self.bind(binder, element, location)?;
+                let slot = self.bind(binder, element, location, LocalKind::Bound)?;
                 let summand = self.infer(summand, None, &location.child(1))?;
                 self.unbind(1);
                 if !is_integer(&summand.value_type) {
@@ -1449,7 +1682,7 @@ impl<'a> Typer<'a> {
             Expression::Let { name, value, body } => {
                 self.enter(location)?;
                 let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location)?;
+                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
                 let body = self.check_dispatch_argument(body, required, &location.child(1))?;
                 self.unbind(1);
                 self.leave();
@@ -1736,7 +1969,12 @@ impl<'a> Typer<'a> {
         let ValueType::Collection(source_type) = source.value_type.clone() else {
             return Err(mismatch(location));
         };
-        let slot = self.bind(binder, source_type.element().clone(), location)?;
+        let slot = self.bind(
+            binder,
+            source_type.element().clone(),
+            location,
+            LocalKind::Bound,
+        )?;
         let body_location = location.child(1);
         let typed = match query {
             BinderQuery::Map | BinderQuery::FlatMap => {
@@ -1877,8 +2115,14 @@ impl<'a> Typer<'a> {
         if form == Accumulation::Reduce && source_type.element() != &value_type {
             return Err(mismatch(location));
         }
-        let accumulator_slot = self.bind(accumulator, value_type.clone(), location)?;
-        let binder_slot = self.bind(binder, source_type.element().clone(), location)?;
+        let accumulator_slot =
+            self.bind(accumulator, value_type.clone(), location, LocalKind::Bound)?;
+        let binder_slot = self.bind(
+            binder,
+            source_type.element().clone(),
+            location,
+            LocalKind::Bound,
+        )?;
         let raw = self.infer(step, Some(&value_type), &location.child(1))?;
         self.unbind(2);
         let catalogued = catalogued_step(&raw, accumulator_slot, &value_type);
@@ -1952,7 +2196,7 @@ pub(crate) fn bind_parameters(
         if !matches!(value_type, ValueType::Population(_)) {
             typer.check_declared_type(value_type, location)?;
         }
-        typer.bind(name, value_type.clone(), location)?;
+        typer.bind(name, value_type.clone(), location, LocalKind::Parameter)?;
     }
     Ok(())
 }

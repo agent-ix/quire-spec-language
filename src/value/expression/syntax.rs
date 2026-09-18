@@ -275,6 +275,12 @@ pub enum Expression {
         /// Arguments in source order.
         arguments: Vec<Expression>,
     },
+    /// `pre(e)` (FR-153): `e`, evaluated with every `allInstances`/`lookup`
+    /// underneath it reading its population operand's invocation pre state
+    /// instead of the ambient post state. A caller-side anchor operation,
+    /// valid only where a checked declaration's postcondition body admits
+    /// it; `e`'s own type is unchanged.
+    Pre(Box<Expression>),
 }
 
 impl Expression {
@@ -297,7 +303,8 @@ impl Expression {
             | Self::Flatten(operand)
             | Self::Size(operand)
             | Self::Field { operand, .. }
-            | Self::Convert { operand, .. } => vec![operand],
+            | Self::Convert { operand, .. }
+            | Self::Pre(operand) => vec![operand],
             Self::Call { arguments, .. } => arguments.iter().collect(),
             Self::Record { fields, .. } => fields
                 .iter()
