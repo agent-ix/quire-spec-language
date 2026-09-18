@@ -38,7 +38,9 @@ use super::super::rational::Rational;
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
 use super::check::Scope;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+use super::ir::{
+    Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
+};
 use super::refusal::Location;
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
@@ -108,6 +110,17 @@ fn charge_element(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionElement))?)
 }
 
+/// `dispatch.select`: one dispatched `receiver.member(args)` call, sized by
+/// `candidates`, the table's total distinct-candidate count
+/// (`value-accounting.md`: `value_occurrences=c`; `work_units += c`).
+fn charge_dispatch_select(meter: &mut Meter, candidates: u64) -> Result<(), Stop> {
+    Ok(meter.charge(
+        Charge::new(ChargePoint::DispatchSelect)
+            .size(LimitKind::ValueOccurrences, candidates)
+            .work(Integer::from(candidates)),
+    )?)
+}
+
 /// The declared `Int` domain of a `sum`; `None` for `Integer`.
 fn sum_domain(value_type: &ValueType) -> Option<&IntegerInterval> {
     match value_type {
@@ -144,6 +157,17 @@ enum Task<'a> {
     ChargeElement(&'a Node),
     Return,
     Iterate(Box<Iteration<'a>>),
+    /// FR-151 (TC-196 D06): the pushed frame's own effective-precondition
+    /// body has just evaluated; decide it, then continue to the selected
+    /// candidate's own body.
+    DispatchGuard(Box<DispatchGuard>),
+}
+
+/// A dispatched call's linked candidate body, awaiting its effective
+/// precondition's decision (TC-196 D06).
+struct DispatchGuard {
+    body_function: usize,
+    arguments: Vec<Value>,
 }
 
 /// A one-binder query or fold in progress.
@@ -162,6 +186,7 @@ pub(crate) struct Machine<'a, 'm> {
     functions: &'a [Callable<'a>],
     objects: &'a ObjectEnvironment,
     meter: &'m mut Meter,
+    dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
     frames: Vec<Vec<Option<Value>>>,
     tasks: Vec<Task<'a>>,
@@ -174,12 +199,14 @@ impl<'a, 'm> Machine<'a, 'm> {
         functions: &'a [Callable<'a>],
         objects: &'a ObjectEnvironment,
         meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
     ) -> Self {
         Self {
             scope,
             functions,
             objects,
             meter,
+            dispatch_tables,
             values: Vec::new(),
             frames: Vec::new(),
             tasks: Vec::new(),
@@ -214,7 +241,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Retain(node)
                 | Task::ChargeElement(node) => Some(&node.location),
                 Task::Iterate(iteration) => Some(&iteration.node.location),
-                Task::Bind(_) | Task::Return => None,
+                Task::Bind(_) | Task::Return | Task::DispatchGuard(_) => None,
             };
             let location = location.cloned().unwrap_or_else(|| root.location.clone());
             if let Err(stop) = self.step(task) {
@@ -361,6 +388,25 @@ impl<'a, 'm> Machine<'a, 'm> {
             Task::ChargeElement(_) => charge_element(self.meter),
             Task::Return => {
                 self.frames.pop().ok_or_else(invariant)?;
+                Ok(())
+            }
+            Task::DispatchGuard(guard) => {
+                let DispatchGuard {
+                    body_function,
+                    arguments,
+                } = *guard;
+                let holds = self.pop_boolean()?;
+                self.frames.pop().ok_or_else(invariant)?;
+                if !holds {
+                    return Err(Stop::Undefined(Undefined::PreconditionFalse));
+                }
+                let callable = self.functions.get(body_function).ok_or_else(invariant)?;
+                charge_call(self.meter)?;
+                let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
+                frame.resize(callable.slots.max(frame.len()), None);
+                self.frames.push(frame);
+                self.tasks.push(Task::Return);
+                self.tasks.push(Task::Eval(callable.body));
                 Ok(())
             }
             Task::Iterate(iteration) => self.iterate(iteration),
@@ -818,7 +864,50 @@ impl<'a, 'm> Machine<'a, 'm> {
                     self.meter,
                 )?
             }
-            NodeKind::Dispatch { .. } => return Err(invariant()),
+            NodeKind::Dispatch {
+                table, arguments, ..
+            } => {
+                let arguments = self.pop_many(arguments.len())?;
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant());
+                };
+                let subtype = reference.object_type();
+                let table = self.dispatch_tables.get(*table).ok_or_else(invariant)?;
+                charge_dispatch_select(self.meter, table.candidate_count())?;
+                let candidate = *table.linked_for(&subtype).ok_or_else(invariant)?;
+                let mut full_arguments = Vec::with_capacity(arguments.len() + 1);
+                full_arguments.push(Value::Reference(reference));
+                full_arguments.extend(arguments);
+                match candidate.precondition {
+                    Some(precondition_function) => {
+                        let callable = self
+                            .functions
+                            .get(precondition_function)
+                            .ok_or_else(invariant)?;
+                        let mut frame: Vec<Option<Value>> =
+                            full_arguments.clone().into_iter().map(Some).collect();
+                        frame.resize(callable.slots.max(frame.len()), None);
+                        self.frames.push(frame);
+                        self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
+                            body_function: candidate.body,
+                            arguments: full_arguments,
+                        })));
+                        self.tasks.push(Task::Eval(callable.body));
+                        return Ok(());
+                    }
+                    None => {
+                        let callable = self.functions.get(candidate.body).ok_or_else(invariant)?;
+                        charge_call(self.meter)?;
+                        let mut frame: Vec<Option<Value>> =
+                            full_arguments.into_iter().map(Some).collect();
+                        frame.resize(callable.slots.max(frame.len()), None);
+                        self.frames.push(frame);
+                        self.tasks.push(Task::Return);
+                        self.tasks.push(Task::Eval(callable.body));
+                        return Ok(());
+                    }
+                }
+            }
         };
         self.values.push(value);
         Ok(())
