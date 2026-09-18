@@ -5,6 +5,8 @@ type: FR
 relationships:
   - target: "ix://agent-ix/quire-spec-language/US-001"
     type: traces_to
+  - target: "ix://agent-ix/quire-specification/FR-301"
+    type: depends_on
 ---
 # FR-010: Report phase-specific CLI outcomes
 
@@ -22,7 +24,7 @@ JSON parse/diagnostic output or formatted source plus a documented exit code.
 
 ## Behavior
 
-Current parse reports parsed only. Exit codes are 0 for successful syntax, 1 refusal, 2 usage/I/O failure and 3 incomplete resource exhaustion. Source diagnostics preserve original byte and scalar coordinates. Future link/evaluate outcomes cannot be inferred from parse success.
+Current parse reports parsed only. [FR-301](ix://agent-ix/quire-specification/FR-301) states the native CLI's exit status contract; this command carries it. A successful parse completes without violation and exits 0. A refused syntax request, an invalid command invocation and invalid OS encoding in commands or labels are invalid or refused input and exit 20. An exhausted parser request is incomplete and exits 22. Source diagnostics preserve original byte and scalar coordinates. Future link/evaluate outcomes cannot be inferred from parse success.
 
 The CLI reads OS arguments without assuming UTF-8. Command, source identity and
 revision labels must be UTF-8; invalid label/command encoding is a usage error
@@ -52,12 +54,12 @@ a second error envelope or alter the audit target's derived errors.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-010-AC-1 | A successful parse emits status parsed. | Test |
-| FR-010-AC-2 | A refused syntax request exits 1. | Test |
-| FR-010-AC-3 | An invalid command invocation exits 2. | Test |
-| FR-010-AC-4 | An exhausted parser request exits 3. | Test |
+| FR-010-AC-2 | A refused syntax request exits 20, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for invalid or refused input. | Test |
+| FR-010-AC-3 | An invalid command invocation exits 20. | Test |
+| FR-010-AC-4 | An exhausted parser request exits 22, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for incomplete. | Test |
 | FR-010-AC-5 | A parse result carries the actual source digest. | Test |
-| FR-010-AC-6 | Invalid OS encoding in commands/labels exits 2 without panic; valid source at a non-UTF-8 Unix file path parses with the exact labels and byte digest. | Test |
-| FR-010-AC-7 | A missing or unreadable selected source file exits 2 and emits no parsed output. | Test |
+| FR-010-AC-6 | Invalid OS encoding in commands/labels exits 20 without panic; valid source at a non-UTF-8 Unix file path parses with the exact labels and byte digest. | Test |
+| FR-010-AC-7 | A missing or unreadable selected source file exits 20 and emits no parsed output. | Test |
 | FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test |
 
 ## Dependencies

@@ -15,7 +15,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
         vec!["parse", "id", "revision", "unused", "extra"],
     ] {
         let output = Command::new(executable).args(args).output().unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         assert!(!output.stderr.is_empty());
     }
@@ -26,7 +26,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
             .arg(path)
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         assert!(!output.stderr.is_empty());
     }
@@ -41,7 +41,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
         .arg(&oversized)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.status.code(), Some(22));
     assert!(output.stdout.is_empty());
     let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(value["status"], "incomplete");
@@ -71,7 +71,7 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
         ];
         args[invalid_at] = OsString::from_vec(vec![0xff]);
         let output = Command::new(executable).args(args).output().unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(stderr.contains("must be UTF-8"), "{stderr}");
@@ -143,7 +143,7 @@ fn cli_parses_and_formats_without_claiming_execution() {
         .args(["parse", "", "fixture:1", "tests/fixtures/parent.native"])
         .output()
         .unwrap();
-    assert_eq!(invalid.status.code(), Some(1));
+    assert_eq!(invalid.status.code(), Some(20));
     let value: serde_json::Value = serde_json::from_slice(&invalid.stderr).unwrap();
     assert_eq!(value["code"], "invalid_source_identity");
     assert_eq!(value["status"], "refused");
@@ -165,7 +165,7 @@ fn malformed_operands_report_the_selected_command_before_io() {
             .args(arguments)
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(20));
         assert!(output.stdout.is_empty());
         let message = std::str::from_utf8(&output.stderr).unwrap();
         assert!(

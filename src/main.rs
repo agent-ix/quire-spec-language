@@ -20,7 +20,9 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
             "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}},
         "message": value.message })
     .to_string();
-    (if incomplete { 3 } else { 1 }, output)
+    // FR-301's contract: incomplete is 22, a refused syntax request is invalid
+    // input (20).
+    (if incomplete { 22 } else { 20 }, output)
 }
 
 fn syntax(
@@ -32,13 +34,13 @@ fn syntax(
     let limits = Limits::default();
     let display_path = path.to_string_lossy();
     let file = std::fs::File::open(path)
-        .map_err(|error| (2, format!("cannot open {display_path}: {error}")))?;
+        .map_err(|error| (20, format!("cannot open {display_path}: {error}")))?;
     let mut bytes = Vec::new();
     let ceiling = u64::try_from(limits.source_bytes)
-        .map_err(|error| (2, format!("invalid source ceiling: {error}")))?;
+        .map_err(|error| (20, format!("invalid source ceiling: {error}")))?;
     file.take(ceiling.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|error| (2, format!("cannot read {display_path}: {error}")))?;
+        .map_err(|error| (20, format!("cannot read {display_path}: {error}")))?;
     let unit = parse(
         SourceIdentity {
             identity: identity.into(),
@@ -96,7 +98,7 @@ fn main() -> ExitCode {
     // reject excess arguments without collecting an unbounded process argument list.
     let arguments: Vec<_> = std::env::args_os().skip(1).take(5).collect();
     let outcome = Command::try_from(arguments.as_slice())
-        .map_err(|error| (2, error.to_string()))
+        .map_err(|error| (20, error.to_string()))
         .and_then(execute);
     let (code, result) = match outcome {
         Ok((code, output)) => {
