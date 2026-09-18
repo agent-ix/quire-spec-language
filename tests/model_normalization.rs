@@ -10,7 +10,7 @@ use ix_trace_rs::trace;
 use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord, RedefinitionRecord,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, RedefinitionRecord,
 };
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{normalize, normalize_with_meter, NormalizeOutcome};
@@ -35,6 +35,26 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> BundleRecord {
         owner: ProducerKey::fixture(owner),
         value_type: ProducerKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
+    })
+}
+
+/// A minimal operation member: no parameters, no result, no effect frame,
+/// no postcondition -- enough to exist as a redefinable member without
+/// pulling in `crate::model::dispatch`/`conformance`'s own richer fixtures.
+fn operation_member(identity: &str, owner: &str) -> BundleRecord {
+    BundleRecord::OperationMember(OperationMemberRecord {
+        key: ProducerKey::fixture(identity),
+        owner: ProducerKey::fixture(owner),
+        parameters: Vec::new(),
+        result: None,
+        effect: OperationEffect {
+            field_writes: Vec::new(),
+            creates: Vec::new(),
+            deletes: Vec::new(),
+        },
+        has_own_precondition: false,
+        own_postcondition_clauses: Vec::new(),
+        has_body: true,
     })
 }
 
@@ -1335,21 +1355,32 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> Bundle {
 /// - `Σ (c − 1) × f(o) = (3 − 1) × (f(B) + f(C) + f(D)) = 2 × (2 + 2 + 5)
 ///   = 18`.
 ///
+/// `normalize.redefinition-check` (`value-accounting.md:455`) charges
+/// `m + r` once per redefinition record in the whole bundle, ascending by
+/// the record's own producer key -- never once per (record, effective type
+/// reaching it) pair (PR #167 review finding #1, QSL #145): `redef.B`
+/// (`r = 0`, `m(B) = 2`) charges `2`; `redef.C` (`r = 1`, `m(C) = 2`)
+/// charges `3`; `redef.D` (`r = 2`, `m(D) = 4`: `D`'s own effective members
+/// are `A.x`, `B.x2`, `C.x3`, all inherited, plus its own direct `D.x4`)
+/// charges `6`. Three charges, `2 + 3 + 6 = 11` total -- not five charges
+/// re-examining `redef.B`/`redef.C` a second time at `D`'s own pass, which
+/// is what a per-(type, record) charge wrongly did before this fix.
+///
 /// Cross-checked against the crate by running it directly: with every
-/// other limit unlimited, `work_units = 58` (43 for every phase-2/3
+/// other limit unlimited, `work_units = 54` (43 for every phase-2/3
 /// `normalize.record`/`normalize.fact`/`normalize.cycle-check` charge, plus
-/// the five `normalize.redefinition-check` charges' own `2 + 2 + 2 + 3 + 6
-/// = 15` work) is exactly enough to admit every charge up to and including
-/// the last `normalize.redefinition-check`, denying only the
+/// the three `normalize.redefinition-check` charges' own `2 + 3 + 6 = 11`
+/// work) is exactly enough to admit every charge up to and including the
+/// last `normalize.redefinition-check`, denying only the
 /// `normalize.conflict-check` that follows it -- and its reported
 /// `next_charge` is exactly `18`.
 ///
 /// Revert probe: reverting the `Σ (c − 1) × f(o)` charge back to a flat,
 /// unconditional `Charge::new(ChargePoint::NormalizeConflictCheck)` (no
 /// `.work(...)` override, i.e. PR #167's own pre-fix shape) makes both
-/// assertions below fail -- the exact-bound one because `work_units = 58`
+/// assertions below fail -- the exact-bound one because `work_units = 54`
 /// then completes outright (a flat charge of 1 fits), and the total
-/// because `104` no longer matches. Confirmed by hand: reintroducing that
+/// because `100` no longer matches. Confirmed by hand: reintroducing that
 /// exact one-line regression locally reproduces both failures, then
 /// removing it again restores this test to green.
 #[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
@@ -1365,11 +1396,11 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
             .iter()
             .filter(|point| **point == ChargePoint::NormalizeRedefinitionCheck)
             .count(),
-        5,
-        "one normalize.redefinition-check per redefinition record examined \
-         at each type whose own effective view reaches it: redef.B and \
-         redef.C are each examined at their own owner's pass and again at \
-         D's, redef.D only at D's"
+        3,
+        "one normalize.redefinition-check per redefinition record in the \
+         whole bundle -- redef.B, redef.C and redef.D each examined exactly \
+         once, ascending by the record's own producer key, never once per \
+         (record, effective type reaching it) pair"
     );
     assert_eq!(
         admitted
@@ -1379,15 +1410,15 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
         1,
         "exactly one contested group (A.x, reachable at D) across the whole build"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 104);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 100);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 58;
+    limits.work_units = 54;
     match normalize(&bundle, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 58);
-            assert_eq!(incomplete.consumed, 58);
+            assert_eq!(incomplete.limit, 54);
+            assert_eq!(incomplete.consumed, 54);
             assert_eq!(incomplete.next_charge, 18);
             assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
         }
@@ -1509,5 +1540,259 @@ fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
             winner.visible,
             "Owner.x2 is the only redefiner and must win outright"
         );
+    }
+}
+
+/// PR #167 review finding #2's own regression shape: the `edges.len() < 2`
+/// guard above only ever fixed the *uncontested* wide-ancestry case.
+/// `Owner` (renamed `O` in the review comment) still declares `n_parents`
+/// direct generalizations, one of them to `Base` (renamed `G000`), but now
+/// `G000` itself also declares a second field, `G000.w`, that redefines
+/// `G000.x` — a genuine two-redefiner contest (`c = 2`: `O.z` and `G000.w`)
+/// whose dominance resolution, before this fix, still built `G000`'s own
+/// [`crate::model::conformance::ancestor_closure`] and exceeded
+/// `MAX_CONFORMANCE_DEPTH` on `O`'s breadth alone, exactly as the
+/// uncontested case did before PR #167's first round. `O` is a proper
+/// descendant of `G000` (one of its `n_parents` direct generalizations), so
+/// `O` dominates `G000` and `O.z` wins outright.
+fn fixture_wide_ancestry_contested_redefiners(n_parents: usize) -> Bundle {
+    let mut records = vec![
+        object_type("model.G000"),
+        field_member("model.G000.x", "model.G000", "model.G000"),
+        field_member("model.G000.w", "model.G000", "model.G000"),
+        redefinition(
+            "model.redef.w",
+            "model.G000",
+            "model.G000.w",
+            "model.G000.x",
+        ),
+    ];
+    for i in 1..n_parents {
+        records.push(object_type(&format!("model.G{i:03}")));
+    }
+    records.push(object_type("model.O"));
+    records.push(generalization("model.gen.O-G000", "model.O", "model.G000"));
+    for i in 1..n_parents {
+        records.push(generalization(
+            &format!("model.gen.O-G{i:03}"),
+            "model.O",
+            &format!("model.G{i:03}"),
+        ));
+    }
+    records.push(field_member("model.O.z", "model.O", "model.G000"));
+    records.push(redefinition(
+        "model.redef.z",
+        "model.O",
+        "model.O.z",
+        "model.G000.x",
+    ));
+    Bundle::new(
+        ModelSelection::fixture(format!("bundle.wide-contested-{n_parents}")),
+        records,
+    )
+}
+
+/// PR #167 review finding #2: a wide (128+ direct generalizations) but
+/// genuinely *contested* ancestry must resolve by dominance exactly as a
+/// narrow one would, not refuse `conformance-depth` — the breadth-vs-depth
+/// defect the `edges.len() < 2` guard alone left unfixed for `c >= 2`
+/// groups.
+///
+/// Revert probe: reverting phase 4's dominance lookup from
+/// `owner_ancestor_sets` (derived from phase 3's own `type_paths`) back to
+/// `ensure_owner_closures`/`ancestor_closure`'s own bounded walk reproduces
+/// the original `conformance-depth` refusal at both widths — confirmed by
+/// hand: reintroducing that walk locally makes this test fail at both 128
+/// and 200, restoring the fix returns it to green.
+#[trace("TC-195", "TC-196", "FR-151-AC-2")]
+#[test]
+fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
+    for n_parents in [128usize, 200usize] {
+        let bundle = fixture_wide_ancestry_contested_redefiners(n_parents);
+        let start = std::time::Instant::now();
+        let outcome = normalize(&bundle, ModelNormalizationLimits::UNLIMITED);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "normalize took {elapsed:?} for {n_parents} direct generalizations \
+             with two contesting redefiners"
+        );
+        let view = match outcome {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!(
+                "expected Completed for {n_parents} direct generalizations, got {other:?} \
+                 (PR #167 review finding #2 regression: a genuinely contested wide \
+                 ancestry must resolve by dominance, not refuse conformance-depth)"
+            ),
+        };
+
+        if n_parents == 128 {
+            assert_eq!(
+                view.declarations.len(),
+                134,
+                "129 type declarations (G000..G127, O) plus 5 member \
+                 declarations (G000.x and G000.w at G000's own view; O's own \
+                 inherited x and w plus its direct z)"
+            );
+        }
+
+        let owner_o = view
+            .declarations
+            .iter()
+            .find(|entry| {
+                entry.preimage.owner_effective_type.is_none()
+                    && entry.preimage.original.identity == "model.O"
+            })
+            .unwrap_or_else(|| panic!("no type declaration for model.O in {n_parents}-parent view"))
+            .effective_id
+            .clone();
+
+        let winner = find_member(&view, &owner_o, "model.O.z");
+        assert!(
+            winner.visible,
+            "O properly dominates G000, so O.z must win over G000.w"
+        );
+        let loser = find_member(&view, &owner_o, "model.G000.w");
+        assert!(
+            !loser.visible,
+            "G000.w loses to the more-derived O.z at O's own effective view"
+        );
+    }
+}
+
+/// PR #167 review finding #3: an operation-member redefinition record is
+/// charged by `normalize.redefinition-check` exactly like a field one, and
+/// its owner's effective-member count `m` includes operation members —
+/// `apply_redefinitions` itself still skips operation-member redefinition
+/// for conflict *resolution* (see the module docs; `crate::model::conformance`
+/// resolves that directly), so this checks the charge alone.
+fn fixture_operation_redefinition() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.op-redef"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            operation_member("model.A.op", "model.A"),
+            operation_member("model.B.op2", "model.B"),
+            redefinition("model.redef.op", "model.B", "model.B.op2", "model.A.op"),
+        ],
+    )
+}
+
+/// Cross-checked against the crate by running it directly: `B`'s own
+/// effective members are `A.op` (inherited) and `B.op2` (direct), so
+/// `m(B) = 2`; this is the only redefinition record in the bundle, so
+/// `r = 0`, and `normalize.redefinition-check` charges exactly `2`.
+///
+/// Revert probe: reverting the `m` computation to count only
+/// `member_counts_by_owner`'s pre-finding-#3 (field-only) tally, with no
+/// operation-member contribution, makes both assertions below fail: the
+/// total drops from `18` to `16` (the redefinition-check charge drops from
+/// `2` to `0`), and `work_units = 10` no longer denies at
+/// `normalize.redefinition-check` (`next_charge` drops to `0`) — confirmed
+/// by hand: removing the operation-member contribution locally reproduces
+/// both failures, restoring it returns this test to green.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn operation_redefinition_is_charged_like_a_field_redefinition() {
+    let bundle = fixture_operation_redefinition();
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeRedefinitionCheck)
+            .count(),
+        1,
+        "the operation redefinition record is charged even though \
+         apply_redefinitions itself never resolves it"
+    );
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        0,
+        "operation-member redefinition resolution stays out of scope for \
+         apply_redefinitions (see the module docs); only the charge changed"
+    );
+    assert_eq!(
+        meter.consumed(LimitKind::WorkUnits),
+        18,
+        "6 normalize.record + 2 normalize.fact (A/B qualify) + 1 \
+         normalize.cycle-check + 1 normalize.fact (B's own inherit-A path) \
+         + 1 normalize.redefinition-check (m + r = 2 + 0) + 2 \
+         normalize.declaration + 2 normalize.hash (per type declaration) + \
+         2 normalize.hash (universe/view) = 18; no member declarations at \
+         all, since operation members never enter member_preimages"
+    );
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 10;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.consumed, 10);
+            assert_eq!(
+                incomplete.next_charge, 2,
+                "m(B) = 2 (A.op inherited, B.op2 direct), r = 0"
+            );
+            assert_eq!(
+                incomplete.charge_point,
+                ChargePoint::NormalizeRedefinitionCheck
+            );
+        }
+        other => panic!("expected Incomplete at normalize.redefinition-check, got {other:?}"),
+    }
+}
+
+/// PR #167 review finding #4: a phase-3 refusal (`specialization-cycle`)
+/// wins over a phase-4 refusal (`derivation-conflict`) when a bundle has
+/// both, matching FR-150's "each normalization phase ... reports every
+/// refusal it exposes in charge order; a phase that reports a refusal ends
+/// checking." `fixture_n06_conflict` (`B`/`C`, two undominated redefiners
+/// of `A.x`, with no `D` to resolve them — phase 4's own defect) plus an
+/// unrelated `Y <-> Z` generalization cycle (phase 3's own defect, TC-196
+/// R01) exercises this precedence directly: phase 3 runs, and refuses,
+/// before phase 4 ever gets a turn.
+fn fixture_n06_conflict_with_unrelated_cycle() -> Bundle {
+    let mut records = fixture_n06_conflict().records;
+    records.push(object_type("model.Y"));
+    records.push(object_type("model.Z"));
+    records.push(generalization("model.gen.Y-Z", "model.Y", "model.Z"));
+    records.push(generalization("model.gen.Z-Y", "model.Z", "model.Y"));
+    Bundle::new(ModelSelection::fixture("bundle.n06-cycle"), records)
+}
+
+#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[test]
+fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
+    match normalize(
+        &fixture_n06_conflict_with_unrelated_cycle(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(
+                refusal.cause, "specialization-cycle",
+                "phase 3's own refusal must win over phase 4's undominated-\
+                 redefiner derivation-conflict, matching FR-150's \
+                 charge-order precedence"
+            );
+            assert!(
+                refusal.detail.contains("[model.Y, model.Z]"),
+                "detail must name the unrelated cycle, got: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
+        }
     }
 }
