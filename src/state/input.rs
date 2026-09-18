@@ -53,11 +53,10 @@ pub struct ObservationDigest(pub String);
 /// Static document, model, profile and configuration identity and digest
 /// required by composed evaluation.
 ///
-/// Every field here comes from the admitted domain package's FR-056
-/// identity (see FR-049's Inputs section); none is a producer interface
-/// version. `StaticAuthority` is not a wire or schema shape -- it is a
-/// plain Rust struct the caller builds directly, and it carries no such
-/// member.
+/// Each identity is paired with a `sha256` digest in the
+/// `filament-canonical-json-1` domain, checked by `valid_digest` in
+/// `crate::state::evaluation`. `StaticAuthority` is a plain Rust struct the
+/// caller builds directly from those checked identities and digests.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StaticAuthority {
     pub document_identity: String,
