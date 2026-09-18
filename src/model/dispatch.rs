@@ -36,7 +36,7 @@
 //!   `conformance`'s independence from phase 4's exposure machinery).
 #![allow(
     clippy::result_large_err,
-    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{HashMap, HashSet};

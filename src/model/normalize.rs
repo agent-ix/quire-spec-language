@@ -75,11 +75,11 @@
 //! "don't walk the identical DFS twice" lesson, applied to phase 4 too).
 #![allow(
     clippy::large_enum_variant,
-    reason = "ModelRefusalCause is a closed typed cause vocabulary retaining complete producer/effective identities without heap allocation"
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "ModelRefusal retains complete producer/effective identities without heap allocation, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::HashMap;
