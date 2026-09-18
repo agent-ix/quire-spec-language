@@ -1974,6 +1974,99 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     }
 }
 
+/// PR #167 review round 5, finding #1: `value-accounting.md:456` prices
+/// every contested `(effective type, redefined member)` in one ascending
+/// pass "by effective member key" -- field and operation targets
+/// interleaved by that one key, never field targets charged as a block
+/// before operation targets as a block. `C <= B <= A` (a two-step
+/// generalization chain, so `f(A) = 1`, `f(B) = 2`, `f(C) = 3`):
+///
+/// - Field `A.z` is redefined by `B.z1` (owner `B`) and `C.z2` (owner `C`).
+///   `C` is a proper descendant of `B`, so this contest resolves (`C.z2`
+///   wins) without a refusal, but a resolved contest still owes its charge
+///   (`c >= 2` is the only condition, `value-accounting.md:456`). `c = 2`,
+///   `Σ (c − 1) × f(o) = (2 − 1) × (f(B) + f(C)) = 1 × (2 + 3) = 5`.
+/// - Operation `A.a` is redefined by `C.a2` and `C.a3`, both owned by `C`.
+///   `apply_redefinitions` never resolves an operation contest (see the
+///   module docs), but still charges it: `c = 2`,
+///   `Σ (c − 1) × f(o) = (2 − 1) × (f(C) + f(C)) = 1 × (3 + 3) = 6`.
+///
+/// `model.A.a` sorts before `model.A.z` (identity bytes: `a` < `z`), so the
+/// merged-and-sorted order charges the operation group (`6`) before the
+/// field group (`5`) -- the reverse of the pre-fix order, which charged
+/// every field group (here, just the one `5`) before any operation group
+/// (`6`), regardless of which target key sorts first.
+///
+/// Cross-checked by running the crate directly: with every other limit
+/// unlimited, this bundle completes at exactly `work_units = 89`, and
+/// `work_units = 58` is exactly enough to admit every charge up to and
+/// including the last `normalize.redefinition-check`, denying at the first
+/// `normalize.conflict-check` -- the operation group's `6`, not the field
+/// group's `5`.
+///
+/// Revert probe: reverting the collect-sort-then-push fix in
+/// `apply_redefinitions` back to each loop pushing its own charge straight
+/// to `conflict_check_work` (this finding's pre-fix shape) makes the
+/// `work_units = 58` assertion fail -- `next_charge` becomes `5` (the field
+/// group, charged first again) instead of `6` -- confirmed by hand:
+/// reverting the two loops to push directly, locally, reproduces the
+/// failure; restoring the collect-sort-push shape returns this test to
+/// green.
+#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[test]
+fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.field-op-order"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            field_member("model.A.z", "model.A", "model.A"),
+            field_member("model.B.z1", "model.B", "model.A"),
+            field_member("model.C.z2", "model.C", "model.A"),
+            redefinition("model.redef.z1", "model.B", "model.B.z1", "model.A.z"),
+            redefinition("model.redef.z2", "model.C", "model.C.z2", "model.A.z"),
+            operation_member("model.A.a", "model.A"),
+            operation_member("model.C.a2", "model.C"),
+            operation_member("model.C.a3", "model.C"),
+            redefinition("model.redef.a2", "model.C", "model.C.a2", "model.A.a"),
+            redefinition("model.redef.a3", "model.C", "model.C.a3", "model.A.a"),
+        ],
+    );
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        2,
+        "one contested group for A.z (field) and one for A.a (operation)"
+    );
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 89);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 58;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 58);
+            assert_eq!(incomplete.consumed, 58);
+            assert_eq!(
+                incomplete.next_charge, 6,
+                "model.A.a sorts before model.A.z, so the operation group's \
+                 charge (6) is denied before the field group's (5)"
+            );
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+        }
+        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
+    }
+}
+
 /// PR #167 review finding #4: a phase-3 refusal (`specialization-cycle`)
 /// wins over a phase-4 refusal (`derivation-conflict`) when a bundle has
 /// both, matching FR-150's "each normalization phase ... reports every

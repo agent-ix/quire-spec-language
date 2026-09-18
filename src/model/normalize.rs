@@ -1332,6 +1332,19 @@ fn apply_redefinitions(
     let mut target_keys: Vec<ProducerKey> = groups.keys().cloned().collect();
     target_keys.sort();
 
+    // `value-accounting.md:456`'s own charge order is a single ascending
+    // pass "by effective member key" over every contested `(effective type,
+    // redefined member)` reached by `c >= 2` records -- field and operation
+    // targets interleaved by that one key, never field targets as a block
+    // followed by operation targets as a block. Each loop below still
+    // resolves (and, for fields, hides/derives) its own kind in its own
+    // pass, but neither pushes its charge amount straight to
+    // `accounting.conflict_check_work`; both collect `(target key, amount)`
+    // here and the combined set is sorted by target key and pushed only
+    // once, after both loops, in that merged order (PR #167 review finding
+    // #1).
+    let mut conflict_charges: Vec<(ProducerKey, u64)> = Vec::new();
+
     for target_key in target_keys {
         let mut edges = groups.remove(&target_key).expect("just listed");
         edges.sort_by(|a, b| {
@@ -1350,7 +1363,7 @@ fn apply_redefinitions(
             // refuse `conformance-depth`.
             0
         } else {
-            let c = edges.len() as u64;
+            let c = length_amount(edges.len());
 
             // `value-accounting.md:456`: `work_units += Σ (c − 1) × f(o)`,
             // summed over the `c` redefining owners `o` -- once per edge,
@@ -1369,9 +1382,10 @@ fn apply_redefinitions(
                         .unwrap_or(0)
                 })
                 .sum();
-            accounting
-                .conflict_check_work
-                .push(fact_total.saturating_mul(c.saturating_sub(1)));
+            conflict_charges.push((
+                target_key.clone(),
+                fact_total.saturating_mul(c.saturating_sub(1)),
+            ));
 
             // `owner_ancestor_sets` already holds every owner in the bundle's
             // own proper-ancestor set (QSL #145 PR #167 review finding #2:
@@ -1582,7 +1596,7 @@ fn apply_redefinitions(
             // `value-accounting.md:456`'s own `c >= 2` condition.
             continue;
         }
-        let c = edges.len() as u64;
+        let c = length_amount(edges.len());
         let fact_total: u64 = edges
             .iter()
             .map(|edge| {
@@ -1593,9 +1607,15 @@ fn apply_redefinitions(
                     .unwrap_or(0)
             })
             .sum();
-        accounting
-            .conflict_check_work
-            .push(fact_total.saturating_mul(c.saturating_sub(1)));
+        conflict_charges.push((
+            target_key.clone(),
+            fact_total.saturating_mul(c.saturating_sub(1)),
+        ));
+    }
+
+    conflict_charges.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_, amount) in conflict_charges {
+        accounting.conflict_check_work.push(amount);
     }
 
     Ok(())
