@@ -551,6 +551,13 @@ impl<'a> Typer<'a> {
                 self.infer(operand, None, &location.child(0))?;
                 Err(mismatch(location))
             }
+            Expression::Pre(operand) => {
+                // FR-153: `pre(e)` is identity-typed; only the anchor that
+                // `allInstances`/`lookup` read underneath it changes.
+                let operand = self.infer(operand, hint, &location.child(0))?;
+                let value_type = operand.value_type.clone();
+                Ok(node(NodeKind::Pre(Box::new(operand)), value_type, location))
+            }
             Expression::Call { name, arguments } => self.call(name, arguments, location),
             Expression::Record { name, fields } => self.record(name, fields, location),
             Expression::Collection { kind, elements } => {

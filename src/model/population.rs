@@ -77,7 +77,7 @@ use std::sync::Arc;
 
 use crate::diagnostic::Code;
 use crate::model::bundle::{
-    Bundle, BundleRecord, GeneralizationRecord, ModelSelection, SubsettingRecord,
+    Bundle, BundleRecord, GeneralizationRecord, ModelSelection, OperationEffect, SubsettingRecord,
 };
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
@@ -381,6 +381,18 @@ pub enum AbsenceMode {
 // Binding admission
 // ---------------------------------------------------------------------------
 
+/// The declared values of `member`'s `field`, or an empty slice when
+/// `member` declares no values for it. Shared by [`admit_binding`]'s
+/// `binding.subset-value` check and [`enforce_frame`]'s field-write check —
+/// both read exactly this same `PopulationMember.field_values` shape.
+fn values_of<'a>(member: &'a PopulationMember, field: &ProducerKey) -> &'a [String] {
+    member
+        .field_values
+        .iter()
+        .find(|entry| &entry.field == field)
+        .map_or(&[][..], |entry| entry.values.as_slice())
+}
+
 /// One admitted population binding: every admitted member, keyed by
 /// [`ReferenceKey`] (so iteration is already canonical reference-key order),
 /// with each member's original most-specific type retained for conformance
@@ -424,9 +436,31 @@ pub struct PopulationBinding {
     /// back into the `ProducerKey` [`all_instances`]/[`lookup`] take, for
     /// every declared type, not only ones a current member happens to name.
     type_catalog: BTreeMap<ProducerKey, EffectiveId>,
+    /// FR-153's invocation pre population, attached only by
+    /// [`admit_invocation`]: `pre(allInstances(p))`/`pre(lookup(p, r) absent
+    /// m)` read this binding instead of `self` underneath a `pre(..)`
+    /// anchor. `None` for a binding admitted directly by [`admit_binding`]
+    /// (no invocation, so no pre state to anchor to). One level of `Arc`
+    /// indirection, never chained: the pre binding [`admit_invocation`]
+    /// attaches here is itself always admitted with `pre_anchor: None`.
+    pre_anchor: Option<Arc<PopulationBinding>>,
 }
 
 impl PopulationBinding {
+    /// Attaches `pre` as this binding's FR-153 invocation pre population,
+    /// consuming both. Only [`admit_invocation`] calls this: attaching an
+    /// arbitrary binding here would let a caller assemble a `pre`/`post`
+    /// pair that was never checked against one invocation's frame.
+    fn with_pre_anchor(mut self, pre: PopulationBinding) -> Self {
+        self.pre_anchor = Some(Arc::new(pre));
+        self
+    }
+
+    /// This binding's attached FR-153 invocation pre population, when one
+    /// was attached by [`admit_invocation`].
+    pub fn pre_anchor(&self) -> Option<&PopulationBinding> {
+        self.pre_anchor.as_deref()
+    }
     /// The full `ModelSelection` header this binding was admitted against.
     pub fn model_selection(&self) -> &ModelSelection {
         &self.bundle.model_selection
@@ -622,15 +656,6 @@ pub fn admit_binding(
     // order already), then each subsetting field reaching that member's
     // most-specific type ascending by declaration key, then each value of
     // the subsetting feature in its declared order (see the module docs).
-    /// The declared values of `member`'s `field`, or an empty slice when
-    /// `member` declares no values for it.
-    fn values_of<'a>(member: &'a PopulationMember, field: &ProducerKey) -> &'a [String] {
-        member
-            .field_values
-            .iter()
-            .find(|entry| &entry.field == field)
-            .map_or(&[][..], |entry| entry.values.as_slice())
-    }
 
     /// The first field named by more than one of `member`'s own
     /// `field_values` entries, or `None` when every named field is unique.
@@ -727,7 +752,210 @@ pub fn admit_binding(
         declared_maximum,
         generals,
         type_catalog: type_lookup,
+        pre_anchor: None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Invocation admission: EXPR-020/021/022's created/deleted identities and
+// operation frame
+// ---------------------------------------------------------------------------
+
+/// [`admit_invocation`]'s shared admission context for its pre and post
+/// bindings: the same bundle, effective view, subtype closure and declared
+/// maximum -- the same population role, admitted at the invocation's two
+/// instants. Grouped into one type rather than four parameters so
+/// `admit_invocation` stays within this crate's argument-count convention.
+#[derive(Clone, Copy)]
+pub struct InvocationContext<'a> {
+    /// The bundle both instants are admitted against.
+    pub bundle: &'a Bundle,
+    /// The bundle's already-normalized, already-charged effective view.
+    pub view: &'a EffectiveView,
+    /// The model selection's subtype closure.
+    pub subtype_closure: GeneralizationClosure,
+    /// The population role's declared maximum, or `None`.
+    pub declared_maximum: Option<u64>,
+}
+
+/// Admits one operation invocation's pre and post [`PopulationDocument`]s
+/// against the same `bundle`/`view`/`subtype_closure`/`declared_maximum`
+/// (the same population role, at the invocation's two instants), then
+/// enforces `effect`'s FR-151 frame (`quire.model.conformance.effect/v1`)
+/// against the two bindings' created and deleted identities and their
+/// surviving members' declared field values.
+///
+/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`) is
+/// returned as-is; a frame violation is `Refused` with
+/// `Code::FrameViolation`/cause `unauthorized-change` (the catalogued
+/// `native-diagnostics.md` cause for that code). On success, the returned
+/// binding is the post binding with `pre` attached as its
+/// [`PopulationBinding::pre_anchor`], so `allInstances`/`lookup` underneath
+/// a `pre(..)` anchor read exactly the admitted pre population.
+///
+/// `pre_meter`/`post_meter` are two independent [`AdmissionMeter`]s, one per
+/// admitted binding: this module's own "Two independent meters" docs already
+/// establish that admission and evaluation are metered separately, and
+/// nothing in FR-153's Inputs clause defines a single combined budget for
+/// admitting two population instants of one invocation, so charging each
+/// against its own meter (rather than inventing an unspecified combined
+/// schedule) is the conservative reading.
+///
+/// Deciding created/deleted-identity and field-write frame membership is,
+/// like the object/subtype-closure and `modelIdentity` checks
+/// [`admit_binding`] already makes, a structural admission decision over
+/// already-charged data, not itself a new charge point: FR-151's model
+/// module does not define one, and the two admitted bindings' own
+/// `binding.member`/`binding.subset-value` charges already measured the
+/// data this check reads.
+///
+/// Out of scope for this function (tracked, not silently dropped):
+/// `Code::PopulationDeltaMismatch`/cause `delta-disagreement` compares an
+/// operation's *recorded* created/deleted delta against the complete
+/// pre/post difference; FR-153's Inputs clause defines no recorded-delta
+/// input to compare against, so this function only enforces the *frame*
+/// (what identities/fields an operation may touch), never a delta record.
+pub fn admit_invocation(
+    context: InvocationContext<'_>,
+    pre_document: &PopulationDocument,
+    post_document: &PopulationDocument,
+    effect: &OperationEffect,
+    pre_meter: &mut AdmissionMeter,
+    post_meter: &mut AdmissionMeter,
+) -> AdmissionOutcome {
+    let pre = match admit_binding(
+        context.bundle,
+        context.view,
+        pre_document,
+        context.subtype_closure,
+        context.declared_maximum,
+        pre_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => return other,
+    };
+    let post = match admit_binding(
+        context.bundle,
+        context.view,
+        post_document,
+        context.subtype_closure,
+        context.declared_maximum,
+        post_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => return other,
+    };
+    if let Err(refusal) = enforce_frame(&pre, &post, pre_document, post_document, effect) {
+        return AdmissionOutcome::Refused(refusal);
+    }
+    AdmissionOutcome::Admitted(post.with_pre_anchor(pre))
+}
+
+/// One [`ModelRefusal`]/`Code::FrameViolation` for `detail`, cause
+/// `unauthorized-change` (the catalogued cause for this code; see
+/// `admit_invocation`'s own docs).
+fn frame_violation(detail: String) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::FrameViolation,
+        cause: "unauthorized-change",
+        detail,
+    }
+}
+
+/// Enforces `effect`'s frame against `pre`/`post`'s created and deleted
+/// identities and their surviving members' declared field values. `pre`,
+/// `post` are the two admitted bindings; `pre_document`, `post_document` are
+/// the raw documents they were admitted from (needed here only for their
+/// `field_values`, which [`PopulationBinding`] does not retain).
+fn enforce_frame(
+    pre: &PopulationBinding,
+    post: &PopulationBinding,
+    pre_document: &PopulationDocument,
+    post_document: &PopulationDocument,
+    effect: &OperationEffect,
+) -> Result<(), ModelRefusal> {
+    // Created: members of `post` absent from `pre`. Each one's
+    // most-specific type must conform to a declared `creates` grant.
+    for (key, created_type) in post.members() {
+        if pre.members().contains_key(key) {
+            continue;
+        }
+        let mut allowed = false;
+        for grant in &effect.creates {
+            if conforms(post, created_type, grant)? {
+                allowed = true;
+                break;
+            }
+        }
+        if !allowed {
+            return Err(frame_violation(format!(
+                "invocation creates object {} of type {}, outside the operation's declared \
+                 creates frame",
+                key.object, created_type.identity
+            )));
+        }
+    }
+
+    // Deleted: members of `pre` absent from `post`. Each one's pre
+    // most-specific type must conform to a declared `deletes` grant.
+    for (key, deleted_type) in pre.members() {
+        if post.members().contains_key(key) {
+            continue;
+        }
+        let mut allowed = false;
+        for grant in &effect.deletes {
+            if conforms(pre, deleted_type, grant)? {
+                allowed = true;
+                break;
+            }
+        }
+        if !allowed {
+            return Err(frame_violation(format!(
+                "invocation deletes object {} of type {}, outside the operation's declared \
+                 deletes frame",
+                key.object, deleted_type.identity
+            )));
+        }
+    }
+
+    // Field writes: members present in both documents (survivors). A
+    // surviving member's field whose declared values differ pre to post
+    // must be a declared `fieldWrites` member.
+    let post_by_object: HashMap<&str, &PopulationMember> = post_document
+        .members
+        .iter()
+        .map(|member| (member.object.as_str(), member))
+        .collect();
+    for pre_member in &pre_document.members {
+        let Some(&post_member) = post_by_object.get(pre_member.object.as_str()) else {
+            continue; // Deleted; already decided above.
+        };
+        let mut fields: Vec<&ProducerKey> = Vec::new();
+        for entry in pre_member
+            .field_values
+            .iter()
+            .chain(&post_member.field_values)
+        {
+            if !fields.iter().any(|existing| **existing == entry.field) {
+                fields.push(&entry.field);
+            }
+        }
+        for field in fields {
+            if values_of(pre_member, field) == values_of(post_member, field) {
+                continue;
+            }
+            if effect.field_writes.iter().any(|write| write == field) {
+                continue;
+            }
+            return Err(frame_violation(format!(
+                "invocation changes object {}'s field {}, outside the operation's declared \
+                 fieldWrites frame",
+                pre_member.object, field.identity
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
