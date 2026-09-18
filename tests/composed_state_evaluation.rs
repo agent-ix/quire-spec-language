@@ -862,10 +862,11 @@ fn tc_126_136_admitted_value_selection_returns_one_typed_outcome() {
     });
 }
 
-/// Tracing: TC-136. Also FR-049-AC-2's proof that `StaticAuthority` carries
-/// no producer interface version member: `postcondition_view`'s authority
-/// below sets only its FR-056 domain-package-derived document/model/profile/
-/// configuration identity and digest fields, and evaluation still completes.
+/// Tracing: TC-136. Also FR-049-AC-2's proof that evaluation completes from
+/// `StaticAuthority` alone: `postcondition_view`'s authority below sets only
+/// its document/model/profile/configuration identity and `sha256`
+/// `filament-canonical-json-1` digest fields, and evaluation still
+/// completes.
 #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-4", "FR-049-AC-5")]
 #[test]
 fn tc_136_pre_reads_the_exact_invocation_pre_observation_and_binding() {
