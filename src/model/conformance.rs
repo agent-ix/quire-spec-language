@@ -59,7 +59,8 @@
 //!   (`apply_redefinitions`'s undominated-edges branch), which already has
 //!   every sibling redefiner of a contended target in view.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::ControlFlow;
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
@@ -223,11 +224,68 @@ impl ConformanceIndex {
     }
 }
 
+/// The one bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
+/// ceiling) proper-descendant DFS both [`type_conforms`] and
+/// [`ancestor_closure`] need, factored out so a future change to the
+/// ceiling or refusal shape (they used to differ only in the detail
+/// string, "conformance check from" vs "ancestor closure of") is made once
+/// instead of twice.
+///
+/// Calls `visit(current, general)` once per direct-generalization edge
+/// discovered, in the same DFS pre-order either caller's own hand-written
+/// loop used: `current` is the node being expanded, `general` its direct
+/// generalization. `visit` returns [`ControlFlow::Break`] to stop the walk
+/// immediately — [`type_conforms`]'s early exit on a target match — or
+/// [`ControlFlow::Continue`] to keep walking and push `general` onto the
+/// stack — [`ancestor_closure`]'s full collection. The walk's own early
+/// termination is returned as this function's `Ok` payload; a `Break`
+/// short-circuits before any further nodes are popped.
+///
+/// `label` is the refusal detail's own subject phrase (`"conformance check
+/// from"` / `"ancestor closure of"`), so the two callers keep their
+/// existing, distinct wording.
+fn walk_ancestors<B>(
+    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    s: &ProducerKey,
+    label: &str,
+    mut visit: impl FnMut(&ProducerKey, &ProducerKey) -> ControlFlow<B>,
+) -> Result<ControlFlow<B>, ModelRefusal> {
+    let mut stack: Vec<ProducerKey> = vec![s.clone()];
+    let mut visited: HashSet<ProducerKey> = HashSet::new();
+    let mut steps: usize = 0;
+    while let Some(current) = stack.pop() {
+        if !visited.insert(current.clone()) {
+            continue;
+        }
+        steps += 1;
+        if steps > MAX_CONFORMANCE_DEPTH {
+            return Err(ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: "conformance-depth",
+                detail: format!(
+                    "{label} {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
+                    s.identity
+                ),
+            });
+        }
+        for general in generals_by_specific.get(&current).into_iter().flatten() {
+            match visit(&current, &general.general) {
+                ControlFlow::Break(value) => return Ok(ControlFlow::Break(value)),
+                ControlFlow::Continue(()) => stack.push(general.general.clone()),
+            }
+        }
+    }
+    Ok(ControlFlow::Continue(()))
+}
+
 /// Whether `s` conforms to `t`: the same identity, or a chain of supplied
-/// generalization records from `s` to `t`. Explicit task stack over
-/// caller-supplied records, bounded by [`MAX_CONFORMANCE_DEPTH`] and a
-/// visited set, so a cycle or an adversarial chain refuses instead of
-/// looping or overflowing a native call stack.
+/// generalization records from `s` to `t`. Delegates to [`walk_ancestors`]
+/// for the bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
+/// ceiling) DFS itself, breaking as soon as `t` is found so a cycle or an
+/// adversarial chain refuses instead of looping or overflowing a native
+/// call stack — and so this, `type_conforms`'s hot-path early-exit
+/// behavior at its many existing single-target call sites, is unchanged by
+/// the walk now being shared with [`ancestor_closure`].
 ///
 /// `pub(super)` so [`crate::model::dispatch`]'s own bounded walks (subtype
 /// applicability and dominance) reuse this one implementation rather than a
@@ -240,39 +298,26 @@ pub(super) fn type_conforms(
     if s == t {
         return Ok(true);
     }
-    let mut stack: Vec<ProducerKey> = vec![s.clone()];
-    let mut visited: std::collections::HashSet<ProducerKey> = std::collections::HashSet::new();
-    let mut steps: usize = 0;
-    while let Some(current) = stack.pop() {
-        if !visited.insert(current.clone()) {
-            continue;
-        }
-        steps += 1;
-        if steps > MAX_CONFORMANCE_DEPTH {
-            return Err(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: "conformance-depth",
-                detail: format!(
-                    "conformance check from {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
-                    s.identity
-                ),
-            });
-        }
-        for general in generals_by_specific.get(&current).into_iter().flatten() {
-            if &general.general == t {
-                return Ok(true);
+    let found = walk_ancestors(
+        generals_by_specific,
+        s,
+        "conformance check from",
+        |_current, general| {
+            if general == t {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
             }
-            stack.push(general.general.clone());
-        }
-    }
-    Ok(false)
+        },
+    )?;
+    Ok(matches!(found, ControlFlow::Break(())))
 }
 
 /// Every proper ancestor of `s` reachable through `generals_by_specific`:
 /// the full set `{ t | type_conforms(s, t) && t != s }`. The same bounded
-/// (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`] ceiling) walk
-/// [`type_conforms`] performs, but collecting every reachable node instead
-/// of stopping at one target's first match.
+/// walk [`type_conforms`] performs, via the identical shared
+/// [`walk_ancestors`], but collecting every reachable node (never
+/// breaking) instead of stopping at one target's first match.
 ///
 /// Deliberately not implemented by calling [`type_conforms`] once per
 /// candidate ancestor, nor by having [`type_conforms`] delegate to this
@@ -289,36 +334,25 @@ pub(super) fn type_conforms(
 /// candidates — [`crate::model::normalize`]'s phase-4 dominance resolution
 /// (QSL #145 / PR #144 review finding #4), which compares every contesting
 /// redefinition edge's owner against every other edge's owner and would
-/// otherwise re-walk this identical graph once per pair.
+/// otherwise re-walk this identical graph once per pair. `normalize` never
+/// calls this for a target group with fewer than two contesting edges —
+/// see its own module docs — so a wide but uncontested ancestry never
+/// exercises this walk at all.
 pub(super) fn ancestor_closure(
     generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
     s: &ProducerKey,
-) -> Result<std::collections::HashSet<ProducerKey>, ModelRefusal> {
-    let mut closure = std::collections::HashSet::new();
-    let mut stack: Vec<ProducerKey> = vec![s.clone()];
-    let mut visited: std::collections::HashSet<ProducerKey> = std::collections::HashSet::new();
-    let mut steps: usize = 0;
-    while let Some(current) = stack.pop() {
-        if !visited.insert(current.clone()) {
-            continue;
-        }
-        steps += 1;
-        if steps > MAX_CONFORMANCE_DEPTH {
-            return Err(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: "conformance-depth",
-                detail: format!(
-                    "ancestor closure of {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
-                    s.identity
-                ),
-            });
-        }
-        for general in generals_by_specific.get(&current).into_iter().flatten() {
-            if closure.insert(general.general.clone()) {
-                stack.push(general.general.clone());
-            }
-        }
-    }
+) -> Result<HashSet<ProducerKey>, ModelRefusal> {
+    let mut closure = HashSet::new();
+    let outcome = walk_ancestors(
+        generals_by_specific,
+        s,
+        "ancestor closure of",
+        |_current, general| {
+            closure.insert(general.clone());
+            ControlFlow::<()>::Continue(())
+        },
+    )?;
+    debug_assert!(matches!(outcome, ControlFlow::Continue(())));
     Ok(closure)
 }
 
