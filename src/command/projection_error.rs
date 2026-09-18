@@ -117,7 +117,7 @@ mod tests {
             ),
         );
         for (code, expected_code, exit) in [
-            (LoweringCode::Unsupported, "unsupported_projection", 20),
+            (LoweringCode::Unsupported, "unsupported_projection", 21),
             (LoweringCode::ResourceExhausted, "resource_exhausted", 22),
             (LoweringCode::Binding, "projection_binding", 20),
             (

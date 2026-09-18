@@ -149,6 +149,31 @@ fn cli_parses_and_formats_without_claiming_execution() {
     assert_eq!(value["status"], "refused");
 }
 
+#[trace("TC-015", "FR-010-AC-9")]
+#[test]
+fn parse_of_a_recognized_but_unsupported_construct_exits_21() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("unsupported.native");
+    std::fs::write(
+        &path,
+        "language \"ix:native\" edition \"0-draft\";\n\
+         profile \"state-finite/0-draft\";\n\
+         model M = \"test/model\" version \"1\" digest \"unresolved\";\n\
+         invariant Test on M::Thing at current { 1 / 2 }\n",
+    )
+    .unwrap();
+    let refused = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args(["parse", "test:unsupported", "fixture:1"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(21));
+    assert!(refused.stdout.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
+    assert_eq!(value["code"], "unsupported_construct");
+    assert_eq!(value["status"], "refused");
+}
+
 #[test]
 #[trace("TC-104", "FR-026-AC-5")]
 fn malformed_operands_report_the_selected_command_before_io() {

@@ -225,9 +225,10 @@ impl RunCause {
 
     /// Native command exit status, on FR-301's six-code contract: request
     /// intake and identifier/digest failures are invalid input (20); a
-    /// disposition's incomplete/exhausted classification promotes it to
-    /// incomplete (22) in place of invalid input (20); writing the outcome
-    /// out is a tool failure (30).
+    /// disposition naming a real, catalogued capability this build does
+    /// not implement is unsupported (21); an incomplete/exhausted
+    /// classification is incomplete (22); writing the outcome out is a
+    /// tool failure (30).
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::Output(_) => 30,
@@ -240,7 +241,9 @@ impl RunCause {
             | Self::SelectedPackage { .. }
             | Self::Lowering { .. }
             | Self::Input(_) => {
-                if self.is_incomplete() {
+                if self.code().is_unsupported() {
+                    21
+                } else if self.is_incomplete() {
                     22
                 } else {
                     20
@@ -248,7 +251,9 @@ impl RunCause {
             }
             #[cfg(feature = "quire-extraction")]
             Self::Extraction(error) => {
-                if error.code().is_incomplete() {
+                if error.code().is_unsupported() {
+                    21
+                } else if error.code().is_incomplete() {
                     22
                 } else {
                     20
@@ -270,7 +275,7 @@ pub struct RunError {
 }
 
 impl RunError {
-    /// Existing usage/refusal/incomplete exit convention, derived from the cause.
+    /// FR-301's six-code exit contract, derived from the cause.
     pub fn exit_code(&self) -> u8 {
         self.cause.exit_code()
     }
