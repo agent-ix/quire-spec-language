@@ -225,25 +225,28 @@ impl ConformanceIndex {
 }
 
 /// The one bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
-/// ceiling) proper-descendant DFS both [`type_conforms`] and
-/// [`ancestor_closure`] need, factored out so a future change to the
-/// ceiling or refusal shape (they used to differ only in the detail
-/// string, "conformance check from" vs "ancestor closure of") is made once
-/// instead of twice.
+/// ceiling) proper-descendant DFS [`type_conforms`] needs. Previously also
+/// shared with a phase-4 dominance helper (`ancestor_closure`, QSL #145 /
+/// PR #144 review finding #4) that collected a full ancestor set rather
+/// than breaking on a target match; that helper is gone (PR #167 review
+/// finding #2, QSL #145 — phase 4 now derives each owner's ancestor set
+/// from `crate::model::normalize`'s own phase-3 paths instead of a second,
+/// separately bounded walk here), so `visit` only ever breaks or continues
+/// with `()` now, but the shape is kept generic in case a future caller
+/// needs a different break payload.
 ///
 /// Calls `visit(current, general)` once per direct-generalization edge
-/// discovered, in the same DFS pre-order either caller's own hand-written
-/// loop used: `current` is the node being expanded, `general` its direct
-/// generalization. `visit` returns [`ControlFlow::Break`] to stop the walk
-/// immediately — [`type_conforms`]'s early exit on a target match — or
+/// discovered, in DFS pre-order: `current` is the node being expanded,
+/// `general` its direct generalization. `visit` returns
+/// [`ControlFlow::Break`] to stop the walk immediately —
+/// [`type_conforms`]'s early exit on a target match — or
 /// [`ControlFlow::Continue`] to keep walking and push `general` onto the
-/// stack — [`ancestor_closure`]'s full collection. The walk's own early
-/// termination is returned as this function's `Ok` payload; a `Break`
-/// short-circuits before any further nodes are popped.
+/// stack. The walk's own early termination is returned as this function's
+/// `Ok` payload; a `Break` short-circuits before any further nodes are
+/// popped.
 ///
 /// `label` is the refusal detail's own subject phrase (`"conformance check
-/// from"` / `"ancestor closure of"`), so the two callers keep their
-/// existing, distinct wording.
+/// from"`).
 fn walk_ancestors<B>(
     generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
     s: &ProducerKey,
@@ -283,9 +286,7 @@ fn walk_ancestors<B>(
 /// for the bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
 /// ceiling) DFS itself, breaking as soon as `t` is found so a cycle or an
 /// adversarial chain refuses instead of looping or overflowing a native
-/// call stack — and so this, `type_conforms`'s hot-path early-exit
-/// behavior at its many existing single-target call sites, is unchanged by
-/// the walk now being shared with [`ancestor_closure`].
+/// call stack.
 ///
 /// `pub(super)` so [`crate::model::dispatch`]'s own bounded walks (subtype
 /// applicability and dominance) reuse this one implementation rather than a
@@ -311,49 +312,6 @@ pub(super) fn type_conforms(
         },
     )?;
     Ok(matches!(found, ControlFlow::Break(())))
-}
-
-/// Every proper ancestor of `s` reachable through `generals_by_specific`:
-/// the full set `{ t | type_conforms(s, t) && t != s }`. The same bounded
-/// walk [`type_conforms`] performs, via the identical shared
-/// [`walk_ancestors`], but collecting every reachable node (never
-/// breaking) instead of stopping at one target's first match.
-///
-/// Deliberately not implemented by calling [`type_conforms`] once per
-/// candidate ancestor, nor by having [`type_conforms`] delegate to this
-/// function: the two answer different questions with different early-exit
-/// shapes. `type_conforms` is queried once per (subtype, candidate) pair
-/// across this crate's hottest loops ([`crate::model::dispatch`]'s
-/// applicability/subtype enumeration, this module's own axis checks) where
-/// stopping at the first match matters; folding it through a full-closure
-/// computation would make every one of those single-target queries pay for
-/// the whole reachable set and could newly exhaust
-/// [`MAX_CONFORMANCE_DEPTH`] on a wide graph a first-match query would
-/// never have walked far enough to hit. This function exists instead for a
-/// caller that already knows it needs the same source's answer against many
-/// candidates — [`crate::model::normalize`]'s phase-4 dominance resolution
-/// (QSL #145 / PR #144 review finding #4), which compares every contesting
-/// redefinition edge's owner against every other edge's owner and would
-/// otherwise re-walk this identical graph once per pair. `normalize` never
-/// calls this for a target group with fewer than two contesting edges —
-/// see its own module docs — so a wide but uncontested ancestry never
-/// exercises this walk at all.
-pub(super) fn ancestor_closure(
-    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
-    s: &ProducerKey,
-) -> Result<HashSet<ProducerKey>, ModelRefusal> {
-    let mut closure = HashSet::new();
-    let outcome = walk_ancestors(
-        generals_by_specific,
-        s,
-        "ancestor closure of",
-        |_current, general| {
-            closure.insert(general.clone());
-            ControlFlow::<()>::Continue(())
-        },
-    )?;
-    debug_assert!(matches!(outcome, ControlFlow::Continue(())));
-    Ok(closure)
 }
 
 /// `quire.model.conformance.multiplicity/v1`: does `from` conform to `to`?
