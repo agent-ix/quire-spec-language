@@ -21,7 +21,7 @@ use quire_spec_language::model::bundle::{
     ObjectTypeRecord,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::{EffectiveId, ProducerDigest, ProducerKey};
+use quire_spec_language::model::key::{EffectiveId, ProducerKey};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
@@ -193,12 +193,7 @@ fn l01_all_instances_selects_subtype_population_once() {
     };
 
     let mut meter_a = Meter::new(SCALAR_UNLIMITED);
-    let selected_a = match all_instances(
-        &bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter_a,
-    ) {
+    let selected_a = match all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter_a) {
         AllInstancesOutcome::Completed(set) => set,
         other => panic!("expected a completed M::A selection, got {other:?}"),
     };
@@ -239,12 +234,7 @@ fn l01_all_instances_selects_subtype_population_once() {
     );
 
     let mut meter_b = Meter::new(SCALAR_UNLIMITED);
-    let selected_b = match all_instances(
-        &bundle,
-        &binding,
-        &ProducerKey::fixture("model.B"),
-        &mut meter_b,
-    ) {
+    let selected_b = match all_instances(&binding, &ProducerKey::fixture("model.B"), &mut meter_b) {
         AllInstancesOutcome::Completed(set) => set,
         other => panic!("expected a completed M::B selection, got {other:?}"),
     };
@@ -296,12 +286,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
         ..SCALAR_UNLIMITED
     };
     let mut meter = Meter::new(limits);
-    let outcome = all_instances(
-        &bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter,
-    );
+    let outcome = all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter);
     let incomplete = match outcome {
         AllInstancesOutcome::Incomplete(incomplete) => incomplete,
         other => panic!("expected an incomplete result, got {other:?}"),
@@ -419,7 +404,6 @@ fn l03_lookup_undefined_mode() {
     };
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
         &rb,
@@ -444,7 +428,6 @@ fn l03_lookup_undefined_mode() {
     };
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
         &rc,
@@ -483,7 +466,6 @@ fn l03_lookup_empty_mode() {
     };
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
         &rb,
@@ -506,7 +488,6 @@ fn l03_lookup_empty_mode() {
     };
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
         &rc,
@@ -539,7 +520,6 @@ fn l03_lookup_refused_mode() {
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
         &rc,
@@ -578,7 +558,6 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.B"),
         &ra,
@@ -624,7 +603,6 @@ fn l04_lookup_foreign_universe_refuses() {
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
-        &bundle,
         &binding,
         &ProducerKey::fixture("model.A"),
         &rx,
@@ -724,12 +702,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
     assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let selected = match all_instances(
-        &bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter,
-    ) {
+    let selected = match all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter) {
         AllInstancesOutcome::Completed(set) => set,
         other => panic!("expected a completed selection, got {other:?}"),
     };
@@ -800,12 +773,7 @@ fn l06_cardinality_bound_and_incomplete() {
     };
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let outcome = all_instances(
-        &bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter,
-    );
+    let outcome = all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter);
     match outcome {
         AllInstancesOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::CardinalityOutOfBound);
@@ -833,7 +801,6 @@ fn l06_cardinality_bound_and_incomplete() {
         other => panic!("expected an admitted binding, got {other:?}"),
     };
     let incomplete_outcome = all_instances(
-        &bundle,
         &bounded,
         &ProducerKey::fixture("model.A"),
         &mut meter_incomplete,
@@ -849,130 +816,33 @@ fn l06_cardinality_bound_and_incomplete() {
     }
 }
 
-/// F1, but with its `ModelSelection` export's declared identity kept
-/// (`bundle.n01`) while its `digest` is a different value —
-/// `require_bundle_matches` now compares the whole admitted header, not just
-/// `export.identity`, so a query bundle whose declared identity collides
-/// with an admitted binding's, but whose digest does not, still refuses.
-fn fixture_f1_with_foreign_digest() -> Bundle {
-    let mut model_selection = ModelSelection::fixture("bundle.n01");
-    model_selection.export.digest = ProducerDigest::of_identity("bundle.n01-imposter");
-    Bundle::new(model_selection, fixture_f1().records)
-}
+// Round-3 review finding (PR #148): the prior fix cycle's
+// `require_bundle_matches` compared `all_instances`/`lookup`'s separate
+// `bundle` argument against the binding's admitted `ModelSelection` header
+// (identity, revision, digest), rather than against the binding's own
+// admitted `records`. Nothing in this crate verifies `export.digest`
+// against a bundle's actual `records` anywhere, and the test-only
+// `ModelSelection::fixture` derives that digest from the identity string
+// alone — so a caller could present a bundle with the exact admitted header
+// but different `records` (e.g. F1 with its `B -> A` generalization record
+// removed) and the header check would pass while `all_instances`/`lookup`
+// silently answered against the wrong content (`b1` dropping out of
+// `allInstances<M::A>(p)` instead of the query refusing).
+//
+// This is now unrepresentable, not merely refused: `all_instances` and
+// `lookup` no longer take a `bundle` argument at all (see the module docs'
+// "Binding/bundle correspondence"), so there is no way for a caller to
+// evaluate a query against anything other than the exact bundle
+// `admit_binding` admitted. The prior fix cycle's `fixture_f1_with_
+// foreign_digest` fixture and its query-time test are deleted along with
+// `require_bundle_matches` itself, rather than adapted — there is no longer
+// a second bundle parameter for either one to exercise. The reachable
+// sibling of this defect class — a `LookupKey` naming a foreign universe,
+// independent of which bundle is bound — stays covered by
+// `l04_lookup_foreign_universe_refuses` above, whose `LookupKey.key.universe`
+// field a caller can still set to anything regardless of the bound bundle.
 
-/// Review finding (PR #148): a [`PopulationBinding`] admitted against one
-/// bundle answered queries made with a different bundle's identity —
-/// `all_instances`/`lookup` never checked the query's own `bundle` argument
-/// against the binding they were handed. `require_bundle_matches` closes
-/// this by comparing the whole admitted `ModelSelection` header
-/// (`{authority, export: {identity, revision, digest}, contract_version}`),
-/// not just `export.identity`: both a foreign `modelIdentity` (a different
-/// bundle entirely) and a same-identity, foreign-header bundle (a colliding
-/// declared identity with a different `digest`) are refused before either
-/// function does anything else, and never place a charge. This is a header
-/// comparison, not a re-derived object universe: `require_bundle_matches`
-/// never calls `object_universe`/`build` on the query's own `bundle`, so a
-/// query never pays to re-normalize a bundle it may reject outright — see
-/// `require_bundle_matches`'s own doc comment for why an exact header match
-/// already implies an identical universe.
-///
-/// Mutation used (guard removed): deleted the
-/// `require_bundle_matches(bundle, binding)?` call from the head of
-/// `all_instances`, which let the foreign-bundle query fall through to
-/// `AllInstancesOutcome::Completed` instead of refusing — the
-/// `Refused(foreign_reference/foreign-model-selection)` assertion went red
-/// as expected, reverted.
-///
-/// Mutation used (identity-only comparison): in `require_bundle_matches`,
-/// narrowed `bundle.model_selection != binding.model_selection` to
-/// `bundle.model_selection.export.identity !=
-/// binding.model_selection.export.identity` — the same-identity,
-/// foreign-digest block below (`fixture_f1_with_foreign_digest`) went red as
-/// expected (returned `Completed` instead of `Refused`), reverted.
-#[test]
-#[trace("TC-198", "FR-153-AC-3")]
-fn l04_binding_admitted_against_one_bundle_refuses_a_foreign_bundle_query() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
-
-    // A different bundle's `modelIdentity` entirely (TC-198's own F1/other
-    // pairing) — the reviewer's own exploit shape: an admitted binding
-    // queried against a bundle it was never admitted against.
-    let foreign_bundle = fixture_other_universe();
-    let mut meter_all = Meter::new(SCALAR_UNLIMITED);
-    let all_outcome = all_instances(
-        &foreign_bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter_all,
-    );
-    match all_outcome {
-        AllInstancesOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
-        }
-        other => {
-            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
-        }
-    }
-    assert_eq!(meter_all.consumed(LimitKind::WorkUnits), 0);
-
-    let universe = object_universe(&bundle).unwrap().identity();
-    let a = type_id(&view, "model.A");
-    let rq = LookupKey {
-        static_type: ProducerKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "a1"),
-    };
-    let mut meter_lookup = Meter::new(SCALAR_UNLIMITED);
-    let lookup_outcome = lookup(
-        &foreign_bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &rq,
-        AbsenceMode::Empty,
-        &mut meter_lookup,
-    );
-    match lookup_outcome {
-        LookupOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
-        }
-        other => {
-            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
-        }
-    }
-    assert_eq!(meter_lookup.consumed(LimitKind::WorkUnits), 0);
-
-    // Same declared `modelIdentity`, different `ModelSelection` header (a
-    // foreign `digest`) — `require_bundle_matches` compares the whole header,
-    // not just `export.identity`, so this still refuses.
-    let foreign_digest_bundle = fixture_f1_with_foreign_digest();
-    assert_eq!(
-        foreign_digest_bundle.model_selection.export.identity,
-        bundle.model_selection.export.identity
-    );
-    let mut meter_digest = Meter::new(SCALAR_UNLIMITED);
-    let digest_outcome = all_instances(
-        &foreign_digest_bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter_digest,
-    );
-    match digest_outcome {
-        AllInstancesOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(refusal.cause, "foreign-model-selection");
-        }
-        other => {
-            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
-        }
-    }
-    assert_eq!(meter_digest.consumed(LimitKind::WorkUnits), 0);
-}
-
-/// TC-198's own admission-time `modelIdentity` check (distinct from
-/// `require_bundle_matches`'s query-time check above): a population document
+/// TC-198's own admission-time `modelIdentity` check: a population document
 /// naming a `modelIdentity` other than the admitting bundle's own refuses
 /// before any `binding.member` charge. Every other test in this file admits
 /// `p1("bundle.n01")` against `fixture_f1()`, whose own `modelIdentity` is
@@ -1167,12 +1037,7 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
     assert_eq!(binding.members().len(), 3);
 
     let mut meter_a = Meter::new(SCALAR_UNLIMITED);
-    let selected_a = match all_instances(
-        &bundle,
-        &binding,
-        &ProducerKey::fixture("model.A"),
-        &mut meter_a,
-    ) {
+    let selected_a = match all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter_a) {
         AllInstancesOutcome::Completed(set) => set,
         other => panic!("expected a completed M::A selection, got {other:?}"),
     };
