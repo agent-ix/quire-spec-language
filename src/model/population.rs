@@ -67,31 +67,12 @@
 //! guard against at query time: a query can only ever be evaluated against
 //! the exact bundle [`admit_binding`] admitted, by construction, not by a
 //! runtime comparison.
-//!
-//! An earlier revision of this module took a separate `bundle: &Bundle`
-//! argument on both query functions and refused when it didn't match the
-//! binding's own recorded header
-//! (`bundle.model_selection != binding.model_selection`). Review found that
-//! check unsound: nothing in this crate verifies `ModelSelection.export.digest`
-//! against a bundle's actual `records` anywhere (including at admission), and
-//! the test-only `ModelSelection::fixture` constructor derives the digest from
-//! the identity string alone — so a caller could present a bundle with the
-//! binding's exact admitted header (identity, revision, digest) but different
-//! `records`, and the header comparison would pass while the query silently
-//! answered against the wrong content (e.g. `all_instances` dropping a member
-//! whose only supporting generalization record the caller removed). FR-153's
-//! own Inputs clause already describes the population binding as carrying
-//! "the FR-150 effective view and ModelSelection" itself, with the query
-//! supplying only the requested type (and, for `lookup`, a key and absence
-//! mode) — never a second, independently suppliable bundle — so binding the
-//! bundle removes the unsound check by removing the parameter that made it
-//! necessary, rather than trying to make the comparison itself sound.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::diagnostic::Code;
-use crate::model::bundle::{Bundle, BundleRecord, ModelSelection};
+use crate::model::bundle::{Bundle, BundleRecord, GeneralizationRecord, ModelSelection};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::key::{EffectiveId, ProducerKey};
@@ -404,6 +385,16 @@ pub struct PopulationBinding {
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
+    /// `bundle`'s generalization records, indexed by `specific`, computed
+    /// once here rather than by [`all_instances`]/[`lookup`] on every call.
+    /// `value-accounting.md`'s "Model and graph evaluation" paragraph
+    /// already places the type-conformance decision this index serves
+    /// outside any charge ("...selects the member, without a charge, exactly
+    /// when that type conforms to `T`"), so this is a one-time efficiency
+    /// fix, not a new charge: the same "compute an index once at admission
+    /// instead of once per lookup" move [`admit_binding`] already makes for
+    /// `type_lookup`/`by_object` below.
+    generals: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
 }
 
 impl PopulationBinding {
@@ -438,11 +429,8 @@ impl PopulationBinding {
 /// The outcome of one [`admit_binding`] attempt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdmissionOutcome {
-    /// Every member was charged and admitted. Boxed: `PopulationBinding` now
-    /// carries the full `ModelSelection` header, not just an identity
-    /// `String`, which otherwise makes this the dominant variant by size
-    /// (`clippy::large_enum_variant`).
-    Admitted(Box<PopulationBinding>),
+    /// Every member was charged and admitted.
+    Admitted(PopulationBinding),
     /// A real defect refused admission outright; no binding.
     Refused(ModelRefusal),
     /// Object or subtype closure is not established. Not a refusal
@@ -454,10 +442,26 @@ pub enum AdmissionOutcome {
 
 /// Admits `document` against `bundle`/`view` into a [`PopulationBinding`],
 /// per FR-153's "Environment key and closure". Decides, without a charge and
-/// in order, the `modelIdentity` check, object closure and subtype closure;
-/// then charges `binding.member` for each member record in document order,
-/// deciding foreign-type and then duplicate-collapse/conflicting-identity
-/// after each charge. Stops at the first refusal or denied charge.
+/// in order, `view`'s correspondence to `bundle`, the `modelIdentity` check,
+/// object closure and subtype closure; then charges `binding.member` for
+/// each member record in document order, deciding foreign-type and then
+/// duplicate-collapse/conflicting-identity after each charge. Stops at the
+/// first refusal or denied charge.
+///
+/// `view` and `bundle` are supplied separately (`view` is FR-150's own
+/// already-normalized, already-charged effective view of `bundle`, computed
+/// by the caller under `ModelNormalizationLimitsV1` before this call), so
+/// nothing before this check ensures the two actually correspond: a caller
+/// could pass a `view` normalized from a different bundle than the one named
+/// here. Re-normalizing `bundle` here to check would duplicate the caller's
+/// own already-charged normalization work under the wrong meter (this
+/// module's own "Two independent meters" docs), so this compares the two
+/// values' own `model_selection` headers instead — the same closed-catalog
+/// `foreign_reference`/`foreign-model-selection` cause the `modelIdentity`
+/// check below already uses for a ModelSelection-key mismatch, and the same
+/// boundary this crate already trusts at that check (`export.identity`
+/// without content verification) — comparing the *full* header rather than
+/// only `export.identity` so a revision-only divergence is caught too.
 pub fn admit_binding(
     bundle: &Bundle,
     view: &EffectiveView,
@@ -466,6 +470,16 @@ pub fn admit_binding(
     declared_maximum: Option<u64>,
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
+    if view.model_selection != bundle.model_selection {
+        return AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: "foreign-model-selection",
+            detail: format!(
+                "effective view was normalized under model selection {}, not the admitting bundle's {}",
+                view.model_selection.export.identity, bundle.model_selection.export.identity
+            ),
+        });
+    }
     if document.model_identity != bundle.model_selection.export.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
@@ -518,6 +532,10 @@ pub fn admit_binding(
         .map(|entry| (entry.preimage.original.clone(), entry.effective_id.clone()))
         .collect();
 
+    // Computed once here rather than once per `all_instances`/`lookup` call;
+    // see the `generals` field's own doc comment.
+    let generals = generals_by_specific(bundle);
+
     let mut admitted: BTreeMap<ReferenceKey, ProducerKey> = BTreeMap::new();
     let mut by_object: BTreeMap<String, ReferenceKey> = BTreeMap::new();
     for (position, member) in document.members.iter().enumerate() {
@@ -566,12 +584,13 @@ pub fn admit_binding(
     // `binding.subset-value` is deliberately not walked here; see the module
     // docs' scope boundary.
 
-    AdmissionOutcome::Admitted(Box::new(PopulationBinding {
+    AdmissionOutcome::Admitted(PopulationBinding {
         bundle: Arc::new(bundle.clone()),
         universe,
         members: admitted,
         declared_maximum,
-    }))
+        generals,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -663,14 +682,13 @@ pub fn all_instances(
         });
     }
 
-    let generals = generals_by_specific(bundle);
     let mut selected: BTreeSet<ReferenceKey> = BTreeSet::new();
     for (key, original_type) in binding.members() {
         if let Err(incomplete) = meter.charge(ScalarCharge::new(ScalarChargePoint::PopulationVisit))
         {
             return AllInstancesOutcome::Incomplete(incomplete);
         }
-        match type_conforms(&generals, original_type, t) {
+        match type_conforms(&binding.generals, original_type, t) {
             Ok(true) => {
                 selected.insert(key.clone());
             }
@@ -797,8 +815,7 @@ pub fn lookup(
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
-    let generals = generals_by_specific(&binding.bundle);
-    match type_conforms(&generals, &r.static_type, t) {
+    match type_conforms(&binding.generals, &r.static_type, t) {
         Ok(true) => {}
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {
