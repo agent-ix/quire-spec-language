@@ -16,9 +16,15 @@
 //!    ([`TypeEnvironment::check_equality`]), FR-144 bounded
 //!    [`CollectionValue`]s ([`construct_collection`]) and FR-307 library
 //!    resolution [`resolve_libraries`] (QSL #119);
-//! 4. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
+//! 4. [`order_numbers`] compares [`Integer`]/[`Rational`]/[`Decimal`]
+//!    operands under one [`OrderingOperator`]; [`evaluate_integer_arithmetic`]
+//!    and [`evaluate_rational_arithmetic`] evaluate `+`, `-`, `*`, `/` over
+//!    [`IntegerArithmetic`]/[`RationalArithmetic`] operands, and
+//!    [`evaluate_boolean`] evaluates `&&`/`||`/`!` — all under
+//!    `quire.value.accounting/v1` (QSL #119);
+//! 5. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`] reasons;
-//! 5. `quire.value.accounting/v1` metering through [`Meter`].
+//! 6. `quire.value.accounting/v1` metering through [`Meter`].
 //!
 //! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
 //! operate on exact bit patterns with soft-float arithmetic over big integers.
