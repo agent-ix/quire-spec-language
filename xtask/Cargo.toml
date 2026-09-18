@@ -1,0 +1,24 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "Re-vendor resources/native-v1 and resources/complete-value from an explicit pinned commit (QSL #138); never resolves \"latest\" and never fetches over the network."
+
+[dependencies]
+quire-spec-language = { path = ".." }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151" }
+thiserror = "=2.0.20"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
