@@ -910,7 +910,6 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .and_then(|declaration| declaration.bindings.get(index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(handle.clone())))?;
         if offered.observation_contract_revision != OBSERVATION_CONTRACT_REVISION
-            || offered.static_selection.interface_version != "1.2.0"
             || !valid_identity(&offered.static_selection.document_identity)
             || !valid_identity(&offered.static_selection.model_identity)
             || !valid_identity(&offered.static_selection.profile_identity)
