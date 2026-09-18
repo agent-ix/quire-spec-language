@@ -129,11 +129,63 @@ pub enum CheckingLimitKind {
     Depth,
 }
 
+/// FR-272's closed `wrong_snapshot` cause list this crate decides for
+/// `pre(...)` (native-diagnostics.md: `wrong-observation`, `wrong-invocation`,
+/// `wrong-anchor` or `forbidden-pre-read`). Only the two causes `pre(...)`
+/// itself can name are represented; `wrong-observation` and
+/// `wrong-invocation` are catalogued for the native runtime's own
+/// snapshot-selection refusals (`src/runtime`), not this crate.
+///
+/// The two represented causes split by *layer*, not by clause: every
+/// checking-time refusal this crate's `Typer` decides over `pre(...)`'s own
+/// syntax -- wrong clause, ineligible operand, or a captured `let` alias
+/// (FR-208 applies FR-042 to invariants/preconditions and names this same
+/// cause explicitly) -- is [`Self::ForbiddenPreRead`]. [`Self::WrongAnchor`]
+/// is reserved for the one case the checker cannot see at all: a
+/// postcondition it did admit, evaluated at runtime
+/// (`evaluate.rs`'s `select_anchor`) over a population value with no
+/// attached pre binding.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum WrongSnapshotCause {
+    /// A postcondition's `pre(...)` evaluated over a `Value::Population`
+    /// with no attached pre anchor -- the caller supplied a population
+    /// admitted through `admit_binding` directly rather than through
+    /// `admit_invocation` (the only constructor that attaches one). A
+    /// runtime-only cause: the checker has no way to see, at checking time,
+    /// which admission path a caller's runtime argument will take.
+    WrongAnchor,
+    /// `pre(...)` written where the checked declaration does not admit it
+    /// at all (anywhere but an operation's postcondition -- shared-
+    /// grammar.md's "self, result and pre(...) are caller-side anchor
+    /// operations, unavailable as implicit ambient state inside a reusable
+    /// predicate"), or admitted but refused over its own operand: a bare
+    /// `Name`, literal, or a value already captured/computed outside this
+    /// `pre(...)`'s own operand (FR-042's Behavior clause: "Pre is refused
+    /// ... on bare parameters/constants/captures"; FR-042-AC-3's `let s =
+    /// self in pre(s.version)` analogue for a `let`-aliased state root) --
+    /// re-anchoring any of these would silently do nothing rather than
+    /// replay a real read under the pre observation.
+    ForbiddenPreRead,
+}
+
+impl WrongSnapshotCause {
+    /// The closed FR-272 cause tag.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::WrongAnchor => "wrong-anchor",
+            Self::ForbiddenPreRead => "forbidden-pre-read",
+        }
+    }
+}
+
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),
+    /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
+    /// written outside its admitted clause, or over an ineligible operand.
+    WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name`.
     MissingName(String),
     /// `ambiguous_declaration` / `ambiguous-name`, listing every locus of the
@@ -178,6 +230,7 @@ impl CheckCause {
     pub fn code(&self) -> Code {
         match self {
             Self::IllTyped(_) => Code::IllTyped,
+            Self::WrongSnapshot(_) => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
@@ -191,6 +244,7 @@ impl CheckCause {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::IllTyped(cause) => cause.tag(),
+            Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::MissingName(_) => Some("missing-name"),
             Self::AmbiguousName { .. } => Some("ambiguous-name"),
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),
