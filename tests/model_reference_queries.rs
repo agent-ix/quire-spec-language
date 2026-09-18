@@ -871,12 +871,14 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// checked static type `S` (`M::B`) must still conform to the queried `T`
 /// (`M::A`) for this probe to reach the bridge at all. Once it does, a
 /// 5-byte universe (never this model's own 32-byte
-/// `quire.model.object-universe/v1` digest) can only be bridged into a value
-/// that provably is not this binding's own universe
-/// (`crate::value::model_query::bridged_universe`'s bit-complement), so the
-/// single real `crate::model::population::lookup` decides it exactly as it
-/// would a genuinely foreign reference: one `lookup.key` charge, then
-/// `foreign-universe`.
+/// `quire.model.object-universe/v1` digest) can never be bridged into a
+/// well-formed key at all, so
+/// `crate::value::model_query::evaluate_unresolvable_lookup` decides it
+/// directly, without ever calling the real
+/// `crate::model::population::lookup` or substituting a derived value: the
+/// same `type_conforms` check, the same single `lookup.key` charge, then
+/// `foreign-universe` -- reporting the 5 bytes actually supplied, not a
+/// fabricated complement.
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit() {
@@ -921,9 +923,12 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
 /// A reference whose object-identity bytes are not valid UTF-8 can never
 /// name a real population member (every member's own identity is a JSON
 /// string, `crate::model::population::PopulationDocument`), so
-/// `crate::value::model_query::bridged_object`'s lossy fallback still lets
-/// the single real `lookup` decide absence -- `none` in `empty` mode --
-/// rather than a checked invariant.
+/// `crate::value::model_query::evaluate_unresolvable_lookup` decides absence
+/// directly -- `none` in `empty` mode -- without substituting a lossy-decoded
+/// string and delegating to the real `lookup`. This population happens to
+/// admit no member whose identity collides with that lossy decode; see
+/// [`lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member`]
+/// for the case where one does.
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
@@ -961,5 +966,176 @@ fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
             assert!(option.payload().is_none());
         }
         other => panic!("expected a completed none option, got {other:?}"),
+    }
+}
+
+/// PR #158 re-review finding 1 (HIGH): before this fix,
+/// `crate::value::model_query`'s identity bridge substituted a lossy UTF-8
+/// decode of a malformed reference's identity bytes and delegated to the
+/// real `lookup`, as if the reference had always carried that decoded
+/// string. `String::from_utf8_lossy(&[0xFF, 0xFE])` is
+/// `"\u{FFFD}\u{FFFD}"` (two U+FFFD replacement characters) -- a value a
+/// population is free to admit as a real member's own identity, so that
+/// substitution let a producer-supplied malformed reference (these same two
+/// invalid bytes) be mistaken for that real member, wrongly returning
+/// "present" in all three absence modes. This population admits exactly that
+/// member; `evaluate_unresolvable_lookup` must now see the malformed
+/// reference as absent in all three modes, never present.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
+fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
+    let bundle = fixture_f1();
+    let view = view_of(&bundle);
+    let universe = object_universe(&bundle).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.n01".to_owned(),
+        members: vec![
+            member("a1", "model.A"),
+            member("\u{FFFD}\u{FFFD}", "model.A"),
+        ],
+    };
+    let binding = admitted_binding(&bundle, &view, &document);
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding,
+    };
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.a))),
+    ];
+
+    let malformed_reference = ObjectReference::new(
+        UniverseIdentity::new(scenario.universe.as_bytes()).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
+    );
+    let object_world =
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+
+    let (undefined_outcome, _) = run(
+        &package,
+        &parameters,
+        &lookup(target.clone(), AbsenceMode::Undefined),
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(malformed_reference.clone()),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match undefined_outcome {
+        Outcome::Undefined(reason) => assert_eq!(reason, Undefined::AbsentKey),
+        other => panic!("expected Undefined(AbsentKey), got {other:?}"),
+    }
+
+    let (refused_outcome, _) = run(
+        &package,
+        &parameters,
+        &lookup(target.clone(), AbsenceMode::Refused),
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(malformed_reference.clone()),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match refused_outcome {
+        Outcome::Refused(refusal) => {
+            assert_eq!(refusal.code(), Some("invalid_runtime_input"));
+            assert_eq!(refusal.cause(), Some("absent-key"));
+        }
+        other => panic!("expected a refused absent-key lookup, got {other:?}"),
+    }
+
+    let (empty_outcome, _) = run(
+        &package,
+        &parameters,
+        &lookup(target.clone(), AbsenceMode::Empty),
+        vec![
+            Value::Population(Arc::new(scenario.binding.clone())),
+            Value::Reference(malformed_reference),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    match empty_outcome {
+        Outcome::Completed(Value::Option(option)) => {
+            assert_eq!(option.payload_type(), &target);
+            assert!(option.payload().is_none());
+        }
+        other => panic!("expected a completed none option, got {other:?}"),
+    }
+}
+
+/// PR #158 re-review finding 3 (LOW): `set[lookup<M::A>(p, r) absent
+/// refused]` preserves the looked-up reference's own runtime most-specific
+/// type inside the checked `Set<Reference<M::A>>` -- the collection's single
+/// element has `object_type` `M::B`, not `M::A`, even though the collection's
+/// declared/checked element type is `Reference<M::A>`. FR-143's identity
+/// triple and FR-153's Outputs both require the most-specific type (TC-198
+/// L01); `OptionValue::from_admitted`'s soundness chain (its own doc comment)
+/// is exactly why this collection-literal path is sound too --
+/// `crate::value::collection::from_admitted` bypasses `admits()` the same way
+/// for the identical reason.
+#[test]
+#[trace("TC-198", "FR-143", "FR-153-AC-5")]
+fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.b))),
+    ];
+    let expression = Expression::Collection {
+        kind: CollectionKind::Set,
+        elements: vec![lookup(target.clone(), AbsenceMode::Refused)],
+    };
+    let expected = ValueType::collection(CollectionType::new(
+        CollectionKind::Set,
+        target,
+        CardinalityBound::new(1, 1).unwrap(),
+    ));
+
+    let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
+    let checked = package
+        .check_expression(
+            parameters
+                .iter()
+                .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+                .collect(),
+            &expression,
+            Some(&expected),
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![
+                Value::Population(Arc::new(scenario.binding.clone())),
+                Value::Reference(present_reference.clone()),
+            ],
+            &objects(&scenario),
+            &mut meter,
+        )
+        .unwrap();
+    match evaluation.outcome {
+        Outcome::Completed(value) => {
+            let elements = reference_elements(&value);
+            assert_eq!(elements.len(), 1);
+            assert_eq!(elements[0], present_reference);
+            assert_eq!(elements[0].object_type(), node_key(&scenario.b));
+        }
+        other => panic!("expected a completed collection, got {other:?}"),
     }
 }
