@@ -163,6 +163,58 @@ fn fixture_n06_conflict_with_unreachable_redefiner() -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.n06e"), records)
 }
 
+/// `fixture_n06_conflict` (`D` conflicts on `A.x`) plus a second, unrelated
+/// diamond: root `M` (field `M.w`), `M1` and `M2` (both `<- M`,
+/// `M1.w1`/`M2.w2` redefine `M.w` -- sibling owners, neither dominating the
+/// other), and `B9` (`<- M1`, `<- M2`, so it inherits both undominated
+/// redefiners of `M.w`). `B9` sorts before `D`.
+fn fixture_n06_conflict_with_a_second_diamond_sorting_first() -> Bundle {
+    let mut records = fixture_n06_conflict().records;
+    records.push(object_type("model.M"));
+    records.push(object_type("model.M1"));
+    records.push(object_type("model.M2"));
+    records.push(object_type("model.B9"));
+    records.push(field_member("model.M.w", "model.M", "model.M"));
+    records.push(generalization("model.gen.M1-M", "model.M1", "model.M"));
+    records.push(generalization("model.gen.M2-M", "model.M2", "model.M"));
+    records.push(generalization("model.gen.B9-M1", "model.B9", "model.M1"));
+    records.push(generalization("model.gen.B9-M2", "model.B9", "model.M2"));
+    records.push(field_member("model.M1.w1", "model.M1", "model.M"));
+    records.push(field_member("model.M2.w2", "model.M2", "model.M"));
+    records.push(redefinition(
+        "model.redef.M1",
+        "model.M1",
+        "model.M1.w1",
+        "model.M.w",
+    ));
+    records.push(redefinition(
+        "model.redef.M2",
+        "model.M2",
+        "model.M2.w2",
+        "model.M.w",
+    ));
+    Bundle::new(ModelSelection::fixture("bundle.n06.two-diamonds"), records)
+}
+
+/// `E` (no generalization) with `redef.Ey` (`E`, `E.y` redefines `A.x`):
+/// `A.x` is not an effective member of `E`. `Da` (`<- E`) inherits the
+/// identical record and fails the identical check for the identical
+/// reason. `Da` sorts before `E` in `type_keys`' ascending identity order.
+fn fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.rank02"),
+        vec![
+            object_type("model.A"),
+            object_type("model.E"),
+            object_type("model.Da"),
+            field_member("model.A.x", "model.A", "model.A"),
+            generalization("model.gen.Da-E", "model.Da", "model.E"),
+            field_member("model.E.y", "model.E", "model.A"),
+            redefinition("model.redef.Ey", "model.E", "model.E.y", "model.A.x"),
+        ],
+    )
+}
+
 /// A second, independently-built instance of the same ranking shape as
 /// `fixture_n06_conflict_with_unreachable_redefiner`: the
 /// `normalize.conflict-check`-stage owner sorts before the
@@ -2598,5 +2650,71 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
             );
         }
         other => panic!("expected Refused(RedefinitionUnreachable) for K, got {other:?}"),
+    }
+}
+
+/// Two independent conflict-check-stage refusals: `B9`'s own dominance
+/// conflict over `M.w` and `D`'s own dominance conflict over `A.x`
+/// (`fixture_n06_conflict`). `normalize.conflict-check` charges per type,
+/// in `type_keys` order, and only then by target within that type
+/// (`value-accounting.md:456`; `model-complete.md:160` puts the owning
+/// type first in the effective member key), and `B9` sorts before `D`, so
+/// `B9`'s own conflict-check is charged first and `record_phase4_refusal`
+/// ranks its refusal ahead of `D`'s.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_conflict_check_refusal_ranks_by_type_before_target() {
+    let bundle = fixture_n06_conflict_with_a_second_diamond_sorting_first();
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: ProducerKey::fixture("model.B9"),
+                        member: ProducerKey::fixture("model.M.w"),
+                        redefiners: vec![
+                            ProducerKey::fixture("model.M1.w1"),
+                            ProducerKey::fixture("model.M2.w2"),
+                        ],
+                    },
+                    detail: "type model.B9 has 2 undominated redefinitions of model.M.w: \
+                              [model.gen.B9-M1, model.redef.M1, model.M.w] and \
+                              [model.gen.B9-M2, model.redef.M2, model.M.w]"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict) for B9, got {other:?}"),
+    }
+}
+
+/// `E`'s own resolution and `Da`'s own resolution (`Da <- E`) both fail the
+/// identical "target not an effective member" check for the identical
+/// record, so both rank identically -- `Da` sorts before `E`, but the
+/// refusal still names `E`, the record's own owning type, since the check
+/// always ranks and names the record's own owner, never the resolving
+/// `type_key`.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_descendant() {
+    let bundle = fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant();
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: ProducerKey::fixture("model.A.x"),
+                        owner: ProducerKey::fixture("model.E"),
+                    },
+                    detail: "redefinition target model.A.x is not an effective member of model.E"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) naming E, got {other:?}"),
     }
 }
