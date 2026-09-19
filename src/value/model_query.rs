@@ -71,7 +71,7 @@
 use std::collections::HashMap;
 
 use crate::diagnostic::Code;
-use crate::model::key::{EffectiveId, ProducerKey};
+use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     all_instances, conforms, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,
@@ -160,7 +160,7 @@ fn bridge_reference(reference: &ObjectReference) -> Result<ReferenceKey, Unbridg
 /// [`PopulationBinding::type_catalog`], built once per query rather than
 /// scanned linearly once per resolved type (`allInstances` resolves one
 /// type; `lookup` resolves two).
-fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, ProducerKey> {
+fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, DeclarationKey> {
     binding
         .type_catalog()
         .iter()
@@ -168,7 +168,7 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Producer
         .collect()
 }
 
-/// The queried type `t`'s original [`ProducerKey`], resolved from a checked
+/// The queried type `t`'s original [`DeclarationKey`], resolved from a checked
 /// `Reference<T>`'s `T` (a [`NodeKey`], the same 32 bytes as `t`'s
 /// `EffectiveId`) through `catalog` (see [`reverse_catalog`]). `Err` for a
 /// `T` the checked package declares but this particular runtime binding's
@@ -180,9 +180,9 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Producer
 /// the module docs -- runs the other way here too, since which types a
 /// *binding* declares is model data, not package data).
 fn resolve_target(
-    catalog: &HashMap<EffectiveId, ProducerKey>,
+    catalog: &HashMap<EffectiveId, DeclarationKey>,
     target: NodeKey,
-) -> Result<ProducerKey, Stop> {
+) -> Result<DeclarationKey, Stop> {
     let target_id = EffectiveId::from_digest_bytes(*target.as_bytes());
     catalog.get(&target_id).cloned().ok_or_else(|| {
         model_refusal(ModelRefusal {
@@ -319,8 +319,8 @@ fn hex_bytes(bytes: &[u8]) -> String {
 #[allow(clippy::too_many_arguments)]
 fn evaluate_unresolvable_lookup(
     binding: &PopulationBinding,
-    static_type: &ProducerKey,
-    target: &ProducerKey,
+    static_type: &DeclarationKey,
+    target: &DeclarationKey,
     reference: &ObjectReference,
     failure: Unbridgeable,
     absence: AbsenceMode,

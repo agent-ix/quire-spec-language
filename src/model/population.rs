@@ -9,7 +9,7 @@
 //! ambient registry: every query is answered from a caller-constructed
 //! [`PopulationDocument`] admitted into a [`PopulationBinding`] by
 //! [`admit_binding`], never from a process-global lookup, and resolution is
-//! always by declared identity (a [`ProducerKey`]/[`EffectiveId`]), never by
+//! always by declared identity (a [`DeclarationKey`]/[`EffectiveId`]), never by
 //! display name.
 //!
 //! # Two independent meters
@@ -58,18 +58,18 @@
 //! for: FR-143 defines a reference's `universe` and most-specific `type` as
 //! literally this crate's own `quire.model.object-universe/v1` and
 //! `quire.model.effective-declaration/v1` digests, so that bridge is a
-//! direct byte transfer between `EffectiveId`/`ProducerKey` and
+//! direct byte transfer between `EffectiveId`/`DeclarationKey` and
 //! `NodeKey`/`UniverseIdentity`, never a re-hash.
 //!
-//! # Binding/bundle correspondence
+//! # Binding/domain package correspondence
 //!
 //! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
-//! only constructor, and it stores the admitted `Bundle` itself (as an
-//! `Arc`, cheap to clone) alongside the universe that bundle normalized to.
-//! [`all_instances`] and [`lookup`] read that bound bundle — neither takes a
-//! separate `bundle` argument — so there is no mismatched-bundle class to
+//! only constructor, and it stores the admitted `DomainPackage` itself (as an
+//! `Arc`, cheap to clone) alongside the universe that domain package normalized to.
+//! [`all_instances`] and [`lookup`] read that bound domain package — neither takes a
+//! separate `domain_package` argument — so there is no mismatched-domain-package class to
 //! guard against at query time: a query can only ever be evaluated against
-//! the exact bundle [`admit_binding`] admitted, by construction, not by a
+//! the exact domain package [`admit_binding`] admitted, by construction, not by a
 //! runtime comparison.
 //!
 //! # Invocation admission
@@ -122,23 +122,24 @@
 //! data, not a new evaluation step.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::diagnostic::Code;
-use crate::model::bundle::{
-    Bundle, BundleRecord, GeneralizationRecord, ModelSelection, OperationEffect, SubsettingRecord,
-};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
-use crate::model::key::{EffectiveId, ProducerKey};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, OperationEffect,
+    SubsettingRecord, SupertypeRecord,
+};
+use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
@@ -384,7 +385,7 @@ pub struct ReferenceKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MemberFieldValues {
     /// The field's own original producer key.
-    pub field: ProducerKey,
+    pub field: DeclarationKey,
     /// The named objects' own declared identities, in declared order.
     pub values: Vec<String>,
 }
@@ -396,20 +397,22 @@ pub struct PopulationMember {
     /// The object's own declared identity.
     pub object: String,
     /// The member's declared most-specific type, as its original producer key.
-    pub type_identity: ProducerKey,
+    pub type_identity: DeclarationKey,
     /// This member's declared reference-valued field values, for FR-151's
     /// runtime subsetting check. Empty for a member that declares no
     /// subsetting-relevant field.
     pub field_values: Vec<MemberFieldValues>,
 }
 
-/// An FCD FR-121 population document: `{closed_world, model_identity, members}`.
+/// An FCD FR-121 population document: `{model_identity, members}`. The
+/// population's extent (FR-153, FR-208:50) is not part of this runtime
+/// document; it is declared once, statically, on the domain package's own
+/// [`crate::model::domain_package::PopulationRecord`], which [`admit_binding`]
+/// resolves from `domain_package.records` by key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationDocument {
-    /// Whether the document declares `closedWorld: true`.
-    pub closed_world: bool,
     /// The document's own declared `modelIdentity`, which must name the
-    /// binding's `ModelSelection` export identity.
+    /// binding's `DomainPackageRef` export identity.
     pub model_identity: String,
     /// Member records, in document order.
     pub members: Vec<PopulationMember>,
@@ -419,7 +422,7 @@ pub struct PopulationDocument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LookupKey {
     /// `r`'s own static type `S`.
-    pub static_type: ProducerKey,
+    pub static_type: DeclarationKey,
     /// `r`'s realized reference key.
     pub key: ReferenceKey,
 }
@@ -444,7 +447,7 @@ pub enum AbsenceMode {
 /// `member` declares no values for it. Shared by [`admit_binding`]'s
 /// `binding.subset-value` check and [`enforce_frame`]'s field-write check —
 /// both read exactly this same `PopulationMember.field_values` shape.
-fn values_of<'a>(member: &'a PopulationMember, field: &ProducerKey) -> &'a [String] {
+fn values_of<'a>(member: &'a PopulationMember, field: &DeclarationKey) -> &'a [String] {
     member
         .field_values
         .iter()
@@ -459,23 +462,23 @@ fn values_of<'a>(member: &'a PopulationMember, field: &ProducerKey) -> &'a [Stri
 ///
 /// Every field is private; [`admit_binding`] is this type's only
 /// constructor, so a caller cannot assemble a binding that was never checked
-/// against a bundle's `modelIdentity`, object closure or subtype closure —
-/// and, because the admitted bundle itself lives here, cannot later evaluate
-/// [`all_instances`]/[`lookup`] against any bundle other than the one that
-/// was checked (see the module docs' "Binding/bundle correspondence").
+/// against a domain package's `modelIdentity`, object closure or subtype closure —
+/// and, because the admitted domain package itself lives here, cannot later evaluate
+/// [`all_instances`]/[`lookup`] against any domain package other than the one that
+/// was checked (see the module docs' "Binding/domain package correspondence").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
-    /// The bundle this binding was admitted against. `Arc`, so cloning a
-    /// binding never re-clones the bundle's own records.
-    bundle: Arc<Bundle>,
+    /// The domain package this binding was admitted against. `Arc`, so cloning a
+    /// binding never re-clones the domain package's own records.
+    domain_package: Arc<DomainPackage>,
     /// This binding's own object universe, computed once at admission.
     universe: EffectiveId,
     /// Every admitted member, ascending by [`ReferenceKey`].
-    members: BTreeMap<ReferenceKey, ProducerKey>,
+    members: BTreeMap<ReferenceKey, DeclarationKey>,
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
-    /// `bundle`'s generalization records, indexed by `specific`, computed
+    /// `domain_package`'s supertype records, indexed by `specific`, computed
     /// once here rather than by [`all_instances`]/[`lookup`] on every call.
     /// `value-accounting.md`'s "Model and graph evaluation" paragraph
     /// already places the type-conformance decision this index serves
@@ -484,17 +487,17 @@ pub struct PopulationBinding {
     /// fix, not a new charge: the same "compute an index once at admission
     /// instead of once per lookup" move [`admit_binding`] already makes for
     /// `type_lookup`/`by_object` below.
-    generals: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
-    /// Every declared object type of `bundle`'s effective view, `ProducerKey`
+    generals: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    /// Every declared object type of `domain_package`'s effective view, `DeclarationKey`
     /// to its FR-150-derived [`EffectiveId`]. Computed once here from
     /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
     /// rather than discarded): the FR-143 reference-identity bridge
     /// (`crate::value::expression::model_query`) needs this exact
     /// correspondence to translate a checked `Reference<T>`'s `T`
     /// (a `crate::value::NodeKey`, the same 32 bytes as an `EffectiveId`)
-    /// back into the `ProducerKey` [`all_instances`]/[`lookup`] take, for
+    /// back into the `DeclarationKey` [`all_instances`]/[`lookup`] take, for
     /// every declared type, not only ones a current member happens to name.
-    type_catalog: BTreeMap<ProducerKey, EffectiveId>,
+    type_catalog: BTreeMap<DeclarationKey, EffectiveId>,
     /// FR-153's invocation pre population, attached only by
     /// [`admit_invocation`]: `pre(allInstances(p))`/`pre(lookup(p, r) absent
     /// m)` read this binding instead of `self` underneath a `pre(..)`
@@ -520,15 +523,15 @@ impl PopulationBinding {
     pub fn pre_anchor(&self) -> Option<&PopulationBinding> {
         self.pre_anchor.as_deref()
     }
-    /// The full `ModelSelection` header this binding was admitted against.
-    pub fn model_selection(&self) -> &ModelSelection {
-        &self.bundle.model_selection
+    /// The full `DomainPackageRef` header this binding was admitted against.
+    pub fn model_selection(&self) -> &DomainPackageRef {
+        &self.domain_package.model_selection
     }
 
-    /// The `ModelSelection` export identity this binding was admitted
+    /// The `DomainPackageRef` export identity this binding was admitted
     /// against.
     pub fn model_identity(&self) -> &str {
-        &self.bundle.model_selection.export.identity
+        &self.domain_package.model_selection.export.identity
     }
 
     /// This binding's own object universe.
@@ -537,7 +540,7 @@ impl PopulationBinding {
     }
 
     /// Every admitted member, ascending by [`ReferenceKey`].
-    pub fn members(&self) -> &BTreeMap<ReferenceKey, ProducerKey> {
+    pub fn members(&self) -> &BTreeMap<ReferenceKey, DeclarationKey> {
         &self.members
     }
 
@@ -548,9 +551,9 @@ impl PopulationBinding {
     }
 
     /// Every declared object type of the admitted effective view,
-    /// `ProducerKey` to its FR-150-derived [`EffectiveId`]; see the field's
+    /// `DeclarationKey` to its FR-150-derived [`EffectiveId`]; see the field's
     /// own doc comment.
-    pub fn type_catalog(&self) -> &BTreeMap<ProducerKey, EffectiveId> {
+    pub fn type_catalog(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
         &self.type_catalog
     }
 }
@@ -569,71 +572,108 @@ pub enum AdmissionOutcome {
     Incomplete(AdmissionIncomplete),
 }
 
-/// Admits `document` against `bundle`/`view` into a [`PopulationBinding`],
-/// per FR-153's "Environment key and closure". Decides, without a charge and
-/// in order, `view`'s correspondence to `bundle`, the `modelIdentity` check,
-/// object closure and subtype closure; then charges `binding.member` for
-/// each member record in document order, deciding foreign-type and then
-/// duplicate-collapse/conflicting-identity after each charge. Stops at the
-/// first refusal or denied charge.
+/// Admits `document` against `domain_package`/`view`/`population_key` into a
+/// [`PopulationBinding`], per FR-153's "Environment key and closure". Decides,
+/// without a charge and in order, `view`'s correspondence to `domain_package`,
+/// the `modelIdentity` check, `population_key`'s own resolution against
+/// `domain_package.records`, object closure (the resolved
+/// [`crate::model::domain_package::PopulationRecord::extent`]) and subtype
+/// closure; then charges
+/// `binding.member` for each member record in document order, deciding
+/// foreign-type and then duplicate-collapse/conflicting-identity after each
+/// charge. Stops at the first refusal or denied charge.
 ///
-/// `view` and `bundle` are supplied separately (`view` is FR-150's own
-/// already-normalized, already-charged effective view of `bundle`, computed
+/// `view` and `domain_package` are supplied separately (`view` is FR-150's own
+/// already-normalized, already-charged effective view of `domain_package`, computed
 /// by the caller under `ModelNormalizationLimitsV1` before this call), so
 /// nothing before this check ensures the two actually correspond: a caller
-/// could pass a `view` normalized from a different bundle than the one named
-/// here. Re-normalizing `bundle` here to check would duplicate the caller's
+/// could pass a `view` normalized from a different domain package than the one named
+/// here. Re-normalizing `domain_package` here to check would duplicate the caller's
 /// own already-charged normalization work under the wrong meter (this
 /// module's own "Two independent meters" docs), so this compares the two
 /// values' own `model_selection` headers instead — the same closed-catalog
 /// `foreign_reference`/`foreign-model-selection` cause the `modelIdentity`
-/// check below already uses for a ModelSelection-key mismatch, and the same
+/// check below already uses for a DomainPackageRef-key mismatch, and the same
 /// boundary this crate already trusts at that check (`export.identity`
 /// without content verification) — comparing the *full* header rather than
 /// only `export.identity` so a revision-only divergence is caught too.
+///
+/// `population_key` is a key, not a caller-supplied
+/// [`crate::model::domain_package::PopulationRecord`]:
+/// FR-153's "Its declaration key must belong to the binding's ModelSelection"
+/// means the population's declared extent is a fact of `domain_package`
+/// itself, never a value the caller states independently of it. This
+/// function resolves the record from `domain_package.records` and refuses
+/// `foreign_reference`/`foreign-model-selection` when no `Population` record
+/// there carries that key, so a caller cannot claim an extent, or select some
+/// other package's population declaration, that `domain_package` did not
+/// itself declare.
 pub fn admit_binding(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
+    population_key: &DeclarationKey,
     subtype_closure: GeneralizationClosure,
     declared_maximum: Option<u64>,
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
-    if view.model_selection != bundle.model_selection {
+    if view.model_selection != domain_package.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
                 actual: OfferedSelection::View(view.model_selection.clone()),
-                expected: bundle.model_selection.clone(),
+                expected: domain_package.model_selection.clone(),
             },
             detail: format!(
-                "effective view was normalized under model selection {}, not the admitting bundle's {}",
-                view.model_selection.export.identity, bundle.model_selection.export.identity
+                "effective view was normalized under model selection {}, not the admitting domain package's {}",
+                view.model_selection.export.identity, domain_package.model_selection.export.identity
             ),
         });
     }
-    if document.model_identity != bundle.model_selection.export.identity {
+    if document.model_identity != domain_package.model_selection.export.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
                 actual: OfferedSelection::Document(document.model_identity.clone()),
-                expected: bundle.model_selection.clone(),
+                expected: domain_package.model_selection.clone(),
             },
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",
-                document.model_identity, bundle.model_selection.export.identity
+                document.model_identity, domain_package.model_selection.export.identity
             ),
         });
     }
-    if !document.closed_world {
+    let Some(population) = domain_package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Population(population) if population.key == *population_key => {
+                Some(population)
+            }
+            _ => None,
+        })
+    else {
+        return AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: OfferedSelection::Population(population_key.clone()),
+                expected: domain_package.model_selection.clone(),
+            },
+            detail: format!(
+                "population key {} names no Population declaration of domain package {}",
+                population_key.identity, domain_package.model_selection.export.identity
+            ),
+        });
+    };
+    if population.extent != Extent::Closed {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::IncompleteScope {
-                selection: bundle.model_selection.export.identity.clone(),
+                selection: domain_package.model_selection.export.identity.clone(),
             },
             detail: format!(
-                "population document for {} does not declare closedWorld: true",
-                bundle.model_selection.export.identity
+                "population {} for {} does not declare extent: closed",
+                population.key.identity, domain_package.model_selection.export.identity
             ),
         });
     }
@@ -641,7 +681,7 @@ pub fn admit_binding(
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::UnclosedSubtypes {
-                selection: bundle.model_selection.export.identity.clone(),
+                selection: domain_package.model_selection.export.identity.clone(),
                 type_name: document
                     .members
                     .first()
@@ -649,7 +689,7 @@ pub fn admit_binding(
             },
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
-                bundle.model_selection.export.identity,
+                domain_package.model_selection.export.identity,
                 document
                     .members
                     .first()
@@ -659,7 +699,7 @@ pub fn admit_binding(
         });
     }
 
-    let universe = match object_universe(bundle) {
+    let universe = match object_universe(domain_package) {
         Ok(universe) => universe.identity(),
         Err(refusal) => return AdmissionOutcome::Refused(refusal),
     };
@@ -668,7 +708,7 @@ pub fn admit_binding(
     // `admitted` would otherwise each be linearly searched per member,
     // making admission O(n^2) against the O(n) `binding.member` charges it
     // records.
-    let type_lookup: BTreeMap<ProducerKey, EffectiveId> = view
+    let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view
         .declarations
         .iter()
         .filter(|entry| entry.preimage.owner_effective_type.is_none())
@@ -677,9 +717,9 @@ pub fn admit_binding(
 
     // Computed once here rather than once per `all_instances`/`lookup` call;
     // see the `generals` field's own doc comment.
-    let generals = generals_by_specific(bundle);
+    let generals = generals_by_specific(domain_package);
 
-    let mut admitted: BTreeMap<ReferenceKey, ProducerKey> = BTreeMap::new();
+    let mut admitted: BTreeMap<ReferenceKey, DeclarationKey> = BTreeMap::new();
     let mut by_object: BTreeMap<String, ReferenceKey> = BTreeMap::new();
     for (position, member) in document.members.iter().enumerate() {
         let k = length_amount(position + 1);
@@ -742,8 +782,8 @@ pub fn admit_binding(
     /// [`values_of`]'s `find` keeps only the first matching entry, so an
     /// unrejected duplicate would silently discard the others rather than
     /// refusing.
-    fn duplicate_field(member: &PopulationMember) -> Option<&ProducerKey> {
-        let mut seen: Vec<&ProducerKey> = Vec::new();
+    fn duplicate_field(member: &PopulationMember) -> Option<&DeclarationKey> {
+        let mut seen: Vec<&DeclarationKey> = Vec::new();
         for entry in &member.field_values {
             if seen.iter().any(|existing| **existing == entry.field) {
                 return Some(&entry.field);
@@ -753,11 +793,11 @@ pub fn admit_binding(
         None
     }
 
-    let subsetting_records: Vec<&SubsettingRecord> = bundle
+    let subsetting_records: Vec<&SubsettingRecord> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            BundleRecord::Subsetting(subsetting) => Some(subsetting),
+            DomainPackageRecord::Subsetting(subsetting) => Some(subsetting),
             _ => None,
         })
         .collect();
@@ -834,7 +874,7 @@ pub fn admit_binding(
     }
 
     AdmissionOutcome::Admitted(PopulationBinding {
-        bundle: Arc::new(bundle.clone()),
+        domain_package: Arc::new(domain_package.clone()),
         universe,
         members: admitted,
         declared_maximum,
@@ -850,16 +890,21 @@ pub fn admit_binding(
 // ---------------------------------------------------------------------------
 
 /// [`admit_invocation`]'s shared admission context for its pre and post
-/// bindings: the same bundle, effective view, subtype closure and declared
-/// maximum -- the same population role, admitted at the invocation's two
-/// instants. Grouped into one type rather than four parameters so
-/// `admit_invocation` stays within this crate's argument-count convention.
+/// bindings: the same domain package, effective view, population declaration,
+/// subtype closure and declared maximum -- the same population role,
+/// admitted at the invocation's two instants. Grouped into one type rather
+/// than five parameters so `admit_invocation` stays within this crate's
+/// argument-count convention.
 #[derive(Clone, Copy)]
 pub struct InvocationContext<'a> {
-    /// The bundle both instants are admitted against.
-    pub bundle: &'a Bundle,
-    /// The bundle's already-normalized, already-charged effective view.
+    /// The domain package both instants are admitted against.
+    pub domain_package: &'a DomainPackage,
+    /// The domain package's already-normalized, already-charged effective view.
     pub view: &'a EffectiveView,
+    /// The population role's own declaration key, resolved against
+    /// `domain_package.records` by each [`admit_binding`] call
+    /// ([`admit_binding`]'s own `population_key` doc).
+    pub population: &'a DeclarationKey,
     /// The model selection's subtype closure.
     pub subtype_closure: GeneralizationClosure,
     /// The population role's declared maximum, or `None`.
@@ -888,8 +933,9 @@ pub struct InvocationDelta<'a> {
 }
 
 /// Admits one operation invocation's pre and post [`PopulationDocument`]s
-/// against the same `bundle`/`view`/`subtype_closure`/`declared_maximum`
-/// (the same population role, at the invocation's two instants), then
+/// against the same `domain_package`/`view`/`population`/`subtype_closure`/
+/// `declared_maximum` (the same population role, at the invocation's two
+/// instants), then
 /// enforces `declared.effect`'s FR-151 frame
 /// (`quire.model.conformance.effect/v1`) against the two bindings' created
 /// and deleted identities and their surviving members' declared field
@@ -955,9 +1001,10 @@ pub fn admit_invocation(
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
     let pre = match admit_binding(
-        context.bundle,
+        context.domain_package,
         context.view,
         pre_document,
+        context.population,
         context.subtype_closure,
         context.declared_maximum,
         pre_meter,
@@ -966,9 +1013,10 @@ pub fn admit_invocation(
         other => return other,
     };
     let post = match admit_binding(
-        context.bundle,
+        context.domain_package,
         context.view,
         post_document,
+        context.population,
         context.subtype_closure,
         context.declared_maximum,
         post_meter,
@@ -1010,14 +1058,14 @@ fn delta_mismatch(cause: ModelRefusalCause, detail: String) -> ModelRefusal {
 /// declared order, so a producer that re-serializes an unordered field in a
 /// different order between pre and post is not a frame violation. Defaults
 /// to `true` (order-sensitive) when `field` has no `FieldMemberRecord` in
-/// `bundle` -- the strict, pre-existing comparison -- since an absent record
+/// `domain_package` -- the strict, pre-existing comparison -- since an absent record
 /// gives this function no positive basis to relax it.
-fn field_ordered(bundle: &Bundle, field: &ProducerKey) -> bool {
-    bundle
+fn field_ordered(domain_package: &DomainPackage, field: &DeclarationKey) -> bool {
+    domain_package
         .records
         .iter()
         .find_map(|record| match record {
-            BundleRecord::FieldMember(member) if member.key == *field => {
+            DomainPackageRecord::FieldMember(member) if member.key == *field => {
                 Some(member.multiplicity.ordered)
             }
             _ => None,
@@ -1032,12 +1080,12 @@ fn field_ordered(bundle: &Bundle, field: &ProducerKey) -> bool {
 /// values are already unique by construction, so multiset equality reduces
 /// to set equality for it without a separate case.
 fn field_values_equal(
-    bundle: &Bundle,
-    field: &ProducerKey,
+    domain_package: &DomainPackage,
+    field: &DeclarationKey,
     pre: &[String],
     post: &[String],
 ) -> bool {
-    if field_ordered(bundle, field) {
+    if field_ordered(domain_package, field) {
         return pre == post;
     }
     let mut pre = pre.to_vec();
@@ -1048,7 +1096,7 @@ fn field_values_equal(
 }
 
 /// Walks `field`'s redefinition chain (`redefining -> redefined`, one
-/// `BundleRecord::Redefinition` hop at a time), returning `true` as soon as
+/// `DomainPackageRecord::Redefinition` hop at a time), returning `true` as soon as
 /// `admits` accepts `field` itself or some ancestor it reaches, `false` once
 /// the chain ends with no accepted link. model-complete.md:56: the
 /// redefining feature replaces "the *one* inherited redefined feature", so a
@@ -1062,15 +1110,15 @@ fn field_values_equal(
 ///
 /// Bounded by `records.len()` hops (an acyclic chain can never visit more
 /// distinct fields than there are records at all) and refuses -- stops and
-/// returns `false`, never loops -- past that bound, so a malformed bundle
+/// returns `false`, never loops -- past that bound, so a malformed domain package
 /// with a redefinition cycle cannot hang this walk.
 ///
 /// Shared by [`field_write_covered`] here and by
 /// `crate::model::conformance`'s effect-escape check
 /// (`check_operation_redefinition`'s "Effect" axis). Taking a
-/// [`BundleRecord`] slice rather than a whole [`Bundle`] lets either call
-/// site pass its own already-available `&bundle.records`. Equality is
-/// `ProducerKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
+/// [`DomainPackageRecord`] slice rather than a whole [`DomainPackage`] lets either call
+/// site pass its own already-available `&domain_package.records`. Equality is
+/// `DeclarationKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
 /// `digest`, all four) at both call sites -- a write naming a field at one
 /// revision does not reach a grant for the same identity at a different
 /// revision. Pinned by
@@ -1079,9 +1127,9 @@ fn field_values_equal(
 /// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name`
 /// at the `conformance` call site (`tests/model_conformance.rs`).
 pub(super) fn redefinition_reaches(
-    records: &[BundleRecord],
-    field: &ProducerKey,
-    admits: impl Fn(&ProducerKey) -> bool,
+    records: &[DomainPackageRecord],
+    field: &DeclarationKey,
+    admits: impl Fn(&DeclarationKey) -> bool,
 ) -> bool {
     let mut current = field.clone();
     let bound = records.len();
@@ -1090,7 +1138,9 @@ pub(super) fn redefinition_reaches(
             return true;
         }
         let Some(redefined) = records.iter().find_map(|record| match record {
-            BundleRecord::Redefinition(redefinition) if redefinition.redefining == current => {
+            DomainPackageRecord::Redefinition(redefinition)
+                if redefinition.redefining == current =>
+            {
                 Some(redefinition.redefined.clone())
             }
             _ => None,
@@ -1110,8 +1160,12 @@ pub(super) fn redefinition_reaches(
 /// writes against its redefined ancestor's. Walks the full chain
 /// ([`redefinition_reaches`]), not just one hop: `modifies: [model.A.x]`
 /// covers a write to `model.C.x` through `model.C.x -> model.B.x -> model.A.x`.
-fn field_write_covered(bundle: &Bundle, effect: &OperationEffect, field: &ProducerKey) -> bool {
-    redefinition_reaches(&bundle.records, field, |candidate| {
+fn field_write_covered(
+    domain_package: &DomainPackage,
+    effect: &OperationEffect,
+    field: &DeclarationKey,
+) -> bool {
+    redefinition_reaches(&domain_package.records, field, |candidate| {
         effect.modifies.contains(candidate)
     })
 }
@@ -1148,13 +1202,13 @@ fn enforce_frame(
     post_document: &PopulationDocument,
     declared: &InvocationDelta<'_>,
 ) -> Result<(), ModelRefusal> {
-    let bundle = &pre.bundle;
-    let pre_by_object: BTreeMap<&str, (&ReferenceKey, &ProducerKey)> = pre
+    let domain_package = &pre.domain_package;
+    let pre_by_object: BTreeMap<&str, (&ReferenceKey, &DeclarationKey)> = pre
         .members()
         .iter()
         .map(|(key, type_identity)| (key.object.as_str(), (key, type_identity)))
         .collect();
-    let post_by_object: BTreeMap<&str, (&ReferenceKey, &ProducerKey)> = post
+    let post_by_object: BTreeMap<&str, (&ReferenceKey, &DeclarationKey)> = post
         .members()
         .iter()
         .map(|(key, type_identity)| (key.object.as_str(), (key, type_identity)))
@@ -1248,16 +1302,16 @@ fn enforce_frame(
         let Some(&post_member) = post_members_by_object.get(pre_member.object.as_str()) else {
             continue; // Deleted; already decided above.
         };
-        let mut fields: BTreeSet<&ProducerKey> = BTreeSet::new();
+        let mut fields: BTreeSet<&DeclarationKey> = BTreeSet::new();
         fields.extend(pre_member.field_values.iter().map(|entry| &entry.field));
         fields.extend(post_member.field_values.iter().map(|entry| &entry.field));
         for field in fields {
             let pre_values = values_of(pre_member, field);
             let post_values = values_of(post_member, field);
-            if field_values_equal(bundle, field, pre_values, post_values) {
+            if field_values_equal(domain_package, field, pre_values, post_values) {
                 continue;
             }
-            if field_write_covered(bundle, declared.effect, field) {
+            if field_write_covered(domain_package, declared.effect, field) {
                 continue;
             }
             return Err(frame_violation(
@@ -1345,14 +1399,14 @@ fn check_declared_delta(
 /// rather than `crate::value::Value::Reference`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReferenceSet {
-    element_type: ProducerKey,
+    element_type: DeclarationKey,
     bound: CardinalityBound,
     members: BTreeSet<ReferenceKey>,
 }
 
 impl ReferenceSet {
     /// The queried type `T`.
-    pub fn element_type(&self) -> &ProducerKey {
+    pub fn element_type(&self) -> &DeclarationKey {
         &self.element_type
     }
 
@@ -1389,24 +1443,23 @@ pub enum AllInstancesOutcome {
     Incomplete(ScalarIncomplete),
 }
 
-fn is_object_type(bundle: &Bundle, key: &ProducerKey) -> bool {
-    bundle
-        .records
-        .iter()
-        .any(|record| matches!(record, BundleRecord::ObjectType(object) if &object.key == key))
+fn is_object_type(domain_package: &DomainPackage, key: &DeclarationKey) -> bool {
+    domain_package.records.iter().any(
+        |record| matches!(record, DomainPackageRecord::ObjectType(object) if &object.key == key),
+    )
 }
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
 /// conforms to `t`, once by reference key, in canonical reference-key order.
 /// `binding.members()` already iterates in that order. Evaluated entirely
-/// against `binding`'s own admitted bundle — there is no separate `bundle`
-/// argument to mismatch (see the module docs' "Binding/bundle correspondence").
+/// against `binding`'s own admitted domain package — there is no separate `domain_package`
+/// argument to mismatch (see the module docs' "Binding/domain package correspondence").
 pub fn all_instances(
     binding: &PopulationBinding,
-    t: &ProducerKey,
+    t: &DeclarationKey,
     meter: &mut ScalarMeter,
 ) -> AllInstancesOutcome {
-    let bundle = &*binding.bundle;
+    let domain_package = &*binding.domain_package;
     let Some(declared_maximum) = binding.declared_maximum() else {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
@@ -1414,7 +1467,7 @@ pub fn all_instances(
             detail: "population binding has no declared maximum".to_owned(),
         });
     };
-    if !is_object_type(bundle, t) {
+    if !is_object_type(domain_package, t) {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
@@ -1490,18 +1543,18 @@ pub fn all_instances(
 /// the query's declared static type `T`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedReference {
-    queried_type: ProducerKey,
+    queried_type: DeclarationKey,
     key: ReferenceKey,
 }
 
 impl TypedReference {
     /// A reference to `key`, typed as `queried_type` (`T`).
-    pub fn new(queried_type: ProducerKey, key: ReferenceKey) -> Self {
+    pub fn new(queried_type: DeclarationKey, key: ReferenceKey) -> Self {
         Self { queried_type, key }
     }
 
     /// The queried type `T`.
-    pub fn queried_type(&self) -> &ProducerKey {
+    pub fn queried_type(&self) -> &DeclarationKey {
         &self.queried_type
     }
 
@@ -1548,12 +1601,12 @@ fn charge_result_retain(meter: &mut ScalarMeter, occ: u64) -> Result<(), ScalarI
 /// absent `empty`-mode result still retains 1 (the `none` wrapper alone),
 /// while an absent `undefined`/`refused`-mode result retains nothing at all
 /// — verified against TC-198 L03's three absence-mode vectors. Evaluated
-/// entirely against `binding`'s own admitted bundle — there is no separate
-/// `bundle` argument to mismatch (see the module docs' "Binding/bundle
+/// entirely against `binding`'s own admitted domain package — there is no separate
+/// `domain_package` argument to mismatch (see the module docs' "Binding/domain package
 /// correspondence").
 pub fn lookup(
     binding: &PopulationBinding,
-    t: &ProducerKey,
+    t: &DeclarationKey,
     r: &LookupKey,
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
@@ -1640,8 +1693,8 @@ pub fn lookup(
 /// `PopulationBinding` exists.
 pub(crate) fn conforms(
     binding: &PopulationBinding,
-    s: &ProducerKey,
-    t: &ProducerKey,
+    s: &DeclarationKey,
+    t: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {
     type_conforms(&binding.generals, s, t)
 }

@@ -1,25 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The producer interface `1.3.0` bundle: FR-150's normalization input.
+//! The producer interface `1.3.0` domain package: FR-150's normalization input.
 //!
-//! QSL does not (yet) receive this bundle from a live Semantic IR 2.0.0
+//! QSL does not (yet) receive this domain package from a live Semantic IR 2.0.0
 //! intake (`filament-core-data#173`, unmerged); the shape below is the
 //! `model-effective-declaration.schema.json`/`model-complete.md` producer
-//! bundle exactly as the correspondence defines it, so normalization built
+//! domain package exactly as the correspondence defines it, so normalization built
 //! against it needs no rewrite once a real intake supplies one. This module
-//! owns no registry: a [`Bundle`] is a value the caller passes in and
+//! owns no registry: a [`DomainPackage`] is a value the caller passes in and
 //! [`crate::model::normalize`] consumes; nothing here is reachable except
 //! through that value.
 
-use crate::model::key::{ProducerDigest, ProducerKey, Revision};
+use crate::model::key::{DeclarationKey, ProducerDigest, Revision};
 use crate::value::OrderingOperator;
 
 /// The one contract version this rung normalizes (`model-complete.md`).
 pub const INTERFACE_VERSION_1_3_0: &str = "1.3.0";
-
-/// The prior contract version this rung recognizes but cannot normalize: it
-/// yields the fixed `unsupplied-producer-record` refusal sequence FR-150
-/// defines (TC-195 N08), not an `unknown_wire` refusal (PR #140 F4).
-pub const INTERFACE_VERSION_1_2_0: &str = "1.2.0";
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,38 +32,38 @@ pub struct Multiplicity {
 /// An object type export: `{key, interfaceFeatures}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
-    /// This type's original producer key.
-    pub key: ProducerKey,
+    /// This type's original declaration key.
+    pub key: DeclarationKey,
     /// `Some(features)` when the producer supplies `interfaceFeatures`
     /// (FR-152's Interface kind), `None` when it does not. `Some(vec![])`
     /// is a real, valid interface with zero declared features; the
     /// distinction from `None` is the capability itself, not emptiness.
-    pub interface_features: Option<Vec<ProducerKey>>,
+    pub interface_features: Option<Vec<DeclarationKey>>,
 }
 
 /// A field member of an object type: `{key, owner, value_type, multiplicity}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldMemberRecord {
-    /// This member's own original producer key.
-    pub key: ProducerKey,
-    /// The owning object type's original producer key.
-    pub owner: ProducerKey,
-    /// The declared value type's original producer key.
-    pub value_type: ProducerKey,
+    /// This member's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning object type's original declaration key.
+    pub owner: DeclarationKey,
+    /// The declared value type's original declaration key.
+    pub value_type: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
 }
 
-/// A generalization record: `{key, specific, general}` (`specific`
+/// A supertype record: `{key, specific, general}` (`specific`
 /// generalizes to `general`; `specific` is the more derived type).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GeneralizationRecord {
-    /// This record's own original producer key.
-    pub key: ProducerKey,
-    /// The specific (more derived) type's original producer key.
-    pub specific: ProducerKey,
-    /// The general (less derived) type's original producer key.
-    pub general: ProducerKey,
+pub struct SupertypeRecord {
+    /// This record's own original declaration key.
+    pub key: DeclarationKey,
+    /// The specific (more derived) type's original declaration key.
+    pub specific: DeclarationKey,
+    /// The general (less derived) type's original declaration key.
+    pub general: DeclarationKey,
 }
 
 /// A scalar type export bound to a closed `Int[lower,upper]` domain
@@ -78,8 +73,8 @@ pub struct GeneralizationRecord {
 /// for a scalar redefinition, not a general scalar type system.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarTypeRecord {
-    /// This type's own original producer key.
-    pub key: ProducerKey,
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
     /// Inclusive lower bound.
     pub lower: i64,
     /// Inclusive upper bound.
@@ -89,10 +84,10 @@ pub struct ScalarTypeRecord {
 /// One operation parameter: `{key, value_type, multiplicity}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationParameterRecord {
-    /// This parameter's own original producer key.
-    pub key: ProducerKey,
-    /// The declared parameter value type's original producer key.
-    pub value_type: ProducerKey,
+    /// This parameter's own original declaration key.
+    pub key: DeclarationKey,
+    /// The declared parameter value type's original declaration key.
+    pub value_type: DeclarationKey,
     /// The declared parameter multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -101,8 +96,8 @@ pub struct OperationParameterRecord {
 /// entirely when the operation has no result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationResult {
-    /// The declared result value type's original producer key.
-    pub value_type: ProducerKey,
+    /// The declared result value type's original declaration key.
+    pub value_type: DeclarationKey,
     /// The declared result multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -112,11 +107,11 @@ pub struct OperationResult {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OperationEffect {
     /// Field members this operation writes.
-    pub modifies: Vec<ProducerKey>,
+    pub modifies: Vec<DeclarationKey>,
     /// Object types this operation creates.
-    pub creates: Vec<ProducerKey>,
+    pub creates: Vec<DeclarationKey>,
     /// Object types this operation deletes.
-    pub deletes: Vec<ProducerKey>,
+    pub deletes: Vec<DeclarationKey>,
 }
 
 /// One postcondition clause an operation's own postcondition declares about
@@ -125,7 +120,7 @@ pub struct OperationEffect {
 /// ordering between `self.<field>` and an integer literal.
 ///
 /// FR-146's expression parser is out of scope for `crate::model`, which
-/// normalizes and checks a caller-constructed [`Bundle`] only and never
+/// normalizes and checks a caller-constructed [`DomainPackage`] only and never
 /// parses producer-supplied expression text. A postcondition clause is
 /// therefore not parsed here: the caller states one accepted single-relation
 /// guard form directly, as this typed value. What that clause actually
@@ -146,12 +141,12 @@ pub enum PostconditionClause {
     /// `present(self.<field>)`.
     Presence {
         /// The field the postcondition establishes presence for.
-        field: ProducerKey,
+        field: DeclarationKey,
     },
     /// `self.<field> <operator> <literal>`, e.g. `self.cs <= 5`.
     Comparison {
         /// The field the postcondition relates to `literal`.
-        field: ProducerKey,
+        field: DeclarationKey,
         /// The stated ordering between `self.<field>` and `literal`.
         operator: OrderingOperator,
         /// The integer literal `self.<field>` is compared against.
@@ -161,7 +156,7 @@ pub enum PostconditionClause {
 
 impl PostconditionClause {
     /// The field this clause is about.
-    pub fn field(&self) -> &ProducerKey {
+    pub fn field(&self) -> &DeclarationKey {
         match self {
             Self::Presence { field } | Self::Comparison { field, .. } => field,
         }
@@ -171,10 +166,10 @@ impl PostconditionClause {
 /// An operation member of an object type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
-    /// This member's own original producer key.
-    pub key: ProducerKey,
-    /// The owning object type's original producer key (the receiver type).
-    pub owner: ProducerKey,
+    /// This member's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning object type's original declaration key (the receiver type).
+    pub owner: DeclarationKey,
     /// Declared parameters, in signature order.
     pub parameters: Vec<OperationParameterRecord>,
     /// Declared result, or `None` when the operation has no result.
@@ -200,26 +195,26 @@ pub struct OperationMemberRecord {
 /// declares `redefining`, which redefines the inherited `redefined` member.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RedefinitionRecord {
-    /// This record's own original producer key.
-    pub key: ProducerKey,
+    /// This record's own original declaration key.
+    pub key: DeclarationKey,
     /// The redefining member's owning object type.
-    pub owner: ProducerKey,
-    /// The redefining (more derived) member's original producer key.
-    pub redefining: ProducerKey,
-    /// The redefined (inherited) member's original producer key.
-    pub redefined: ProducerKey,
+    pub owner: DeclarationKey,
+    /// The redefining (more derived) member's original declaration key.
+    pub redefining: DeclarationKey,
+    /// The redefined (inherited) member's original declaration key.
+    pub redefined: DeclarationKey,
 }
 
 /// FCD FR-114 component record: FR-152's Part candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComponentRecord {
-    /// This component's own original producer key.
-    pub key: ProducerKey,
-    /// The owning composite type's original producer key
+    /// This component's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning composite type's original declaration key
     /// (`owningTypeIdentity`).
-    pub owning_type: ProducerKey,
-    /// The declared part type's original producer key (`typeIdentity`).
-    pub value_type: ProducerKey,
+    pub owning_type: DeclarationKey,
+    /// The declared part type's original declaration key (`typeIdentity`).
+    pub value_type: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
     /// Whether the producer supplies the `part-signature` capability
@@ -241,13 +236,13 @@ pub enum PortDirection {
 /// FCD FR-114 endpoint record: FR-152's Port candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EndpointRecord {
-    /// This endpoint's own original producer key.
-    pub key: ProducerKey,
-    /// The owning component's original producer key
+    /// This endpoint's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning component's original declaration key
     /// (`owningComponentIdentity`).
-    pub owning_component: ProducerKey,
-    /// The declared interface type's original producer key (`typeIdentity`).
-    pub value_type: ProducerKey,
+    pub owning_component: DeclarationKey,
+    /// The declared interface type's original declaration key (`typeIdentity`).
+    pub value_type: DeclarationKey,
     /// `Some(direction)` when the producer supplies the `port-direction`
     /// capability (FR-152's Port kind requires it); `None` when it does not.
     pub direction: Option<PortDirection>,
@@ -262,7 +257,7 @@ pub struct EndpointRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipEnd {
     /// The named producer key.
-    pub type_identity: ProducerKey,
+    pub type_identity: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -285,8 +280,8 @@ pub enum RelationshipDirection {
 /// with no kind.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
-    /// This relationship's own original producer key.
-    pub key: ProducerKey,
+    /// This relationship's own original declaration key.
+    pub key: DeclarationKey,
     /// The source end.
     pub source: RelationshipEnd,
     /// The target end.
@@ -304,25 +299,55 @@ pub struct RelationshipRecord {
 /// declares `subsetting`, whose runtime values are a subset of `subsetted`'s.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubsettingRecord {
-    /// This record's own original producer key.
-    pub key: ProducerKey,
+    /// This record's own original declaration key.
+    pub key: DeclarationKey,
     /// The subsetting member's owning object type.
-    pub owner: ProducerKey,
-    /// The subsetting feature's original producer key.
-    pub subsetting: ProducerKey,
-    /// The subsetted feature's original producer key.
-    pub subsetted: ProducerKey,
+    pub owner: DeclarationKey,
+    /// The subsetting feature's original declaration key.
+    pub subsetting: DeclarationKey,
+    /// The subsetted feature's original declaration key.
+    pub subsetted: DeclarationKey,
 }
 
-/// One producer record, in the bundle's declared order.
+/// FR-153's population declaration extent: `closed` or `open`. Object
+/// closure holds exactly when a population's extent is `closed`
+/// (FR-153:68); `open` is admission's own `incomplete_population`
+/// unknown-closure case for object closure, distinct from
+/// [`GeneralizationClosure`](crate::model::dispatch::GeneralizationClosure)'s
+/// subtype closure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Extent {
+    /// The population's object closure holds.
+    Closed,
+    /// The population's object closure does not hold.
+    Open,
+}
+
+/// An FR-153/FR-208:50 population declaration record: `{key, member_types,
+/// extent}`. Lists the population's declared member types and carries one
+/// population-level `extent`; a member type carries no multiplicity of its
+/// own here — the declared maximum `N` stays on the binding
+/// ([`crate::model::population::admit_binding`]'s own `declared_maximum`
+/// parameter).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BundleRecord {
+pub struct PopulationRecord {
+    /// This record's own original declaration key.
+    pub key: DeclarationKey,
+    /// The population's declared member types' original declaration keys.
+    pub member_types: Vec<DeclarationKey>,
+    /// The population's declared extent.
+    pub extent: Extent,
+}
+
+/// One producer record, in the domain package's declared order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DomainPackageRecord {
     /// An object type export.
     ObjectType(ObjectTypeRecord),
     /// A field member of an object type.
     FieldMember(FieldMemberRecord),
-    /// A generalization between two object types.
-    Generalization(GeneralizationRecord),
+    /// A supertype relationship between two object types.
+    Supertype(SupertypeRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
@@ -337,15 +362,17 @@ pub enum BundleRecord {
     Endpoint(EndpointRecord),
     /// FCD FR-115 relationship (FR-152 Connection/Allocation candidate).
     Relationship(RelationshipRecord),
+    /// FR-153 population declaration.
+    Population(PopulationRecord),
 }
 
-impl BundleRecord {
-    /// This record's own original producer key.
-    pub fn key(&self) -> &ProducerKey {
+impl DomainPackageRecord {
+    /// This record's own original declaration key.
+    pub fn key(&self) -> &DeclarationKey {
         match self {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
-            Self::Generalization(record) => &record.key,
+            Self::Supertype(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Redefinition(record) => &record.key,
@@ -353,26 +380,26 @@ impl BundleRecord {
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
             Self::Relationship(record) => &record.key,
+            Self::Population(record) => &record.key,
         }
     }
 }
 
-/// The model selection's export identity: `{identity, revision, digest}`
-/// (`model-complete.md`'s `ModelSelection.export`).
+/// The model selection's export identity: `{identity, revision, digest}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelSelectionExport {
-    /// The bundle's own producer identity (e.g. `bundle.n01`).
+pub struct DomainPackageRefExport {
+    /// The domain package's own producer identity (e.g. `bundle.n01`).
     pub identity: String,
-    /// The bundle's producer revision.
+    /// The domain package's producer revision.
     pub revision: Revision,
-    /// The bundle's `filament-canonical-json-1` digest.
+    /// The domain package's `filament-canonical-json-1` digest.
     pub digest: ProducerDigest,
 }
 
 /// The producer interface contract version: `{interface_version, wire_schema}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractVersion {
-    /// The producer interface version this bundle claims.
+    /// The producer interface version this domain package claims.
     pub interface_version: String,
     /// The wire schema identity for that interface version.
     pub wire_schema: String,
@@ -380,16 +407,16 @@ pub struct ContractVersion {
 
 /// A model selection: `{authority, export, contract_version}` (FR-321).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelSelection {
+pub struct DomainPackageRef {
     /// The correspondence authority (e.g. `filament-core-data`).
     pub authority: String,
-    /// The bundle's own export identity.
-    pub export: ModelSelectionExport,
+    /// The domain package's own export identity.
+    pub export: DomainPackageRefExport,
     /// The claimed contract version.
     pub contract_version: ContractVersion,
 }
 
-impl ModelSelection {
+impl DomainPackageRef {
     pub(super) fn to_json(&self) -> serde_json::Value {
         use serde_json::{Map, Value};
         let mut export = Map::new();
@@ -449,7 +476,7 @@ impl ModelSelection {
         Value::Object(object)
     }
 
-    /// A `filament-core-data` model selection for a bundle export named
+    /// A `filament-core-data` model selection for a domain package export named
     /// `identity` (e.g. `bundle.n01`), following TC-195/196/197/198's
     /// fixture convention.
     ///
@@ -459,7 +486,7 @@ impl ModelSelection {
         let identity = identity.into();
         Self {
             authority: "filament-core-data".to_owned(),
-            export: ModelSelectionExport {
+            export: DomainPackageRefExport {
                 digest: ProducerDigest::of_identity(&identity),
                 revision: Revision::producer_object("1"),
                 identity,
@@ -472,19 +499,19 @@ impl ModelSelection {
     }
 }
 
-/// A producer interface `1.3.0` bundle: a [`ModelSelection`] and its ordered
+/// A producer interface `1.3.0` domain package: a [`DomainPackageRef`] and its ordered
 /// records.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Bundle {
-    /// This bundle's model selection.
-    pub model_selection: ModelSelection,
-    /// The bundle's records, in the producer's declared order.
-    pub records: Vec<BundleRecord>,
+pub struct DomainPackage {
+    /// This domain package's model selection.
+    pub model_selection: DomainPackageRef,
+    /// The domain package's records, in the producer's declared order.
+    pub records: Vec<DomainPackageRecord>,
 }
 
-impl Bundle {
-    /// A bundle over `records`, selected under `model_selection`.
-    pub fn new(model_selection: ModelSelection, records: Vec<BundleRecord>) -> Self {
+impl DomainPackage {
+    /// A domain package over `records`, selected under `model_selection`.
+    pub fn new(model_selection: DomainPackageRef, records: Vec<DomainPackageRecord>) -> Self {
         Self {
             model_selection,
             records,

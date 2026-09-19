@@ -3,22 +3,22 @@
 //! value checker (TC-196 D06-D08).
 //!
 //! [`crate::model::dispatch::link_dispatch`] links a dispatch family by
-//! [`ProducerKey`] alone; it has no `Expression` to check and builds no
+//! [`DeclarationKey`] alone; it has no `Expression` to check and builds no
 //! call-graph index (its own module docs record both as out of scope: it is
 //! link-time linking only). This module is the other half: for one
 //! dispatch-eligible root operation, it types every linked candidate's
 //! effective precondition and body against
 //! [`crate::value::expression::PackageDeclarations`], and translates
-//! `link_dispatch`'s [`ProducerKey`]-keyed
+//! `link_dispatch`'s [`DeclarationKey`]-keyed
 //! [`crate::model::dispatch::DispatchTable`] into the checked layer's
 //! [`NodeKey`]- and function-index-keyed
 //! [`crate::value::expression::DispatchTable`], ready for
 //! [`PackageDeclarations::check`](crate::value::expression::PackageDeclarations)
 //! and the evaluator.
 //!
-//! Pure: no intake, no I/O. It takes a caller-supplied [`Bundle`] and an
+//! Pure: no intake, no I/O. It takes a caller-supplied [`DomainPackage`] and an
 //! [`OperationClauses`] side table naming each candidate's own clause
-//! `Expression` and signature. `Bundle` carries no `Expression` payload —
+//! `Expression` and signature. `DomainPackage` carries no `Expression` payload —
 //! adding one would perturb the producer-interface-1.3.0 correspondence
 //! every other rung of this crate keys against — so this is where a real
 //! intake (`agent-ix/quire-specification#131`) will eventually plug in its
@@ -45,7 +45,7 @@
 //!   parameter/result records: turning a model-layer type reference into a
 //!   checker [`ValueType`] is its own, separately-scoped piece of work
 //!   (needed well beyond dispatch), so this bridge accepts it pre-translated
-//!   exactly as `link_dispatch` accepts `bundle`/`view` pre-normalized.
+//!   exactly as `link_dispatch` accepts `domain_package`/`view` pre-normalized.
 //!
 //! Effective-precondition semantics (FR-151
 //! `quire.model.conformance.refinement/v1`: "the disjunction of its own
@@ -87,11 +87,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::Meter;
-use crate::model::bundle::{Bundle, BundleRecord, RedefinitionRecord};
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
-use crate::model::key::ProducerKey;
+use crate::model::domain_package::{DomainPackage, DomainPackageRecord, RedefinitionRecord};
+use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{
     BinaryOperator, DeclaredClauseKind, DispatchCandidate, DispatchOperation, DispatchTable,
@@ -104,14 +104,14 @@ use crate::value::{
 const MAX_ANCESTOR_DEPTH: usize = 128;
 
 /// One dispatch candidate's own clause `Expression`s and signature, supplied
-/// by the caller since [`Bundle`] carries no `Expression` payload. Every
+/// by the caller since [`DomainPackage`] carries no `Expression` payload. Every
 /// operation this bridge is asked to check — the root operation and every
 /// one of its linked candidates — needs an entry.
 #[derive(Clone, Debug, Default)]
 pub struct OperationClauses {
     /// The unqualified member name. Only the *root* operation's entry is
     /// consulted for this field.
-    pub member: BTreeMap<ProducerKey, String>,
+    pub member: BTreeMap<DeclarationKey, String>,
     /// Declared parameters, receiver first: element 0 is always the
     /// receiver (`self`) parameter every candidate's own
     /// [`FunctionDeclaration`] needs at slot 0, matching how the evaluator's
@@ -119,15 +119,15 @@ pub struct OperationClauses {
     /// a linked candidate's frame. [`DispatchOperation::parameters`] (the
     /// call site's own argument types) is everything after that receiver
     /// element; this bridge strips it when building the call site.
-    pub parameters: BTreeMap<ProducerKey, Vec<(String, ValueType)>>,
+    pub parameters: BTreeMap<DeclarationKey, Vec<(String, ValueType)>>,
     /// The declared result type.
-    pub result: BTreeMap<ProducerKey, ValueType>,
+    pub result: BTreeMap<DeclarationKey, ValueType>,
     /// This operation's own precondition clause, when it declares one.
-    pub own_precondition: BTreeMap<ProducerKey, Expression>,
+    pub own_precondition: BTreeMap<DeclarationKey, Expression>,
     /// This operation's own body clause. Required for every linked
     /// candidate (an operation without a body is never a candidate;
     /// `link_dispatch` already filters those out).
-    pub own_body: BTreeMap<ProducerKey, Expression>,
+    pub own_body: BTreeMap<DeclarationKey, Expression>,
 }
 
 /// Which [`OperationClauses`] field [`DispatchBridgeRefusal::MissingClauseData`]
@@ -157,11 +157,11 @@ pub enum DispatchBridgeRefusal {
     /// value from every fallible step below.
     Unlinked(Box<LinkCheckOutcome>),
     /// `clauses` has no entry for this operation under the named field.
-    /// `operation` is boxed: [`ProducerKey`] itself is larger than the rest
+    /// `operation` is boxed: [`DeclarationKey`] itself is larger than the rest
     /// of this refusal put together.
     MissingClauseData {
         /// The operation missing an entry.
-        operation: Box<ProducerKey>,
+        operation: Box<DeclarationKey>,
         /// The field that was missing it.
         field: MissingClauseField,
     },
@@ -171,7 +171,7 @@ pub enum DispatchBridgeRefusal {
     /// instead of overloading `operation`.
     MissingObjectKey {
         /// The subtype missing an entry.
-        subtype: Box<ProducerKey>,
+        subtype: Box<DeclarationKey>,
     },
     /// The effective-precondition ancestor walk exceeded
     /// [`MAX_ANCESTOR_DEPTH`] redefinition steps, built from
@@ -182,14 +182,14 @@ pub enum DispatchBridgeRefusal {
     AncestorDepthExceeded(Box<ModelRefusal>),
 }
 
-fn missing(operation: &ProducerKey, field: MissingClauseField) -> DispatchBridgeRefusal {
+fn missing(operation: &DeclarationKey, field: MissingClauseField) -> DispatchBridgeRefusal {
     DispatchBridgeRefusal::MissingClauseData {
         operation: Box::new(operation.clone()),
         field,
     }
 }
 
-fn depth_exceeded(candidate: &ProducerKey) -> DispatchBridgeRefusal {
+fn depth_exceeded(candidate: &DeclarationKey) -> DispatchBridgeRefusal {
     DispatchBridgeRefusal::AncestorDepthExceeded(Box::new(ModelRefusal {
         code: Code::ResourceExhausted,
         cause: ModelRefusalCause::DispatchFamilyDepth {
@@ -203,8 +203,8 @@ fn depth_exceeded(candidate: &ProducerKey) -> DispatchBridgeRefusal {
 }
 
 fn require_expression(
-    map: &BTreeMap<ProducerKey, Expression>,
-    operation: &ProducerKey,
+    map: &BTreeMap<DeclarationKey, Expression>,
+    operation: &DeclarationKey,
     field: MissingClauseField,
 ) -> Result<Expression, DispatchBridgeRefusal> {
     map.get(operation)
@@ -214,7 +214,7 @@ fn require_expression(
 
 fn require_signature(
     clauses: &OperationClauses,
-    operation: &ProducerKey,
+    operation: &DeclarationKey,
 ) -> Result<(Vec<(String, ValueType)>, ValueType), DispatchBridgeRefusal> {
     let parameters = clauses
         .parameters
@@ -235,7 +235,7 @@ fn require_signature(
 /// Grouped into one value to keep that function's own argument count small.
 pub struct DispatchRoot {
     /// The root operation's own original producer key.
-    pub key: ProducerKey,
+    pub key: DeclarationKey,
     /// The exact static type the checker requires of a dispatched call's
     /// receiver. See the module docs: this bridge does not derive it from
     /// `OperationMemberRecord::owner`.
@@ -245,16 +245,16 @@ pub struct DispatchRoot {
     pub closure: GeneralizationClosure,
 }
 
-/// `bundle.records`'s own first-appearance index of every declared
-/// operation, keyed by its [`ProducerKey`] (`bundle.rs`: `records` is "in
-/// the producer's declared order"). [`ProducerKey`]'s own `Ord` sorts by
+/// `domain_package.records`'s own first-appearance index of every declared
+/// operation, keyed by its [`DeclarationKey`] (`domain_package.rs`: `records`
+/// is "in the producer's declared order"). [`DeclarationKey`]'s own `Ord` sorts by
 /// `authority, identity, revision, digest`, unrelated to source order, so
-/// this — not a `BTreeSet<ProducerKey>` iteration — is FR-151's "source
+/// this — not a `BTreeSet<DeclarationKey>` iteration — is FR-151's "source
 /// declaration order" for the D08 call-graph edge listing.
-fn declaration_order(bundle: &Bundle) -> BTreeMap<ProducerKey, usize> {
+fn declaration_order(domain_package: &DomainPackage) -> BTreeMap<DeclarationKey, usize> {
     let mut order = BTreeMap::new();
-    for (index, record) in bundle.records.iter().enumerate() {
-        if let BundleRecord::OperationMember(operation) = record {
+    for (index, record) in domain_package.records.iter().enumerate() {
+        if let DomainPackageRecord::OperationMember(operation) = record {
             order.entry(operation.key.clone()).or_insert(index);
         }
     }
@@ -270,8 +270,8 @@ fn declaration_order(bundle: &Bundle) -> BTreeMap<ProducerKey, usize> {
 /// bound instead of silently truncating the closure.
 fn ancestor_closure(
     redefinitions: &[RedefinitionRecord],
-    candidate: &ProducerKey,
-) -> Result<BTreeSet<ProducerKey>, DispatchBridgeRefusal> {
+    candidate: &DeclarationKey,
+) -> Result<BTreeSet<DeclarationKey>, DispatchBridgeRefusal> {
     let mut closure = BTreeSet::new();
     // `depth` is `current`'s own redefinition-chain distance from
     // `candidate` (0 for `candidate` itself), tracked per queue entry, not a
@@ -279,7 +279,7 @@ fn ancestor_closure(
     // family where one member has many direct redefiners (wide, shallow
     // fan-out) must not exhaust the same bound a genuinely deep single chain
     // would.
-    let mut pending: VecDeque<(ProducerKey, usize)> = VecDeque::from([(candidate.clone(), 0)]);
+    let mut pending: VecDeque<(DeclarationKey, usize)> = VecDeque::from([(candidate.clone(), 0)]);
     while let Some((current, depth)) = pending.pop_front() {
         if !closure.insert(current.clone()) {
             continue;
@@ -317,10 +317,10 @@ fn ancestor_closure(
 /// caller's own depth budget, since its own walk already passed the bound
 /// when it was first computed.
 fn effective_terms(
-    candidate: &ProducerKey,
+    candidate: &DeclarationKey,
     clauses: &OperationClauses,
     redefinitions: &[RedefinitionRecord],
-    memo: &mut BTreeMap<ProducerKey, Option<Vec<Expression>>>,
+    memo: &mut BTreeMap<DeclarationKey, Option<Vec<Expression>>>,
     depth: usize,
 ) -> Result<Option<Vec<Expression>>, DispatchBridgeRefusal> {
     if let Some(cached) = memo.get(candidate) {
@@ -658,48 +658,48 @@ fn substitute_names(
 /// [`DispatchTable`] the evaluator needs. See the module docs for this
 /// bridge's exact scope.
 pub fn checked_dispatch_operation(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     view: &EffectiveView,
     root: &DispatchRoot,
-    object_keys: &BTreeMap<ProducerKey, NodeKey>,
+    object_keys: &BTreeMap<DeclarationKey, NodeKey>,
     clauses: &OperationClauses,
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
-    let outcome = link_dispatch(bundle, view, &root.key, root.closure, meter);
+    let outcome = link_dispatch(domain_package, view, &root.key, root.closure, meter);
     let table = match outcome {
         LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) => table,
         other => return Err(DispatchBridgeRefusal::Unlinked(Box::new(other))),
     };
 
-    let redefinitions: Vec<RedefinitionRecord> = bundle
+    let redefinitions: Vec<RedefinitionRecord> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            BundleRecord::Redefinition(redefinition) => Some(redefinition.clone()),
+            DomainPackageRecord::Redefinition(redefinition) => Some(redefinition.clone()),
             _ => None,
         })
         .collect();
-    let order = declaration_order(bundle);
-    let by_order = |key: &ProducerKey| order.get(key).copied().unwrap_or(usize::MAX);
+    let order = declaration_order(domain_package);
+    let by_order = |key: &DeclarationKey| order.get(key).copied().unwrap_or(usize::MAX);
 
-    let mut distinct: BTreeSet<ProducerKey> = BTreeSet::new();
+    let mut distinct: BTreeSet<DeclarationKey> = BTreeSet::new();
     for (_, candidate) in table.entries() {
         distinct.insert(candidate.clone());
     }
-    let mut ordered_candidates: Vec<ProducerKey> = distinct.iter().cloned().collect();
+    let mut ordered_candidates: Vec<DeclarationKey> = distinct.iter().cloned().collect();
     ordered_candidates.sort_by_key(|candidate| (by_order(candidate), candidate.clone()));
 
     // Every member (candidate or redefinition ancestor) whose own
     // precondition clause some candidate's static FR-146 call-graph ancestry
     // reaches, regardless of runtime short-circuiting (TC-196 D08).
-    let mut closures: BTreeMap<ProducerKey, BTreeSet<ProducerKey>> = BTreeMap::new();
-    let mut every_member: BTreeSet<ProducerKey> = BTreeSet::new();
+    let mut closures: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>> = BTreeMap::new();
+    let mut every_member: BTreeSet<DeclarationKey> = BTreeSet::new();
     for candidate in &ordered_candidates {
         let closure = ancestor_closure(&redefinitions, candidate)?;
         every_member.extend(closure.iter().cloned());
         closures.insert(candidate.clone(), closure);
     }
-    let mut authored: Vec<ProducerKey> = every_member
+    let mut authored: Vec<DeclarationKey> = every_member
         .into_iter()
         .filter(|member| clauses.own_precondition.contains_key(member))
         .collect();
@@ -708,7 +708,7 @@ pub fn checked_dispatch_operation(
     // One shared checked function per authored clause, in source declaration
     // order, built before any candidate body or combinator.
     let mut functions: Vec<FunctionDeclaration> = Vec::new();
-    let mut authored_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
+    let mut authored_index: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for member in &authored {
         let (parameters, _) = require_signature(clauses, member)?;
         let body = require_expression(
@@ -728,10 +728,10 @@ pub fn checked_dispatch_operation(
         authored_index.insert(member.clone(), index);
     }
 
-    let mut memo: BTreeMap<ProducerKey, Option<Vec<Expression>>> = BTreeMap::new();
-    let mut body_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
-    let mut precondition_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
-    let mut precondition_clauses_index: BTreeMap<ProducerKey, Vec<usize>> = BTreeMap::new();
+    let mut memo: BTreeMap<DeclarationKey, Option<Vec<Expression>>> = BTreeMap::new();
+    let mut body_index: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
+    let mut precondition_index: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
+    let mut precondition_clauses_index: BTreeMap<DeclarationKey, Vec<usize>> = BTreeMap::new();
 
     for candidate in &ordered_candidates {
         let (parameters, result) = require_signature(clauses, candidate)?;
@@ -859,8 +859,8 @@ mod tests {
         ancestor_closure, effective_terms, DispatchBridgeRefusal, OperationClauses,
         MAX_ANCESTOR_DEPTH,
     };
-    use crate::model::bundle::RedefinitionRecord;
-    use crate::model::key::ProducerKey;
+    use crate::model::domain_package::RedefinitionRecord;
+    use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
     use crate::value::{Expression, ValueType};
 
@@ -873,12 +873,12 @@ mod tests {
     #[test]
     fn ancestor_closure_refuses_past_the_depth_bound_instead_of_truncating() {
         let chain_length = MAX_ANCESTOR_DEPTH + 1;
-        let keys: Vec<ProducerKey> = (0..=chain_length)
-            .map(|index| ProducerKey::fixture(format!("model.chain.op{index}")))
+        let keys: Vec<DeclarationKey> = (0..=chain_length)
+            .map(|index| DeclarationKey::fixture(format!("model.chain.op{index}")))
             .collect();
         let redefinitions: Vec<RedefinitionRecord> = (1..keys.len())
             .map(|index| RedefinitionRecord {
-                key: ProducerKey::fixture(format!("model.chain.redef{index}")),
+                key: DeclarationKey::fixture(format!("model.chain.redef{index}")),
                 owner: keys[index].clone(),
                 redefining: keys[index].clone(),
                 redefined: keys[index - 1].clone(),
@@ -904,12 +904,12 @@ mod tests {
         // the full closure — the guard (`depth > MAX_ANCESTOR_DEPTH`) fires
         // strictly past the bound, never at it.
         let shallow_chain = MAX_ANCESTOR_DEPTH;
-        let shallow_keys: Vec<ProducerKey> = (0..=shallow_chain)
-            .map(|index| ProducerKey::fixture(format!("model.shallow-chain.op{index}")))
+        let shallow_keys: Vec<DeclarationKey> = (0..=shallow_chain)
+            .map(|index| DeclarationKey::fixture(format!("model.shallow-chain.op{index}")))
             .collect();
         let shallow_redefinitions: Vec<RedefinitionRecord> = (1..shallow_keys.len())
             .map(|index| RedefinitionRecord {
-                key: ProducerKey::fixture(format!("model.shallow-chain.redef{index}")),
+                key: DeclarationKey::fixture(format!("model.shallow-chain.redef{index}")),
                 owner: shallow_keys[index].clone(),
                 redefining: shallow_keys[index].clone(),
                 redefined: shallow_keys[index - 1].clone(),
@@ -934,15 +934,15 @@ mod tests {
     /// them apart.
     #[test]
     fn ancestor_closure_does_not_refuse_a_wide_family_with_many_direct_parents() {
-        let candidate = ProducerKey::fixture("model.fanout.candidate");
+        let candidate = DeclarationKey::fixture("model.fanout.candidate");
         let parent_count = MAX_ANCESTOR_DEPTH + 2;
-        let parents: Vec<ProducerKey> = (0..parent_count)
-            .map(|index| ProducerKey::fixture(format!("model.fanout.parent{index}")))
+        let parents: Vec<DeclarationKey> = (0..parent_count)
+            .map(|index| DeclarationKey::fixture(format!("model.fanout.parent{index}")))
             .collect();
         let redefinitions: Vec<RedefinitionRecord> = parents
             .iter()
             .map(|parent| RedefinitionRecord {
-                key: ProducerKey::fixture(format!("model.fanout.redef-{}", parent.identity)),
+                key: DeclarationKey::fixture(format!("model.fanout.redef-{}", parent.identity)),
                 owner: candidate.clone(),
                 redefining: candidate.clone(),
                 redefined: parent.clone(),
@@ -970,7 +970,7 @@ mod tests {
     /// sibling already visited.
     #[test]
     fn effective_terms_does_not_refuse_a_wide_family_with_a_shallow_chain() {
-        let root = ProducerKey::fixture("model.wide.root");
+        let root = DeclarationKey::fixture("model.wide.root");
         let self_parameters = vec![("self".to_owned(), ValueType::Boolean)];
         let mut clauses = OperationClauses::default();
         clauses
@@ -982,8 +982,8 @@ mod tests {
             .insert(root.clone(), Expression::Boolean(true));
 
         let child_count = MAX_ANCESTOR_DEPTH + 1;
-        let children: Vec<ProducerKey> = (0..child_count)
-            .map(|index| ProducerKey::fixture(format!("model.wide.child{index}")))
+        let children: Vec<DeclarationKey> = (0..child_count)
+            .map(|index| DeclarationKey::fixture(format!("model.wide.child{index}")))
             .collect();
         let mut redefinitions = Vec::with_capacity(child_count);
         for child in &children {
@@ -995,7 +995,7 @@ mod tests {
                 .own_precondition
                 .insert(child.clone(), Expression::Boolean(true));
             redefinitions.push(RedefinitionRecord {
-                key: ProducerKey::fixture(format!("model.wide.redef-{}", child.identity)),
+                key: DeclarationKey::fixture(format!("model.wide.redef-{}", child.identity)),
                 owner: child.clone(),
                 redefining: child.clone(),
                 redefined: root.clone(),

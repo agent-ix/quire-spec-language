@@ -13,46 +13,51 @@
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
-use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, GeneralizationRecord, ModelSelection, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord,
-};
 use quire_spec_language::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
-use quire_spec_language::model::key::ProducerKey;
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+};
+use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
 
-fn object_type(identity: &str) -> BundleRecord {
-    BundleRecord::ObjectType(ObjectTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn object_type(identity: &str) -> DomainPackageRecord {
+    DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: DeclarationKey::fixture(identity),
         interface_features: None,
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord {
-    BundleRecord::Generalization(GeneralizationRecord {
-        key: ProducerKey::fixture(identity),
-        specific: ProducerKey::fixture(specific),
-        general: ProducerKey::fixture(general),
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Supertype(SupertypeRecord {
+        key: DeclarationKey::fixture(identity),
+        specific: DeclarationKey::fixture(specific),
+        general: DeclarationKey::fixture(general),
     })
 }
 
-fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> BundleRecord {
-    BundleRecord::Redefinition(RedefinitionRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        redefining: ProducerKey::fixture(redefining),
-        redefined: ProducerKey::fixture(redefined),
+fn redefinition(
+    identity: &str,
+    owner: &str,
+    redefining: &str,
+    redefined: &str,
+) -> DomainPackageRecord {
+    DomainPackageRecord::Redefinition(RedefinitionRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        redefining: DeclarationKey::fixture(redefining),
+        redefined: DeclarationKey::fixture(redefined),
     })
 }
 
 /// A parameterless, resultless `size`-shaped operation with an empty effect
 /// frame, exactly as much signature as dispatch linking itself inspects.
-fn operation(identity: &str, owner: &str, has_body: bool) -> BundleRecord {
-    BundleRecord::OperationMember(OperationMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
+fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord {
+    DomainPackageRecord::OperationMember(OperationMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
         parameters: Vec::new(),
         result: None,
         effect: OperationEffect::default(),
@@ -64,21 +69,23 @@ fn operation(identity: &str, owner: &str, has_body: bool) -> BundleRecord {
 
 /// G: F2's types/generalizations (`model.A`, `model.B` <= `A`, `model.C` <=
 /// `A`, `model.D` <= `B`, `D` <= `C`).
-fn fixture_g() -> Vec<BundleRecord> {
+fn fixture_g() -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A"),
         object_type("model.B"),
         object_type("model.C"),
         object_type("model.D"),
-        generalization("model.gen.B-A", "model.B", "model.A"),
-        generalization("model.gen.C-A", "model.C", "model.A"),
-        generalization("model.gen.D-B", "model.D", "model.B"),
-        generalization("model.gen.D-C", "model.D", "model.C"),
+        supertype("model.gen.B-A", "model.B", "model.A"),
+        supertype("model.gen.C-A", "model.C", "model.A"),
+        supertype("model.gen.D-B", "model.D", "model.B"),
+        supertype("model.gen.D-C", "model.D", "model.C"),
     ]
 }
 
-fn effective_view(bundle: &Bundle) -> quire_spec_language::model::normalize::EffectiveView {
-    match normalize(bundle, ModelNormalizationLimits::UNLIMITED) {
+fn effective_view(
+    domain_package: &DomainPackage,
+) -> quire_spec_language::model::normalize::EffectiveView {
+    match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed effective view, got {other:?}"),
     }
@@ -109,14 +116,14 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
         "model.B.size",
         "model.A.size",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut meter,
     );
@@ -126,7 +133,7 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
     };
     let linked = |subtype: &str| {
         table
-            .linked_for(&ProducerKey::fixture(subtype))
+            .linked_for(&DeclarationKey::fixture(subtype))
             .map(|c| c.identity.clone())
     };
     assert_eq!(linked("model.D"), Some("model.B.size".to_owned()));
@@ -169,17 +176,17 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
         "model.B.size",
         "model.A.size",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
 
     let mut meter = quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits {
         dispatch_candidates: 7,
         ..ModelNormalizationLimits::UNLIMITED
     });
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut meter,
     );
@@ -208,17 +215,17 @@ fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
         "model.B.size",
         "model.A.size",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
 
     let mut meter = quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits {
         dispatch_candidates: 8,
         ..ModelNormalizationLimits::UNLIMITED
     });
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut meter,
     );
@@ -262,14 +269,14 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
         "model.D.size",
         "model.A.size",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records.clone());
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records.clone());
+    let view = effective_view(&domain_package);
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut meter,
     );
@@ -309,19 +316,20 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     // and C, so it uniquely wins at every subtype it is applicable for.
     let mut resolved_records = records;
     for record in &mut resolved_records {
-        if let BundleRecord::OperationMember(op) = record {
+        if let DomainPackageRecord::OperationMember(op) = record {
             if op.key.identity == "model.D.size" {
                 op.has_body = true;
             }
         }
     }
-    let resolved_bundle = Bundle::new(ModelSelection::fixture("bundle.g"), resolved_records);
+    let resolved_bundle =
+        DomainPackage::new(DomainPackageRef::fixture("bundle.g"), resolved_records);
     let resolved_view = effective_view(&resolved_bundle);
     let mut resolved_meter = unlimited_meter();
     let resolved_outcome = link_dispatch(
         &resolved_bundle,
         &resolved_view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut resolved_meter,
     );
@@ -330,7 +338,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     };
     assert_eq!(
         table
-            .linked_for(&ProducerKey::fixture("model.D"))
+            .linked_for(&DeclarationKey::fixture("model.D"))
             .map(|c| c.identity.as_str()),
         Some("model.D.size")
     );
@@ -352,14 +360,14 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
         "model.B.size",
         "model.A.size",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut meter,
     );
@@ -390,7 +398,7 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     );
 }
 
-/// D04: D01 with every bundle record supplied in reverse declared order and
+/// D04: D01 with every domain package record supplied in reverse declared order and
 /// `B.size` declared before `A.size`. Linking depends only on the
 /// (authority, identity, revision, digest)-sorted family and the effective
 /// view's own ascending-identity subtype order, never on registration or
@@ -408,14 +416,14 @@ fn d04_registration_order_does_not_change_the_linked_table() {
         "model.A.size",
     ));
     records.reverse();
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
         &mut meter,
     );
@@ -424,7 +432,7 @@ fn d04_registration_order_does_not_change_the_linked_table() {
     };
     let linked = |subtype: &str| {
         table
-            .linked_for(&ProducerKey::fixture(subtype))
+            .linked_for(&DeclarationKey::fixture(subtype))
             .map(|c| c.identity.as_str())
     };
     assert_eq!(linked("model.D"), Some("model.B.size"));
@@ -448,14 +456,14 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
         "model.B.size",
         "model.A.size",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.g"), records);
-    let view = effective_view(&bundle);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
-        &ProducerKey::fixture("model.A.size"),
+        &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Open,
         &mut meter,
     );
@@ -477,16 +485,16 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
 #[trace("TC-196")]
 #[test]
 fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let op1_key = ProducerKey::fixture("model.A.size");
-    let mut op2_key = ProducerKey::fixture("model.A.size");
+    let op1_key = DeclarationKey::fixture("model.A.size");
+    let mut op2_key = DeclarationKey::fixture("model.A.size");
     op2_key.revision.value = "2".to_owned();
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.f2-dispatch-revision"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-dispatch-revision"),
         vec![
             object_type("model.A"),
-            BundleRecord::OperationMember(OperationMemberRecord {
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
                 key: op1_key.clone(),
-                owner: ProducerKey::fixture("model.A"),
+                owner: DeclarationKey::fixture("model.A"),
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
@@ -494,9 +502,9 @@ fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survi
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
             }),
-            BundleRecord::OperationMember(OperationMemberRecord {
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
                 key: op2_key,
-                owner: ProducerKey::fixture("model.A"),
+                owner: DeclarationKey::fixture("model.A"),
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
@@ -506,11 +514,11 @@ fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survi
             }),
         ],
     );
-    let view = effective_view(&bundle);
+    let view = effective_view(&domain_package);
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &bundle,
+        &domain_package,
         &view,
         &op1_key,
         GeneralizationClosure::Closed,
@@ -521,7 +529,7 @@ fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survi
         panic!("expected a linked dispatch table, got {outcome:?}");
     };
     let linked = table
-        .linked_for(&ProducerKey::fixture("model.A"))
+        .linked_for(&DeclarationKey::fixture("model.A"))
         .expect("model.A must link to the revision-1 candidate, which has a body");
     // Revision "2" (no body) must never silently overwrite revision "1"
     // (has a body) in `DispatchIndex.operations` by shared identity alone.

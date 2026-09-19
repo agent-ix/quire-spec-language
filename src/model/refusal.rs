@@ -7,33 +7,39 @@
 //! import of it a module cycle (#141 finding 4). `normalize` re-exports this
 //! type at its own path (`crate::model::normalize::ModelRefusalCause`), so
 //! nothing outside this crate's module tree observes a rename. This module
-//! imports [`crate::model::key::ProducerKey`]/[`crate::model::key::EffectiveId`]
+//! imports [`crate::model::key::DeclarationKey`]/[`crate::model::key::EffectiveId`]
 //! back from `key`: a mutual `use` between sibling modules is not a cycle
 //! Rust's compiler rejects (#163 re-review ruling 3) — only a real cyclic
 //! type/const definition would be.
 
 use std::collections::BTreeSet;
 
-use crate::model::bundle::{ModelSelection, Multiplicity};
-use crate::model::key::{EffectiveId, ProducerKey};
+use crate::model::domain_package::{DomainPackageRef, Multiplicity};
+use crate::model::key::{DeclarationKey, EffectiveId};
 
-/// The offered model selection at a `foreign-model-selection` refusal's two
-/// sites (#163 review finding: a revision-only mismatch must stay
+/// The offered model selection at a `foreign-model-selection` refusal's
+/// three sites (#163 review finding: a revision-only mismatch must stay
 /// distinguishable in the typed cause, not just in `detail`'s text).
 ///
 /// The effective-view site (`crate::model::population::admit_binding`'s
-/// `view.model_selection != bundle.model_selection` check) has the offered
-/// selection's own full `ModelSelection`, so it carries that. The population-
+/// `view.model_selection != domain_package.model_selection` check) has the offered
+/// selection's own full `DomainPackageRef`, so it carries that. The population-
 /// document site (the same function's `modelIdentity` check) has only the
 /// document's declared `modelIdentity` string — a `PopulationDocument`
-/// carries no full `ModelSelection` of its own — so it carries that string
-/// instead, never a substituted or partially-populated `ModelSelection`.
+/// carries no full `DomainPackageRef` of its own — so it carries that string
+/// instead, never a substituted or partially-populated `DomainPackageRef`. The
+/// population-declaration site (the same function's population-key
+/// resolution, FR-153's "Its declaration key must belong to the binding's
+/// ModelSelection") has only the caller-supplied population `DeclarationKey`,
+/// so it carries that.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OfferedSelection {
     /// The effective view's own model selection, in full.
-    View(ModelSelection),
+    View(DomainPackageRef),
     /// The population document's declared `modelIdentity`.
     Document(String),
+    /// The caller-supplied population declaration key.
+    Population(DeclarationKey),
 }
 
 /// The closed FR-150/151/152/153/272 cause of a
@@ -50,7 +56,7 @@ pub enum OfferedSelection {
 /// Variants carry a typed field for every identity/path/name their `detail`
 /// text names, wherever every construction site for that variant supplies
 /// the same shape of data (#141 F9a, review finding 3), and the *real* type
-/// of the underlying value — [`ProducerKey`] or [`EffectiveId`], not a
+/// of the underlying value — [`DeclarationKey`] or [`EffectiveId`], not a
 /// pre-formatted `String` — wherever the call site holds one (#163 re-review
 /// ruling 3). A variant with no natural data, or whose construction sites
 /// disagree in shape (a plain count instead of an identity, or a different
@@ -63,19 +69,19 @@ pub enum ModelRefusalCause {
     /// A dispatch family's redefinition chain exceeded `MAX_DISPATCH_DEPTH`.
     DispatchFamilyDepth {
         /// The dispatch original the family was built from.
-        original: ProducerKey,
+        original: DeclarationKey,
     },
     /// An operation family closes over an unresolved or unproved method set.
     UnclosedMethodSet,
-    /// A dispatch original names an operation absent from the bundle.
+    /// A dispatch original names an operation absent from the domain package.
     UnknownOriginal {
         /// The absent original.
-        original: ProducerKey,
+        original: DeclarationKey,
     },
-    /// A dispatch candidate names an operation absent from the bundle.
+    /// A dispatch candidate names an operation absent from the domain package.
     UnknownCandidate {
         /// The absent candidate.
-        candidate: ProducerKey,
+        candidate: DeclarationKey,
     },
     /// No candidate in a dispatch family is applicable to the call.
     NoApplicable,
@@ -90,107 +96,107 @@ pub enum ModelRefusalCause {
     /// generalization records.
     GeneralizationDepthExceeded {
         /// The ancestor path's root.
-        root: ProducerKey,
+        root: DeclarationKey,
     },
     /// A type generalizes back to itself through its own ancestor path.
     SpecializationCycle {
         /// The ancestor that closes the cycle.
-        ancestor: ProducerKey,
-        /// The generalization record the cycle is discovered via.
-        via: ProducerKey,
+        ancestor: DeclarationKey,
+        /// The supertype record the cycle is discovered via.
+        via: DeclarationKey,
     },
     /// A field, operation, redefinition or subsetting record names an owner
     /// that is not a declared object type.
     UnknownOwner {
         /// The record naming the owner.
-        member: ProducerKey,
+        member: DeclarationKey,
         /// The absent owner.
-        owner: ProducerKey,
+        owner: DeclarationKey,
     },
-    /// A generalization record names a specific that is not a declared
+    /// A supertype record names a specific that is not a declared
     /// object type.
     UnknownSpecific {
-        /// The generalization record.
-        generalization: ProducerKey,
+        /// The supertype record.
+        supertype: DeclarationKey,
         /// The absent specific.
-        specific: ProducerKey,
+        specific: DeclarationKey,
     },
-    /// A generalization record names a general that is not a declared
+    /// A supertype record names a general that is not a declared
     /// object type.
     UnknownGeneral {
-        /// The generalization record.
-        generalization: ProducerKey,
+        /// The supertype record.
+        supertype: DeclarationKey,
         /// The absent general.
-        general: ProducerKey,
+        general: DeclarationKey,
     },
     /// An operation parameter or result names a value type that is not
     /// declared.
     UnknownValueType {
         /// The operation naming the value type.
-        operation: ProducerKey,
+        operation: DeclarationKey,
         /// The parameter naming it, or `None` when a result names it
         /// instead — the two construction sites' only difference in shape.
-        parameter: Option<ProducerKey>,
+        parameter: Option<DeclarationKey>,
         /// The absent value type.
-        value_type: ProducerKey,
+        value_type: DeclarationKey,
     },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
         /// The operation whose effect writes the field.
-        operation: ProducerKey,
+        operation: DeclarationKey,
         /// The absent field.
-        field: ProducerKey,
+        field: DeclarationKey,
     },
     /// An operation effect names a type that is not a declared object type.
     UnknownEffectType {
         /// The operation whose effect names the type.
-        operation: ProducerKey,
+        operation: DeclarationKey,
         /// The absent type.
-        type_name: ProducerKey,
+        type_name: DeclarationKey,
     },
     /// A redefinition or subsetting record names a member absent from its
     /// owner.
     UnknownMember {
         /// The redefinition or subsetting record.
-        record: ProducerKey,
+        record: DeclarationKey,
         /// The absent member.
-        member: ProducerKey,
+        member: DeclarationKey,
     },
     /// A type has two or more undominated redefinitions of one member.
     DerivationConflict {
         /// The type with the conflicting redefinitions.
-        type_: ProducerKey,
+        type_: DeclarationKey,
         /// The contended redefinition target.
-        member: ProducerKey,
-        /// The undominated redefining members, in bundle order.
-        redefiners: Vec<ProducerKey>,
+        member: DeclarationKey,
+        /// The undominated redefining members, in domain package order.
+        redefiners: Vec<DeclarationKey>,
     },
     /// A redefinition edge's target or redefining member is not an
     /// effective member of its owner.
     RedefinitionUnreachable {
         /// The unreachable member.
-        member: ProducerKey,
+        member: DeclarationKey,
         /// The owner it is not an effective member of.
-        owner: ProducerKey,
+        owner: DeclarationKey,
     },
-    /// A bundle record's producer interface is neither normalized nor a
+    /// A domain package record's producer interface is neither normalized nor a
     /// recognized refusal (outside FR-150's supported wire range).
     UnsupportedWire {
         /// The unsupported producer interface version. A wire version
-        /// string, not a [`ProducerKey`]: every site supplies the plain
+        /// string, not a [`DeclarationKey`]: every site supplies the plain
         /// `interface_version` field, not a producer key.
         version: String,
     },
-    /// A bundle record has no producer revision to select.
+    /// A domain package record has no producer revision to select.
     WrongModelSelection {
         /// The record with no producer revision.
-        key: ProducerKey,
+        key: DeclarationKey,
     },
     /// A producer key's digest domain does not match
     /// [`crate::model::key::PRODUCER_DIGEST_DOMAIN`].
     DigestDomainMismatch {
         /// The producer key.
-        key: ProducerKey,
+        key: DeclarationKey,
         /// Its actual (wrong) digest domain.
         domain: String,
     },
@@ -201,7 +207,7 @@ pub enum ModelRefusalCause {
     /// `MAX_CONFORMANCE_DEPTH`.
     ConformanceDepth {
         /// The conformance check's starting specific.
-        from: ProducerKey,
+        from: DeclarationKey,
     },
     /// A redefining or subsetting result/effect does not conform to the
     /// redefined/subsetted one under FR-151 variance.
@@ -220,9 +226,9 @@ pub enum ModelRefusalCause {
     /// field's value type.
     SubsettingType {
         /// The subsetting field's value type.
-        subsetting: ProducerKey,
+        subsetting: DeclarationKey,
         /// The subsetted field's value type.
-        subsetted: ProducerKey,
+        subsetted: DeclarationKey,
     },
     /// Two compared items disagree in kind, arity or declared type where
     /// FR-151/FR-152 require agreement.
@@ -233,15 +239,15 @@ pub enum ModelRefusalCause {
         /// The parameter's position.
         index: usize,
         /// The redefining (declared) parameter's value type.
-        declared: ProducerKey,
+        declared: DeclarationKey,
         /// The redefined parameter's value type.
-        redefined: ProducerKey,
+        redefined: DeclarationKey,
     },
     /// A redefining operation's effect writes a field the redefined
     /// operation's effect does not cover.
     EffectEscape {
         /// The uncovered write.
-        field: ProducerKey,
+        field: DeclarationKey,
     },
     /// A redefinition narrows a fact FR-146 has no proof form to establish,
     /// or narrows past an established fact with no supporting proof.
@@ -249,34 +255,42 @@ pub enum ModelRefusalCause {
     /// More than one redefinition target candidate remains after dominance.
     RedefinitionTarget,
     /// A population document or effective view names a model selection
-    /// other than the admitting bundle's.
+    /// other than the admitting domain package's.
     ForeignModelSelection {
         /// The offered model selection: full at the effective-view site,
         /// `modelIdentity` only at the population-document site.
         actual: OfferedSelection,
-        /// The admitting bundle's model selection, in full.
-        expected: ModelSelection,
+        /// The admitting domain package's model selection, in full.
+        expected: DomainPackageRef,
     },
-    /// A population document does not declare `closedWorld: true`.
+    /// A population's declared extent is not `closed`.
     IncompleteScope {
-        /// The model selection named without `closedWorld: true`.
+        /// The model selection named by the not-`closed` population.
         selection: String,
     },
-    /// A closed-world model selection's generalization graph is not itself
+    /// A closed-extent population's generalization graph is not itself
     /// closed.
     UnclosedSubtypes {
         /// The model selection.
         selection: String,
         /// A member's type from the population document's first member, or
         /// `None` when the document declares no members.
-        type_name: Option<ProducerKey>,
+        type_name: Option<DeclarationKey>,
     },
     /// A population member names a type absent from the effective view.
     ForeignType {
         /// The member.
         member: String,
         /// The absent type.
-        type_name: ProducerKey,
+        type_name: DeclarationKey,
+    },
+    /// A population declaration's `member_types` names a type that is not a
+    /// declared object type (model-complete.md's "Populations" row).
+    UnknownPopulationMemberType {
+        /// The population declaration naming the member type.
+        population: DeclarationKey,
+        /// The absent type.
+        type_name: DeclarationKey,
     },
     /// One object is declared with two conflicting types.
     ConflictingIdentity {
@@ -312,88 +326,88 @@ pub enum ModelRefusalCause {
     AbsentKey {
         /// The absent key's raw object bytes, exactly as supplied. A
         /// reference key's plain `object` string as UTF-8 bytes, not a
-        /// [`ProducerKey`] -- not always valid UTF-8 itself
+        /// [`DeclarationKey`] -- not always valid UTF-8 itself
         /// (`crate::value::model_query`'s own malformed-identity case),
         /// reporting the bytes the caller actually supplied rather than a
         /// substituted or lossily-decoded string.
         key: Vec<u8>,
     },
-    /// A bundle record does not export the required [`crate::model::key`]
+    /// A domain package record does not export the required [`crate::model::key`]
     /// kind for its role.
     WrongExport,
-    /// A systems relationship names an endpoint absent from the bundle.
+    /// A systems relationship names an endpoint absent from the domain package.
     UnknownRelationship {
         /// The absent relationship.
-        relationship: ProducerKey,
+        relationship: DeclarationKey,
     },
     /// A connection's source end names a port that is not a declared
     /// endpoint.
     UnknownSourcePort {
         /// The absent source port.
-        port: ProducerKey,
+        port: DeclarationKey,
     },
     /// A connection's target end names a port that is not a declared
     /// endpoint.
     UnknownTargetPort {
         /// The absent target port.
-        port: ProducerKey,
+        port: DeclarationKey,
     },
     /// A connection's direction is not compatible with its source/target
     /// ports.
     PortDirection {
         /// The source port.
-        source: ProducerKey,
+        source: DeclarationKey,
         /// The target port.
-        target: ProducerKey,
+        target: DeclarationKey,
     },
     /// A conformance redefinition record names a redefining member absent
-    /// from the bundle.
+    /// from the domain package.
     UnknownRedefining {
         /// The absent redefining member.
-        member: ProducerKey,
+        member: DeclarationKey,
     },
     /// A conformance redefinition record names a redefined member absent
-    /// from the bundle.
+    /// from the domain package.
     UnknownRedefined {
         /// The absent redefined member.
-        member: ProducerKey,
+        member: DeclarationKey,
     },
     /// A conformance subsetting record names a subsetting member absent
-    /// from the bundle.
+    /// from the domain package.
     UnknownSubsetting {
         /// The absent subsetting member.
-        member: ProducerKey,
+        member: DeclarationKey,
     },
     /// A conformance subsetting record names a subsetted member absent
-    /// from the bundle.
+    /// from the domain package.
     UnknownSubsetted {
         /// The absent subsetted member.
-        member: ProducerKey,
+        member: DeclarationKey,
     },
-    /// An endpoint's owning component names a key absent from the bundle.
+    /// An endpoint's owning component names a key absent from the domain package.
     UnknownComponent {
         /// The endpoint naming the owning component.
-        item: ProducerKey,
+        item: DeclarationKey,
         /// The absent component.
-        missing: ProducerKey,
+        missing: DeclarationKey,
     },
-    /// A relationship end names a type identity absent from the bundle.
+    /// A relationship end names a type identity absent from the domain package.
     UnknownEndpoint {
         /// Which end: `"source"` or `"target"`.
         end: &'static str,
         /// The relationship naming the endpoint.
-        relationship: ProducerKey,
+        relationship: DeclarationKey,
         /// The absent endpoint (#163 re-review ruling 3: structured data —
         /// `end`/`relationship`/`missing` — not the prose
         /// `"{end} end of {relationship}"` `item` string the original PR
         /// carried).
-        missing: ProducerKey,
+        missing: DeclarationKey,
     },
     /// An [`crate::model::key::EffectiveDeclarationPreimage`]'s derivation
     /// fact has an `ordinal` that does not match its array position.
     UnsortedDerivation {
         /// The preimage's own original declaration.
-        original: ProducerKey,
+        original: DeclarationKey,
         /// The out-of-order fact's array position.
         position: usize,
         /// The fact's actual (wrong) ordinal.
@@ -403,7 +417,7 @@ pub enum ModelRefusalCause {
     /// retains the same input path at two positions.
     DuplicatePath {
         /// The preimage's own original declaration.
-        original: ProducerKey,
+        original: DeclarationKey,
         /// The earlier position retaining the path.
         earlier: usize,
         /// The later position retaining the same path.
@@ -424,7 +438,7 @@ pub enum ModelRefusalCause {
         /// The object declaring the field twice.
         object: String,
         /// The duplicated field.
-        field: ProducerKey,
+        field: DeclarationKey,
     },
     /// A population member's subsetting-feature value is not among its
     /// subsetted feature's values (#157).
@@ -432,11 +446,11 @@ pub enum ModelRefusalCause {
         /// The object whose subsetting feature is violated.
         object: String,
         /// The subsetting record.
-        record: ProducerKey,
+        record: DeclarationKey,
         /// The subsetting field.
-        subsetting: ProducerKey,
+        subsetting: DeclarationKey,
         /// The subsetted field.
-        subsetted: ProducerKey,
+        subsetted: DeclarationKey,
     },
     /// FR-046/FR-151: an invocation creates an object outside its
     /// operation's declared `creates` frame. One of four distinct
@@ -449,7 +463,7 @@ pub enum ModelRefusalCause {
         /// The created object.
         object: String,
         /// Its most-specific type.
-        type_name: ProducerKey,
+        type_name: DeclarationKey,
     },
     /// FR-046/FR-151: an invocation changes an object's most-specific type
     /// between pre and post, which no `creates`/`deletes`/`modifies`
@@ -458,9 +472,9 @@ pub enum ModelRefusalCause {
         /// The object whose type changed.
         object: String,
         /// Its pre most-specific type.
-        pre_type: ProducerKey,
+        pre_type: DeclarationKey,
         /// Its post most-specific type.
-        post_type: ProducerKey,
+        post_type: DeclarationKey,
     },
     /// FR-046/FR-151: an invocation deletes an object outside its
     /// operation's declared `deletes` frame. `Code::FrameViolation`/
@@ -469,7 +483,7 @@ pub enum ModelRefusalCause {
         /// The deleted object.
         object: String,
         /// Its pre most-specific type.
-        type_name: ProducerKey,
+        type_name: DeclarationKey,
     },
     /// FR-046/FR-151: an invocation changes a surviving object's field
     /// outside its operation's declared `modifies` frame.
@@ -478,7 +492,7 @@ pub enum ModelRefusalCause {
         /// The object whose field changed.
         object: String,
         /// The changed field.
-        field: ProducerKey,
+        field: DeclarationKey,
     },
     /// FR-046: an invocation's caller-supplied delta declares the same
     /// identity more than once in one of its own `created`/`deleted` lists.
@@ -552,6 +566,7 @@ impl ModelRefusalCause {
             Self::IncompleteScope { .. } => "incomplete-scope",
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
             Self::ForeignType { .. } => "foreign-type",
+            Self::UnknownPopulationMemberType { .. } => "missing-name",
             Self::ConflictingIdentity { .. } => "conflicting-identity",
             Self::OperatorIneligible => "operator-ineligible",
             Self::AboveMaximum { .. } => "above-maximum",
@@ -595,11 +610,11 @@ mod tests {
     use serde_json::Value;
 
     use super::{ModelRefusalCause, OfferedSelection};
-    use crate::model::bundle::Multiplicity;
-    use crate::model::key::{digest_of, ProducerKey};
+    use crate::model::domain_package::Multiplicity;
+    use crate::model::key::{digest_of, DeclarationKey};
 
-    fn key(identity: &str) -> ProducerKey {
-        ProducerKey::fixture(identity)
+    fn key(identity: &str) -> DeclarationKey {
+        DeclarationKey::fixture(identity)
     }
 
     fn effective_id() -> crate::model::key::EffectiveId {
@@ -665,6 +680,7 @@ mod tests {
             ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
             ModelRefusalCause::ForeignType { .. } => "foreign-type",
+            ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing-name",
             ModelRefusalCause::ConflictingIdentity { .. } => "conflicting-identity",
             ModelRefusalCause::OperatorIneligible => "operator-ineligible",
             ModelRefusalCause::AboveMaximum { .. } => "above-maximum",
@@ -718,11 +734,11 @@ mod tests {
                 owner: key("p"),
             },
             ModelRefusalCause::UnknownSpecific {
-                generalization: key("p"),
+                supertype: key("p"),
                 specific: key("p"),
             },
             ModelRefusalCause::UnknownGeneral {
-                generalization: key("p"),
+                supertype: key("p"),
                 general: key("p"),
             },
             ModelRefusalCause::UnknownValueType {
@@ -781,7 +797,7 @@ mod tests {
             ModelRefusalCause::RedefinitionTarget,
             ModelRefusalCause::ForeignModelSelection {
                 actual: OfferedSelection::Document(String::new()),
-                expected: crate::model::bundle::ModelSelection::fixture("p"),
+                expected: crate::model::domain_package::DomainPackageRef::fixture("p"),
             },
             ModelRefusalCause::IncompleteScope {
                 selection: String::new(),
@@ -792,6 +808,10 @@ mod tests {
             },
             ModelRefusalCause::ForeignType {
                 member: String::new(),
+                type_name: key("p"),
+            },
+            ModelRefusalCause::UnknownPopulationMemberType {
+                population: key("p"),
                 type_name: key("p"),
             },
             ModelRefusalCause::ConflictingIdentity {
