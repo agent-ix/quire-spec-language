@@ -87,8 +87,8 @@
 //!   every created and deleted object identity's most-specific type must
 //!   conform to a declared `creates`/`deletes` grant, and every changed
 //!   field on a surviving object must be a declared `modifies` member
-//!   (directly, or reaching one through a redefinition record — FR-151's own
-//!   effect-inclusion rule). A field's declared collection kind
+//!   (directly, or reaching one through a member's own `redefines` property
+//!   — FR-151's own effect-inclusion rule). A field's declared collection kind
 //!   (`Multiplicity::ordered`) decides whether its pre/post values compare
 //!   by exact sequence or by order-insensitive multiset, so re-serializing
 //!   an unordered field in a different order is never itself a write. An
@@ -136,8 +136,8 @@ use crate::diagnostic::Code;
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, OperationEffect,
-    SubsettingRecord, SupertypeRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
+    OperationEffect,
 };
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{
@@ -412,7 +412,7 @@ pub struct PopulationMember {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationDocument {
     /// The document's own declared `modelIdentity`, which must name the
-    /// binding's `DomainPackageRef` export identity.
+    /// binding's `DomainPackageRef` identity.
     pub model_identity: String,
     /// Member records, in document order.
     pub members: Vec<PopulationMember>,
@@ -478,8 +478,9 @@ pub struct PopulationBinding {
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
-    /// `domain_package`'s supertype records, indexed by `specific`, computed
-    /// once here rather than by [`all_instances`]/[`lookup`] on every call.
+    /// `domain_package`'s declared `supertypes[]` generals, indexed by
+    /// specific, computed once here rather than by [`all_instances`]/[`lookup`]
+    /// on every call.
     /// `value-accounting.md`'s "Model and graph evaluation" paragraph
     /// already places the type-conformance decision this index serves
     /// outside any charge ("...selects the member, without a charge, exactly
@@ -487,7 +488,7 @@ pub struct PopulationBinding {
     /// fix, not a new charge: the same "compute an index once at admission
     /// instead of once per lookup" move [`admit_binding`] already makes for
     /// `type_lookup`/`by_object` below.
-    generals: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    generals: HashMap<DeclarationKey, Vec<DeclarationKey>>,
     /// Every declared object type of `domain_package`'s effective view, `DeclarationKey`
     /// to its FR-150-derived [`EffectiveId`]. Computed once here from
     /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
@@ -528,10 +529,9 @@ impl PopulationBinding {
         &self.domain_package.model_selection
     }
 
-    /// The `DomainPackageRef` export identity this binding was admitted
-    /// against.
+    /// The `DomainPackageRef` identity this binding was admitted against.
     pub fn model_identity(&self) -> &str {
-        &self.domain_package.model_selection.export.identity
+        &self.domain_package.model_selection.identity
     }
 
     /// This binding's own object universe.
@@ -594,9 +594,9 @@ pub enum AdmissionOutcome {
 /// values' own `model_selection` headers instead — the same closed-catalog
 /// `foreign_reference`/`foreign-model-selection` cause the `modelIdentity`
 /// check below already uses for a DomainPackageRef-key mismatch, and the same
-/// boundary this crate already trusts at that check (`export.identity`
+/// boundary this crate already trusts at that check (`identity`
 /// without content verification) — comparing the *full* header rather than
-/// only `export.identity` so a revision-only divergence is caught too.
+/// only `identity` so a version-only divergence is caught too.
 ///
 /// `population_key` is a key, not a caller-supplied
 /// [`crate::model::domain_package::PopulationRecord`]:
@@ -626,11 +626,11 @@ pub fn admit_binding(
             },
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting domain package's {}",
-                view.model_selection.export.identity, domain_package.model_selection.export.identity
+                view.model_selection.identity, domain_package.model_selection.identity
             ),
         });
     }
-    if document.model_identity != domain_package.model_selection.export.identity {
+    if document.model_identity != domain_package.model_selection.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
@@ -639,7 +639,7 @@ pub fn admit_binding(
             },
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",
-                document.model_identity, domain_package.model_selection.export.identity
+                document.model_identity, domain_package.model_selection.identity
             ),
         });
     }
@@ -661,7 +661,7 @@ pub fn admit_binding(
             },
             detail: format!(
                 "population key {} names no Population declaration of domain package {}",
-                population_key.identity, domain_package.model_selection.export.identity
+                population_key.node, domain_package.model_selection.identity
             ),
         });
     };
@@ -669,11 +669,11 @@ pub fn admit_binding(
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::IncompleteScope {
-                selection: domain_package.model_selection.export.identity.clone(),
+                selection: domain_package.model_selection.identity.clone(),
             },
             detail: format!(
                 "population {} for {} does not declare extent: closed",
-                population.key.identity, domain_package.model_selection.export.identity
+                population.key.node, domain_package.model_selection.identity
             ),
         });
     }
@@ -681,7 +681,7 @@ pub fn admit_binding(
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::UnclosedSubtypes {
-                selection: domain_package.model_selection.export.identity.clone(),
+                selection: domain_package.model_selection.identity.clone(),
                 type_name: document
                     .members
                     .first()
@@ -689,11 +689,11 @@ pub fn admit_binding(
             },
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
-                domain_package.model_selection.export.identity,
+                domain_package.model_selection.identity,
                 document
                     .members
                     .first()
-                    .map(|member| member.type_identity.identity.as_str())
+                    .map(|member| member.type_identity.node.as_str())
                     .unwrap_or("<no members>")
             ),
         });
@@ -738,7 +738,7 @@ pub fn admit_binding(
                 },
                 detail: format!(
                     "member {} names type {}, absent from the effective view",
-                    member.object, member.type_identity.identity
+                    member.object, member.type_identity.node
                 ),
             });
         };
@@ -793,15 +793,30 @@ pub fn admit_binding(
         None
     }
 
-    let subsetting_records: Vec<&SubsettingRecord> = domain_package
+    /// One subsetting edge derived from a field member's own inline
+    /// `subsets[]` property (`model-complete.md`:161): `owner` declares
+    /// `subsetting`, whose runtime values must be a subset of `subsetted`'s.
+    struct SubsettingEdge<'a> {
+        owner: &'a DeclarationKey,
+        subsetting: &'a DeclarationKey,
+        subsetted: &'a DeclarationKey,
+    }
+    let subsetting_edges: Vec<SubsettingEdge<'_>> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            DomainPackageRecord::Subsetting(subsetting) => Some(subsetting),
+            DomainPackageRecord::FieldMember(field) if !field.subsets.is_empty() => Some(field),
             _ => None,
         })
+        .flat_map(|field: &FieldMemberRecord| {
+            field.subsets.iter().map(move |subsetted| SubsettingEdge {
+                owner: &field.owner,
+                subsetting: &field.key,
+                subsetted,
+            })
+        })
         .collect();
-    if !subsetting_records.is_empty() {
+    if !subsetting_edges.is_empty() {
         let member_by_object: HashMap<&str, &PopulationMember> = document
             .members
             .iter()
@@ -824,23 +839,23 @@ pub fn admit_binding(
                     },
                     detail: format!(
                         "object {} declares field {} more than once in its field_values",
-                        key.object, field.identity
+                        key.object, field.node
                     ),
                 });
             }
-            let mut applicable: Vec<&SubsettingRecord> = Vec::new();
-            for record in &subsetting_records {
-                match type_conforms(&generals, original_type, &record.owner) {
-                    Ok(true) => applicable.push(record),
+            let mut applicable: Vec<&SubsettingEdge<'_>> = Vec::new();
+            for edge in &subsetting_edges {
+                match type_conforms(&generals, original_type, edge.owner) {
+                    Ok(true) => applicable.push(edge),
                     Ok(false) => {}
                     Err(refusal) => return AdmissionOutcome::Refused(refusal),
                 }
             }
-            applicable.sort_by(|a, b| a.key.cmp(&b.key));
+            applicable.sort_by(|a, b| a.subsetting.cmp(b.subsetting));
 
-            for record in applicable {
-                let subsetting_values = values_of(member, &record.subsetting);
-                let subsetted_values = values_of(member, &record.subsetted);
+            for edge in applicable {
+                let subsetting_values = values_of(member, edge.subsetting);
+                let subsetted_values = values_of(member, edge.subsetted);
                 for value in subsetting_values {
                     let n = length_amount(subsetted_values.len());
                     if let Err(incomplete) = meter.charge(
@@ -854,17 +869,16 @@ pub fn admit_binding(
                             code: Code::InvalidRuntimeInput,
                             cause: ModelRefusalCause::SubsettingViolation {
                                 object: key.object.clone(),
-                                record: record.key.clone(),
-                                subsetting: record.subsetting.clone(),
-                                subsetted: record.subsetted.clone(),
+                                subsetting: edge.subsetting.clone(),
+                                subsetted: edge.subsetted.clone(),
                             },
                             detail: format!(
                                 "object {}'s {} names {value}, not among its {} values \
-                                 (subsetting record {})",
+                                 (subsetting field {})",
                                 key.object,
-                                record.subsetting.identity,
-                                record.subsetted.identity,
-                                record.key.identity
+                                edge.subsetting.node,
+                                edge.subsetted.node,
+                                edge.subsetting.node
                             ),
                         });
                     }
@@ -1095,13 +1109,13 @@ fn field_values_equal(
     pre == post
 }
 
-/// Walks `field`'s redefinition chain (`redefining -> redefined`, one
-/// `DomainPackageRecord::Redefinition` hop at a time), returning `true` as soon as
+/// Walks `field`'s redefinition chain (one member's own inline `redefines`
+/// hop at a time — `model-complete.md`:162), returning `true` as soon as
 /// `admits` accepts `field` itself or some ancestor it reaches, `false` once
 /// the chain ends with no accepted link. model-complete.md:56: the
 /// redefining feature replaces "the *one* inherited redefined feature", so a
 /// chain -- `C.x` redefines `B.x`, `B.x` redefines `A.x`, with no direct
-/// `C.x -> A.x` record -- is legal and normal, not an edge case; a single
+/// `C.x -> A.x` edge -- is legal and normal, not an edge case; a single
 /// hop only ever reaches an immediate redefinition target, never a
 /// grandparent one. `redefinitionClosure: closed` (model-complete.md:64)
 /// means every redefinition edge in the model is *listed* here, not that
@@ -1118,13 +1132,12 @@ fn field_values_equal(
 /// (`check_operation_redefinition`'s "Effect" axis). Taking a
 /// [`DomainPackageRecord`] slice rather than a whole [`DomainPackage`] lets either call
 /// site pass its own already-available `&domain_package.records`. Equality is
-/// `DeclarationKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
-/// `digest`, all four) at both call sites -- a write naming a field at one
-/// revision does not reach a grant for the same identity at a different
-/// revision. Pinned by
-/// `enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name`
+/// `DeclarationKey`'s derived `PartialEq` (`package`, `node`, both) at both
+/// call sites -- a write naming a field in one package does not reach a
+/// grant for the same node in a different package. Pinned by
+/// `enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_name`
 /// here (`tests/model_population.rs`) and by
-/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name`
+/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant_does_not_name`
 /// at the `conformance` call site (`tests/model_conformance.rs`).
 pub(super) fn redefinition_reaches(
     records: &[DomainPackageRecord],
@@ -1138,10 +1151,11 @@ pub(super) fn redefinition_reaches(
             return true;
         }
         let Some(redefined) = records.iter().find_map(|record| match record {
-            DomainPackageRecord::Redefinition(redefinition)
-                if redefinition.redefining == current =>
-            {
-                Some(redefinition.redefined.clone())
+            DomainPackageRecord::FieldMember(member) if member.key == current => {
+                member.redefines.clone()
+            }
+            DomainPackageRecord::OperationMember(member) if member.key == current => {
+                member.redefines.clone()
             }
             _ => None,
         }) else {
@@ -1153,9 +1167,9 @@ pub(super) fn redefinition_reaches(
 }
 
 /// Whether `field` (the field a runtime population document names on some
-/// member) is covered by `effect.modifies`, directly or because it
-/// "reaches one through redefinition records" -- FR-151's own effect-
-/// inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
+/// member) is covered by `effect.modifies`, directly or because it reaches
+/// one through a chain of members' own `redefines` properties -- FR-151's
+/// own effect-inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
 /// operation's own declared writes rather than to a redefining operation's
 /// writes against its redefined ancestor's. Walks the full chain
 /// ([`redefinition_reaches`]), not just one hop: `modifies: [model.A.x]`
@@ -1237,7 +1251,7 @@ fn enforce_frame(
                     format!(
                         "invocation creates object {object} of type {}, outside the operation's \
                          declared creates frame",
-                        post_type.identity
+                        post_type.node
                     ),
                 ));
             }
@@ -1255,7 +1269,7 @@ fn enforce_frame(
                     "invocation changes object {object}'s most-specific type from {} to {} \
                      between pre and post, which no operation frame may authorize (FR-151's \
                      effect grants cover modifies/creates/deletes only)",
-                    pre_type.identity, post_type.identity
+                    pre_type.node, post_type.node
                 ),
             ));
         }
@@ -1283,7 +1297,7 @@ fn enforce_frame(
                 format!(
                     "invocation deletes object {object} of type {}, outside the operation's \
                      declared deletes frame",
-                    pre_type.identity
+                    pre_type.node
                 ),
             ));
         }
@@ -1322,7 +1336,7 @@ fn enforce_frame(
                 format!(
                     "invocation changes object {}'s field {}, outside the operation's declared \
                      modifies frame",
-                    pre_member.object, field.identity
+                    pre_member.object, field.node
                 ),
             ));
         }
@@ -1471,7 +1485,7 @@ pub fn all_instances(
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
-            detail: format!("{} is not a model object type", t.identity),
+            detail: format!("{} is not a model object type", t.node),
         });
     }
 
@@ -1617,10 +1631,7 @@ pub fn lookup(
             return LookupOutcome::Refused(ModelRefusal {
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::TypeMismatch,
-                detail: format!(
-                    "{} does not conform to {}",
-                    r.static_type.identity, t.identity
-                ),
+                detail: format!("{} does not conform to {}", r.static_type.node, t.node),
             })
         }
         Err(refusal) => return LookupOutcome::Refused(refusal),

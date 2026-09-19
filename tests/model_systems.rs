@@ -18,7 +18,9 @@ use quire_spec_language::model::domain_package::{
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
-use quire_spec_language::model::normalize::{ModelRefusal, ModelRefusalCause};
+use quire_spec_language::model::normalize::{
+    normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
     ConnectionCheckOutcome, ConnectionOutcome, Kind,
@@ -37,11 +39,19 @@ fn one() -> Multiplicity {
     mult(1, Some(1))
 }
 
-fn object_type(identity: &str, interface_features: Option<Vec<&str>>) -> DomainPackageRecord {
+fn object_type(
+    identity: &str,
+    interface_features: Option<Vec<&str>>,
+    supertypes: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: interface_features
             .map(|features| features.into_iter().map(DeclarationKey::fixture).collect()),
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
@@ -65,16 +75,8 @@ fn field_member(
             owner: DeclarationKey::fixture(owner),
             value_type: DeclarationKey::fixture(value_type),
             multiplicity: m,
-        },
-    )
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(
-        quire_spec_language::model::domain_package::SupertypeRecord {
-            key: DeclarationKey::fixture(identity),
-            specific: DeclarationKey::fixture(specific),
-            general: DeclarationKey::fixture(general),
+            subsets: vec![],
+            redefines: None,
         },
     )
 }
@@ -144,6 +146,7 @@ fn operation_run() -> DomainPackageRecord {
         has_own_precondition: false,
         own_postcondition_clauses: vec![],
         has_body: true,
+        redefines: None,
     })
 }
 
@@ -153,12 +156,15 @@ fn operation_run() -> DomainPackageRecord {
 fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackage {
     let mut records = vec![
         scalar_type("model.Count", 0, 9),
-        object_type("model.Sys", None),
-        object_type("model.Pump", None),
-        object_type("model.Tank", None),
-        object_type("model.Flow", Some(vec!["model.Flow.rate"])),
-        object_type("model.Flow2", Some(vec!["model.Flow.rate"])),
-        supertype("model.gen.Flow2-Flow", "model.Flow2", "model.Flow"),
+        object_type("model.Sys", None, vec![]),
+        object_type("model.Pump", None, vec![]),
+        object_type("model.Tank", None, vec![]),
+        object_type("model.Flow", Some(vec!["model.Flow.rate"]), vec![]),
+        object_type(
+            "model.Flow2",
+            Some(vec!["model.Flow.rate"]),
+            vec!["model.Flow"],
+        ),
         field_member("model.Flow.rate", "model.Flow", "model.Count", one()),
         component("model.Sys.pump", "model.Sys", "model.Pump", one()),
         component("model.Sys.tank", "model.Sys", "model.Tank", one()),
@@ -230,7 +236,7 @@ fn find_relationship<'a>(
         .iter_mut()
         .find_map(|record| match record {
             DomainPackageRecord::Relationship(relationship)
-                if relationship.key.identity == identity =>
+                if relationship.key.node == identity =>
             {
                 Some(relationship)
             }
@@ -246,7 +252,7 @@ fn find_endpoint<'a>(
     records
         .iter_mut()
         .find_map(|record| match record {
-            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.identity == identity => {
+            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.node == identity => {
                 Some(endpoint)
             }
             _ => None,
@@ -261,7 +267,7 @@ fn find_component<'a>(
     records
         .iter_mut()
         .find_map(|record| match record {
-            DomainPackageRecord::Component(component) if component.key.identity == identity => {
+            DomainPackageRecord::Component(component) if component.key.node == identity => {
                 Some(component)
             }
             _ => None,
@@ -659,32 +665,30 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
 }
 
-/// PR #144 review finding #2 regression: two components sharing a display
-/// identity but differing in revision must classify and resolve
-/// independently — never one collapsing/overwriting the other by identity
-/// alone (the exact defect class PR #140 fixed in `normalize.rs`). Mirrors
-/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
-/// in `tests/model_normalization.rs`.
+/// FR-154: "Two nodes share one identity" refuses
+/// `invalid_model_binding`/`conflicting-binding`. Retargets the pre-#131
+/// `f2_components_sharing_an_identity_but_differing_in_revision_both_survive`
+/// regression test: under the dropped `revision`/`digest` fields, two
+/// `Component` records that once differed only in `revision` now share the
+/// exact same `DeclarationKey`, and `normalize` -- which every real
+/// pipeline runs before `classify` ever sees a domain package -- must
+/// refuse before either component reaches `SystemsClassification`.
 #[trace("TC-197")]
 #[test]
-fn f2_components_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let revision_1 = DeclarationKey::fixture("model.Sys.pump");
-    let mut revision_2 = DeclarationKey::fixture("model.Sys.pump");
-    revision_2.revision.value = "2".to_owned();
-
+fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.f2-systems-revision"),
+        DomainPackageRef::fixture("bundle.f2-systems-conflict"),
         vec![
-            object_type("model.Pump", None),
+            object_type("model.Pump", None, vec![]),
             DomainPackageRecord::Component(ComponentRecord {
-                key: revision_1.clone(),
+                key: DeclarationKey::fixture("model.Sys.pump"),
                 owning_type: DeclarationKey::fixture("model.Sys"),
                 value_type: DeclarationKey::fixture("model.Pump"),
                 multiplicity: one(),
                 has_part_signature: true,
             }),
             DomainPackageRecord::Component(ComponentRecord {
-                key: revision_2.clone(),
+                key: DeclarationKey::fixture("model.Sys.pump"),
                 owning_type: DeclarationKey::fixture("model.Sys"),
                 value_type: DeclarationKey::fixture("model.Pump"),
                 multiplicity: one(),
@@ -692,16 +696,18 @@ fn f2_components_sharing_an_identity_but_differing_in_revision_both_survive() {
             }),
         ],
     );
-    let mut meter = unlimited_meter();
-    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
-
-    // Revision "2" (no part-signature) must never silently overwrite
-    // revision "1" (has one) in `SystemsClassification`'s maps.
-    let resolved = resolve_kind(&classification, Kind::Part, &revision_1)
-        .expect("revision \"1\" has the part-signature capability");
-    assert_eq!(resolved.key, revision_1);
-
-    let refusal = resolve_kind(&classification, Kind::Part, &revision_2)
-        .expect_err("revision \"2\" does not have the part-signature capability");
-    assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingBinding {
+                    key: DeclarationKey::fixture("model.Sys.pump"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
+        }
+    }
 }

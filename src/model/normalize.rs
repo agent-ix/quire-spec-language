@@ -3,16 +3,16 @@
 //! 4 (`quire.model.normalize.redefine/v1`, explicit field redefinition) and
 //! 5 (canonicalize).
 //!
-//! Phase 4 here covers exactly TC-195 N06's shape: explicit
-//! [`crate::model::domain_package::RedefinitionRecord`]s over **field** members,
-//! resolved by the same proper-descendant dominance FR-151 dispatch later
-//! reuses (a redefining owner that is a proper descendant of every other
-//! contesting owner wins outright; two or more undominated owners refuse
-//! `derivation-conflict`). `quire.model.normalize.subset/v1` (explicit
-//! subsetting) derives no replacement member — FR-150 says so explicitly
-//! ("subsetting never conflicts with redefinition because it derives no
-//! replacement") — so [`crate::model::domain_package::SubsettingRecord`] carries no
-//! normalization derivation at all; it is checked directly by
+//! Phase 4 here covers exactly TC-195 N06's shape: **field** members' own
+//! explicit `redefines` property (`model-complete.md`:159/160), resolved by
+//! the same proper-descendant dominance FR-151 dispatch later reuses (a
+//! redefining owner that is a proper descendant of every other contesting owner wins
+//! outright; two or more undominated owners refuse `derivation-conflict`).
+//! `quire.model.normalize.subset/v1` (explicit subsetting) derives no
+//! replacement member — FR-150 says so explicitly ("subsetting never
+//! conflicts with redefinition because it derives no replacement") — so a
+//! field member's own `subsets` property (`model-complete.md`:159) carries
+//! no normalization derivation at all; it is checked directly by
 //! `crate::model::conformance` (the static `subsetting-type` axis) and, at
 //! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
 //! — FR-153 territory, not yet implemented anywhere in this crate (see
@@ -20,18 +20,18 @@
 //! **Operation-member** redefinition (TC-196 R02–R08) also builds no phase
 //! here: `crate::model::conformance` constructs its own
 //! [`EffectiveDeclarationPreimage`] directly over the domain package's
-//! [`crate::model::domain_package::OperationMemberRecord`]/`RedefinitionRecord`
-//! values for FR-151's conformance checking, so this pass — which exists to
+//! [`crate::model::domain_package::OperationMemberRecord`]'s own `redefines`
+//! property for FR-151's conformance checking, so this pass — which exists to
 //! grow [`EffectiveView`] itself — has nothing to add for operations. This
 //! split is a scope decision recorded here, not a silent gap: extending
 //! this pass to also normalize operation-member redefinition into the view
 //! is future work, tracked by the PR that made this decision. This scope
 //! decision covers only the *view* this pass grows: the `m + r`
 //! `normalize.redefinition-check` charge below still prices every
-//! redefinition record and every effective member the spec names,
+//! redefining member and every effective member the spec names,
 //! operation and field alike (QSL #145), and the
 //! `Σ (c − 1) × f(o)` `normalize.conflict-check` charge below prices a
-//! contested operation target (`c >= 2` operation-redefinition records
+//! contested operation target (`c >= 2` redefining operation members
 //! reaching the same target) exactly as it prices a contested field target
 //! (QSL #145) — neither charge is itself
 //! an operation-redefinition normalization pass. Detecting and *resolving*
@@ -125,16 +125,17 @@
 //! `proposals/quire-v1/definitions/value-accounting.md` states, not a flat
 //! one work unit (QSL #145 scope item 2):
 //! `normalize.redefinition-check` (`:455`) charges `m + r` once per
-//! redefinition record in the *entire domain package* — field or operation alike —
-//! ascending by the record's own producer key, where `m` is the number of
-//! the record's own owning type's effective members (field and operation
-//! together) and `r` is the count of redefinition records already checked
+//! redefining member in the *entire domain package* — field or operation alike —
+//! ascending by the member's own key (there is no separate redefinition-record
+//! key to sort by under QSpec's inline shape), where `m` is the number of
+//! the member's own owning type's effective members (field and operation
+//! together) and `r` is the count of redefining members already checked
 //! before it in that same ascending, domain-package-wide sequence. This is computed
 //! exactly once, in `build()`, before the per-type phase-4 loop runs at
-//! all: the unit the spec prices is the record itself, tested once against
-//! its own owning type, never once per (record, effective type reaching
+//! all: the unit the spec prices is the redefining member itself, tested once against
+//! its own owning type, never once per (member, effective type reaching
 //! it) pair the previous per-type loop recomputed it at, which overcharged
-//! any record reachable from more than one effective type and reset `r` at
+//! any member reachable from more than one effective type and reset `r` at
 //! each type instead of counting across the whole domain package.
 //! `normalize.conflict-check` (`:456`) charges `Σ (c − 1) × f(o)` per
 //! contested target with `c >= 2` redefiners, summed once per redefining
@@ -151,8 +152,8 @@
 //! already exist regardless.
 //!
 //! The redefine facts phase 4 itself derives (`RULE_REDEFINE`, one on the
-//! redefining feature and one on the redefined feature per redefinition
-//! record reaching a type — `model-complete.md:231`) are themselves
+//! redefining feature and one on the redefined feature per redefining
+//! member reaching a type — `model-complete.md:231`) are themselves
 //! derivation facts, exactly like phase 2's qualify facts and phase 3's
 //! inherit facts, and `value-accounting.md:453` prices every derivation
 //! fact as `normalize.fact` regardless of which phase formed it. `build`
@@ -198,12 +199,11 @@ use crate::model::accounting::{
 };
 use crate::model::conformance::generals_by_specific;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, SupertypeRecord,
-    INTERFACE_VERSION_1_3_0,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
 };
 use crate::model::key::{
     digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact,
-    PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
 
@@ -398,17 +398,24 @@ impl ObjectUniverse {
 pub const MAX_GENERALIZATION_DEPTH: usize = 128;
 
 struct Index {
-    /// Every declared object type, keyed by its own full producer key (PR
-    /// #140 F2): two `ObjectType` records that share a display identity but
-    /// differ in revision or digest are distinct original declarations and
-    /// must both survive, never merge. Also serves phase 4's and this
-    /// module's other passes' "is this a declared type" dangling-reference
-    /// checks — a second, redundant `known_types` set would only ever
-    /// duplicate this one.
+    /// Every declared object type, keyed by its own [`DeclarationKey`]
+    /// (`package`/`node`). Under #131's flat key shape, two `ObjectType`
+    /// records that share one key are no longer distinct declarations: this
+    /// set's own `.insert()` would silently keep only the first, but
+    /// `build`'s caller never trusts that -- `validate_references`'s
+    /// collision check re-walks `domain_package.records` right after
+    /// `Index::build` returns and refuses
+    /// `invalid_model_binding`/`conflicting-binding` before this `Index` is
+    /// put to any real use, so a caller that observes a completed
+    /// normalization never sees a collapsed pair here. Also serves phase 4's
+    /// and this module's other passes' "is this a declared type"
+    /// dangling-reference checks — a second, redundant `known_types` set
+    /// would only ever duplicate this one.
     types: std::collections::BTreeSet<DeclarationKey>,
     fields_by_owner: HashMap<DeclarationKey, Vec<FieldMemberRecord>>,
-    generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
-    /// Every type that is some record's `specific`, i.e. not a root.
+    generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
+    /// Every type whose own `supertypes[]` (`model-complete.md`:155) is
+    /// non-empty, i.e. not a root.
     non_root: std::collections::HashSet<DeclarationKey>,
     /// Every declared scalar type's own full key.
     known_scalars: std::collections::HashSet<DeclarationKey>,
@@ -435,6 +442,12 @@ impl Index {
             match record {
                 DomainPackageRecord::ObjectType(t) => {
                     types.insert(t.key.clone());
+                    // A type is `non_root` when its own `supertypes[]`
+                    // (`model-complete.md`:155) is non-empty, i.e. it is the
+                    // `specific` end of at least one generalization edge.
+                    if !t.supertypes.is_empty() {
+                        non_root.insert(t.key.clone());
+                    }
                 }
                 DomainPackageRecord::FieldMember(m) => {
                     field_member_keys.insert(m.key.clone());
@@ -443,22 +456,12 @@ impl Index {
                         .or_default()
                         .push(m.clone());
                 }
-                DomainPackageRecord::Supertype(g) => {
-                    non_root.insert(g.specific.clone());
-                }
                 DomainPackageRecord::ScalarType(s) => {
                     known_scalars.insert(s.key.clone());
                 }
                 DomainPackageRecord::OperationMember(o) => {
                     operation_member_keys.insert(o.key.clone());
                 }
-                // Redefinition bookkeeping is scanned per type directly from
-                // `domain_package.records` by `apply_redefinitions`, so it
-                // needs no index bucket here.
-                DomainPackageRecord::Redefinition(_) => {}
-                // Subsetting derives no normalization fact (see module
-                // docs); it needs no bookkeeping here at all.
-                DomainPackageRecord::Subsetting(_) => {}
                 // FR-152 systems-model records (crate::model::systems) and
                 // FR-153 population declarations (crate::model::population)
                 // are not FR-150 normalization inputs: they neither declare
@@ -490,13 +493,16 @@ impl Index {
         members
     }
 
-    fn sorted_generals(&self, specific: &DeclarationKey) -> Vec<SupertypeRecord> {
+    /// `specific`'s own declared `supertypes[]`, ascending by the general
+    /// type's own key (there is no separate generalization-record key to
+    /// sort by under QSpec's inline shape).
+    fn sorted_generals(&self, specific: &DeclarationKey) -> Vec<DeclarationKey> {
         let mut generals = self
             .generals_by_specific
             .get(specific)
             .cloned()
             .unwrap_or_default();
-        generals.sort_by(|a, b| a.key.cmp(&b.key));
+        generals.sort();
         generals
     }
 }
@@ -549,7 +555,7 @@ fn ancestor_paths(
     budget: usize,
 ) -> Result<Vec<AncestorPath>, ModelRefusal> {
     struct Frame {
-        directs: Vec<SupertypeRecord>,
+        directs: Vec<DeclarationKey>,
         next: usize,
         path: Vec<DeclarationKey>,
         visited: Vec<DeclarationKey>,
@@ -580,15 +586,21 @@ fn ancestor_paths(
                 },
                 detail: format!(
                     "ancestor path from {} exceeds {MAX_GENERALIZATION_DEPTH} generalization records",
-                    root_key.identity
+                    root_key.node
                 ),
             });
         }
-        let record = frame.directs[frame.next].clone();
+        // The type whose own `supertypes[]` this frame walks: a refusal
+        // cites this owning node's own key.
+        let specific_key = frame
+            .visited
+            .last()
+            .cloned()
+            .expect("every Frame is seeded with root_key and only ever grows visited");
+        let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
         let mut new_path = frame.path.clone();
-        new_path.push(record.key.clone());
-        let ancestor_key = record.general.clone();
+        new_path.push(ancestor_key.clone());
         if frame.visited.contains(&ancestor_key) {
             // Every contributing declaration in the cycle itself, not the
             // whole path from the walk's root: `frame.visited` is that whole
@@ -618,17 +630,17 @@ fn ancestor_paths(
             {
                 chain.rotate_left(least);
             }
-            let listing: Vec<&str> = chain.iter().map(|key| key.identity.as_str()).collect();
+            let listing: Vec<&str> = chain.iter().map(|key| key.node.as_str()).collect();
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
                     ancestor: ancestor_key.clone(),
-                    via: record.key.clone(),
+                    via: specific_key.clone(),
                 },
                 detail: format!(
                     "{} generalizes back to itself via {}, through the cycle [{}]",
-                    ancestor_key.identity,
-                    record.key.identity,
+                    ancestor_key.node,
+                    specific_key.node,
                     listing.join(", ")
                 ),
             });
@@ -674,17 +686,17 @@ struct Built {
     universe: ObjectUniverse,
     /// Every phase-4 `normalize.redefinition-check` charge's own exact
     /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
-    /// per redefinition record in the entire domain package (field and operation
-    /// alike), ascending by the record's own producer key — computed once,
-    /// domain-package-wide, in `build()` itself, never once per (record, effective
+    /// per redefining member in the entire domain package (field and operation
+    /// alike), ascending by the member's own key — computed once,
+    /// domain-package-wide, in `build()` itself, never once per (member, effective
     /// type reaching it) pair; replayed by
     /// `charge_all`.
     redefinition_check_work: Vec<u64>,
     /// The count of phase-4 redefine facts (`RULE_REDEFINE`) awaiting their
     /// own `normalize.fact` charge: `quire.model.normalize.redefine/v1`
     /// derives "one fact on (T, redefining feature) and one on (T, redefined
-    /// feature)" per redefinition record reaching `T`
-    /// (`model-complete.md:231`), for every record reaching `T`, contested
+    /// feature)" per redefining member reaching `T`
+    /// (`model-complete.md:231`), for every member reaching `T`, contested
     /// or not — `apply_redefinitions` builds these two [`Fact`]s directly
     /// into the redefining and target members' own
     /// [`EffectiveDeclarationPreimage`]; this is only their count, charged
@@ -721,68 +733,157 @@ struct Built {
 /// Refuses a [`DomainPackageRecord`] that names a type key absent from the domain package's
 /// own `ObjectType` records, so a dangling `owner`, `specific` or `general`
 /// reference is a typed refusal rather than a panic or a silently dropped
-/// record — `domain_package` is caller-supplied, not validated on the way in.
-/// Membership is checked by the record's *whole* producer key (PR #140 F2):
-/// a reference matching some declared type's display identity but not its
-/// exact revision/digest is exactly as dangling as one matching nothing.
+/// record — `domain_package` is caller-supplied, not validated on the way in
+/// except for this function's own empty-component and colliding-key checks
+/// above, which run first. Membership is checked by the record's whole
+/// [`DeclarationKey`] (`package`/`node`, #131): a reference matching some
+/// declared type's `node` but naming a different `package` is exactly as
+/// dangling as one matching nothing.
 fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<(), ModelRefusal> {
-    for record in &domain_package.records {
+    // FR-321: "Missing required properties, duplicate keys, out-of-domain
+    // values and non-canonical encodings refuse before consumption." An
+    // empty `package`/`node`/`identity`/`version` string is schema
+    // `minLength`-invalid (out of domain) under
+    // `model-effective-declaration.schema.json`'s `$defs.DeclarationKey` and
+    // FR-321's own `ModelSelectionArtifact` shape, so it refuses before any
+    // reference is resolved or any key comparison runs -- checked first,
+    // ahead of the collision check below, matching FR-154's own row order
+    // (`malformed-declaration` before `conflicting-binding`).
+    if domain_package.model_selection.identity.is_empty()
+        || domain_package.model_selection.version.is_empty()
+    {
+        return Err(ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::MalformedDeclaration,
+            detail: format!(
+                "domain package selection has an empty identity or version: {:?}",
+                domain_package.model_selection
+            ),
+        });
+    }
+    // `model-complete.md`:73: "Nodes are read ascending by declaration key."
+    // Every following check -- the per-node malformed-key check, the
+    // dangling-reference checks, and the collision check -- runs over this
+    // sorted order, not `domain_package.records`' own input order, so two
+    // domain packages that differ only in record order refuse identically.
+    let mut records: Vec<&DomainPackageRecord> = domain_package.records.iter().collect();
+    records.sort_by(|a, b| a.key().cmp(b.key()));
+    // FR-154's own row order: node (declaration) order first, then table
+    // order within one node -- `missing-name` (row 4) before
+    // `conflicting-binding` (row 6). Folded into one pass over the sorted
+    // `records`, not several: a standalone collision pre-pass over every
+    // record before any dangling-reference check ran would report a *later*
+    // node's duplicate key ahead of an *earlier* node's own dangling
+    // reference, applying FR-154's table order globally instead of within
+    // each node -- the wrong axis. `DeclarationKey` is `package`/`node`
+    // only, so two records sharing one key collide for real and must
+    // refuse here, not silently let the later record replace or shadow the
+    // earlier one in `Index`'s by-key maps/sets.
+    let mut seen_keys: std::collections::HashSet<&DeclarationKey> =
+        std::collections::HashSet::new();
+    for record in records {
+        let key = record.key();
+        // `model-complete.md`:81: within a node, the malformed-declaration
+        // check is that node's own first check, ahead of any
+        // dangling-reference or collision check for that same node -- an
+        // empty `package`/`node` is schema `minLength`-invalid (FR-321,
+        // out of domain) so it refuses before this node's own key is ever
+        // looked up in `index` or compared against `seen_keys`.
+        if key.package.is_empty() || key.node.is_empty() {
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::MalformedDeclaration,
+                detail: format!("declaration key has an empty package or node: {key:?}"),
+            });
+        }
         match record {
-            DomainPackageRecord::ObjectType(_) => {}
-            DomainPackageRecord::FieldMember(member) if !index.types.contains(&member.owner) => {
-                return Err(ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner {
-                        member: member.key.clone(),
-                        owner: member.owner.clone(),
-                    },
-                    detail: format!(
-                        "field member {} names owner {}, which is not a declared object type",
-                        member.key.identity, member.owner.identity
-                    ),
-                });
+            DomainPackageRecord::ObjectType(t) => {
+                // `specific` is always this same record's own `t.key`,
+                // already inserted into `index.types` from this identical
+                // record under QSpec's inline `supertypes[]` shape
+                // (`model-complete.md`:155) -- so an "unknown specific" is
+                // structurally unreachable and there is no matching
+                // `ModelRefusalCause` variant for it.
+                for general in &t.supertypes {
+                    if !index.types.contains(general) {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: ModelRefusalCause::UnknownGeneral {
+                                supertype: t.key.clone(),
+                                general: general.clone(),
+                            },
+                            detail: format!(
+                                "object type {} names supertype {}, which is not a declared object type",
+                                t.key.node, general.node
+                            ),
+                        });
+                    }
+                }
             }
-            DomainPackageRecord::Supertype(general) if !index.types.contains(&general.specific) => {
-                return Err(ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownSpecific {
-                        supertype: general.key.clone(),
-                        specific: general.specific.clone(),
-                    },
-                    detail: format!(
-                        "supertype {} names specific {}, which is not a declared object type",
-                        general.key.identity, general.specific.identity
-                    ),
-                });
-            }
-            DomainPackageRecord::Supertype(general) if !index.types.contains(&general.general) => {
-                return Err(ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownGeneral {
-                        supertype: general.key.clone(),
-                        general: general.general.clone(),
-                    },
-                    detail: format!(
-                        "supertype {} names general {}, which is not a declared object type",
-                        general.key.identity, general.general.identity
-                    ),
-                });
+            DomainPackageRecord::FieldMember(member) => {
+                if !index.types.contains(&member.owner) {
+                    return Err(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownOwner {
+                            member: member.key.clone(),
+                            owner: member.owner.clone(),
+                        },
+                        detail: format!(
+                            "field member {} names owner {}, which is not a declared object type",
+                            member.key.node, member.owner.node
+                        ),
+                    });
+                }
+                if let Some(redefines) = &member.redefines {
+                    if !index.field_member_keys.contains(redefines)
+                        && !index.operation_member_keys.contains(redefines)
+                    {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: ModelRefusalCause::UnknownMember {
+                                record: member.key.clone(),
+                                member: redefines.clone(),
+                            },
+                            detail: format!(
+                                "field member {} redefines {}, which is not a declared field or operation member",
+                                member.key.node, redefines.node
+                            ),
+                        });
+                    }
+                }
+                for subsetted in &member.subsets {
+                    if !index.field_member_keys.contains(subsetted)
+                        && !index.operation_member_keys.contains(subsetted)
+                    {
+                        return Err(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: ModelRefusalCause::UnknownMember {
+                                record: member.key.clone(),
+                                member: subsetted.clone(),
+                            },
+                            detail: format!(
+                                "field member {} subsets {}, which is not a declared field or operation member",
+                                member.key.node, subsetted.node
+                            ),
+                        });
+                    }
+                }
             }
             DomainPackageRecord::ScalarType(_) => {}
-            DomainPackageRecord::OperationMember(op) if !index.types.contains(&op.owner) => {
-                return Err(ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner {
-                        member: op.key.clone(),
-                        owner: op.owner.clone(),
-                    },
-                    detail: format!(
-                        "operation member {} names owner {}, which is not a declared object type",
-                        op.key.identity, op.owner.identity
-                    ),
-                });
-            }
             DomainPackageRecord::OperationMember(op) => {
+                if !index.types.contains(&op.owner) {
+                    return Err(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownOwner {
+                            member: op.key.clone(),
+                            owner: op.owner.clone(),
+                        },
+                        detail: format!(
+                            "operation member {} names owner {}, which is not a declared object type",
+                            op.key.node, op.owner.node
+                        ),
+                    });
+                }
                 for parameter in &op.parameters {
                     if !index.types.contains(&parameter.value_type)
                         && !index.known_scalars.contains(&parameter.value_type)
@@ -796,9 +897,9 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} parameter {} names value type {}, which is not a declared type",
-                                op.key.identity,
-                                parameter.key.identity,
-                                parameter.value_type.identity
+                                op.key.node,
+                                parameter.key.node,
+                                parameter.value_type.node
                             ),
                         });
                     }
@@ -816,7 +917,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} result names value type {}, which is not a declared type",
-                                op.key.identity, result.value_type.identity
+                                op.key.node, result.value_type.node
                             ),
                         });
                     }
@@ -831,7 +932,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} effect writes {}, which is not a declared field member",
-                                op.key.identity, field.identity
+                                op.key.node, field.node
                             ),
                         });
                     }
@@ -846,81 +947,29 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} effect names type {}, which is not a declared object type",
-                                op.key.identity, target.identity
+                                op.key.node, target.node
                             ),
                         });
                     }
                 }
-            }
-            DomainPackageRecord::Redefinition(redefinition)
-                if !index.types.contains(&redefinition.owner) =>
-            {
-                return Err(ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner {
-                        member: redefinition.key.clone(),
-                        owner: redefinition.owner.clone(),
-                    },
-                    detail: format!(
-                        "redefinition {} names owner {}, which is not a declared object type",
-                        redefinition.key.identity, redefinition.owner.identity
-                    ),
-                });
-            }
-            DomainPackageRecord::Redefinition(redefinition) => {
-                for member in [&redefinition.redefining, &redefinition.redefined] {
-                    if !index.field_member_keys.contains(member)
-                        && !index.operation_member_keys.contains(member)
+                if let Some(redefines) = &op.redefines {
+                    if !index.field_member_keys.contains(redefines)
+                        && !index.operation_member_keys.contains(redefines)
                     {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::UnknownMember {
-                                record: redefinition.key.clone(),
-                                member: member.clone(),
+                                record: op.key.clone(),
+                                member: redefines.clone(),
                             },
                             detail: format!(
-                                "redefinition {} names {}, which is not a declared field or operation member",
-                                redefinition.key.identity, member.identity
+                                "operation member {} redefines {}, which is not a declared field or operation member",
+                                op.key.node, redefines.node
                             ),
                         });
                     }
                 }
             }
-            DomainPackageRecord::Subsetting(subsetting)
-                if !index.types.contains(&subsetting.owner) =>
-            {
-                return Err(ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::UnknownOwner {
-                        member: subsetting.key.clone(),
-                        owner: subsetting.owner.clone(),
-                    },
-                    detail: format!(
-                        "subsetting {} names owner {}, which is not a declared object type",
-                        subsetting.key.identity, subsetting.owner.identity
-                    ),
-                });
-            }
-            DomainPackageRecord::Subsetting(subsetting) => {
-                for member in [&subsetting.subsetting, &subsetting.subsetted] {
-                    if !index.field_member_keys.contains(member)
-                        && !index.operation_member_keys.contains(member)
-                    {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownMember {
-                                record: subsetting.key.clone(),
-                                member: member.clone(),
-                            },
-                            detail: format!(
-                                "subsetting {} names {}, which is not a declared field or operation member",
-                                subsetting.key.identity, member.identity
-                            ),
-                        });
-                    }
-                }
-            }
-            DomainPackageRecord::FieldMember(_) | DomainPackageRecord::Supertype(_) => {}
             // FR-152 systems-model records validate their own references
             // independently (crate::model::systems); FR-150's phase 1 does
             // not concern itself with them.
@@ -941,12 +990,22 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "population {} names member type {}, which is not a declared object type",
-                                population.key.identity, type_name.identity
+                                population.key.node, type_name.node
                             ),
                         });
                     }
                 }
             }
+        }
+        if !seen_keys.insert(key) {
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+                detail: format!(
+                    "{} is declared by more than one record in this domain package",
+                    key.node
+                ),
+            });
         }
     }
     Ok(())
@@ -1005,8 +1064,7 @@ fn build(
         let budget = remaining_fact_budget(limits, facts_so_far);
         let paths = ancestor_paths(type_key, &index, budget)?;
         for ancestor in &paths {
-            let mut inputs = ancestor.path.clone();
-            inputs.push(ancestor.ancestor_key.clone());
+            let inputs = ancestor.path.clone();
             phase3_facts.push(PendingFact {
                 owner_key: None,
                 declared_key: type_key.clone(),
@@ -1163,29 +1221,32 @@ fn build(
         .collect();
 
     // `normalize.redefinition-check` (`value-accounting.md:455`) charges
-    // `m + r` once per redefinition record in the *entire domain package* -- field
-    // and operation alike -- ascending by the record's own producer key,
-    // `r` the count of records already checked before it in this same
-    // domain-package-wide sequence. Computed once here, before the per-type phase-4
-    // loop below even starts: the record is the spec's own priced unit,
-    // tested once against its own owning type, never once per (record,
-    // effective type reaching it) pair a per-type loop would recompute it
-    // at.
-    let mut all_redefinition_records: Vec<_> = domain_package
+    // `m + r` once per redefining member in the *entire domain package* --
+    // field and operation alike -- ascending by the member's own key
+    // (there is no separate redefinition-record key to sort by under
+    // QSpec's inline `redefines` property), `r` the count of members
+    // already checked before it in this same domain-package-wide sequence.
+    // Computed once here, before the per-type phase-4 loop below even
+    // starts: each redefining member is the spec's own priced unit, tested
+    // once against its own owning type, never once per (member, effective
+    // type reaching it) pair a per-type loop would recompute it at.
+    let mut all_redefining_members: Vec<(&DeclarationKey, &DeclarationKey)> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            DomainPackageRecord::Redefinition(redefinition) => Some(redefinition),
+            DomainPackageRecord::FieldMember(member) if member.redefines.is_some() => {
+                Some((&member.key, &member.owner))
+            }
+            DomainPackageRecord::OperationMember(operation) if operation.redefines.is_some() => {
+                Some((&operation.key, &operation.owner))
+            }
             _ => None,
         })
         .collect();
-    all_redefinition_records.sort_by(|a, b| a.key.cmp(&b.key));
+    all_redefining_members.sort_by(|a, b| a.0.cmp(b.0));
     let mut redefinition_check_work: Vec<u64> = Vec::new();
-    for (r, redefinition) in all_redefinition_records.iter().enumerate() {
-        let m = member_counts_by_owner
-            .get(&redefinition.owner)
-            .copied()
-            .unwrap_or(0);
+    for (r, (_key, owner)) in all_redefining_members.iter().enumerate() {
+        let m = member_counts_by_owner.get(*owner).copied().unwrap_or(0);
         redefinition_check_work.push(m.saturating_add(length_amount(r)));
     }
 
@@ -1291,13 +1352,15 @@ fn build(
     })
 }
 
-/// One redefinition record's contest for its `redefined` target, reachable
+/// One redefining member's contest for its `redefines` target, reachable
 /// at `type_key` along `path` (the ancestor-generalization keys from
 /// `type_key` to `owner`, empty when `owner` is `type_key` itself).
+/// `redefining` is both this edge's identity and the node F1 requires every
+/// refusal to cite -- there is no separate redefinition-record key under
+/// QSpec's inline shape (`model-complete.md`:159/160/270/271).
 struct RedefinitionEdge {
     owner: DeclarationKey,
     redefining: DeclarationKey,
-    record_key: DeclarationKey,
     target: DeclarationKey,
     path: Vec<DeclarationKey>,
 }
@@ -1338,7 +1401,7 @@ struct Phase4Accounting<'a> {
 
 /// Charge-order stage for `record_phase4_refusal`'s own rank key: lower
 /// values rank earlier. `normalize.redefinition-check` charges every
-/// redefinition record before phase 4's own `normalize.fact` charges, which
+/// redefining member before phase 4's own `normalize.fact` charges, which
 /// in turn precede every `normalize.conflict-check` charge
 /// (`value-accounting.md:455`, `:456`), so a redefinition-check-stage
 /// refusal always outranks a conflict-check-stage refusal, regardless of
@@ -1355,8 +1418,8 @@ const CONFLICT_CHECK_STAGE: u8 = 1;
 /// [`REDEFINITION_CHECK_STAGE`] or [`CONFLICT_CHECK_STAGE`], and
 /// `(type_key, key)` is the pair the exposing stage itself ascends by.
 /// `normalize.redefinition-check` (`value-accounting.md:455`) ascends by
-/// the redefinition record's own producer key alone, so redefinition-check
-/// callers pass `type_key: None` and `key` as that record's key.
+/// the redefining member's own key alone, so redefinition-check
+/// callers pass `type_key: None` and `key` as that member's own key.
 /// `normalize.conflict-check` (`:456`) charges "per type, in `type_keys`
 /// order, and only then by target" (`model-complete.md:160` puts the
 /// owning type first in the effective member key), so conflict-check
@@ -1392,7 +1455,7 @@ fn record_phase4_refusal(
 /// resolves that case directly against its own [`EffectiveDeclarationPreimage`]
 /// values instead of this pass's exposure bookkeeping.
 ///
-/// For every field redefinition record reachable at `type_key` (declared on
+/// For every field member's own `redefines` property reachable at `type_key` (declared on
 /// `type_key` itself or a generalization ancestor, per `paths` — already
 /// computed by `build` for this same `type_key`, not recomputed here), groups
 /// the competing redefiners of the same `redefined` target and resolves a
@@ -1435,11 +1498,13 @@ fn apply_redefinitions(
             .or_insert_with(|| ancestor.path.clone());
     }
 
-    // Every redefinition record reachable at `type_key`, gathered flat (not
-    // yet grouped by target) and split by member kind.
+    // Every redefining member reachable at `type_key`, gathered flat (not
+    // yet grouped by target) and split by member kind, from each field's or
+    // operation's own inline `redefines` property (`model-complete.md`:159/
+    // 160/270/271).
     // `normalize.redefinition-check`'s own charge sequence does not come
     // from either list: it is `build`'s own domain-package-wide pass over every
-    // redefinition record, field and operation alike; `all_edges`
+    // redefining member, field and operation alike; `all_edges`
     // (field-only) is scoped purely to this type's own conflict
     // *resolution*, exactly as the module docs describe. `operation_edges`
     // feeds only the contention *charge* below (QSL #145): operation-member
@@ -1452,29 +1517,34 @@ fn apply_redefinitions(
     let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
     let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
     for record in &domain_package.records {
-        let DomainPackageRecord::Redefinition(redefinition) = record else {
-            continue;
+        let (owner, redefining, redefines, is_field, is_operation) = match record {
+            DomainPackageRecord::FieldMember(member) => match &member.redefines {
+                Some(redefines) => (&member.owner, &member.key, redefines, true, false),
+                None => continue,
+            },
+            DomainPackageRecord::OperationMember(operation) => match &operation.redefines {
+                Some(redefines) => (&operation.owner, &operation.key, redefines, false, true),
+                None => continue,
+            },
+            _ => continue,
         };
-        let is_field = index.field_member_keys.contains(&redefinition.redefining)
-            && index.field_member_keys.contains(&redefinition.redefined);
-        let is_operation = index
-            .operation_member_keys
-            .contains(&redefinition.redefining)
-            && index
-                .operation_member_keys
-                .contains(&redefinition.redefined);
+        let is_field = is_field
+            && index.field_member_keys.contains(redefining)
+            && index.field_member_keys.contains(redefines);
+        let is_operation = is_operation
+            && index.operation_member_keys.contains(redefining)
+            && index.operation_member_keys.contains(redefines);
         if !is_field && !is_operation {
             continue;
         }
-        let Some(path) = owner_paths.get(&redefinition.owner) else {
-            // This redefinition's owner does not reach `type_key`.
+        let Some(path) = owner_paths.get(owner) else {
+            // This redefining member's owner does not reach `type_key`.
             continue;
         };
         let edge = RedefinitionEdge {
-            owner: redefinition.owner.clone(),
-            redefining: redefinition.redefining.clone(),
-            record_key: redefinition.key.clone(),
-            target: redefinition.redefined.clone(),
+            owner: owner.clone(),
+            redefining: redefining.clone(),
+            target: redefines.clone(),
             path: path.clone(),
         };
         if is_field {
@@ -1510,7 +1580,7 @@ fn apply_redefinitions(
         edges.sort_by(|a, b| {
             a.owner
                 .cmp(&b.owner)
-                .then_with(|| a.record_key.cmp(&b.record_key))
+                .then_with(|| a.redefining.cmp(&b.redefining))
         });
 
         // `Option<usize>`, not a bare `usize`: an ambiguous group (no edge
@@ -1610,8 +1680,8 @@ fn apply_redefinitions(
                 // A caller cannot resolve either shape by an arbitrary pick,
                 // but they are different ambiguities with different FR-272
                 // causes: this one refuses `redefinition-target`, naming every
-                // redefining member's own declaration key (never its
-                // redefinition record's key) and the one contended target.
+                // redefining member's own declaration key and the one
+                // contended target.
                 //
                 // `normalize.conflict-check` exposes this ambiguity
                 // (`value-accounting.md:456`), so `record_phase4_refusal`
@@ -1627,7 +1697,7 @@ fn apply_redefinitions(
                 for edge in &edges {
                     let mut dominated_by_another = false;
                     for other in &edges {
-                        if other.owner.identity == edge.owner.identity {
+                        if other.owner.node == edge.owner.node {
                             continue;
                         }
                         if owner_dominates(
@@ -1646,11 +1716,11 @@ fn apply_redefinitions(
                 let same_owner = !most_derived.is_empty()
                     && most_derived
                         .iter()
-                        .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
+                        .all(|edge| edge.owner.node == most_derived[0].owner.node);
                 let candidate = if same_owner {
                     let mut redefiners: Vec<String> = most_derived
                         .iter()
-                        .map(|edge| edge.redefining.identity.clone())
+                        .map(|edge| edge.redefining.node.clone())
                         .collect();
                     redefiners.sort();
                     ModelRefusal {
@@ -1658,10 +1728,10 @@ fn apply_redefinitions(
                         cause: ModelRefusalCause::RedefinitionTarget,
                         detail: format!(
                             "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                            most_derived[0].owner.identity,
+                            most_derived[0].owner.node,
                             most_derived.len(),
                             redefiners.join(", "),
-                            target_key.identity
+                            target_key.node
                         ),
                     }
                 } else {
@@ -1669,9 +1739,9 @@ fn apply_redefinitions(
                         .iter()
                         .map(|edge| {
                             let mut path: Vec<String> =
-                                edge.path.iter().map(|key| key.identity.clone()).collect();
-                            path.push(edge.record_key.identity.clone());
-                            path.push(target_key.identity.clone());
+                                edge.path.iter().map(|key| key.node.clone()).collect();
+                            path.push(edge.redefining.node.clone());
+                            path.push(target_key.node.clone());
                             format!("[{}]", path.join(", "))
                         })
                         .collect();
@@ -1684,9 +1754,9 @@ fn apply_redefinitions(
                         },
                         detail: format!(
                             "type {} has {} undominated redefinitions of {}: {}",
-                            type_key.identity,
+                            type_key.node,
                             edges.len(),
-                            target_key.identity,
+                            target_key.node,
                             edge_paths.join(" and ")
                         ),
                     }
@@ -1707,31 +1777,32 @@ fn apply_redefinitions(
             // `normalize.redefinition-check` exposes this refusal
             // (`value-accounting.md:455`), so `record_phase4_refusal` below
             // ranks it by `REDEFINITION_CHECK_STAGE` and the least of this
-            // group's own redefinition records' producer keys — `:455`'s
-            // own "ascending by the record's own producer key" order; every
-            // edge in this group shares the same unreachable target, so
-            // whichever of them sorts first is the one that order would
+            // group's own redefining members' own keys — `:455`'s own
+            // "ascending by the member's own key" order (there is no
+            // separate redefinition-record key under QSpec's inline shape);
+            // every edge in this group shares the same unreachable target,
+            // so whichever of them sorts first is the one that order would
             // check first. Held in `accounting.refusal` rather than
             // returned here (see the module docs), so every remaining type
             // and target group is still resolved and every later phase-4
             // charge amount is still computed correctly.
             //
-            // This exact record can also be reached, and fail the identical
+            // This exact member can also be reached, and fail the identical
             // check for the identical reason, at more than one `type_key`
             // whenever a descendant of `least_edge.owner` also inherits it
-            // (both compute the same `least_edge.record_key`, so they rank
+            // (both compute the same `least_edge.redefining`, so they rank
             // identically) -- naming `least_edge.owner` rather than
             // `type_key` keeps the reported refusal the same regardless of
             // which of those tied candidates this pass happens to keep.
             let least_edge = edges
                 .iter()
-                .min_by(|a, b| a.record_key.cmp(&b.record_key))
+                .min_by(|a, b| a.redefining.cmp(&b.redefining))
                 .expect("a target group always has at least one edge");
             record_phase4_refusal(
                 accounting,
                 REDEFINITION_CHECK_STAGE,
                 None,
-                &least_edge.record_key,
+                &least_edge.redefining,
                 ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::RedefinitionUnreachable {
@@ -1740,7 +1811,7 @@ fn apply_redefinitions(
                     },
                     detail: format!(
                         "redefinition target {} is not an effective member of {}",
-                        target_key.identity, least_edge.owner.identity
+                        target_key.node, least_edge.owner.node
                     ),
                 },
             );
@@ -1749,56 +1820,21 @@ fn apply_redefinitions(
 
         for (i, edge) in edges.iter().enumerate() {
             let mut inputs = edge.path.clone();
-            inputs.push(edge.record_key.clone());
+            inputs.push(edge.redefining.clone());
             inputs.push(edge.target.clone());
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
-            let entry = match member_preimages.get_mut(&redefining_key) {
-                Some(entry) => entry,
-                None => {
-                    // Same deferred-refusal treatment as the target check
-                    // above: this redefining member is not itself an
-                    // effective member of `type_key`, which
-                    // `normalize.redefinition-check` also exposes — ranked
-                    // by this one edge's own `record_key`, since unlike the
-                    // target check above this failure is specific to a
-                    // single record, not shared by the whole group.
-                    //
-                    // This edge's `record_key` can likewise be reached, and
-                    // fail the identical check for the identical reason, at
-                    // more than one `type_key` whenever a descendant of
-                    // `edge.owner` also inherits it (both tie at the same
-                    // `record_key`) -- naming `edge.owner` rather than
-                    // `type_key` keeps the reported refusal the same
-                    // regardless of which of those tied candidates this pass
-                    // happens to keep, matching the target check above.
-                    record_phase4_refusal(
-                        accounting,
-                        REDEFINITION_CHECK_STAGE,
-                        None,
-                        &edge.record_key,
-                        ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::RedefinitionUnreachable {
-                                member: edge.redefining.clone(),
-                                owner: edge.owner.clone(),
-                            },
-                            detail: format!(
-                                "redefining member {} is not an effective member of {}",
-                                edge.redefining.identity, edge.owner.identity
-                            ),
-                        },
-                    );
-                    // `continue 'targets` here leaves this group
-                    // half-processed — any earlier edge's own derive facts
-                    // in this loop are already counted, and the winning
-                    // edge's own target is not hidden — but that is
-                    // harmless: the outcome is a refusal regardless, once
-                    // every remaining phase-4 charge is admitted (see the
-                    // module docs).
-                    continue 'targets;
-                }
-            };
+            // Always present: `owner_paths.get(owner)` above already
+            // restricted every edge in this group to an `owner` that is
+            // either `type_key` itself or one of its ancestors in `paths`,
+            // and phase 3's own per-type loop inserts a `member_preimages`
+            // entry for every direct member of `type_key` and of every
+            // ancestor along `paths` -- `edge.redefining` is one such direct
+            // member of `edge.owner`, so `(type_key, edge.redefining)` was
+            // already inserted before this phase-4 pass ever runs.
+            let entry = member_preimages.get_mut(&redefining_key).expect(
+                "a redefining member whose owner reaches type_key is always one of type_key's own effective members, inserted by phase 3 above",
+            );
             let ordinal = entry.derivation.len();
             entry.derivation.push(Fact {
                 ordinal,
@@ -1826,7 +1862,7 @@ fn apply_redefinitions(
             });
             // The redefined (target) feature's own fact —
             // `model-complete.md:231`'s "one ... on (T, redefined feature)"
-            // — one entry per redefinition record reaching this target, not
+            // — one entry per redefining member reaching this target, not
             // one per target: a `c >= 2` group counts one here for every
             // contesting edge.
             *accounting.phase4_fact_count += 1;
@@ -1935,6 +1971,14 @@ fn charge_all(
     // #141 F11: only the running position (`index + 1`) is charged, never a
     // key's value or its relative order, so collecting and sorting a
     // `Vec<DeclarationKey>` just to throw the order away was dead work.
+    //
+    // `normalize.record` charges once per IR node (`value-accounting.md`:489).
+    // Under QSpec's inline shape (`model-complete.md`:155/159/160,
+    // :270/271) a supertype, redefinition or subsetting relationship is a
+    // property of the declaration record that owns it -- `ObjectTypeRecord`,
+    // `FieldMemberRecord`, `OperationMemberRecord` -- never a record of its
+    // own, so there is no separate variant left to filter out here:
+    // `domain_package.records.len()` already is the exact IR node count.
     for index in 0..domain_package.records.len() {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
@@ -2027,127 +2071,18 @@ fn charge_all(
     Ok(())
 }
 
-/// Every producer key `record` itself declares or refers to.
-fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
-    match record {
-        DomainPackageRecord::ObjectType(record) => vec![&record.key],
-        DomainPackageRecord::FieldMember(record) => {
-            vec![&record.key, &record.owner, &record.value_type]
-        }
-        DomainPackageRecord::Supertype(record) => {
-            vec![&record.key, &record.specific, &record.general]
-        }
-        DomainPackageRecord::ScalarType(record) => vec![&record.key],
-        DomainPackageRecord::OperationMember(record) => {
-            let mut keys = vec![&record.key, &record.owner];
-            for parameter in &record.parameters {
-                keys.push(&parameter.key);
-                keys.push(&parameter.value_type);
-            }
-            if let Some(result) = &record.result {
-                keys.push(&result.value_type);
-            }
-            for field in &record.effect.modifies {
-                keys.push(field);
-            }
-            for target in record.effect.creates.iter().chain(&record.effect.deletes) {
-                keys.push(target);
-            }
-            keys
-        }
-        DomainPackageRecord::Redefinition(record) => {
-            vec![
-                &record.key,
-                &record.owner,
-                &record.redefining,
-                &record.redefined,
-            ]
-        }
-        DomainPackageRecord::Subsetting(record) => {
-            vec![
-                &record.key,
-                &record.owner,
-                &record.subsetting,
-                &record.subsetted,
-            ]
-        }
-        DomainPackageRecord::Component(record) => {
-            vec![&record.key, &record.owning_type, &record.value_type]
-        }
-        DomainPackageRecord::Endpoint(record) => {
-            vec![&record.key, &record.owning_component, &record.value_type]
-        }
-        DomainPackageRecord::Relationship(record) => {
-            vec![
-                &record.key,
-                &record.source.type_identity,
-                &record.target.type_identity,
-            ]
-        }
-        DomainPackageRecord::Population(record) => {
-            let mut keys = vec![&record.key];
-            keys.extend(record.member_types.iter());
-            keys
-        }
-    }
-}
-
-/// Whether `revision` is absent: FR-150 admits `Revision` as a required
-/// struct (there is no wire-optional variant in this typed `DomainPackage`), so
-/// "absent" is the caller supplying an empty namespace or value rather than
-/// a real revision label (PR #140 F6).
-fn revision_is_absent(revision: &crate::model::key::Revision) -> bool {
-    revision.namespace.is_empty() || revision.value.is_empty()
-}
-
-/// Phase-1 decode checks common to every entry point: the claimed producer
-/// interface version, every referenced key's absent revision
-/// (TC-195 N04, PR #140 F6) and digest domain (TC-195 N05). All refuse
-/// before any charge; no effective view is exposed.
-fn decode_check(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
-    let version = &domain_package
-        .model_selection
-        .contract_version
-        .interface_version;
-    if version != INTERFACE_VERSION_1_3_0 {
-        return Err(ModelRefusal {
-            code: Code::UnknownWire,
-            cause: ModelRefusalCause::UnsupportedWire {
-                version: version.clone(),
-            },
-            detail: format!(
-                "producer interface {version} is not supported; only {INTERFACE_VERSION_1_3_0} is normalized"
-            ),
-        });
-    }
-    for record in &domain_package.records {
-        for key in referenced_keys(record) {
-            if revision_is_absent(&key.revision) {
-                return Err(ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::WrongModelSelection { key: key.clone() },
-                    detail: format!("{} has no producer revision", key.identity),
-                });
-            }
-            if key.digest.domain != PRODUCER_DIGEST_DOMAIN {
-                return Err(ModelRefusal {
-                    code: Code::StaleDependency,
-                    cause: ModelRefusalCause::DigestDomainMismatch {
-                        key: key.clone(),
-                        domain: key.digest.domain.clone(),
-                    },
-                    detail: format!(
-                        "{} digest domain is {}; expected {PRODUCER_DIGEST_DOMAIN}",
-                        key.identity, key.digest.domain
-                    ),
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
+///
+/// This entry point takes an already-parsed [`DomainPackage`]: the FR-154
+/// byte-level intake checks (digest domain, package digest and
+/// ModelSelection identity/version against admitted package bytes) run
+/// before a caller builds one, and are not repeated here (Remaining work:
+/// #131 wires a real Semantic IR 2.0.0 intake in front of this entry point).
+/// `validate_references`'s own phase-1 checks -- FR-321's empty-component
+/// (`minLength`) and FR-154's colliding-key checks -- are schema-shape
+/// checks over the already-parsed [`DomainPackage`] itself, not byte-level
+/// digest checks against admitted package bytes, so they run here rather
+/// than waiting on that future intake.
 pub fn normalize(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
@@ -2164,9 +2099,6 @@ pub fn normalize_with_meter(
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
     let mut meter = Meter::new(limits);
-    if let Err(refusal) = decode_check(domain_package) {
-        return (NormalizeOutcome::Refused(refusal), meter);
-    }
     let built = match build(domain_package, &limits) {
         Ok(built) => built,
         Err(refusal) => return (NormalizeOutcome::Refused(refusal), meter),

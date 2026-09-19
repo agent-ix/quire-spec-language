@@ -1,20 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The producer interface `1.3.0` domain package: FR-150's normalization input.
+//! The domain package: FR-150's normalization input.
 //!
 //! QSL does not (yet) receive this domain package from a live Semantic IR 2.0.0
 //! intake (`filament-core-data#173`, unmerged); the shape below is the
-//! `model-effective-declaration.schema.json`/`model-complete.md` producer
-//! domain package exactly as the correspondence defines it, so normalization built
-//! against it needs no rewrite once a real intake supplies one. This module
-//! owns no registry: a [`DomainPackage`] is a value the caller passes in and
+//! `model-effective-declaration.schema.json`/`model-complete.md` domain
+//! package exactly as FR-154 defines it, so normalization built against it
+//! needs no rewrite once a real intake supplies one. This module owns no
+//! registry: a [`DomainPackage`] is a value the caller passes in and
 //! [`crate::model::normalize`] consumes; nothing here is reachable except
 //! through that value.
 
-use crate::model::key::{DeclarationKey, ProducerDigest, Revision};
+use crate::model::key::DeclarationKey;
 use crate::value::OrderingOperator;
-
-/// The one contract version this rung normalizes (`model-complete.md`).
-pub const INTERFACE_VERSION_1_3_0: &str = "1.3.0";
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,7 +26,7 @@ pub struct Multiplicity {
     pub unique: bool,
 }
 
-/// An object type export: `{key, interfaceFeatures}`.
+/// An object type export: `{key, interfaceFeatures, supertypes}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
     /// This type's original declaration key.
@@ -39,9 +36,16 @@ pub struct ObjectTypeRecord {
     /// is a real, valid interface with zero declared features; the
     /// distinction from `None` is the capability itself, not emptiness.
     pub interface_features: Option<Vec<DeclarationKey>>,
+    /// This type's declared `supertypes[]` (`model-complete.md`:155/159/160
+    /// and :270/271): every entry names an object type of the package this
+    /// type directly generalizes to. An inline property of the object type
+    /// itself -- there is no producer key of its own for one generalization
+    /// edge.
+    pub supertypes: Vec<DeclarationKey>,
 }
 
-/// A field member of an object type: `{key, owner, value_type, multiplicity}`.
+/// A field member of an object type: `{key, owner, value_type, multiplicity,
+/// subsets, redefines}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldMemberRecord {
     /// This member's own original declaration key.
@@ -52,18 +56,15 @@ pub struct FieldMemberRecord {
     pub value_type: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
-}
-
-/// A supertype record: `{key, specific, general}` (`specific`
-/// generalizes to `general`; `specific` is the more derived type).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SupertypeRecord {
-    /// This record's own original declaration key.
-    pub key: DeclarationKey,
-    /// The specific (more derived) type's original declaration key.
-    pub specific: DeclarationKey,
-    /// The general (less derived) type's original declaration key.
-    pub general: DeclarationKey,
+    /// This field's declared `subsets[]` (`model-complete.md`:161): every
+    /// entry names a field of the owning type or of a supertype whose
+    /// runtime values this field's are a subset of. An inline property of
+    /// the field itself.
+    pub subsets: Vec<DeclarationKey>,
+    /// This field's declared `redefines` (`model-complete.md`:162): the
+    /// inherited field or operation this member redefines, or `None` when
+    /// it declares no redefinition. An inline property of the field itself.
+    pub redefines: Option<DeclarationKey>,
 }
 
 /// A scalar type export bound to a closed `Int[lower,upper]` domain
@@ -189,20 +190,10 @@ pub struct OperationMemberRecord {
     /// family member for redefinition-conformance checking, just never a
     /// candidate.
     pub has_body: bool,
-}
-
-/// A redefinition record: `{key, owner, redefining, redefined}` — `owner`
-/// declares `redefining`, which redefines the inherited `redefined` member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RedefinitionRecord {
-    /// This record's own original declaration key.
-    pub key: DeclarationKey,
-    /// The redefining member's owning object type.
-    pub owner: DeclarationKey,
-    /// The redefining (more derived) member's original declaration key.
-    pub redefining: DeclarationKey,
-    /// The redefined (inherited) member's original declaration key.
-    pub redefined: DeclarationKey,
+    /// This operation's declared `redefines` (`model-complete.md`:162): the
+    /// inherited operation this member redefines, or `None` when it
+    /// declares no redefinition. An inline property of the operation itself.
+    pub redefines: Option<DeclarationKey>,
 }
 
 /// FCD FR-114 component record: FR-152's Part candidate.
@@ -295,20 +286,6 @@ pub struct RelationshipRecord {
     pub direction: RelationshipDirection,
 }
 
-/// A subsetting record: `{key, owner, subsetting, subsetted}` — `owner`
-/// declares `subsetting`, whose runtime values are a subset of `subsetted`'s.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubsettingRecord {
-    /// This record's own original declaration key.
-    pub key: DeclarationKey,
-    /// The subsetting member's owning object type.
-    pub owner: DeclarationKey,
-    /// The subsetting feature's original declaration key.
-    pub subsetting: DeclarationKey,
-    /// The subsetted feature's original declaration key.
-    pub subsetted: DeclarationKey,
-}
-
 /// FR-153's population declaration extent: `closed` or `open`. Object
 /// closure holds exactly when a population's extent is `closed`
 /// (FR-153:68); `open` is admission's own `incomplete_population`
@@ -346,16 +323,10 @@ pub enum DomainPackageRecord {
     ObjectType(ObjectTypeRecord),
     /// A field member of an object type.
     FieldMember(FieldMemberRecord),
-    /// A supertype relationship between two object types.
-    Supertype(SupertypeRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
     OperationMember(OperationMemberRecord),
-    /// An explicit redefinition of an inherited field or operation member.
-    Redefinition(RedefinitionRecord),
-    /// An explicit subsetting of another feature.
-    Subsetting(SubsettingRecord),
     /// FCD FR-114 component (FR-152 Part candidate).
     Component(ComponentRecord),
     /// FCD FR-114 endpoint (FR-152 Port candidate).
@@ -372,11 +343,8 @@ impl DomainPackageRecord {
         match self {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
-            Self::Supertype(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
-            Self::Redefinition(record) => &record.key,
-            Self::Subsetting(record) => &record.key,
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
             Self::Relationship(record) => &record.key,
@@ -385,122 +353,81 @@ impl DomainPackageRecord {
     }
 }
 
-/// The model selection's export identity: `{identity, revision, digest}`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DomainPackageRefExport {
-    /// The domain package's own producer identity (e.g. `bundle.n01`).
-    pub identity: String,
-    /// The domain package's producer revision.
-    pub revision: Revision,
-    /// The domain package's `filament-canonical-json-1` digest.
-    pub digest: ProducerDigest,
-}
-
-/// The producer interface contract version: `{interface_version, wire_schema}`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ContractVersion {
-    /// The producer interface version this domain package claims.
-    pub interface_version: String,
-    /// The wire schema identity for that interface version.
-    pub wire_schema: String,
-}
-
-/// A model selection: `{authority, export, contract_version}` (FR-321).
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// A domain package selection: `{identity, version, digest_domain: "sha256-jcs",
+/// digest}` (FR-321, `model-complete.md`:50).
+#[derive(Clone, Eq, PartialEq)]
 pub struct DomainPackageRef {
-    /// The correspondence authority (e.g. `filament-core-data`).
-    pub authority: String,
-    /// The domain package's own export identity.
-    pub export: DomainPackageRefExport,
-    /// The claimed contract version.
-    pub contract_version: ContractVersion,
+    /// The domain package's own identity (e.g. `test/orders`).
+    pub identity: String,
+    /// The domain package's own version.
+    pub version: String,
+    /// The SHA-256 digest of the domain package's JCS bytes.
+    pub digest: [u8; 32],
+}
+
+impl std::fmt::Debug for DomainPackageRef {
+    /// Prints `digest` as hex, not 32 decimal bytes — readable in refusal
+    /// payloads (e.g. `ForeignModelSelection { expected }`) the way the
+    /// deleted `ProducerDigest`'s own hex `Debug` was.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DomainPackageRef")
+            .field("identity", &self.identity)
+            .field("version", &self.version)
+            .field("digest", &super::key::hex(&self.digest))
+            .finish()
+    }
 }
 
 impl DomainPackageRef {
     pub(super) fn to_json(&self) -> serde_json::Value {
         use serde_json::{Map, Value};
-        let mut export = Map::new();
-        export.insert(
-            "identity".to_owned(),
-            Value::String(self.export.identity.clone()),
-        );
-        export.insert(
-            "revision".to_owned(),
-            Value::Object({
-                let mut r = Map::new();
-                r.insert(
-                    "namespace".to_owned(),
-                    Value::String(self.export.revision.namespace.clone()),
-                );
-                r.insert(
-                    "value".to_owned(),
-                    Value::String(self.export.revision.value.clone()),
-                );
-                r
-            }),
-        );
-        export.insert(
-            "digest".to_owned(),
-            Value::Object({
-                let mut d = Map::new();
-                d.insert(
-                    "domain".to_owned(),
-                    Value::String(self.export.digest.domain.clone()),
-                );
-                d.insert(
-                    "sha256".to_owned(),
-                    Value::String(super::key::hex(&self.export.digest.sha256)),
-                );
-                d
-            }),
-        );
-        let mut contract_version = Map::new();
-        contract_version.insert(
-            "interface_version".to_owned(),
-            Value::String(self.contract_version.interface_version.clone()),
-        );
-        contract_version.insert(
-            "wire_schema".to_owned(),
-            Value::String(self.contract_version.wire_schema.clone()),
-        );
         let mut object = Map::new();
+        object.insert("identity".to_owned(), Value::String(self.identity.clone()));
+        object.insert("version".to_owned(), Value::String(self.version.clone()));
         object.insert(
-            "authority".to_owned(),
-            Value::String(self.authority.clone()),
+            "digest_domain".to_owned(),
+            Value::String(super::key::SHA256_JCS_DIGEST_DOMAIN.to_owned()),
         );
-        object.insert("export".to_owned(), Value::Object(export));
         object.insert(
-            "contract_version".to_owned(),
-            Value::Object(contract_version),
+            "digest".to_owned(),
+            Value::String(super::key::hex(&self.digest)),
         );
         Value::Object(object)
     }
 
-    /// A `filament-core-data` model selection for a domain package export named
-    /// `identity` (e.g. `bundle.n01`), following TC-195/196/197/198's
-    /// fixture convention.
+    /// A `test/orders` version-`1` selection whose digest is the SHA-256 of
+    /// `placeholder`'s exact UTF-8 bytes, following TC-195's own placeholder
+    /// selection convention: F1 selects `n01`, F2 selects `n02`, and F1 as
+    /// version `2` selects `n01v2`.
     ///
-    /// Test-only (PR #140 F13): see [`ProducerDigest::of_identity`].
+    /// Test-only (PR #140 F13): this derives a digest from a display
+    /// identity, which is exactly the name-derived-identity defect this
+    /// engine exists to exclude. Gated behind `test-support` so a production
+    /// caller cannot reach it; `cargo test --all-features` enables it for
+    /// `tests/model_normalization.rs`.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(identity: impl Into<String>) -> Self {
-        let identity = identity.into();
+    pub fn fixture(placeholder: impl Into<String>) -> Self {
+        Self::fixture_with_version(placeholder, "1")
+    }
+
+    /// [`Self::fixture`], with an explicit `version` rather than the
+    /// hard-wired `"1"` — needed to reach F1 as version `2` under
+    /// placeholder `n01v2` (TC-195 N09's third clause).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_with_version(
+        placeholder: impl Into<String>,
+        version: impl Into<String>,
+    ) -> Self {
+        use sha2::{Digest, Sha256};
         Self {
-            authority: "filament-core-data".to_owned(),
-            export: DomainPackageRefExport {
-                digest: ProducerDigest::of_identity(&identity),
-                revision: Revision::producer_object("1"),
-                identity,
-            },
-            contract_version: ContractVersion {
-                interface_version: INTERFACE_VERSION_1_3_0.to_owned(),
-                wire_schema: "filament-core-data/producer-interface/1.3.0".to_owned(),
-            },
+            identity: "test/orders".to_owned(),
+            version: version.into(),
+            digest: Sha256::digest(placeholder.into().as_bytes()).into(),
         }
     }
 }
 
-/// A producer interface `1.3.0` domain package: a [`DomainPackageRef`] and its ordered
-/// records.
+/// A domain package: a [`DomainPackageRef`] and its ordered records.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DomainPackage {
     /// This domain package's model selection.
