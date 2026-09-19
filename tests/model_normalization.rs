@@ -135,11 +135,10 @@ fn fixture_f2() -> DomainPackage {
     DomainPackage::new(DomainPackageRef::fixture("n02"), records)
 }
 
-/// F2 plus field members `B.x2`/`C.x3` of type `A` (both of `A`'s own value
-/// type) and redefinition records `redef.B` (`B`, `B.x2` redefines `A.x`)
-/// and `redef.C` (`C`, `C.x3` redefines `A.x`) — TC-195 N06's first stage:
-/// two undominated redefiners of `A.x` reach `D` through sibling owners `B`
-/// and `C`.
+/// F2 plus field members `B.x2` (`B`, redefines `A.x`) and `C.x3` (`C`,
+/// redefines `A.x`), both of `A`'s own value type — TC-195 N06's first
+/// stage: two undominated redefiners of `A.x` reach `D` through sibling
+/// owners `B` and `C`.
 fn fixture_n06_conflict() -> DomainPackage {
     let mut records = fixture_f2().records;
     records.push(field_member_redefining(
@@ -252,18 +251,15 @@ fn fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant(
 // `fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant`
 // (and its consuming test,
 // `n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant`)
-// are dropped, not adapted: they relied on a separate `RedefinitionRecord`
-// declaring an `owner` (`model.E`) independent of the redefining member's own
-// real owner (`model.Z`), to construct a member reachable at `owner` by name
-// but not by actual ownership. Under QSpec's inline `redefines` property
+// are dropped: under QSpec's inline `redefines` property
 // (`model-complete.md`:162), a redefining member's `redefines` is always
 // evaluated at its own `owner` field (`src/model/normalize.rs`'s
 // `apply_redefinitions`: `let Some(path) = owner_paths.get(owner) else {
 // continue };` immediately followed by using that same `owner` to reach
 // `type_key`), and a member declared with a given `owner` is by construction
 // always an effective member of that same `owner` -- so "redefining member
-// not an effective member of the owner its own record names" is no longer a
-// reachable code path (F1: aligning with QSpec is pre-approved).
+// not an effective member of the owner its own record names" is not a
+// reachable code path.
 
 /// A second, independently-built instance of the same ranking shape as
 /// `fixture_n06_conflict_with_unreachable_redefiner`: the
@@ -791,13 +787,11 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
 }
 
 // `a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignored`
-// is dropped, not adapted: under QSpec's inline `supertypes[]` property
+// is dropped: under QSpec's inline `supertypes[]` property
 // (`model-complete.md`:155), `specific` is always the owning
 // `ObjectTypeRecord`'s own key, already indexed from that identical record --
 // an "unknown specific" is structurally unreachable from
-// `validate_references` now (see its `ObjectType` arm's own comment), unlike
-// the separate-record shape a standalone `Supertype` producer key once
-// allowed (F1: aligning with QSpec is pre-approved).
+// `validate_references` (see its `ObjectType` arm's own comment).
 
 #[trace("TC-195")]
 #[test]
@@ -860,6 +854,75 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
         }
         other => panic!("expected Refused, got {other:?}"),
     }
+}
+
+/// A field member's own inline `subsets` property
+/// (`model-complete.md`:161) naming a member that is not a declared field
+/// or operation member refuses `dangling_reference`/`unknown-member`
+/// instead of being silently accepted.
+#[trace("TC-195", "FR-150-AC-3")]
+#[test]
+fn a_field_members_subsets_naming_an_undeclared_member_refuses_instead_of_dropping() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subsets-dangling"),
+        vec![
+            object_type("model.A", vec![]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining(
+                "model.A.y",
+                "model.A",
+                "model.A",
+                None,
+                vec!["model.A.no-such-member"],
+            ),
+        ],
+    );
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownMember {
+            record: DeclarationKey::fixture("model.A.y"),
+            member: DeclarationKey::fixture("model.A.no-such-member"),
+        },
+        detail: "field member model.A.y subsets model.A.no-such-member, \
+                 which is not a declared field or operation member"
+            .to_owned(),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
+}
+
+/// An operation member's own inline `redefines` property
+/// (`model-complete.md`:162) naming a member that is not a declared field
+/// or operation member refuses `dangling_reference`/`unknown-member`
+/// instead of being silently accepted -- the operation-member analog of
+/// `n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping`,
+/// which only covers a field member's own `redefines`.
+#[trace("TC-195", "FR-150-AC-3")]
+#[test]
+fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of_dropping() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.operation-redefines-dangling"),
+        vec![
+            object_type("model.A", vec![]),
+            operation_member_redefining("model.A.op", "model.A", Some("model.A.no-such-member")),
+        ],
+    );
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownMember {
+            record: DeclarationKey::fixture("model.A.op"),
+            member: DeclarationKey::fixture("model.A.no-such-member"),
+        },
+        detail: "operation member model.A.op redefines model.A.no-such-member, \
+                 which is not a declared field or operation member"
+            .to_owned(),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
 }
 
 // Retagged (PR #144 review finding #1): this is the conflict refusal AC-3
@@ -974,7 +1037,7 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
             );
             assert!(
                 refusal.detail.contains("model.B.z") && !refusal.detail.contains("model.redef.z"),
-                "detail must name the redefining members' own keys, not the redefinition records' keys: {}",
+                "detail must name the redefining members' own keys: {}",
                 refusal.detail
             );
             assert!(
@@ -1152,8 +1215,7 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
 // only a refusal). Under QSpec's inline `redefines` property
 // (`model-complete.md`:162), the redefining side is always a real declared
 // member (it IS the record), so only the redefined *target* can dangle;
-// `record` in the refusal below names the redefining member's own key, not a
-// separate redefinition record's key (there is no longer one).
+// `record` in the refusal below names the redefining member's own key.
 #[trace("TC-195", "FR-150-AC-3")]
 #[test]
 fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() {
@@ -1276,32 +1338,30 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
             object_type("model.B", vec![]),
         ],
     );
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal.code,
-                quire_spec_language::diagnostic::Code::DanglingReference
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::UnknownOwner {
-                    member: DeclarationKey::fixture("model.A.y"),
-                    owner: DeclarationKey::fixture("model.no-such-owner"),
-                }
-            );
-        }
-        other => panic!("expected Refused(dangling_reference/unknown-owner), got {other:?}"),
-    }
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownOwner {
+            member: DeclarationKey::fixture("model.A.y"),
+            owner: DeclarationKey::fixture("model.no-such-owner"),
+        },
+        detail: "field member model.A.y names owner model.no-such-owner, \
+                 which is not a declared object type"
+            .to_owned(),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
 }
 
-/// The same fixture, records in the other order: the two conflicting `B`
-/// nodes now come first, so the second `B` record's own duplicate-key check
-/// reports at node 2, before `validate_references` ever reaches node 3's
-/// dangling owner -- node order, not a fixed global row order, decides
-/// which refusal wins.
+/// The same fixture, records in the other order: `model.A.y` still sorts
+/// before `model.B` (`"model.A.y" < "model.B"` as UTF-8 bytes, `model-complete.md`:73
+/// "Nodes are read ascending by declaration key"), so `validate_references`
+/// still reaches node `A.y`'s own dangling owner before either `B` record's
+/// duplicate-key check, regardless of the records' own input order.
 #[trace("TC-195", "FR-154")]
 #[test]
-fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_nodes_dangling_owner() {
+fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.f2-order-conflict-first"),
         vec![
@@ -1310,23 +1370,63 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             field_member("model.A.y", "model.no-such-owner", "model.A.y"),
         ],
     );
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ConflictingBinding {
-                    key: DeclarationKey::fixture("model.B"),
-                }
-            );
-        }
-        other => {
-            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
-        }
-    }
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownOwner {
+            member: DeclarationKey::fixture("model.A.y"),
+            owner: DeclarationKey::fixture("model.no-such-owner"),
+        },
+        detail: "field member model.A.y names owner model.no-such-owner, \
+                 which is not a declared object type"
+            .to_owned(),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
+}
+
+/// A conflicting key that sorts *before* a dangling reference elsewhere:
+/// two `model.A` records plus a dangling owner at `model.Z.y`. `"model.A" <
+/// "model.Z.y"` as UTF-8 bytes, so node `A`'s own duplicate-key check must
+/// win in every input order, unlike the two tests above where the dangling
+/// node happens to sort first.
+#[trace("TC-195", "FR-154")]
+#[test]
+fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_nodes_dangling_owner() {
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+        cause: ModelRefusalCause::ConflictingBinding {
+            key: DeclarationKey::fixture("model.A"),
+        },
+        detail: "model.A is declared by more than one record in this domain package".to_owned(),
+    });
+
+    let dangling_first = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-conflict-sorts-first-a"),
+        vec![
+            field_member("model.Z.y", "model.no-such-owner", "model.Z.y"),
+            object_type("model.A", vec![]),
+            object_type("model.A", vec![]),
+        ],
+    );
+    assert_eq!(
+        normalize(&dangling_first, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
+
+    let conflict_first = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-conflict-sorts-first-b"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.A", vec![]),
+            field_member("model.Z.y", "model.no-such-owner", "model.Z.y"),
+        ],
+    );
+    assert_eq!(
+        normalize(&conflict_first, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
 }
 
 /// FR-321: "Missing required properties, duplicate keys, out-of-domain
@@ -1386,71 +1486,123 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
 fn n04_empty_model_selection_version_refuses_malformed_declaration() {
     let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-version");
     model_selection.version.clear();
-    let domain_package = DomainPackage::new(model_selection, vec![object_type("model.A", vec![])]);
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
-        }
-        other => {
-            panic!("expected Refused(invalid_model_binding/malformed-declaration), got {other:?}")
-        }
-    }
+    let domain_package = DomainPackage::new(
+        model_selection.clone(),
+        vec![object_type("model.A", vec![])],
+    );
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+        cause: ModelRefusalCause::MalformedDeclaration,
+        detail: format!(
+            "domain package selection has an empty identity or version: {model_selection:?}"
+        ),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
 }
 
 /// The same phase-1 check, over a `DeclarationKey` with an empty `package`.
 #[trace("TC-195", "FR-150-AC-3")]
 #[test]
 fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
+    let key = DeclarationKey {
+        package: String::new(),
+        node: "model.A".to_owned(),
+    };
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.n04-empty-package"),
         vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
-            key: DeclarationKey {
-                package: String::new(),
-                node: "model.A".to_owned(),
-            },
+            key: key.clone(),
             interface_features: None,
             supertypes: Vec::new(),
         })],
     );
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
-        }
-        other => {
-            panic!("expected Refused(invalid_model_binding/malformed-declaration), got {other:?}")
-        }
-    }
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+        cause: ModelRefusalCause::MalformedDeclaration,
+        detail: format!("declaration key has an empty package or node: {key:?}"),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
 }
 
-/// 15 types in a chain, each specific type generalizing to its predecessor
-/// via TWO parallel entries in its own inline `supertypes[]`
-/// (`model-complete.md`:155) naming the identical ancestor twice (15 records
-/// total, one `ObjectType` per type -- there is no separate `Supertype`
-/// record to double under QSpec's inline shape, so the duplication moves
-/// into each type's own `supertypes` vec instead) — the exact shape the
-/// original review reproduced (diamond/parallel generalization causes an
-/// ancestor-path count exponential in chain depth). Under a tight budget
-/// this must return a typed `Incomplete` quickly rather than enumerate every
-/// path first. Unbounded `ancestor_paths` took ~51s over this exact shape;
-/// it must complete in low single-digit seconds here.
+/// `model-complete.md`:81: within a node, the malformed-declaration check is
+/// that node's own first check -- ahead of any dangling-reference check for
+/// that same node. This pins the axis across two different nodes: an
+/// earlier-sorting node (`test/orders`/`A.y`) has a genuine dangling owner,
+/// a later-sorting node (`zzz.package`/empty `node`) is itself malformed.
+/// The earlier node's own dangling-owner refusal must win, since
+/// `validate_references` now reads nodes ascending by declaration key
+/// (H1, `model-complete.md`:73) and only then applies each node's own
+/// malformed-first-then-dangling row order.
+#[trace("TC-195", "FR-150-AC-3", "FR-154")]
+#[test]
+fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
+    let malformed_key = DeclarationKey {
+        package: "zzz.package".to_owned(),
+        node: String::new(),
+    };
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n04-earlier-dangling-later-malformed"),
+        vec![
+            field_member("model.A.y", "model.no-such-owner", "model.A.y"),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: malformed_key,
+                interface_features: None,
+                supertypes: Vec::new(),
+            }),
+        ],
+    );
+    let expected = NormalizeOutcome::Refused(ModelRefusal {
+        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownOwner {
+            member: DeclarationKey::fixture("model.A.y"),
+            owner: DeclarationKey::fixture("model.no-such-owner"),
+        },
+        detail: "field member model.A.y names owner model.no-such-owner, \
+                 which is not a declared object type"
+            .to_owned(),
+    });
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        expected
+    );
+}
+
+/// A root type plus seven levels of two distinct types apiece (15 records
+/// total, one `ObjectType` per type), each level's own pair both
+/// generalizing to *both* of the previous level's types via inline
+/// `supertypes[]` (`model-complete.md`:155) -- a genuine diamond ladder.
+/// This replaces a prior `vec![&prev, &prev]` shape that named one ancestor
+/// twice inside a single record's own `supertypes`, which QSpec never
+/// defines: a type's `supertypes[]` names its distinct generals, never the
+/// same general listed more than once. Doubling the live ancestor ladder at
+/// every level reproduces the same diamond/parallel-generalization blowup
+/// the original review found (unbounded `ancestor_paths` took ~51s over an
+/// equivalent record count). Under a tight budget this must return a typed
+/// `Incomplete` quickly rather than enumerate every path first.
 fn fixture_deep_parallel_generalization_chain() -> DomainPackage {
     let mut records: Vec<DomainPackageRecord> = vec![object_type("model.T0", vec![])];
-    for i in 1..15 {
-        let prev = format!("model.T{}", i - 1);
-        records.push(object_type(&format!("model.T{i}"), vec![&prev, &prev]));
+    let mut previous_level = vec!["model.T0".to_owned()];
+    for level in 1..=7 {
+        let current_level: Vec<String> = ["a", "b"]
+            .into_iter()
+            .map(|branch| format!("model.T{level}{branch}"))
+            .collect();
+        let supertypes: Vec<&str> = previous_level.iter().map(String::as_str).collect();
+        for type_name in &current_level {
+            records.push(object_type(type_name, supertypes.clone()));
+        }
+        previous_level = current_level;
     }
     assert_eq!(
         records.len(),
         15,
-        "15 types, each with two parallel supertypes[] entries"
+        "one root type plus seven levels of two distinct types apiece"
     );
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.deep-parallel-chain"),
@@ -1632,14 +1784,12 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
 }
 
-/// F1: a member's own inline `subsets` property adds no extra
-/// `normalize.record` charge -- `value-accounting.md:489` charges one
-/// `normalize.record` per IR node, and `normalize.record` here charges
-/// exactly the domain package's own four declared records (`A`, `A.x`, `B`,
-/// `B.y`; `records.len()`). `model.B.y`'s `subsets: ["model.A.x"]` names the
-/// relationship inline on `B.y`'s own record; there is no separate
-/// `Subsetting` record (deleted under F1) to admit, and thus no extra
-/// charge to omit.
+/// A member's own inline `subsets` property adds no extra `normalize.record`
+/// charge -- `value-accounting.md:489` charges one `normalize.record` per IR
+/// node, and `normalize.record` here charges exactly the domain package's
+/// own four declared records (`A`, `A.x`, `B`, `B.y`; `records.len()`).
+/// `model.B.y`'s `subsets: ["model.A.x"]` names the relationship inline on
+/// `B.y`'s own record, admitting no separate record of its own.
 #[trace("TC-195", "FR-150-AC-1")]
 #[test]
 fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
@@ -1658,6 +1808,28 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
         NormalizeOutcome::Completed(_) => {}
         other => panic!("expected Completed, got {other:?}"),
     }
+    use ChargePoint::{NormalizeDeclaration, NormalizeFact, NormalizeHash, NormalizeRecord};
+    let expected = vec![
+        NormalizeRecord,
+        NormalizeRecord,
+        NormalizeRecord,
+        NormalizeRecord,
+        NormalizeFact,
+        NormalizeFact,
+        NormalizeFact,
+        NormalizeFact,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeDeclaration,
+        NormalizeHash,
+        NormalizeHash,
+        NormalizeHash,
+    ];
+    assert_eq!(meter.admitted_charges().to_vec(), expected);
     let record_charges = meter
         .admitted_charges()
         .iter()
@@ -1668,7 +1840,8 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
 }
 
 /// TC-195 N02: five `normalize.record` (`A`, `B`, `C`, `D`, `A/x`; F2's four
-/// `Supertype` records are not declarations of their own), fifteen
+/// generalization edges are inline `supertypes[]` entries on their owning
+/// `ObjectType` records, not declarations of their own), fifteen
 /// `normalize.fact` charges (five phase-2 qualify facts for A, B, C, D and
 /// A.x; ten phase-3 inherit facts) and six `normalize.cycle-check` charges
 /// (one per phase-3 type-level ancestor path: `B`->`A`, `C`->`A`, `D`->`B`,

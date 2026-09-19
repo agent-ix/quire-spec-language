@@ -10,8 +10,8 @@
 //! [`crate::model::normalize::EffectiveView`]: it builds its own
 //! [`crate::model::key::EffectiveDeclarationPreimage`]-shaped queries over
 //! the domain package's field/operation members' own inline `redefines`/
-//! `subsets` properties (`model-complete.md`:161/162, QSpec's own shape), so
-//! field redefinition (already exposed by `normalize`'s phase 4) and operation
+//! `subsets` properties (`model-complete.md`:161/162), so field
+//! redefinition (already exposed by `normalize`'s phase 4) and operation
 //! redefinition (out of scope there, see its module docs) are checked
 //! uniformly here.
 //!
@@ -40,16 +40,14 @@
 //!   operation bodies this rung does not model. Every `conformance.axis`
 //!   charge costs a flat one work unit; this is a recorded scope choice,
 //!   not silent drift from the spec's numbers.
-//! - `resolve_redefinition_target`'s ambiguity ruling (two valid, distinct
-//!   inherited targets for the same redefining member) is an interpretation
-//!   call: FR-151's own prose motivates it only informally. It is recorded
-//!   here, not asserted as unambiguous spec fidelity. TC-196 R07 reports
-//!   both the "zero valid targets" and "several distinct valid targets"
-//!   shapes under the identical `redefinition-target` cause ("the same
-//!   refusal"), so [`RedefinitionTargetOutcome::Refused`] keeps one cause
-//!   tag for both; its `valid_targets` field (QSL #146) still lets a caller
-//!   tell the two failure shapes apart from the outcome alone, without
-//!   recomputing `candidates` itself.
+//! - `resolve_redefinition_target` resolves a redefining member's own single
+//!   inline `redefines` property (`model-complete.md`:162) against exactly
+//!   the one target it names: either that target is a genuinely inherited
+//!   member and the call resolves, or it is not and the call refuses
+//!   `redefinition-target` with [`RedefinitionTargetOutcome::Refused`]'s
+//!   `candidate` naming the `(redefining, stated target)` pair. There is no
+//!   "several distinct valid targets" shape to rule on: a member names at
+//!   most one `redefines` target, never a set of candidates to choose among.
 //!
 //!   TC-196 R07's other shape — two distinct redefining members (e.g. `B/z`
 //!   and `B/z2`) contending for the identical single inherited target — is
@@ -138,26 +136,24 @@ pub enum ConformanceCheckOutcome {
 }
 
 /// The outcome of resolving which inherited member a redefining member's
-/// redefinition record(s) actually target.
+/// own inline `redefines` property (`model-complete.md`:162) actually
+/// targets.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RedefinitionTargetOutcome {
-    /// Exactly one valid inherited target.
+    /// A valid inherited target.
     Resolved(DeclarationKey),
-    /// Zero or multiple valid inherited targets; every checked record and
-    /// its named target, in domain package order.
+    /// `redefining`'s own `redefines` names no genuinely inherited member:
+    /// either it names a member declared directly on `redefining`'s own
+    /// owner rather than a proper ancestor, or the owner does not actually
+    /// specialize the named target's declaring type.
     Refused {
-        /// FR-151's cause tag: always [`ModelRefusalCause::RedefinitionTarget`]
-        /// — TC-196 R07 reports both failure shapes under "the same refusal"
-        /// (see the module docs).
+        /// FR-151's cause tag.
         cause: ModelRefusalCause,
-        /// The record/target pairs considered.
-        candidates: Vec<(DeclarationKey, DeclarationKey)>,
-        /// The distinct valid (genuinely inherited) targets among
-        /// `candidates`: empty for the "zero valid targets" shape, two or
-        /// more for the "several distinct valid targets" shape — the
-        /// distinction QSL #146 found collapsed into one cause with no way
-        /// to tell the two shapes apart from the outcome alone.
-        valid_targets: Vec<DeclarationKey>,
+        /// `redefining`'s own `(redefining key, stated target)` pair —
+        /// `None` when `redefining` declares no `redefines` at all. Its
+        /// inline `redefines` property (`model-complete.md`:162) is
+        /// singular, so this is at most one candidate.
+        candidate: Option<(DeclarationKey, DeclarationKey)>,
     },
 }
 
@@ -183,7 +179,7 @@ struct ConformanceIndex {
 /// object types whose key shares a display identity but differs in revision
 /// must both index their own distinct ancestor set, never silently overwrite
 /// one another. `supertypes` is an inline property of the object type itself
-/// (`model-complete.md`:155, QSpec's own shape), not a separate record.
+/// (`model-complete.md`:155).
 pub(super) fn generals_by_specific(
     domain_package: &DomainPackage,
 ) -> HashMap<DeclarationKey, Vec<DeclarationKey>> {
@@ -1062,17 +1058,16 @@ pub fn check_field_refinement_obligation(
     }
 }
 
-/// Resolves which of `redefining`'s stated redefinition records name a
-/// genuinely inherited target: a member declared on a proper ancestor of
-/// `owner`, never `owner` itself. Zero or several distinct valid targets
-/// refuse `redefinition-target` naming every candidate — never an arbitrary
-/// pick among them.
+/// Resolves whether `redefining`'s own inline `redefines` property
+/// (`model-complete.md`:162) names a genuinely inherited target: a member
+/// declared on a proper ancestor of `redefining`'s own owner (read from the
+/// index, never a caller-supplied claim), not on that owner itself.
 ///
 /// This covers R07's *first* shape only: one redefining member queried in
-/// isolation, whose own stated records resolve to zero or multiple targets.
-/// It cannot see sibling redefiners of the same target (querying `B/z` alone
-/// has no visibility into `B/z2`), so it does not — and cannot — detect
-/// R07's *second* shape, several distinct members all redefining one shared
+/// isolation, whose own stated `redefines` resolves or does not. It cannot
+/// see sibling redefiners of the same target (querying `B/z` alone has no
+/// visibility into `B/z2`), so it does not — and cannot — detect R07's
+/// *second* shape, several distinct members all redefining one shared
 /// inherited target. That contention check runs where the real boundary can
 /// see every redefiner at once: `normalize.rs`'s phase 4
 /// (`apply_redefinitions`), not here. This function is currently unwired
@@ -1080,21 +1075,10 @@ pub fn check_field_refinement_obligation(
 /// composes it into the real pipeline's `conformance.axis` accounting.
 pub fn resolve_redefinition_target(
     domain_package: &DomainPackage,
-    owner: &DeclarationKey,
     redefining: &DeclarationKey,
 ) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
     let index = ConformanceIndex::build(domain_package);
-    let mut candidates: Vec<(DeclarationKey, DeclarationKey)> = Vec::new();
-    let mut valid: Vec<DeclarationKey> = Vec::new();
 
-    // `redefines` is a single inline property of the redefining member itself
-    // (`model-complete.md`:162, QSpec's own shape), so there is at most one
-    // candidate to resolve here now, not a list of separate redefinition
-    // records naming `owner`/`redefining`; the "several distinct valid
-    // targets" shape this function still reports (see the module docs) can
-    // no longer arise from one member's own single `redefines`, but the
-    // zero-valid-targets shape (redefines a member declared directly on
-    // `owner`, or one `owner` does not actually specialize) still can.
     let own_redefines = index
         .fields
         .get(redefining)
@@ -1105,30 +1089,25 @@ pub fn resolve_redefinition_target(
                 .get(redefining)
                 .and_then(|operation| operation.redefines.clone())
         });
-    if let Some(target) = own_redefines {
-        candidates.push((redefining.clone(), target.clone()));
-        if let Some(target_owner) = index.member_owner.get(&target) {
-            if target_owner != owner
-                && type_conforms(&index.generals_by_specific, owner, target_owner)?
-            {
-                valid.push(target);
-            }
-        }
-    }
-
-    let mut distinct: Vec<DeclarationKey> = Vec::new();
-    for target in &valid {
-        if !distinct.iter().any(|existing| existing.node == target.node) {
-            distinct.push(target.clone());
-        }
-    }
-
-    match distinct.len() {
-        1 => Ok(RedefinitionTargetOutcome::Resolved(distinct.remove(0))),
-        _ => Ok(RedefinitionTargetOutcome::Refused {
+    let Some(target) = own_redefines else {
+        return Ok(RedefinitionTargetOutcome::Refused {
             cause: ModelRefusalCause::RedefinitionTarget,
-            candidates,
-            valid_targets: distinct,
-        }),
+            candidate: None,
+        });
+    };
+
+    let owner = index.member_owner.get(redefining).expect(
+        "redefining names a declared field or operation member, indexed by ConformanceIndex::build under its own owner",
+    );
+    if let Some(target_owner) = index.member_owner.get(&target) {
+        if target_owner != owner && type_conforms(&index.generals_by_specific, owner, target_owner)?
+        {
+            return Ok(RedefinitionTargetOutcome::Resolved(target));
+        }
     }
+
+    Ok(RedefinitionTargetOutcome::Refused {
+        cause: ModelRefusalCause::RedefinitionTarget,
+        candidate: Some((redefining.clone(), target)),
+    })
 }

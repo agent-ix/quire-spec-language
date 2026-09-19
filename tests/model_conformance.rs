@@ -583,11 +583,9 @@ fn r06_subsetting_type_and_multiplicity_axes() {
 // Only the "zero inherited targets" shape is directly testable through
 // `resolve_redefinition_target` under QSpec's inline `redefines` property
 // (`model-complete.md`:162): a field or operation member declares at most
-// one `redefines`, never several competing candidates the way separate
-// `RedefinitionRecord`s once allowed one redefining member to name more than
-// one target. TC-196 R07's "two distinct, both-legitimate inherited
-// targets" shape is therefore structurally unreachable here (F1: aligning
-// with QSpec is pre-approved) and is dropped rather than adapted.
+// one `redefines`, never several competing candidates. TC-196 R07's "two
+// distinct, both-legitimate inherited targets" shape is therefore
+// structurally unreachable here and is dropped rather than adapted.
 #[trace("TC-196", "FR-151-AC-2")]
 #[test]
 fn r07_zero_inherited_targets_refuses_redefinition_target() {
@@ -610,21 +608,15 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
             ),
         ],
     );
-    match resolve_redefinition_target(
-        &zero,
-        &DeclarationKey::fixture("model.B"),
-        &DeclarationKey::fixture("model.B.z"),
-    ) {
-        Ok(RedefinitionTargetOutcome::Refused {
-            cause,
-            candidates,
-            valid_targets,
-        }) => {
+    match resolve_redefinition_target(&zero, &DeclarationKey::fixture("model.B.z")) {
+        Ok(RedefinitionTargetOutcome::Refused { cause, candidate }) => {
             assert_eq!(cause, ModelRefusalCause::RedefinitionTarget);
-            assert_eq!(candidates.len(), 1);
-            assert!(
-                valid_targets.is_empty(),
-                "zero-target shape must carry no valid targets, got {valid_targets:?}"
+            assert_eq!(
+                candidate,
+                Some((
+                    DeclarationKey::fixture("model.B.z"),
+                    DeclarationKey::fixture("model.C.w"),
+                ))
             );
         }
         other => panic!("expected Refused(zero targets), got {other:?}"),
