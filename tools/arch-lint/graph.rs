@@ -39,6 +39,32 @@ impl fmt::Display for Repo {
     }
 }
 
+/// Classify a resolved package as one of the four ADR-011 ecosystem
+/// repositories, by package name or by its `source` string. Shared by the
+/// FR-059 direction check (`metadata::edges_for_manifest`) and the FR-061
+/// duplicate-revision check (`duplicate_revisions::check`), so QSL holds one
+/// definition of an ecosystem *repository* component, not two: a package
+/// published from the same git repository under a different crate name (for
+/// example IR's own workspace member, published as `quire-contract-model`)
+/// still classifies as that one repository, never a second, distinct one.
+pub(crate) fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
+    let haystack = source.unwrap_or(name);
+    if name == "quire-spec-language" || haystack.contains("quire-spec-language") {
+        Some(Repo::Qsl)
+    } else if name == "quire-contract-ir"
+        || name == "quire-contract-model"
+        || haystack.contains("quire-contract-ir")
+    {
+        Some(Repo::Ir)
+    } else if name == "quire-contract-runtime" || haystack.contains("quire-contract-runtime") {
+        Some(Repo::Rt)
+    } else if name == "quire-contract-codegen" || haystack.contains("quire-contract-codegen") {
+        Some(Repo::Cg)
+    } else {
+        None
+    }
+}
+
 /// A normal dependency edge is a build-time link; a dev edge exists only for
 /// tests, examples or benches. FB-11 forbids a cycle over either kind; FB-05
 /// forbids most normal or dev edges into QSL.
@@ -321,6 +347,25 @@ mod tests {
         let report = check(&edges);
         assert_eq!(report.fb11.len(), 1);
         assert_eq!(report.fb11[0].path.len(), 4);
+    }
+
+    /// tc_arch_lint_direction_009: `classify` maps a package published from
+    /// IR's repository under a different crate name (`quire-contract-model`)
+    /// to the same `Repo::Ir` as the repository's own facade package name --
+    /// this is what lets FR-061's duplicate-revision check treat both as one
+    /// component (R2, #249 review).
+    #[trace("TC-156", "FR-061-AC-2")]
+    #[test]
+    fn tc_arch_lint_direction_009_classify_shares_repo_across_package_names() {
+        assert_eq!(classify("quire-contract-ir", None), Some(Repo::Ir));
+        assert_eq!(
+            classify(
+                "quire-contract-model",
+                Some("git+https://github.com/agent-ix/quire-contract-ir?rev=53cc03c#53cc03c")
+            ),
+            Some(Repo::Ir)
+        );
+        assert_eq!(classify("serde", None), None);
     }
 
     /// tc_arch_lint_direction_008: a linear chain with no return edge is not

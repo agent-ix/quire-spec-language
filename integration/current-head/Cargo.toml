@@ -53,6 +53,13 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # historical-compatibility fixture, not part of this lane.
 [patch."https://github.com/agent-ix/quire-contract-ir"]
 quire-contract-model = { path = ".vendor/quire-contract-ir/crates/quire-contract-model" }
+quire-contract-ir = { path = ".vendor/quire-contract-ir" }
+
+[patch."https://github.com/agent-ix/quire-contract-runtime"]
+quire-contract-runtime = { path = ".vendor/quire-contract-runtime" }
+
+[patch."https://github.com/agent-ix/quire-spec-language"]
+quire-spec-language = { path = "../.." }
 
 [lints.rust]
 unsafe_code = "forbid"

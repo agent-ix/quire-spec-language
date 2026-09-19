@@ -55,21 +55,40 @@ ci: ci-default-features ci-all-features ci-clean-build
 # head (ADR-011 OBS-029, ADR-013 OBS-018), owned by #213/#211, not by this
 # target's caller. `arch-lint-direction` needs real local checkouts of the
 # three backend repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
+# `arch-lint-api-surface`'s T12-A rule is CG-side (#249 review, HIGH-2/
+# MEDIUM-4) and needs CG_CLONE too, once `src/replay.rs` lands; until then it
+# stays PENDING with no root given.
+#
+# `arch-lint` (both this repo's own checks) exits 1 by design today: T12-B and
+# T12-C's real, already-tracked findings above make `arch-lint-api-surface`
+# fail, and QSL's own root Cargo.lock's deliberate double pin of the IR
+# repository (`quire-contract-ir` vs. `quire-contract-model`, #249 review R2)
+# makes `arch-lint-duplicate-revisions` fail. Neither is remediated by this
+# target's caller. `arch-lint` joins `ci:` once #211/#213 remediate both.
+# Remaining work: #211.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane
 
 arch-lint-direction:
 	cargo run --locked --bin arch-lint -- direction \
 		--qsl . --ir $(IR_CLONE) --rt $(RT_CLONE) --cg $(CG_CLONE)
 
 arch-lint-api-surface:
-	cargo run --locked --bin arch-lint -- api-surface --qsl .
+	cargo run --locked --bin arch-lint -- api-surface --qsl . $(if $(CG_CLONE),--cg $(CG_CLONE))
 
 arch-lint-duplicate-revisions:
 	cargo run --locked --bin arch-lint -- duplicate-revisions --lockfile Cargo.lock
+
+# FR-061 (#249 review R3): the current-head lane's own Cargo.lock is in scope
+# too -- it converges on one revision per ecosystem repository via the lane's
+# own [patch] table (integration/current-head/Cargo.toml), independent of the
+# root workspace's lock this target above checks.
+arch-lint-duplicate-revisions-lane:
+	cargo run --locked --bin arch-lint -- duplicate-revisions \
+		--lockfile integration/current-head/Cargo.lock
 
 # Runs the two checks that need only this repository. `arch-lint-direction`
 # needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is run separately.
@@ -81,11 +100,15 @@ arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions
 # `ci:` verifies. See integration/current-head/README.md.
 .PHONY: integration-current-head-prepare integration-current-head integration-current-head-revision-log integration-current-head-incompatible-fixture
 
-# Refreshes the local clones the lane's [patch] entries need. Run this first,
-# and again any time quire-contract-ir's head should be picked up again.
+# Refreshes the local clones the lane's [patch] entries need, then runs
+# `cargo update` against the lane's own manifest so its committed Cargo.lock
+# picks up each dependency's current head (#249 review, HIGH-1) -- this never
+# touches the root workspace's Cargo.lock. Run this first, and again any time
+# a dependency's head should be picked up again.
 integration-current-head-prepare:
 	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		prepare --vendor-root integration/current-head/.vendor
+		prepare --vendor-root integration/current-head/.vendor \
+		--manifest integration/current-head/Cargo.toml
 
 integration-current-head:
 	cargo test --manifest-path integration/current-head/Cargo.toml

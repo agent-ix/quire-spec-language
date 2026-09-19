@@ -53,6 +53,22 @@ revisions QSL's own root `Cargo.toml`/`Cargo.lock` resolve, and a failure in
 the current-head lane SHALL NOT fail QSL's own `cargo build`/`cargo test`/`cargo
 clippy` over the root workspace.
 
+### Staleness detection
+
+Running the lane's `prepare` step SHALL refresh the lane's own manifest's own
+`Cargo.lock` (`cargo update` scoped to that manifest, never the root
+workspace's) to each dependency's current head, before any other step reads
+it (#249 review HIGH-1). A committed lane lockfile that is never refreshed
+would silently re-resolve the same stale revisions on every run, defeating
+the lane's purpose.
+
+The lane's `revision-log` step SHALL compare each of its own resolved commit
+shas against `git ls-remote <url> <default branch>` for the same repository,
+and SHALL fail, naming the repository and both shas, when they disagree.
+Agreement on every run is expected, not merely hoped for: a real, current run
+against the three repositories' real current heads confirms this (see
+Status).
+
 ### What the lane resolves at head, and what it does not
 
 The current-head lane SHALL resolve quire-contract-ir, quire-contract-runtime
@@ -93,6 +109,15 @@ incompatible with the others, and running the lane against that fixture
 manifest SHALL fail with a stable, documented diagnostic (a fixed marker
 string that identifies which dependency and which kind of incompatibility),
 not an arbitrary, unstable compiler backtrace.
+
+The check SHALL emit that marker only when the fixture's build actually
+failed with a real, unresolved-import compiler diagnostic (at minimum an
+`error[E0` diagnostic in the compiler's stderr, per #249 review HIGH-3), not
+on any build failure whatsoever. A build that fails for an unrelated reason
+(for example a missing manifest, or a toolchain error) SHALL be reported as a
+distinct failure that does not claim the marker, so an unrelated failure is
+never misreported as "the fixture correctly demonstrated the intended
+incompatibility."
 
 ### Local and CI invocation
 
@@ -138,3 +163,29 @@ Specified and implemented under
 questions this requirement does not settle: where hosted CI runs the lane, and
 how QSpec artifacts would be sourced at head rather than at their currently
 vendored revision. Both are reported to the issue rather than decided here.
+
+A real run of `revision-log` against the three repositories' real current
+heads (#249 review) resolved QSL at `087fb4e5...`, quire-contract-ir at
+`ef11217a...`, quire-contract-runtime at `aff8177c...` and
+quire-contract-codegen at `a4b2a733...`, each matching `git ls-remote <url>
+main` exactly (HIGH-1's staleness check passed on a real run, not only a
+synthetic one).
+
+A real run of `check-incompatible-fixture` against the real fixture manifest
+exits `0` (it correctly detected the intended failure) and prints the
+`FR-058-AC-3` marker naming the incompatible dependency; the fixture's own
+`cargo build` fails with `error[E0432]: unresolved imports
+quire_contract_ir::SourceIdentity, ...` (the stub crate exports nothing QSL's
+real source imports), confirming HIGH-3's real-diagnostic requirement against
+real, not only synthetic, output.
+
+Separately, building the current-head lane's own manifest (not the fixture)
+at real current heads surfaced a genuine, unplanned cross-repository
+incompatibility -- exactly the class of finding this requirement exists to
+catch, found as a byproduct of R3's lock-convergence work rather than by a
+designed fixture: real quire-contract-codegen head fails to compile against
+real quire-contract-runtime head with `error[E0560]: struct
+CounterexamplePacket has no field named witness`
+(`bounded_kani_corpus.rs:196`) -- RT's real head removed or renamed that
+field, leaving only `source`. This is reported here as new, real evidence; it
+is a CG/RT concern, not QSL's, and this requirement does not remediate it.

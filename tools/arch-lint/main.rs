@@ -27,7 +27,7 @@ fn usage() -> Error {
     Error::new(
         Code::Usage,
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path> [--offline]\n\
-         arch-lint api-surface --qsl <path>\n\
+         arch-lint api-surface --qsl <path> [--cg <path>]\n\
          arch-lint duplicate-revisions --lockfile <path>",
     )
 }
@@ -104,29 +104,45 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
 
 fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     let qsl = require(&mut args, "--qsl")?;
+    let cg = take_flag(&mut args, "--cg")?.map(PathBuf::from);
     if !args.is_empty() {
         return Err(usage());
     }
-    let src = qsl.join("src");
     let mut summary = String::new();
     summary.push_str("FR-060 API-surface check (ADR-011 T-12)\n");
+    summary.push_str(
+        "  Note: this is a textual scan. It does not resolve `use ... as` renamed \
+         imports or macro-expanded call sites, and it does not skip a call pattern \
+         found inside a comment or string literal -- both are stated limitations of \
+         this check, not silent gaps.\n",
+    );
     let mut all_passed = true;
     for rule in api_surface::RULES {
-        let outcome = api_surface::evaluate(rule, &qsl, &src)?;
+        let scan_root = match rule.role {
+            api_surface::Role::Qsl => Some(qsl.as_path()),
+            api_surface::Role::Cg => cg.as_deref(),
+        };
+        let outcome = api_surface::evaluate(rule, &qsl, scan_root)?;
         let passed = outcome.passed();
         all_passed &= passed;
         match &outcome.status {
             api_surface::RuleStatus::Pending(reason) => {
                 summary.push_str(&format!(
                     "  {} [{}]: PENDING -- {reason}\n",
-                    rule.id, rule.description
+                    outcome.rule_id, rule.description
                 ));
             }
             api_surface::RuleStatus::Live if outcome.violations.is_empty() => {
-                summary.push_str(&format!("  {} [{}]: PASS\n", rule.id, rule.description));
+                summary.push_str(&format!(
+                    "  {} [{}]: PASS\n",
+                    outcome.rule_id, rule.description
+                ));
             }
             api_surface::RuleStatus::Live => {
-                summary.push_str(&format!("  {} [{}]: FAIL\n", rule.id, rule.description));
+                summary.push_str(&format!(
+                    "  {} [{}]: FAIL\n",
+                    outcome.rule_id, rule.description
+                ));
                 for site in &outcome.violations {
                     summary.push_str(&format!(
                         "    {}:{} (module {})\n",
@@ -155,7 +171,7 @@ fn run_duplicate_revisions(mut args: Vec<String>) -> Result<(String, bool)> {
     } else {
         summary.push_str("  FAIL\n");
         for duplicate in &duplicates {
-            summary.push_str(&format!("    {}:\n", duplicate.name));
+            summary.push_str(&format!("    {}:\n", duplicate.repo));
             for source in &duplicate.sources {
                 summary.push_str(&format!(
                     "      {}\n",

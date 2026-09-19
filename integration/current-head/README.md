@@ -20,9 +20,12 @@ From the repository root:
 
 ```bash
 # Vendor/refresh the local clones the lane's [patch] entries need (see "Why
-# a vendored clone" below). Re-run any time to pick up a new IR head.
+# a vendored clone" below), then refresh this lane's own Cargo.lock to each
+# dependency's current head (never the root workspace's Cargo.lock). Re-run
+# any time to pick up a new IR/RT head.
 cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-  prepare --vendor-root integration/current-head/.vendor
+  prepare --vendor-root integration/current-head/.vendor \
+  --manifest integration/current-head/Cargo.toml
 
 # Build and test the lane at current head (needs network access to fetch
 # quire-contract-runtime's and quire-contract-codegen's default branch).
@@ -45,17 +48,24 @@ cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
 
 ### Why a vendored clone, not a plain `branch = "main"` dependency
 
-quire-contract-runtime and quire-contract-codegen are declared directly at
-`branch = "main"`, which is enough for them: QSL depends on neither today.
-quire-contract-ir is different: QSL's own root `Cargo.toml` already depends
-on it at a pinned `rev`, and moving *that* transitive dependency to head is
-exactly the point of this lane. Cargo refuses a `[patch]` whose replacement
-is a different branch/rev/tag of the *same* git URL ("patches must point to
+quire-contract-codegen is declared directly at `branch = "main"`, which is
+enough for it: nothing else in this lane's graph pins a conflicting revision
+of it. quire-contract-ir and quire-contract-runtime are different: each is
+reachable through more than one path to a *different* pinned `rev` of the
+same repository elsewhere in the graph (QSL's own root `Cargo.toml` pins IR;
+quire-contract-codegen's own manifest pins both IR and RT at its own, older
+revisions), and moving *those* transitive dependencies to head is exactly the
+point of this lane. Cargo refuses a `[patch]` whose replacement is a
+different branch/rev/tag of the *same* git URL ("patches must point to
 different sources") -- patch is for redirecting to a genuinely different
 source. Redirecting to a local path clone of the current head is Cargo's
 supported mechanism for this, so `tool/`'s `prepare` subcommand keeps
-`.vendor/quire-contract-ir` (current head) fresh, and the lane's `[patch]`
-points at that local clone.
+`.vendor/quire-contract-ir` and `.vendor/quire-contract-runtime` (both at
+current head) fresh, and the lane's `[patch]` table points IR, RT and
+quire-spec-language itself (a direct path patch, since QSL's own manifest is
+already a path dependency of this lane) at those local sources. This is what
+converges the lane's own `Cargo.lock` to exactly one revision per repository
+(#249 review R3; `make arch-lint-duplicate-revisions-lane` checks it).
 
 ## What it checks (FR-058)
 
@@ -71,6 +81,11 @@ points at that local clone.
 - **Silent fallback to released deps**: none of the three dependencies has a
   version fallback -- each is a git dependency only, so a resolution failure
   is a lane failure, never a quiet substitution.
+- **Staleness**: `prepare` refreshes this lane's own `Cargo.lock` via `cargo
+  update` on every run, so it never re-resolves a stale, previously-committed
+  revision (#249 review HIGH-1). `revision-log` additionally compares each
+  resolved sha against `git ls-remote <url> main` and fails on a mismatch, so
+  a `Cargo.lock` that fell behind head cannot silently pass as current.
 - **Intentionally incompatible fixture**: `fixtures/incompatible/` patches
   quire-contract-ir's `quire-contract-model` package to
   `stub-quire-contract-model/`, a local, deliberately empty stand-in crate
@@ -79,7 +94,22 @@ points at that local clone.
   errors; running it through `check-incompatible-fixture` turns that failure
   into the stable marker line `FR-058-AC-3: quire-contract-ir patched to a
   deliberately empty stub crate is incompatible with quire-spec-language at
-  head`.
+  head`. The marker is only emitted when the build's stderr actually contains
+  a real `error[E0` diagnostic; an unrelated build failure (a missing
+  manifest, a toolchain error) is reported as a distinct failure instead of
+  being misreported as the expected one (#249 review HIGH-3).
+
+### A real finding this lane already surfaced
+
+Building this lane's own manifest at real current heads (not the
+intentionally incompatible fixture) currently fails: real
+quire-contract-codegen head does not compile against real
+quire-contract-runtime head (`error[E0560]: struct CounterexamplePacket has
+no field named witness`, RT `bounded_kani_corpus.rs:196` -- RT's real head
+removed or renamed that field, leaving only `source`). This is exactly the
+class of incompatibility this lane exists to catch, reported here as real,
+current evidence; it is a CG/RT concern to fix, not this lane's or QSL's, and
+the ownership procedure below applies to it directly.
 
 ## What it deliberately does not attempt
 

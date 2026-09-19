@@ -1,15 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-061 (ADR-011 §7.1: "QSL's own Cargo.lock resolves exactly one revision
-//! per quire-ecosystem crate"): the duplicate-revision check.
+//! per quire-ecosystem *repository*"): the duplicate-revision check.
 //!
 //! Reads `Cargo.lock` as plain text. `Cargo.lock` is a stable, Cargo-owned
 //! format (`[[package]]` stanzas of `key = "value"` lines); this parser reads
 //! only the three fields this check needs (`name`, `version`, `source`) and
 //! is not a general TOML reader.
+//!
+//! Grouping is by *repository* (`graph::classify`, shared with FR-059's
+//! `metadata::edges_for_manifest`), not by raw crate name (#249 review, R2):
+//! a repository that publishes more than one crate name -- IR's own facade
+//! package `quire-contract-ir` and its workspace member `quire-contract-model`
+//! -- is one component, so two different names sourced from that one
+//! repository at two different revisions are a real duplicate, exactly as two
+//! `[[package]]` stanzas sharing one name at two sources would be.
 
 use std::path::Path;
 
 use crate::error::{Code, Error, Result};
+use crate::graph::{classify, Repo};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct LockedPackage {
@@ -69,33 +78,28 @@ pub(crate) fn read_lockfile(path: &Path) -> Result<Vec<LockedPackage>> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DuplicateRevision {
-    pub(crate) name: String,
+    pub(crate) repo: Repo,
     pub(crate) sources: Vec<Option<String>>,
 }
 
-/// A quire-ecosystem crate: named `quire-*`, or the one QSL package alias
-/// (`quire-contract-model`, the crate name IR's workspace member publishes
-/// under, consumed as `quire-contract-ir` in this repo's own `Cargo.toml`).
-fn is_ecosystem_crate(name: &str) -> bool {
-    name.starts_with("quire-") || name == "quire_contract_model"
-}
-
-/// ADR-011 §7.1: exactly one revision (source string) per ecosystem crate
-/// name. Two `[[package]]` stanzas with the same name and different sources
-/// mean the lock resolved two different git revisions (or a mix of a git
-/// revision and a registry release) of what is meant to be one dependency.
+/// ADR-011 §7.1: exactly one revision (source string) per ecosystem
+/// *repository* (`graph::classify`, shared with FR-059; R2). Two
+/// `[[package]]` stanzas that classify to the same repository, whether they
+/// share one crate name or not, with different sources mean the lock resolved
+/// two different git revisions (or a mix of a git revision and a registry
+/// release) of what is meant to be one dependency.
 pub(crate) fn check(packages: &[LockedPackage]) -> Vec<DuplicateRevision> {
-    let mut by_name: Vec<(&str, Vec<Option<String>>)> = Vec::new();
-    for package in packages
-        .iter()
-        .filter(|package| is_ecosystem_crate(&package.name))
-    {
-        match by_name.iter_mut().find(|(name, _)| *name == package.name) {
+    let mut by_repo: Vec<(Repo, Vec<Option<String>>)> = Vec::new();
+    for package in packages {
+        let Some(repo) = classify(&package.name, package.source.as_deref()) else {
+            continue;
+        };
+        match by_repo.iter_mut().find(|(existing, _)| *existing == repo) {
             Some((_, sources)) => sources.push(package.source.clone()),
-            None => by_name.push((package.name.as_str(), vec![package.source.clone()])),
+            None => by_repo.push((repo, vec![package.source.clone()])),
         }
     }
-    by_name
+    by_repo
         .into_iter()
         .filter(|(_, sources)| {
             let mut distinct = sources.clone();
@@ -103,10 +107,7 @@ pub(crate) fn check(packages: &[LockedPackage]) -> Vec<DuplicateRevision> {
             distinct.dedup();
             distinct.len() > 1
         })
-        .map(|(name, sources)| DuplicateRevision {
-            name: name.to_owned(),
-            sources,
-        })
+        .map(|(repo, sources)| DuplicateRevision { repo, sources })
         .collect()
 }
 
@@ -172,7 +173,35 @@ source = "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f8#04eb6f8"
         let packages = parse_lockfile(LOCKFILE_DUPLICATE_REVISION);
         let duplicates = check(&packages);
         assert_eq!(duplicates.len(), 1);
-        assert_eq!(duplicates[0].name, "quire-contract-ir");
+        assert_eq!(duplicates[0].repo, crate::graph::Repo::Ir);
+        assert_eq!(duplicates[0].sources.len(), 2);
+    }
+
+    /// tc_arch_lint_duplicate_revisions_005 (negative control, R2/#249
+    /// review): two *different* crate names sourced from the same repository
+    /// at two different revisions -- IR's own facade package
+    /// `quire-contract-ir` and its workspace member `quire-contract-model`,
+    /// exactly QSL's real root `Cargo.lock` shape (the `-historical` alias
+    /// vs. the current pin) -- are one repository component and are reported,
+    /// not skipped because their names differ.
+    #[trace("TC-158", "FR-061-AC-3")]
+    #[test]
+    fn tc_arch_lint_duplicate_revisions_005_same_repository_different_names_is_a_violation() {
+        let lockfile = r#"
+[[package]]
+name = "quire-contract-ir"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f8#04eb6f8"
+
+[[package]]
+name = "quire-contract-model"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=53cc03c#53cc03c"
+"#;
+        let packages = parse_lockfile(lockfile);
+        let duplicates = check(&packages);
+        assert_eq!(duplicates.len(), 1);
+        assert_eq!(duplicates[0].repo, crate::graph::Repo::Ir);
         assert_eq!(duplicates[0].sources.len(), 2);
     }
 

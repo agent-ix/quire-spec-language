@@ -24,11 +24,15 @@ apart in a way only a genuine cross-crate call detects.
 The lane crate under test is `integration/current-head/`. Its external
 dependencies, each resolved at current head rather than a pinned `rev`:
 
-- `quire-contract-ir` (`quire-contract-model` package), patched via a local
-  vendored clone of its default branch (see `integration/current-head/README.md`
-  for why a plain `branch = "main"` dependency cannot be used for this one).
-- `quire-contract-runtime`, at `branch = "main"`.
-- `quire-contract-codegen`, at `branch = "main"`.
+- `quire-contract-ir` (`quire-contract-model` package) and
+  `quire-contract-runtime`, each patched via a local vendored clone of its
+  default branch (see `integration/current-head/README.md` for why a plain
+  `branch = "main"` dependency cannot be used for either -- #249 review R3
+  added the `quire-contract-runtime` patch to converge this lane's own
+  `Cargo.lock` on one revision per repository, alongside IR's pre-existing
+  one).
+- `quire-contract-codegen`, at `branch = "main"` (not patched; nothing else in
+  this lane's graph pins a conflicting revision of it).
 
 QSL itself is a `path` dependency on this repository's own working tree. All
 four are real crates; none is faked, stubbed or hand-copied for this test.
@@ -37,8 +41,11 @@ four are real crates; none is faked, stubbed or hand-copied for this test.
 
 - Network access to fetch quire-contract-ir's, quire-contract-runtime's and
   quire-contract-codegen's default branches.
-- `integration/current-head/.vendor/quire-contract-ir` prepared by
-  `make integration-current-head-prepare` (`tool/` subcommand `prepare`).
+- `integration/current-head/.vendor/quire-contract-ir` and
+  `integration/current-head/.vendor/quire-contract-runtime`, both prepared by
+  `make integration-current-head-prepare` (`tool/` subcommand `prepare`),
+  which also refreshes this lane's own `Cargo.lock` to each dependency's
+  current head (#249 review HIGH-1).
 
 ## Inputs
 
@@ -47,8 +54,8 @@ four are real crates; none is faked, stubbed or hand-copied for this test.
   data.
 - `quire_contract_runtime::{ContractIdentity, RequirementId, RevisionId}`,
   constructed from real, unrestricted public constructors.
-- `quire_contract_codegen::{BOUND_COVERAGE_SCHEMA, MAX_ANALYSIS_BYTES}`, its
-  public generated-schema constants.
+- `quire_contract_codegen::BOUND_COVERAGE_SCHEMA`, its public generated-schema
+  constant.
 
 ## Test Procedure
 
@@ -60,15 +67,20 @@ four are real crates; none is faked, stubbed or hand-copied for this test.
    - IT-013-SC-02: `quire_contract_runtime`'s `ContractIdentity`, `RequirementId`
      and `RevisionId` construct from that same data via their real public
      constructors, with no internal or restricted producer bypassed.
-   - IT-013-SC-03: `quire_contract_codegen::BOUND_COVERAGE_SCHEMA` and
-     `MAX_ANALYSIS_BYTES` are readable and structurally well-formed constants,
+   - IT-013-SC-03: `quire_contract_codegen::BOUND_COVERAGE_SCHEMA` is a
+     readable, structurally well-formed Draft 2020-12 schema constant,
      confirming the codegen crate's generated artifacts at head are not stale
      relative to its own source.
-2. Inspect the lane's resolved dependency graph after step 1.
-   - IT-013-SC-04: none of the three backend crates resolved from a published
-     registry release; each resolved from its git default branch (or, for
-     quire-contract-ir, the local vendored clone of it), so a resolution
-     failure at head cannot silently fall back to a released version.
+2. Read this lane's own resolved `integration/current-head/Cargo.lock` after
+   step 1 (`tests/contract.rs`'s
+   `backend_crates_resolve_from_head_not_a_registry_release`, an automated
+   check, not only inspection -- #249 review, LOW).
+   - IT-013-SC-04: none of the three backend crates' packages resolved from a
+     published registry release; quire-contract-codegen resolved from its git
+     default branch, and quire-contract-ir/quire-contract-model/
+     quire-contract-runtime resolved through the local vendored clones, so a
+     resolution failure at head cannot silently fall back to a released
+     version.
 
 ## Expected Results
 

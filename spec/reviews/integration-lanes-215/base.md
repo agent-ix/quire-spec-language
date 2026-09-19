@@ -34,14 +34,108 @@ convention instead of this repo's real `#[trace(...)]` attribute, which left
 all 18 of FR-058 through FR-061's ACs showing as `unbacked_rows` in `quire
 coverage` despite real, passing tests existing.
 
+## Revision update (#249 review round 2)
+
+A second review round (external PR review, REVISE verdict) found real gaps
+this base review's PASS verdict had not caught, all fixed in the same PR
+rather than deferred, plus three owner rulings (R1, R2, R3) this section
+records verbatim rather than re-litigating:
+
+- **R1 (T12-B minting sites)**: `node_key_of(` was added to T12-B's call
+  patterns and `value::node` (the helper's own defining module) to its
+  allowed-caller prefixes. Run against real QSL head, T12-B now finds **five**
+  real sites, not the one this review's FND-002 recorded:
+  `value/enumeration.rs:117,162`, `value/unit.rs:198,311` and the OBS-018 site
+  `value/model_query.rs:108`. None of these five are among the three modules
+  ADR-011 §1's S3 "today" mapping names for the `check` stage
+  (`value::expression::check`, `model::checked_dispatch`, `value::library`) --
+  a real discrepancy between that mapping and QSL's real head, reported here
+  and in FR-060's Status section, not resolved. Remaining work: #211.
+- **R2 (duplicate-revisions keying)**: the check now groups by ecosystem
+  *repository* (source URL, via a `graph::classify` function shared with
+  FR-059's edge extraction), not by crate name. Run against QSL's real root
+  `Cargo.lock`, this now reports a real duplicate: `quire-contract-ir` and
+  `quire-contract-model` are the same repository at two different revisions.
+  `arch-lint duplicate-revisions --lockfile Cargo.lock` exits `1`. This
+  review's Dependency analysis section and FND-004/FR-061-AC-4 below
+  previously asserted the opposite ("no duplicate," "true of the real
+  lockfile"); both are corrected below rather than left standing. This PR does
+  not change the root lock to make the check pass.
+- **R3 (the lane's own lock)**: FR-061 now also covers
+  `integration/current-head/Cargo.lock`. Three new `[patch]` entries in
+  `integration/current-head/Cargo.toml` (quire-contract-ir/-model via the
+  existing vendored clone, quire-contract-runtime via a new vendored clone,
+  quire-spec-language via a direct path) plus a real `cargo update` converge
+  that lock to exactly one revision per repository. `make
+  arch-lint-duplicate-revisions-lane` (new target) confirms: exit `0`, "PASS:
+  one revision per quire-ecosystem crate." Building the lane's real manifest
+  at real current heads (a byproduct of this convergence work, not a designed
+  fixture) surfaced a genuine, new cross-repository incompatibility: real
+  quire-contract-codegen head fails against real quire-contract-runtime head
+  (`error[E0560]: struct CounterexamplePacket has no field named witness`,
+  `bounded_kani_corpus.rs:196`), reported in FR-058's Status section as real,
+  current evidence, not remediated here.
+
+Also fixed this round: the lane's `prepare` step now runs `cargo update`
+against the lane's own manifest and `revision-log` fails on a
+resolved-sha/`git ls-remote` mismatch (HIGH-1); `arch-lint api-surface` and
+`api_surface.rs` rules now carry an explicit role (`--qsl`/`--cg`) so a
+CG-role rule (T12-A) is evaluated against a CG tree instead of vacuously
+against QSL's own, with a negative-control test over a synthetic
+consumer-shaped tree (HIGH-2); `check-incompatible-fixture` now requires a
+real `error[E0` compiler diagnostic in stderr before emitting the FR-058-AC-3
+marker, with a negative-control test for a missing-manifest build failure
+that is not that diagnostic (HIGH-3); T12-A now has its own CG scan root
+instead of silently flipping to PASS against QSL's own tree once
+`src/replay.rs` exists (MEDIUM-4); the check's own report now states both its
+renamed-import limitation and a second, previously-undocumented one (a call
+pattern found inside a comment or string literal is not excluded) (MEDIUM-5);
+T12-A's `pending_reason` now names `src/replay.rs` explicitly, so
+`tc_arch_lint_api_surface_002` asserts that name rather than a value it set
+itself (MEDIUM-6); the PR body's claim that `make ci` runs Kani proofs is
+removed, since it does not (MEDIUM-8); `integration/current-head/tool/src/
+main.rs`'s `cargo metadata` call now passes `--locked`; the dead
+`is_ecosystem_crate`/`"quire_contract_model"` underscore check was removed
+along with the crate-name-keyed logic it supported; `RuleOutcome::rule_id` is
+now read (used in the printed report); the tautological `const _: () =
+assert!(MAX_ANALYSIS_BYTES > 0)` in `tests/contract.rs` was dropped (a
+`const` bound provable at compile time is not a runtime gate); IT-013-SC-04
+now has a `#[trace(...)]` tag and a real automated check
+(`backend_crates_resolve_from_head_not_a_registry_release`) instead of only
+an inspection step; and the Makefile now states, next to `arch-lint`'s own
+target, why it exits 1 by design today and that it joins `ci:` once #211/#213
+remediate (Remaining work: #211).
+
+FND-004's coverage-overclaim is corrected below rather than left standing.
+Before this round's fixes, real per-document backed count (an AC backed by an
+automated, symbol-tagged test, per `quire coverage --scope . --json`'s own
+`minted_targets[].backed` field) was FR-058 1/4, FR-059 5/6, FR-060 3/4,
+FR-061 3/4 = 12/18, not 18/18. This round added a real negative-control test
+tagged `FR-058-AC-3` (the missing-manifest case, HIGH-3), which
+`quire coverage` now reports as backed; the real, current count, re-measured
+against this document's `minted_targets` output rather than assumed, is
+**FR-058 2/4, FR-059 5/6, FR-060 3/4, FR-061 3/4 = 13/18**. The remaining five
+unbacked (`FR-058-AC-1`, `FR-058-AC-4`, `FR-059-AC-6`, `FR-060-AC-4`,
+`FR-061-AC-4`) are verified by each requirement's TC's own documented
+**manual** real-data-run step (TC-159's, TC-156's, TC-157's and TC-158's own
+`Automation` fields already say so), which this round ran for real and
+recorded real output for (FR-058's and FR-060's Status sections, this
+document's Revision update section above) -- a real but non-automated
+verification, not an automation gap silently passed over. `unbacked_rows`/
+`status_lies` count is a different, narrower claim than "has a passing test":
+a manual TC that a symbol correctly cites is not `unbacked_rows` even though
+no automated test executes it, so the 0-`unbacked_rows`/0-`status_lies`
+figures in FND-004's Resolved clause below remain accurate on their own,
+narrower terms.
+
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | `quire validate` flagged two agentless-passive SHALL statements in FR-059 and FR-061 (`ears:missing-subject`). Resolved before this review's evaluated revision. | FR-059; FR-061 |
-| FND-002 | low | FR-060-AC-4/TC-157 asserted the real T12-B/T12-C run reproduces ADR-013 OBS-018's documented sites exactly; the real run also finds `src/value/node.rs:322` (a call to `NodeKey::of` inside the constructor's own defining module, via the crate-internal `node_key_of` helper), which OBS-018's text does not name. Resolved: both documents now state the verified finding, including the site beyond OBS-018, rather than the assumption. Whether the constructor's own defining module should be an implicit allowed caller is left as an open design question for the ADR-013/#211/#213 owner, not decided by this check or this review. | FR-060; TC-157; ADR-013 OBS-018 |
+| FND-002 | low | FR-060-AC-4/TC-157 asserted the real T12-B/T12-C run reproduces ADR-013 OBS-018's documented sites exactly; the real run also finds real call sites OBS-018's text does not name. Resolved: both documents now state the verified finding rather than the assumption. **Superseded by the Revision update above (R1)**: after `node_key_of(` was added to T12-B's call patterns and `value::node` exempted as the helper's own defining module, the real, current count is five sites (`value/enumeration.rs:117,162`, `value/unit.rs:198,311`, `value/model_query.rs:108`), not the one site this finding originally recorded; FR-060 and TC-157 state the five-site count, not the one-site count. Whether the constructor's own defining module should be an implicit allowed caller is left as an open design question for the ADR-013/#211/#213 owner, not decided by this check or this review. | FR-060; TC-157; ADR-013 OBS-018 |
 | FND-003 | low | The tool crate (`integration/current-head/tool/`) initially shipped with zero unit tests, unlike the sibling `arch-lint` tool's 20 tests with negative controls. Resolved: added unit tests for `resolved_commit`, which also caught and fixed a real bug (a source string with no `#` fragment at all returned the whole string as a fabricated commit sha instead of `None`). | `integration/current-head/tool/src/main.rs` |
-| FND-004 | low | None of the new tests in `tools/arch-lint/*.rs`, `integration/current-head/tool/src/main.rs` or `integration/current-head/tests/contract.rs` carried this repo's real, current test-tracing tag (`use ix_trace_rs::trace; #[trace("TC-...", "FR-...-AC-...")]`, confirmed via real, current examples such as `tests/text_enum_identity.rs:72` and `tests/integer_lowering.rs:68`); a stale, free-text doc-comment naming a test id in prose is not the convention (NFR-005's own `## Verification` text says so explicitly: "Legacy doc-comment tags are not the convention for new tests"). `quire coverage --scope . --json` correctly reported all 18 of FR-058 through FR-061's ACs as `unbacked_rows` as a result, despite real, passing tests existing for every one of them. Resolved: added `#[trace(...)]` attributes (and the `ix-trace-rs` dev-dependency, where a manifest did not already carry it) to every relevant test; re-running `quire coverage --scope . --json` afterward shows 0 of these 18 ids remaining in `unbacked_rows` and 0 new `status_lies` (repo-wide backed rows moved from 515/578 to 527/578). FR-058's four ACs (verified only by TC-159, which is itself `Automation: Manual`) are not required to carry a symbol tag by this repo's own convention (the same as the pre-existing `TC-010`/`NFR-005` precedent) and correctly do not appear in `unbacked_rows` or `no_symbol_rows` either. | `tools/arch-lint/graph.rs`; `tools/arch-lint/metadata.rs`; `tools/arch-lint/api_surface.rs`; `tools/arch-lint/duplicate_revisions.rs`; `integration/current-head/tool/src/main.rs`; `integration/current-head/tests/contract.rs` |
+| FND-004 | low | None of the new tests in `tools/arch-lint/*.rs`, `integration/current-head/tool/src/main.rs` or `integration/current-head/tests/contract.rs` carried this repo's real, current test-tracing tag (`use ix_trace_rs::trace; #[trace("TC-...", "FR-...-AC-...")]`, confirmed via real, current examples such as `tests/text_enum_identity.rs:72` and `tests/integer_lowering.rs:68`); a stale, free-text doc-comment naming a test id in prose is not the convention (NFR-005's own `## Verification` text says so explicitly: "Legacy doc-comment tags are not the convention for new tests"). `quire coverage --scope . --json` correctly reported all 18 of FR-058 through FR-061's ACs as `unbacked_rows` as a result. Resolved: added `#[trace(...)]` attributes (and the `ix-trace-rs` dev-dependency, where a manifest did not already carry it) to every relevant test. **Correction (superseding this finding's closing clause, #249 review MEDIUM-7)**: the original text of this finding claimed "real, passing tests existing for every one of them" for all 18 ACs; that overclaimed. The real, per-document *backed* count (an AC covered by an automated, symbol-tagged test that `quire coverage`'s own `minted_targets[].backed` field recognizes) is now, after this round's fixes, FR-058 2/4, FR-059 5/6, FR-060 3/4, FR-061 3/4 = 13/18, not 18/18 -- see the Revision update section above for the remaining five (`FR-058-AC-1`, `FR-058-AC-4`, `FR-059-AC-6`, `FR-060-AC-4`, `FR-061-AC-4`), each genuinely verified only by its TC's own documented manual real-data-run step, not an automated test. | `tools/arch-lint/graph.rs`; `tools/arch-lint/metadata.rs`; `tools/arch-lint/api_surface.rs`; `tools/arch-lint/duplicate_revisions.rs`; `integration/current-head/tool/src/main.rs`; `integration/current-head/tests/contract.rs` |
 
 ## Scope and provenance
 
@@ -95,8 +189,11 @@ requirement set (no state machine, no numeric option matrix):
   → TC-159; FR-059 AC-1..6 → TC-156; FR-060 AC-1..4 → TC-157; FR-061 AC-1..4 →
   TC-158). Verified by reading each FR's Acceptance Criteria table's
   Verification column, and machine-verified via `#[trace(...)]` tags plus a
-  clean `quire coverage --scope . --json` run (see FND-004): 0 of these 18 ACs
-  remain in `unbacked_rows`, 0 `status_lies`.
+  clean `quire coverage --scope . --json` run (see FND-004 and the Revision
+  update above): 0 of these 18 ACs remain in `unbacked_rows`, 0 `status_lies`,
+  and 13 of the 18 (all but `FR-058-AC-1`, `FR-058-AC-4`, `FR-059-AC-6`,
+  `FR-060-AC-4`, `FR-061-AC-4`) show `backed: true` in the same run's
+  `minted_targets`; repo-wide, 528/578 rows are `backed: true`.
 - Option permutation: not applicable; none of the four FRs declares an
   `-OPT-` option set.
 - Constraint boundary: FR-061's path-dependency-vs-git-source boundary (no
@@ -161,12 +258,17 @@ to spot-check.
   `cargo metadata` — errors "believes it's in a workspace when it's not",
   since it sits under the incompatible fixture's directory tree without being
   declared a member or excluded).
-- **FR-061's own scope boundary is real, not asserted**: independently
-  confirmed against the root `Cargo.lock` that `quire-contract-model`
-  (consumed as `quire-contract-ir`) and `quire-contract-ir` (consumed as
-  `quire-contract-ir-historical`) are two distinct package names, each
-  resolved to exactly one source, so FR-061-AC-4's "no duplicate" claim is
-  true of the real lockfile, not only of a synthetic one.
+- **FR-061's own scope boundary, corrected (superseded by R2, #249 review)**:
+  this bullet originally read that `quire-contract-model` and
+  `quire-contract-ir` are "two distinct package names... not a duplicate of
+  one name," and that FR-061-AC-4's "no duplicate" claim held against the real
+  lockfile. Under R2's repository-keyed rule, that is now known to be false:
+  both packages classify to the IR *repository*, resolved to two different
+  revisions, and `arch-lint duplicate-revisions --lockfile Cargo.lock` exits
+  `1` against the real root lockfile. FR-061-AC-4 is rewritten to state the
+  repository rule instead of the (now-known-false) "no duplicate" outcome;
+  this PR reports the root lock's real failure rather than changing the lock
+  to make the check pass.
 
 ## Evidence analysis
 
@@ -180,8 +282,13 @@ PR's own reported evidence a first-class thing to check, not a formality.
   ADR-011 OBS-029's FB-05 violation and its FB-11 cycles; `api-surface`
   against this repository's own `src/` at `4cd5174` reports T12-A pending,
   T12-C failing at both OBS-018 sites, and T12-B failing at the one OBS-018
-  site plus one additional real site; `duplicate-revisions` against the real
-  root `Cargo.lock` passes clean.
+  site plus one additional real site (**superseded by R1, #249 review**: with
+  `node_key_of(` added to T12-B's call patterns, the real, current count is
+  five sites, not two -- see the Revision update section above);
+  `duplicate-revisions` against the real root `Cargo.lock` passes clean
+  (**superseded by R2, #249 review**: keyed on repository rather than crate
+  name, the same real lockfile now fails -- see the Revision update section
+  above and the corrected Dependency analysis bullet).
 - Every exit code quoted above was re-captured without piping through
   `tail`/`head`, after this session caught itself doing exactly that once (a
   `tail`-piped exit code silently reflects `tail`'s own status, not the
