@@ -154,3 +154,27 @@ ADR-011 at `1666d02`, ADR-012 at `eecf825`.
 | ADR-011 R3 low (IR #139) | Fixed. IR PR #139 is merged at `954c2f2`. | Context, TK-10 |
 | ADR-011 R3 low (TK-01) | Fixed. The skeleton spine (ADR-011 T-2) lands the `replay` facade first; #214 widens it per family. | TK-01 |
 | ADR-011 §4 dependency binding | No change. ADR-013 lists no E4 or E9 refusal codes, so `DependencyIdentityMismatch` is not added. | none |
+
+## Round 4 (commit 02a504f)
+
+Final PR #236 check of the delta c7d8df1..02a504f, against ADR-011 at 1666d02
+and ADR-012 at eecf825.
+
+- PR2-M1 to PR2-M3 and PR2-L1 to PR2-L4 are fixed. `PackageNodeKey{package,
+  node: WireNodeId}` is the same in all three ADRs (ADR-011 I2 and E3). QC-20
+  amends the AD-016 Packet row, and ADR-011 E8 and E9 cite it. `FamilyOutcome
+  { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }` is in the layer-3
+  `check` core in all three ADRs (ADR-011 §6.1 layer 3). ADR-011 T-12 has the
+  three-part API-surface check. ADR-011 §4 `DependencyIdentityMismatch` agrees
+  with O-04, O-26 and T-2.
+- PR2-H1 is fixed for CG, for the kernel payloads (`VariantId` only) and for
+  enforcement (T-12 (b) and (c)). The RT half is not fixed:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR3-M1 | medium | O-04 says RT holds `NodeKey`s "only as in-process values that QSL passes to it through S6a", and ADR-012 keys RT's function lookup by `NodeKey`. The ADR-011 §7.1 crate graph has no QSL → RT edge, and S6a never calls RT. RT runs inside CG-generated harnesses built from IR wire data, so its only node ids are wire ids, and it would have to mint `NodeKey`s, which T-12 (b) forbids. Fix: key RT's function lookup by `WireNodeId` (or a CG-assigned index), and say RT holds no `NodeKey` (ADR-013 O-04, ADR-012 §9). | ADR-013 166 · ADR-012@eecf825 666, 859 · ADR-011@1666d02 §7.1 |
+| PR3-N1 | nit | "F `diagnostic` maps it (`FamilyRefusal`) to category `refusal`": F sits below layer 3 and cannot name `FamilyRefusal`. O-17 has the layering right: `FamilyRefusal::catalog_code()` yields the code, and F maps the code to its category. Same wording in ADR-012 §2 and §13.5. | ADR-013 368 |
+
+`quire validate --strict --summary` reports 10/10 grammar-clean.
+
+Round-4 verdict: CHANGES (PR3-M1 only: two sentences in ADR-013 O-04 and ADR-012 §9 and §13.5).
