@@ -2582,10 +2582,16 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// `value-accounting.md:456` prices every `(effective type, redefined
 /// member)` reached by `c >= 2` redefinition records, and an operation
 /// member is a redefined member same as a field one — `apply_redefinitions`
-/// now charges a contested operation-redefinition group exactly like a
-/// contested field group, even though it still never resolves which
-/// operation redefiner wins (that stays `crate::model::conformance`'s job;
-/// see the module docs, and QSL #173 for the still-open detection gap).
+/// charges a contested operation-redefinition group exactly like a
+/// contested field group, and (#173) also resolves it with the identical
+/// dominance search fields use: `B.op2` and `B.op3` share the same owner
+/// `B`, so no edge dominates another and the group refuses
+/// `redefinition-target`, not `derivation-conflict` (that shape needs
+/// distinct, non-dominating owners; see
+/// `r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize`
+/// above for the field analog). Resolving an operation contest still builds
+/// no `EffectiveView` member entry (see the module docs): only the ambiguity
+/// check itself is shared with fields.
 ///
 /// Cross-checked by hand: `f(A) = 1` (`A`'s own qualify fact only), `f(B) =
 /// 2` (qualify plus its own inherit-`A` fact) — both types are otherwise
@@ -2593,12 +2599,10 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// `A.op` has `c = 2` edges, both owned by `B`, so `Σ (c − 1) × f(o) = (2 −
 /// 1) × (f(B) + f(B)) = 1 × (2 + 2) = 4`.
 ///
-/// Revert-probe: removing the operation-group charging loop in
-/// `apply_redefinitions` (which never touches `member_preimages`/`hidden`)
-/// drops the `NormalizeConflictCheck`
-/// count to `0` and the `work_units` floor below no longer denies at that
-/// charge point — confirmed by hand: removing the loop locally reproduces
-/// both failures, restoring it returns this test to green.
+/// Revert-probe: reverting `resolve_redefinition_contest`'s call site in the
+/// operation loop back to charge-only (dropping the `Err` branch's
+/// `record_phase4_refusal` call) turns this test's outcome back into
+/// `Completed`, confirmed locally, then restored.
 #[trace("TC-196", "FR-151-AC-2")]
 #[test]
 fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
@@ -2606,7 +2610,28 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    match &outcome {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
+            assert!(
+                refusal.detail.contains("model.B.op2") && refusal.detail.contains("model.B.op3"),
+                "detail must name both contending redefiners: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.A.op"),
+                "detail must name the contended target: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
     let admitted = meter.admitted_charges();
     assert_eq!(
         admitted
@@ -2614,22 +2639,26 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
             .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
             .count(),
         1,
-        "the contested operation-redefinition group is charged once, even \
-         though apply_redefinitions never resolves which operation \
-         redefiner wins"
+        "the contested operation-redefinition group is still charged once, \
+         exhaustively, before phase 4's own refusal is reported \
+         (value-accounting.md:481) -- B.op2 and B.op3 share the same owner, \
+         so #173's dominance search now also resolves this contest, and \
+         same-owner contention refuses redefinition-target"
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        26,
+        20,
         "5 normalize.record (A, B, A.op, B.op2, B.op3 -- Supertype/\
          Redefinition records are relationships, not declarations) + 2 \
          normalize.fact (A/B qualify) + 1 normalize.cycle-check + 1 \
          normalize.fact (B's own inherit-A path) + 2 \
          normalize.redefinition-check (m + r = 3 + 0, then 3 + 1) + 1 \
-         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * 4 = 4) + 2 \
-         normalize.declaration + 2 normalize.hash (per type declaration) + \
-         2 normalize.hash (universe/view) = 26; no member declarations at \
-         all, since operation members never enter member_preimages"
+         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * (2+2) = 4) = \
+         20; phase 4's own charges are exhaustive up to and including \
+         normalize.conflict-check (value-accounting.md:481), but the \
+         redefinition-target refusal that same-owner contest now reports \
+         (#173) ends checking there -- no normalize.declaration or \
+         normalize.hash charge ever runs (value-accounting.md:482)"
     );
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
@@ -2648,6 +2677,44 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     }
 }
 
+/// The operation-member analog of `fixture_n06_resolved`: `B.op2` (owner
+/// `B <- A`) and `C.op3` (owner `C <- A`) both redefine `A.op` -- sibling
+/// owners, neither dominating the other -- but `D` (`<- B`, `<- C`) also
+/// declares `D.op4` redefining `A.op`, and `D` is a proper descendant of
+/// both `B` and `C`. #173's dominance search resolves this contest (`D.op4`
+/// dominates every other redefiner), so the group completes with no
+/// refusal -- the "a winner if one dominates" half of #173's rule, as
+/// opposed to the same-owner and diamond refusal cases exercised above and
+/// in `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`.
+/// Resolving an operation contest builds no `EffectiveView` member entry
+/// (see the module docs): there is nothing to assert about the view here,
+/// only that the ambiguity check itself does not refuse.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.op-redef-resolved"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+            object_type("model.D", vec!["model.B", "model.C"]),
+            operation_member("model.A.op", "model.A"),
+            operation_member_redefining("model.B.op2", "model.B", Some("model.A.op")),
+            operation_member_redefining("model.C.op3", "model.C", Some("model.A.op")),
+            operation_member_redefining("model.D.op4", "model.D", Some("model.A.op")),
+        ],
+    );
+
+    let outcome = normalize(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    assert!(
+        matches!(outcome, NormalizeOutcome::Completed(_)),
+        "D.op4 dominates every other redefiner of A.op (B and C are both \
+         proper ancestors of D), so the contest resolves without a \
+         refusal: {outcome:?}"
+    );
+}
+
 /// `value-accounting.md:456` prices every contested `(effective type,
 /// redefined member)` in one ascending pass "by effective member key" --
 /// field and operation targets
@@ -2661,9 +2728,11 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 ///   (`c >= 2` is the only condition, `value-accounting.md:456`). `c = 2`,
 ///   `Σ (c − 1) × f(o) = (2 − 1) × (f(B) + f(C)) = 1 × (2 + 3) = 5`.
 /// - Operation `A.a` is redefined by `C.a2` and `C.a3`, both owned by `C`.
-///   `apply_redefinitions` never resolves an operation contest (see the
-///   module docs), but still charges it: `c = 2`,
-///   `Σ (c − 1) × f(o) = (2 − 1) × (f(C) + f(C)) = 1 × (3 + 3) = 6`.
+///   `apply_redefinitions` charges this contest exactly like the field one,
+///   `c = 2`, `Σ (c − 1) × f(o) = (2 − 1) × (f(C) + f(C)) = 1 × (3 + 3) =
+///   6`, and (#173) also resolves it with the same dominance search: no
+///   edge dominates another (both share owner `C`), so it refuses
+///   `redefinition-target`.
 ///
 /// `model.A.a` sorts before `model.A.z` (identity bytes: `a` < `z`), so the
 /// merged-and-sorted order charges the operation group (`6`) before the
@@ -2672,7 +2741,9 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// (`6`), regardless of which target key sorts first.
 ///
 /// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this domain package completes at exactly `work_units = 89`
+/// unlimited, this domain package's phase 4 charges exhaustively up to and
+/// including the last `normalize.conflict-check`
+/// (value-accounting.md:481) at exactly `work_units = 69`
 /// (`normalize.record` charges its nine declaration records -- three
 /// object types, three fields and three operation members; `B`'s and `C`'s
 /// own `supertypes[]` entries and every member's own `redefines` property
@@ -2683,10 +2754,14 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// reaching `C`; the operation group's own two records contribute no facts
 /// at all, since operation members never enter `member_preimages` and get
 /// no `Fact` here, only a `normalize.conflict-check` charge -- see the
-/// module docs), and `work_units = 58` (`52 + 6`) is exactly enough to admit
-/// every charge up to and including these six phase-4 `normalize.fact`
-/// charges, denying at the first `normalize.conflict-check` -- the
-/// operation group's `6`, not the field group's `5`.
+/// module docs), then refuses `redefinition-target` there
+/// (value-accounting.md:482 ends checking at that stage's refusal): no
+/// `normalize.declaration` or `normalize.hash` charge ever runs, unlike
+/// before #173 resolved this contest. `work_units = 58` (`52 + 6`) is
+/// exactly enough to admit every charge up to and including the six
+/// phase-4 `normalize.fact` charges, denying at the first
+/// `normalize.conflict-check` -- the operation group's `6`, not the field
+/// group's `5`.
 ///
 /// Revert probe: reverting `apply_redefinitions` back to each loop pushing
 /// its own charge straight to `conflict_check_work` (the pre-fix shape)
@@ -2727,7 +2802,28 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    match &outcome {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
+            assert!(
+                refusal.detail.contains("model.C.a2") && refusal.detail.contains("model.C.a3"),
+                "detail must name both contending redefiners: {}",
+                refusal.detail
+            );
+            assert!(
+                refusal.detail.contains("model.A.a"),
+                "detail must name the contended target: {}",
+                refusal.detail
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
     let admitted = meter.admitted_charges();
     assert_eq!(
         admitted
@@ -2735,12 +2831,21 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
             .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
             .count(),
         2,
-        "one contested group for A.z (field) and one for A.a (operation)"
+        "one contested group for A.z (field) and one for A.a (operation) -- \
+         both still charged exhaustively (value-accounting.md:481) even \
+         though the operation group (C.a2/C.a3, same owner C) now also \
+         refuses redefinition-target (#173); the field group resolves \
+         (C.z2 dominates B.z1) and stays unrefused"
     );
     // Includes the field redefinition group's own six phase-4 redefine
     // facts' `normalize.fact` charges (operation members derive no facts of
-    // their own -- see the module docs).
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 89);
+    // their own -- see the module docs). Phase 4's own charges are
+    // exhaustive up to and including the last normalize.conflict-check
+    // (value-accounting.md:481), but the operation group's
+    // redefinition-target refusal ends checking there (#173,
+    // value-accounting.md:482): no normalize.declaration or normalize.hash
+    // charge ever runs, unlike before #173 resolved this contest.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 69);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 58;

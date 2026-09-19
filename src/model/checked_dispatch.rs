@@ -34,19 +34,31 @@
 //!   calls this once per distinct receiver-type/member pair and merges the
 //!   resulting `functions`/`dispatch_operations`/`dispatch_tables`.
 //! - `receiver_type` is supplied by the caller as the exact [`NodeKey`] the
-//!   checker requires of a dispatched call's receiver. This bridge does not
-//!   derive it from `OperationMemberRecord::owner` and does not expose a
-//!   dispatch-eligible operation through every ancestor static type that
-//!   would also admit the call. TC-196 D06-D08 only ever dispatch through an
-//!   operation's own declared owner type, so this narrower scope covers
-//!   them; broadening it to inherited exposure is future work, not a gap
-//!   this bridge silently papers over.
+//!   checker requires the operation's own declared owner type to resolve to;
+//!   this bridge does not derive it from `OperationMemberRecord::owner`
+//!   itself (turning a `DeclarationKey` into a checker [`NodeKey`] is the
+//!   same kind of pre-translated input as `OperationClauses`, below). A call
+//!   is also admitted through every other static type `checked_table`
+//!   exposes the operation through (#176): one [`DispatchOperation`] entry
+//!   is built per distinct [`NodeKey`] `object_keys` maps `table.entries()`'s
+//!   own subtypes to, not only `root.receiver_type`, so a receiver whose
+//!   static type is any conforming subtype -- whether it redefines the
+//!   operation itself or only inherits it unredefined -- resolves the
+//!   identical checked table.
 //! - Parameter and result types come from [`OperationClauses`], not from a
 //!   translation of `OperationMemberRecord`'s own producer-interface
 //!   parameter/result records: turning a model-layer type reference into a
 //!   checker [`ValueType`] is its own, separately-scoped piece of work
 //!   (needed well beyond dispatch), so this bridge accepts it pre-translated
 //!   exactly as `link_dispatch` accepts `domain_package`/`view` pre-normalized.
+//! - Every distinct linked candidate must itself be a query -- a declared
+//!   result and an empty effect set (#174, FR-151's own restriction on what
+//!   may be a dispatch target) -- checked directly against each candidate's
+//!   own [`crate::model::domain_package::OperationMemberRecord`], not the
+//!   pre-translated `OperationClauses`: `checked_dispatch_operation` refuses
+//!   [`DispatchBridgeRefusal::NotAQuery`] before typing any candidate's
+//!   clauses when one is not, since nothing earlier in `src/`'s own pipeline
+//!   enforces it (see that variant's own doc for the FR-272 cause choice).
 //!
 //! Effective-precondition semantics (FR-151
 //! `quire.model.conformance.refinement/v1`: "the disjunction of its own
@@ -91,7 +103,7 @@ use crate::model::accounting::Meter;
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord};
+use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{
@@ -181,6 +193,17 @@ pub enum DispatchBridgeRefusal {
     /// is, rather than a bridge-only cause. Boxed: `ModelRefusal` is far
     /// larger than the other variants.
     AncestorDepthExceeded(Box<ModelRefusal>),
+    /// A linked candidate reachable as this dispatch's own target has no
+    /// declared result, or a non-empty effect set (#174): FR-151
+    /// (`quire.model.dispatch.single/v1`) admits only a query -- "whose
+    /// result is present and whose effect set is empty" -- as a dispatch
+    /// target. FR-272's `invalid_model_binding` cause list is closed and has
+    /// no dedicated non-query-dispatch variant, so this reuses
+    /// [`ModelRefusalCause::MalformedDeclaration`], exactly as that cause's
+    /// own doc already establishes for a closed list with no dedicated cause
+    /// (#157), rather than a bridge-only cause. Boxed: `ModelRefusal` is far
+    /// larger than the other variants.
+    NotAQuery(Box<ModelRefusal>),
 }
 
 fn missing(operation: &DeclarationKey, field: MissingClauseField) -> DispatchBridgeRefusal {
@@ -199,6 +222,22 @@ fn depth_exceeded(candidate: &DeclarationKey) -> DispatchBridgeRefusal {
         detail: format!(
             "effective-precondition ancestry for {} exceeded {MAX_ANCESTOR_DEPTH} redefinition steps",
             candidate.node
+        ),
+    }))
+}
+
+/// `operation` is a linked dispatch target with no declared result, or a
+/// non-empty effect set (#174, see [`DispatchBridgeRefusal::NotAQuery`]'s
+/// own doc for the cause choice).
+fn not_a_query(operation: &DeclarationKey) -> DispatchBridgeRefusal {
+    DispatchBridgeRefusal::NotAQuery(Box::new(ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: ModelRefusalCause::MalformedDeclaration,
+        detail: format!(
+            "{} is a dispatch target but is not a query: FR-151 \
+             (quire.model.dispatch.single/v1) admits only an operation \
+             whose result is present and whose effect set is empty",
+            operation.node
         ),
     }))
 }
@@ -664,17 +703,16 @@ pub fn checked_dispatch_operation(
         other => return Err(DispatchBridgeRefusal::Unlinked(Box::new(other))),
     };
 
-    let redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = domain_package
-        .records
-        .iter()
-        .filter_map(|record| match record {
-            DomainPackageRecord::OperationMember(operation) => operation
-                .redefines
-                .clone()
-                .map(|redefined| (operation.key.clone(), redefined)),
-            _ => None,
-        })
-        .collect();
+    let mut redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = BTreeMap::new();
+    let mut operation_records: BTreeMap<DeclarationKey, &OperationMemberRecord> = BTreeMap::new();
+    for record in &domain_package.records {
+        if let DomainPackageRecord::OperationMember(operation) = record {
+            operation_records.insert(operation.key.clone(), operation);
+            if let Some(redefined) = &operation.redefines {
+                redefinitions.insert(operation.key.clone(), redefined.clone());
+            }
+        }
+    }
     let order = declaration_order(domain_package);
     let by_order = |key: &DeclarationKey| order.get(key).copied().unwrap_or(usize::MAX);
 
@@ -684,6 +722,32 @@ pub fn checked_dispatch_operation(
     }
     let mut ordered_candidates: Vec<DeclarationKey> = distinct.iter().cloned().collect();
     ordered_candidates.sort_by_key(|candidate| (by_order(candidate), candidate.clone()));
+
+    // FR-151 (`quire.model.dispatch.single/v1`): "Only query operations,
+    // whose result is present and whose effect set is empty, may be
+    // called" (#174). Every distinct linked candidate is checked -- not
+    // only `root.key` -- since any of them can be "the operation actually
+    // dispatched" at runtime for some conforming subtype; FR-151's own
+    // conformance variance already forces every redefiner's result
+    // presence and effect frame to agree with what it redefines wherever
+    // that checking runs, but nothing in `src/`'s own build pipeline runs
+    // it before this bridge, so this is the one real gate today. Checked
+    // in `ordered_candidates`' own declaration order for a deterministic
+    // refusal when more than one candidate fails.
+    for candidate in &ordered_candidates {
+        let record = operation_records.get(candidate).expect(
+            "table.entries()'s candidates are always declared operation \
+             members: link_dispatch's own DispatchIndex is built from this \
+             same domain_package.records",
+        );
+        let is_query = record.result.is_some()
+            && record.effect.modifies.is_empty()
+            && record.effect.creates.is_empty()
+            && record.effect.deletes.is_empty();
+        if !is_query {
+            return Err(not_a_query(candidate));
+        }
+    }
 
     // Every member (candidate or redefinition ancestor) whose own
     // precondition clause some candidate's static FR-146 call-graph ancestry
@@ -790,12 +854,31 @@ pub fn checked_dispatch_operation(
     }
 
     let mut entries = Vec::with_capacity(table.entries().len());
+    // Every subtype's own checked [`NodeKey`] that `table.entries()` links a
+    // candidate for, in the table's own subtype-enumeration order
+    // (ascending effective identity), deduplicated (#176: `link_dispatch`
+    // links one entry per conforming subtype under `object_keys`; the
+    // reflexive entry for `root.receiver_type` itself is one of them, since
+    // `type_conforms(s, t)` is `true` for `s == t` -- see
+    // `conformance::type_conforms`). Feeds every exposing static type's own
+    // [`DispatchOperation`] entry below, so a call whose receiver's static
+    // type is any type this dispatch is exposed through -- the operation's
+    // own declared owner or any conforming subtype that exposes it, whether
+    // by redefining it or only by inheriting it unredefined -- resolves
+    // (FR-151, `quire.model.dispatch.single/v1`: "member-name resolves
+    // statically to exactly one exposed effective operation... of the
+    // receiver's static type `T`"), not only a call through the operation's
+    // own declared owner type.
+    let mut exposing_receiver_types: Vec<NodeKey> = Vec::new();
     for (subtype, candidate) in table.entries() {
         let subtype_key = object_keys.get(subtype).copied().ok_or_else(|| {
             DispatchBridgeRefusal::MissingObjectKey {
                 subtype: Box::new(subtype.clone()),
             }
         })?;
+        if !exposing_receiver_types.contains(&subtype_key) {
+            exposing_receiver_types.push(subtype_key);
+        }
         let &body = body_index
             .get(candidate)
             .ok_or_else(|| missing(candidate, MissingClauseField::OwnBody))?;
@@ -827,17 +910,29 @@ pub fn checked_dispatch_operation(
     let (parameters, result) = require_signature(clauses, &root.key)?;
     // `parameters` is receiver-first (see `OperationClauses::parameters`);
     // the call site's own argument types are everything after it.
-    let call_arguments = parameters.get(1..).unwrap_or_default().to_vec();
-    let dispatch_operations = vec![DispatchOperation {
-        receiver_type: root.receiver_type,
-        member,
-        parameters: call_arguments
-            .into_iter()
-            .map(|(_, value_type)| value_type)
-            .collect(),
-        result,
-        table: 0,
-    }];
+    let call_arguments: Vec<ValueType> = parameters
+        .get(1..)
+        .unwrap_or_default()
+        .iter()
+        .map(|(_, value_type)| value_type.clone())
+        .collect();
+    // One `DispatchOperation` entry per exposing static type (#176), all
+    // sharing this same `member`/`parameters`/`result` signature and
+    // pointing at the identical `table: 0` -- the receiver's *runtime* type
+    // still resolves through `checked_table` as before; only the set of
+    // *static* types `check.rs`'s `dispatch_call` admits as a call site's
+    // receiver grows from the operation's own declared owner alone to every
+    // type this dispatch is exposed through.
+    let dispatch_operations: Vec<DispatchOperation> = exposing_receiver_types
+        .into_iter()
+        .map(|receiver_type| DispatchOperation {
+            receiver_type,
+            member: member.clone(),
+            parameters: call_arguments.clone(),
+            result: result.clone(),
+            table: 0,
+        })
+        .collect();
 
     Ok(PackageDeclarations {
         functions,
