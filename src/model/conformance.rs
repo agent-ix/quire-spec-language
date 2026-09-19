@@ -673,9 +673,9 @@ pub fn check_operation_redefinition(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    for write in &redefining.effect.field_writes {
+    for write in &redefining.effect.modifies {
         let covered = redefinition_reaches(&bundle.records, write, |candidate| {
-            redefined.effect.field_writes.contains(candidate)
+            redefined.effect.modifies.contains(candidate)
         });
         if !covered {
             failures.push(AxisFailure {
@@ -940,7 +940,7 @@ pub fn check_field_refinement_obligation(
     }
 
     let writer = index.operations.values().find(|operation| {
-        operation.effect.field_writes.iter().any(|field| {
+        operation.effect.modifies.iter().any(|field| {
             field.identity == record.redefined.identity
                 || field.identity == record.redefining.identity
         })

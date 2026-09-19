@@ -35,7 +35,17 @@ const NODE_REQUIRED: [&str; 7] = [
     "body",
 ];
 
-const NODE_OPTIONAL: [&str; 2] = ["recursion_group", "nominal_identity_preimage"];
+/// `declaration` is the projection node's own name member (checked-package-v2
+/// README.md's "Declarations" section): a named, source-declared node carries
+/// `declaration: {qualified_name}` exactly when it has a declaration source
+/// occurrence. On a nominal node it must equal the nominal
+/// `qualified_declaration`, and every export resolves only through this
+/// member, never through `nominal_identity_preimage` directly.
+const NODE_OPTIONAL: [&str; 3] = [
+    "recursion_group",
+    "nominal_identity_preimage",
+    "declaration",
+];
 
 /// Why an identity preimage is structurally malformed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -69,10 +79,26 @@ pub enum PreimageDefect {
         /// The node's index in `identity_projection`.
         index: usize,
     },
-    /// Projection node `index` repeats an earlier node's qualified declaration.
-    DuplicateDeclaration {
-        /// The node's index in `identity_projection`.
-        index: usize,
+    /// Two projection nodes carry equal `declaration.qualified_name` values
+    /// (`ambiguous-name`). `nodes` holds both node keys in ascending digest
+    /// order.
+    AmbiguousDeclaration {
+        /// The repeated qualified name.
+        name: String,
+        /// Both node keys, in ascending digest order.
+        nodes: [NodeKey; 2],
+    },
+    /// A node's top-level `declaration.qualified_name` disagrees with its
+    /// nominal `qualified_declaration`, or is absent while a nominal
+    /// `qualified_declaration` is present (`declaration-nominal-mismatch`).
+    DeclarationNominalMismatch {
+        /// The node's key.
+        node: NodeKey,
+        /// The node's top-level `declaration.qualified_name`, or `None` when
+        /// `declaration` is absent.
+        declared: Option<String>,
+        /// The node's nominal `qualified_declaration`.
+        nominal: String,
     },
 }
 
@@ -92,12 +118,14 @@ pub enum NodeDefect {
     SchemaVersion,
     /// `node_tag` is not a V2 semantic graph node tag.
     NodeTag,
-    /// A nominal `qualified_declaration` is not a non-empty identifier array.
+    /// A nominal `qualified_declaration` or a top-level `declaration` is not
+    /// a non-empty identifier array, or `declaration` is not exactly
+    /// `{qualified_name}`.
     Declaration,
 }
 
-/// The validated node keys of one identity preimage, by nominal qualified
-/// declaration spelled with `::`.
+/// The validated node keys of one identity preimage, by the top-level
+/// `declaration.qualified_name` each node spells, spelled with `::`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProjectedDeclarations(BTreeMap<String, NodeKey>);
 
@@ -199,22 +227,50 @@ fn nominal_declaration(nominal: &Value) -> Result<Option<String>, NodeDefect> {
     qualified(segments).map(Some)
 }
 
-/// The nominal `qualified_declaration` a projection node carries. Complete V1
-/// at this pin names no other node, so only enum, dimension and unit nodes
-/// declare an exportable name.
-fn declaration(node: &Map<String, Value>) -> Result<Option<String>, NodeDefect> {
-    node.get("node_tag")
-        .and_then(Value::as_str)
-        .filter(|tag| NODE_TAGS.contains(tag))
-        .ok_or(NodeDefect::NodeTag)?;
-    Ok(node
+/// The `qualified_name` of a top-level `declaration` member, which must be
+/// exactly `{qualified_name}`.
+fn declared_name(value: &Value) -> Result<String, NodeDefect> {
+    let object = value.as_object().ok_or(NodeDefect::Declaration)?;
+    if object.len() != 1 {
+        return Err(NodeDefect::Declaration);
+    }
+    let segments = object
+        .get("qualified_name")
+        .and_then(Value::as_array)
+        .ok_or(NodeDefect::Declaration)?
+        .iter()
+        .map(|segment| segment.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(NodeDefect::Declaration)?;
+    qualified(segments)
+}
+
+/// A projection node's key and its shape-valid `declaration.qualified_name`
+/// and nominal `qualified_declaration`, before the cross-node checks that
+/// order them: whether `declared` and `nominal` agree, and whether `declared`
+/// repeats an earlier node's.
+struct NodeShape {
+    key: NodeKey,
+    declared: Option<String>,
+    nominal: Option<String>,
+}
+
+/// The shape-valid `declaration.qualified_name` and nominal
+/// `qualified_declaration` of one node's `declaration` and
+/// `nominal_identity_preimage` members, without checking whether they agree.
+fn declaration_shape(
+    node: &Map<String, Value>,
+) -> Result<(Option<String>, Option<String>), NodeDefect> {
+    let nominal = node
         .get("nominal_identity_preimage")
         .map(nominal_declaration)
         .transpose()?
-        .flatten())
+        .flatten();
+    let declared = node.get("declaration").map(declared_name).transpose()?;
+    Ok((declared, nominal))
 }
 
-fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect> {
+fn projected_node(value: &Value) -> Result<NodeShape, NodeDefect> {
     let node = members(value, &NODE_REQUIRED, &NODE_OPTIONAL).map_err(|defect| match defect {
         MemberDefect::NotObject => NodeDefect::NotObject,
         MemberDefect::Missing(name) => NodeDefect::MissingMember(name),
@@ -227,7 +283,38 @@ fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect
     if node.get("schema_version").and_then(Value::as_str) != Some(NODE_SCHEMA_VERSION) {
         return Err(NodeDefect::SchemaVersion);
     }
-    Ok((key, declaration(node)?))
+    node.get("node_tag")
+        .and_then(Value::as_str)
+        .filter(|tag| NODE_TAGS.contains(tag))
+        .ok_or(NodeDefect::NodeTag)?;
+    let (declared, nominal) = declaration_shape(node)?;
+    Ok(NodeShape {
+        key,
+        declared,
+        nominal,
+    })
+}
+
+/// `shape`'s `declaration-nominal-mismatch` defect, if its top-level
+/// `declaration.qualified_name` disagrees with its nominal
+/// `qualified_declaration`, or is absent while a nominal
+/// `qualified_declaration` is present.
+fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
+    match (&shape.declared, &shape.nominal) {
+        (Some(declared), Some(nominal)) if declared != nominal => {
+            Some(PreimageDefect::DeclarationNominalMismatch {
+                node: shape.key,
+                declared: Some(declared.clone()),
+                nominal: nominal.clone(),
+            })
+        }
+        (None, Some(nominal)) => Some(PreimageDefect::DeclarationNominalMismatch {
+            node: shape.key,
+            declared: None,
+            nominal: nominal.clone(),
+        }),
+        _ => None,
+    }
 }
 
 /// Validate `bytes` as an identity preimage and derive the node key of each
@@ -238,7 +325,7 @@ fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect
 /// ascending UTF-8 byte order, no insignificant whitespace and one string and
 /// number spelling per value. That is RFC 8785 JCS for every preimage whose
 /// member names are ASCII, which is every name this schema defines and every
-/// name QSpec 7d7943a gives a projection node. It is stricter than JCS, never
+/// name QSpec d227270 gives a projection node. It is stricter than JCS, never
 /// weaker: a preimage that JCS would order differently (member names outside
 /// ASCII, whose UTF-16 code-unit order differs from their UTF-8 byte order) is
 /// refused as [`PreimageDefect::NonCanonical`] rather than admitted under a
@@ -271,18 +358,44 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         .and_then(Value::as_array)
         .filter(|nodes| !nodes.is_empty())
         .ok_or(PreimageDefect::EmptyProjection)?;
-    let mut declarations = BTreeMap::new();
+
+    // Pass 1 (native-diagnostics.md's refusal order, step 1): every node's
+    // own shape, and the projection's strictly ascending node-id order. This
+    // pass runs to completion across every node before pass 2 begins, so a
+    // schema refusal anywhere in the projection outranks a mismatch or an
+    // ambiguity found by scanning fewer nodes.
+    let mut shapes = Vec::with_capacity(nodes.len());
     let mut previous: Option<NodeKey> = None;
     for (index, node) in nodes.iter().enumerate() {
-        let (key, declared) =
+        let shape =
             projected_node(node).map_err(|defect| PreimageDefect::Node { index, defect })?;
-        if previous.is_some_and(|previous| previous >= key) {
+        if previous.is_some_and(|previous| previous >= shape.key) {
             return Err(PreimageDefect::NodeOrder { index });
         }
-        previous = Some(key);
-        if let Some(declared) = declared {
-            if declarations.insert(declared, key).is_some() {
-                return Err(PreimageDefect::DuplicateDeclaration { index });
+        previous = Some(shape.key);
+        shapes.push(shape);
+    }
+
+    // Pass 2 (step 4): declaration-nominal-mismatch, in ascending node-id
+    // order (`shapes` is already ordered that way by pass 1's NodeOrder
+    // check). This pass runs to completion across every node before pass 3
+    // begins, so a mismatch anywhere outranks an ambiguity at an earlier
+    // node.
+    for shape in &shapes {
+        if let Some(defect) = declaration_mismatch(shape) {
+            return Err(defect);
+        }
+    }
+
+    // Pass 3 (step 5): ambiguous-name, in ascending node-id order.
+    let mut declarations = BTreeMap::new();
+    for shape in &shapes {
+        if let Some(declared) = &shape.declared {
+            if let Some(earlier) = declarations.insert(declared.clone(), shape.key) {
+                return Err(PreimageDefect::AmbiguousDeclaration {
+                    name: declared.clone(),
+                    nodes: [earlier, shape.key],
+                });
             }
         }
     }

@@ -214,7 +214,7 @@ fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
 
 /// TC-198 L07's own scenario, as a real invocation admission: pre P1,
 /// post P1-without-`a2`, under `model.A.remove`'s declared frame
-/// `{fieldWrites: [], creates: [], deletes: [model.A]}`. The returned
+/// `{modifies: [], creates: [], deletes: [model.A]}`. The returned
 /// `Scenario`'s `binding` is the admitted *post* binding with the admitted
 /// *pre* binding attached as its `pre_anchor` -- exactly the
 /// `Value::Population` argument a real `pre(..)` source expression reads.
@@ -225,7 +225,7 @@ fn l07_scenario() -> Scenario {
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let effect = OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: Vec::new(),
         deletes: vec![ProducerKey::fixture("model.A")],
     };
