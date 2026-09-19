@@ -7,14 +7,16 @@
 //! `resources/complete-value/quire-specification/proposals/checked-package-v2/model-effective-declaration-vectors.json`.
 
 use ix_trace_rs::trace;
-use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
+use quire_spec_language::model::accounting::{
+    ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
+};
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, DomainPackageRef, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, RedefinitionRecord,
 };
 use quire_spec_language::model::key::{EffectiveId, DeclarationKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
-    normalize, normalize_with_meter, ModelRefusalCause, NormalizeOutcome,
+    normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -140,6 +142,136 @@ fn fixture_n06_resolved() -> DomainPackage {
         "model.A.x",
     ));
     DomainPackage::new(DomainPackageRef::fixture("bundle.n06"), records)
+}
+
+/// `fixture_n06_conflict` plus a type `E` with no generalization, field
+/// `E.y` of `A`'s value type, and redefinition record `redef.E` (`E`,
+/// `E.y` redefines `A.x`). `E` does not inherit `A`, so `A.x` is not an
+/// effective member of `E` -- this redefinition record's own target is
+/// unreachable from its owner, distinct from N06's own dominance conflict
+/// at `D`.
+fn fixture_n06_conflict_with_unreachable_redefiner() -> DomainPackage {
+    let mut records = fixture_n06_conflict().records;
+    records.push(object_type("model.E"));
+    records.push(field_member("model.E.y", "model.E", "model.A"));
+    records.push(redefinition(
+        "model.redef.E",
+        "model.E",
+        "model.E.y",
+        "model.A.x",
+    ));
+    DomainPackage::new(DomainPackageRef::fixture("bundle.n06e"), records)
+}
+
+/// `fixture_n06_conflict` (`D` conflicts on `A.x`) plus a second, unrelated
+/// diamond: root `M` (field `M.w`), `M1` and `M2` (both `<- M`,
+/// `M1.w1`/`M2.w2` redefine `M.w` -- sibling owners, neither dominating the
+/// other), and `B9` (`<- M1`, `<- M2`, so it inherits both undominated
+/// redefiners of `M.w`). `B9` sorts before `D`.
+fn fixture_n06_conflict_with_a_second_diamond_sorting_first() -> DomainPackage {
+    let mut records = fixture_n06_conflict().records;
+    records.push(object_type("model.M"));
+    records.push(object_type("model.M1"));
+    records.push(object_type("model.M2"));
+    records.push(object_type("model.B9"));
+    records.push(field_member("model.M.w", "model.M", "model.M"));
+    records.push(generalization("model.gen.M1-M", "model.M1", "model.M"));
+    records.push(generalization("model.gen.M2-M", "model.M2", "model.M"));
+    records.push(generalization("model.gen.B9-M1", "model.B9", "model.M1"));
+    records.push(generalization("model.gen.B9-M2", "model.B9", "model.M2"));
+    records.push(field_member("model.M1.w1", "model.M1", "model.M"));
+    records.push(field_member("model.M2.w2", "model.M2", "model.M"));
+    records.push(redefinition(
+        "model.redef.M1",
+        "model.M1",
+        "model.M1.w1",
+        "model.M.w",
+    ));
+    records.push(redefinition(
+        "model.redef.M2",
+        "model.M2",
+        "model.M2.w2",
+        "model.M.w",
+    ));
+    DomainPackage::new(DomainPackageRef::fixture("bundle.n06.two-diamonds"), records)
+}
+
+/// `E` (no generalization) with `redef.Ey` (`E`, `E.y` redefines `A.x`):
+/// `A.x` is not an effective member of `E`. `Da` (`<- E`) inherits the
+/// identical record and fails the identical check for the identical
+/// reason. `Da` sorts before `E` in `type_keys`' ascending identity order.
+fn fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.rank02"),
+        vec![
+            object_type("model.A"),
+            object_type("model.E"),
+            object_type("model.Da"),
+            field_member("model.A.x", "model.A", "model.A"),
+            generalization("model.gen.Da-E", "model.Da", "model.E"),
+            field_member("model.E.y", "model.E", "model.A"),
+            redefinition("model.redef.Ey", "model.E", "model.E.y", "model.A.x"),
+        ],
+    )
+}
+
+/// `E` (`<- A`, so `A.x` IS an effective member of `E`) declares
+/// `redef.Ez` (`E`, `Z.w` redefines `A.x`) where the redefining member
+/// `Z.w` is owned by unrelated type `Z`, so `Z.w` is not itself an
+/// effective member of `E`. `Da` (`<- E`) inherits the identical record and
+/// fails the identical "redefining member not an effective member" check
+/// for the identical reason. `Da` sorts before `E` in `type_keys`'
+/// ascending identity order.
+fn fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.rank03"),
+        vec![
+            object_type("model.A"),
+            object_type("model.Z"),
+            object_type("model.E"),
+            object_type("model.Da"),
+            field_member("model.A.x", "model.A", "model.A"),
+            generalization("model.gen.E-A", "model.E", "model.A"),
+            generalization("model.gen.Da-E", "model.Da", "model.E"),
+            field_member("model.Z.w", "model.Z", "model.A"),
+            redefinition("model.redef.Ez", "model.E", "model.Z.w", "model.A.x"),
+        ],
+    )
+}
+
+/// A second, independently-built instance of the same ranking shape as
+/// `fixture_n06_conflict_with_unreachable_redefiner`: the
+/// `normalize.conflict-check`-stage owner sorts before the
+/// `normalize.redefinition-check`-stage owner in `type_keys`' ascending
+/// order, to pin the ranking rule itself rather than any one domain package's own
+/// identities. Types `G` (field `G.g`), `H` and `I` (both `<- G`, with
+/// `H.h2`/`I.i3` redefining `G.g` -- sibling owners, neither dominating the
+/// other), `J` (`<- H`, `<- I`, so it inherits both undominated redefiners
+/// of `G.g`), and `K` (no generalization, `K.k` redefines `G.g`). `J`'s own
+/// dominance conflict over `G.g` and `K`'s own unreachable target (`K` does
+/// not inherit `G`) coexist; `J` sorts before `K`.
+fn fixture_conflict_check_owner_sorts_before_redefinition_check_owner() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.rank01"),
+        vec![
+            object_type("model.G"),
+            object_type("model.H"),
+            object_type("model.I"),
+            object_type("model.J"),
+            object_type("model.K"),
+            field_member("model.G.g", "model.G", "model.G"),
+            generalization("model.gen.H-G", "model.H", "model.G"),
+            generalization("model.gen.I-G", "model.I", "model.G"),
+            generalization("model.gen.J-H", "model.J", "model.H"),
+            generalization("model.gen.J-I", "model.J", "model.I"),
+            field_member("model.H.h2", "model.H", "model.G"),
+            field_member("model.I.i3", "model.I", "model.G"),
+            redefinition("model.redef.h2", "model.H", "model.H.h2", "model.G.g"),
+            redefinition("model.redef.i3", "model.I", "model.I.i3", "model.G.g"),
+            field_member("model.K.k", "model.K", "model.G"),
+            redefinition("model.redef.k", "model.K", "model.K.k", "model.G.g"),
+        ],
+    )
 }
 
 /// TC-196 R07's second shape (origin/main, after QSpec #86): `B` itself
@@ -1443,16 +1575,23 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> DomainPackage {
 /// `normalize.record`/`normalize.fact`/`normalize.cycle-check` charge, plus
 /// the three `normalize.redefinition-check` charges' own `2 + 3 + 6 = 11`
 /// work) is exactly enough to admit every charge up to and including the
-/// last `normalize.redefinition-check`, denying only the
-/// `normalize.conflict-check` that follows it -- and its reported
-/// `next_charge` is exactly `18`.
+/// last `normalize.redefinition-check`. It no longer denies at
+/// `normalize.conflict-check` there (QSL #169): ten phase-4 redefine facts
+/// -- two per redefinition record reaching the type that resolves it,
+/// `2` at `B` + `2` at `C` + `6` at `D` (see
+/// `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`
+/// below for the full count) -- are now charged as `normalize.fact` first,
+/// so `54` denies at the first of those instead. `work_units = 64`
+/// (`54 + 10`) is the boundary that now lands exactly before
+/// `normalize.conflict-check`, whose reported `next_charge` is still
+/// exactly `18`.
 ///
 /// Revert probe: reverting the `Σ (c − 1) × f(o)` charge back to a flat,
 /// unconditional `Charge::new(ChargePoint::NormalizeConflictCheck)` (no
 /// `.work(...)` override, i.e. PR #167's own pre-fix shape) makes both
-/// assertions below fail -- the exact-bound one because `work_units = 54`
+/// assertions below fail -- the exact-bound one because `work_units = 64`
 /// then completes outright (a flat charge of 1 fits), and the total
-/// because `100` no longer matches. Confirmed by hand: reintroducing that
+/// because `110` no longer matches. Confirmed by hand: reintroducing that
 /// exact one-line regression locally reproduces both failures, then
 /// removing it again restores this test to green.
 #[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
@@ -1482,19 +1621,122 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
         1,
         "exactly one contested group (A.x, reachable at D) across the whole build"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 100);
+    // Includes the ten phase-4 redefine facts' own `normalize.fact` charges
+    // (see `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`
+    // for their derivation).
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 110);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 64;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 64);
+            assert_eq!(incomplete.consumed, 64);
+            assert_eq!(incomplete.next_charge, 18);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+        }
+        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
+    }
+}
+
+/// Phase-4 redefine facts (`RULE_REDEFINE`) are themselves derivation facts
+/// and are charged as `normalize.fact`
+/// (`value-accounting.md:453`: "each derivation fact before it is formed:
+/// phase 2, then phase 3, then phase 4 ... `derivation_facts=k`"), in the
+/// order `value-accounting.md:455`/`:456` fix relative to phase 4's own two
+/// checks: `normalize.redefinition-check` fires "before its first
+/// `normalize.fact`" and `normalize.conflict-check` fires "after its last
+/// `normalize.fact`" -- so the phase-4 charge sequence is
+/// redefinition-check, then every phase-4 `normalize.fact` (one charge per
+/// fact, continuing the same `derivation_facts` running total phase 2/3
+/// already charge), then conflict-check.
+///
+/// `fixture_n06_resolved` (reused from
+/// `n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o` above,
+/// same hand-verified `m`/`f(o)` values) produces exactly ten phase-4
+/// redefine facts -- two per redefinition record reaching the type that
+/// resolves it (`quire.model.normalize.redefine/v1`,
+/// `model-complete.md:231`: "one fact on (T, redefining feature) and one on
+/// (T, redefined feature)"), for every record reaching that type, contested
+/// or not:
+///
+/// - at `B`: `redef.B` reaches only `B` -- 2 facts (`B.x2`, `A.x`).
+/// - at `C`: `redef.C` reaches only `C` -- 2 facts (`C.x3`, `A.x`).
+/// - at `D`: `redef.B`, `redef.C` and `redef.D` all reach `D` -- 3 records
+///   x 2 facts = 6 facts (`B.x2`, `A.x`, `C.x3`, `A.x`, `D.x4`, `A.x`).
+///
+/// Total: `2 + 2 + 6 = 10`.
+///
+/// Cross-checked against the crate: a completed (`UNLIMITED`) run charges
+/// `work_units = 110` and peaks at `derivation_facts = 30` (the `20`
+/// phase-2/3 facts plus these ten). `work_units = 109` is exactly one short
+/// of that total, `Incomplete` at the run's own last charge; `work_units =
+/// 110` completes.
+///
+/// Revert probe: dropping the phase-4 `normalize.fact` charge loop out of
+/// `charge_all` makes `work_units` read `100`, not `110`, and moves the
+/// `work_units = 54` boundary's denial to `normalize.conflict-check` --
+/// confirmed by hand: reverting the change locally reproduces both,
+/// restoring it returns this test to green.
+#[trace("TC-195", "FR-150-AC-8")]
+#[test]
+fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks() {
+    let domain_package = fixture_n06_resolved();
+
+    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    match outcome {
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 110);
+    assert_eq!(meter.consumed(LimitKind::DerivationFacts), 30);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 54;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 54);
-            assert_eq!(incomplete.consumed, 54);
-            assert_eq!(incomplete.next_charge, 18);
-            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 54,
+                    consumed: 54,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                },
+                "the first phase-4 normalize.fact charge, never once with a \
+                 flat cost other than one work unit"
+            );
         }
-        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
+        other => {
+            panic!("expected Incomplete at the first phase-4 normalize.fact charge, got {other:?}")
+        }
+    }
+
+    // Exact-bound pair (FR-150-AC-8): one short of the full charge total
+    // denies at the run's own last charge; the full total completes.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 109;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 109,
+                    consumed: 109,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeHash,
+                }
+            );
+        }
+        other => panic!("expected Incomplete one work unit short of completion, got {other:?}"),
+    }
+    limits.work_units = 110;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        other => panic!("expected Completed at work_units=110, got {other:?}"),
     }
 }
 
@@ -1505,7 +1747,10 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
 /// shape that walked one unconditionally regardless of `edges.len()`.
 ///
 /// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this domain package completes at exactly `work_units = 37`, and its
+/// unlimited, this domain package completes at exactly `work_units = 39` (`37`
+/// before QSL #169: the single redefinition record still produces its own
+/// two phase-4 redefine facts -- one on `B2.x2`, one on the redefined
+/// `A.x` -- now charged as `normalize.fact`, `+2`), and its
 /// one `normalize.redefinition-check` charge is exactly `2` (`m = 2`:
 /// `B2`'s own effective members are `A.x`, inherited, and `B2.x2`, direct;
 /// `r = 0`: the only redefinition record examined in this build).
@@ -1540,7 +1785,7 @@ fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
         0,
         "a single redefiner has nothing to dominate and admits no conflict-check charge"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 37);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 39);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 19;
@@ -1931,15 +2176,21 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// (`6`), regardless of which target key sorts first.
 ///
 /// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this domain package completes at exactly `work_units = 89`, and
-/// `work_units = 58` is exactly enough to admit every charge up to and
-/// including the last `normalize.redefinition-check`, denying at the first
-/// `normalize.conflict-check` -- the operation group's `6`, not the field
-/// group's `5`.
+/// unlimited, this domain package completes at exactly `work_units = 95` (`89`
+/// before QSL #169: the field redefinition group alone produces six phase-4
+/// redefine facts, `+6` -- two at `B` for `redef.z1` reaching only `B`, and
+/// four at `C` for `redef.z1`/`redef.z2` both reaching `C`; the operation
+/// group's own two records contribute no facts at all, since operation
+/// members never enter `member_preimages` and get no `Fact` here, only a
+/// `normalize.conflict-check` charge -- see the module docs), and
+/// `work_units = 64` (`58 + 6`) is exactly enough to admit every charge up
+/// to and including these six phase-4 `normalize.fact` charges, denying at
+/// the first `normalize.conflict-check` -- the operation group's `6`, not
+/// the field group's `5`.
 ///
 /// Revert probe: reverting `apply_redefinitions` back to each loop pushing
 /// its own charge straight to `conflict_check_work` (the pre-fix shape)
-/// makes the `work_units = 58` assertion fail -- `next_charge` becomes `5`
+/// makes the `work_units = 64` assertion fail -- `next_charge` becomes `5`
 /// (the field group, charged first again) instead of `6` -- confirmed by hand:
 /// reverting the two loops to push directly, locally, reproduces the
 /// failure; restoring the collect-sort-push shape returns this test to
@@ -1979,15 +2230,18 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
         2,
         "one contested group for A.z (field) and one for A.a (operation)"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 89);
+    // Includes the field redefinition group's own six phase-4 redefine
+    // facts' `normalize.fact` charges (operation members derive no facts of
+    // their own -- see the module docs).
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 95);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 58;
+    limits.work_units = 64;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 58);
-            assert_eq!(incomplete.consumed, 58);
+            assert_eq!(incomplete.limit, 64);
+            assert_eq!(incomplete.consumed, 64);
             assert_eq!(
                 incomplete.next_charge, 6,
                 "model.A.a sorts before model.A.z, so the operation group's \
@@ -2048,5 +2302,407 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
         other => {
             panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
         }
+    }
+}
+
+/// A phase-4 refusal (`derivation-conflict`/`redefinition-target`) does not
+/// short-circuit `build()` before `charge_all` replays phase 4's own
+/// charges. `value-accounting.md:481`'s "checking is exhaustive within a
+/// stage" means every `normalize.redefinition-check`, every phase-4
+/// `normalize.fact` and every `normalize.conflict-check` for
+/// `fixture_n06_conflict` (`B.x2`/`C.x3`, undominated redefiners of `A.x`
+/// reaching `D`) must be admitted before the `derivation-conflict` refusal
+/// they expose is reported; a tighter limit that runs out first reports
+/// that `Incomplete` instead, never the refusal.
+///
+/// `fixture_n06_conflict`'s exact phase-4 shape: `redef.B` reaches only `B`
+/// (2 facts), `redef.C` reaches only `C` (2 facts), and both
+/// `redef.B`/`redef.C` reach `D` (4 facts) -- eight phase-4 facts total. A
+/// completed (`UNLIMITED`) run charges 27 `derivation_facts` (19 through
+/// phase 2/3 plus these 8) and 57 `work_units` (40 through phase 3, `+5`
+/// for the two `normalize.redefinition-check` charges, `+8` for the
+/// phase-4 facts, `+4` for the one `normalize.conflict-check` group) before
+/// reporting the refusal.
+///
+/// Revert probe: hand-reverting `build()` to return the phase-4 refusal
+/// directly makes every case below fail -- `derivation_facts = 19` reports
+/// `Refused` instead of `Incomplete`, and every `work_units` case in
+/// `16..=56` reports `Refused` instead of `Incomplete` -- confirmed by
+/// hand: reverting `build`/`charge_all` locally reproduces every failure,
+/// restoring them returns this test to green.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
+    let domain_package = fixture_n06_conflict();
+
+    // A `derivation_facts` budget that exhausts exactly at the 19th
+    // phase-2/3 fact -- one short of the first phase-4 fact -- reports
+    // `Incomplete` at that first phase-4 `normalize.fact`, never the
+    // `derivation-conflict` refusal `D`'s own resolution would otherwise
+    // expose.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.derivation_facts = 19;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::DerivationFacts,
+                    limit: 19,
+                    consumed: 19,
+                    next_charge: 20,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at the first phase-4 normalize.fact, got {other:?}"),
+    }
+
+    // `work_units` in `45..=52` land inside the eight phase-4
+    // `normalize.fact` charges, after both `normalize.redefinition-check`
+    // charges and before the one `normalize.conflict-check` charge.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 48;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 48,
+                    consumed: 48,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at a phase-4 normalize.fact, got {other:?}"),
+    }
+
+    // `work_units` in `16..=39` land inside phase 2/3's own facts, well
+    // before phase 4 starts.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 30;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 30,
+                    consumed: 30,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at a phase 2/3 normalize.fact, got {other:?}"),
+    }
+
+    // `work_units = 56` is one short of the one `normalize.conflict-check`
+    // charge's own `work_units` price (`4`): 53 are already consumed (40
+    // through phase 3, `+5` redefinition-check, `+8` phase-4 facts), so the
+    // attempted 4-unit conflict-check charge would reach 57, one over the
+    // limit -- `consumed` reports that pre-charge total, not the limit
+    // itself.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 56;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 56,
+                    consumed: 53,
+                    next_charge: 4,
+                    charge_point: ChargePoint::NormalizeConflictCheck,
+                }
+            );
+        }
+        other => {
+            panic!("expected Incomplete at the normalize.conflict-check charge, got {other:?}")
+        }
+    }
+
+    // `work_units = 57` is exactly enough to admit every phase-4 charge
+    // (40 through phase 3, `+5` redefinition-check, `+8` phase-4 facts,
+    // `+4` conflict-check), so the refusal these charges expose is finally
+    // reported.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 57;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: DeclarationKey::fixture("model.D"),
+                        member: DeclarationKey::fixture("model.A.x"),
+                        redefiners: vec![
+                            DeclarationKey::fixture("model.B.x2"),
+                            DeclarationKey::fixture("model.C.x3"),
+                        ],
+                    },
+                    detail: "type model.D has 2 undominated redefinitions of model.A.x: \
+                              [model.gen.D-B, model.redef.B, model.A.x] and \
+                              [model.gen.D-C, model.redef.C, model.A.x]"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict) at work_units=57, got {other:?}"),
+    }
+}
+
+/// The deferred-refusal treatment covers `RedefinitionUnreachable` -- a
+/// redefinition record whose own target, or whose redefining member, is
+/// not an effective member of its owner -- exactly like the dominance
+/// refusals in `n06_conflict_refusal_waits_for_every_phase4_charge_to_admit`
+/// above: `apply_redefinitions` holds it in `accounting.refusal` and moves
+/// on to the next target group, rather than returning it directly out of
+/// `build()`. `fixture_n06_conflict_with_unreachable_redefiner` adds type
+/// `E` (no generalization) with `redef.E` (`E`, `E.y` redefines `A.x`):
+/// since `E` does not inherit `A`, `A.x` is not an effective member of
+/// `E`, so this redefinition's own target is unreachable, alongside `D`'s
+/// own dominance conflict over the same `A.x` (from `fixture_n06_conflict`).
+///
+/// `E`'s own `RedefinitionUnreachable` wins over `D`'s `derivation-conflict`
+/// under `UNLIMITED`: `record_phase4_refusal` ranks a
+/// `normalize.redefinition-check`-stage refusal (`value-accounting.md:455`)
+/// ahead of a `normalize.conflict-check`-stage refusal (`:456`), since every
+/// redefinition-check charge precedes every phase-4 fact charge, which in
+/// turn precedes every conflict-check charge -- `E`'s target check fails at
+/// its own redefinition-check charge, long before `D`'s ambiguity is even
+/// checked at its own later conflict-check charge, regardless of `D`
+/// sorting before `E` in `type_keys`' ascending identity order.
+///
+/// Revert probe: hand-reverting the two `apply_redefinitions` sites that
+/// hold this refusal back to an eager `return Err(...)` makes
+/// `work_units = 30` report `Refused(RedefinitionUnreachable)` with zero
+/// charges replayed instead of `Incomplete` -- confirmed by hand, then
+/// restored.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
+    let domain_package = fixture_n06_conflict_with_unreachable_redefiner();
+
+    // A `work_units` budget that runs out inside phase 2/3's own facts
+    // reports `Incomplete` there, never `E`'s own `RedefinitionUnreachable`
+    // refusal (which the pre-fix code would have returned immediately,
+    // with zero charges replayed).
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 30;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 30,
+                    consumed: 30,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at a phase 2/3 normalize.fact, got {other:?}"),
+    }
+
+    // Under `UNLIMITED`, every phase-4 charge is admitted, and `E`'s own
+    // `RedefinitionUnreachable` -- ranked ahead of `D`'s conflict, since it
+    // belongs to the earlier-charged redefinition-check stage -- is the
+    // refusal reported (see the doc comment above).
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: DeclarationKey::fixture("model.A.x"),
+                        owner: DeclarationKey::fixture("model.E"),
+                    },
+                    detail: "redefinition target model.A.x is not an effective member of model.E"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) for E, got {other:?}"),
+    }
+
+    // The exact `work_units` bound between the last-admitted phase-4 charge
+    // and the refusal it exposes: `64` is one short of the one
+    // `normalize.conflict-check` charge's own price (`4`, added to `61`
+    // already consumed through phase 3, redefinition-check and every
+    // phase-4 fact); `65` admits it and reports the refusal -- `E`'s
+    // `RedefinitionUnreachable`, ranked ahead of `D`'s conflict (see the doc
+    // comment above).
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 64;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 64,
+                    consumed: 61,
+                    next_charge: 4,
+                    charge_point: ChargePoint::NormalizeConflictCheck,
+                }
+            );
+        }
+        other => {
+            panic!("expected Incomplete at the normalize.conflict-check charge, got {other:?}")
+        }
+    }
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 65;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: DeclarationKey::fixture("model.A.x"),
+                        owner: DeclarationKey::fixture("model.E"),
+                    },
+                    detail: "redefinition target model.A.x is not an effective member of model.E"
+                        .to_string(),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(RedefinitionUnreachable) at work_units=65, got {other:?}")
+        }
+    }
+}
+
+/// The conflict-check owner (`J`) sorts before the redefinition-check owner
+/// (`K`) in `type_keys`' ascending order, yet `K`'s own
+/// `RedefinitionUnreachable` -- a `normalize.redefinition-check`-stage
+/// refusal (`value-accounting.md:455`) -- ranks ahead of `J`'s own
+/// `derivation-conflict` -- a `normalize.conflict-check`-stage refusal
+/// (`:456`) -- and is the refusal `build` reports, exactly as
+/// `record_phase4_refusal` ranks them.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refusal() {
+    let domain_package = fixture_conflict_check_owner_sorts_before_redefinition_check_owner();
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: DeclarationKey::fixture("model.G.g"),
+                        owner: DeclarationKey::fixture("model.K"),
+                    },
+                    detail: "redefinition target model.G.g is not an effective member of model.K"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) for K, got {other:?}"),
+    }
+}
+
+/// Two independent conflict-check-stage refusals: `B9`'s own dominance
+/// conflict over `M.w` and `D`'s own dominance conflict over `A.x`
+/// (`fixture_n06_conflict`). `normalize.conflict-check` charges per type,
+/// in `type_keys` order, and only then by target within that type
+/// (`value-accounting.md:456`; `model-complete.md:160` puts the owning
+/// type first in the effective member key), and `B9` sorts before `D`, so
+/// `B9`'s own conflict-check is charged first and `record_phase4_refusal`
+/// ranks its refusal ahead of `D`'s.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_conflict_check_refusal_ranks_by_type_before_target() {
+    let domain_package = fixture_n06_conflict_with_a_second_diamond_sorting_first();
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: DeclarationKey::fixture("model.B9"),
+                        member: DeclarationKey::fixture("model.M.w"),
+                        redefiners: vec![
+                            DeclarationKey::fixture("model.M1.w1"),
+                            DeclarationKey::fixture("model.M2.w2"),
+                        ],
+                    },
+                    detail: "type model.B9 has 2 undominated redefinitions of model.M.w: \
+                              [model.gen.B9-M1, model.redef.M1, model.M.w] and \
+                              [model.gen.B9-M2, model.redef.M2, model.M.w]"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict) for B9, got {other:?}"),
+    }
+}
+
+/// `E`'s own resolution and `Da`'s own resolution (`Da <- E`) both fail the
+/// identical "target not an effective member" check for the identical
+/// record, so both rank identically -- `Da` sorts before `E`, but the
+/// refusal still names `E`, the record's own owning type, since the check
+/// always ranks and names the record's own owner, never the resolving
+/// `type_key`.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_descendant() {
+    let domain_package = fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant();
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: DeclarationKey::fixture("model.A.x"),
+                        owner: DeclarationKey::fixture("model.E"),
+                    },
+                    detail: "redefinition target model.A.x is not an effective member of model.E"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) naming E, got {other:?}"),
+    }
+}
+
+/// `E`'s own resolution and `Da`'s own resolution (`Da <- E`) both fail the
+/// identical "redefining member not an effective member" check for the
+/// identical record, so both rank identically -- `Da` sorts before `E`, but
+/// the refusal still names `E`, the record's own owning type, since the
+/// check always ranks and names the record's own owner, never the
+/// resolving `type_key`.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant() {
+    let domain_package = fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant();
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: DeclarationKey::fixture("model.Z.w"),
+                        owner: DeclarationKey::fixture("model.E"),
+                    },
+                    detail: "redefining member model.Z.w is not an effective member of model.E"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) naming E, got {other:?}"),
     }
 }
