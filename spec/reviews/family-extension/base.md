@@ -134,6 +134,7 @@ Fixed in the commit that carries this section, under Agent A's rulings:
 | --- | --- |
 | PR-N1 | Fixed: QSpec #134 (FR-290, QSpec PR #135 at 046d1bd) owns the capability vocabulary and wire spelling. #229 (QSL PR #237) aligns QSL's specification to it and holds the claim form → kind table (FR-057). The Context table, the consumption sentence, the §2 Requirements row, S7, §5.2, OBS-012, DA-11, §12.1, §12.2, §13.3, §13.4 and §13.5 all say so. |
 | PR-N2 | Fixed: the §9 RT row keys the function lookup by the checked declaration node id (`NodeKey`, ADR-013 O-04), and the checker resolves the name (R-06). The QSL row names the replay executor entry as the one lookup by `QualifiedName` that R-06 allows. |
+| PR-N2 (update) | superseded: RT keys by `WireNodeId` (0d4a15e) |
 | PR-N3 | Routed to ADR-011 (#209), per Agent A. |
 | PR-N4 | Fixed: §13.5 says the S2 and S3 hook matches have one arm per family, and the S1 stage-participation table has one entry per family. |
 | PR-N5 | Fixed: SR-476 FND-018 names Agent A (the coordinator) as owner, triggered by the merge of #235 and #236. |
