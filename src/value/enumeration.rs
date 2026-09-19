@@ -8,6 +8,14 @@
 //! admitted content and refuses a retained key that no longer matches with
 //! `invalid_semantic_graph`. Display text and source loci are not part of
 //! either preimage.
+//!
+//! `EnumDeclaration::admit`/`admit_member` mint these node ids the same way
+//! `value::expression::check` mints checked-expression node ids (ADR-013
+//! O-04): this module is one of ADR-011 §1's S3 "today" implementers,
+//! colocated with its own domain type rather than living in `check`, exactly
+//! as `value::library` is. No check-stage caller invokes them yet (#118
+//! scoped identity semantics only); today they are exercised only by this
+//! crate's own tests (ADR-011 §1, #211).
 
 use std::collections::BTreeSet;
 
