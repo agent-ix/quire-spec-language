@@ -178,3 +178,13 @@ and ADR-012 at eecf825.
 `quire validate --strict --summary` reports 10/10 grammar-clean.
 
 Round-4 verdict: CHANGES (PR3-M1 only: two sentences in ADR-013 O-04 and ADR-012 §9 and §13.5).
+
+## Author fixes (round 4)
+
+Ruling by Agent A (2026-09-19): RT holds no `NodeKey`. ADR-012 pin stays at
+`eecf825` until its next head is given.
+
+| ID | Disposition | Where |
+| --- | --- | --- |
+| PR3-M1 | Fixed. RT and CG hold only `WireNodeId`s; only QSL (E4 and the layer-6 `replay` facade) converts one to a `NodeKey`. RT runs inside CG-generated harnesses built from IR wire data, and ADR-012 keys RT's function lookup by `WireNodeId`, an id lookup that keeps R-06. The S6a in-process sentence is removed. | O-04 |
+| PR3-N1 | Fixed. `FamilyRefusal::catalog_code()` yields the code and F `diagnostic` maps the code to category `refusal`; F never names `FamilyRefusal`. | O-16 |
