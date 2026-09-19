@@ -51,8 +51,10 @@ The medium findings are dependency edges the record implies but does not state:
   (FND-007).
 - #229's scope overlaps DA-11 (FND-008).
 
-Verdict: **REJECT** until FND-001 is fixed. Once FND-001 is fixed and the
-medium findings are resolved, the record is ACCEPT WITH FINDINGS.
+Verdict: **ACCEPT WITH FINDINGS** (round 2, commit 8fb238b). Round 1 was
+REJECT until FND-001 was fixed. The revision resolves FND-001 and most medium
+findings. FND-002 and FND-008 are partly resolved with low residue, and one new
+low finding remains; see "Round 2".
 
 ## Findings
 
@@ -144,3 +146,32 @@ graph TD
 The family DAG in §1 has no cycles. At the ticket level there is one loop
 through deferral: #210 defers to #222, #222 depends on #212, and #212 depends
 on #210. FND-004 breaks it by naming the single #222 input that #212 needs.
+
+## Round 2
+
+Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: REJECT.
+
+| ID | Round-1 severity | Status | Note |
+|---|---|---|---|
+| FND-001 | high | resolved | Candidates match on capability kind alone (§7.2 step 1). §1.1 lets `negotiate_*` settle `requires-bound` for a bounded-only candidate when a finite bound is available, and `unsupported` (warned) otherwise. §5.2 and §7.3 agree. |
+| FND-002 | medium | partial | §11's test now reads "needs a candidate set from the #185 registry" and adds the CG `negotiate_*` ticket to every ticket that waits on #185, #185's own exit included (option 2). §14 and §14.2 add the edge to #188, #189 and #217. Residue (low): the IR form of the claim, which `negotiate_*` takes, is not named as a prerequisite of #188 and #189 closure. Nothing asks the CG owner to open the ticket before #212, although Consequences cites CG `negotiate_*` tests as scenario 5 evidence. |
+| FND-003 | medium | resolved | §11 has a "Waits instead on" column: #186 → #231, #187 and #198 → #212 and #214, #191 and #192 → #212. |
+| FND-004 | medium | resolved | §1.1 lists the mechanics #212 checks from this record alone and names the single #222 input (the "available finite bound" predicate), produced in parallel. Scenario 5 is in Consequences. |
+| FND-005 | medium | resolved | §1 and §14 name implementation owners per family with the #220–#223 design inputs apart. §4.3 names #120, #121 and #164 under #220. |
+| FND-006 | medium | resolved | §1 adds `TemporalTrace → ProtocolClause` and gives the FR-300 mapping to `TemporalTrace`. The DAG stays acyclic. §10 has a PR #59 row: it no longer waits on #210, and its QSL consumer is #188. |
+| FND-007 | medium | resolved | §1 states the #121 edge is sequencing, not a family edge, and keeps it. |
+| FND-008 | medium | partial | The Context table says #229 consumes §6 and §7.1 for the selection mechanics, and DA-11 names #229 as secondary owner. Residue (low): §13.3 has no question asking #229 to confirm it consumes §6 and §7.1, so the overlap is settled on one side only. |
+| FND-009 | low | resolved | §14 gives the QSL `negotiate_*` removal to #214. §14.2 lists issue-body amendments for #185 and #214 after #212. |
+| FND-010 | low | resolved | `Requirements` carries extent and bound, not mode. §13.3 Q2 asks only about advertisement. |
+| FND-011 | low | resolved | §14 gives the S7 registry arm and its seam probe to #185. §5.3 still groups S7 with the "S5–S9 owners" sentence (SR-478 FND-003 note). |
+| FND-012 | low | resolved | PR #133 is merged (818f555), and FR-290 is `depends_on` in the frontmatter. |
+| FND-013 | low | resolved | The #198 row states that the emission request is a checked-package export request and names no `BackendId`. |
+| FND-014 | low | resolved | §1 moves #222 to a "Design input" column. |
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+|---|---|---|---|
+| FND-015 | low | Pre-gate edges are stated in prose only. §13.3 Q3 (kinds for frame and sum/case) and §13.4 Q1 (FR-290 vocabulary for value, state and temporal claims) must be answered before #212, which makes #229 and a QSpec issue prerequisites of #212. §14.2 lists edges to add after #212 but not these. The QSpec issue for Q1, and the one for the FR-331 candidate-set field (§13.4 Q3), have no number. Fix: add to §14.2 "#212: add #229 (Q3, Q1) and the QSpec issue for Q1 as prerequisites", and ask the owner to open or name the QSpec issues before #212. | ADR-012 §13.3 Q3, §13.4 Q1 and Q3, §14.2 · #212 · #229 |
+
+Round 2 verdict: ACCEPT WITH FINDINGS

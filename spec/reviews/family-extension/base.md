@@ -56,3 +56,18 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 | --- | --- | --- | --- |
 | FND-001 | low | The checklist rules for US, FR and TC quality and the six test-coverage rules do not apply, because the ADR carries no acceptance criteria. They are recorded as not applicable, not as passed. The ADR's obligations become testable through #213, #214 and #185, which own the FRs. | ADR-012 §14 |
 | FND-002 | low | Seam ids `S1` to `S8` are local to ADR-012. Other records must cite them as `ADR-012 S<n>` to stay unambiguous. Fix: state the citation form. | ADR-012 §5.1 |
+
+## Round 2
+
+The seven analyses were rerun against commit 8fb238b, which resolved every
+round-1 high finding (`requires-bound` reachability and the single CG
+`negotiate_*` settlement point). All seven round-2 verdicts are ACCEPT WITH
+FINDINGS, with no open high finding. The author then addressed the remaining
+medium items in the ADR: every requested item reaches `negotiate_*` once; the
+mode vocabulary is decided in #222; the OBS-004 copy removal belongs to #185;
+the solver-absence fault-injection test and the `xtask string-edge` scan have
+owners; the AD-016 arrow-7 key change needs a QSpec issue; the unnumbered CG
+and IR tickets are an owner question. Remaining low findings are recorded in
+each analysis file for #212.
+
+Round 2 verdict: ACCEPT WITH FINDINGS

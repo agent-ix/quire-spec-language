@@ -45,7 +45,8 @@ The medium findings are about whether slices can be built as sized:
   covers them (FND-009);
 - #185, #188 and #189 wait on a CG ticket that has not been opened (FND-002).
 
-Verdict: REJECT (1 high, 7 medium, 5 low). Every fix is local to the record.
+Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). The round-1 verdict
+at 048deb3 was REJECT (1 high, 7 medium, 5 low); see Round 2.
 
 ## Method
 
@@ -124,3 +125,43 @@ Verdict: REJECT (1 high, 7 medium, 5 low). Every fix is local to the record.
 overlaps with this review are FND-001 (the terminal disposition when the
 candidate set and the negotiator disagree) and FND-003 (whether diagnostics
 still aggregate after a clause is refused).
+
+## Round 2
+
+Reviewed commit: 8fb238b (branch `task/210-family-extension`), against the
+round-1 findings above, using
+`git diff 048deb3 8fb238b -- spec/decisions/`. The revision was also checked
+against QSpec AD-016 and against FR-290 and AD-010 as amended by merged QSpec
+PR #133. Round-1 verdict: REJECT (1 high, 7 medium, 5 low).
+
+### Round-1 findings
+
+| ID | Round-1 severity | Status | Note |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | "Its own negotiator" is gone. Consequences now reads "one descriptor plus one CG `negotiate_*` arm and its runner". The §7.2 "exactly one" row is the CG `negotiate_*` arm for the backend's kind (seam S9). A backend outside CG contributes a CG arm (§7.2). §7.1 puts the registry call in the orchestrating CLI or driver binary, and states that no QSL library crate depends on or calls CG (routed to #209 as §13.1 Q2). The checked-package carrier is struck: the candidate set is a field of the FR-331 negotiation request, and §13.4 Q3 asks which QSpec issue owns it. This agrees with AD-016 and PR #133. |
+| FND-002 | medium | partial | §11 now states that any ticket waiting on #185, and #185's own exit, also waits on the CG `negotiate_*` ticket. §14.1 and §14.2 make #185, #188, #189 and #217 wait on it. The CG and IR tickets are still "to be opened by the owner" and have no number, so #212's "bounded implementation tickets" condition still cannot be checked for scenarios 5 and 7. Residual severity: medium. Fix: name the CG and IR tickets by number in §14.1 once opened, or add a §13.4 owner question stating that #212 cannot pass scenarios 5 and 7 until they exist. |
+| FND-003 | medium | resolved | §4.2 is now a runtime state machine with one `accept(state, clause) -> (state, ClauseResult)` step, an explicit arm for every pair and no `_` arm. An out-of-order clause leaves the state unchanged. A clause that fails its own check still advances the state. |
+| FND-004 | medium | partial | #214 now thins only the function-application arms (§4.3, §14.2). The remaining `Value` arms go to #120, #164, #170 and #175, and the `StateModel` arms to #120, #121 and #164 under #220. §4.3 names "model lookup, population and dispatched call" but not the `Pre`, `Deref` and `Present` arms (`check.rs:761-784`), so their owning family is unstated. S2 still names "the one `Expression` enum" with owner "QSL, owning family" and gives no rule for a shared enum. Residual severity: low. |
+| FND-005 | medium | resolved | `evaluate` moved to a separate `ReferenceEvaluation` trait. The S1 evaluation seam has an explicit `Relation` arm that returns a typed `unsupported` refusal. §2 states that both traits are static contracts dispatched through closed enums. |
+| FND-006 | low | open | S1 still lists check dispatch, package emission dispatch, requirement derivation and reference evaluation dispatch as `FamilyKind` seams. A `match` on a payload-free `FamilyKind` cannot call `check(form)`. Those seams are S2 and S3 matches. |
+| FND-007 | medium | resolved | §5.3 specifies the `seam-probe` cargo feature and an `xtask seam-probe` that compares rustc E0004 locations with a checked-in list, run in the full gate. |
+| FND-008 | medium | resolved | Both change sets now have a Diagnostics row (QSpec `native-diagnostics.md` plus re-vendor) and state the v2 wire version change. §12.1's Requirements seam is "none". |
+| FND-009 | medium | resolved | §10 OBS-003 and §14.1 name the FR-036 amendment (line 97, AC-5, AC-6) and the TC-115 rewrite, assigned to #185 through `/specify` before #185 starts. |
+| FND-010 | low | resolved | `Requirements` entries are (capability kind, declared extent, authored bound), so one node can carry different extents. |
+| FND-011 | low | resolved | §9 adds the open-identity rule (registry lookup, typed refusal naming the unknown name). The `--target` row now states that `ProjectionTarget` is a closed QSL lowering enum beside the registry. |
+| FND-012 | low | resolved | OBS-012 reads AD-016's "QSL `Capability` = language admission" as values recorded during admission that decide nothing. "Is not a capability" is removed. |
+| FND-013 | low | partial | §12.2's Requirements row is conditional on §13.3 Q3, and Q3 must be settled before #212 judges scenario 3. The row covers the S7 arm, but not the QSpec FR-290 edit that a new kind would need (§13.4 Q1). |
+
+### New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | medium | The §9 enforcement mechanism has no owner and no stated mechanism. §9 requires a `#[string_edge]` marker on every edge function and "a lint gate [that] reports every string comparison outside a marked function". Clippy has no such lint. A custom attribute needs a proc-macro or tool attribute, and the gate needs a custom lint (for example dylint) or an `xtask` scan. §14.1 assigns neither the attribute nor the gate to any ticket. Without an owner, #210's "no string dispatch" acceptance bullet rests on review alone, which is the same risk as round-1 FND-007. Fix: name the mechanism (for example an `xtask string-edge` scan over the QSL crates, or a dylint lint) and add it to the #214 row in §14.1. State that the IR, CG and RT tickets adopt the same gate. | ADR-012 §9, §14.1; #214 Acceptance |
+| FND-015 | low | The registry is open, but CG's backend kind (S9) is closed. §7.2 has CG map a registered `BackendId` to its closed backend kind, and it settles `invalid-request` for an identity CG does not know. A backend that is registered but has no CG arm therefore settles `invalid-request` for every item, which blames the request for a configuration error. §12.3 does add the CG variant, so the designed path works, but a mismatch is found item by item. Fix: state that the orchestrating caller checks every registered `BackendId` against CG's conversion once, before any negotiation, and refuses the run naming the identity. Alternatively, state that the open seam is bounded by S9 in practice. | ADR-012 §5.2, §7.2, §12.3 |
+| FND-016 | low | The seam probe can miss seams in downstream crates. When the probe variant makes the crate that defines the enum fail to compile, cargo never checks the crates that depend on it. So the E0004 list covers only seams in the defining crate. Today S1–S4 sit in one QSL crate, but §13.1 Q3 leaves family crates open. Fix: state that the probe variant also puts the defining crate's own seams behind the feature, or that the probe runs once per crate, with the upstream seams gated. Alternatively, state that S1–S4 seams must stay in one crate. | ADR-012 §5.3, §13.1 Q3 |
+
+The revision adds no compatibility layer, no fallback and no string dispatch.
+§4.2's `accept` step is one exhaustive `match` whose admitted arms each call
+the clause's own function, so it is not a monolithic checker.
+
+Round 2 verdict: ACCEPT WITH FINDINGS
