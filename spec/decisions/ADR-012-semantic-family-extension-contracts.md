@@ -55,7 +55,7 @@ Sibling tickets own adjacent decisions. This record cites them as "decided in
 |---|---|
 | #209 | stages, stage edges, the crate and module DAG, and where each hook's code lives (ADR-011) |
 | #211 | canonical types, identities, outcomes, refusals, provenance and version representations, and conversions (ADR-013) |
-| #229 | the capability specification: the vocabulary (FR-290's kinds), its identity, wire spelling and version rules, the absence policy, and how a family declares, a backend advertises and a request selects a capability. #229 consumes §6 and §7.1 of this record for the selection mechanics. |
+| #229 | the capability specification: the vocabulary (FR-290's kinds, as widened by QSpec #134), its identity, wire spelling and version rules, the absence policy, and how a family declares, a backend advertises and a request selects a capability. #229 consumes §6 and §7.1 of this record for the selection mechanics. |
 | #213 | the canonical Rust `Capability` value type and the shared outcome types |
 | #185 | the capability registry and routing; it alone implements them |
 | #222 | the early boundedness design: finite, bounded and unbounded requests, the "available finite bound" predicate, and which bound representation #213 implements under #211's DA-12 ownership. It feeds #213, #188 and #189. |
@@ -339,10 +339,10 @@ listed seam.
 | S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
 | S5 | clause kind (canonical form decided in #211, DA-08 and DA-17) | QSL → IR conversion, IR → RT observation conversion, IR → CG obligation kind (AD-016 scenario 2) | QSL, IR, RT, CG |
-| S6 | IR checked-node tag and semantic-form enums | IR `lower` arm; CG `negotiate_*` arm; CG harness arm; RT op selection | IR, CG, RT |
+| S6 | IR checked-node tag and semantic-form enums, decoded at v2 intake | IR `lower` arm; CG `negotiate_*` arm; CG harness arm; RT op selection. No vocabulary is re-derived from a wire string after intake. | IR (Contract IR #141), CG, RT |
 | S7 | capability kind enum (#229 vocabulary, #213 type) | requirement derivation per family; registry advertisement check; CG `negotiate_*` capability arm | QSL (#213, #185), CG |
 | S8 | IR `KaniOutcomeKind` and any later backend outcome enum | outcome → FR-331 result map (AD-016 arrow 6) | IR |
-| S9 | CG backend kind enum | CG `negotiate_*` backend arm; CG artifact generation arm | CG |
+| S9 | CG backend kind enum (closed) | CG `negotiate_*` backend arm; CG artifact generation arm. Every capability is settled inside a `negotiate_*` arm over this enum; a new backend kind is a compile error until it has an arm. | CG (Codegen #86) |
 
 Three rules make the failure certain:
 
@@ -351,6 +351,15 @@ Three rules make the failure certain:
   `clippy::match_wildcard_for_single_variants`, and the lint gate runs them.
 - No S1–S9 enum is `#[non_exhaustive]`. A cross-crate match on a
   `#[non_exhaustive]` enum must have a `_` arm, which would defeat the seam.
+- S9 is a settlement point by construction, not by coincidence. Today CG has
+  one concrete function, `negotiate_kani_obligations`
+  (`CG:src/kani_obligations.rs:454`). Codegen #86 makes settlement a
+  `negotiate_*` arm over the closed S9 enum, with a test that fails when any
+  capability is settled outside such an arm.
+- S6 has one rule past intake: no vocabulary is re-derived from a wire string.
+  Intake already decodes most tags once. The defect is the `as_str()` sites
+  in IR `src/kani/` after intake (27 measured), which Contract IR #141
+  removes.
 - A downstream arm that cannot yet lower or prove a new variant is still an
   explicit arm. It returns `unsupported` with a catalog code, as AD-016 does
   for frames today. That arm is written by hand.
@@ -416,7 +425,7 @@ Consequences of the separation:
 | Family | `Requirements` of each checked node (§2) | each family |
 | Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), tool: pinned tool identity }`. `BackendId` is a typed identity, never a display string. | the backend's repository; registered in #185 |
 | Registry | a value built from descriptors; computes candidate sets and routes each `supported` item to its backend | #185 |
-| Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` (AD-016; QSpec FR-290 and AD-010 as amended by PR #133) |
+| Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; Codegen #86) |
 
 The registry is an ordinary value, for example a `BTreeMap` keyed by
 `BackendId`. The orchestrating caller builds it and passes it as an argument.
@@ -479,7 +488,7 @@ owns that field (§13.4).
 An absent capability is an item whose candidate set is empty.
 
 - `negotiate_*` settles it `unsupported` with a warning naming every unmet
-  capability kind, per QSpec FR-290-AC-4. The outcome constructor comes from
+  capability kind (FR-290 kinds as widened by QSpec #134), per QSpec FR-290-AC-4. The outcome constructor comes from
   #213 and the catalog code from #229.
 - No backend is invoked, and no artifact is emitted for the item at any later
   stage.
@@ -508,7 +517,7 @@ routed.
   again with a mismatched pin. It asserts that the #229 outcome names the
   backend, the tool identity and the claim, that no other candidate runs, and
   that no probe runs before routing. It replaces the `expect` panic in IT-010
-  (ADR-010 §2.1) and belongs to the CG `negotiate_*` ticket (§14.1).
+  (ADR-010 §2.1) and belongs to Codegen #86 (§14.1).
 
 ## 8. Stage coverage
 
@@ -575,8 +584,8 @@ gate. #214 builds the attribute and the scan.
 | value call by function name `&str` (`QSL:src/value/expression/mod.rs:635`) | no | keyed by checked declaration identity; the identity type is decided in #211 | #214 |
 | `--target` (`QSL:src/lowering/target.rs:39-46`) | no | already an edge conversion: a total `FromStr` into the closed `ProjectionTarget` enum. Its three values are QSL lowering domains, not backends, and stay a closed QSL enum beside the registry. Backend choice is a separate CLI argument resolved to `BackendId` by registry lookup. | QSL lowering; #185 for the backend argument |
 | `CapabilityId(String)` (`QSL:src/complete/package.rs:690`) | no | replaced by the #213 capability type | #213 |
-| IR `CheckedNodeTag::from_wire`, `required_by(tag, form: &str)`, `DispatchIndex::resolve(&str)` | no | wire strings decoded once in the v2 reader into closed tag and form enums | IR |
-| CG `semantic_form == "call"`, `node_tag == "state" && semantic_form == "frame"` | no | CG matches on IR's enums (seam S6) | CG |
+| IR `CheckedNodeTag::from_wire`, `required_by(tag, form: &str)`, `DispatchIndex::resolve(&str)`, and the `as_str()` sites in IR `src/kani/` | no | wire strings decoded at v2 intake into closed tag and form enums; no vocabulary re-derived from a wire string after intake | Contract IR #141 |
+| CG `semantic_form == "call"`, `node_tag == "state" && semantic_form == "frame"` | no | CG matches on IR's enums (seam S6) | CG (Codegen #86) |
 | RT function lookup by name | no | keyed by checked declaration identity, as for QSL | RT |
 
 The IR, CG and RT rows describe code in those repositories. This record
@@ -587,19 +596,19 @@ states the contract; the change belongs to their own tickets (§14).
 | Item | Decision |
 |---|---|
 | ADR-010 OBS-003 | The composed linker performs no backend negotiation. `requests::report` records requests as data and has no `Backend` parameter, no `UnsupportedCapability` disposition and no `UnsupportedFamily` disposition. Candidates and routing live only in the #185 registry, and dispositions only in CG `negotiate_*` (§7). #185 implements the removal. QSL FR-036 (line 97, AC-5, AC-6) and TC-115 change with it (§14). |
-| ADR-010 OBS-004 | `negotiate_integer_division`, `negotiate_ieee` and `IeeeBackendCapabilities` are capability predicates. AD-016 arrow 3 places them in RT, and arrow 4 makes CG the only caller. QSL has no copy of them; #185 removes the copies, as ADR-010 §7 maps OBS-004. QSL value semantics keep their evaluation functions, which are not negotiation. |
+| ADR-010 OBS-004 | `negotiate_integer_division`, `negotiate_ieee` and `IeeeBackendCapabilities` are RT-internal operation-eligibility predicates (AD-016 arrow 3). They are not settlement points and settle no disposition; CG `negotiate_*` arms over S9 are the only settlement points (arrow 4, Codegen #86). QSL has no copy of them; #185 removes the QSL copies, as ADR-010 §7 maps OBS-004. QSL value semantics keep their evaluation functions, which are not negotiation. |
 | ADR-010 OBS-012 | "Capability" has one meaning: the requirement kind that semantic admission records as `capability_report` data (AD-016 arrow 1), from the #229 vocabulary. This is how this record reads AD-016's row "QSL `Capability` = language admission": the values are recorded during admission and decide nothing. The QSL four-variant request label enum is replaced by the #213 type. IR `CheckedCapability`, `CapabilityDisposition` and `OutputCapability`, and CG `ObligationDisposition`, are dispositions or output kinds. They stay layer-owned, with total conversions (AD-016 shared-type strategy). |
 | ADR-010 OBS-013 | The Kani backend is one `BackendDescriptor` in the #185 registry. Its implementation is CG (harness and its `negotiate_*` arm) plus IR (outcome), per AD-016. QSL owns the registry, not the backend. FR-290's wording "quire-spec-language's Kani backend" needs a QSpec edit, routed through #229 (§13.3). |
 | ADR-010 OBS-014 | The five production string sites are the rows marked "yes" in §9. Each is typed at its intake edge. |
-| ADR-010 OBS-033 | Cross-repository dispatch is on closed enums decoded once at the v2 reader edge (§9, seams S6 and S9). IR, CG and RT own their edits. |
-| ADR-010 DA-11 | One authority per role. Vocabulary: #229, over QSpec FR-290. Rust type: #213. Requirement derivation: each family's `requirements` hook. Advertisement: each backend's descriptor. Registry and routing: #185, using the candidate mechanism in §7.2. Per-item disposition: CG `negotiate_*` only. Runtime availability: the executing adapter. #210 owns DA-11; #229 is its secondary owner for the vocabulary. |
+| ADR-010 OBS-033 | Cross-repository dispatch is on closed enums decoded at v2 intake; no vocabulary is re-derived from a wire string after intake (§9, seams S6 and S9). The enum sets follow the vocabulary as widened by QSpec #134. Contract IR #141 and Codegen #86 implement it; RT owns its edits. |
+| ADR-010 DA-11 | One authority per role. Vocabulary: #229, over QSpec FR-290 as widened by QSpec #134. Rust type: #213. Requirement derivation: each family's `requirements` hook. Advertisement: each backend's descriptor. Registry and routing: #185, using the candidate mechanism in §7.2. Per-item disposition: CG `negotiate_*` only. Runtime availability: the executing adapter. #210 owns DA-11; #229 is its secondary owner for the vocabulary. |
 | QSpec PR #59 (FR-300, deferred to #210 by ADR-010 §8) | The control-to-temporal mapping belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1). PR #59 does not wait on #210. Its QSL consumer is #188. |
 
 ## 11. L1-D1: which ladder tickets wait on #185
 
 Test used: a ticket waits on #185 if and only if one of its exit criteria
 needs a candidate set from the #185 registry. Any ticket that waits on #185
-also waits on the CG ticket that makes `negotiate_*` take the candidate set
+also waits on Codegen #86, which makes `negotiate_*` take the candidate set
 (§14), because only `negotiate_*` settles the outcome. The same holds for
 #185's own exit criterion.
 
@@ -740,21 +749,16 @@ scenario 7.
 
 ### 13.4 Owner questions
 
-1. FR-290 is titled "Protocol claim kind vocabulary", yet #229 adopts it for
-   every family's requirements. Does the owner accept that value, state and
-   temporal claims use the protocol claim kinds, or should QSpec widen the
-   vocabulary? Owner: #229 with QSpec. This must be answered before #212,
-   because §7 cannot select a backend for the #217 function exemplar without
-   a kind.
+1. QSpec #134 widens FR-290 to value, state, replay and temporal claims and
+   adds the FR-331 candidate set. #212 needs #134 settled, because §7 cannot
+   select a backend for the #217 function exemplar without a kind. Owner:
+   #229 with QSpec.
 2. When more than one backend matches and the request names none,
    `negotiate_*` settles `invalid-request` (§7.2). Is a declared preference
    order wanted instead? This record chose `invalid-request` because a
    preference order is dispatch on a policy that is not part of the claim.
 3. The candidate set crosses to CG as a field of the FR-331 negotiation
-   request (§7.2). Which QSpec issue owns that field?
-4. The CG `negotiate_*` ticket and the IR v2-reader ticket (§14.1) have no
-   numbers yet. #212 cannot pass scenarios 5 and 7 until they exist. Will the
-   CG and IR owners open them before #212?
+   request (§7.2). QSpec #134 carries it; confirm that #134 owns the field.
 
 ### 13.5 Answers to sibling questions
 
@@ -778,15 +782,16 @@ scenario 7.
 | Capability type and outcome constructors for §7.3 and §7.4 | #213 |
 | Registry value, `BackendDescriptor`, candidate sets and routing (§7.2), the S7 registry arm and its seam probe, removal of the composed-linker negotiation, removal of the QSL `negotiate_*` copies from `value::ieee` and `value::division` (OBS-004), registry evidence (§5.3) | #185 |
 | QSL FR-036 amendment (line 97, AC-5, AC-6: requests recorded as data; dispositions in CG `negotiate_*`) and the TC-115 rewrite, through `/specify` before #185 starts | #185 |
-| `negotiate_*` taking the candidate set and extent (§7.2, §1.1), backend kind enum S9, the solver-absence fault-injection test (§7.4) | CG ticket, to be opened by the CG owner; #185 exit, #188, #189 and #217 wait on it |
+| `negotiate_*` taking the candidate set and extent (§7.2, §1.1), backend kind enum S9, the solver-absence fault-injection test (§7.4) | Codegen #86; #185 exit, #188, #189 and #217 wait on it |
 | Remaining `Value` forms | #120, #164, #170, #175 |
 | `StateModel` migration, including the `StateModel` arms of `infer_form` | #120, #121, #164 via #220 |
 | `SumCase` | #187 via #221 |
 | `TemporalTrace`, including the FR-300 mapping | #188, #189 via #222 |
 | `ProtocolClause` | #218 via #223 |
 | `Relation` | #191, #192, #198 via #223 |
-| IR tag and form enums at the v2 reader edge | IR ticket, to be opened by the IR owner |
-| CG and RT enum matches in place of string compares | CG and RT tickets, to be opened by their owners |
+| IR tag and form enums decoded at v2 intake; removal of the post-intake `as_str()` sites in IR `src/kani/` | Contract IR #141 |
+| CG enum matches in place of string compares | Codegen #86 |
+| RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
 
 Requirements needed before implementation starts:
 
@@ -804,7 +809,7 @@ Requirements needed before implementation starts:
   function-application arms of `infer_form` are in scope.
 - #186, #187, #191, #192, #198: replace the #185 edge with the §11 "Waits
   instead on" edges.
-- #188, #189, #217: add the CG `negotiate_*` ticket as a prerequisite.
+- #188, #189, #217: add Codegen #86 as a prerequisite.
 
 ## Consequences
 
