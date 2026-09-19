@@ -285,11 +285,13 @@ pub enum ModelRefusalCause {
     /// A reference key names a universe other than the binding's.
     ForeignUniverse {
         /// The reference key's raw universe bytes, exactly as supplied. Not
-        /// always a well-formed 32-byte identity: a reference whose universe
-        /// component is some other length is also refused under this cause
-        /// (`crate::value::model_query`'s own malformed-universe case),
-        /// reporting the bytes the caller actually supplied rather than a
-        /// substituted or truncated identity.
+        /// always a well-formed 32-byte identity: a
+        /// [`crate::model::population::LookupKey`] whose `universe` is some
+        /// other length is also refused under this cause
+        /// (`crate::model::population::lookup`'s own raw-byte universe
+        /// comparison, never a separate malformed case), reporting the bytes
+        /// the caller actually supplied rather than a substituted or
+        /// truncated identity.
         actual: Vec<u8>,
         /// The binding's universe.
         expected: EffectiveId,
@@ -297,11 +299,12 @@ pub enum ModelRefusalCause {
     /// A reference key is not a member of the bound population.
     AbsentKey {
         /// The absent key's raw object bytes, exactly as supplied. A
-        /// reference key's plain `object` string as UTF-8 bytes, not a
-        /// [`DeclarationKey`] -- not always valid UTF-8 itself
-        /// (`crate::value::model_query`'s own malformed-identity case),
-        /// reporting the bytes the caller actually supplied rather than a
-        /// substituted or lossily-decoded string.
+        /// [`crate::model::population::LookupKey`]'s plain `object` bytes,
+        /// not a [`DeclarationKey`] -- not always valid UTF-8 itself
+        /// (`crate::model::population::lookup`'s own raw-byte membership
+        /// check, never a separate malformed case), reporting the bytes the
+        /// caller actually supplied rather than a substituted or
+        /// lossily-decoded string.
         key: Vec<u8>,
     },
     /// A domain package record does not export the required [`crate::model::key`]
