@@ -163,6 +163,41 @@ fn fixture_n06_conflict_with_unreachable_redefiner() -> Bundle {
     Bundle::new(ModelSelection::fixture("bundle.n06e"), records)
 }
 
+/// A second, independently-built instance of the same ranking shape as
+/// `fixture_n06_conflict_with_unreachable_redefiner`: the
+/// `normalize.conflict-check`-stage owner sorts before the
+/// `normalize.redefinition-check`-stage owner in `type_keys`' ascending
+/// order, to pin the ranking rule itself rather than any one bundle's own
+/// identities. Types `G` (field `G.g`), `H` and `I` (both `<- G`, with
+/// `H.h2`/`I.i3` redefining `G.g` -- sibling owners, neither dominating the
+/// other), `J` (`<- H`, `<- I`, so it inherits both undominated redefiners
+/// of `G.g`), and `K` (no generalization, `K.k` redefines `G.g`). `J`'s own
+/// dominance conflict over `G.g` and `K`'s own unreachable target (`K` does
+/// not inherit `G`) coexist; `J` sorts before `K`.
+fn fixture_conflict_check_owner_sorts_before_redefinition_check_owner() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.rank01"),
+        vec![
+            object_type("model.G"),
+            object_type("model.H"),
+            object_type("model.I"),
+            object_type("model.J"),
+            object_type("model.K"),
+            field_member("model.G.g", "model.G", "model.G"),
+            generalization("model.gen.H-G", "model.H", "model.G"),
+            generalization("model.gen.I-G", "model.I", "model.G"),
+            generalization("model.gen.J-H", "model.J", "model.H"),
+            generalization("model.gen.J-I", "model.J", "model.I"),
+            field_member("model.H.h2", "model.H", "model.G"),
+            field_member("model.I.i3", "model.I", "model.G"),
+            redefinition("model.redef.h2", "model.H", "model.H.h2", "model.G.g"),
+            redefinition("model.redef.i3", "model.I", "model.I.i3", "model.G.g"),
+            field_member("model.K.k", "model.K", "model.G"),
+            redefinition("model.redef.k", "model.K", "model.K.k", "model.G.g"),
+        ],
+    )
+}
+
 /// TC-196 R07's second shape (origin/main, after QSpec #86): `B` itself
 /// (not two sibling lineages) declares two distinct redefining members,
 /// `B/z` and `B/z2`, both `redefines: A/x` — the identical single inherited
@@ -2419,14 +2454,18 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
 /// `build()`. `fixture_n06_conflict_with_unreachable_redefiner` adds type
 /// `E` (no generalization) with `redef.E` (`E`, `E.y` redefines `A.x`):
 /// since `E` does not inherit `A`, `A.x` is not an effective member of
-/// `E`, so this redefinition's own target is unreachable.
+/// `E`, so this redefinition's own target is unreachable, alongside `D`'s
+/// own dominance conflict over the same `A.x` (from `fixture_n06_conflict`).
 ///
-/// `type_keys` walks in ascending identity order, so `D`'s own dominance
-/// conflict (found while resolving `D`) is stored in `accounting.refusal`
-/// before `E`'s own unreachable-target refusal is found (while resolving
-/// `E`, which sorts after `D`): the first refusal found wins, so a
-/// completed (`UNLIMITED`) run reports `D`'s `derivation-conflict`, never
-/// `E`'s `RedefinitionUnreachable`.
+/// `E`'s own `RedefinitionUnreachable` wins over `D`'s `derivation-conflict`
+/// under `UNLIMITED`: `record_phase4_refusal` ranks a
+/// `normalize.redefinition-check`-stage refusal (`value-accounting.md:455`)
+/// ahead of a `normalize.conflict-check`-stage refusal (`:456`), since every
+/// redefinition-check charge precedes every phase-4 fact charge, which in
+/// turn precedes every conflict-check charge -- `E`'s target check fails at
+/// its own redefinition-check charge, long before `D`'s ambiguity is even
+/// checked at its own later conflict-check charge, regardless of `D`
+/// sorting before `E` in `type_keys`' ascending identity order.
 ///
 /// Revert probe: hand-reverting the two `apply_redefinitions` sites that
 /// hold this refusal back to an eager `return Err(...)` makes
@@ -2460,38 +2499,35 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
         other => panic!("expected Incomplete at a phase 2/3 normalize.fact, got {other:?}"),
     }
 
-    // Under `UNLIMITED`, every phase-4 charge is admitted, and `D`'s own
-    // conflict -- found first, since `D` sorts before `E` -- is the refusal
-    // reported, not `E`'s later `RedefinitionUnreachable`.
+    // Under `UNLIMITED`, every phase-4 charge is admitted, and `E`'s own
+    // `RedefinitionUnreachable` -- ranked ahead of `D`'s conflict, since it
+    // belongs to the earlier-charged redefinition-check stage -- is the
+    // refusal reported (see the doc comment above).
     match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
                 ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::DerivationConflict {
-                        type_: ProducerKey::fixture("model.D"),
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
                         member: ProducerKey::fixture("model.A.x"),
-                        redefiners: vec![
-                            ProducerKey::fixture("model.B.x2"),
-                            ProducerKey::fixture("model.C.x3"),
-                        ],
+                        owner: ProducerKey::fixture("model.E"),
                     },
-                    detail: "type model.D has 2 undominated redefinitions of model.A.x: \
-                              [model.gen.D-B, model.redef.B, model.A.x] and \
-                              [model.gen.D-C, model.redef.C, model.A.x]"
+                    detail: "redefinition target model.A.x is not an effective member of model.E"
                         .to_string(),
                 }
             );
         }
-        other => panic!("expected Refused(derivation-conflict) for D, got {other:?}"),
+        other => panic!("expected Refused(RedefinitionUnreachable) for E, got {other:?}"),
     }
 
     // The exact `work_units` bound between the last-admitted phase-4 charge
     // and the refusal it exposes: `64` is one short of the one
     // `normalize.conflict-check` charge's own price (`4`, added to `61`
     // already consumed through phase 3, redefinition-check and every
-    // phase-4 fact); `65` admits it and reports `D`'s conflict.
+    // phase-4 fact); `65` admits it and reports the refusal -- `E`'s
+    // `RedefinitionUnreachable`, ranked ahead of `D`'s conflict (see the doc
+    // comment above).
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 64;
     match normalize(&bundle, limits) {
@@ -2519,22 +2555,48 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
             assert_eq!(
                 refusal,
                 ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::DerivationConflict {
-                        type_: ProducerKey::fixture("model.D"),
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
                         member: ProducerKey::fixture("model.A.x"),
-                        redefiners: vec![
-                            ProducerKey::fixture("model.B.x2"),
-                            ProducerKey::fixture("model.C.x3"),
-                        ],
+                        owner: ProducerKey::fixture("model.E"),
                     },
-                    detail: "type model.D has 2 undominated redefinitions of model.A.x: \
-                              [model.gen.D-B, model.redef.B, model.A.x] and \
-                              [model.gen.D-C, model.redef.C, model.A.x]"
+                    detail: "redefinition target model.A.x is not an effective member of model.E"
                         .to_string(),
                 }
             );
         }
-        other => panic!("expected Refused(derivation-conflict) at work_units=65, got {other:?}"),
+        other => {
+            panic!("expected Refused(RedefinitionUnreachable) at work_units=65, got {other:?}")
+        }
+    }
+}
+
+/// The conflict-check owner (`J`) sorts before the redefinition-check owner
+/// (`K`) in `type_keys`' ascending order, yet `K`'s own
+/// `RedefinitionUnreachable` -- a `normalize.redefinition-check`-stage
+/// refusal (`value-accounting.md:455`) -- ranks ahead of `J`'s own
+/// `derivation-conflict` -- a `normalize.conflict-check`-stage refusal
+/// (`:456`) -- and is the refusal `build` reports, exactly as
+/// `record_phase4_refusal` ranks them.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refusal() {
+    let bundle = fixture_conflict_check_owner_sorts_before_redefinition_check_owner();
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: ProducerKey::fixture("model.G.g"),
+                        owner: ProducerKey::fixture("model.K"),
+                    },
+                    detail: "redefinition target model.G.g is not an effective member of model.K"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) for K, got {other:?}"),
     }
 }
