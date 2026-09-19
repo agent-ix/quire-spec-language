@@ -186,9 +186,8 @@ here, and #212 can check them from this record alone.
   - `supported` for a bounded-only backend requires a bounded extent.
 - A bounded extent is within both modes. An unbounded extent is within
   unbounded mode only.
-- `negotiate_*` applies these rules to each `Requirements` entry. The item
-  settles the most restrictive entry result, in the order `unsupported`,
-  `requires-bound`, `supported`.
+- Each requested item has exactly one capability kind (FR-057, FR-290), so
+  `negotiate_*` applies these rules once, to that kind and its extent.
 - An unbounded claim keeps its extent. A `requires-bound` item runs only after
   the caller supplies a bound, which makes a new bounded request with its own
   identity (AD-016 arrow 5).
@@ -207,7 +206,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Identity | Every checked node carries a stable identity, minted by QSL at check time as a function of the node's normalized content and its declaration path. It is derived from content and path alone, so it is independent of counters, display strings and collection positions. | ADR-013 O-04 (DA-02); package identity O-02 |
 | Provenance | Every checked node maps to its source span through a source map keyed by that identity. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
-| Requirements | A pure function of a checked node returns `Requirements`. Its entries are (capability kind, declared extent, authored bound). The capability set is non-empty by type. A claim that needs no backend capability yields no `Requirements` value. If such an item is requested for proof, it still reaches `negotiate_*` exactly once (§7.2). | kinds from QSpec #134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
+| Requirements | A pure function of a checked node returns `Requirements`. It holds the item's one capability kind (FR-057, FR-290), its declared extent and any authored bound. A claim form whose FR-057 kind is none yields no `Requirements` value and requests no backend (§7.2). | kinds from QSpec #134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node, a refusal with a family-typed cause, or `Incomplete` when a limit or the meter is exhausted. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is the kernel `Refusal` |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
 
@@ -265,7 +264,7 @@ Each family owns the following. The shared layer owns none of it.
 | Normalization | Any canonical form the family needs, such as sorted variant sets or resolved frame targets. It runs inside the family's `check`, before identity is minted, so identity is taken over the normalized form. |
 | Evaluation and lowering | The `evaluate` hook, the checked-package emission arm, and the family's arms in downstream IR, RT and CG seams (§8). |
 | Diagnostics | A family `Cause` enum. Every variant has a catalog code in the vendored QSpec diagnostic catalog; the catalog version and its vendoring follow ADR-013 O-17 and O-23 (OBS-023). |
-| Tests | Clause-level unit tests, builder ordering tests, the seam probe (§5.3), wire totality tests, and one absent-capability corpus case per capability the family requires (§7). |
+| Tests | Clause-level unit tests, builder ordering tests, the seam probe (§5.3), wire totality tests, and one backend-absence corpus case per capability kind the family's claim forms request (§7). |
 
 The per-family assignment:
 
@@ -421,7 +420,7 @@ independent of registration order.
 | Two registrations with the same `BackendId` | registry construction refuses, naming the identity |
 | A registration advertising a capability kind outside the QSpec #134 vocabulary | handled by the unknown-kind rule of #229's specification, aligned to QSpec #134; this record adds nothing |
 | A request naming a `BackendId` that is not registered | `negotiate_*` settles `invalid-request`, naming the unknown identity. A CLI argument naming it is refused at the CLI edge with the same identity named (§9), so no request is formed. |
-| A requirement whose capability kinds no registrant advertises | empty candidate set; `negotiate_*` settles `unsupported`, warned (§7.3) |
+| A requirement whose capability kind no registrant advertises | empty candidate set; `negotiate_*` settles `unsupported`, warned (§7.3) |
 | More than one registrant matches and the request names none | `negotiate_*` settles `invalid-request`, naming every candidate (§7.2) |
 
 ### 5.3 Evidence
@@ -450,7 +449,7 @@ independent of registration order.
   - one unit test per §5.2 row.
 - **Dispositions end to end.** An integration test in the test harness
   downstream of CG (§14.2) runs the #185 exit corpus. It includes the
-  absent-capability case of §3 and asserts §7.3: `unsupported` with its
+  backend-absence case of §3 and asserts §7.3: `unsupported` with its
   warning, no artifact, and one accounting record per `request_index`.
 
 ## 6. Four admissions
@@ -459,7 +458,7 @@ independent of registration order.
 |---|---|---|---|---|---|
 | Syntax admission | Is this text a well-formed form of an admitted edition? | QSL parser; family productions | source → family `Form` | parse diagnostic; no form | that the form type-checks |
 | Semantic admission | Is this form meaningful in the language? | QSL checker; family `check` | `Form` + `CheckContext` → checked node + `Requirements` | family refusal with catalog code, or `Incomplete`; no checked node | that any backend supports it |
-| Backend capability | Which registered backends advertise the required capability kinds, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7. Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
+| Backend capability | Which registered backends advertise the item's capability kind, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7. Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
 | Runtime availability | Is the selected backend's tool present at the pinned version? | the executing adapter, after negotiation and before the run (CG for Kani) | backend descriptor → available tool identity or absence cause | solver-absence outcome (§7.4) | anything about language meaning |
 
 Consequences of the separation:
@@ -509,18 +508,20 @@ For each requested item the steps run once, in this order, before any backend
 runs:
 
 1. **Candidates.** The #185 registry computes the candidate set from the
-   item's `Requirements`, matching on capability kind alone. The mode is
+   item's `Requirements`, matching on capability kind alone. A backend
+   matches when it advertises the item's one kind (FR-057). The mode is
    compared in step 3:
    - If the request names a registered `BackendId`, the set is that backend
-     when it advertises every required capability kind, and empty otherwise.
+     when it advertises the item's kind, and empty otherwise.
    - If the request names an unregistered `BackendId`, the set is marked
      unknown-backend.
    - If the request names none, the set is every registrant that advertises
-     every required capability kind.
-   - An item with no `Requirements` has as candidates the named backend, or
-     every registrant. The CG arm for its IR form then settles it; an IR form
-     no backend proves settles `unsupported` with a catalog code. Every
-     requested item reaches `negotiate_*` exactly once.
+     the item's kind.
+   - An item needs a kind to have candidates. A claim form whose FR-057 kind
+     is none requests no backend and gets no candidates: the `case`
+     exhaustiveness obligation, discharged at language admission, and the
+     abstraction relation. Every item that requests a backend reaches
+     `negotiate_*` exactly once.
 2. **Target-neutral IR.** IR lowers the checked item (AD-016 arrows 2 and 3).
 3. **Negotiation.** CG `negotiate_*` receives the IR form, the item's extent
    and the candidate set, and settles exactly one disposition.
@@ -531,7 +532,7 @@ runs:
 | Candidate set | Disposition settled by `negotiate_*` |
 |---|---|
 | unknown-backend | `invalid-request`, naming the unknown `BackendId` |
-| empty | `unsupported`, warned, naming every unmet capability kind (§7.3) |
+| empty | `unsupported`, warned, naming the item's unmet capability kind (backend absence, §7.3) |
 | more than one, request names none | `invalid-request`, naming every candidate; the caller resolves it by naming a backend |
 | exactly one | the CG `negotiate_*` arm for that backend's kind (seam S9), over the IR form and the extent rules of §1.1: `supported`, `requires-bound`, `unsupported` (warned) or `invalid-request` |
 
@@ -553,12 +554,13 @@ The candidate set reaches CG as a typed argument of the negotiation request.
 Its wire form is a field of the QSpec FR-331 negotiation request, and QSpec
 owns that field (QSpec #134 scope item 4; FR-331 in QSpec PR #135).
 
-### 7.3 Absent capability
+### 7.3 Backend absence
 
-An absent capability is an item whose candidate set is empty.
+Backend absence (FR-290, FR-057) is an item whose candidate set is empty. At
+admission, capability absence is a different thing: the `absent-kind` refusal.
 
-- `negotiate_*` settles it `unsupported` with a warning naming every unmet
-  capability kind (FR-290 kinds as widened by QSpec #134), per QSpec FR-290-AC-4. The outcome constructor comes from
+- `negotiate_*` settles it `unsupported` with a warning naming the item's
+  unmet capability kind (FR-290 kinds as widened by QSpec #134), per QSpec FR-290-AC-4. The outcome constructor comes from
   #213 and the catalog code from #229.
 - No backend is invoked, and no artifact is emitted for the item at any later
   stage.
@@ -596,7 +598,7 @@ routed.
 
 The contract spans six stages. The arrow numbers are AD-016's.
 
-| Stage | AD-016 arrow | Family hook | Owner | Closed seams | Absent capability or unsupported form |
+| Stage | AD-016 arrow | Family hook | Owner | Closed seams | Backend absence or unsupported form |
 |---|---|---|---|---|---|
 | Check | 1 | `check`, `requirements` | QSL family | S1–S4, S7 | not consulted; requirements recorded as data |
 | Package | 2 | `package` (checked-package/v2 emission arm, all-or-nothing) | QSL family; wire in QSpec | S1, S3 | requirements carried in `capability_report`, not dropped |
@@ -775,7 +777,7 @@ Tests: frame member eligibility, one refusal per FR-340 cause; anchor scope
 refusal; out-of-order clause refusal from the builder; cross-clause write
 containment; runtime `frame_violation` evaluation; the S5 seam probe showing
 the `TemporalTrace` and `Relation` arms are forced; typed `unsupported` ledger
-test; the absent-capability corpus case when a kind is assigned. The clause
+test; the backend-absence corpus case when a kind is assigned. The clause
 kind lives in the `check` core, so no `Value` or `SumCase` module changes.
 `TemporalTrace` and `Relation` change only by their compile-forced clause-kind
 arm.
@@ -853,7 +855,7 @@ item 6, §7.2).
 | Question | Answer |
 |---|---|
 | ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). A family that sits out a stage has an explicit, hand-written arm. At ADR-011 S6a that arm returns `FamilyOutcome::Refused` with a named `FamilyRefusal` cause (for `Relation`, `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`), category `refusal`. At lowering and proof stages it returns `unsupported` with a catalog code. |
-| ADR-011: what ADR-011 S3 records in `capability_report` | exactly one entry per checked item that has `Requirements`, keyed by the item's checked identity. Each entry holds the capability kinds (vocabulary per QSpec #134, FR-290), the declared extent and the authored bound (#222). Nothing else: no backend, candidate or disposition, because ADR-011 S3 negotiates nothing (§2, §6). |
+| ADR-011: what ADR-011 S3 records in `capability_report` | exactly one entry per checked item that has `Requirements`, keyed by the item's checked identity. Each entry holds the item's one capability kind (FR-057; vocabulary per QSpec #134, FR-290), the declared extent and the authored bound (#222). Nothing else: no backend, candidate or disposition, because ADR-011 S3 negotiates nothing (§2, §6). |
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (Contract IR #141) and admits them there (#218 and #223 with Contract IR #109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
