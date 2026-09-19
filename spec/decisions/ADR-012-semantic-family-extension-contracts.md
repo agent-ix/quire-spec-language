@@ -13,6 +13,10 @@ relationships:
     type: relates_to
   - target: ix://agent-ix/quire-spec-language/FR-036
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: relates_to
 ---
 # ADR-012: Semantic-family extension and dispatch contracts (ARCH-11)
 
