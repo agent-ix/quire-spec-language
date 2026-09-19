@@ -220,7 +220,7 @@ trait FamilyContract {
     type Checked;           // checked payload with identity and provenance
     type Cause: CatalogCoded;
     fn check(form: Self::Form, cx: &mut CheckContext)
-        -> FamilyOutcome<Self::Checked, Self::Cause>;   // checked | refused | incomplete
+        -> CheckOutcome<Self::Checked, Self::Cause>;    // checked | refused | incomplete
     fn requirements(checked: &Self::Checked) -> Option<Requirements>;
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
@@ -239,11 +239,16 @@ enum, so the set of families is fixed at compile time.
 
 `ReferenceEvaluation` is implemented by every family except `Relation`, whose
 gates run over compiled corpora. The S1 evaluation seam (ADR-011 S6a) has an
-explicit `Relation` arm. That arm returns the kernel `Refused` with the named
-cause `FamilyNotNativelyEvaluable`, which is category `refusal` under ADR-013
-O-16. The rule is general: at an evaluation stage, a family that sits out the
-stage has a typed arm that returns `Refused` with a named cause. At a lowering
-or proof stage, the arm returns `unsupported` with a catalog code (§5.1).
+explicit `Relation` arm. The seam returns a QSL layer-3 `check`-core type,
+`FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }`,
+because the kernel `Refusal` carries only kernel causes. `FamilyRefusal`
+carries the family-dispatch causes, starting with
+`FamilyNotNativelyEvaluable`, and F `diagnostic` maps it to category
+`refusal` (ADR-013 O-16). The `Relation` arm returns
+`FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`. The rule is general: at an evaluation stage, a family that
+sits out the stage has a typed arm that returns `FamilyOutcome::Refused` with
+a named `FamilyRefusal` cause. At a lowering or proof stage, the arm returns
+`unsupported` with a catalog code (§5.1).
 
 `package` is all-or-nothing. A family either emits every v2 node for the item
 or emits none and returns the refusal.
@@ -270,7 +275,7 @@ The per-family assignment:
 | `SumCase` | variant type declarations, variant construction, `case` with arms | arm pattern typing per arm; exhaustiveness as its own obligation | `case` evaluation; v2 variant and case nodes | non-exhaustive, unreachable arm, wrong variant |
 | `TemporalTrace` | temporal formulas, intervals, clock roles, profiles; the control-to-temporal mapping over checked protocol operations | interval and window typing, profile facet admission | temporal evaluation over a trace; v2 temporal nodes | unbounded without facet, clock role, interval |
 | `ProtocolClause` | protocols, operation clauses, frames, scoped anchors | clause ordering, frame target eligibility (FR-340), anchor scoping | protocol and state evaluation; v2 `state`/`frame` and clause nodes | frame target, anchor scope, clause order |
-| `Relation` | refinement relations, abstraction relations from model elements to implementation state | relation totality over its declared domain; unbound-element refusal | corpus-differential gates; abstraction relation export in the checked package. The refinement gates (#191, #192) emit `operation-contract` claims, one per clause implication; FR-290 (QSpec PR #135) keeps `refinement` for refinement between protocols | unbound element, refinement violation |
+| `Relation` | refinement relations, abstraction relations from model elements to implementation state | relation totality over its declared domain; unbound-element refusal | corpus-differential gates; abstraction relation export in the checked package; no native `evaluate`: at ADR-011 S6a the `Relation` arm returns `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`, category `refusal`. The refinement gates (#191, #192) emit `operation-contract` claims, one per clause implication; FR-290 (QSpec PR #135) keeps `refinement` for refinement between protocols | unbound element, refinement violation |
 
 ## 4. Typed subnodes and staged builders
 
@@ -374,7 +379,7 @@ listed seam.
 
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
-| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage (explicit `Relation` evaluation arm returning `Refused(FamilyNotNativelyEvaluable)`). The calls into a family's `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
+| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage (explicit `Relation` evaluation arm returning `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`, category `refusal`). The calls into a family's `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
 | S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum | parser entry table; check seam | QSL, owning family |
 | S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
@@ -597,7 +602,7 @@ The contract spans six stages. The arrow numbers are AD-016's.
 | Lower | 2, 3 | IR `lower` arm per (tag, form); RT op selection | IR, RT | S5, S6 | explicit `unsupported` arm with catalog code |
 | Execute or prove | 4, 5 | candidates and routing (#185, §7.2); CG `negotiate_*` and harness arm per IR form and backend kind; `evaluate` for native execution | #185, CG, QSL | S6, S7, S9 | every disposition from `negotiate_*` (§7.2, §7.3); solver absence after routing (§7.4) |
 | Witness | 6 | the family's witness binding schema, derived from the obligation identity's arguments; the payload is the FR-351 record unchanged | IR (packet and witness), CG (schema) | S8 | no packet without a counterexample; no placeholder witness |
-| Replay | 7 | the family's `evaluate` hook, reached through the QSL complete-V1 executor | CG reconstruction; QSL executor | S1, S3 | refused decode yields no verdict; disagreement is `inconclusive` with a typed cause; a `Relation` claim reaches the S1 `Relation` arm and is `Refused(FamilyNotNativelyEvaluable)`, category `refusal` |
+| Replay | 7 | the family's `evaluate` hook, reached through the QSL complete-V1 executor | CG reconstruction; QSL executor | S1, S3 | refused decode yields no verdict; disagreement is `inconclusive` with a typed cause; a `Relation` claim reaches the S1 `Relation` arm and is `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`, category `refusal` |
 
 Two rules apply at every stage.
 
@@ -846,12 +851,13 @@ item 6, §7.2).
 
 | Question | Answer |
 |---|---|
-| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). A family that sits out a stage has an explicit, hand-written arm. At ADR-011 S6a that arm returns the kernel `Refused` with a named cause (for `Relation`, `FamilyNotNativelyEvaluable`), category `refusal`. At lowering and proof stages it returns `unsupported` with a catalog code. |
+| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). A family that sits out a stage has an explicit, hand-written arm. At ADR-011 S6a that arm returns `FamilyOutcome::Refused` with a named `FamilyRefusal` cause (for `Relation`, `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`), category `refusal`. At lowering and proof stages it returns `unsupported` with a catalog code. |
 | ADR-011: what ADR-011 S3 records in `capability_report` | exactly one entry per checked item that has `Requirements`, keyed by the item's checked identity. Each entry holds the capability kinds (vocabulary per QSpec #134, FR-290), the declared extent and the authored bound (#222). Nothing else: no backend, candidate or disposition, because ADR-011 S3 negotiates nothing (§2, §6). |
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (Contract IR #141) and admits them there (#218 and #223 with Contract IR #109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → kernel `Refused(FamilyNotNativelyEvaluable)` → `refusal`; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013: how RT obtains `NodeKey`s | RT gets `NodeKey`s only as in-process values from QSL through ADR-011 S6a, never from the wire. A node id read from a wire is a `WireNodeId` (ADR-013 O-04), and RT does not convert it. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (mapped in F `diagnostic`); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on
