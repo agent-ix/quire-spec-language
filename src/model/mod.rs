@@ -7,11 +7,9 @@
 //! `model-effective-declaration.schema.json`/`model-complete.md` domain
 //! package shape FR-154 defines; every other rung in this module is a pure
 //! function of that value. [`intake`] admits Semantic IR 2.0.0 document
-//! bytes against a caller's selection (FR-154's four-check table) and lifts
-//! them from a spec bundle in the first place; reading an admitted
-//! document's IR nodes into [`domain_package::DomainPackageRecord`]s is not
-//! wired yet, so every [`domain_package::DomainPackage`] in this tree is
-//! still caller-constructed.
+//! bytes against a caller's selection (FR-154's four-check table), lifts
+//! them from a spec bundle in the first place, and reads an admitted
+//! document's IR nodes into [`domain_package::DomainPackageRecord`]s.
 
 pub mod accounting;
 pub mod checked_dispatch;

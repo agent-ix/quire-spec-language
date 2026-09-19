@@ -39,12 +39,20 @@ fn one() -> Multiplicity {
     mult(1, Some(1))
 }
 
-fn object_type(identity: &str, interface_features: Option<Vec<&str>>) -> DomainPackageRecord {
+fn object_type(
+    identity: &str,
+    interface_features: Option<Vec<&str>>,
+    supertypes: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: interface_features
             .map(|features| features.into_iter().map(DeclarationKey::fixture).collect()),
         abstract_type: false,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
@@ -68,16 +76,8 @@ fn field_member(
             owner: DeclarationKey::fixture(owner),
             value_type: DeclarationKey::fixture(value_type),
             multiplicity: m,
-        },
-    )
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(
-        quire_spec_language::model::domain_package::SupertypeRecord {
-            key: DeclarationKey::fixture(identity),
-            specific: DeclarationKey::fixture(specific),
-            general: DeclarationKey::fixture(general),
+            subsets: vec![],
+            redefines: None,
         },
     )
 }
@@ -147,6 +147,7 @@ fn operation_run() -> DomainPackageRecord {
         has_own_precondition: false,
         own_postcondition_clauses: vec![],
         has_body: true,
+        redefines: None,
     })
 }
 
@@ -156,12 +157,15 @@ fn operation_run() -> DomainPackageRecord {
 fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackage {
     let mut records = vec![
         scalar_type("model.Count", 0, 9),
-        object_type("model.Sys", None),
-        object_type("model.Pump", None),
-        object_type("model.Tank", None),
-        object_type("model.Flow", Some(vec!["model.Flow.rate"])),
-        object_type("model.Flow2", Some(vec!["model.Flow.rate"])),
-        supertype("model.gen.Flow2-Flow", "model.Flow2", "model.Flow"),
+        object_type("model.Sys", None, vec![]),
+        object_type("model.Pump", None, vec![]),
+        object_type("model.Tank", None, vec![]),
+        object_type("model.Flow", Some(vec!["model.Flow.rate"]), vec![]),
+        object_type(
+            "model.Flow2",
+            Some(vec!["model.Flow.rate"]),
+            vec!["model.Flow"],
+        ),
         field_member("model.Flow.rate", "model.Flow", "model.Count", one()),
         component("model.Sys.pump", "model.Sys", "model.Pump", one()),
         component("model.Sys.tank", "model.Sys", "model.Tank", one()),
@@ -676,7 +680,7 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.f2-systems-conflict"),
         vec![
-            object_type("model.Pump", None),
+            object_type("model.Pump", None, vec![]),
             DomainPackageRecord::Component(ComponentRecord {
                 key: DeclarationKey::fixture("model.Sys.pump"),
                 owning_type: DeclarationKey::fixture("model.Sys"),

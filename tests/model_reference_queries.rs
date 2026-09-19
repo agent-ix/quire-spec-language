@@ -23,7 +23,7 @@ use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord, SupertypeRecord,
+    ObjectTypeRecord, OperationEffect, PopulationRecord,
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
@@ -64,11 +64,15 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
         abstract_type: false,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
@@ -78,14 +82,8 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageR
         owner: DeclarationKey::fixture(owner),
         value_type: DeclarationKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
+        subsets: Vec::new(),
+        redefines: None,
     })
 }
 
@@ -98,10 +96,9 @@ fn fixture_f1() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n01"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
             DomainPackageRecord::Population(PopulationRecord {
                 key: DeclarationKey::fixture("model.pop.p1"),
                 member_types: vec![
@@ -620,10 +617,8 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
         Outcome::Completed(value) => value,
         other => panic!("expected a completed collection, got {other:?}"),
     };
-    // #131's DeclarationKey reshape and the #197 RULE_INHERIT/RULE_REDEFINE
-    // fact-input fix each changed every declaration's JCS preimage bytes and
-    // hence its effective-id hash; A now sorts before B (was B before A), so
-    // canonical reference-key order is every A member then every B member.
+    // `A`'s effective-id hash sorts before `B`'s, so canonical reference-key
+    // order is every `A` member then every `B` member.
     let expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.a, "a2"),
@@ -1456,8 +1451,7 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         SCALAR_UNLIMITED,
         &ObjectEnvironment::default(),
     );
-    // #131's DeclarationKey reshape and the #197 RULE_INHERIT/RULE_REDEFINE
-    // fact-input fix each changed effective-id hashes; A now sorts before B.
+    // `A`'s effective-id hash sorts before `B`'s.
     let post_expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.b, "b1"),
