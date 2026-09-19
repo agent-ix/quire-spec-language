@@ -188,3 +188,4 @@ Ruling by Agent A (2026-09-19): RT holds no `NodeKey`. ADR-012 pin stays at
 | --- | --- | --- |
 | PR3-M1 | Fixed. RT and CG hold only `WireNodeId`s; only QSL (E4 and the layer-6 `replay` facade) converts one to a `NodeKey`. RT runs inside CG-generated harnesses built from IR wire data, and ADR-012 keys RT's function lookup by `WireNodeId`, an id lookup that keeps R-06. The S6a in-process sentence is removed. | O-04 |
 | PR3-N1 | Fixed. `FamilyRefusal::catalog_code()` yields the code and F `diagnostic` maps the code to category `refusal`; F never names `FamilyRefusal`. | O-16 |
+| R4-2 (ADR-011 reviewer) | Fixed. O-26 validation lists `DependencyIdentityMismatch` (`stale_dependency`): `replay` compiles each dependency's QC-1 source through S4 and refuses when the recomputed `package_id` differs from the proved package's record (QC-10). C-13 adds the executor test. This supersedes the round-3 "no change" row. ADR-012 pin moves to `0d4a15e`. | O-26, C-13, Context |
