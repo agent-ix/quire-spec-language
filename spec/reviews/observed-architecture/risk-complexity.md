@@ -13,76 +13,89 @@ relationships:
 
 ## Summary
 
-Reviewed commit: faa1731 (branch `task/206-observed-architecture`), ADR-010 and
-its `spec/spec.md` index row. Adapted to a descriptive baseline: the review asks
-whether the record surfaces the hotspots Layer 1 (#209, #210, #211) needs,
-whether any high-risk fact is missing or mis-stated, whether the record will go
-stale in a misleading way, and whether owner assignments are balanced and
-plausible. Spot checks ran against QSL de627b5, IR 553b6d1, CG a4b2a73 and
-CG 5e2a6a9 (the QSL dev pin), plus live `gh` state for PRs #200, #204, #228 and
-issue #207.
+Reviewed commit: 432e615 (branch `task/206-observed-architecture`), round 2.
+Round 1 reviewed faa1731. This round checks each round-1 finding against the
+revision (`git diff faa1731 432e615 -- spec/decisions`) and looks for new
+risk or complexity problems in that diff only. Spot checks ran against QSL
+de627b5 (PR heads pr/200 13b6687, pr/204 6eee1f3, pr/228 a43e951), CG 5e2a6a9
+and a4b2a73, and the live ARCH-01 comment on #207 (issuecomment-5743530928).
 
-The record is strong. Counts reconcile: 14 QSL-side AD-016 claims (5/1/8), 32
-downstream claims (24/2/6), 17 DA items (13/4), 36 findings (13/6/17) and 68 open
-issues (confirmed live). The `Diagnostic` embedding (`QSL:diagnostic.rs:306-324`)
-and the `ir_revision` literal (`QSL:package/view.rs:39-46`) check out. It flags
-the main hotspots: the `Diagnostic` SCC, `ir::ValueType`, IR definedness
-inversion, the single-writer file `normalize.rs`, pin staleness, and the one
-test-only proof path.
+The blocking defect is fixed. §3.2 now has a `QSL tests → RT 8a4d02b` edge, a
+QSL ⇄ RT test-time cycle and a proof-path revision chain. OBS-002 and OBS-040
+state that the proof path shares no IR, CG or RT revision with production. The
+checks hold: CG 5e2a6a9 `src/oracle.rs:14,17` pins IR 04eb6f8 and RT 8a4d02b,
+and the QSL `Cargo.lock:911-913` resolves one `quire-contract-ir` at 04eb6f8.
+The revision also pins every PR citation to a head sha, widens the
+single-writer hotspot (confirmed with `git diff --stat de627b5...pr/N`), makes
+ARCH-01 the authority for merge order (the comment reads #228 → #204 → #200),
+adds a 31-module placement table, states the owner load, and adds OBS-037 to
+OBS-041.
 
-One blocking defect remains. The record says QSL has no dependency on the
-Contract Runtime (RT), but the only proof path compiles and runs RT at a pinned
-revision (FND-001). Two more gaps weaken the proof-path hotspot: the record does
-not say whether that path ever runs (FND-002), and it does not say that the
-path's IR, RT and CG revisions differ from the production pins. Other risk-side
-gaps: PR-sourced evidence is unpinned and will change as the next three merges
-land, writer contention is understated, and the owner load leans heavily on #211,
-with some owners that look wrong.
+Two medium problems remain. One is new wording that is wrong: "no CI job runs
+IT-010". The manual CI workflow and `make ci` both run IT-010 (FND-001). The
+other is that replay ownership is split across two Layer 1 owners, and §7.1
+names consumed items under owners that contradict §9.2 (FND-002). Neither
+blocks, and both fixes are local.
 
-Verdict: REJECT (one blocking finding, FND-001; the fix is small and local to
-§3.2, §2.1 and OBS-002).
+Verdict: ACCEPT WITH FINDINGS (0 high, 2 medium, 3 low).
 
 ## Risk register (decision items with elevated risk or volatility)
 
 | Item | Tech risk | Volatility | Drivers | Mitigation named in the record? |
 |---|---|---|---|---|
-| OBS-002 / A9–A11 | High | Medium | Only proof-and-replay path. It is test-only, needs an installed pinned Kani and offline cargo, and runs on CG, IR and RT revisions that differ from production. | Partly. Environment and revision gaps: FND-001, FND-002 |
-| OBS-028 / OBS-030 / OBS-036 | High | High | Replay executor is disputed in the specs (IR FR-031 vs AD-016). Every CG replay call site uses a stub. | Yes, routed to #209 |
-| OBS-016 / `Diagnostic` | Medium | Medium | Fan-in 20 type embeds `quire_contract_ir::Diagnostic`, so every IR pin bump reaches every module | Yes, hotspot row |
-| `src/model/{normalize,conformance,refusal}.rs` | Medium | High | Three open PRs write these files, and the merge order is disputed | Partly. FND-003, FND-004 |
-| OBS-006, OBS-014, X2 | Low | High | PR #200 is expected to merge soon and will change what these items describe | No. FND-005 |
-| OBS-022 / OBS-034 / DA-14 | Medium | High | Five QSL revisions in use, hard-coded revision literals, pins 5–144 commits behind | Yes. Partly incomplete: FND-011 |
-| #211 owner load | n/a | n/a | 32 of 54 decision items go to one Layer 1 ticket, and it feeds #213 | No. FND-006 |
-
-## Top hazards
-
-1. The proof spine: IT-010 runs on CG 5e2a6a9, IR root 04eb6f8 and RT 8a4d02b.
-   None of these is on a production edge. §3.2 says QSL has no RT dependency.
-   (FND-001, FND-002)
-2. Replay-executor conflict (OBS-028, OBS-036): the specs disagree and every
-   call site uses a stub.
-3. Model-file writer contention across PRs #200, #204 and #228, with two merge
-   orders on record (FND-003, FND-004).
-4. #211 load concentration, which is on the critical path to #213 (FND-006).
+| OBS-002 / OBS-040 / A9–A11 | High | Medium | Only proof-and-replay path. It is test-only and runs on IR 04eb6f8, CG 5e2a6a9 and RT 8a4d02b, none of them a production pin. It needs a pinned Kani. The full gate runs it. | Yes. CI wording is wrong: FND-001 |
+| OBS-028 / OBS-036 / OBS-038 / OBS-039 | High | High | Replay executor is disputed in the specs, every call site uses a stub, and two owners decide it | Partly. FND-002 |
+| `src/model/{normalize,conformance,refusal,checked_dispatch}.rs` | Medium | High | Three keep PRs write these files. Merge order #228 → #204 → #200 now cites ARCH-01 | Yes (§4.5, §8). Tag list incomplete: FND-004 |
+| X2, OBS-006, OBS-014, OBS-027, OBS-036, OBS-041 | Low | High | Keep PRs change the described state | Yes. PR-sensitive list plus a #208 re-check |
+| #211 owner load | n/a | n/a | 33 of 59 items. #213 consumes 8 of #211's DA items | Stated in §9.2. Grouping incomplete: FND-003 |
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | Dependency direction is mis-stated for the only proof path. §3.2 gives `QSL → RT: none`, and the mermaid shows `QSL -.-x no dep RT`. But IT-010 writes a Kani crate that depends on `quire-contract-runtime` at CG 5e2a6a9's `RUNTIME_REVISION` 8a4d02b and runs it (`QSL:tests/configversion_backends.rs:807-841`, `CG@5e2a6a9:src/oracle.rs:17`). QSL's fixture `tests/fixtures/native-lowering/Cargo.toml:14` also pins RT 8a4d02b, which §6.3 already lists, so the record contradicts itself. The QSL `Cargo.lock` also shows CG 5e2a6a9 resolving to IR root 04eb6f8, a different crate from the production pin, model 53cc03c. So the proof path shares no IR, RT or CG revision with production. This breaks the #206 criterion "dependency direction ... explicit" on the hotspot #209 must rule on. Fix: in §3.2 and its diagram, add `QSL (tests) → RT 8a4d02b` (generated Kani crate and native-lowering fixture, test-time only). In OBS-002 and §2.1 A9, state that the proof path's IR (04eb6f8), CG (5e2a6a9) and RT (8a4d02b) revisions are all separate from the production IR pin 53cc03c. | ADR-010 §3.2, §6.3, §2.1 A9, OBS-002 |
-| FND-002 | medium | The record never says whether the only proof path is executed. IT-010 is not `#[ignore]`d. It `expect`s `cargo-kani 0.67.0` on PATH with an exact sha256 (`QSL:tests/configversion_backends.rs:502-526`), and it runs Kani with `CARGO_NET_OFFLINE=true` against an RT git revision that must already be in the cargo cache (:820-838). QSL CI is `workflow_dispatch` only and installs no cargo-kani (`QSL:.github/workflows/ci.yml:3-26`). So the one proof-and-replay path has no automated gate and fails in a default environment. Layer 1 could read "1 path, test-only" as "1 path, exercised". Fix: in §2.1 A9 and OBS-002, record these environment preconditions and the fact that no CI job runs IT-010. Route the gap as a #209 input, with #217 as consumer. | ADR-010 §2.1, OBS-002, Summary counts row "Proof-and-replay paths" |
-| FND-003 | medium | Writer contention is understated. The §4.5 hotspot row names only `src/model/normalize.rs`. Live PR file lists show #200 and #204 also both write `src/model/conformance.rs` and `src/model/refusal.rs` (the other two single-writer files in §8). #204 also writes `src/model/checked_dispatch.rs`, the evidence site for OBS-007 and §2.3, where it is named as the only non-test `Expression` producer. Fix: widen the §4.5 row to all three single-writer files with the PRs that touch each one. Note that #204 changes the OBS-007 evidence site. | ADR-010 §4.5, §8, OBS-007 |
-| FND-004 | medium | The §8 merge order contradicts Decision 4 and the §8 table. Decision 4 makes the ARCH-01 comment on #207 the authority for WIP dispositions. The §8 table Notes follow #207 (#228 first, #204 second). The prose then says a coordinator order #204 → #228 → #200 governs, and cites nothing. A reader cannot tell which order holds for the hottest file in the repo. Fix: cite the coordinator decision (comment URL), then either amend Decision 4 to name it as the authority for merge order, or make the table Notes match the governing order. | ADR-010 Decision 4, §8 |
-| FND-005 | medium | PR-sourced evidence is unpinned and will change soon. PR #200, #204, #228 and IR PR #139 are cited with no head sha (for example "PR #200 adds it (2104 lines)"). #207 recorded #204's head as 8d0a939. The live head is already 6eee1f3. OBS-006, OBS-014 (the `"allocation"` site), X2, §1 rows 3–4, §4.3 row 1 and the §8 notes all describe state that these "keep" PRs change, and those PRs are next to merge. Once they merge, main-state claims in the record become false while it still reads as current. Fix: pin every PR citation to a head sha (#200@13b6687, #204@6eee1f3, #228@a43e951, IR #139@64982f1). Tag PR-sensitive items (for example "PR-SENSITIVE: #200"). State in Consequences that #208 re-checks the tagged items after each of these merges. | ADR-010 §1, §2.6 X2, §4.3, §8, OBS-006, OBS-014, OBS-027 |
-| FND-006 | medium | Owner load is unbalanced. #211 owns 17 of 36 findings and 15 of 17 DA items: 32 of 54 decision items (59%). #209 owns 13 and #210 owns 8 (including L1-D1 and DA-11). #213 (Layer 2) consumes 8 of #211's DA items, which puts #211 on the critical path. The record does not flag this. Fix: state the load in §9. Either split #211's items into named decision groups (identity and typestate DA-01..04, DA-08, DA-17; values, types and kernel DA-05..07, DA-16, OBS-032; versions, pins and vendoring DA-14, OBS-022..024, OBS-034), or move the items that are about dependency direction to #209 (see FND-007). | ADR-010 §9.2 owner tally, §9.3, §7.1 #213 |
-| FND-007 | medium | Some owners look wrong. OBS-031 (no current-head integration lane in QI) goes to #211. But the #207 ARCH-01 classification, which Decision 4 names as authority, says QI PR #2 waits on #209, "which decides whether quire-integration owns the current-head integration lane". #209's scope is "legal dependency direction". OBS-034 (five QSL revisions in use, pins trailing targets) is also about cross-repo dependency direction, but names no #209 input. OBS-017 (two `CheckedPackage` types) bears directly on the #209 acceptance criterion "unchecked and checked objects cannot share an ambiguous public type", but names no secondary. Fix: reassign OBS-031 to #209. Add #209 as a secondary on OBS-034 and OBS-017. Update the §9.2 tally and the Summary counts. | ADR-010 OBS-017, OBS-031, OBS-034, §9.2, Decision 4 |
-| FND-008 | medium | The module-to-stage inventory is incomplete for #209. #209 acceptance requires "every current module/crate maps to one stage". `QSL:lib.rs` declares 32 top-level modules. The record places modules only through stage entry cells. It has no placement for `format`, `located_json`, `json_number`, `serde_object`, `token`, `digest`, `source_map`, `wire_format` or `model_source`. §3.1 leaves the public items of `checking`, `complete` and `runtime` "not counted". #206 acceptance says Layer 1 must not need another census. Fix: add one table listing all 32 top-level modules with lane or stage, line count and public-item count. Mark the modules shared across lanes (`diagnostic`, `source`, `digest`). | ADR-010 §2, §3.1; #209 Acceptance; #206 Acceptance |
-| FND-009 | low | Risks from PR #200 appear in §8 prose with no decision item: a new QSL → FCD edge at 7dcb2f2, which #209 must rule on for direction, `tempfile` promoted to a production dependency, and a second quire-rs revision (2823a93) in the lock. These leave a new cross-repo edge and a duplicate version with no owner. Fix: add OBS items (FCD edge → #209; duplicate quire-rs revision and the production `tempfile` → #211), or state that they are out of Layer 1 scope. | ADR-010 §8, §3.2 row "QSL → FCD" |
-| FND-010 | low | Several evidence cells lack the line number that the evidence convention requires. These are the cells that are hardest to re-verify after the code changes: `QSL:tests/configversion_backends.rs constants` (§1 Kani sha, actually :34), `QSL:wire_format.rs` (§3.3, OBS-026), `QSL:temporal.rs` (`clock:`, OBS-014), `QSL:model/checked_dispatch.rs` (DA-02, §4.2), `QSL:Cargo.toml` (quire-rs row), `QSL:value/accounting.rs`, `QSL:model/key.rs` (DA-12, DA-15). Fix: add line numbers. For evidence of absence, cite the file and state what the search looked for. | ADR-010 §1, §3.2, §3.3, §4.2, §5, OBS-014, OBS-026 |
-| FND-011 | low | Version-literal and staleness coverage is incomplete. `QSL:package/view.rs:39` hard-codes a second pinned revision literal, `STANDARD = "e897f810…"`, next to `ir_revision`. Neither OBS-022 nor DA-14 records it. The "Behind" counts in §3.2, §6.3 and the vendoring table do not say which head they were measured against (the Context-table sha or live `origin/main`). Fix: add the `STANDARD` literal to OBS-022 and DA-14. State that "behind" counts are measured against the Context-table shas. | ADR-010 §3.2, §6.3, OBS-022, DA-14 |
+| FND-001 | medium | "No CI job runs IT-010" is wrong. The record says so in §2.1 ("so no CI job runs IT-010"), OBS-002 ("no CI job runs it") and the Summary counts row ("not run by CI"). But IT-010 is an auto-discovered integration test: it is not `#[ignore]`d and has no `required-features` entry in `QSL:Cargo.toml:62-95`. The only CI job runs `cargo test --locked --workspace` twice (`QSL:.github/workflows/ci.yml:22,26`), and so does `make ci` (`QSL:Makefile:34,38`). When dispatched, both run IT-010 on a runner that installs no cargo-kani (`QSL:.github/workflows/ci.yml:13-16`). There it panics at `QSL:tests/configversion_backends.rs:513` (`expect("cargo-kani 0.67.0 must be installed")`). The real risk is the reverse of the one the record states: IT-010 is on every full gate, and that gate fails in any environment without the pinned Kani and a warm cargo cache. CI also has no automatic trigger (`ci.yml:3-4`). Fix: in §2.1, OBS-002 and the Summary counts row, replace "no CI job runs IT-010" with "CI has only a manual trigger. The manual workflow and `make ci` both run IT-010, which fails unless the pinned cargo-kani is installed and the RT revision is already in the cargo cache." Cite `ci.yml:22,26` and `Makefile:34,38`. | ADR-010 §2.1 (IT-010 preconditions), OBS-002, Summary counts "Proof-and-replay paths" |
+| FND-002 | medium | Replay ownership is split across two owners, and §7.1 names consumed items under owners that contradict §9.2. OBS-028, OBS-036 and OBS-038 (who performs replay, the FR-031 vs AD-016 executor conflict, and #205's Runtime replay surface) go to #209. OBS-039 (AD-016 and #205 name different replay owners) goes to #211 with #209 as secondary. That is one question with two deciders, which works against Decision 3 ("exactly one owning ticket"). The new §7.1 column "Layer 1 decision consumed" also names items under the wrong owner: #231 "#211 (OBS-002, OBS-027, OBS-028, X6)", but OBS-002 and OBS-028 are #209's; #217 "#209 (OBS-002, OBS-027, …)", but OBS-027 is #211's; #215 "#209 (OBS-031, OBS-034)", but OBS-034 is #211's. A consumer reading §7.1 would wait on the wrong ticket. Fix: move OBS-039 to #209 (secondary #211), or say which part each ticket decides. In §7.1, group each row's items by their §9.2 owner, for example #231 "#209 (OBS-002, OBS-028); #211 (OBS-027, X6)". | ADR-010 Decision 3, §7.1 rows #215, #217, #231, §9.2 OBS-028, OBS-036, OBS-038, OBS-039 |
+| FND-003 | low | The §9.2 load paragraph says #211's items "fall into three groups", but those groups cover 21 of #211's 33 items. Twelve are in no group: DA-09, DA-10, DA-12, DA-13, DA-15, OBS-006, OBS-021, OBS-025, OBS-026, OBS-027, OBS-035 and OBS-039. Six of those twelve (DA-09, DA-10, DA-12, DA-13 and their findings) are the ones #213 consumes, so the ungrouped remainder sits on #211's critical path. Fix: add a fourth group, "outcomes, refusals, budgets, provenance and digests" (DA-09, DA-10, DA-12, DA-13, DA-15, OBS-021, OBS-025, OBS-035), and a fifth, "intake, witness and wire" (OBS-006, OBS-026, OBS-027, OBS-039). Alternatively, say "include" instead of "fall into". | ADR-010 §9.2 Load paragraph |
+| FND-004 | low | The §8 PR-sensitive list leaves out evidence sites that the keep PRs rewrite. PR #204@6eee1f3 adds 253 changed lines to `src/model/checked_dispatch.rs`, inside `checked_dispatch_operation`. It adds `object_type_supertypes`, removes `DispatchRoot::receiver_type` and derives receiver types from `object_keys`. That changes the cited lines and the facts of OBS-007, the §2.3 "only non-test constructor" sentence, the §4.2 rows for `DeclarationKey → NodeKey` and model dispatch, OBS-018 and DA-02 (`:653,657`). PR #200@13b6687 changes `src/model/population.rs` (DA-02 `:376`) and `src/model/systems.rs` (OBS-014 `:269`, already tagged). §8 notes the OBS-007 site in the #204 row, but the list that #208 re-checks does not include it. Fix: add OBS-007, OBS-018, DA-02 and the §2.3 and §4.2 rows to the PR-sensitive list. | ADR-010 §8 PR-sensitive items, §2.3, §4.2, OBS-007, OBS-018, DA-02 |
+| FND-005 | low | Some positive evidence cells still have no line number, which the evidence convention requires. The ones left are `QSpec:spec/objects/protocol/FR-290-protocol-claim-kind.md` (§1.2, OBS-012, OBS-013, DA-11), `QSpec:proposals/checked-package-v2/schema.json` (§1.1, OBS-001), `PR #200@13b6687:src/model/intake.rs` (§1.1 `model::intake` row) and `QSL:tests/native_protocol_emission.rs` (§2.2, OBS-011). FR-290 backs two load-bearing claims: the 6 claim kinds, and naming QSL's Kani backend as a registrant (OBS-013). Those claims are the hardest to re-verify once QSpec #116 or #229 edits FR-290. Every cell that round 1 FND-010 listed is fixed. Fix: add line numbers, or cite a file-level fact as `absent:` or `§`. | ADR-010 Evidence convention, §1.1, §1.2, §2.2, OBS-011, OBS-012, OBS-013 |
+
+## Round 1 resolution
+
+Counts: 10 resolved, 1 partially resolved, 0 unresolved.
+
+| Round-1 ID | Severity | Status | Reason |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | §3.2 adds `QSL tests → RT 8a4d02b` (fixture and IT-010 crates), the QSL ⇄ RT cycle, the proof-path revision chain and a mermaid test-time edge. OBS-002, OBS-040 and A9 name IR 04eb6f8, CG 5e2a6a9 and RT 8a4d02b as separate from 53cc03c. Checked against `CG@5e2a6a9:src/oracle.rs:14,17` and `QSL:Cargo.lock:911-913`. |
+| FND-002 | medium | partially resolved | The Kani pin, `CARGO_NET_OFFLINE` and non-`#[ignore]` preconditions are now recorded in §2.1 and OBS-002. The new sentence "no CI job runs IT-010" is wrong, because CI and `make ci` run it (round-2 FND-001). No #209 or #217 routing for the gate gap is stated beyond the OBS-002 owner. |
+| FND-003 | medium | resolved | §4.5 names normalize.rs (#228, #204, #200), conformance.rs and refusal.rs (#204, #200) and checked_dispatch.rs (#204). Confirmed with three-dot diffs against de627b5. |
+| FND-004 | medium | resolved | Decision 4 and §8 cite issuecomment-5743530928 as the authority for dispositions and merge order. The comment's "Rulings applied" gives #228 → #204 → #200, which matches the table. |
+| FND-005 | medium | resolved | Every PR citation is pinned to a head sha. There is a PR-sensitive list, and Consequences has #208 re-check it after each keep PR merges. The list is incomplete: round-2 FND-004. |
+| FND-006 | medium | resolved | §9.2 states the load (33 of 59 items; 8 consumed by #213) and names groups. The groups are incomplete: round-2 FND-003. |
+| FND-007 | medium | resolved | OBS-031 moves to #209 (secondary #211). OBS-034 and OBS-017 gain #209 as secondary, and the tally is updated. The §7.1 owner columns now contradict §9.2: round-2 FND-002. |
+| FND-008 | medium | resolved | §3.1 places all 31 top-level modules with lane or stage, lines and public items, and marks the shared modules. Round 1's "32" counted the `#[path]` test-support module `runtime_test_setup`, and the record rightly excludes it. |
+| FND-009 | low | resolved | OBS-041 records the FCD edge, the production `tempfile` and quire-rs 2823a93, owned by #209 with #211 as secondary. Evidence checked at `PR #200@13b6687:Cargo.toml:37-38,42` and `Cargo.lock:1077,1098`. |
+| FND-010 | low | resolved | Every cell listed in round 1 now has a line number (`configversion_backends.rs:34`, `wire_format.rs:31`, `temporal.rs:50`, `checked_dispatch.rs:653,657`, `Cargo.toml:26`, `value/accounting.rs:2,143`, `model/key.rs:23,26`), and there is an `absent:` form. Other cells without line numbers remain: round-2 FND-005. |
+| FND-011 | low | resolved | `STANDARD "e897f810…"` is in §3.2, OBS-022 and DA-14 (`QSL:package/view.rs:39`, with `ir_revision` at :46). The Evidence convention now defines "Behind" against the Context shas. |
 
 ## Failure-domain gaps
 
-No failure-domain SpecReview exists yet in `spec/reviews/observed-architecture/`
-(only base and ears-conformance are present). FND-001 and FND-002 are the
-failure-domain overlaps: the proof path's environment and revision identity.
+`spec/reviews/observed-architecture/failure-domain.md` now exists. The overlap
+with this review is FND-001: the proof path's environment preconditions decide
+whether the full gate passes.
+
+## Round 2 resolution (author)
+
+Recorded by the authoring agent; the round-2 verdict stands.
+
+- FND-001 resolved: §2.1, OBS-002 and the Summary row state that IT-010 runs on
+  every full `cargo test` gate (`ci.yml:22,26`, `Makefile:34,38`) and fails at
+  `configversion_backends.rs:513` without cargo-kani.
+- FND-002 resolved: OBS-039 moved to #209; §7.1 #215, #217 and #231 cells follow
+  §9 owners.
+- FND-003 resolved: the §9.2 load paragraph lists four groups covering all 33
+  #211 items.
+- FND-004 resolved: the PR-sensitive list adds OBS-007, OBS-018, DA-02 and the
+  §2.3 and §4.2 `checked_dispatch.rs` rows.
+- FND-005 partly resolved: FR-290 and test-file cells carry lines; the
+  checked-package-v2 `schema.json` and PR #200 `intake.rs` cells remain
+  file-level (existence claims).
