@@ -447,10 +447,8 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     assert_eq!(refusals.len(), 4);
     let subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
     // Subtype order follows the view's own ascending effective-identity
-    // order, i.e. each type's computed hash -- #131's DeclarationKey reshape
-    // (dropping `revision`/`digest` from its JSON shape) changed every
-    // effective id here, which reordered A and B relative to each other.
-    assert_eq!(subtypes, vec!["model.D", "model.C", "model.A", "model.B"]);
+    // order, i.e. each type's computed hash.
+    assert_eq!(subtypes, vec!["model.A", "model.D", "model.C", "model.B"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals
         .iter()
@@ -471,7 +469,7 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
 
 /// D04: D01 with every domain package record supplied in reverse declared order and
 /// `B.size` declared before `A.size`. Linking depends only on the
-/// (authority, identity, revision, digest)-sorted family and the effective
+/// `DeclarationKey` (`package`, `node`)-sorted family and the effective
 /// view's own ascending-identity subtype order, never on registration or
 /// source order (FR-151-AC-5): the same table results.
 #[trace("TC-196", "FR-151-AC-5")]
@@ -544,4 +542,39 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
     assert_eq!(unclosed.cause, ModelRefusalCause::UnclosedMethodSet);
     assert_eq!(unclosed.operation.node, "model.A.size");
     assert!(meter.admitted_charges().is_empty());
+}
+
+/// FR-154: "Two nodes share one identity" refuses
+/// `invalid_model_binding`/`conflicting-binding`. Retargets the pre-#131
+/// `f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survive`
+/// regression test: under the dropped `revision`/`digest` fields, two
+/// `OperationMember` records that once differed only in `revision` now
+/// share the exact same `DeclarationKey`, and `normalize` -- which every
+/// real pipeline runs before `link_dispatch` ever sees a domain package --
+/// must refuse before either candidate reaches `DispatchIndex`.
+#[trace("TC-196")]
+#[test]
+fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-dispatch-conflict"),
+        vec![
+            object_type("model.A"),
+            operation("model.A.size", "model.A", true),
+            operation("model.A.size", "model.A", false),
+        ],
+    );
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingBinding {
+                    key: DeclarationKey::fixture("model.A.size"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
+        }
+    }
 }

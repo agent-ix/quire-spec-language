@@ -397,13 +397,19 @@ impl ObjectUniverse {
 pub const MAX_GENERALIZATION_DEPTH: usize = 128;
 
 struct Index {
-    /// Every declared object type, keyed by its own full producer key (PR
-    /// #140 F2): two `ObjectType` records that share a display identity but
-    /// differ in revision or digest are distinct original declarations and
-    /// must both survive, never merge. Also serves phase 4's and this
-    /// module's other passes' "is this a declared type" dangling-reference
-    /// checks — a second, redundant `known_types` set would only ever
-    /// duplicate this one.
+    /// Every declared object type, keyed by its own [`DeclarationKey`]
+    /// (`package`/`node`). Under #131's flat key shape, two `ObjectType`
+    /// records that share one key are no longer distinct declarations: this
+    /// set's own `.insert()` would silently keep only the first, but
+    /// `build`'s caller never trusts that -- `validate_references`'s
+    /// collision check re-walks `domain_package.records` right after
+    /// `Index::build` returns and refuses
+    /// `invalid_model_binding`/`conflicting-binding` before this `Index` is
+    /// put to any real use, so a caller that observes a completed
+    /// normalization never sees a collapsed pair here. Also serves phase 4's
+    /// and this module's other passes' "is this a declared type"
+    /// dangling-reference checks — a second, redundant `known_types` set
+    /// would only ever duplicate this one.
     types: std::collections::BTreeSet<DeclarationKey>,
     fields_by_owner: HashMap<DeclarationKey, Vec<FieldMemberRecord>>,
     generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
@@ -586,7 +592,7 @@ fn ancestor_paths(
         let record = frame.directs[frame.next].clone();
         frame.next += 1;
         let mut new_path = frame.path.clone();
-        new_path.push(record.key.clone());
+        new_path.push(record.general.clone());
         let ancestor_key = record.general.clone();
         if frame.visited.contains(&ancestor_key) {
             // Every contributing declaration in the cycle itself, not the
@@ -720,11 +726,67 @@ struct Built {
 /// Refuses a [`DomainPackageRecord`] that names a type key absent from the domain package's
 /// own `ObjectType` records, so a dangling `owner`, `specific` or `general`
 /// reference is a typed refusal rather than a panic or a silently dropped
-/// record — `domain_package` is caller-supplied, not validated on the way in.
-/// Membership is checked by the record's *whole* producer key (PR #140 F2):
-/// a reference matching some declared type's display identity but not its
-/// exact revision/digest is exactly as dangling as one matching nothing.
+/// record — `domain_package` is caller-supplied, not validated on the way in
+/// except for this function's own empty-component and colliding-key checks
+/// above, which run first. Membership is checked by the record's whole
+/// [`DeclarationKey`] (`package`/`node`, #131): a reference matching some
+/// declared type's `node` but naming a different `package` is exactly as
+/// dangling as one matching nothing.
 fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<(), ModelRefusal> {
+    // FR-321: "Missing required properties, duplicate keys, out-of-domain
+    // values and non-canonical encodings refuse before consumption." An
+    // empty `package`/`node`/`identity`/`version` string is schema
+    // `minLength`-invalid (out of domain) under
+    // `model-effective-declaration.schema.json`'s `$defs.DeclarationKey` and
+    // FR-321's own `ModelSelectionArtifact` shape, so it refuses before any
+    // reference is resolved or any key comparison runs -- checked first,
+    // ahead of the collision check below, matching FR-154's own row order
+    // (`malformed-declaration` before `conflicting-binding`).
+    if domain_package.model_selection.identity.is_empty()
+        || domain_package.model_selection.version.is_empty()
+    {
+        return Err(ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::MalformedDeclaration,
+            detail: format!(
+                "domain package selection has an empty identity or version: {:?}",
+                domain_package.model_selection
+            ),
+        });
+    }
+    for record in &domain_package.records {
+        let key = record.key();
+        if key.package.is_empty() || key.node.is_empty() {
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::MalformedDeclaration,
+                detail: format!("declaration key has an empty package or node: {key:?}"),
+            });
+        }
+    }
+    // FR-154's own table: "Two nodes share one identity" refuses
+    // `invalid_model_binding`/`conflicting-binding` -- checked next, before
+    // any reference is resolved, since a colliding key makes every later
+    // by-key lookup ambiguous rather than merely incomplete. Under #131's
+    // flat `DeclarationKey` (`package`/`node` only), two records that would
+    // once have been distinguished by `revision`/`digest` now collide for
+    // real and must refuse here, not silently let the later record replace
+    // or shadow the earlier one in `Index`'s by-key maps/sets.
+    let mut seen_keys: std::collections::HashSet<&DeclarationKey> =
+        std::collections::HashSet::new();
+    for record in &domain_package.records {
+        let key = record.key();
+        if !seen_keys.insert(key) {
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+                detail: format!(
+                    "{} is declared by more than one record in this domain package",
+                    key.node
+                ),
+            });
+        }
+    }
     for record in &domain_package.records {
         match record {
             DomainPackageRecord::ObjectType(_) => {}
@@ -1004,8 +1066,7 @@ fn build(
         let budget = remaining_fact_budget(limits, facts_so_far);
         let paths = ancestor_paths(type_key, &index, budget)?;
         for ancestor in &paths {
-            let mut inputs = ancestor.path.clone();
-            inputs.push(ancestor.ancestor_key.clone());
+            let inputs = ancestor.path.clone();
             phase3_facts.push(PendingFact {
                 owner_key: None,
                 declared_key: type_key.clone(),
@@ -1748,7 +1809,7 @@ fn apply_redefinitions(
 
         for (i, edge) in edges.iter().enumerate() {
             let mut inputs = edge.path.clone();
-            inputs.push(edge.record_key.clone());
+            inputs.push(edge.redefining.clone());
             inputs.push(edge.target.clone());
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
@@ -1934,7 +1995,25 @@ fn charge_all(
     // #141 F11: only the running position (`index + 1`) is charged, never a
     // key's value or its relative order, so collecting and sorting a
     // `Vec<DeclarationKey>` just to throw the order away was dead work.
-    for index in 0..domain_package.records.len() {
+    //
+    // `normalize.record` charges declaration records only -- a `Supertype`
+    // or `Redefinition` record states a relationship between declarations,
+    // not a declaration of its own, and never becomes its own
+    // `normalize.declaration`/`normalize.hash` pair below. TC-195 N01/N02
+    // pin this exactly: F1's own `Supertype` record (`B` -> `A`) is not one
+    // of N01's three `normalize.record` charges, and F2's four `Supertype`
+    // records are not among N02's five.
+    let declaration_record_count = domain_package
+        .records
+        .iter()
+        .filter(|record| {
+            !matches!(
+                record,
+                DomainPackageRecord::Supertype(_) | DomainPackageRecord::Redefinition(_)
+            )
+        })
+        .count();
+    for index in 0..declaration_record_count {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
                 .size(LimitKind::DeclarationRecords, length_amount(index + 1)),
@@ -2033,6 +2112,11 @@ fn charge_all(
 /// ModelSelection identity/version against admitted package bytes) run
 /// before a caller builds one, and are not repeated here (Remaining work:
 /// #131 wires a real Semantic IR 2.0.0 intake in front of this entry point).
+/// `validate_references`'s own phase-1 checks -- FR-321's empty-component
+/// (`minLength`) and FR-154's colliding-key checks -- are schema-shape
+/// checks over the already-parsed [`DomainPackage`] itself, not byte-level
+/// digest checks against admitted package bytes, so they run here rather
+/// than waiting on that future intake.
 pub fn normalize(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,

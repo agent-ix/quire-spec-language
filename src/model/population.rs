@@ -1181,13 +1181,12 @@ fn field_values_equal(
 /// (`check_operation_redefinition`'s "Effect" axis). Taking a
 /// [`DomainPackageRecord`] slice rather than a whole [`DomainPackage`] lets either call
 /// site pass its own already-available `&domain_package.records`. Equality is
-/// `DeclarationKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
-/// `digest`, all four) at both call sites -- a write naming a field at one
-/// revision does not reach a grant for the same identity at a different
-/// revision. Pinned by
-/// `enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name`
+/// `DeclarationKey`'s derived `PartialEq` (`package`, `node`, both) at both
+/// call sites -- a write naming a field in one package does not reach a
+/// grant for the same node in a different package. Pinned by
+/// `enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_name`
 /// here (`tests/model_population.rs`) and by
-/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name`
+/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant_does_not_name`
 /// at the `conformance` call site (`tests/model_conformance.rs`).
 pub(super) fn redefinition_reaches(
     records: &[DomainPackageRecord],
