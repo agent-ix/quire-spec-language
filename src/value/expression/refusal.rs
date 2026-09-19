@@ -233,18 +233,81 @@ pub enum CheckCause {
         /// callee source-declaration order (FR-151's own listing order).
         edges: Vec<(String, String)>,
     },
-    /// `invalid_package` / `invalid-value` (finding #172-4): a supplied
-    /// [`super::DispatchTable`] or [`super::DispatchOperation`] is
-    /// malformed — an out-of-range table or function index, or a candidate
-    /// whose signature does not match its dispatch operation's declared
-    /// arity or types. Checked upfront in
+    /// `invalid_package` / `invalid-value`: a supplied [`super::DispatchTable`]
+    /// or [`super::DispatchOperation`] is malformed — an out-of-range table
+    /// or function index, or a candidate whose signature does not match its
+    /// dispatch operation's declared arity or types. Checked upfront in
     /// [`super::PackageDeclarations::check`], before any node is typed, so
     /// [`super::facts`]'s own call-graph walk can treat every table index it
     /// reads as already valid; reuses the already-catalogued `invalid-value`
     /// tag rather than minting a new one.
-    InvalidDispatchDeclaration {
-        /// What was malformed.
-        detail: String,
+    InvalidDispatchDeclaration(InvalidDispatchDeclaration),
+}
+
+/// Which dispatch-table function slot [`InvalidDispatchDeclaration`] names.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DispatchFunctionRole {
+    /// A candidate's own operation body.
+    Body,
+    /// A candidate's own runtime-evaluated effective precondition.
+    Precondition,
+    /// A precondition clause reachable from a candidate's static FR-146
+    /// redefinition ancestry.
+    PreconditionClause,
+}
+
+/// The typed detail of [`CheckCause::InvalidDispatchDeclaration`]: what
+/// exactly is malformed about a supplied [`super::DispatchTable`] or
+/// [`super::DispatchOperation`], with the actual field/index path
+/// (`native-diagnostics.md`'s `invalid_package`/`invalid-value` row) rather
+/// than a free-form summary.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum InvalidDispatchDeclaration {
+    /// A dispatch operation names a `table` index past the package's own
+    /// `dispatch_tables`.
+    TableOutOfRange {
+        /// The dispatch operation's own member name.
+        member: String,
+        /// The out-of-range table index.
+        table: usize,
+    },
+    /// A dispatch-table function index names no function in the package's
+    /// own `functions`.
+    FunctionOutOfRange {
+        /// Which slot this index was read from.
+        role: DispatchFunctionRole,
+        /// The out-of-range function index.
+        index: usize,
+    },
+    /// A candidate function's declared parameter count does not match the
+    /// dispatch operation's own arity (the receiver plus every declared
+    /// argument).
+    Arity {
+        /// Which slot this index was read from.
+        role: DispatchFunctionRole,
+        /// The function index, valid in `functions` but wrongly shaped.
+        index: usize,
+        /// The function's own declared parameter count.
+        declared: usize,
+        /// The receiver plus the dispatch operation's own argument count.
+        expected: usize,
+    },
+    /// A candidate function's parameter types (after the receiver) do not
+    /// match the dispatch operation's declared argument types.
+    ParameterType {
+        /// Which slot this index was read from.
+        role: DispatchFunctionRole,
+        /// The function index, valid in `functions` but wrongly shaped.
+        index: usize,
+    },
+    /// A candidate function's declared result type does not match the
+    /// result its role requires (the operation's own result for a body,
+    /// `Boolean` for a precondition or precondition clause).
+    ResultType {
+        /// Which slot this index was read from.
+        role: DispatchFunctionRole,
+        /// The function index, valid in `functions` but wrongly shaped.
+        index: usize,
     },
 }
 
@@ -260,7 +323,7 @@ impl CheckCause {
             Self::ResourceExhausted { .. } => Code::ResourceExhausted,
             Self::IeeeProfileNotAdmitted
             | Self::DefinitionCycle { .. }
-            | Self::InvalidDispatchDeclaration { .. } => Code::InvalidPackage,
+            | Self::InvalidDispatchDeclaration(_) => Code::InvalidPackage,
             Self::UnrepresentableBound => Code::UnrepresentableConstraint,
         }
     }
@@ -282,7 +345,7 @@ impl CheckCause {
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
             Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
-            Self::InvalidDispatchDeclaration { .. } => Some("invalid-value"),
+            Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound => None,
         }
     }

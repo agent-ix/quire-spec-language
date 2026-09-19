@@ -335,11 +335,16 @@ pub(crate) enum NodeKind {
     },
     /// `receiver.member(args)` (FR-151), resolved at check time to one
     /// checked dispatch table (identified by `table`, an index into the
-    /// package's own `dispatch_tables`), selected at runtime by the
-    /// receiver's most-specific type (TC-196 D06).
+    /// package's own `dispatch_tables`) and the exact call site that
+    /// produced it (`operation`, an index into the package's own
+    /// `dispatch_operations` — never re-derived at runtime by searching
+    /// `dispatch_operations` for a `table` match, which picks the wrong
+    /// operation's `member` when two call sites share a table), selected at
+    /// runtime by the receiver's most-specific type (TC-196 D06).
     Dispatch {
         receiver: Box<Node>,
         table: usize,
+        operation: usize,
         arguments: Vec<Node>,
     },
     /// `pre(e)` (FR-153): evaluate `e` with `allInstances`/`lookup`

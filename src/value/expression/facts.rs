@@ -16,8 +16,11 @@ use super::super::equality::EqualityOperator;
 use super::super::integer::{Integer, IntegerInterval};
 use super::super::numeric::ArithmeticOperator;
 use super::super::numeric::OrderingOperator;
+use super::check::DispatchOperation;
 use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, Slot, Visit};
-use super::refusal::{CheckCause, CheckRefusal, Location, Obligation, ProvedInterval};
+use super::refusal::{
+    CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
+};
 
 /// One step of a stable path.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -371,14 +374,20 @@ pub(crate) struct Definedness<'a> {
     pub(crate) calls: Vec<CallSite>,
     parameters: usize,
     dispatch_tables: &'a [DispatchTable],
+    dispatch_operations: &'a [DispatchOperation],
 }
 
 impl<'a> Definedness<'a> {
-    pub(crate) fn new(parameters: usize, dispatch_tables: &'a [DispatchTable]) -> Self {
+    pub(crate) fn new(
+        parameters: usize,
+        dispatch_tables: &'a [DispatchTable],
+        dispatch_operations: &'a [DispatchOperation],
+    ) -> Self {
         Self {
             calls: Vec::new(),
             parameters,
             dispatch_tables,
+            dispatch_operations,
         }
     }
 
@@ -884,6 +893,7 @@ impl<'a> Definedness<'a> {
             NodeKind::Dispatch {
                 receiver,
                 table,
+                operation,
                 arguments,
             } => {
                 self.walk(receiver, facts)?;
@@ -895,18 +905,30 @@ impl<'a> Definedness<'a> {
                 // index before any node is walked, so this should be
                 // unreachable — but silently treating a missing table as
                 // "no edges" would hide real call-graph edges rather than
-                // refuse (finding #172-4), so this still reports a typed
-                // refusal instead of `unwrap_or_default`.
+                // refuse, so this still reports a typed refusal instead of
+                // `unwrap_or_default`. The member name comes from this
+                // node's own `operation` index (the same field `ir.rs`'s
+                // own doc warns must not be re-derived by searching for a
+                // table match), never a placeholder, so a refusal this
+                // deep still names the operation actually being checked.
                 let table_index = *table;
+                let member = self
+                    .dispatch_operations
+                    .get(*operation)
+                    .map(|declared| declared.member.clone())
+                    .unwrap_or_default();
                 let callees = self
                     .dispatch_tables
                     .get(table_index)
                     .map(DispatchTable::callees)
                     .ok_or_else(|| CheckRefusal {
                         location: node.location.clone(),
-                        cause: CheckCause::InvalidDispatchDeclaration {
-                            detail: format!("dispatch table {table_index} is out of range"),
-                        },
+                        cause: CheckCause::InvalidDispatchDeclaration(
+                            InvalidDispatchDeclaration::TableOutOfRange {
+                                member,
+                                table: table_index,
+                            },
+                        ),
                     })?;
                 for callee in callees {
                     self.calls.push(CallSite {
@@ -961,7 +983,7 @@ pub(crate) struct Established {
 /// they actually prove is decided by this same arithmetic a real checked
 /// postcondition already runs, never restated from a clause's own literal.
 pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Established {
-    let checker = Definedness::new(self_slot + 1, &[]);
+    let checker = Definedness::new(self_slot + 1, &[], &[]);
     let (when_true, _) = checker.outcomes(condition, &Facts::default());
     let Some(facts) = when_true else {
         return Established::default();

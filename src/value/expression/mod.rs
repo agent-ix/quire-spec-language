@@ -38,8 +38,9 @@ pub use check::{
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
+    InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin, ProvedInterval,
+    WrongSnapshotCause,
 };
 pub use syntax::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -158,39 +159,50 @@ fn root(origin: Origin) -> Location {
     }
 }
 
-fn invalid_dispatch(detail: String) -> CheckRefusal {
+fn invalid_dispatch(location: Location, detail: InvalidDispatchDeclaration) -> CheckRefusal {
     CheckRefusal {
-        location: root(Origin::Expression),
-        cause: CheckCause::InvalidDispatchDeclaration { detail },
+        location,
+        cause: CheckCause::InvalidDispatchDeclaration(detail),
     }
 }
 
 /// One dispatch-table function index against the dispatch operation it must
 /// conform to: `expected_arity` is the receiver plus every declared
 /// argument, `result` is `Boolean` for a precondition (clause or combinator)
-/// and the operation's own declared result for a body (finding #172-4:
-/// validate every dispatch table/candidate index and signature arity/type
-/// upfront, rather than trusting a caller-supplied table at evaluation
-/// time).
+/// and the operation's own declared result for a body — validates every
+/// dispatch table/candidate index and signature arity/type upfront, rather
+/// than trusting a caller-supplied table at evaluation time. A function that
+/// exists (valid `index`) is located at its own real
+/// [`Origin::Body`]; an out-of-range `index` names no real declaration to
+/// point at, so it is located at [`Origin::Expression`] instead.
 fn validate_dispatch_function(
     functions: &[FunctionDeclaration],
     index: usize,
     call_parameters: &[ValueType],
     result: &ValueType,
-    role: &str,
+    role: DispatchFunctionRole,
 ) -> Result<(), CheckRefusal> {
     let Some(function) = functions.get(index) else {
-        return Err(invalid_dispatch(format!(
-            "{role} function {index} is out of range"
-        )));
+        return Err(invalid_dispatch(
+            root(Origin::Expression),
+            InvalidDispatchDeclaration::FunctionOutOfRange { role, index },
+        ));
     };
+    let location = root(Origin::Body {
+        function: function.name.clone(),
+        index,
+    });
     let expected_arity = call_parameters.len() + 1;
     if function.parameters.len() != expected_arity {
-        return Err(invalid_dispatch(format!(
-            "{role} function {index} has {} parameters, expected {expected_arity} \
-             (the receiver plus the dispatch operation's own arguments)",
-            function.parameters.len()
-        )));
+        return Err(invalid_dispatch(
+            location,
+            InvalidDispatchDeclaration::Arity {
+                role,
+                index,
+                declared: function.parameters.len(),
+                expected: expected_arity,
+            },
+        ));
     }
     let mismatched = function
         .parameters
@@ -200,15 +212,16 @@ fn validate_dispatch_function(
         .zip(call_parameters)
         .any(|(declared, expected)| declared != expected);
     if mismatched {
-        return Err(invalid_dispatch(format!(
-            "{role} function {index}'s parameter types do not match the dispatch \
-             operation's declared arguments"
-        )));
+        return Err(invalid_dispatch(
+            location,
+            InvalidDispatchDeclaration::ParameterType { role, index },
+        ));
     }
     if &function.result != result {
-        return Err(invalid_dispatch(format!(
-            "{role} function {index}'s result type does not match its declared result"
-        )));
+        return Err(invalid_dispatch(
+            location,
+            InvalidDispatchDeclaration::ResultType { role, index },
+        ));
     }
     Ok(())
 }
@@ -249,10 +262,13 @@ impl PackageDeclarations {
         }
         for operation in &self.dispatch_operations {
             let Some(table) = self.dispatch_tables.get(operation.table) else {
-                refusals.push(invalid_dispatch(format!(
-                    "dispatch operation {} names out-of-range table {}",
-                    operation.member, operation.table
-                )));
+                refusals.push(invalid_dispatch(
+                    root(Origin::Expression),
+                    InvalidDispatchDeclaration::TableOutOfRange {
+                        member: operation.member.clone(),
+                        table: operation.table,
+                    },
+                ));
                 continue;
             };
             for (_, candidate) in table.entries() {
@@ -261,7 +277,7 @@ impl PackageDeclarations {
                     candidate.body,
                     &operation.parameters,
                     &operation.result,
-                    "body",
+                    DispatchFunctionRole::Body,
                 ) {
                     refusals.push(refusal);
                 }
@@ -271,7 +287,7 @@ impl PackageDeclarations {
                         precondition,
                         &operation.parameters,
                         &ValueType::Boolean,
-                        "precondition",
+                        DispatchFunctionRole::Precondition,
                     ) {
                         refusals.push(refusal);
                     }
@@ -282,7 +298,7 @@ impl PackageDeclarations {
                         clause,
                         &operation.parameters,
                         &ValueType::Boolean,
-                        "precondition clause",
+                        DispatchFunctionRole::PreconditionClause,
                     ) {
                         refusals.push(refusal);
                     }
@@ -377,11 +393,15 @@ impl PackageDeclarations {
         let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(functions.len());
         for function in &functions {
             let parameters = function.signature.parameters.len();
-            let mut body = Definedness::new(parameters, &dispatch_tables);
+            let mut body =
+                Definedness::new(parameters, &dispatch_tables, &scope.dispatch_operations);
             let checked = body
                 .check(&function.body)
                 .and_then(|()| match &function.measure {
-                    Some(measure) => Definedness::new(parameters, &dispatch_tables).check(measure),
+                    Some(measure) => {
+                        Definedness::new(parameters, &dispatch_tables, &scope.dispatch_operations)
+                            .check(measure)
+                    }
                     None => Ok(()),
                 });
             if let Err(refusal) = checked {
@@ -509,7 +529,12 @@ impl CheckedPackage {
         };
         let slots = typer.slots();
         if mode == CheckMode::Linked {
-            Definedness::new(parameters.len(), &self.dispatch_tables).check(&root)?;
+            Definedness::new(
+                parameters.len(),
+                &self.dispatch_tables,
+                &self.scope.dispatch_operations,
+            )
+            .check(&root)?;
         }
         Ok(CheckedExpression {
             parameters,
@@ -598,7 +623,15 @@ impl CheckedPackage {
         Ok(())
     }
 
-    /// Call the named function: `function.call`, then its body.
+    /// Call the named function: `function.call`, then its body. Refused
+    /// `InputRefusal::UnknownFunction` for a name [`Self::function`] finds
+    /// but whose `callable_by_name` is `false` — the same refusal an
+    /// undeclared name gets, not a distinct one — so this public runtime
+    /// entry point cannot reach a crate-internal FR-151 synthesized dispatch
+    /// candidate body or effective precondition by name any more than an
+    /// ordinary checked `Expression::Call` can (`check.rs`'s own
+    /// `callable_by_name` gate, TC-196 D07's bypass this closes at the other
+    /// entry point).
     pub fn call(
         &self,
         function: &str,
@@ -608,6 +641,7 @@ impl CheckedPackage {
     ) -> Result<Evaluation, InputRefusal> {
         let (_, checked) = self
             .function(function)
+            .filter(|(_, checked)| checked.signature.callable_by_name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_owned()))?;
         Self::validate(&checked.signature.parameters, &arguments, objects)?;
         let callables = self.callables();

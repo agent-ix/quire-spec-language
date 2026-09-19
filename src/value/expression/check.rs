@@ -1610,9 +1610,15 @@ impl<'a> Typer<'a> {
         let ValueType::Reference(receiver_type) = receiver_node.value_type else {
             return Err(ineligible(location));
         };
-        let Some(operation) = self.scope.dispatch_operations.iter().find(|operation| {
-            operation.receiver_type == receiver_type && operation.member == member
-        }) else {
+        let Some((operation_index, operation)) = self
+            .scope
+            .dispatch_operations
+            .iter()
+            .enumerate()
+            .find(|(_, operation)| {
+                operation.receiver_type == receiver_type && operation.member == member
+            })
+        else {
             return Err(ineligible(location));
         };
         if operation.parameters.len() != arguments.len() {
@@ -1632,6 +1638,7 @@ impl<'a> Typer<'a> {
             NodeKind::Dispatch {
                 receiver: Box::new(receiver_node),
                 table: operation.table,
+                operation: operation_index,
                 arguments: typed_arguments,
             },
             operation.result.clone(),
