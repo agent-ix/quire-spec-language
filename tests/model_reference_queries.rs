@@ -20,12 +20,12 @@ use std::sync::Arc;
 
 use ix_trace_rs::trace;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord, OperationEffect,
-};
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::{EffectiveId, ProducerKey};
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, SupertypeRecord,
+};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
@@ -64,53 +64,64 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn object_type(identity: &str) -> BundleRecord {
-    BundleRecord::ObjectType(ObjectTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn object_type(identity: &str) -> DomainPackageRecord {
+    DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: DeclarationKey::fixture(identity),
         interface_features: None,
     })
 }
 
-fn field_member(identity: &str, owner: &str, value_type: &str) -> BundleRecord {
-    BundleRecord::FieldMember(FieldMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        value_type: ProducerKey::fixture(value_type),
+fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageRecord {
+    DomainPackageRecord::FieldMember(FieldMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        value_type: DeclarationKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord {
-    BundleRecord::Generalization(GeneralizationRecord {
-        key: ProducerKey::fixture(identity),
-        specific: ProducerKey::fixture(specific),
-        general: ProducerKey::fixture(general),
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Supertype(SupertypeRecord {
+        key: DeclarationKey::fixture(identity),
+        specific: DeclarationKey::fixture(specific),
+        general: DeclarationKey::fixture(general),
     })
 }
 
 /// TC-195 F1, imported as `M` by TC-198 (see `tests/model_population.rs`):
-/// types `A`, `B`; field `A.x` of `A`; generalization `B -> A`.
-fn fixture_f1() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.n01"),
+/// types `A`, `B`; field `A.x` of `A`; generalization `B -> A`; plus its own
+/// FR-153 population declaration `model.pop.p1` (member types `A`, `B`),
+/// closed, which [`admit_binding`]/[`admit_invocation`] resolve by
+/// [`p1_population_key`] rather than take as a caller-supplied record.
+fn fixture_f1() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n01"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
             field_member("model.A.x", "model.A", "model.A"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: DeclarationKey::fixture("model.pop.p1"),
+                member_types: vec![
+                    DeclarationKey::fixture("model.A"),
+                    DeclarationKey::fixture("model.B"),
+                ],
+                extent: Extent::Closed,
+            }),
         ],
     )
 }
 
-fn view_of(bundle: &Bundle) -> EffectiveView {
-    match normalize(bundle, ModelNormalizationLimits::UNLIMITED) {
+fn view_of(domain_package: &DomainPackage) -> EffectiveView {
+    match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed effective view, got {other:?}"),
     }
 }
 
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
-    let original = ProducerKey::fixture(identity);
+    let original = DeclarationKey::fixture(identity);
     view.declarations
         .iter()
         .find(|entry| {
@@ -123,7 +134,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
 fn member(object: &str, type_identity: &str) -> PopulationMember {
     PopulationMember {
         object: object.to_owned(),
-        type_identity: ProducerKey::fixture(type_identity),
+        type_identity: DeclarationKey::fixture(type_identity),
         field_values: Vec::new(),
     }
 }
@@ -131,7 +142,6 @@ fn member(object: &str, type_identity: &str) -> PopulationMember {
 /// FCD FR-121 document P1: members `a1`/`a2` of `model.A`, `b1` of `model.B`.
 fn p1(model_identity: &str) -> PopulationDocument {
     PopulationDocument {
-        closed_world: true,
         model_identity: model_identity.to_owned(),
         members: vec![
             member("a1", "model.A"),
@@ -141,16 +151,23 @@ fn p1(model_identity: &str) -> PopulationDocument {
     }
 }
 
+/// [`fixture_f1`]'s own `model.pop.p1` declaration key, backing [`p1`]/
+/// [`p1_minus_a2`].
+fn p1_population_key() -> DeclarationKey {
+    DeclarationKey::fixture("model.pop.p1")
+}
+
 fn admitted_binding(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
 ) -> PopulationBinding {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     match admit_binding(
-        bundle,
+        domain_package,
         view,
         document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -188,12 +205,12 @@ struct Scenario {
 }
 
 fn scenario() -> Scenario {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
     Scenario {
         universe,
         a,
@@ -206,7 +223,6 @@ fn scenario() -> Scenario {
 /// survive unchanged.
 fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
     PopulationDocument {
-        closed_world: true,
         model_identity: model_identity.to_owned(),
         members: vec![member("a1", "model.A"), member("b1", "model.B")],
     }
@@ -219,19 +235,21 @@ fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
 /// *pre* binding attached as its `pre_anchor` -- exactly the
 /// `Value::Population` argument a real `pre(..)` source expression reads.
 fn l07_scenario() -> Scenario {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let effect = OperationEffect {
         modifies: Vec::new(),
         creates: Vec::new(),
-        deletes: vec![ProducerKey::fixture("model.A")],
+        deletes: vec![DeclarationKey::fixture("model.A")],
     };
+    let population = p1_population_key();
     let context = InvocationContext {
-        bundle: &bundle,
+        domain_package: &domain_package,
         view: &view,
+        population: &population,
         subtype_closure: GeneralizationClosure::Closed,
         declared_maximum: Some(3),
     };
@@ -1184,20 +1202,19 @@ fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
 fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![
             member("a1", "model.A"),
             member("\u{FFFD}\u{FFFD}", "model.A"),
         ],
     };
-    let binding = admitted_binding(&bundle, &view, &document);
+    let binding = admitted_binding(&domain_package, &view, &document);
     let scenario = Scenario {
         universe,
         a,

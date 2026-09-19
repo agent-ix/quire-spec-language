@@ -6,7 +6,7 @@
 //!
 //! Scope decisions, recorded rather than left implicit:
 //!
-//! - This module resolves a systems-model element **by [`ProducerKey`]
+//! - This module resolves a systems-model element **by [`DeclarationKey`]
 //!   directly**, not by FR-152's own `resolve(kind, name)` binder request
 //!   over a qualified, aliased name (`M::Sys::pump`). Qualified-name
 //!   resolution needs the profile/model-alias binder this crate's
@@ -25,7 +25,7 @@
 //!   systems-model kind: `crate::model::normalize` does not fold
 //!   components/endpoints/relationships into its `EffectiveView` (see its
 //!   own module docs' exhaustive per-variant no-op arms for these three
-//!   `BundleRecord` variants). What this module resolves is the original
+//!   `DomainPackageRecord` variants). What this module resolves is the original
 //!   producer identity and its kind only.
 //! - Work-unit costs mirror the flat-one-per-charge choice
 //!   [`crate::model::conformance`]/[`crate::model::dispatch`] already
@@ -34,22 +34,23 @@
 //!   which this module would have to re-walk to reproduce exactly.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
-use crate::model::bundle::{
-    Bundle, BundleRecord, ComponentRecord, EndpointRecord, PortDirection, RelationshipRecord,
-};
 use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
-use crate::model::key::ProducerKey;
+use crate::model::domain_package::{
+    ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord, PortDirection,
+    RelationshipRecord,
+};
+use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 
 /// FR-152's five disjoint systems-model kinds, plus `None` for a record
@@ -86,22 +87,22 @@ impl Kind {
     }
 }
 
-/// The full kind mapping over one [`Bundle`]: every component's, endpoint's
+/// The full kind mapping over one [`DomainPackage`]: every component's, endpoint's
 /// and relationship's resolved [`Kind`], plus every interface object type.
-/// Every map here is keyed on the full [`ProducerKey`], never the display
+/// Every map here is keyed on the full [`DeclarationKey`], never the display
 /// identity alone (PR #140 F2, PR #144 review): two records that share a
 /// display identity but differ in revision must classify, and resolve,
 /// independently rather than one silently overwriting the other.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SystemsClassification {
-    component_kinds: HashMap<ProducerKey, Kind>,
-    endpoint_kinds: HashMap<ProducerKey, Kind>,
-    relationship_kinds: HashMap<ProducerKey, Kind>,
-    interface_types: HashSet<ProducerKey>,
-    components: HashMap<ProducerKey, ComponentRecord>,
-    endpoints: HashMap<ProducerKey, EndpointRecord>,
-    relationships: HashMap<ProducerKey, RelationshipRecord>,
-    object_types: HashSet<ProducerKey>,
+    component_kinds: HashMap<DeclarationKey, Kind>,
+    endpoint_kinds: HashMap<DeclarationKey, Kind>,
+    relationship_kinds: HashMap<DeclarationKey, Kind>,
+    interface_types: HashSet<DeclarationKey>,
+    components: HashMap<DeclarationKey, ComponentRecord>,
+    endpoints: HashMap<DeclarationKey, EndpointRecord>,
+    relationships: HashMap<DeclarationKey, RelationshipRecord>,
+    object_types: HashSet<DeclarationKey>,
     /// Every kind-mapping cascade refusal, in emission order (ascending
     /// producer key within each of components, then endpoints, then
     /// relationships).
@@ -112,7 +113,7 @@ impl SystemsClassification {
     /// The resolved kind for any exact key this classification knows about
     /// (a component, endpoint, relationship or interface object type);
     /// [`Kind::None`] for anything else, including a dangling key.
-    pub fn actual_kind(&self, key: &ProducerKey) -> Kind {
+    pub fn actual_kind(&self, key: &DeclarationKey) -> Kind {
         if self.interface_types.contains(key) {
             return Kind::Interface;
         }
@@ -132,8 +133,8 @@ impl SystemsClassification {
     /// match under `kind`, fetched from the record store `kind` names
     /// (finding #7): never `key` itself echoed straight back, so a caller
     /// asserting the resolved key against the request key is asserting a
-    /// real fact about what the bundle declared, not a tautology.
-    fn stored_key(&self, kind: Kind, key: &ProducerKey) -> Option<ProducerKey> {
+    /// real fact about what the domain package declared, not a tautology.
+    fn stored_key(&self, kind: Kind, key: &DeclarationKey) -> Option<DeclarationKey> {
         match kind {
             Kind::Interface => self.interface_types.get(key).cloned(),
             Kind::Part => self.components.get(key).map(|record| record.key.clone()),
@@ -167,14 +168,14 @@ fn unsupplied(capability: &'static str, item: &str) -> ModelRefusal {
 }
 
 /// An endpoint's owning component, or a relationship end's endpoint, names a
-/// key absent from the bundle entirely (finding #6): distinct from a key
+/// key absent from the domain package entirely (finding #6): distinct from a key
 /// that IS declared but resolves to [`Kind::None`], which is a real
 /// [`wrong_export`] refusal, not a dangling one.
 fn dangling(cause: ModelRefusalCause, missing: &str, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::DanglingReference,
         cause,
-        detail: format!("{item} names {missing}, which is not declared in this bundle"),
+        detail: format!("{item} names {missing}, which is not declared in this domain package"),
     }
 }
 
@@ -183,43 +184,47 @@ fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
 }
 
 /// Runs `quire.model.systems.kind-mapping/v1` over every component, then
-/// every endpoint, then every relationship in `bundle`, each ascending by
+/// every endpoint, then every relationship in `domain_package`, each ascending by
 /// producer key, charging `systems.kind` once per record before resolving
 /// it. Exhaustive under the limits: every no-kind cascade is reported, in
 /// this same order, never stopping at the first.
-pub fn classify(bundle: &Bundle, meter: &mut Meter) -> Result<SystemsClassification, Incomplete> {
+pub fn classify(
+    domain_package: &DomainPackage,
+    meter: &mut Meter,
+) -> Result<SystemsClassification, Incomplete> {
     let mut components: Vec<&ComponentRecord> = Vec::new();
     let mut endpoints: Vec<&EndpointRecord> = Vec::new();
     let mut relationships: Vec<&RelationshipRecord> = Vec::new();
-    let mut object_types: HashSet<ProducerKey> = HashSet::new();
-    let mut interface_types: HashSet<ProducerKey> = HashSet::new();
+    let mut object_types: HashSet<DeclarationKey> = HashSet::new();
+    let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
 
-    for record in &bundle.records {
+    for record in &domain_package.records {
         match record {
-            BundleRecord::Component(component) => components.push(component),
-            BundleRecord::Endpoint(endpoint) => endpoints.push(endpoint),
-            BundleRecord::Relationship(relationship) => relationships.push(relationship),
-            BundleRecord::ObjectType(object_type) => {
+            DomainPackageRecord::Component(component) => components.push(component),
+            DomainPackageRecord::Endpoint(endpoint) => endpoints.push(endpoint),
+            DomainPackageRecord::Relationship(relationship) => relationships.push(relationship),
+            DomainPackageRecord::ObjectType(object_type) => {
                 object_types.insert(object_type.key.clone());
                 if object_type.interface_features.is_some() {
                     interface_types.insert(object_type.key.clone());
                 }
             }
-            BundleRecord::FieldMember(_)
-            | BundleRecord::Generalization(_)
-            | BundleRecord::ScalarType(_)
-            | BundleRecord::OperationMember(_)
-            | BundleRecord::Redefinition(_)
-            | BundleRecord::Subsetting(_) => {}
+            DomainPackageRecord::FieldMember(_)
+            | DomainPackageRecord::Supertype(_)
+            | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::OperationMember(_)
+            | DomainPackageRecord::Redefinition(_)
+            | DomainPackageRecord::Subsetting(_)
+            | DomainPackageRecord::Population(_) => {}
         }
     }
     components.sort_by_key(|component| component.key.clone());
     endpoints.sort_by_key(|endpoint| endpoint.key.clone());
     relationships.sort_by_key(|relationship| relationship.key.clone());
 
-    let mut component_kinds: HashMap<ProducerKey, Kind> = HashMap::new();
-    let mut endpoint_kinds: HashMap<ProducerKey, Kind> = HashMap::new();
-    let mut relationship_kinds: HashMap<ProducerKey, Kind> = HashMap::new();
+    let mut component_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
+    let mut endpoint_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
+    let mut relationship_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut refusals: Vec<ModelRefusal> = Vec::new();
 
     for component in &components {
@@ -341,7 +346,7 @@ pub struct ResolvedElement {
     /// `key` echoed straight back (finding #7; see
     /// [`SystemsClassification::stored_key`]). This module resolves by
     /// key, not by qualified name — see the module docs.
-    pub key: ProducerKey,
+    pub key: DeclarationKey,
     /// The resolved kind, always equal to the request's `required` kind.
     pub kind: Kind,
 }
@@ -353,7 +358,7 @@ pub struct ResolvedElement {
 pub fn resolve_kind(
     classification: &SystemsClassification,
     required: Kind,
-    key: &ProducerKey,
+    key: &DeclarationKey,
 ) -> Result<ResolvedElement, ModelRefusal> {
     let actual = classification.actual_kind(key);
     if actual == required {
@@ -371,7 +376,7 @@ pub fn resolve_kind(
     }
 }
 
-fn unsupplied_or_wrong(required: Kind, key: &ProducerKey) -> ModelRefusal {
+fn unsupplied_or_wrong(required: Kind, key: &DeclarationKey) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::UnsuppliedProducerRecord,
@@ -421,7 +426,7 @@ pub enum ConnectionCheckOutcome {
 
 fn end_port<'a>(
     classification: &'a SystemsClassification,
-    end_key: &ProducerKey,
+    end_key: &DeclarationKey,
 ) -> Option<&'a EndpointRecord> {
     classification.endpoints.get(end_key)
 }
@@ -431,9 +436,9 @@ fn end_port<'a>(
 /// `systems.connection-condition` for each of the three table conditions,
 /// in table order, and reports every failure (never stop-at-first).
 pub fn check_connection(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     classification: &SystemsClassification,
-    relationship_key: &ProducerKey,
+    relationship_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConnectionCheckOutcome {
     if classification.actual_kind(relationship_key) != Kind::Connection {
@@ -490,7 +495,7 @@ pub fn check_connection(
         return ConnectionCheckOutcome::Incomplete(incomplete);
     }
     let (flow_source, flow_target, direction_ok) = match relationship.direction {
-        crate::model::bundle::RelationshipDirection::SourceToTarget => (
+        crate::model::domain_package::RelationshipDirection::SourceToTarget => (
             source_port,
             target_port,
             matches!(
@@ -501,7 +506,7 @@ pub fn check_connection(
                 Some(PortDirection::In | PortDirection::InOut)
             ),
         ),
-        crate::model::bundle::RelationshipDirection::TargetToSource => (
+        crate::model::domain_package::RelationshipDirection::TargetToSource => (
             target_port,
             source_port,
             matches!(
@@ -512,13 +517,13 @@ pub fn check_connection(
                 Some(PortDirection::In | PortDirection::InOut)
             ),
         ),
-        crate::model::bundle::RelationshipDirection::Bidirectional => (
+        crate::model::domain_package::RelationshipDirection::Bidirectional => (
             source_port,
             target_port,
             matches!(source_port.direction, Some(PortDirection::InOut))
                 && matches!(target_port.direction, Some(PortDirection::InOut)),
         ),
-        crate::model::bundle::RelationshipDirection::Undirected => {
+        crate::model::domain_package::RelationshipDirection::Undirected => {
             (source_port, target_port, false)
         }
     };
@@ -542,10 +547,10 @@ pub fn check_connection(
     if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::SystemsConnectionCondition)) {
         return ConnectionCheckOutcome::Incomplete(incomplete);
     }
-    let generals = generals_by_specific(bundle);
+    let generals = generals_by_specific(domain_package);
     let interface_ok = if matches!(
         relationship.direction,
-        crate::model::bundle::RelationshipDirection::Bidirectional
+        crate::model::domain_package::RelationshipDirection::Bidirectional
     ) {
         flow_source.value_type.identity == flow_target.value_type.identity
     } else {
@@ -616,7 +621,7 @@ pub enum AllocationCheckOutcome {
 /// target element must be a Part.
 pub fn check_allocation(
     classification: &SystemsClassification,
-    relationship_key: &ProducerKey,
+    relationship_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> AllocationCheckOutcome {
     if classification.actual_kind(relationship_key) != Kind::Allocation {

@@ -4,14 +4,14 @@
 //! 5 (canonicalize).
 //!
 //! Phase 4 here covers exactly TC-195 N06's shape: explicit
-//! [`crate::model::bundle::RedefinitionRecord`]s over **field** members,
+//! [`crate::model::domain_package::RedefinitionRecord`]s over **field** members,
 //! resolved by the same proper-descendant dominance FR-151 dispatch later
 //! reuses (a redefining owner that is a proper descendant of every other
 //! contesting owner wins outright; two or more undominated owners refuse
 //! `derivation-conflict`). `quire.model.normalize.subset/v1` (explicit
 //! subsetting) derives no replacement member — FR-150 says so explicitly
 //! ("subsetting never conflicts with redefinition because it derives no
-//! replacement") — so [`crate::model::bundle::SubsettingRecord`] carries no
+//! replacement") — so [`crate::model::domain_package::SubsettingRecord`] carries no
 //! normalization derivation at all; it is checked directly by
 //! `crate::model::conformance` (the static `subsetting-type` axis) and, at
 //! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
@@ -19,8 +19,8 @@
 //! `crate::model::conformance`'s own module doc).
 //! **Operation-member** redefinition (TC-196 R02–R08) also builds no phase
 //! here: `crate::model::conformance` constructs its own
-//! [`EffectiveDeclarationPreimage`] directly over the bundle's
-//! [`crate::model::bundle::OperationMemberRecord`]/`RedefinitionRecord`
+//! [`EffectiveDeclarationPreimage`] directly over the domain package's
+//! [`crate::model::domain_package::OperationMemberRecord`]/`RedefinitionRecord`
 //! values for FR-151's conformance checking, so this pass — which exists to
 //! grow [`EffectiveView`] itself — has nothing to add for operations. This
 //! split is a scope decision recorded here, not a silent gap: extending
@@ -41,21 +41,21 @@
 //! `crate::model::conformance`'s own module doc names the same gap for its
 //! side of this split. Remaining work: #173.
 //!
-//! This engine takes a [`Bundle`] value the caller constructs; it holds no
+//! This engine takes a [`DomainPackage`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
-//! preimage built here, replayed exactly for the same [`Bundle`] and
+//! preimage built here, replayed exactly for the same [`DomainPackage`] and
 //! [`ModelNormalizationLimits`] — the same inputs always retrace the same
 //! derivation and the same bytes.
 //!
 //! [`build`] enumerates ancestor paths and derivation facts under a fact
 //! budget derived from `limits` itself (PR #140 F1): a diamond
 //! generalization graph produces an ancestor-path count exponential in
-//! depth, so an adversarial bundle enumerated without bound before any
+//! depth, so an adversarial domain package enumerated without bound before any
 //! charge is consulted can exhaust memory long before [`charge_all`] gets a
 //! chance to deny anything — `ModelNormalizationLimits` protects nothing if
 //! it is only consulted after the fact. `remaining_fact_budget` and
 //! `fact_budget_exceeded` both only ever *overestimate* remaining capacity
-//! (never underestimate it), so a bundle that legitimately completes under
+//! (never underestimate it), so a domain package that legitimately completes under
 //! `limits` is never truncated: enumeration only stops once continuing is
 //! certainly futile, and it always generates at least one fact past that
 //! point so [`charge_all`]'s real, exact replay is the one that reports the
@@ -125,17 +125,17 @@
 //! `proposals/quire-v1/definitions/value-accounting.md` states, not a flat
 //! one work unit (QSL #145 scope item 2):
 //! `normalize.redefinition-check` (`:455`) charges `m + r` once per
-//! redefinition record in the *entire bundle* — field or operation alike —
+//! redefinition record in the *entire domain package* — field or operation alike —
 //! ascending by the record's own producer key, where `m` is the number of
 //! the record's own owning type's effective members (field and operation
 //! together) and `r` is the count of redefinition records already checked
-//! before it in that same ascending, bundle-wide sequence. This is computed
+//! before it in that same ascending, domain-package-wide sequence. This is computed
 //! exactly once, in `build()`, before the per-type phase-4 loop runs at
 //! all: the unit the spec prices is the record itself, tested once against
 //! its own owning type, never once per (record, effective type reaching
 //! it) pair the previous per-type loop recomputed it at, which overcharged
 //! any record reachable from more than one effective type and reset `r` at
-//! each type instead of counting across the whole bundle.
+//! each type instead of counting across the whole domain package.
 //! `normalize.conflict-check` (`:456`) charges `Σ (c − 1) × f(o)` per
 //! contested target with `c >= 2` redefiners, summed once per redefining
 //! edge (not once per *distinct* owner: the memoization above is this
@@ -143,7 +143,7 @@
 //! is owner `o`'s own count of type derivation facts (qualify plus
 //! inherit). `m` and `f(o)` are read directly from `build`'s own phase 2/3
 //! results (`member_preimages`/`type_preimages`, extended for `m` with the
-//! bundle's own directly-declared and inherited operation members), which
+//! domain package's own directly-declared and inherited operation members), which
 //! is why phase 4 now runs as its own pass only after every type's phase
 //! 2/3 has finished, rather than interleaved per type as before: a
 //! redefinition's owner can sort after the type currently being processed
@@ -183,11 +183,11 @@
 //! `normalize.hash` charges never run once this refusal is pending.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{HashMap, HashSet};
@@ -196,13 +196,13 @@ use crate::diagnostic::Code;
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
-use crate::model::bundle::{
-    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection,
-    INTERFACE_VERSION_1_2_0, INTERFACE_VERSION_1_3_0,
-};
 use crate::model::conformance::generals_by_specific;
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, SupertypeRecord,
+    INTERFACE_VERSION_1_3_0,
+};
 use crate::model::key::{
-    digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, ProducerKey,
+    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact,
     PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
@@ -232,10 +232,6 @@ pub enum NormalizeOutcome {
     Completed(EffectiveView),
     /// A real defect refused normalization outright; no effective view.
     Refused(ModelRefusal),
-    /// A producer interface `1.2.0` bundle: exactly one
-    /// `unsupplied-producer-record` refusal per missing FR-150 capability
-    /// item, in the fixed TC-195 N08 order; no effective view.
-    UnsupportedCapabilities(Vec<ModelRefusal>),
     /// A `ModelNormalizationLimitsV1` counter was exhausted; no effective view.
     Incomplete(Incomplete),
 }
@@ -263,11 +259,11 @@ pub struct ViewEntry {
 }
 
 /// A `quire.model.effective-view/v1` result: every effective declaration a
-/// [`ModelSelection`] admits, sorted ascending by effective identity.
+/// [`DomainPackageRef`] admits, sorted ascending by effective identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectiveView {
     /// The model selection this view was normalized under.
-    pub model_selection: ModelSelection,
+    pub model_selection: DomainPackageRef,
     /// Every admitted declaration, ascending by [`EffectiveId`].
     pub declarations: Vec<ViewEntry>,
 }
@@ -351,7 +347,7 @@ impl EffectiveView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectUniverse {
     /// The model selection this universe was normalized under.
-    pub model_selection: ModelSelection,
+    pub model_selection: DomainPackageRef,
     /// Every root effective type (no generalization ancestor), ascending by
     /// [`EffectiveId`].
     pub root_types: Vec<EffectiveId>,
@@ -391,7 +387,7 @@ impl ObjectUniverse {
 /// rather than recurse without bound.
 ///
 /// #141 P2: this bounds a distinct recursion (the FR-150 generalization
-/// ancestor-path walk over a [`Bundle`]) from [`crate::value::MAX_CHECKING_DEPTH`]
+/// ancestor-path walk over a [`DomainPackage`]) from [`crate::value::MAX_CHECKING_DEPTH`]
 /// (Complete-V1 expression-checking recursion, `src/value/expression/check.rs`).
 /// Both happen to be 128 because both were
 /// chosen as "a safe bound well inside the host stack" for their own
@@ -409,66 +405,68 @@ struct Index {
     /// module's other passes' "is this a declared type" dangling-reference
     /// checks — a second, redundant `known_types` set would only ever
     /// duplicate this one.
-    types: std::collections::BTreeSet<ProducerKey>,
-    fields_by_owner: HashMap<ProducerKey, Vec<FieldMemberRecord>>,
-    generals_by_specific: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
+    types: std::collections::BTreeSet<DeclarationKey>,
+    fields_by_owner: HashMap<DeclarationKey, Vec<FieldMemberRecord>>,
+    generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
     /// Every type that is some record's `specific`, i.e. not a root.
-    non_root: std::collections::HashSet<ProducerKey>,
+    non_root: std::collections::HashSet<DeclarationKey>,
     /// Every declared scalar type's own full key.
-    known_scalars: std::collections::HashSet<ProducerKey>,
+    known_scalars: std::collections::HashSet<DeclarationKey>,
     /// Every field member's own key.
-    field_member_keys: std::collections::HashSet<ProducerKey>,
+    field_member_keys: std::collections::HashSet<DeclarationKey>,
     /// Every operation member's own key.
-    operation_member_keys: std::collections::HashSet<ProducerKey>,
+    operation_member_keys: std::collections::HashSet<DeclarationKey>,
 }
 
 impl Index {
-    fn build(bundle: &Bundle) -> Self {
+    fn build(domain_package: &DomainPackage) -> Self {
         let mut types = std::collections::BTreeSet::new();
-        let mut fields_by_owner: HashMap<ProducerKey, Vec<_>> = HashMap::new();
+        let mut fields_by_owner: HashMap<DeclarationKey, Vec<_>> = HashMap::new();
         // Built once by the one shared function every bounded proper-descendant
         // walk in `crate::model` uses (`crate::model::conformance`'s own doc),
         // rather than a second, independent accumulation of the identical
         // `specific -> generalization records` map.
-        let generals_by_specific = generals_by_specific(bundle);
+        let generals_by_specific = generals_by_specific(domain_package);
         let mut non_root = std::collections::HashSet::new();
         let mut known_scalars = std::collections::HashSet::new();
         let mut field_member_keys = std::collections::HashSet::new();
         let mut operation_member_keys = std::collections::HashSet::new();
-        for record in &bundle.records {
+        for record in &domain_package.records {
             match record {
-                BundleRecord::ObjectType(t) => {
+                DomainPackageRecord::ObjectType(t) => {
                     types.insert(t.key.clone());
                 }
-                BundleRecord::FieldMember(m) => {
+                DomainPackageRecord::FieldMember(m) => {
                     field_member_keys.insert(m.key.clone());
                     fields_by_owner
                         .entry(m.owner.clone())
                         .or_default()
                         .push(m.clone());
                 }
-                BundleRecord::Generalization(g) => {
+                DomainPackageRecord::Supertype(g) => {
                     non_root.insert(g.specific.clone());
                 }
-                BundleRecord::ScalarType(s) => {
+                DomainPackageRecord::ScalarType(s) => {
                     known_scalars.insert(s.key.clone());
                 }
-                BundleRecord::OperationMember(o) => {
+                DomainPackageRecord::OperationMember(o) => {
                     operation_member_keys.insert(o.key.clone());
                 }
                 // Redefinition bookkeeping is scanned per type directly from
-                // `bundle.records` by `apply_redefinitions`, so it needs no
-                // index bucket here.
-                BundleRecord::Redefinition(_) => {}
+                // `domain_package.records` by `apply_redefinitions`, so it
+                // needs no index bucket here.
+                DomainPackageRecord::Redefinition(_) => {}
                 // Subsetting derives no normalization fact (see module
                 // docs); it needs no bookkeeping here at all.
-                BundleRecord::Subsetting(_) => {}
-                // FR-152 systems-model records (crate::model::systems) are
-                // not FR-150 normalization inputs: they neither declare a
-                // type nor derive an effective declaration here.
-                BundleRecord::Component(_)
-                | BundleRecord::Endpoint(_)
-                | BundleRecord::Relationship(_) => {}
+                DomainPackageRecord::Subsetting(_) => {}
+                // FR-152 systems-model records (crate::model::systems) and
+                // FR-153 population declarations (crate::model::population)
+                // are not FR-150 normalization inputs: they neither declare
+                // a type nor derive an effective declaration here.
+                DomainPackageRecord::Component(_)
+                | DomainPackageRecord::Endpoint(_)
+                | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Population(_) => {}
             }
         }
         Self {
@@ -482,17 +480,17 @@ impl Index {
         }
     }
 
-    fn sorted_type_keys(&self) -> Vec<ProducerKey> {
+    fn sorted_type_keys(&self) -> Vec<DeclarationKey> {
         self.types.iter().cloned().collect()
     }
 
-    fn sorted_direct_members(&self, owner: &ProducerKey) -> Vec<FieldMemberRecord> {
+    fn sorted_direct_members(&self, owner: &DeclarationKey) -> Vec<FieldMemberRecord> {
         let mut members = self.fields_by_owner.get(owner).cloned().unwrap_or_default();
         members.sort_by(|a, b| a.key.cmp(&b.key));
         members
     }
 
-    fn sorted_generals(&self, specific: &ProducerKey) -> Vec<GeneralizationRecord> {
+    fn sorted_generals(&self, specific: &DeclarationKey) -> Vec<SupertypeRecord> {
         let mut generals = self
             .generals_by_specific
             .get(specific)
@@ -504,18 +502,18 @@ impl Index {
 }
 
 /// One path from a type to a strict ancestor: the ordered chain of
-/// generalization-record keys taken, and the ancestor's own original
+/// supertype-record keys taken, and the ancestor's own original
 /// producer key (PR #140 F2: the full key, not a display identity string).
 struct AncestorPath {
-    path: Vec<ProducerKey>,
-    ancestor_key: ProducerKey,
+    path: Vec<DeclarationKey>,
+    ancestor_key: DeclarationKey,
 }
 
 /// A conservative upper bound on how many additional phase-2/3 facts this
 /// build could ever admit before [`charge_all`] denies a `normalize.fact` or
 /// `normalize.cycle-check` charge, derived from `limits` and the facts
 /// already produced (PR #140 F1). Passed into [`ancestor_paths`] so an
-/// adversarial diamond-generalization bundle's path count is bounded by the
+/// adversarial diamond-generalization domain-package's path count is bounded by the
 /// meter's own configuration *during* enumeration, not only checked after
 /// full materialization.
 ///
@@ -543,18 +541,18 @@ fn fact_budget_exceeded(limits: &ModelNormalizationLimits, facts_so_far: u64) ->
 
 /// Every ancestor path of `root_key`, in DFS pre-order over ascending-key
 /// direct generalizations, capped at `budget` entries. Explicit stack, not
-/// native recursion: bundle data is caller-supplied and may describe a
+/// native recursion: domain package data is caller-supplied and may describe a
 /// cycle.
 fn ancestor_paths(
-    root_key: &ProducerKey,
+    root_key: &DeclarationKey,
     index: &Index,
     budget: usize,
 ) -> Result<Vec<AncestorPath>, ModelRefusal> {
     struct Frame {
-        directs: Vec<GeneralizationRecord>,
+        directs: Vec<SupertypeRecord>,
         next: usize,
-        path: Vec<ProducerKey>,
-        visited: Vec<ProducerKey>,
+        path: Vec<DeclarationKey>,
+        visited: Vec<DeclarationKey>,
     }
 
     let mut stack = vec![Frame {
@@ -654,9 +652,9 @@ fn ancestor_paths(
 /// One fact awaiting replayed accounting, tagged with what it charges.
 #[derive(Clone)]
 struct PendingFact {
-    owner_key: Option<ProducerKey>,
-    declared_key: ProducerKey,
-    inputs: Vec<ProducerKey>,
+    owner_key: Option<DeclarationKey>,
+    declared_key: DeclarationKey,
+    inputs: Vec<DeclarationKey>,
     /// `Some(path_len)` for a phase-3 type-level fact (charges
     /// `normalize.cycle-check` first); `None` otherwise.
     cycle_check_len: Option<usize>,
@@ -676,9 +674,9 @@ struct Built {
     universe: ObjectUniverse,
     /// Every phase-4 `normalize.redefinition-check` charge's own exact
     /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
-    /// per redefinition record in the entire bundle (field and operation
+    /// per redefinition record in the entire domain package (field and operation
     /// alike), ascending by the record's own producer key — computed once,
-    /// bundle-wide, in `build()` itself, never once per (record, effective
+    /// domain-package-wide, in `build()` itself, never once per (record, effective
     /// type reaching it) pair; replayed by
     /// `charge_all`.
     redefinition_check_work: Vec<u64>,
@@ -720,18 +718,18 @@ struct Built {
     phase4_refusal: Option<ModelRefusal>,
 }
 
-/// Refuses a [`BundleRecord`] that names a type key absent from the bundle's
+/// Refuses a [`DomainPackageRecord`] that names a type key absent from the domain package's
 /// own `ObjectType` records, so a dangling `owner`, `specific` or `general`
 /// reference is a typed refusal rather than a panic or a silently dropped
-/// record — `bundle` is caller-supplied, not validated on the way in.
+/// record — `domain_package` is caller-supplied, not validated on the way in.
 /// Membership is checked by the record's *whole* producer key (PR #140 F2):
 /// a reference matching some declared type's display identity but not its
 /// exact revision/digest is exactly as dangling as one matching nothing.
-fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusal> {
-    for record in &bundle.records {
+fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<(), ModelRefusal> {
+    for record in &domain_package.records {
         match record {
-            BundleRecord::ObjectType(_) => {}
-            BundleRecord::FieldMember(member) if !index.types.contains(&member.owner) => {
+            DomainPackageRecord::ObjectType(_) => {}
+            DomainPackageRecord::FieldMember(member) if !index.types.contains(&member.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -744,34 +742,34 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     ),
                 });
             }
-            BundleRecord::Generalization(general) if !index.types.contains(&general.specific) => {
+            DomainPackageRecord::Supertype(general) if !index.types.contains(&general.specific) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownSpecific {
-                        generalization: general.key.clone(),
+                        supertype: general.key.clone(),
                         specific: general.specific.clone(),
                     },
                     detail: format!(
-                        "generalization {} names specific {}, which is not a declared object type",
+                        "supertype {} names specific {}, which is not a declared object type",
                         general.key.identity, general.specific.identity
                     ),
                 });
             }
-            BundleRecord::Generalization(general) if !index.types.contains(&general.general) => {
+            DomainPackageRecord::Supertype(general) if !index.types.contains(&general.general) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownGeneral {
-                        generalization: general.key.clone(),
+                        supertype: general.key.clone(),
                         general: general.general.clone(),
                     },
                     detail: format!(
-                        "generalization {} names general {}, which is not a declared object type",
+                        "supertype {} names general {}, which is not a declared object type",
                         general.key.identity, general.general.identity
                     ),
                 });
             }
-            BundleRecord::ScalarType(_) => {}
-            BundleRecord::OperationMember(op) if !index.types.contains(&op.owner) => {
+            DomainPackageRecord::ScalarType(_) => {}
+            DomainPackageRecord::OperationMember(op) if !index.types.contains(&op.owner) => {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -784,7 +782,7 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     ),
                 });
             }
-            BundleRecord::OperationMember(op) => {
+            DomainPackageRecord::OperationMember(op) => {
                 for parameter in &op.parameters {
                     if !index.types.contains(&parameter.value_type)
                         && !index.known_scalars.contains(&parameter.value_type)
@@ -854,7 +852,7 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     }
                 }
             }
-            BundleRecord::Redefinition(redefinition)
+            DomainPackageRecord::Redefinition(redefinition)
                 if !index.types.contains(&redefinition.owner) =>
             {
                 return Err(ModelRefusal {
@@ -869,7 +867,7 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     ),
                 });
             }
-            BundleRecord::Redefinition(redefinition) => {
+            DomainPackageRecord::Redefinition(redefinition) => {
                 for member in [&redefinition.redefining, &redefinition.redefined] {
                     if !index.field_member_keys.contains(member)
                         && !index.operation_member_keys.contains(member)
@@ -888,7 +886,9 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     }
                 }
             }
-            BundleRecord::Subsetting(subsetting) if !index.types.contains(&subsetting.owner) => {
+            DomainPackageRecord::Subsetting(subsetting)
+                if !index.types.contains(&subsetting.owner) =>
+            {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -901,7 +901,7 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     ),
                 });
             }
-            BundleRecord::Subsetting(subsetting) => {
+            DomainPackageRecord::Subsetting(subsetting) => {
                 for member in [&subsetting.subsetting, &subsetting.subsetted] {
                     if !index.field_member_keys.contains(member)
                         && !index.operation_member_keys.contains(member)
@@ -920,13 +920,33 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                     }
                 }
             }
-            BundleRecord::FieldMember(_) | BundleRecord::Generalization(_) => {}
+            DomainPackageRecord::FieldMember(_) | DomainPackageRecord::Supertype(_) => {}
             // FR-152 systems-model records validate their own references
             // independently (crate::model::systems); FR-150's phase 1 does
             // not concern itself with them.
-            BundleRecord::Component(_)
-            | BundleRecord::Endpoint(_)
-            | BundleRecord::Relationship(_) => {}
+            DomainPackageRecord::Component(_)
+            | DomainPackageRecord::Endpoint(_)
+            | DomainPackageRecord::Relationship(_) => {}
+            // model-complete.md's "Populations" row: each member type names
+            // a declared object type; a missing one refuses
+            // `missing_declaration`/`missing-name`.
+            DomainPackageRecord::Population(population) => {
+                for type_name in &population.member_types {
+                    if !index.types.contains(type_name) {
+                        return Err(ModelRefusal {
+                            code: Code::MissingDeclaration,
+                            cause: ModelRefusalCause::UnknownPopulationMemberType {
+                                population: population.key.clone(),
+                                type_name: type_name.clone(),
+                            },
+                            detail: format!(
+                                "population {} names member type {}, which is not a declared object type",
+                                population.key.identity, type_name.identity
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -934,21 +954,26 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
 
 /// Pass one: build the complete normalization, refusing outright on a real
 /// defect and bounding ancestor-path enumeration against `limits` (PR #140
-/// F1) so a diamond-generalization bundle cannot force unbounded work before
+/// F1) so a diamond-generalization domain-package cannot force unbounded work before
 /// [`charge_all`] gets to deny anything.
-fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, ModelRefusal> {
-    let index = Index::build(bundle);
-    validate_references(bundle, &index)?;
+fn build(
+    domain_package: &DomainPackage,
+    limits: &ModelNormalizationLimits,
+) -> Result<Built, ModelRefusal> {
+    let index = Index::build(domain_package);
+    validate_references(domain_package, &index)?;
     let type_keys = index.sorted_type_keys();
 
     let mut phase2_facts = Vec::new();
     let mut phase3_facts = Vec::new();
-    let mut type_preimages: HashMap<ProducerKey, EffectiveDeclarationPreimage> = HashMap::new();
-    let mut type_effective_ids: HashMap<ProducerKey, EffectiveId> = HashMap::new();
-    let mut type_jcs_lens: HashMap<ProducerKey, u64> = HashMap::new();
-    let mut member_preimages: HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage> =
-        HashMap::new();
-    let mut hidden: std::collections::HashSet<(ProducerKey, ProducerKey)> =
+    let mut type_preimages: HashMap<DeclarationKey, EffectiveDeclarationPreimage> = HashMap::new();
+    let mut type_effective_ids: HashMap<DeclarationKey, EffectiveId> = HashMap::new();
+    let mut type_jcs_lens: HashMap<DeclarationKey, u64> = HashMap::new();
+    let mut member_preimages: HashMap<
+        (DeclarationKey, DeclarationKey),
+        EffectiveDeclarationPreimage,
+    > = HashMap::new();
+    let mut hidden: std::collections::HashSet<(DeclarationKey, DeclarationKey)> =
         std::collections::HashSet::new();
     let mut facts_so_far: u64 = 0;
     // Phase 3's own ancestor paths, retained per type (rather than dropped
@@ -956,7 +981,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     // run only after every type's phase 2/3 has finished -- can reuse them
     // without recomputing (PR #140 F10) for a `type_key` whose own
     // iteration already ran.
-    let mut type_paths: HashMap<ProducerKey, Vec<AncestorPath>> = HashMap::new();
+    let mut type_paths: HashMap<DeclarationKey, Vec<AncestorPath>> = HashMap::new();
 
     for type_key in &type_keys {
         phase2_facts.push(PendingFact {
@@ -1077,7 +1102,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     // `:456`) -- both read directly out of `member_preimages`/
     // `type_preimages` below -- must already exist regardless of which
     // type's turn happens to reach it first.
-    let mut member_counts_by_owner: HashMap<ProducerKey, u64> = HashMap::new();
+    let mut member_counts_by_owner: HashMap<DeclarationKey, u64> = HashMap::new();
     for (owner, _member) in member_preimages.keys() {
         *member_counts_by_owner.entry(owner.clone()).or_insert(0) += 1;
     }
@@ -1089,9 +1114,9 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     // reaches" shape `member_preimages` above builds for fields, just
     // counted rather than given a full preimage (no phase 5 view entry, no
     // redefinition resolution, exists here for `m` alone).
-    let mut operations_by_owner: HashMap<ProducerKey, Vec<ProducerKey>> = HashMap::new();
-    for record in &bundle.records {
-        if let BundleRecord::OperationMember(operation) = record {
+    let mut operations_by_owner: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
+    for record in &domain_package.records {
+        if let DomainPackageRecord::OperationMember(operation) = record {
             operations_by_owner
                 .entry(operation.owner.clone())
                 .or_default()
@@ -1099,7 +1124,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         }
     }
     for type_key in &type_keys {
-        let mut effective_operations: HashSet<ProducerKey> = HashSet::new();
+        let mut effective_operations: HashSet<DeclarationKey> = HashSet::new();
         if let Some(direct) = operations_by_owner.get(type_key) {
             effective_operations.extend(direct.iter().cloned());
         }
@@ -1115,12 +1140,12 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
                 length_amount(effective_operations.len());
         }
     }
-    let type_fact_counts: HashMap<ProducerKey, u64> = type_preimages
+    let type_fact_counts: HashMap<DeclarationKey, u64> = type_preimages
         .iter()
         .map(|(key, preimage)| (key.clone(), length_amount(preimage.derivation.len())))
         .collect();
     // Every owner's own proper-ancestor set, derived from phase 3's own
-    // `type_paths` (populated above for every type in the bundle) rather
+    // `type_paths` (populated above for every type in the domain package) rather
     // than a fresh, separately-bounded walk (QSL #145): `ancestor_key` is
     // exactly the proper-ancestor identity
     // `crate::model::conformance::ancestor_closure` used to compute with its
@@ -1128,29 +1153,29 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     // same keys here needs no walk of its own and has no ceiling to exceed.
     // Computed once, build-wide (QSL #145), not once per (type, target)
     // group.
-    let owner_ancestor_sets: HashMap<ProducerKey, HashSet<ProducerKey>> = type_paths
+    let owner_ancestor_sets: HashMap<DeclarationKey, HashSet<DeclarationKey>> = type_paths
         .iter()
         .map(|(owner, paths)| {
-            let ancestors: HashSet<ProducerKey> =
+            let ancestors: HashSet<DeclarationKey> =
                 paths.iter().map(|path| path.ancestor_key.clone()).collect();
             (owner.clone(), ancestors)
         })
         .collect();
 
     // `normalize.redefinition-check` (`value-accounting.md:455`) charges
-    // `m + r` once per redefinition record in the *entire bundle* -- field
+    // `m + r` once per redefinition record in the *entire domain package* -- field
     // and operation alike -- ascending by the record's own producer key,
     // `r` the count of records already checked before it in this same
-    // bundle-wide sequence. Computed once here, before the per-type phase-4
+    // domain-package-wide sequence. Computed once here, before the per-type phase-4
     // loop below even starts: the record is the spec's own priced unit,
     // tested once against its own owning type, never once per (record,
     // effective type reaching it) pair a per-type loop would recompute it
     // at.
-    let mut all_redefinition_records: Vec<_> = bundle
+    let mut all_redefinition_records: Vec<_> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            BundleRecord::Redefinition(redefinition) => Some(redefinition),
+            DomainPackageRecord::Redefinition(redefinition) => Some(redefinition),
             _ => None,
         })
         .collect();
@@ -1167,7 +1192,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     let mut conflict_check_work: Vec<u64> = Vec::new();
     let mut phase4_fact_count: u64 = 0;
     let mut phase4_refusal: Option<ModelRefusal> = None;
-    let mut phase4_refusal_rank: Option<(u8, Option<ProducerKey>, ProducerKey)> = None;
+    let mut phase4_refusal_rank: Option<(u8, Option<DeclarationKey>, DeclarationKey)> = None;
     let mut accounting = Phase4Accounting {
         type_fact_counts: &type_fact_counts,
         owner_ancestor_sets: &owner_ancestor_sets,
@@ -1193,7 +1218,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
                 .get(type_key)
                 .expect("populated in the loop above");
             apply_redefinitions(
-                bundle,
+                domain_package,
                 &index,
                 type_key,
                 paths,
@@ -1219,7 +1244,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
             visible: true,
         });
     }
-    let mut member_keys: Vec<(ProducerKey, ProducerKey)> =
+    let mut member_keys: Vec<(DeclarationKey, DeclarationKey)> =
         member_preimages.keys().cloned().collect();
     member_keys.sort_by(|(owner_a, decl_a), (owner_b, decl_b)| {
         owner_a.cmp(owner_b).then_with(|| decl_a.cmp(decl_b))
@@ -1245,11 +1270,11 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     root_types.sort();
 
     let view = EffectiveView {
-        model_selection: bundle.model_selection.clone(),
+        model_selection: domain_package.model_selection.clone(),
         declarations: entries,
     };
     let universe = ObjectUniverse {
-        model_selection: bundle.model_selection.clone(),
+        model_selection: domain_package.model_selection.clone(),
         root_types,
     };
 
@@ -1270,11 +1295,11 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
 /// at `type_key` along `path` (the ancestor-generalization keys from
 /// `type_key` to `owner`, empty when `owner` is `type_key` itself).
 struct RedefinitionEdge {
-    owner: ProducerKey,
-    redefining: ProducerKey,
-    record_key: ProducerKey,
-    target: ProducerKey,
-    path: Vec<ProducerKey>,
+    owner: DeclarationKey,
+    redefining: DeclarationKey,
+    record_key: DeclarationKey,
+    target: DeclarationKey,
+    path: Vec<DeclarationKey>,
 }
 
 /// Every cross-type input and output `apply_redefinitions` needs beyond its
@@ -1286,11 +1311,11 @@ struct RedefinitionEdge {
 /// `conflict_check_work`, `phase4_fact_count` and `refusal` are build-wide
 /// accumulators mutated across every `type_key`'s own call.
 /// `normalize.redefinition-check`'s own charge sequence — and the `m` it
-/// needs — is not built here at all: `build` computes it once, bundle-wide,
-/// before any `apply_redefinitions` call.
+/// needs — is not built here at all: `build` computes it once,
+/// domain-package-wide, before any `apply_redefinitions` call.
 struct Phase4Accounting<'a> {
-    type_fact_counts: &'a HashMap<ProducerKey, u64>,
-    owner_ancestor_sets: &'a HashMap<ProducerKey, HashSet<ProducerKey>>,
+    type_fact_counts: &'a HashMap<DeclarationKey, u64>,
+    owner_ancestor_sets: &'a HashMap<DeclarationKey, HashSet<DeclarationKey>>,
     conflict_check_work: &'a mut Vec<u64>,
     /// The running count of phase-4 redefine facts awaiting their own
     /// `normalize.fact` charge (see [`Built::phase4_fact_count`]'s own
@@ -1308,7 +1333,7 @@ struct Phase4Accounting<'a> {
     /// The charge-order rank of whatever refusal `refusal` currently holds
     /// (see `record_phase4_refusal`'s own doc for what a rank is and how
     /// candidates are compared against it).
-    refusal_rank: &'a mut Option<(u8, Option<ProducerKey>, ProducerKey)>,
+    refusal_rank: &'a mut Option<(u8, Option<DeclarationKey>, DeclarationKey)>,
 }
 
 /// Charge-order stage for `record_phase4_refusal`'s own rank key: lower
@@ -1347,8 +1372,8 @@ const CONFLICT_CHECK_STAGE: u8 = 1;
 fn record_phase4_refusal(
     accounting: &mut Phase4Accounting<'_>,
     stage: u8,
-    type_key: Option<&ProducerKey>,
-    key: &ProducerKey,
+    type_key: Option<&DeclarationKey>,
+    key: &DeclarationKey,
     refusal: ModelRefusal,
 ) {
     let rank = (stage, type_key.cloned(), key.clone());
@@ -1384,8 +1409,8 @@ fn record_phase4_refusal(
 /// Also appends this contested target group's own `normalize.conflict-check`
 /// charge amount (`value-accounting.md:456`) to `conflict_check_work`,
 /// replayed later by `charge_all` — `normalize.redefinition-check`'s own
-/// charge sequence is `build`'s own bundle-wide pass, not this function's.
-/// `type_fact_counts` supplies `f(o)` for any owner in the bundle, not just
+/// charge sequence is `build`'s own domain-package-wide pass, not this function's.
+/// `type_fact_counts` supplies `f(o)` for any owner in the domain package, not just
 /// `type_key` itself — `build` computes it
 /// only after every type's own phase 2/3 has run (see the module docs) so
 /// this is always a lookup, never a fresh walk. `owner_ancestor_sets` is
@@ -1394,15 +1419,15 @@ fn record_phase4_refusal(
 /// separately bounded walk, and likewise computed once, build-wide, not
 /// once per (type, target) group.
 fn apply_redefinitions(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     index: &Index,
-    type_key: &ProducerKey,
+    type_key: &DeclarationKey,
     paths: &[AncestorPath],
-    member_preimages: &mut HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage>,
-    hidden: &mut HashSet<(ProducerKey, ProducerKey)>,
+    member_preimages: &mut HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
+    hidden: &mut HashSet<(DeclarationKey, DeclarationKey)>,
     accounting: &mut Phase4Accounting<'_>,
 ) {
-    let mut owner_paths: HashMap<ProducerKey, Vec<ProducerKey>> = HashMap::new();
+    let mut owner_paths: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
     owner_paths.insert(type_key.clone(), Vec::new());
     for ancestor in paths {
         owner_paths
@@ -1413,7 +1438,7 @@ fn apply_redefinitions(
     // Every redefinition record reachable at `type_key`, gathered flat (not
     // yet grouped by target) and split by member kind.
     // `normalize.redefinition-check`'s own charge sequence does not come
-    // from either list: it is `build`'s own bundle-wide pass over every
+    // from either list: it is `build`'s own domain-package-wide pass over every
     // redefinition record, field and operation alike; `all_edges`
     // (field-only) is scoped purely to this type's own conflict
     // *resolution*, exactly as the module docs describe. `operation_edges`
@@ -1426,8 +1451,8 @@ fn apply_redefinitions(
     // does.
     let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
     let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
-    for record in &bundle.records {
-        let BundleRecord::Redefinition(redefinition) = record else {
+    for record in &domain_package.records {
+        let DomainPackageRecord::Redefinition(redefinition) = record else {
             continue;
         };
         let is_field = index.field_member_keys.contains(&redefinition.redefining)
@@ -1459,12 +1484,12 @@ fn apply_redefinitions(
         }
     }
 
-    let mut groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    let mut groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
     for edge in all_edges {
         groups.entry(edge.target.clone()).or_default().push(edge);
     }
 
-    let mut target_keys: Vec<ProducerKey> = groups.keys().cloned().collect();
+    let mut target_keys: Vec<DeclarationKey> = groups.keys().cloned().collect();
     target_keys.sort();
 
     // `value-accounting.md:456`'s own charge order is a single ascending
@@ -1478,7 +1503,7 @@ fn apply_redefinitions(
     // here, and charges from both loops are sorted by effective member key
     // before being pushed, once, after both loops
     // (`value-accounting.md:456`).
-    let mut conflict_charges: Vec<(ProducerKey, u64)> = Vec::new();
+    let mut conflict_charges: Vec<(DeclarationKey, u64)> = Vec::new();
 
     'targets: for target_key in target_keys {
         let mut edges = groups.remove(&target_key).expect("just listed");
@@ -1504,7 +1529,7 @@ fn apply_redefinitions(
             // charge either (`value-accounting.md:456`'s own `c >= 2`
             // condition; QSL #145): computing a closure regardless of
             // `edges.len()` is what made a wide
-            // (128+ direct generalizations) but uncontested bundle wrongly
+            // (128+ direct generalizations) but uncontested domain package wrongly
             // refuse `conformance-depth`.
             Some(0)
         } else {
@@ -1532,7 +1557,7 @@ fn apply_redefinitions(
                 fact_total.saturating_mul(c.saturating_sub(1)),
             ));
 
-            // `owner_ancestor_sets` already holds every owner in the bundle's
+            // `owner_ancestor_sets` already holds every owner in the domain package's
             // own proper-ancestor set (QSL #145: derived once, build-wide,
             // from phase 3's own `type_paths` rather than a fresh,
             // separately bounded walk here) -- the
@@ -1818,14 +1843,14 @@ fn apply_redefinitions(
     // No `member_preimages`/`hidden` state is touched here: operation
     // members never enter `member_preimages` (see the module docs), so
     // there is nothing here for this loop to resolve or hide.
-    let mut operation_groups: HashMap<ProducerKey, Vec<RedefinitionEdge>> = HashMap::new();
+    let mut operation_groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
     for edge in operation_edges {
         operation_groups
             .entry(edge.target.clone())
             .or_default()
             .push(edge);
     }
-    let mut operation_target_keys: Vec<ProducerKey> = operation_groups.keys().cloned().collect();
+    let mut operation_target_keys: Vec<DeclarationKey> = operation_groups.keys().cloned().collect();
     operation_target_keys.sort();
     for target_key in operation_target_keys {
         let edges = operation_groups.remove(&target_key).expect("just listed");
@@ -1865,9 +1890,9 @@ fn apply_redefinitions(
 /// called from stays cheap because `closures` was already built once,
 /// build-wide, before any `apply_redefinitions` call.
 fn owner_dominates(
-    closures: &HashMap<ProducerKey, HashSet<ProducerKey>>,
-    p_owner: &ProducerKey,
-    q_owner: &ProducerKey,
+    closures: &HashMap<DeclarationKey, HashSet<DeclarationKey>>,
+    p_owner: &DeclarationKey,
+    q_owner: &DeclarationKey,
 ) -> bool {
     p_owner != q_owner
         && closures
@@ -1902,14 +1927,18 @@ impl From<Incomplete> for ChargeAllDenial {
     }
 }
 
-fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), ChargeAllDenial> {
+fn charge_all(
+    domain_package: &DomainPackage,
+    built: &Built,
+    meter: &mut Meter,
+) -> Result<(), ChargeAllDenial> {
     // #141 F11: only the running position (`index + 1`) is charged, never a
     // key's value or its relative order, so collecting and sorting a
-    // `Vec<ProducerKey>` just to throw the order away was dead work.
-    for index in 0..bundle.records.len() {
+    // `Vec<DeclarationKey>` just to throw the order away was dead work.
+    for index in 0..domain_package.records.len() {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::ProducerRecords, length_amount(index + 1)),
+                .size(LimitKind::DeclarationRecords, length_amount(index + 1)),
         )?;
     }
 
@@ -1999,15 +2028,17 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), C
 }
 
 /// Every producer key `record` itself declares or refers to.
-fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
+fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
     match record {
-        BundleRecord::ObjectType(record) => vec![&record.key],
-        BundleRecord::FieldMember(record) => vec![&record.key, &record.owner, &record.value_type],
-        BundleRecord::Generalization(record) => {
+        DomainPackageRecord::ObjectType(record) => vec![&record.key],
+        DomainPackageRecord::FieldMember(record) => {
+            vec![&record.key, &record.owner, &record.value_type]
+        }
+        DomainPackageRecord::Supertype(record) => {
             vec![&record.key, &record.specific, &record.general]
         }
-        BundleRecord::ScalarType(record) => vec![&record.key],
-        BundleRecord::OperationMember(record) => {
+        DomainPackageRecord::ScalarType(record) => vec![&record.key],
+        DomainPackageRecord::OperationMember(record) => {
             let mut keys = vec![&record.key, &record.owner];
             for parameter in &record.parameters {
                 keys.push(&parameter.key);
@@ -2024,7 +2055,7 @@ fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
             }
             keys
         }
-        BundleRecord::Redefinition(record) => {
+        DomainPackageRecord::Redefinition(record) => {
             vec![
                 &record.key,
                 &record.owner,
@@ -2032,7 +2063,7 @@ fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
                 &record.redefined,
             ]
         }
-        BundleRecord::Subsetting(record) => {
+        DomainPackageRecord::Subsetting(record) => {
             vec![
                 &record.key,
                 &record.owner,
@@ -2040,24 +2071,29 @@ fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
                 &record.subsetted,
             ]
         }
-        BundleRecord::Component(record) => {
+        DomainPackageRecord::Component(record) => {
             vec![&record.key, &record.owning_type, &record.value_type]
         }
-        BundleRecord::Endpoint(record) => {
+        DomainPackageRecord::Endpoint(record) => {
             vec![&record.key, &record.owning_component, &record.value_type]
         }
-        BundleRecord::Relationship(record) => {
+        DomainPackageRecord::Relationship(record) => {
             vec![
                 &record.key,
                 &record.source.type_identity,
                 &record.target.type_identity,
             ]
         }
+        DomainPackageRecord::Population(record) => {
+            let mut keys = vec![&record.key];
+            keys.extend(record.member_types.iter());
+            keys
+        }
     }
 }
 
 /// Whether `revision` is absent: FR-150 admits `Revision` as a required
-/// struct (there is no wire-optional variant in this typed `Bundle`), so
+/// struct (there is no wire-optional variant in this typed `DomainPackage`), so
 /// "absent" is the caller supplying an empty namespace or value rather than
 /// a real revision label (PR #140 F6).
 fn revision_is_absent(revision: &crate::model::key::Revision) -> bool {
@@ -2065,23 +2101,26 @@ fn revision_is_absent(revision: &crate::model::key::Revision) -> bool {
 }
 
 /// Phase-1 decode checks common to every entry point: the claimed producer
-/// interface version (TC-195 N08), every referenced key's absent revision
+/// interface version, every referenced key's absent revision
 /// (TC-195 N04, PR #140 F6) and digest domain (TC-195 N05). All refuse
 /// before any charge; no effective view is exposed.
-fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
-    let version = &bundle.model_selection.contract_version.interface_version;
-    if version != INTERFACE_VERSION_1_3_0 && version != INTERFACE_VERSION_1_2_0 {
+fn decode_check(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
+    let version = &domain_package
+        .model_selection
+        .contract_version
+        .interface_version;
+    if version != INTERFACE_VERSION_1_3_0 {
         return Err(ModelRefusal {
             code: Code::UnknownWire,
             cause: ModelRefusalCause::UnsupportedWire {
                 version: version.clone(),
             },
             detail: format!(
-                "producer interface {version} is not supported; only {INTERFACE_VERSION_1_3_0} is normalized and {INTERFACE_VERSION_1_2_0} is refused"
+                "producer interface {version} is not supported; only {INTERFACE_VERSION_1_3_0} is normalized"
             ),
         });
     }
-    for record in &bundle.records {
+    for record in &domain_package.records {
         for key in referenced_keys(record) {
             if revision_is_absent(&key.revision) {
                 return Err(ModelRefusal {
@@ -2108,112 +2147,31 @@ fn decode_check(bundle: &Bundle) -> Result<(), ModelRefusal> {
     Ok(())
 }
 
-/// The fixed TC-195 N08 order of FR-150 capability items a producer
-/// interface `1.2.0` bundle cannot supply, given the object types and field
-/// members `bundle` declares (a `1.2.0` bundle carries no generalization,
-/// subsetting or redefinition record at all, so those never appear as
-/// *bundle content* — they are refused as capabilities the interface itself
-/// cannot carry, one item per declared type or member).
-fn unsupplied_capability_items(bundle: &Bundle) -> Vec<(&'static str, String)> {
-    let index = Index::build(bundle);
-    let type_keys = index.sorted_type_keys();
-    let mut member_keys: Vec<ProducerKey> = bundle
-        .records
-        .iter()
-        .filter_map(|record| match record {
-            BundleRecord::FieldMember(member) => Some(member.key.clone()),
-            _ => None,
-        })
-        .collect();
-    member_keys.sort();
-
-    let bundle_identity = bundle.model_selection.export.identity.clone();
-    let mut items: Vec<(&'static str, String)> = vec![
-        ("subtype-closure", bundle_identity.clone()),
-        ("subsetting-closure", bundle_identity.clone()),
-        ("redefinition-closure", bundle_identity),
-    ];
-    for type_key in &type_keys {
-        items.push(("generalization", type_key.identity.clone()));
-    }
-    for member_key in &member_keys {
-        items.push(("redefinition", member_key.identity.clone()));
-    }
-    for member_key in &member_keys {
-        items.push(("subsetting", member_key.identity.clone()));
-    }
-    for type_key in &type_keys {
-        items.push(("interface-signature", type_key.identity.clone()));
-    }
-    for member_key in &member_keys {
-        items.push(("typed-multiplicity", member_key.identity.clone()));
-    }
-    items
-}
-
-/// A producer interface `1.2.0` bundle (TC-195 N08, FR-150-AC-7): charges
-/// one `normalize.record` per record and one `normalize.unsupplied-item` per
-/// missing capability item, then returns exactly one
-/// `invalid_model_binding`/`unsupplied-producer-record` refusal per item, in
-/// the fixed order (PR #140 F4). No effective view is ever exposed.
-fn unsupported_capability_refusals(
-    bundle: &Bundle,
-    meter: &mut Meter,
-) -> Result<Vec<ModelRefusal>, Incomplete> {
-    // #141 F11: same dead work as `charge_all` above — the sorted order was
-    // never used, only the running position.
-    for index in 0..bundle.records.len() {
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::ProducerRecords, length_amount(index + 1)),
-        )?;
-    }
-
-    let items = unsupplied_capability_items(bundle);
-    let supplied = &bundle.model_selection.contract_version.interface_version;
-    let mut refusals = Vec::with_capacity(items.len());
-    for (name, subject) in items {
-        meter.charge(Charge::new(ChargePoint::NormalizeUnsuppliedItem))?;
-        refusals.push(ModelRefusal {
-            code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::UnsuppliedProducerRecord,
-            detail: format!(
-                "{name} for {subject} requires producer interface {INTERFACE_VERSION_1_3_0}; supplied {supplied}"
-            ),
-        });
-    }
-    Ok(refusals)
-}
-
-/// Normalize `bundle` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
-pub fn normalize(bundle: &Bundle, limits: ModelNormalizationLimits) -> NormalizeOutcome {
-    let (outcome, _meter) = normalize_with_meter(bundle, limits);
+/// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
+pub fn normalize(
+    domain_package: &DomainPackage,
+    limits: ModelNormalizationLimits,
+) -> NormalizeOutcome {
+    let (outcome, _meter) = normalize_with_meter(domain_package, limits);
     outcome
 }
 
-/// A meter constructed to run `bundle` under [`ModelNormalizationLimits::UNLIMITED`]
+/// A meter constructed to run `domain_package` under [`ModelNormalizationLimits::UNLIMITED`]
 /// and expose its admitted-charge sequence, for tests that assert the exact
 /// charge order alongside [`normalize`]'s result.
 pub fn normalize_with_meter(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
     let mut meter = Meter::new(limits);
-    if let Err(refusal) = decode_check(bundle) {
+    if let Err(refusal) = decode_check(domain_package) {
         return (NormalizeOutcome::Refused(refusal), meter);
     }
-    if bundle.model_selection.contract_version.interface_version == INTERFACE_VERSION_1_2_0 {
-        let outcome = match unsupported_capability_refusals(bundle, &mut meter) {
-            Ok(refusals) => NormalizeOutcome::UnsupportedCapabilities(refusals),
-            Err(incomplete) => NormalizeOutcome::Incomplete(incomplete),
-        };
-        return (outcome, meter);
-    }
-    let built = match build(bundle, &limits) {
+    let built = match build(domain_package, &limits) {
         Ok(built) => built,
         Err(refusal) => return (NormalizeOutcome::Refused(refusal), meter),
     };
-    let outcome = match charge_all(bundle, &built, &mut meter) {
+    let outcome = match charge_all(domain_package, &built, &mut meter) {
         Ok(()) => NormalizeOutcome::Completed(built.view),
         Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
         Err(ChargeAllDenial::Refused(refusal)) => NormalizeOutcome::Refused(refusal),
@@ -2221,14 +2179,14 @@ pub fn normalize_with_meter(
     (outcome, meter)
 }
 
-/// The object universe `bundle` normalizes to, independent of `charge_all`'s
+/// The object universe `domain_package` normalizes to, independent of `charge_all`'s
 /// bookkeeping (test and caller convenience; recomputes via [`build`], under
 /// [`ModelNormalizationLimits::UNLIMITED`]). Under `UNLIMITED` nothing ever
 /// runs out, so `build`'s own deferred `Built::phase4_refusal` (see the
 /// module docs) is surfaced here directly rather than replayed through
 /// `charge_all`.
-pub fn object_universe(bundle: &Bundle) -> Result<ObjectUniverse, ModelRefusal> {
-    let built = build(bundle, &ModelNormalizationLimits::UNLIMITED)?;
+pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, ModelRefusal> {
+    let built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)?;
     if let Some(refusal) = built.phase4_refusal {
         return Err(refusal);
     }

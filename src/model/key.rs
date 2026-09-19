@@ -136,7 +136,7 @@ impl fmt::Debug for ProducerDigest {
 /// each as UTF-8 bytes, a proper prefix first. Field declaration order below
 /// gives exactly that comparison under `derive(Ord)`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProducerKey {
+pub struct DeclarationKey {
     /// The correspondence `ProducerObject.authority` (FCD FR-116).
     pub authority: String,
     /// The original declaration's producer identity string.
@@ -147,7 +147,7 @@ pub struct ProducerKey {
     pub digest: ProducerDigest,
 }
 
-impl ProducerKey {
+impl DeclarationKey {
     /// A `filament-core-data` key over `identity`, following TC-195/196/197/198's
     /// fixture convention: revision value `"1"`, digest over `identity`'s bytes.
     ///
@@ -208,7 +208,7 @@ pub struct Fact {
     /// The rule that derived this fact.
     pub rule: RuleRef,
     /// Ordered producer keys the fact consumed.
-    pub inputs: Vec<ProducerKey>,
+    pub inputs: Vec<DeclarationKey>,
 }
 
 impl Fact {
@@ -221,7 +221,7 @@ impl Fact {
         object.insert("rule".to_owned(), self.rule.to_json());
         object.insert(
             "inputs".to_owned(),
-            Value::Array(self.inputs.iter().map(ProducerKey::to_json).collect()),
+            Value::Array(self.inputs.iter().map(DeclarationKey::to_json).collect()),
         );
         Value::Object(object)
     }
@@ -284,7 +284,7 @@ pub struct EffectiveDeclarationPreimage {
     /// an effective member.
     pub owner_effective_type: Option<EffectiveId>,
     /// The original producer declaration this effective declaration derives from.
-    pub original: ProducerKey,
+    pub original: DeclarationKey,
     /// The ordered derivation facts.
     pub derivation: Vec<Fact>,
 }
@@ -342,7 +342,7 @@ impl EffectiveDeclarationPreimage {
     /// the first defect found, in derivation order.
     #[allow(
         clippy::result_large_err,
-        reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+        reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
     )]
     pub fn validate_derivation(&self) -> Result<(), (ModelRefusalCause, String)> {
         for (position, fact) in self.derivation.iter().enumerate() {
