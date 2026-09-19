@@ -57,8 +57,8 @@ Inputs this record builds on:
   concrete values are methods that re-derive their answer from `transcript` on
   every call. This record adopts that as the witness ownership decision (O-25)
   and adds admission-time validation.
-- **Sibling records**: ADR-011 (#209, QSL PR #235) at `1666d02` and ADR-012
-  (#210, QSL PR #234) at `0d4a15e`. Section and item citations below refer to
+- **Sibling records**: ADR-011 (#209, QSL PR #235) at `a4ce336` and ADR-012
+  (#210, QSL PR #234) at `e71986a`. Section and item citations below refer to
   those heads.
 
 Sibling Layer 1 tickets are authored in parallel. #209 decides stages, stage
@@ -631,7 +631,7 @@ one and derives four (QC-13).
 | Public type | Typed replay request. It is the O-25 packet plus the #231 envelope members, and nothing else: from the packet, the exact FR-322 package reference (`package_id`, contract version, source digests), the selected function's `QualifiedName` (OQ-5 ruling), the `ReplaySource`, the originating counterexample identity and the `backend` member (O-19); from the #231 envelope, the state environment, the `quire.value.accounting/v1` limits and the outcome → verdict map. Arguments are keyed by parameter `WireNodeId`, taken from the `ReplaySource`; the `replay` facade converts the keys to `NodeKey`s (O-04). The packet and the replay request are separate types. |
 | Serialized authority | QSpec FR-323 `quire.native-runtime/v1` (`package`, `selection`, `state_environment`, `limits`, `replay`), plus the digest-addressed byte provision QC-1 adds. |
 | Conversions | Packet + #231 envelope members → request (CG, C-12); CG copies them and invents no member. Request → execution (QSL executor, C-13): the executor obtains every source, definition and domain-package input by digest from the byte provision the request names. It never reads a path, environment variable or search location. It recompiles, recomputes `package_id` and requires equality with the request, requires every recompiled `RawSourceRef` digest to equal the request's, resolves the `QualifiedName` by name lookup in the recompiled package's declarations (OQ-5 ruling), and calls the selected function. |
-| Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); a dependency whose view `replay` builds by compiling its QC-1 source through S4 and whose recomputed `package_id` differs from the one the proved package records (QC-10) (`DependencyIdentityMismatch`, `stale_dependency`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain; and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
+| Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); a dependency whose view `replay` builds by compiling its QC-1 source through S1 to S4 and verifying the emitted v2 bytes under the ADR-011 §4 binding, and whose recomputed `package_id` differs from the one the proved package records (QC-10) (`DependencyIdentityMismatch`, `stale_dependency`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain; and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
 | Equality | lexical over the RFC 8785 encoding of the FR-323 request-identity members (package, selection, inputs, limits, options). |
 
 #### O-27 Replay results
