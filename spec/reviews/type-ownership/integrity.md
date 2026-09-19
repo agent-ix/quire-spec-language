@@ -138,3 +138,83 @@ are medium and should be fixed before the #212 gate).
   Mermaid labels are free of `;`. Deferrals are to #209 or #210, except
   OBS-026 (FND-011).
 - **Not verified.** RT, CG and FCD code claims; IR code beyond the PR #139 head.
+
+## Round 2 (commit 0042691)
+
+This pass re-checked each round-1 finding against ADR-013 at 0042691, read with
+`git show 0042691:`. It also re-checked the id kinds the revision adds:
+
+- S-1..S-6, QC-1..QC-7, Q209-1..7, Q210-1..4, Q222-1..2, Q229-1 and
+  OQ-1..OQ-4 are sequential and unique, and every in-text reference resolves.
+- C-01..C-25 are sequential.
+- The Context count of five AD-016 departures matches OQ-3 (a)–(e).
+- The Consequences count of seven QSpec changes matches QC-1..QC-7.
+- Every Implementing-ticket row that names #213 maps to exactly one slice in
+  the §7 slice table.
+- The Mermaid labels contain no `;`.
+- `RawSourceRef` (`authority`, `identity`, `revision`, `digest_domain`,
+  `digest`) exists in `proposals/checked-package-v2/schema.json`.
+
+Round-1 dispositions:
+
+- FND-001 resolved. O-07 uses the FR-322 key (node id, `role`, `ordinal`) with
+  ordered `RawSourceRef` regions. O-12's region equality includes the document
+  digest.
+- FND-002 resolved differently. The packet and the request now carry the
+  function node id, occurrence key, source digests, profile selections, bounds,
+  tool lock and trace position. The executor obtains its bytes by digest from a
+  byte provision that QSpec must add (QC-1), rather than from a lock carried in
+  the packet. Replay is complete once QC-1 lands, and §7 gates #231, the
+  executor and CG #50 on it.
+- FND-003 resolved. Context lists the five AD-016 departures, OQ-3 (a)–(e)
+  names them, and OQ-3 states that a refused amendment reopens its cell. The
+  obligation-identity departures in FND-021 are not among the five.
+- FND-004 resolved. QC-2 adds the model domains to FR-201, the O-18 enum
+  includes them, and the Alternatives sentence is corrected.
+- FND-005 resolved. The map now has `undefined` and `inconclusive` rows, and
+  `tested` and `failed` are placed. The new proof-column targets raise
+  FND-020.
+- FND-006 resolved. O-16, O-19, O-21 and O-23 state equality or
+  "not an identity". O-22 has a Tests row. O-25 has Admission and serialized
+  Carrier rows.
+- FND-007 resolved. O-24 and O-25 cite FR-331 `counterexamples` and
+  `artifacts`, and QC-6 asks QSpec to confirm the transcript carriage.
+- FND-008 resolved. C-17 to C-25 add each missing conversion with its owner
+  and test.
+- FND-009 resolved differently. §7 now names #213 by six slices, and the slice
+  table covers every O- that names #213. O-23 moved to #215.
+- FND-010 resolved. OQ-4 lists the unowned work (executor, emitter, kernel
+  adoption, IR packet members, WP9 map, IR reader codes, CG conformance), and
+  the IR #137 attribution is corrected.
+- FND-011 resolved differently. OBS-026 is decided in O-27: #231 builds the
+  carrier and #186 the serializer. Which version `run` produces stays OQ-1,
+  which now records that #186's exit criterion conflicts with R-08.
+- FND-012 resolved. The O-20 owner is CG. #213 S-6 builds only the QSL request
+  representation. Equality is on the FR-331 disposition string.
+- FND-013 resolved. R-06 treats import resolution by the importing package's
+  checker as that package's own check stage, and O-11 cites FR-322
+  `declaration.qualified_name`.
+- FND-014 resolved. `ByteDigest` folds into O-18. Native `Source`/`Span` and
+  simulation `Outcome` are in §6. `LosslessCst` is placed in O-12.
+- FND-015 resolved. OQ-3 (e) records the AD-016 row conflict, and QC-3 asks
+  for `ModelOwner` vectors covering general model declarations.
+- FND-016 resolved. §9 adds a secondary-owner table. O-23 covers OBS-041 and
+  the `pins.json` part of OBS-034.
+- FND-017 partly resolved. O-01 and C-16 are fixed. O-26 and O-27 still call
+  FR-323 request and result identity "normalized", and FR-323 defines no digest
+  for either (low; recorded as FND-022).
+- FND-018 resolved. The literals are checked equal to the lock by a test
+  (#215).
+- FND-019 resolved. The O-21 authored-bound row lists `BoundedInteger`,
+  `CardinalityBound` and `BoundViolation`.
+
+New findings introduced by the revision:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-020 | medium | The O-16 proof column maps post-run Kani outcomes to FR-331 dispositions. `Refused`, `InvalidInput` and `IncompleteInput` become disposition `invalid-request`, and `Unavailable` becomes disposition `unsupported`, all with "no result entry". But a Kani run happens only for an item that negotiation already settled `supported`. FR-331-AC-1 completes negotiation before artifact emission. AD-016's terminal-disposition rule gives a `supported` item exactly one FR-331 result. So these rows either give one item two dispositions or leave a `supported` item with no result, which the ledger-completeness test rejects. Fix: map these kinds to an FR-331 result value with a typed cause (for example `failed` or `inconclusive`). Or keep the categories, but state that the FR-331 terminal record is a result, and add a QSpec change if FR-331 lacks a fitting result value. Update OQ-3 (d) to match. | ADR-013 O-16, C-09, C-23, OQ-3 (d) · QSpec FR-331-AC-1 · AD-016 Terminal-disposition rule |
+| FND-021 | medium | O-09 departs from accepted AD-016 in two places that OQ-3 does not list. AD-016 arrow 5 says "Obligation id = clause node id" and orders `KaniObligationIdentity.arguments` "ascending by identifier". O-09 identifies an obligation by a digest over (clause node id, obligation kind, `arguments`), "never by the clause node id alone". It also orders `arguments` "in declared parameter order", and O-25 relies on that order ("harness argument order equals `arguments` order"). Context says the five OQ-3 items are the only departures. Fix: add both to OQ-3 as amendments (f) and (g) and update the Context count. Or keep the AD-016 order, and state that the node-id join in O-25 is independent of argument order. | ADR-013 Context, O-09, O-25, OQ-3 · QSpec AD-016 Arrow 5, Arrow 6 |
+| FND-022 | low | FND-017 residue. O-26 and O-27 give their equality as "normalized", citing FR-323 request and result identity. FR-323 defines those identities as sets of components ("includes every semantic input and limit", "additionally includes implementation/toolchain pin and canonical per-item results"), not as digests over a JCS preimage. O-24's "normalized" over FR-331 result identity has the same problem. Fix: state the equality as componentwise over the FR-323 or FR-331 identity members, or add a QC for a digest domain. | ADR-013 §2, O-24, O-26, O-27 · QSpec FR-323, FR-331 |
+
+Round-2 verdict: ACCEPT WITH FINDINGS. No high finding remains. FND-020 and
+FND-021 are medium and should be fixed before the #212 gate; FND-022 is low.

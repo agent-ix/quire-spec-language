@@ -180,3 +180,37 @@ decisions, and the §3 owners form no cycle. Q209-4 correctly sends the
 - Classified each O-item as enablement or feature, built the prerequisite graph
   and checked it for cycles. Compared each implementing-ticket assignment with
   the Scope and Non-goals of the named ticket.
+
+## Round 2 (commit 0042691)
+
+Re-read ADR-013 at 0042691 in full: §7 "Waits on" column, the #213 slices
+S-1 to S-6, the unowned-work list, §8 QC-1 to QC-7, Q222 and Q229, OQ-3 (a) to
+(e) and OQ-4. Re-checked the bodies of #131, #213, #215, #222, #226, #231 and CG
+#50, QSL PR #200 at 9e59dde, and FCD PR #200. The author cannot open issues, so
+work that no ticket owns is recorded in §7 and OQ-4, and QSpec changes are
+recorded as QC-n with the work each one blocks. For FND-001 to FND-003 this
+review accepts that as the resolution.
+
+| ID | Status | How |
+|---|---|---|
+| FND-001 | resolved differently | The QSpec changes appear as QC-1 to QC-7 (each with a Blocks column) and OQ-2 and OQ-3 (a)–(e). Blocked work is gated in §7: #231 waits on OQ-3 (a), QC-1, QC-6, and on OQ-2 for the result half. #213 S-1 waits on OQ-3 (c), and S-2 on QC-2, QC-3 and QC-5. §8 says why #212 can pass while they are open: each names QSpec as contract owner and names the work it blocks. No QSpec issue numbers exist yet, and filing them is an owner action. The per-item blocked work for OQ-3 (b), (d) and (e) is still missing (FND-013). |
+| FND-002 | resolved differently | #231's §7 row now reads "No replay execution". C-11, C-12 and parity go to CG #50. The executor entry (O-26, C-13), the IR packet members and the IR reader codes are listed as unowned in §7, and OQ-4 recommends that the executor join #214. The CG #50 body does not yet match the assignment (FND-011). |
+| FND-003 | resolved differently | #213 S-1 builds the kernel types in `quire-exact`, gated on Q209-4 (crate creation and direction), which now also covers the pin cycle for RT and CG. The v2 emitter (WP6), RT and CG kernel adoption (WP5a, WP5b) and RT C-06 are listed as unowned under OQ-4. OBS-001 names the emitter as the OQ-4 ticket. |
+| FND-004 | resolved differently | A Q222 table (Q222-1 taxonomy and derivations, Q222-2 absent-bound meaning) is added. #222's §7 row waits on #212 and QSpec #112 and #113. S-6 waits on "#222 accepted". O-21 now assigns owners only to existing representations and leaves the taxonomy to #222. The Status clause "a #209, #210, #222 or #229 decision that contradicts a §3 cell reopens that cell and no other" lets #212 place scenario 5 against O-20 (`requires-bound` single predicate) and C-25 (never narrows), with #222 able to reopen those cells later. Q210-2 still reads "with #222". That is acceptable now that the reopen rule covers it. |
+| FND-005 | resolved | Q229-1 sends wire spelling and version to #229. Q210-1 now asks only about the selection contract. |
+| FND-006 | resolved | Every O-item that names #213 appears in a slice: O-03 in S-2, O-07 in S-4, O-08, O-10, O-11 and O-14 in S-3. OBS-022 and OBS-034 move to #215. OBS-035 is listed as unowned IR work. |
+| FND-007 | resolved | O-01 and O-03 now build on the `DomainPackageRef` already on main and on PR #200 at 9e59dde. S-2 reworks the key "after #131 merges". The stale Consequence is replaced. One new ordering side effect is FND-012. |
+| FND-008 | resolved | #231 waits on "IR PR #139 merged at a recorded sha". C-11 goes to CG #50. |
+| FND-009 | resolved | The O-16 proof column now maps all ten `KaniOutcomeKind`s to one category each. OQ-3 (d) asks QSpec to adopt it. QC-7 carries the WP9 parity field and blocks #231's result type and CG #50 parity. |
+| FND-010 | resolved | §5 and OQ-1 record #186's assumption, and #186's §7 row waits on OQ-1 and OQ-2. |
+
+New findings from the revision:
+
+| ID | Severity | Summary | Refs |
+|---|---|---|---|
+| FND-011 | medium | §7 gives CG #50 the C-11 widening, the C-12 reconstruction and the parity comparison, but CG #50's body does not match that assignment in two ways. (a) It says it will "Implement the canonical typed counterexample envelope for all values, state/trace identities, claims, bounds and source maps". That reads as a second canonical owner of the O-25 envelope that #231 builds. (b) Its exit is replay "through runtime::execute", which is the native-v1 path. AD-016 arrow 7 and O-26 exclude that path as a replay target and use the complete-V1 executor. As written, CG #50 can close against a different executor and envelope owner than ADR-013 decides. Fix: in the CG #50 row of §7, state that CG #50 consumes #231's envelope as its layer-owned reconstruction input (no second canonical envelope), and that it targets the OQ-4 executor entry, not `runtime::execute`. List that body amendment as an owner action next to OQ-4. | ADR-013 O-25, O-26, §7 CG #50 row · CG #50 body and Exit · QSpec AD-016 arrow 7 |
+| FND-012 | medium | QC-5 (a refusal code for a second selection of the same domain-package identity) lists "#213 S-2, #131" under Blocks. But O-01 gives the single-selection rule to #213 S-2 ("#213 S-2 then adds the single-selection rule"), and the §7 #131 row waits only on FCD PR #200. The in-flight feature PR #200 therefore picks up a QSpec dependency that its own §7 row does not show. That dependency also contradicts FND-007's resolution that #131 is not blocked by ADR-013. Fix: remove #131 from QC-5's Blocks, since the rule is S-2 work. Otherwise, add QC-5 to #131's "Waits on" and move the rule into O-01's #131 half. | ADR-013 O-01, §7 #131 row, §8 QC-5 |
+| FND-013 | low | Unlike the QC table, OQ-3 names no blocked work for three of its five amendments: (b) selecting by node id blocks the OQ-4 executor entry, (d) the WP9 category mapping blocks IR C-09 and #231 C-23, and (e) listing node ids in the kernel row only blocks #213 S-1. §7 gates only (a) and (c). Fix: give each OQ-3 item a Blocks entry, and add (e) to S-1's gate and (d) to #231's "Waits on". | ADR-013 §7, §8 OQ-3, OQ-4 |
+| FND-014 | low | O-03 and the Consequences add a new condition to the open QSL PR #200: "#131 adds an adverse test for that refusal before PR #200 merges". ADR-013 is Proposed and is accepted at #212, and PR #200 is expected to merge before then, so the ADR cannot enforce this. Fix: word it as a request to #131, or put the adverse test in #213 S-2 alongside the O-03 rework. | ADR-013 O-03, C-01, Consequences · QSL PR #200 head 9e59dde |
+
+Round-2 verdict: ACCEPT WITH FINDINGS. No finding is high. FND-011 and FND-012 are medium and do not block.

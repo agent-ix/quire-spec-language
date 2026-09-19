@@ -88,3 +88,38 @@ Applicability per rule:
 | FND-010 | low | Current-state and no-compatibility program rule. The §5 heading is "Version and compatibility policy". §5 bullet 2 reads "Where an older artifact must be read, it is regenerated", which conflicts with the preceding "No component reads an older artifact version" and is the only body `must` outside Consequences. Fix: retitle §5 "Version policy". Rephrase bullet 2 as "An artifact at another version is regenerated from source at the current version." | ADR-013 §5 |
 | FND-011 | low | Current-state and no-fallback program rule. The O-13 paragraph that starts "The AD-016 fallback rule … applies only if the owner withdraws Owner decision 2. It is inactive while that decision stands" records a conditional fallback. Fix: state only the decision: "OBS-005 is decided: `quire-exact` is the canonical owner (AD-016 Owner decision 2). Its crate creation and dependency direction are decided in #209; its types are built in #213." Change the §9 OBS-005 cell "fallback inactive" to match. | ADR-013 O-13, §9 OBS-005 |
 | FND-012 | low | Transitional wording. §6 Digests row: "`state::input::CanonicalDigest` (until #213 folds it)". Other §6 rows state the lane-private status without a time clause, and O-18 already assigns the fold to #213. Fix: drop "(until #213 folds it)". | ADR-013 §6, O-18 |
+
+## Round 2 (commit 0042691)
+
+I re-checked ADR-013 at `0042691`. The EARS pattern checks still do not
+apply (the record has no `shall` statement). R-01, R-04, R-05, R-06, R-07,
+R-09 and §5 were reworded. `quire validate --strict --summary` on the ADR is
+still grammar-clean.
+
+| Finding | Status | How |
+| --- | --- | --- |
+| FND-001 | resolved differently, low residual | R-01 now reads "one canonical owner per layer" and joins two-layer objects by a named §4 conversion. O-07 names only the check stage, and O-09 splits the clause and obligation owners. Residual: R-01 still requires "one stage" per layer, and O-11, O-12 and O-14 each name two QSL stages or types (FND-013). |
+| FND-002 | resolved | R-01 puts lane-private types outside the rule and points to R-09. |
+| FND-003 | resolved | R-04 allows "states that it is not an identity". Every O-01..O-27 now names a §2 kind or says it is not an identity: O-10 lexical, O-15, O-16 and O-21 not an identity, O-19 and O-23 lexical, O-25 declared with semantic comparison of the deciding value, O-27 normalized. |
+| FND-004 | resolved differently, low residual | R-07 defines admitted input as "the values that pass the source contract's reader and schema", so no §4 column was added. Residual: conversions whose source is an in-memory type have no reader, and C-22 gives an ambiguous "or" (FND-014). |
+| FND-005 | resolved | O-16 has eight categories, and "every source value has exactly one row". All ten `KaniOutcomeKind`s and all six FR-331 result values are placed: `tested` under success, `inconclusive` in its own row, `failed` under internal failure. OQ-3 (d) sends the proof column to QSpec. The success and violation rows overlap on the evaluation side (FND-015). |
+| FND-006 | resolved | R-05 defines the forbidden index as one "in a collection whose order no declaration defines", with examples. O-25 now says "never by collection position". |
+| FND-007 | resolved differently, low residual | R-06 defines a name as "an identifier or qualified name in source or on a wire", and handles a library export resolved in an importing package's check stage. Residual: "on a wire" can cover catalog and operation identifiers (FND-016). |
+| FND-008 | resolved differently | Each §4 Test cell now names the evidence and who supplies it: C-06 is an RT test over all six kinds (no ticket, §7), C-08 is one adverse test per O-16 row in #213 S-1, and C-12 is a CG #50 contract test plus the #231 round trip. The lead-in says what the column holds. It gives no test ids, which is acceptable for a record that comes before the tickets. |
+| FND-009 | resolved differently | R-09 uses the acceptance of this record as the baseline ("no consumer added after this record is accepted uses it"), and the #226 drift gate enforces it. |
+| FND-010 | resolved | §5 is titled "Version policy". Bullet 2 reads "An older artifact is regenerated from source at the current version." |
+| FND-011 | resolved | The O-13 fallback paragraph is gone. O-13 and the §9 OBS-005 row state only that `quire-exact` is the canonical owner, with crate direction in Q209-4. |
+| FND-012 | resolved | The §6 Digests row is removed. §6 states that `CanonicalDigest` and `ByteDigest` are duplicates that #213 S-2 folds into O-18. |
+
+New findings introduced by, or left exposed by, the revision:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | low | R-01 requires one owner per layer, meaning "one repository, one stage and one public type". Three QSL-layer objects still name two stages or two types in one layer. O-11: parsed forms produce, check resolves. O-12: source and check stages; `LocatedSpan` and the node-keyed source map. O-14: package type node in the check stage and kernel `ValueType` in `quire-exact`, with no §4 conversion joining them. Fix: name the owning stage and type for each object (for example O-12 is owned by the check stage through the node-keyed source map, with `LocatedSpan` a source-stage input joined by C-21). For O-14, split the kernel evaluation shape into its own row or add the checked type node → kernel `ValueType` conversion to §4. | ADR-013 R-01, O-11, O-12, O-14 |
+| FND-014 | low | R-07 defines admitted input only for sources that have a contract reader and schema. C-02, C-08, C-14, C-18 to C-22 and C-25 convert in-memory types that have no reader. C-22 and O-13 say an out-of-domain value gives "`requires-bound` or refusal", and `requires-bound` is a disposition, not an R-07 refusal. Fix: add to R-07 "for an in-memory source, the admitted input is every value of the source type". Then state which out-of-domain case in C-22 yields `requires-bound` (an unbounded declared domain) and which one refuses (a value outside a finite declared domain). | ADR-013 R-07, C-22, O-13 |
+| FND-015 | low | O-16 says "Every source value has exactly one row", but `Completed(false)` of a claim matches both the success row (`Completed(value)`) and the violation row. Fix: success row "`Completed(value)` except `Completed(false)` of a claim". | ADR-013 O-16 |
+| FND-016 | low | R-06 defines a name as "an identifier or qualified name in source or on a wire". Operation identities (`quire.op.claim.clause`), `node_tag` strings and catalog codes are identifiers on a wire, and IR and CG look them up after the check stage. Read literally, R-06 forbids those lookups and the #226 static check would flag them. Fix: add "Catalog identifiers, operation identities, node tags and codes are lexical keys (§2), not names." | ADR-013 R-06, O-10, O-17 |
+
+Round-2 verdict: ACCEPT WITH FINDINGS. All twelve round-1 findings are
+resolved, seven as proposed and five by a different fix; the residuals of FND-001, FND-004 and FND-007 are carried as FND-013, FND-014 and FND-016. The four new findings
+are low, and none blocks.
