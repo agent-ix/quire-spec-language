@@ -2120,6 +2120,11 @@ fn apply_redefinitions(
                     // `normalize.conflict-check` (`:493`), ranked by this
                     // group's own resolving type's effective identity (QSL
                     // #195).
+                    // `resolve_redefinition_contest` only ever constructs
+                    // these two causes in its `Err` (see its own doc); matched
+                    // by name rather than a wildcard so a future third cause
+                    // added there fails to compile here instead of silently
+                    // ranking as a `DerivationConflict`.
                     let rank = match &refusal.cause {
                         ModelRefusalCause::RedefinitionTarget { redefiners, .. } => {
                             Phase4Rank::RedefinitionCheck(
@@ -2129,9 +2134,12 @@ fn apply_redefinitions(
                                     .unwrap_or_else(|| redefiners[0].clone()),
                             )
                         }
-                        _ => Phase4Rank::ConflictCheck(
+                        ModelRefusalCause::DerivationConflict { .. } => Phase4Rank::ConflictCheck(
                             owner_effective_id.clone(),
                             target_key.clone(),
+                        ),
+                        other => unreachable!(
+                            "resolve_redefinition_contest only ever returns RedefinitionTarget or DerivationConflict, got {other:?}"
                         ),
                     };
                     record_phase4_refusal(accounting, rank, refusal);
@@ -2310,6 +2318,8 @@ fn apply_redefinitions(
             // #228 review): a same-owner `RedefinitionTarget` ranks at
             // `normalize.redefinition-check`, a genuine `DerivationConflict`
             // at `normalize.conflict-check` (QSL #195).
+            // Matched by name, not a wildcard -- see the field-edges loop's
+            // identical comment above.
             let rank = match &refusal.cause {
                 ModelRefusalCause::RedefinitionTarget { redefiners, .. } => {
                     Phase4Rank::RedefinitionCheck(
@@ -2319,7 +2329,12 @@ fn apply_redefinitions(
                             .unwrap_or_else(|| redefiners[0].clone()),
                     )
                 }
-                _ => Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone()),
+                ModelRefusalCause::DerivationConflict { .. } => {
+                    Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone())
+                }
+                other => unreachable!(
+                    "resolve_redefinition_contest only ever returns RedefinitionTarget or DerivationConflict, got {other:?}"
+                ),
             };
             record_phase4_refusal(accounting, rank, refusal);
         }
