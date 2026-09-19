@@ -196,13 +196,13 @@ use crate::diagnostic::Code;
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
+use crate::model::conformance::generals_by_specific;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, DomainPackageRef,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, SupertypeRecord,
     INTERFACE_VERSION_1_3_0,
 };
-use crate::model::conformance::generals_by_specific;
 use crate::model::key::{
-    digest_of, jcs_bytes, EffectiveDeclarationPreimage, EffectiveId, Fact, DeclarationKey,
+    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact,
     PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
@@ -453,18 +453,20 @@ impl Index {
                     operation_member_keys.insert(o.key.clone());
                 }
                 // Redefinition bookkeeping is scanned per type directly from
-                // `bundle.records` by `apply_redefinitions`, so it needs no
-                // index bucket here.
+                // `domain_package.records` by `apply_redefinitions`, so it
+                // needs no index bucket here.
                 DomainPackageRecord::Redefinition(_) => {}
                 // Subsetting derives no normalization fact (see module
                 // docs); it needs no bookkeeping here at all.
                 DomainPackageRecord::Subsetting(_) => {}
-                // FR-152 systems-model records (crate::model::systems) are
-                // not FR-150 normalization inputs: they neither declare a
-                // type nor derive an effective declaration here.
+                // FR-152 systems-model records (crate::model::systems) and
+                // FR-153 population declarations (crate::model::population)
+                // are not FR-150 normalization inputs: they neither declare
+                // a type nor derive an effective declaration here.
                 DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_) => {}
+                | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Population(_) => {}
             }
         }
         Self {
@@ -500,7 +502,7 @@ impl Index {
 }
 
 /// One path from a type to a strict ancestor: the ordered chain of
-/// generalization-record keys taken, and the ancestor's own original
+/// supertype-record keys taken, and the ancestor's own original
 /// producer key (PR #140 F2: the full key, not a display identity string).
 struct AncestorPath {
     path: Vec<DeclarationKey>,
@@ -884,7 +886,9 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     }
                 }
             }
-            DomainPackageRecord::Subsetting(subsetting) if !index.types.contains(&subsetting.owner) => {
+            DomainPackageRecord::Subsetting(subsetting)
+                if !index.types.contains(&subsetting.owner) =>
+            {
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -917,12 +921,14 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                 }
             }
             DomainPackageRecord::FieldMember(_) | DomainPackageRecord::Supertype(_) => {}
-            // FR-152 systems-model records validate their own references
-            // independently (crate::model::systems); FR-150's phase 1 does
-            // not concern itself with them.
+            // FR-152 systems-model records and FR-153 population
+            // declarations validate their own references independently
+            // (crate::model::systems, crate::model::population); FR-150's
+            // phase 1 does not concern itself with them.
             DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
-            | DomainPackageRecord::Relationship(_) => {}
+            | DomainPackageRecord::Relationship(_)
+            | DomainPackageRecord::Population(_) => {}
         }
     }
     Ok(())
@@ -932,7 +938,10 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
 /// defect and bounding ancestor-path enumeration against `limits` (PR #140
 /// F1) so a diamond-generalization domain-package cannot force unbounded work before
 /// [`charge_all`] gets to deny anything.
-fn build(domain_package: &DomainPackage, limits: &ModelNormalizationLimits) -> Result<Built, ModelRefusal> {
+fn build(
+    domain_package: &DomainPackage,
+    limits: &ModelNormalizationLimits,
+) -> Result<Built, ModelRefusal> {
     let index = Index::build(domain_package);
     validate_references(domain_package, &index)?;
     let type_keys = index.sorted_type_keys();
@@ -942,8 +951,10 @@ fn build(domain_package: &DomainPackage, limits: &ModelNormalizationLimits) -> R
     let mut type_preimages: HashMap<DeclarationKey, EffectiveDeclarationPreimage> = HashMap::new();
     let mut type_effective_ids: HashMap<DeclarationKey, EffectiveId> = HashMap::new();
     let mut type_jcs_lens: HashMap<DeclarationKey, u64> = HashMap::new();
-    let mut member_preimages: HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage> =
-        HashMap::new();
+    let mut member_preimages: HashMap<
+        (DeclarationKey, DeclarationKey),
+        EffectiveDeclarationPreimage,
+    > = HashMap::new();
     let mut hidden: std::collections::HashSet<(DeclarationKey, DeclarationKey)> =
         std::collections::HashSet::new();
     let mut facts_so_far: u64 = 0;
@@ -2002,7 +2013,9 @@ fn charge_all(
 fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
     match record {
         DomainPackageRecord::ObjectType(record) => vec![&record.key],
-        DomainPackageRecord::FieldMember(record) => vec![&record.key, &record.owner, &record.value_type],
+        DomainPackageRecord::FieldMember(record) => {
+            vec![&record.key, &record.owner, &record.value_type]
+        }
         DomainPackageRecord::Supertype(record) => {
             vec![&record.key, &record.specific, &record.general]
         }
@@ -2053,6 +2066,11 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
                 &record.target.type_identity,
             ]
         }
+        DomainPackageRecord::Population(record) => {
+            let mut keys = vec![&record.key];
+            keys.extend(record.member_types.iter());
+            keys
+        }
     }
 }
 
@@ -2069,7 +2087,10 @@ fn revision_is_absent(revision: &crate::model::key::Revision) -> bool {
 /// (TC-195 N04, PR #140 F6) and digest domain (TC-195 N05). All refuse
 /// before any charge; no effective view is exposed.
 fn decode_check(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
-    let version = &domain_package.model_selection.contract_version.interface_version;
+    let version = &domain_package
+        .model_selection
+        .contract_version
+        .interface_version;
     if version != INTERFACE_VERSION_1_3_0 {
         return Err(ModelRefusal {
             code: Code::UnknownWire,
@@ -2109,7 +2130,10 @@ fn decode_check(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
 }
 
 /// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
-pub fn normalize(domain_package: &DomainPackage, limits: ModelNormalizationLimits) -> NormalizeOutcome {
+pub fn normalize(
+    domain_package: &DomainPackage,
+    limits: ModelNormalizationLimits,
+) -> NormalizeOutcome {
     let (outcome, _meter) = normalize_with_meter(domain_package, limits);
     outcome
 }

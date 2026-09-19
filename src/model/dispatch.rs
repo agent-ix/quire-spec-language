@@ -43,8 +43,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord, RedefinitionRecord};
 use crate::model::conformance::{generals_by_specific, type_conforms};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, OperationMemberRecord, RedefinitionRecord,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 
@@ -163,7 +165,8 @@ pub enum LinkCheckOutcome {
 struct DispatchIndex {
     operations: HashMap<DeclarationKey, OperationMemberRecord>,
     redefinitions: Vec<RedefinitionRecord>,
-    generals_by_specific: HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
+    generals_by_specific:
+        HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
 }
 
 impl DispatchIndex {
@@ -185,7 +188,8 @@ impl DispatchIndex {
                 | DomainPackageRecord::Subsetting(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_) => {}
+                | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Population(_) => {}
             }
         }
         Self {
@@ -237,7 +241,10 @@ fn build_family(
 /// Whether `p` (by its owner) strictly dominates `q`: `p`'s owner is a
 /// proper descendant of `q`'s owner.
 fn dominates(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
+    generals_by_specific: &HashMap<
+        DeclarationKey,
+        Vec<crate::model::domain_package::SupertypeRecord>,
+    >,
     p_owner: &DeclarationKey,
     q_owner: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {

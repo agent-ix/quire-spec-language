@@ -11,10 +11,10 @@ use quire_spec_language::model::accounting::{
     ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
 };
 use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, DomainPackageRef, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord, RedefinitionRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
 };
-use quire_spec_language::model::key::{EffectiveId, DeclarationKey, RULE_REDEFINE};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
     normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
@@ -70,7 +70,12 @@ fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackag
     })
 }
 
-fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> DomainPackageRecord {
+fn redefinition(
+    identity: &str,
+    owner: &str,
+    redefining: &str,
+    redefined: &str,
+) -> DomainPackageRecord {
     DomainPackageRecord::Redefinition(RedefinitionRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -193,7 +198,10 @@ fn fixture_n06_conflict_with_a_second_diamond_sorting_first() -> DomainPackage {
         "model.M2.w2",
         "model.M.w",
     ));
-    DomainPackage::new(DomainPackageRef::fixture("bundle.n06.two-diamonds"), records)
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n06.two-diamonds"),
+        records,
+    )
 }
 
 /// `E` (no generalization) with `redef.Ey` (`E`, `E.y` redefines `A.x`):
@@ -222,7 +230,8 @@ fn fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant(
 /// fails the identical "redefining member not an effective member" check
 /// for the identical reason. `Da` sorts before `E` in `type_keys`'
 /// ascending identity order.
-fn fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant() -> DomainPackage {
+fn fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant() -> DomainPackage
+{
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.rank03"),
         vec![
@@ -715,7 +724,10 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
 #[test]
 fn unsupported_interface_version_refuses_before_any_charge() {
     let mut domain_package = fixture_f1();
-    domain_package.model_selection.contract_version.interface_version = "1.4.0".to_owned();
+    domain_package
+        .model_selection
+        .contract_version
+        .interface_version = "1.4.0".to_owned();
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
@@ -1497,7 +1509,10 @@ fn fixture_single_redefiner_no_conflict() -> DomainPackage {
         "model.B2.x2",
         "model.A.x",
     ));
-    DomainPackage::new(DomainPackageRef::fixture("bundle.single-redefiner"), records)
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.single-redefiner"),
+        records,
+    )
 }
 
 /// `Owner` declares `n_parents` direct generalizations (one to `Base`, the
@@ -1599,7 +1614,8 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> DomainPackage {
 fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
     let domain_package = fixture_n06_resolved();
 
-    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
@@ -1684,7 +1700,8 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
 fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks() {
     let domain_package = fixture_n06_resolved();
 
-    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     match outcome {
         NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
         other => panic!("expected Completed, got {other:?}"),
@@ -1767,7 +1784,8 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
 fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
     let domain_package = fixture_single_redefiner_no_conflict();
 
-    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
@@ -2014,7 +2032,8 @@ fn fixture_operation_redefinition() -> DomainPackage {
 fn operation_redefinition_is_charged_like_a_field_redefinition() {
     let domain_package = fixture_operation_redefinition();
 
-    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
@@ -2111,7 +2130,8 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
     let domain_package = fixture_operation_redefinition_conflict();
 
-    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
@@ -2219,7 +2239,8 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
         ],
     );
 
-    let (outcome, meter) = normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
@@ -2658,7 +2679,8 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
 #[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
 #[test]
 fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_descendant() {
-    let domain_package = fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant();
+    let domain_package =
+        fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant();
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
@@ -2687,7 +2709,8 @@ fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_desce
 #[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
 #[test]
 fn n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant() {
-    let domain_package = fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant();
+    let domain_package =
+        fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant();
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(

@@ -15,7 +15,7 @@
 use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity};
-use crate::model::key::{EffectiveId, DeclarationKey};
+use crate::model::key::{DeclarationKey, EffectiveId};
 
 /// The offered model selection at a `foreign-model-selection` refusal's two
 /// sites (#163 review finding: a revision-only mismatch must stay
@@ -257,12 +257,12 @@ pub enum ModelRefusalCause {
         /// The admitting domain package's model selection, in full.
         expected: DomainPackageRef,
     },
-    /// A population document does not declare `closedWorld: true`.
+    /// A population's declared extent is not `closed`.
     IncompleteScope {
-        /// The model selection named without `closedWorld: true`.
+        /// The model selection named by the not-`closed` population.
         selection: String,
     },
-    /// A closed-world model selection's generalization graph is not itself
+    /// A closed-extent population's generalization graph is not itself
     /// closed.
     UnclosedSubtypes {
         /// The model selection.

@@ -13,12 +13,12 @@
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, SupertypeRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord,
-};
 use quire_spec_language::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
+};
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
@@ -38,7 +38,12 @@ fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackag
     })
 }
 
-fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> DomainPackageRecord {
+fn redefinition(
+    identity: &str,
+    owner: &str,
+    redefining: &str,
+    redefined: &str,
+) -> DomainPackageRecord {
     DomainPackageRecord::Redefinition(RedefinitionRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -77,7 +82,9 @@ fn fixture_g() -> Vec<DomainPackageRecord> {
     ]
 }
 
-fn effective_view(domain_package: &DomainPackage) -> quire_spec_language::model::normalize::EffectiveView {
+fn effective_view(
+    domain_package: &DomainPackage,
+) -> quire_spec_language::model::normalize::EffectiveView {
     match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed effective view, got {other:?}"),
@@ -315,7 +322,8 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
             }
         }
     }
-    let resolved_bundle = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), resolved_records);
+    let resolved_bundle =
+        DomainPackage::new(DomainPackageRef::fixture("bundle.g"), resolved_records);
     let resolved_view = effective_view(&resolved_bundle);
     let mut resolved_meter = unlimited_meter();
     let resolved_outcome = link_dispatch(

@@ -20,12 +20,12 @@ use std::sync::Arc;
 
 use ix_trace_rs::trace;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, DomainPackageRef, Multiplicity,
-    ObjectTypeRecord, OperationEffect,
-};
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::{EffectiveId, DeclarationKey};
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, SupertypeRecord,
+};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
@@ -131,13 +131,24 @@ fn member(object: &str, type_identity: &str) -> PopulationMember {
 /// FCD FR-121 document P1: members `a1`/`a2` of `model.A`, `b1` of `model.B`.
 fn p1(model_identity: &str) -> PopulationDocument {
     PopulationDocument {
-        closed_world: true,
         model_identity: model_identity.to_owned(),
         members: vec![
             member("a1", "model.A"),
             member("a2", "model.A"),
             member("b1", "model.B"),
         ],
+    }
+}
+
+/// The closed population declaration backing [`p1`]/[`p1_minus_a2`].
+fn p1_population() -> PopulationRecord {
+    PopulationRecord {
+        key: DeclarationKey::fixture("model.pop.p1"),
+        member_types: vec![
+            DeclarationKey::fixture("model.A"),
+            DeclarationKey::fixture("model.B"),
+        ],
+        extent: Extent::Closed,
     }
 }
 
@@ -151,6 +162,7 @@ fn admitted_binding(
         domain_package,
         view,
         document,
+        &p1_population(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -206,7 +218,6 @@ fn scenario() -> Scenario {
 /// survive unchanged.
 fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
     PopulationDocument {
-        closed_world: true,
         model_identity: model_identity.to_owned(),
         members: vec![member("a1", "model.A"), member("b1", "model.B")],
     }
@@ -229,9 +240,11 @@ fn l07_scenario() -> Scenario {
         creates: Vec::new(),
         deletes: vec![DeclarationKey::fixture("model.A")],
     };
+    let population = p1_population();
     let context = InvocationContext {
         domain_package: &domain_package,
         view: &view,
+        population: &population,
         subtype_closure: GeneralizationClosure::Closed,
         declared_maximum: Some(3),
     };
@@ -1190,7 +1203,6 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![
             member("a1", "model.A"),

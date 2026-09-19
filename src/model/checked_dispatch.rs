@@ -87,10 +87,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::Meter;
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, RedefinitionRecord};
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
+use crate::model::domain_package::{DomainPackage, DomainPackageRecord, RedefinitionRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{

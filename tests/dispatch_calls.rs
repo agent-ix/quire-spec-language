@@ -14,14 +14,14 @@ use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, SupertypeRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord,
-};
 use quire_spec_language::model::checked_dispatch::{
     checked_dispatch_operation, DispatchRoot, OperationClauses,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+};
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use quire_spec_language::value::{
@@ -608,11 +608,17 @@ fn ab_bridge_declarations(
         receiver_type,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &object_keys, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     let types = TypeEnvironment::new(
         [],
         [
@@ -1131,11 +1137,17 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         receiver_type: b_type,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &object_keys, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     declarations.types = TypeEnvironment::new(
         [],
         [
@@ -1316,11 +1328,17 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         receiver_type: a_type,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &object_keys, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     // The bridge is pure and builds no `TypeEnvironment` of its own (see its
     // module docs): the caller declares the object types its own clauses'
     // parameter/result `ValueType`s name.

@@ -13,10 +13,10 @@
 //! dispatched against.
 
 pub mod accounting;
-pub mod domain_package;
 pub mod checked_dispatch;
 pub mod conformance;
 pub mod dispatch;
+pub mod domain_package;
 pub mod key;
 pub mod normalize;
 pub mod population;

@@ -82,8 +82,8 @@ use std::ops::ControlFlow;
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, Multiplicity,
-    OperationMemberRecord, PostconditionClause, RedefinitionRecord, SubsettingRecord,
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, OperationMemberRecord,
+    PostconditionClause, RedefinitionRecord, SubsettingRecord, SupertypeRecord,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -225,10 +225,13 @@ impl ConformanceIndex {
                 }
                 DomainPackageRecord::Subsetting(_) => {}
                 // FR-152 systems-model records are not conformance-checked
-                // by this module (crate::model::systems owns them).
+                // by this module (crate::model::systems owns them); FR-153
+                // population declarations are not conformance-checked here
+                // either (crate::model::population owns them).
                 DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_) => {}
+                | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Population(_) => {}
             }
         }
         Self {
