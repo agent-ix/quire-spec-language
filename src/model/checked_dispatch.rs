@@ -33,18 +33,18 @@
 //!   own per-operation signature. A package with several dispatch call sites
 //!   calls this once per distinct receiver-type/member pair and merges the
 //!   resulting `functions`/`dispatch_operations`/`dispatch_tables`.
-//! - `receiver_type` is supplied by the caller as the exact [`NodeKey`] the
-//!   checker requires the operation's own declared owner type to resolve to;
-//!   this bridge does not derive it from `OperationMemberRecord::owner`
-//!   itself (turning a `DeclarationKey` into a checker [`NodeKey`] is the
-//!   same kind of pre-translated input as `OperationClauses`, below). A call
-//!   is also admitted through every other static type `checked_table`
-//!   exposes the operation through (#176): one [`DispatchOperation`] entry
-//!   is built per distinct [`NodeKey`] `object_keys` maps `table.entries()`'s
-//!   own subtypes to, not only `root.receiver_type`, so a receiver whose
-//!   static type is any conforming subtype -- whether it redefines the
-//!   operation itself or only inherits it unredefined -- resolves the
-//!   identical checked table.
+//! - The receiver's admitted static types are derived from `object_keys` and
+//!   `table.entries()`, not supplied by the caller (turning a
+//!   `DeclarationKey` into a checker [`NodeKey`] is the same kind of
+//!   pre-translated input as `OperationClauses`, below): one
+//!   [`DispatchOperation`] entry is built per distinct [`NodeKey`]
+//!   `object_keys` maps a `table.entries()` subtype to, wherever that
+//!   subtype's own winning candidate is `root.key` itself (#176, tightened
+//!   by #204 round 1's M5) -- the operation's own declared owner, plus every
+//!   conforming subtype that inherits the operation unredefined. A subtype
+//!   that redefines it is exposed by that redefiner's own, separate
+//!   `checked_dispatch_operation` call instead, so no two calls ever expose
+//!   the same `(receiver_type, member)` pair.
 //! - Parameter and result types come from [`OperationClauses`], not from a
 //!   translation of `OperationMemberRecord`'s own producer-interface
 //!   parameter/result records: turning a model-layer type reference into a
@@ -197,13 +197,23 @@ pub enum DispatchBridgeRefusal {
     /// declared result, or a non-empty effect set (#174): FR-151
     /// (`quire.model.dispatch.single/v1`) admits only a query -- "whose
     /// result is present and whose effect set is empty" -- as a dispatch
-    /// target. FR-272's `invalid_model_binding` cause list is closed and has
-    /// no dedicated non-query-dispatch variant, so this reuses
-    /// [`ModelRefusalCause::MalformedDeclaration`], exactly as that cause's
-    /// own doc already establishes for a closed list with no dedicated cause
-    /// (#157), rather than a bridge-only cause. Boxed: `ModelRefusal` is far
-    /// larger than the other variants.
+    /// target. This is a valid declaration typed wrong for its role, not a
+    /// malformed one, so it is [`Code::IllTyped`] /
+    /// [`ModelRefusalCause::OperatorIneligible`], the same pairing
+    /// `crate::model::population::all_instances` already uses for a binding
+    /// ineligible for the operator applied to it, rather than a bridge-only
+    /// cause. Boxed: `ModelRefusal` is far larger than the other variants.
     NotAQuery(Box<ModelRefusal>),
+    /// A candidate reached from `root.key` or `table.entries()` names no
+    /// declared operation member in `domain_package.records`. `link_dispatch`
+    /// builds its own `DispatchIndex` from the same records, so this should
+    /// not arise from a table it linked; kept as a typed refusal rather than
+    /// an `.expect()` so a malformed `domain_package`/`root` pairing supplied
+    /// directly to this bridge (bypassing `link_dispatch`'s own index) is
+    /// reported, not panicked, exactly as `crate::model::dispatch::link_dispatch`
+    /// itself reports every other missing-candidate lookup. Boxed:
+    /// `ModelRefusal` is far larger than the other variants.
+    UnknownCandidate(Box<ModelRefusal>),
 }
 
 fn missing(operation: &DeclarationKey, field: MissingClauseField) -> DispatchBridgeRefusal {
@@ -231,14 +241,27 @@ fn depth_exceeded(candidate: &DeclarationKey) -> DispatchBridgeRefusal {
 /// own doc for the cause choice).
 fn not_a_query(operation: &DeclarationKey) -> DispatchBridgeRefusal {
     DispatchBridgeRefusal::NotAQuery(Box::new(ModelRefusal {
-        code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::MalformedDeclaration,
+        code: Code::IllTyped,
+        cause: ModelRefusalCause::OperatorIneligible,
         detail: format!(
             "{} is a dispatch target but is not a query: FR-151 \
              (quire.model.dispatch.single/v1) admits only an operation \
              whose result is present and whose effect set is empty",
             operation.node
         ),
+    }))
+}
+
+/// `candidate` is reached from `root.key`/`table.entries()` but names no
+/// declared operation member (see [`DispatchBridgeRefusal::UnknownCandidate`]'s
+/// own doc for why this is typed rather than an `.expect()`).
+fn unknown_candidate(candidate: &DeclarationKey) -> DispatchBridgeRefusal {
+    DispatchBridgeRefusal::UnknownCandidate(Box::new(ModelRefusal {
+        code: Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownCandidate {
+            candidate: candidate.clone(),
+        },
+        detail: format!("{} is not a declared operation member", candidate.node),
     }))
 }
 
@@ -270,19 +293,51 @@ fn require_signature(
 }
 
 /// The FR-151 dispatch-eligible operation [`checked_dispatch_operation`] is
-/// asked to check: its own key, the receiver type its dispatch call sites
-/// require, and whether the generalization closure is known closed.
-/// Grouped into one value to keep that function's own argument count small.
+/// asked to check: its own key, and whether the generalization closure is
+/// known closed. Grouped into one value to keep that function's own
+/// argument count small.
 pub struct DispatchRoot {
     /// The root operation's own original producer key.
     pub key: DeclarationKey,
-    /// The exact static type the checker requires of a dispatched call's
-    /// receiver. See the module docs: this bridge does not derive it from
-    /// `OperationMemberRecord::owner`.
-    pub receiver_type: NodeKey,
     /// Whether the generalization closure relevant to this operation is
     /// known closed.
     pub closure: GeneralizationClosure,
+}
+
+/// Every declared object type's own `supertypes` (H1, #204 round 1),
+/// translated from `domain_package.records`' [`DeclarationKey`]s through
+/// `object_keys` into checker [`NodeKey`]s -- the exact shape
+/// [`crate::value::composite::ObjectTypeDeclaration::with_supertypes`]
+/// needs, and the same kind of pre-translated bridge input as
+/// [`OperationClauses`] is for clause data (see the module docs). No
+/// production code builds a [`crate::value::composite::TypeEnvironment`]
+/// yet (only test scaffolding does), so this is test-support infrastructure
+/// today; #131's own real intake can call it exactly as tests do.
+pub fn object_type_supertypes(
+    domain_package: &DomainPackage,
+    object_keys: &BTreeMap<DeclarationKey, NodeKey>,
+) -> Result<BTreeMap<NodeKey, Vec<NodeKey>>, DispatchBridgeRefusal> {
+    let mut supertypes: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
+    for record in &domain_package.records {
+        if let DomainPackageRecord::ObjectType(object_type) = record {
+            let subtype_key = object_keys.get(&object_type.key).copied().ok_or_else(|| {
+                DispatchBridgeRefusal::MissingObjectKey {
+                    subtype: Box::new(object_type.key.clone()),
+                }
+            })?;
+            let mut mapped = Vec::with_capacity(object_type.supertypes.len());
+            for supertype in &object_type.supertypes {
+                let supertype_key = object_keys.get(supertype).copied().ok_or_else(|| {
+                    DispatchBridgeRefusal::MissingObjectKey {
+                        subtype: Box::new(supertype.clone()),
+                    }
+                })?;
+                mapped.push(supertype_key);
+            }
+            supertypes.insert(subtype_key, mapped);
+        }
+    }
+    Ok(supertypes)
 }
 
 /// `domain_package.records`'s own first-appearance index of every declared
@@ -725,21 +780,37 @@ pub fn checked_dispatch_operation(
 
     // FR-151 (`quire.model.dispatch.single/v1`): "Only query operations,
     // whose result is present and whose effect set is empty, may be
-    // called" (#174). Every distinct linked candidate is checked -- not
-    // only `root.key` -- since any of them can be "the operation actually
-    // dispatched" at runtime for some conforming subtype; FR-151's own
-    // conformance variance already forces every redefiner's result
-    // presence and effect frame to agree with what it redefines wherever
-    // that checking runs, but nothing in `src/`'s own build pipeline runs
-    // it before this bridge, so this is the one real gate today. Checked
-    // in `ordered_candidates`' own declaration order for a deterministic
-    // refusal when more than one candidate fails.
-    for candidate in &ordered_candidates {
-        let record = operation_records.get(candidate).expect(
-            "table.entries()'s candidates are always declared operation \
-             members: link_dispatch's own DispatchIndex is built from this \
-             same domain_package.records",
-        );
+    // called" (#174). `root.key` is checked first, even when it declares no
+    // body and so is never itself a `table.entries()` candidate: FR-151's
+    // query-only restriction binds the operation a dispatch call resolves
+    // to by member name, not only the operations that happened to end up
+    // runtime-eligible under it. Every distinct linked candidate follows,
+    // since any of them can be "the operation actually dispatched" at
+    // runtime for some conforming subtype; FR-151's own conformance
+    // variance already forces every redefiner's result presence and effect
+    // frame to agree with what it redefines wherever that checking runs,
+    // but nothing in `src/`'s own build pipeline runs it before this
+    // bridge, so this is the one real gate today. Checked in plain
+    // `DeclarationKey` order (`distinct`'s own `BTreeSet` order), not
+    // `ordered_candidates`' record order, so a refusal with more than one
+    // disqualified candidate is deterministic regardless of
+    // `domain_package.records`' declaration order; `ordered_candidates`
+    // itself is left untouched since `functions` below still needs its
+    // record order for FR-151 D08's declaration-order call-graph edges.
+    let mut query_checked: BTreeSet<DeclarationKey> = BTreeSet::new();
+    let mut query_check_order: Vec<DeclarationKey> = Vec::with_capacity(distinct.len() + 1);
+    if query_checked.insert(root.key.clone()) {
+        query_check_order.push(root.key.clone());
+    }
+    for candidate in &distinct {
+        if query_checked.insert(candidate.clone()) {
+            query_check_order.push(candidate.clone());
+        }
+    }
+    for candidate in &query_check_order {
+        let record = operation_records
+            .get(candidate)
+            .ok_or_else(|| unknown_candidate(candidate))?;
         let is_query = record.result.is_some()
             && record.effect.modifies.is_empty()
             && record.effect.creates.is_empty()
@@ -854,29 +925,40 @@ pub fn checked_dispatch_operation(
     }
 
     let mut entries = Vec::with_capacity(table.entries().len());
-    // Every subtype's own checked [`NodeKey`] that `table.entries()` links a
-    // candidate for, in the table's own subtype-enumeration order
+    // Every subtype's own checked [`NodeKey`] that `table.entries()` links
+    // *to `root.key` itself*, in the table's own subtype-enumeration order
     // (ascending effective identity), deduplicated (#176: `link_dispatch`
     // links one entry per conforming subtype under `object_keys`; the
-    // reflexive entry for `root.receiver_type` itself is one of them, since
-    // `type_conforms(s, t)` is `true` for `s == t` -- see
+    // reflexive entry for the operation's own declared owner is one of
+    // them, since `type_conforms(s, t)` is `true` for `s == t` -- see
     // `conformance::type_conforms`). Feeds every exposing static type's own
     // [`DispatchOperation`] entry below, so a call whose receiver's static
     // type is any type this dispatch is exposed through -- the operation's
-    // own declared owner or any conforming subtype that exposes it, whether
-    // by redefining it or only by inheriting it unredefined -- resolves
-    // (FR-151, `quire.model.dispatch.single/v1`: "member-name resolves
-    // statically to exactly one exposed effective operation... of the
-    // receiver's static type `T`"), not only a call through the operation's
-    // own declared owner type.
+    // own declared owner or any conforming subtype that exposes it by
+    // inheriting it unredefined -- resolves (FR-151,
+    // `quire.model.dispatch.single/v1`: "member-name resolves statically to
+    // exactly one exposed effective operation... of the receiver's static
+    // type `T`"), not only a call through the operation's own declared
+    // owner type. A subtype whose own winning candidate is some *other*
+    // redefiner is left out here (M5, #204 round 1): that subtype's own
+    // effective member resolves to that redefiner, not to `root.key`, so it
+    // is exposed by that redefiner's own separate `checked_dispatch_operation`
+    // call instead -- exposing it here too would hand `check.rs`'s
+    // `dispatch_call` two `DispatchOperation` entries for the same
+    // `(receiver_type, member)` pair with different signatures, and which
+    // one it found would depend on merge order. `table.entries()` itself
+    // still gets a row for every subtype below, redefiner or not: that
+    // feeds `checked_table`, which resolves a receiver's *runtime* type
+    // regardless of which static type admitted the call.
     let mut exposing_receiver_types: Vec<NodeKey> = Vec::new();
+    let mut exposing_seen: BTreeSet<NodeKey> = BTreeSet::new();
     for (subtype, candidate) in table.entries() {
         let subtype_key = object_keys.get(subtype).copied().ok_or_else(|| {
             DispatchBridgeRefusal::MissingObjectKey {
                 subtype: Box::new(subtype.clone()),
             }
         })?;
-        if !exposing_receiver_types.contains(&subtype_key) {
+        if candidate == &root.key && exposing_seen.insert(subtype_key) {
             exposing_receiver_types.push(subtype_key);
         }
         let &body = body_index

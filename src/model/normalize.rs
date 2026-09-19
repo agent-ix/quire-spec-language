@@ -1880,23 +1880,46 @@ fn owner_dominates(
 ///   dominating the other, naming every contending edge's own path.
 ///
 /// A caller cannot resolve either shape by an arbitrary pick.
+///
+/// Sorted here, once, by `(owner, redefining)` (M1, #204 round 1) so the
+/// refusal payload built below (`DerivationConflict`'s own `redefiners`/
+/// `detail`, and `RedefinitionTarget`'s `detail`) is deterministic
+/// regardless of a caller's own incoming order: the field-target loop above
+/// already sorts its own `edges` the identical way before calling, for its
+/// *other* (`member_preimages`/`hidden`) needs downstream, so this sort is a
+/// stable no-op there and `Ok(i)` still indexes that caller's own slice the
+/// same way; the operation-target loop does not pre-sort, and never reads
+/// `Ok(i)` (operation members have no winner bookkeeping of their own — see
+/// that loop's comment), so sorting only here, once, covers both callers.
 fn resolve_redefinition_contest(
     owner_ancestor_sets: &HashMap<DeclarationKey, HashSet<DeclarationKey>>,
     type_key: &DeclarationKey,
     target_key: &DeclarationKey,
     edges: &[RedefinitionEdge],
 ) -> Result<usize, ModelRefusal> {
-    for i in 0..edges.len() {
-        let dominates_all = (0..edges.len()).all(|j| {
-            i == j || owner_dominates(owner_ancestor_sets, &edges[i].owner, &edges[j].owner)
-        });
-        if dominates_all {
-            return Ok(i);
-        }
+    let mut edges: Vec<&RedefinitionEdge> = edges.iter().collect();
+    edges.sort_by(|a, b| {
+        a.owner
+            .cmp(&b.owner)
+            .then_with(|| a.redefining.cmp(&b.redefining))
+    });
+    let edges = edges;
+    // L2, #204 round 1: `iter().position` in place of a raw `0..len()`
+    // index loop; `std::ptr::eq` stands in for the original `i == j`
+    // self-skip, comparing each edge's own identity (its slot in this
+    // group), not its value -- two structurally identical edges at
+    // different slots must still each get their own turn as `candidate`.
+    if let Some(winner) = edges.iter().position(|candidate| {
+        edges.iter().all(|other| {
+            std::ptr::eq(*candidate, *other)
+                || owner_dominates(owner_ancestor_sets, &candidate.owner, &other.owner)
+        })
+    }) {
+        return Ok(winner);
     }
 
     let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
-    for edge in edges {
+    for edge in edges.iter().copied() {
         let dominated_by_another = edges.iter().any(|other| {
             other.owner.node != edge.owner.node
                 && owner_dominates(owner_ancestor_sets, &other.owner, &edge.owner)
@@ -1916,9 +1939,17 @@ fn resolve_redefinition_contest(
             .map(|edge| edge.redefining.node.clone())
             .collect();
         redefiners.sort();
+        let mut redefiner_keys: Vec<DeclarationKey> = most_derived
+            .iter()
+            .map(|edge| edge.redefining.clone())
+            .collect();
+        redefiner_keys.sort();
         ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::RedefinitionTarget,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: redefiner_keys,
+                target: target_key.clone(),
+            },
             detail: format!(
                 "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
                 most_derived[0].owner.node,
