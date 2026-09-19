@@ -87,6 +87,7 @@ use crate::model::bundle::{
 };
 use crate::model::key::ProducerKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::population::redefinition_reaches;
 use crate::value::{
     established_field_fact, Connective, Established, Integer, IntegerInterval, Location, Node,
     NodeKind, OrderedKind, OrderingOperator, Origin, ProvedInterval, Value, ValueType,
@@ -664,25 +665,19 @@ pub fn check_operation_redefinition(
         }
     }
 
-    // Effect.
+    // Effect. A write is covered when it is granted directly or reaches a
+    // granted field through the redefinition chain
+    // ([`redefinition_reaches`]; QSL #171) -- not just one hop, since
+    // model-complete.md:56/:64 make a multi-hop chain like `C.x -> B.x ->
+    // A.x` legal with no direct `C.x -> A.x` record.
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
     for write in &redefining.effect.field_writes {
-        let direct = redefined
-            .effect
-            .field_writes
-            .iter()
-            .any(|w| w.identity == write.identity);
-        let via_redefinition = index.redefinitions.iter().any(|r| {
-            r.redefining.identity == write.identity
-                && redefined
-                    .effect
-                    .field_writes
-                    .iter()
-                    .any(|w| w.identity == r.redefined.identity)
+        let covered = redefinition_reaches(&bundle.records, write, |candidate| {
+            redefined.effect.field_writes.contains(candidate)
         });
-        if !direct && !via_redefinition {
+        if !covered {
             failures.push(AxisFailure {
                 axis: "effect",
                 code: Code::IllTyped,
