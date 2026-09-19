@@ -7,7 +7,9 @@
 //! `resources/complete-value/quire-specification/proposals/checked-package-v2/model-effective-declaration-vectors.json`.
 
 use ix_trace_rs::trace;
-use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
+use quire_spec_language::model::accounting::{
+    ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
+};
 use quire_spec_language::model::bundle::{
     Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, RedefinitionRecord,
@@ -1554,9 +1556,9 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
         1,
         "exactly one contested group (A.x, reachable at D) across the whole build"
     );
-    // #169: 100 before this fix -- the ten phase-4 redefine facts (see
-    // `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`)
-    // were never charged as `normalize.fact`.
+    // Includes the ten phase-4 redefine facts' own `normalize.fact` charges
+    // (see `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`
+    // for their derivation).
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 110);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
@@ -1573,21 +1575,17 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
     }
 }
 
-/// QSL #169: phase-4 redefine facts (`RULE_REDEFINE`) are themselves
-/// derivation facts and must be charged as `normalize.fact`
+/// Phase-4 redefine facts (`RULE_REDEFINE`) are themselves derivation facts
+/// and are charged as `normalize.fact`
 /// (`value-accounting.md:453`: "each derivation fact before it is formed:
 /// phase 2, then phase 3, then phase 4 ... `derivation_facts=k`"), in the
 /// order `value-accounting.md:455`/`:456` fix relative to phase 4's own two
 /// checks: `normalize.redefinition-check` fires "before its first
 /// `normalize.fact`" and `normalize.conflict-check` fires "after its last
-/// `normalize.fact`" -- so the correct phase-4 charge sequence is
-/// redefinition-check, then every phase-4 `normalize.fact` (ascending by
-/// `(owner producer key, declaration producer key, inputs)`, `:453`), then
-/// conflict-check. Before this fix, `charge_all` went straight from
-/// `redefinition_check_work` to `conflict_check_work`, so these facts
-/// existed in the effective view's own derivation (`apply_redefinitions`
-/// already pushed them) but were never counted toward `derivation_facts` or
-/// `work_units`.
+/// `normalize.fact`" -- so the phase-4 charge sequence is
+/// redefinition-check, then every phase-4 `normalize.fact` (one charge per
+/// fact, continuing the same `derivation_facts` running total phase 2/3
+/// already charge), then conflict-check.
 ///
 /// `fixture_n06_resolved` (reused from
 /// `n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o` above,
@@ -1605,32 +1603,27 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
 ///
 /// Total: `2 + 2 + 6 = 10`.
 ///
-/// Cross-checked against the crate: `work_units` for a completed
-/// (`UNLIMITED`) run rises from the pre-fix `100`
-/// (`n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o`'s own
-/// total) to `110` -- the ten new `normalize.fact` charges, one work unit
-/// each -- and `derivation_facts` peaks at `30` (the pre-existing `20`
-/// phase-2/3 facts plus these ten). At `work_units = 54` (exactly the
-/// pre-fix boundary: `43` phase-1/2/3 plus `11` for the three
-/// `normalize.redefinition-check` charges), the next charge is now the
-/// *first* phase-4 `normalize.fact` (`next_charge = 1`), never
-/// `normalize.conflict-check` -- the pre-fix defect reported `Incomplete` at
-/// `normalize.conflict-check` here because the ten facts in between were
-/// never charged.
+/// Cross-checked against the crate: a completed (`UNLIMITED`) run charges
+/// `work_units = 110` and peaks at `derivation_facts = 30` (the `20`
+/// phase-2/3 facts plus these ten). `work_units = 109` is exactly one short
+/// of that total, `Incomplete` at the run's own last charge; `work_units =
+/// 110` completes.
 ///
-/// Revert probe: dropping this fix's phase-4 `normalize.fact` charge loop
-/// back out of `charge_all` reproduces both failures here -- `work_units`
-/// reads `100`, not `110`, and the bounded run denies at
-/// `normalize.conflict-check`, not `normalize.fact` -- confirmed by hand:
-/// reverting the change locally reproduces both, restoring it returns this
-/// test to green.
-#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+/// Revert probe: dropping the phase-4 `normalize.fact` charge loop out of
+/// `charge_all` makes `work_units` read `100`, not `110`, and moves the
+/// `work_units = 54` boundary's denial to `normalize.conflict-check` --
+/// confirmed by hand: reverting the change locally reproduces both,
+/// restoring it returns this test to green.
+#[trace("TC-195", "FR-150-AC-8")]
 #[test]
 fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks() {
     let bundle = fixture_n06_resolved();
 
     let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    match outcome {
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        other => panic!("expected Completed, got {other:?}"),
+    }
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 110);
     assert_eq!(meter.consumed(LimitKind::DerivationFacts), 30);
 
@@ -1638,19 +1631,47 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
     limits.work_units = 54;
     match normalize(&bundle, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
-            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 54);
-            assert_eq!(incomplete.consumed, 54);
             assert_eq!(
-                incomplete.next_charge, 1,
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 54,
+                    consumed: 54,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                },
                 "the first phase-4 normalize.fact charge, never once with a \
                  flat cost other than one work unit"
             );
-            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
         }
         other => {
             panic!("expected Incomplete at the first phase-4 normalize.fact charge, got {other:?}")
         }
+    }
+
+    // Exact-bound pair (FR-150-AC-8): one short of the full charge total
+    // denies at the run's own last charge; the full total completes.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 109;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 109,
+                    consumed: 109,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeHash,
+                }
+            );
+        }
+        other => panic!("expected Incomplete one work unit short of completion, got {other:?}"),
+    }
+    limits.work_units = 110;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        other => panic!("expected Completed at work_units=110, got {other:?}"),
     }
 }
 
@@ -2144,8 +2165,9 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
         2,
         "one contested group for A.z (field) and one for A.a (operation)"
     );
-    // #169: 89 before this fix -- the field redefinition group's own six
-    // phase-4 redefine facts were never charged as `normalize.fact`.
+    // Includes the field redefinition group's own six phase-4 redefine
+    // facts' `normalize.fact` charges (operation members derive no facts of
+    // their own -- see the module docs).
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 95);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
@@ -2215,5 +2237,129 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
         other => {
             panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
         }
+    }
+}
+
+/// PR #178 review finding 1: a phase-4 refusal (`derivation-conflict`/
+/// `redefinition-target`) must not short-circuit `build()` before
+/// `charge_all` replays phase 4's own charges. `value-accounting.md:481`'s
+/// "checking is exhaustive within a stage" means every
+/// `normalize.redefinition-check`, every phase-4 `normalize.fact` and every
+/// `normalize.conflict-check` for `fixture_n06_conflict` (`B.x2`/`C.x3`,
+/// undominated redefiners of `A.x` reaching `D`) must be admitted before the
+/// `derivation-conflict` refusal they expose is reported; a tighter limit
+/// that runs out first reports that `Incomplete` instead, never the
+/// refusal.
+///
+/// `fixture_n06_conflict`'s exact phase-4 shape (recounted, matching PR
+/// #178's review): `redef.B` reaches only `B` (2 facts), `redef.C` reaches
+/// only `C` (2 facts), and both `redef.B`/`redef.C` reach `D` (4 facts) --
+/// eight phase-4 facts total. A completed (`UNLIMITED`) run charges 27
+/// `derivation_facts` (19 through phase 2/3 plus these 8) and 57
+/// `work_units` (40 through phase 3, `+5` for the two
+/// `normalize.redefinition-check` charges, `+8` for the phase-4 facts,
+/// `+4` for the one `normalize.conflict-check` group) before reporting the
+/// refusal.
+///
+/// Revert probe: reverting `build()` to return the phase-4 refusal directly
+/// (its pre-review shape) makes every case below fail -- `derivation_facts
+/// = 19` reports `Refused` instead of `Incomplete`, and every `work_units`
+/// case in `16..=56` reports `Refused` instead of `Incomplete` -- confirmed
+/// by hand: reverting `build`/`charge_all` locally reproduces every
+/// failure, restoring them returns this test to green.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
+    let bundle = fixture_n06_conflict();
+
+    // Repro 1: a `derivation_facts` budget that exhausts exactly at the
+    // 19th phase-2/3 fact -- one short of the first phase-4 fact -- reports
+    // `Incomplete` at that first phase-4 `normalize.fact`, never the
+    // `derivation-conflict` refusal `D`'s own resolution would otherwise
+    // expose.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.derivation_facts = 19;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::DerivationFacts,
+                    limit: 19,
+                    consumed: 19,
+                    next_charge: 20,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at the first phase-4 normalize.fact, got {other:?}"),
+    }
+
+    // Repro 2, `45..=52`: new with this fix -- these `work_units` land
+    // inside the eight phase-4 `normalize.fact` charges, after both
+    // `normalize.redefinition-check` charges and before the one
+    // `normalize.conflict-check` charge.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 48;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 48,
+                    consumed: 48,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at a phase-4 normalize.fact, got {other:?}"),
+    }
+
+    // Repro 2, `16..=39`: already broken on `main` before this PR --
+    // `fact_budget_exceeded` compares only the fact count against
+    // `work_units`, ignoring the work units already spent on
+    // `normalize.record` and `normalize.cycle-check`, so these land inside
+    // phase 2/3's own facts, well before phase 4 starts.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 30;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 30,
+                    consumed: 30,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at a phase 2/3 normalize.fact, got {other:?}"),
+    }
+
+    // `work_units = 57` is exactly enough to admit every phase-4 charge
+    // (40 through phase 3, `+5` redefinition-check, `+8` phase-4 facts,
+    // `+4` conflict-check), so the refusal these charges expose is finally
+    // reported.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 57;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DerivationConflict {
+                    type_: ProducerKey::fixture("model.D"),
+                    member: ProducerKey::fixture("model.A.x"),
+                    redefiners: vec![
+                        ProducerKey::fixture("model.B.x2"),
+                        ProducerKey::fixture("model.C.x3"),
+                    ],
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict) at work_units=57, got {other:?}"),
     }
 }
