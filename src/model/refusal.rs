@@ -224,8 +224,18 @@ pub enum ModelRefusalCause {
     /// A redefinition narrows a fact FR-146 has no proof form to establish,
     /// or narrows past an established fact with no supporting proof.
     UnprovedRefinement,
-    /// More than one redefinition target candidate remains after dominance.
-    RedefinitionTarget,
+    /// More than one redefinition target candidate remains after dominance
+    /// (L4, #204 round 1: typed like [`Self::DerivationConflict`], the
+    /// sibling cause for the other R07 ambiguity shape).
+    RedefinitionTarget {
+        /// The contending redefining members sharing one owner, with no
+        /// single owner dominating a resolvable choice among them. Empty
+        /// where no redefining member's own claim is even known (a
+        /// construction site with no candidate edge to name).
+        redefiners: Vec<DeclarationKey>,
+        /// The contended redefinition target.
+        target: DeclarationKey,
+    },
     /// A population document or effective view names a model selection
     /// other than the admitting domain package's.
     ForeignModelSelection {
@@ -273,7 +283,10 @@ pub enum ModelRefusalCause {
         /// The newly declared, conflicting type.
         declared_type: EffectiveId,
     },
-    /// A population binding has no declared maximum to select against.
+    /// An operator is applied to a binding it cannot act on: a population
+    /// binding with no declared maximum to select against, or (FR-151,
+    /// `quire.model.dispatch.single/v1`) a dispatch target with a declared
+    /// result and effect set that disqualify it as a query.
     OperatorIneligible,
     /// A selected population count exceeds its declared maximum.
     AboveMaximum {
@@ -538,7 +551,7 @@ impl ModelRefusalCause {
             Self::VarianceParameter { .. } => "variance-parameter",
             Self::EffectEscape { .. } => "effect-escape",
             Self::UnprovedRefinement => "unproved-refinement",
-            Self::RedefinitionTarget => "redefinition-target",
+            Self::RedefinitionTarget { .. } => "redefinition-target",
             Self::ForeignModelSelection { .. } => "foreign-model-selection",
             Self::IncompleteScope { .. } => "incomplete-scope",
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
@@ -649,7 +662,7 @@ mod tests {
             ModelRefusalCause::VarianceParameter { .. } => "variance-parameter",
             ModelRefusalCause::EffectEscape { .. } => "effect-escape",
             ModelRefusalCause::UnprovedRefinement => "unproved-refinement",
-            ModelRefusalCause::RedefinitionTarget => "redefinition-target",
+            ModelRefusalCause::RedefinitionTarget { .. } => "redefinition-target",
             ModelRefusalCause::ForeignModelSelection { .. } => "foreign-model-selection",
             ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
@@ -757,7 +770,10 @@ mod tests {
             },
             ModelRefusalCause::EffectEscape { field: key("p") },
             ModelRefusalCause::UnprovedRefinement,
-            ModelRefusalCause::RedefinitionTarget,
+            ModelRefusalCause::RedefinitionTarget {
+                redefiners: vec![key("p")],
+                target: key("p"),
+            },
             ModelRefusalCause::ForeignModelSelection {
                 actual: OfferedSelection::Document(String::new()),
                 expected: crate::model::domain_package::DomainPackageRef::fixture("p"),

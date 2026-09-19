@@ -1029,21 +1029,15 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
-            assert!(
-                refusal.detail.contains("model.B.z2"),
-                "detail must name B/z2's own declaration key: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.B.z") && !refusal.detail.contains("model.redef.z"),
-                "detail must name the redefining members' own keys: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.A.x"),
-                "detail must name the contended target: {}",
-                refusal.detail
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.B.z"),
+                        DeclarationKey::fixture("model.B.z2"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.x"),
+                }
             );
         }
         other => {
@@ -1071,21 +1065,18 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
-            assert!(
-                refusal.detail.contains("model.B.z") && refusal.detail.contains("model.B.z2"),
-                "detail must name both of B's own redefining members: {}",
-                refusal.detail
-            );
-            assert!(
-                !refusal.detail.contains("model.C.w"),
-                "C's already-dominated edge must take no part in the ambiguity: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.A.x"),
-                "detail must name the contended target: {}",
-                refusal.detail
+            // The typed `redefiners` list is exactly B's two edges -- C's
+            // already-dominated `C.w` edge, checked equal here, takes no
+            // part in the ambiguity.
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.B.z"),
+                        DeclarationKey::fixture("model.B.z2"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.x"),
+                }
             );
         }
         other => {
@@ -2616,16 +2607,15 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
-            assert!(
-                refusal.detail.contains("model.B.op2") && refusal.detail.contains("model.B.op3"),
-                "detail must name both contending redefiners: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.A.op"),
-                "detail must name the contended target: {}",
-                refusal.detail
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.B.op2"),
+                        DeclarationKey::fixture("model.B.op3"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.op"),
+                }
             );
         }
         other => {
@@ -2677,6 +2667,72 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     }
 }
 
+/// M2 (#204 round 1): the operation-member analog of
+/// `fixture_n06_conflict` -- a diamond (`D <- B, C`; `B <- A`; `C <- A`)
+/// where `B.op2` and `C.op3` both redefine `A.op` and neither dominates the
+/// other (distinct sibling owners, unlike
+/// `operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check`'s
+/// same-owner `B.op2`/`B.op3` shape above), and `D` (unlike
+/// `operation_redefinition_group_resolved_by_a_dominating_owner_completes`
+/// below) declares no `D.op4` of its own to dominate them. #173's dominance
+/// search resolves this the same way `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`
+/// resolves the field analog: no edge dominates, so it refuses
+/// `derivation-conflict`, naming the full typed payload.
+fn fixture_operation_diamond_conflict(reversed: bool) -> DomainPackage {
+    let mut records = vec![
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
+        object_type("model.C", vec!["model.A"]),
+        object_type("model.D", vec!["model.B", "model.C"]),
+        operation_member("model.A.op", "model.A"),
+        operation_member_redefining("model.B.op2", "model.B", Some("model.A.op")),
+        operation_member_redefining("model.C.op3", "model.C", Some("model.A.op")),
+    ];
+    if reversed {
+        records.reverse();
+    }
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.op-diamond-conflict"),
+        records,
+    )
+}
+
+/// M1's own fix (#204 round 1) is exactly what this test needs: without it,
+/// `domain_package.records`' own (reversed) order would leak into
+/// `DerivationConflict`'s `redefiners` list, and this test's own second
+/// half (the reversed-order run) would see `[C.op3, B.op2]` instead of the
+/// sorted `[B.op2, C.op3]` both runs assert here.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
+    for reversed in [false, true] {
+        let domain_package = fixture_operation_diamond_conflict(reversed);
+        match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Refused(refusal) => {
+                assert_eq!(
+                    refusal.code,
+                    quire_spec_language::diagnostic::Code::InvalidModelBinding
+                );
+                assert_eq!(
+                    refusal.cause,
+                    ModelRefusalCause::DerivationConflict {
+                        type_: DeclarationKey::fixture("model.D"),
+                        member: DeclarationKey::fixture("model.A.op"),
+                        redefiners: vec![
+                            DeclarationKey::fixture("model.B.op2"),
+                            DeclarationKey::fixture("model.C.op3"),
+                        ],
+                    },
+                    "reversed={reversed}"
+                );
+            }
+            other => panic!(
+                "expected Refused(invalid_model_binding/derivation-conflict), reversed={reversed}, got {other:?}"
+            ),
+        }
+    }
+}
+
 /// The operation-member analog of `fixture_n06_resolved`: `B.op2` (owner
 /// `B <- A`) and `C.op3` (owner `C <- A`) both redefine `A.op` -- sibling
 /// owners, neither dominating the other -- but `D` (`<- B`, `<- C`) also
@@ -2706,13 +2762,39 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
         ],
     );
 
-    let outcome = normalize(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     assert!(
         matches!(outcome, NormalizeOutcome::Completed(_)),
         "D.op4 dominates every other redefiner of A.op (B and C are both \
          proper ancestors of D), so the contest resolves without a \
          refusal: {outcome:?}"
     );
+    // M3 (#204 round 1): a *resolved* contest still owes its
+    // `normalize.conflict-check` charge (`value-accounting.md:456`'s own
+    // `c >= 2` condition, independent of whether the contest resolves --
+    // `n06_wide_ancestry_with_two_contesting_redefiners_completes` is this
+    // same rule's field analog), which the prior version of this test never
+    // asserted.
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        1,
+        "D's c=3 group (B.op2, C.op3, D.op4) is still charged once even though it resolves"
+    );
+    // Cross-checked by running the crate directly (outcome is `Completed`,
+    // so this is the exhaustive total through the final `normalize.hash`):
+    // 8 `normalize.record` (A, B, C, D, A.op, B.op2, C.op3, D.op4) + facts
+    // for every type's own qualify/inherit path (`f(A)=1, f(B)=f(C)=2,
+    // f(D)=4` under the diamond's own ancestor set `{A}`/`{A,B,C}`) + one
+    // `normalize.cycle-check` per generalization edge (B->A, C->A, D->B,
+    // D->C) + the `c=3` group's own `normalize.redefinition-check`/
+    // `normalize.conflict-check` charges + `normalize.declaration`/
+    // `normalize.hash` once the group resolves.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 65);
 }
 
 /// `value-accounting.md:456` prices every contested `(effective type,
@@ -2808,16 +2890,15 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
-            assert!(
-                refusal.detail.contains("model.C.a2") && refusal.detail.contains("model.C.a3"),
-                "detail must name both contending redefiners: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.A.a"),
-                "detail must name the contended target: {}",
-                refusal.detail
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.C.a2"),
+                        DeclarationKey::fixture("model.C.a3"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.a"),
+                }
             );
         }
         other => {

@@ -1089,8 +1089,17 @@ pub fn resolve_redefinition_target(
                 .and_then(|operation| operation.redefines.clone())
         });
     let Some(target) = own_redefines else {
+        // `redefining` declares no `redefines` property of its own: there is
+        // no candidate edge to name, so `redefiners` is empty and `target`
+        // falls back to `redefining` itself (L4, #204 round 1) -- this
+        // branch carries no test of its own (see this function's own doc:
+        // unwired from `src/`'s pipeline, QSL #165), and `candidate: None`
+        // right below already tells a caller no target was ever found.
         return Ok(RedefinitionTargetOutcome::Refused {
-            cause: ModelRefusalCause::RedefinitionTarget,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: Vec::new(),
+                target: redefining.clone(),
+            },
             candidate: None,
         });
     };
@@ -1106,7 +1115,10 @@ pub fn resolve_redefinition_target(
     }
 
     Ok(RedefinitionTargetOutcome::Refused {
-        cause: ModelRefusalCause::RedefinitionTarget,
+        cause: ModelRefusalCause::RedefinitionTarget {
+            redefiners: vec![redefining.clone()],
+            target: target.clone(),
+        },
         candidate: Some((redefining.clone(), target)),
     })
 }

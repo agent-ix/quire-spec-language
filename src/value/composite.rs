@@ -367,16 +367,32 @@ pub struct ObjectTypeDeclaration {
     key: NodeKey,
     name: String,
     attributes: Vec<FieldDeclaration>,
+    /// Every directly declared supertype (FR-151/FR-152/FR-153 generalization,
+    /// #204 round 1 H1), empty unless [`Self::with_supertypes`] sets it.
+    supertypes: Vec<NodeKey>,
 }
 
 impl ObjectTypeDeclaration {
-    /// The object type `name` with declaration identity `key`.
+    /// The object type `name` with declaration identity `key`, declaring no
+    /// supertype. See [`Self::with_supertypes`] to declare one.
     pub fn new(key: NodeKey, name: impl Into<String>, attributes: Vec<FieldDeclaration>) -> Self {
         Self {
             key,
             name: name.into(),
             attributes,
+            supertypes: Vec::new(),
         }
+    }
+
+    /// Declares this object type's own direct supertypes: every key
+    /// [`TypeEnvironment::new`] admits here must itself name a declared
+    /// object type, and the whole supertypes graph must be acyclic. Consumes
+    /// and returns `self` so every existing [`Self::new`] call site is
+    /// unaffected.
+    #[must_use]
+    pub fn with_supertypes(mut self, supertypes: Vec<NodeKey>) -> Self {
+        self.supertypes = supertypes;
+        self
     }
 
     /// The object-type declaration identity.
@@ -392,6 +408,11 @@ impl ObjectTypeDeclaration {
     /// The attributes in declaration order.
     pub fn attributes(&self) -> &[FieldDeclaration] {
         &self.attributes
+    }
+
+    /// Every directly declared supertype, in declaration order.
+    pub fn supertypes(&self) -> &[NodeKey] {
+        &self.supertypes
     }
 }
 
@@ -412,7 +433,9 @@ impl InvalidDeclaration {
             DeclarationCause::DuplicateKey
             | DeclarationCause::DuplicateMember(_)
             | DeclarationCause::UnknownDeclaration(_) => "invalid_semantic_graph",
-            DeclarationCause::Type(_) | DeclarationCause::Recursion { .. } => IllTyped::CODE,
+            DeclarationCause::Type(_)
+            | DeclarationCause::Recursion { .. }
+            | DeclarationCause::GeneralizationCycle { .. } => IllTyped::CODE,
         }
     }
 }
@@ -447,6 +470,14 @@ pub enum DeclarationCause {
         /// The declaration names along the cycle.
         cycle: Vec<String>,
     },
+    /// An object type's own declared `supertypes` (H1, #204 round 1) form a
+    /// cycle: a separate graph from [`Self::Recursion`]'s field-containment
+    /// one -- generalization, not containment -- so it earns its own
+    /// variant rather than reusing [`RecursionEdges`].
+    GeneralizationCycle {
+        /// The object-type names along the cycle, first and last equal.
+        cycle: Vec<String>,
+    },
 }
 
 /// One checked package's closed, admitted record, tuple and object-type
@@ -455,6 +486,11 @@ pub enum DeclarationCause {
 pub struct TypeEnvironment {
     composites: BTreeMap<NodeKey, CompositeDeclaration>,
     object_types: BTreeMap<NodeKey, ObjectTypeDeclaration>,
+    /// Every object type's own proper ancestor set (H1, #204 round 1):
+    /// transitive, not just direct, `supertypes`. Precomputed once in
+    /// [`TypeEnvironment::new`], after the supertypes graph is known
+    /// acyclic, so [`Self::conforms`] is a plain set lookup.
+    ancestors: BTreeMap<NodeKey, BTreeSet<NodeKey>>,
 }
 
 /// One containment edge of the recursion rule.
@@ -509,6 +545,8 @@ impl TypeEnvironment {
         environment.check_member_types()?;
         environment.check_recursion(RecursionEdges::Unnamed)?;
         environment.check_recursion(RecursionEdges::NonEscaping)?;
+        environment.check_supertypes()?;
+        environment.ancestors = environment.compute_ancestors();
         Ok(environment)
     }
 
@@ -525,6 +563,18 @@ impl TypeEnvironment {
     /// The admitted object type with this key.
     pub fn object_type(&self, key: NodeKey) -> Option<&ObjectTypeDeclaration> {
         self.object_types.get(&key)
+    }
+
+    /// Whether `sub` conforms to `sup` (H1, #204 round 1): reflexive
+    /// (`sub == sup` always conforms), or `sup` is a proper ancestor of
+    /// `sub` in the admitted supertypes graph. `false` for either key
+    /// outside this environment's own admitted object types, never a panic.
+    pub fn conforms(&self, sub: NodeKey, sup: NodeKey) -> bool {
+        sub == sup
+            || self
+                .ancestors
+                .get(&sub)
+                .is_some_and(|ancestors| ancestors.contains(&sup))
     }
 
     /// Check a type named outside a declaration (a parameter or result type):
@@ -770,6 +820,107 @@ impl TypeEnvironment {
             }
         }
         Ok(())
+    }
+
+    /// Every object type's own declared `supertypes`, keyed by its own key
+    /// (H1, #204 round 1): every entry must itself name an admitted object
+    /// type, and the whole graph must be acyclic -- refuses the first cycle
+    /// found, in declaration-key order, exactly as [`Self::check_recursion`]
+    /// does for the separate field-containment graph.
+    fn check_supertypes(&self) -> Result<(), InvalidDeclaration> {
+        let name = |key: &NodeKey| {
+            self.object_types
+                .get(key)
+                .map_or_else(String::new, |declaration| declaration.name.clone())
+        };
+        for declaration in self.object_types.values() {
+            for supertype in &declaration.supertypes {
+                if !self.object_types.contains_key(supertype) {
+                    return Err(InvalidDeclaration {
+                        declaration: declaration.name.clone(),
+                        cause: DeclarationCause::UnknownDeclaration(*supertype),
+                    });
+                }
+            }
+        }
+        let mut finished: BTreeSet<NodeKey> = BTreeSet::new();
+        for root in self.object_types.keys() {
+            if finished.contains(root) {
+                continue;
+            }
+            let mut path: Vec<(NodeKey, usize)> = vec![(*root, 0)];
+            while let Some((node, next)) = path.last_mut() {
+                let node = *node;
+                let Some(target) = self
+                    .object_types
+                    .get(&node)
+                    .and_then(|declaration| declaration.supertypes.get(*next))
+                else {
+                    finished.insert(node);
+                    path.pop();
+                    continue;
+                };
+                *next += 1;
+                if let Some(start) = path.iter().position(|(on_path, _)| on_path == target) {
+                    let mut cycle: Vec<String> =
+                        path.iter().skip(start).map(|(key, _)| name(key)).collect();
+                    cycle.push(name(target));
+                    return Err(InvalidDeclaration {
+                        declaration: name(target),
+                        cause: DeclarationCause::GeneralizationCycle { cycle },
+                    });
+                }
+                if !finished.contains(target) {
+                    path.push((*target, 0));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Every object type's own proper ancestor set, transitively closed over
+    /// the admitted (already known acyclic, see [`Self::check_supertypes`])
+    /// supertypes graph. An explicit stack, never native recursion, mirroring
+    /// [`Self::check_recursion`]'s own bounded walk: a node's ancestors are
+    /// folded in only after every direct supertype's own ancestors are
+    /// already known (a post-order finish), so each node is visited once and
+    /// the walk is bounded by the object-type count, not call-stack depth.
+    fn compute_ancestors(&self) -> BTreeMap<NodeKey, BTreeSet<NodeKey>> {
+        let mut ancestors: BTreeMap<NodeKey, BTreeSet<NodeKey>> = BTreeMap::new();
+        let mut finished: BTreeSet<NodeKey> = BTreeSet::new();
+        for root in self.object_types.keys() {
+            if finished.contains(root) {
+                continue;
+            }
+            let mut path: Vec<(NodeKey, usize)> = vec![(*root, 0)];
+            while let Some((node, next)) = path.last_mut() {
+                let node = *node;
+                let Some(target) = self
+                    .object_types
+                    .get(&node)
+                    .and_then(|declaration| declaration.supertypes.get(*next))
+                else {
+                    let mut own_ancestors = BTreeSet::new();
+                    if let Some(declaration) = self.object_types.get(&node) {
+                        for supertype in &declaration.supertypes {
+                            own_ancestors.insert(*supertype);
+                            if let Some(further) = ancestors.get(supertype) {
+                                own_ancestors.extend(further.iter().copied());
+                            }
+                        }
+                    }
+                    ancestors.insert(node, own_ancestors);
+                    finished.insert(node);
+                    path.pop();
+                    continue;
+                };
+                *next += 1;
+                if !finished.contains(target) {
+                    path.push((*target, 0));
+                }
+            }
+        }
+        ancestors
     }
 
     /// Construct a record from its supplied fields. An omitted `?` field is
