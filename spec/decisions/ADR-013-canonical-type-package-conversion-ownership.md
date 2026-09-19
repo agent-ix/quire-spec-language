@@ -17,7 +17,9 @@ relationships:
 Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#211
 (ARCH-12), epic #205, Layer 1. Acceptance is decided at the architecture
 change-scenario gate #212. Supersedes nothing. A #209, #210, #222 or #229
-decision that contradicts a §3 cell reopens that cell and no other.
+decision that contradicts a §3 cell reopens that cell and no other. Owner
+rulings of 2026-09-19, made by the #205 coordinator under the owner's
+delegation, are recorded in §8 Owner rulings.
 
 ## Context
 
@@ -38,9 +40,11 @@ Inputs this record builds on:
   (Owner decision 3); renames of `CanonicalDigest`, `DeclarationKey` and
   `CheckedPackage` are deferred until the owner asks (Owner decision 6). This
   record proposes no rename. Five cells of this record differ from accepted
-  AD-016 text; each is listed in §8 OQ-3 as a QSpec amendment, and the
-  affected implementation waits for it (§7). The replay executor key, which
-  AD-016 arrow 7 names as `function: &str`, is not decided here (OQ-5).
+  AD-016 text. The owner accepted all five as AD-016 amendments (OQ-3 ruling);
+  §8 lists them as QC-13 to QC-17, and the affected implementation waits for
+  them (§7). The replay executor key, which AD-016 arrow 7 names as
+  `function: &str`, is a typed `QualifiedName` (OQ-5 ruling), which keeps arrow
+  7 unchanged.
 - **QSpec contracts**: FR-201 (identity-domain vocabulary), FR-321 (model
   selection), FR-322 (`quire.checked-package/v2`), FR-323
   (`quire.native-runtime/v1`), FR-331 (`quire.backend-provider/v1`), FR-351
@@ -61,7 +65,7 @@ spelling. Where this record needs one of their decisions it writes "decided in
 
 ## Decision
 
-Item ids `R-`, `O-`, `T-`, `C-`, `S-`, `QC-`, `Q209-`, `Q210-`, `Q222-`, `Q229-` and
+Item ids `R-`, `O-`, `T-`, `C-`, `S-`, `QC-`, `TK-`, `Q209-`, `Q210-`, `Q222-`, `Q229-` and
 `OQ-` are local to this record. Other artifacts cite them as `ADR-013 O-nn`, the
 same form ADR-010 uses for its `OBS-` and `DA-` ids.
 
@@ -74,7 +78,7 @@ same form ADR-010 uses for its `OBS-` and `DA-` ids.
 | R-03 | QSL-internal compiler representations are QSL-owned. Contract IR, Runtime and Codegen keep a local representation only where §4 names the conversion and its test. |
 | R-04 | Identity equality is one of four kinds (§2). Each §3 object names its kind or states that it is not an identity. Two identities in different FR-201 digest domains are unequal whatever their bytes. |
 | R-05 | No consumer derives semantic identity from display text, diagnostic text, rendering, registration order, or the index of an item in a collection whose order no declaration defines (for example a hash-map iteration, a parse-result vector or a transcript's row order). A position is identity only where a declaration defines it (a tuple position, a parameter position). An encoding order, such as Kani's `concrete_vals` rows, is resolved only by joining it with a declared schema that names every position. |
-| R-06 | A name is an authored identifier or qualified name of a declaration. After a package's check stage no consumer of that package resolves a name. The checker resolves names to checked node ids, and a later stage selects by node id. An importing package's checker resolving a library export by FR-322 `declaration.qualified_name` is that package's own check stage. Contract-defined keys (operation identities, node tags, semantic forms, catalog codes, capability wire strings) are lexical keys, not names. The replay executor key is OQ-5. |
+| R-06 | A name is an authored identifier or qualified name of a declaration. After a package's check stage no consumer of that package resolves a name. The checker resolves names to checked node ids, and a later stage selects by node id. An importing package's checker resolving a library export by FR-322 `declaration.qualified_name` is that package's own check stage. Contract-defined keys (operation identities, node tags, semantic forms, catalog codes, capability wire strings) are lexical keys, not names. The replay executor key is a typed `QualifiedName` resolved against the recompiled package's declarations (OQ-5 ruling); that lookup is the one exception to this rule. |
 | R-07 | A conversion is total over its admitted input: for a wire source, the values that pass the source contract's reader and schema; for an in-memory source, every value its type can construct. It refuses everything else with a typed cause and a catalog code. It drops no identity, provenance, version or bound. A target that cannot represent a source value refuses; it never truncates, rounds, defaults or approximates. |
 | R-08 | A serialized contract has one version per build. The producer fixes the version in the artifact. A reader accepts exactly its version and refuses any other with an explicit unsupported-version refusal. No reader for another version, no inferred version and no adapter between versions exists (§5). |
 | R-09 | A representation that §6 lists as lane-private carries no canonical authority. No conversion to or from a canonical type is defined for it, and no consumer added after this record is accepted uses it. Its deletion follows its lane's disposition, decided in #209. The #226 drift gate enforces the no-new-consumer rule. |
@@ -123,7 +127,7 @@ it.
 | Field | Decision |
 | --- | --- |
 | Owner | QSL, linked/package-form stage: the v2 emitter mints it, in layer-4 `package` (ADR-011 M-4). |
-| Implementing ticket | #213 S-2 for the identity type; the v2 emitter itself (AD-016 WP6) has no ticket (§7, OQ-4). |
+| Implementing ticket | #213 S-2 for the identity type; the v2 emitter itself (AD-016 WP6) is ADR-011 T-8 (M-4). |
 | Public type | QSL package identity over the `quire.checked-package-id/v2` preimage, built from the existing preimage reader in `value::package_identity`. Invariant: it is computed from a `CheckedPackage` and never accepted from a caller. |
 | Serialized authority | QSpec FR-322: `package_id`, a `quire.package.semantic/v2` digest of exactly the JCS bytes of `identity_preimage`; contract `quire.checked-package/v2`. |
 | Conversions | `CheckedPackage` → `package_id` (QSL, one-way). Wire string → IR (read-only). A replay request names the package by `package_id`; the executor recomputes it (O-26). |
@@ -153,7 +157,7 @@ checked node id (O-04), not `model::key::DeclarationKey`.
 
 | Field | Decision |
 | --- | --- |
-| Owner | QSL, check stage: the checker is the only minter (AD-016 arrow 1). The type lives in the `quire-exact` kernel (`NodeKey`, AD-016 kernel row). AD-016 also lists node ids in its Semantic identities row; this record follows the kernel row, and OQ-3 (e) asks QSpec to reconcile the two rows. |
+| Owner | QSL, check stage: the checker is the only minter (AD-016 arrow 1). The type lives in the `quire-exact` kernel (`NodeKey`, AD-016 kernel row). AD-016 also lists node ids in its Semantic identities row; this record follows the kernel row, and QC-17 asks QSpec to reconcile the two rows. |
 | Implementing ticket | #213 S-1. |
 | Public type | `NodeKey`: 32 bytes in domain `quire.checked-semantic-node/v1` only. Constructed only from a node-identity preimage (`node-identity-preimage.schema.json`). No constructor accepts bytes minted in another domain; the crate-internal `NodeKey::from_bytes` (`value/node.rs:49`) is removed. |
 | Serialized authority | QSpec FR-322 `NodeId{domain, digest}`; preimage schema and `node-identity-vectors.json`. |
@@ -166,10 +170,10 @@ checked node id (O-04), not `model::key::DeclarationKey`.
 | Field | Decision |
 | --- | --- |
 | Owner | QSL `model`, model-normalization step of the check stage. |
-| Implementing ticket | #213 S-2, after QC-2 and OQ-3 (c). |
+| Implementing ticket | #213 S-2, after QC-2 and QC-15. |
 | Public type | `EffectiveId`: 32 bytes in domain `quire.model.effective-declaration/v1`, derived only from an `EffectiveDeclaration` preimage (original `DeclarationKey` plus derivation facts). FR-201 does not list this domain; QC-2 adds it. |
 | Serialized authority | `model-effective-declaration.schema.json` and its vectors (QSpec TC-195); it adds no v2 wire member (checked-package-v2 README). |
-| Conversions | None to or from `NodeKey`. FR-143 makes the `type` component of a `Reference<T>` value an effective-declaration identity. That component is therefore typed as `EffectiveId`, not `NodeKey`, so no byte transfer between the two domains exists. Because the kernel `Value` holds references, `EffectiveId` and the reference's universe and object identities are kernel component types of `Value` (OQ-3 (c)). |
+| Conversions | None to or from `NodeKey`. FR-143 makes the `type` component of a `Reference<T>` value an effective-declaration identity. That component is therefore typed as `EffectiveId`, not `NodeKey`, so no byte transfer between the two domains exists. Because the kernel `Value` holds references, `EffectiveId` and the reference's universe and object identities are kernel component types of `Value` (QC-15). |
 | Validation and diagnostics | A reference whose type component is not an `EffectiveId` of the bound universe refuses at value admission. |
 | Equality | normalized. |
 
@@ -219,7 +223,7 @@ reference type components, and the `EffectiveId` ↔ `NodeKey` transfers at
 | --- | --- |
 | Owner | Clause: QSL, check stage. Obligation: CG, backend-IR stage (AD-016 arrow 5). |
 | Implementing ticket | Clause: #213 S-3. Obligation: CG conformance work with no ticket (§7). #231 carries the obligation identity in its envelopes. |
-| Public type | Clause: the checked node id of the `claim`, `temporal` or `protocol` node. Obligation: `KaniObligationIdentity`. One clause yields one obligation per CG `ObligationKind` it requests, so an obligation is identified by the full identity digest over (clause node id, obligation kind, `arguments`), never by the clause node id alone (OQ-3 (b)). `arguments` are `Vec<ObligationBinding>` ascending by identifier (AD-016 arrow 5), each naming its parameter node id and declared per-argument domain. Replay correctness does not depend on this order, because values join parameters by node id (O-25). |
+| Public type | Clause: the checked node id of the `claim`, `temporal` or `protocol` node. Obligation: `KaniObligationIdentity`. One clause yields one obligation per CG `ObligationKind` it requests, so an obligation is identified by the full identity digest over (clause node id, obligation kind, `arguments`), never by the clause node id alone (QC-14). `arguments` are `Vec<ObligationBinding>` ascending by identifier (AD-016 arrow 5), each naming its parameter node id and declared per-argument domain. Replay correctness does not depend on this order, because values join parameters by node id (O-25). |
 | Serialized authority | Clause: FR-322. Obligation: CG `KaniObligationIdentity` digest (`obligationIdentitySha256`, AD-016 seed vector). Its digest domain is not in FR-201 (QC-4). `source_span` is removed from the identity preimage, because occurrences are excluded from identity (O-07). |
 | Conversions | clause node id → obligation identity (CG, C-19: adds kind and arguments; no re-mint of the clause id). |
 | Validation and diagnostics | CG negotiation settles one disposition per `request_index` (AD-016 terminal-disposition rule). |
@@ -256,7 +260,7 @@ layer's enum, and each mapping fails to compile until it has an arm.
 | Implementing ticket | #213 S-3. |
 | Public type | A qualified name is a non-empty sequence of identifiers (`QualifiedName` in the preimage schema). It is a declared component of an identity preimage, not an identity. |
 | Serialized authority | Preimage schema `Identifier` and `QualifiedName`; FR-322 `declaration.qualified_name`. |
-| Conversions | name → node id by the checker only (R-06). No name → identity lookup exists after the check stage. The replay executor's selection key, `function: &str` in AD-016 arrow 7, is OQ-5; whichever key the owner picks is a typed value, never a bare string. `ir::SymbolName` in native-v1 is lane-private (§6). |
+| Conversions | name → node id by the checker only (R-06). No name → identity lookup exists after the check stage. The replay executor's selection key, `function: &str` in AD-016 arrow 7, is a typed `QualifiedName` (O-11, OQ-5 ruling), resolved against the recompiled package's declarations, never a bare string. `ir::SymbolName` in native-v1 is lane-private (§6). |
 | Validation and diagnostics | Unresolved or ambiguous names refuse at check with a catalog code. |
 | Equality | lexical over the identifier sequence. |
 
@@ -351,7 +355,7 @@ Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
 proof column fixes the category part of AD-016's `OPEN — decided in WP9` cell
-(OQ-3 (d)); IR implements the map. Runtime `ExecutionOutcome`/`EvaluationOutcome`,
+(QC-16); IR implements the map. Runtime `ExecutionOutcome`/`EvaluationOutcome`,
 state `EvaluationOutcome` and simulation `Outcome` are lane-private (§6); a
 family result wraps kernel outcomes and maps to these categories under its
 family contract (Q210-3).
@@ -550,7 +554,7 @@ The counterexample packet and the #231 envelope carry, for deterministic replay:
 
 - the obligation identity (O-09, with its declared per-argument domains) and the
   clause node id;
-- the selected function key (the replay selection, OQ-5);
+- the selected function's `QualifiedName` (the replay selection, OQ-5 ruling);
 - the occurrence key of the clause (O-07);
 - the `package_id` and contract version of the package the harness was
   generated from, and the digest of every `RawSourceRef` in its lock;
@@ -582,17 +586,17 @@ own backend evidence, and a round trip preserves the stored transcript byte for
 byte.
 
 The AD-016 Replay-ownership row lists five `Witness` fields; this decision stores
-one and derives four (OQ-3 (a)).
+one and derives four (QC-13).
 
 #### O-26 Replay requests
 
 | Field | Decision |
 | --- | --- |
 | Owner | CG replay adapter builds the request (reconstruction, CG #50). QSL owns the executor-side typed request type. |
-| Implementing ticket | #231 for the typed request and its round trip. CG #50 for C-12. The executor entry (C-13) has no ticket (§7, OQ-4). |
-| Public type | Typed replay request: exact FR-322 package reference (`package_id`, contract version, source digests), selection by the replay key (OQ-5), typed kernel `Value` arguments keyed by parameter node id, state environment, `quire.value.accounting/v1` limits, originating counterexample identity, the `backend` member (O-19), `witness_backed`, and expected verdict. |
+| Implementing ticket | #231 for the typed request and its round trip. CG #50 for C-12. The executor entry (C-13) is TK-01. |
+| Public type | Typed replay request: exact FR-322 package reference (`package_id`, contract version, source digests), selection by `QualifiedName` (OQ-5 ruling), typed kernel `Value` arguments keyed by parameter node id, state environment, `quire.value.accounting/v1` limits, originating counterexample identity, the `backend` member (O-19), `witness_backed`, and expected verdict. |
 | Serialized authority | QSpec FR-323 `quire.native-runtime/v1` (`package`, `selection`, `state_environment`, `limits`, `replay`), plus the digest-addressed byte provision QC-1 adds. |
-| Conversions | Packet → request (CG, C-12). Request → execution (QSL executor, C-13): the executor obtains every source, definition and domain-package input by digest from the byte provision the request names. It never reads a path, environment variable or search location. It recompiles, recomputes `package_id` and requires equality with the request, requires every recompiled `RawSourceRef` digest to equal the request's, resolves the selection by lookup in the recompiled package (a node id against its node set, or a qualified name against its declarations, per OQ-5), and calls the selected function. |
+| Conversions | Packet → request (CG, C-12). Request → execution (QSL executor, C-13): the executor obtains every source, definition and domain-package input by digest from the byte provision the request names. It never reads a path, environment variable or search location. It recompiles, recomputes `package_id` and requires equality with the request, requires every recompiled `RawSourceRef` digest to equal the request's, resolves the selection by lookup in the recompiled package (the `QualifiedName` against its declarations, OQ-5 ruling), and calls the selected function. |
 | Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain; and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
 | Equality | lexical over the RFC 8785 encoding of the FR-323 request-identity members (package, selection, inputs, limits, options). |
 
@@ -603,7 +607,7 @@ one and derives four (OQ-3 (a)).
 | Owner | QSL executor produces the result; CG replay adapter compares parity. |
 | Implementing ticket | #231 for the common result type and record carrier; #186 for the `native-run-result/2` serializer and its state-specific payload. |
 | Public type | One typed per-item result carrying the O-16 category, the evaluated value, the FR-351 separating witness when the settlement basis is decisive, the resolved nested regions (O-12), the replay charges, and the executor's toolchain pin. Parity is an identical verdict under the same package and input domain; a disagreement is `inconclusive` with a typed cause and is never repaired (AD-016 arrow 7). |
-| Serialized authority | `native-run-result/2` (FR-352, AD-014) carries the FR-351 record; FR-323 carries per-item dispositions. Which of the two is the replay-result record is OQ-2. The parity carrier field is `OPEN — decided in WP9` in AD-016 (QC-7). |
+| Serialized authority | `native-run-result/2` (FR-352, AD-014) carries the FR-351 record; FR-323 carries per-item dispositions. FR-352 `native-run-result/2` is the replay-result record, and FR-323 keeps the request and the per-item disposition vocabulary (OQ-2 ruling). The parity carrier field is `OPEN — decided in WP9` in AD-016 (QC-7). |
 | Conversions | kernel `Outcome` → per-item disposition (total, category-preserving, O-16, C-08). |
 | Validation and diagnostics | A version other than the selected one refuses (FR-352-AC-5, QSpec TC-255). |
 | Equality | lexical over the RFC 8785 encoding of the FR-323 result-identity members. The embedded FR-351 record compares as in O-25. |
@@ -620,9 +624,9 @@ decides one. The O rows above hold the full decision where one exists.
 | T-3 | The canonical cross-package node key | `DeclarationKey{package, node}` does not serve: it names domain-package declarations only (O-03). The key is `PackageNodeKey{package: package_id, node: NodeKey}`, owned by QSL `library` and built by #213 S-3. It is needed because a node id cannot contain its package's `package_id`, which is computed over the node ids. Equality is declared: both components compare under their own kinds (O-02, O-04). Within one package the bare `NodeKey` is the key. The v2 member for a reference into a dependency package is QC-10. |
 | T-4 | Stage outcome and refusal types, the limit cause and the internal-fault kind | Stages S1 to S4 and the I2 reader return `Result<Staged<T>, StageFailure<C>>`. `Staged<T>` carries the output and its warnings. `StageFailure<C>` has three variants: `Refused{causes, diagnostics}` with at least one typed cause `C` of that stage (O-17), `Limit(LimitExceeded)` and `Fault(InternalFault)`. `LimitExceeded` names the limit kind (closed enum: input bytes, nesting depth, node count, work budget), the configured bound and the location tag where it was reached. `InternalFault` names the stage and the violated invariant by a stable identifier. It maps to the O-16 internal-failure category and is never a `Refusal`. S6a keeps the kernel `Outcome<T>` (O-16): its `Incomplete` is a meter budget, not a stage limit. The types live in F `diagnostic`, built by #213 S-5. Catalog codes for each limit kind and for internal fault are QC-11. #225 renders them to exit codes. |
 | T-5 | The foundation `diagnostic` locus type (DA-13) | `Locus` has three variants. `Region(SourceRegion)` is the O-07 region (`RawSourceRef`, byte start, byte end), used by S0 to S2. `Occurrence(Location)` is the kernel location tag (node id and occurrence key, O-12), used from S3 on and resolved to regions through the source map when rendered. `Artifact{digest, pointer}` is a digest record (O-18) and a JSON pointer into that artifact, used by wire readers. F depends on K, so `Locus` uses the kernel `Location` directly. A stage converts its own position into a `Locus` when it emits a diagnostic (ADR-011 §6.1). #213 S-4 builds it. |
-| T-6 | The kernel edge cuts for X-1 | Each payload either moves into `quire-exact` as a component type of an AD-016 kernel-row type (OQ-3 (c)), or its variant leaves the kernel type. The `Reference` payload moves in: `EffectiveId` and the universe and object identities (O-05). The `Quantity` payload moves in: magnitude and unit identity as kernel values, with no reference to `quantity` declarations. The `Enum` payload moves in as the O-14 sum shape: enum node id and variant member identity. `ValueType::Population` keeps its `u64` count only (AD-016 model row). Any other `model::population` payload leaves the kernel type and stays in `model`. In `Refusal`, the `expression::WrongSnapshotCause` variant leaves: it becomes a `value::expression` family cause mapped through its own `catalog_code()` (O-17). `diagnostic::Code` is replaced by a kernel `CatalogCode` newtype over the code string, which F `diagnostic` uses. `collection`, `equality`, `division` and `ieee` then import only kernel types. Code that needs a `definition` or `model::key` value stays in `semantic_value` and passes the kernel shape in. #213 S-1 makes the cuts as part of X-1. |
+| T-6 | The kernel edge cuts for X-1 | Each payload either moves into `quire-exact` as a component type of an AD-016 kernel-row type (QC-15), or its variant leaves the kernel type. The `Reference` payload moves in: `EffectiveId` and the universe and object identities (O-05). The `Quantity` payload moves in: magnitude and unit identity as kernel values, with no reference to `quantity` declarations. The `Enum` payload moves in as the O-14 sum shape: enum node id and variant member identity. `ValueType::Population` keeps its `u64` count only (AD-016 model row). Any other `model::population` payload leaves the kernel type and stays in `model`. In `Refusal`, the `expression::WrongSnapshotCause` variant leaves: it becomes a `value::expression` family cause mapped through its own `catalog_code()` (O-17). `diagnostic::Code` is replaced by a kernel `CatalogCode` newtype over the code string, which F `diagnostic` uses. `collection`, `equality`, `division` and `ieee` then import only kernel types. Code that needs a `definition` or `model::key` value stays in `semantic_value` and passes the kernel shape in. #213 S-1 makes the cuts as part of X-1. |
 | T-7 | Which crate holds `BackendDescriptor`, the candidate set and `Capability` | They cross as data in QSpec-authored formats. No shared Rust crate holds them. `quire-exact` cannot, because the AD-016 kernel row lists its types exactly, and ADR-011 §7 approves no other extraction. A backend's descriptor is its FR-331 provider manifest. The driver reads it, and QSL `route` converts it into its `BackendDescriptor` (C-28). A candidate set is one list of `backend` members (O-19) per `request_index`, sorted by (identity, manifest digest) (QC-12, C-29). A capability crosses in its #229 wire spelling (C-24). QSL's `Capability` (#213 S-6) and CG's own representations each convert from the wire, so there is no CG → QSL type edge (FB-05). |
-| T-8 | The executor key | OQ-5, the same question as ADR-012 §13.2 Q1. It is not decided here, because option 2 amends AD-016 arrow 7. ADR-011 E9 fits either option: the key is looked up from the checked declaration identity in the recompiled package. |
+| T-8 | The executor key | Ruled 2026-09-19 (OQ-5): a typed `QualifiedName` (O-11), resolved against the recompiled package's declarations. It keeps AD-016 arrow 7 unchanged. ADR-011 E9 looks the key up from the checked declaration identity in the recompiled package. |
 | T-9 | Pin representation (OBS-034 secondary) | O-23: a `RevisionPin` is the repository source exactly as `Cargo.lock` records it, plus the full 40-character lowercase commit sha. A short sha, branch or tag refuses. Equality is lexical on both fields. |
 
 ### 4. Boundary conversions
@@ -634,7 +638,7 @@ else with a typed cause (R-07). "Test" names the evidence and who supplies it.
 | --- | --- | --- | --- | --- |
 | C-01 | FCD semantic IR bytes → `DomainPackage` | QSL `model::intake` | Keeps every declaration key, `Locus` → region | #131 intake test over a pinned FCD fixture, including the `quire/native` refusal |
 | C-02 | `DeclarationKey` → `NodeKey` | QSL checker | One-way mint through the `ModelOwner` preimage; recorded as model correspondence | Model-owned node-identity vectors (QC-3); #213 S-2 test against them |
-| C-03 | `CheckedPackage` → `quire.checked-package/v2` bytes | QSL emitter | A family with no v2 arm fails to compile; no partial package | Emitter golden test against the v2 positive fixtures, QSpec TC-233 as reference (emitter ticket, OQ-4) |
+| C-03 | `CheckedPackage` → `quire.checked-package/v2` bytes | QSL emitter | A family with no v2 arm fails to compile; no partial package | Emitter golden test against the v2 positive fixtures, QSpec TC-233 as reference (emitter ticket ADR-011 T-8) |
 | C-04 | v2 bytes → IR `CheckedPackageV2` | IR | Refuses under FR-322 codes; ids read-only | IR TC-048; QSpec TC-217 |
 | C-05 | v2 checked forms → IR value type, `ClauseKind`, `Operator` | IR | Total `From`, no `_` arm | IR test enumerating every v2 form; `cargo mutants` on the mapping functions |
 | C-06 | IR `ClauseKind` (6) → RT observation kind | RT | Each of the six kinds maps to an RT kind or refuses with a typed cause; none is dropped | RT test over all six IR kinds that fixes RT's mapping table (RT work, no ticket, §7) |
@@ -644,7 +648,7 @@ else with a typed cause (R-07). "Test" names the evidence and who supplies it.
 | C-10 | Kani transcript → `Witness` | IR `Witness::parse` | Stores the selected, trimmed assertion block; cover and unwinding refuse | IR PR #139 `tc_042_*`; #231 byte-for-byte envelope round trip |
 | C-11 | `Witness` + bindings → kernel `Value`s | IR `decode`, CG | Lossless widening; join by parameter node id; mismatch refuses | Vendored AD-016 seed counterexample vector; CG widening test at `i64::MIN` and `i64::MAX` (CG #50) |
 | C-12 | Packet → FR-323 replay request | CG | Carries every O-25 member | CG contract test (CG #50); #231 round trip of the request type |
-| C-13 | Replay request → execution | QSL executor | Digest-addressed inputs, `package_id` and source-digest equality, select by key lookup (OQ-5) | Executor tests (OQ-4 ticket): a meaning-affecting edit refuses by `package_id`; a presentation-only edit refuses by source digest; a missing input refuses |
+| C-13 | Replay request → execution | QSL executor | Digest-addressed inputs, `package_id` and source-digest equality, select by `QualifiedName` lookup (OQ-5) | Executor tests (TK-01): a meaning-affecting edit refuses by `package_id`; a presentation-only edit refuses by source digest; a missing input refuses |
 | C-14 | Node id → nested regions | QSL | Through the v2 source map, O-07 key | Source-map lookup test over the v2 positive fixtures (#213 S-4) |
 | C-15 | Typed cause → catalog code | every layer | Exhaustive, no `_` arm | Per-layer `catalog_code()` totality test against the vendored catalog |
 | C-16 | Digest wire string ↔ QSL digest record | QSL `digest` | Domain checked first | Digest members of the v2 positive and negative fixtures, plus #213 S-2 adverse cases: uppercase hex, wrong length, a prefixed form, an absent domain and a cross-domain digest |
@@ -692,9 +696,9 @@ flowchart LR
 - No component reads an older artifact version. An older artifact is
   regenerated from source at the current version.
 - `native-run-result/1` and `/2` (FR-352) are two versions of one contract.
-  Under R-08 a QSL build produces one of them. Which one is OQ-1. #186's exit
-  criterion assumes `run` keeps producing `/1` while `/2` exists; that needs the
-  owner's answer to OQ-1.
+  Under R-08 a QSL build produces one of them: `run` produces `/2` only (OQ-1
+  ruling, AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231
+  builds the carrier and #186 the serializer. No build produces both.
 - Exact release pins are authoritative; the current-head lane is a drift check
   and never a substitute (O-23).
 
@@ -730,11 +734,11 @@ duplicates that #213 S-2 folds into the O-18 record.
 | #185 | Capability registry and routing only (O-19), including C-28 and C-29 (T-7). | #213 S-6, QC-12 |
 | #222 | Bound taxonomy, derivations and absent-bound meaning (O-21, Q222-1, Q222-2). | #212, QSpec #112, QSpec #113 |
 | #213 | All of O-01 to O-23 that name #213, in the six slices below. | #212 |
-| #231 | QSL-side envelopes: proof-result envelope and FR-331 reader (O-24, C-23), counterexample envelope with the O-25 members, replay request type (O-26), result type and record carrier (O-27), round trips and adverse tests. No replay execution. | #213 S-1, IR PR #139 merged at a recorded sha with admission through `parse` (O-25), OQ-3 (a), OQ-5, QC-1, QC-6, QC-8; the proof-result half also waits on QC-9, and the result half on OQ-2 |
-| #186 | `native-run-result/2` serializer and state payload (O-27). | #231, OQ-1, OQ-2 |
+| #231 | QSL-side envelopes: proof-result envelope and FR-331 reader (O-24, C-23), counterexample envelope with the O-25 members, replay request type (O-26), result type and record carrier (O-27), round trips and adverse tests. No replay execution. | #213 S-1, IR PR #139 merged at a recorded sha with admission through `parse` (O-25), QC-13, QC-1, QC-6, QC-8; the proof-result half also waits on QC-9 |
+| #186 | `native-run-result/2` serializer and state payload (O-27), and deletion of `/1` in the same change (OQ-1 ruling). | #231 |
 | #131 / QSL PR #200 | O-01 intake wiring, O-03 native references as `ValueTypeRef::Native` with an adverse test for the `quire/native` refusal. | FCD PR #200 |
 | #215, #226 | O-23 pin-equality tests, heads lane and drift gates; R-09 and R-06 static checks. | #209 accepted |
-| CG #50 | C-11 widening, C-12 reconstruction, parity comparison (O-27). CG #50 uses #231's counterexample envelope and builds no second one, and it targets the QSL executor entry (OQ-4), not `runtime::execute`. Amending the CG #50 body to say so is an owner action. | #231, QC-8 |
+| CG #50 | C-11 widening, C-12 reconstruction, parity comparison (O-27). CG #50 uses #231's counterexample envelope and builds no second one, and it targets the QSL executor entry (TK-01), not `runtime::execute`. Amending the CG #50 body to say so is an owner action. | #231, QC-8 |
 | QSpec #114 | FR-351 and `native-run-result/2` (O-25, O-27). | — |
 | QSpec #81, spec-objects-business PR #8 (merged), FCD #172, #173, #199 | ADR-010 §7.5 downstream tickets routed to #211; they implement the owners above (compiled-protocol `Model`, object tables, Semantic IR producer and intake shapes) and receive no new ownership decision here. | — |
 
@@ -743,33 +747,26 @@ Proposed #213 slices, in order. The split itself is an owner action on #213.
 | Slice | Objects | Gate |
 | --- | --- | --- |
 | S-1 | `quire-exact` kernel, exactly the AD-016 kernel row: O-04 `NodeKey`, O-13 values, O-16 kernel outcome, refusal and category types, `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, and the kernel bound value types (O-21), with the T-6 edge cuts (ADR-011 X-1). If it exceeds one bounded effort it splits into values and outcomes first, then accounting and location. | ADR-011 X-1 |
-| S-2 | Identities and digests: O-01 single selection, O-02, O-03 rework, O-05, O-06, O-18 | S-1, #131 merged, OQ-3 (c) (adds `EffectiveId` and the reference identities to the kernel), QC-2, QC-3, QC-5 |
+| S-2 | Identities and digests: O-01 single selection, O-02, O-03 rework, O-05, O-06, O-18 | S-1, #131 merged, QC-15 (adds `EffectiveId` and the reference identities to the kernel), QC-2, QC-3, QC-5 |
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 node-keyed source map, T-5 `Locus` | S-3 |
 | S-5 | Refusals and readers: O-17 QSL `catalog_code()`, O-22 QSL readers, T-4 stage failures | S-1, QC-11 |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, the `model::accounting` fold into the S-1 meter, and the #222 bound types (O-21) | S-1, #222 accepted, #229 |
 
-Work that this record assigns and that no ticket owns. Each is an owner
-question (OQ-4); filing tickets is an owner action.
-
-- QSL replay executor entry: digest-addressed recompilation, `package_id` and
-  source-digest checks, key selection per OQ-5 (O-26, C-13). #231 excludes replay
-  execution and #217 owns integration only.
-- The v2 emitter (AD-016 WP6, O-02, C-03).
-- RT and CG adoption of `quire-exact` (AD-016 WP5a, WP5b) and RT C-06.
-- IR: the O-25 packet members, the WP9 map (C-09), and FR-322 reader code
-  completeness (OBS-035). IR #137 covers only the FR-031-AC-3 witness test.
-- CG: obligation identity conformance (O-09, C-19, C-20, C-22, C-25).
+Work that this record assigns and that no ticket owns is listed in §8
+Tickets to open at #212 (OQ-4 ruling).
 
 ### 8. Open questions
 
 QSpec changes this record requires. Each blocks the named work until it merges.
+Each is filed as the ticket named in Tickets to open at #212 below; QC-12 is
+already QSpec #134 scope item 4.
 #212 can pass with them open, because each names its contract owner (QSpec) and
 the blocked work.
 
 | ID | Change | Blocks |
 | --- | --- | --- |
-| QC-1 | FR-323: a digest-addressed byte provision for the source, definition and domain-package inputs a replay recompiles, and the `RawSourceRef` digests in the `package` reference. | #231 request type, OQ-4 executor, CG #50 |
+| QC-1 | FR-323: a digest-addressed byte provision for the source, definition and domain-package inputs a replay recompiles, and the `RawSourceRef` digests in the `package` reference. | #231 request type, TK-01 executor, CG #50 |
 | QC-2 | FR-201: list `quire.model.effective-declaration/v1` and the other digest domains the model schemas use. | #213 S-2 (O-05, O-18) |
 | QC-3 | Node-identity vectors with `ModelOwner` owners for general model declarations. | #213 S-2 (C-02) |
 | QC-4 | FR-201: a digest domain for the CG obligation identity, with `source_span` outside its preimage. | CG obligation conformance |
@@ -778,9 +775,14 @@ the blocked work.
 | QC-7 | AD-016 WP9: the parity carrier field. | CG #50 parity, #231 result type |
 | QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add, which is `witness_backed` and the rule that a counterexample with `witness_backed = false` never counts as backend evidence; arguments keyed by parameter node id; the semantic profile selections; the clause occurrence key; the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). | #231 counterexample envelope and request type, CG #50 |
 | QC-9 | FR-331: the result value for a `supported` item whose Kani run ends in `Refused`, `InvalidInput`, `IncompleteInput` or `Unavailable`, so the item keeps exactly one terminal record with a typed cause (O-16). | IR C-09, #231 C-23 |
-| QC-10 | FR-322: the member for a reference to a dependency package's node, (`package_id`, node id) (T-3), if FR-322 has none. | #213 S-3, the v2 emitter (OQ-4) |
+| QC-10 | FR-322: the member for a reference to a dependency package's node, (`package_id`, node id) (T-3), if FR-322 has none. | #213 S-3, the v2 emitter (ADR-011 T-8) |
 | QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5 |
 | QC-12 | A QSpec wire for the candidate set: per `request_index`, a sorted list of `backend` members (T-7). | #185, CG negotiation input |
+| QC-13 | AD-016 amendment (was OQ-3 (a)): the Replay-ownership `Witness` row stores `transcript` only, with the other four facts derived. | #231 |
+| QC-14 | AD-016 amendment (was OQ-3 (b)): an obligation is identified by the digest over (clause node id, obligation kind, `arguments`), not by the clause node id alone, with `source_span` outside the preimage; the AD-016 seed vector is regenerated. | CG obligation conformance (TK-05) |
+| QC-15 | AD-016 amendment (was OQ-3 (c)): the kernel includes the component types of `Value`: `EffectiveId` and the reference universe and object identities, the quantity magnitude and unit identity, and the enum node id and variant identity (T-6). | #213 S-1 edge cuts and S-2 |
+| QC-16 | AD-016 amendment (was OQ-3 (d)): the WP9 category mapping of the ten `KaniOutcomeKind`s is the O-16 proof column. | IR C-09, #231 C-23 |
+| QC-17 | AD-016 amendment (was OQ-3 (e)): node ids are listed in the kernel row only, reconciling two AD-016 rows. No rename. | nothing; #213 S-1 follows the kernel row |
 
 Questions for #209:
 
@@ -818,15 +820,36 @@ Questions for #229:
 | --- | --- |
 | Q229-1 | Wire spelling and version of capability values in v2 `capability_report` and FR-331 `manifest.capabilities`, aligned with QSpec FR-290. |
 
-Owner questions:
+Owner rulings (2026-09-19). The #205 coordinator made these under the
+owner's delegation ("do what is reasonable"). Each closes its question.
 
-| ID | Question |
-| --- | --- |
-| OQ-1 | Once `native-run-result/2` exists, does the QSL `run` command produce `/1` or `/2`? R-08 allows one. #186's exit criterion assumes both. |
-| OQ-2 | FR-323 `results` and FR-352 `native-run-result/2` both describe a native replay result. Which is the replay-result record? Recommendation: `native-run-result/2` (AD-014, AD-016 arrow 7 name it), with FR-323 for the request and per-item disposition vocabulary. This is a QSpec change. |
-| OQ-3 | Approve QSpec amendments to AD-016 that this record requires. Each blocks the named work. (a) The Replay-ownership `Witness` row stores `transcript` only, with the other four derived; blocks #231. (b) An obligation is identified by the digest over (clause node id, obligation kind, `arguments`), not by the clause node id alone, with `source_span` outside the preimage; blocks CG obligation conformance and regenerates the AD-016 seed vector. (c) The kernel includes the component types of `Value`: `EffectiveId` and the reference universe and object identities, the quantity magnitude and unit identity, and the enum node id and variant identity (T-6); blocks #213 S-1 edge cuts and S-2. (d) The WP9 category mapping of the ten `KaniOutcomeKind`s is the O-16 proof column; blocks IR C-09 and #231 C-23. (e) Node ids are listed in the kernel row only; this reconciles two AD-016 rows and blocks nothing, because #213 S-1 follows the kernel row. No rename is proposed. If an amendment is refused, the matching cell of this record reopens. |
-| OQ-4 | Assign tickets for the §7 work that no ticket owns: the QSL replay executor entry, the v2 emitter, RT and CG kernel adoption, the IR packet members and WP9 map, IR reader codes, and CG obligation conformance. Recommendation: the executor entry joins #214's function migration, which already carries function identity through the package. |
-| OQ-5 | The replay executor key (ADR-012 §13.2 Q1). AD-016 arrow 7 names `CheckedPackage::call(function: &str, …)`. Option 1: the declared qualified name, as a typed `QualifiedName` (O-11), resolved against the recompiled package's declarations; this keeps arrow 7, and R-06 then names this lookup as its one exception. Option 2: the checked node id, resolved by lookup in the recompiled package's node set; this amends AD-016 arrow 7 through a QSpec issue. Either key is typed, never a bare string. The packet and replay request carry the chosen key (QC-8). Blocks the executor entry (OQ-4), #231 request type and #214. |
+| ID | Question | Ruling |
+| --- | --- | --- |
+| OQ-1 | Which `native-run-result` version the QSL `run` command produces | `/2` only (AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231 builds the carrier and #186 the serializer. No build produces both (§5). |
+| OQ-2 | Which record is the replay result: FR-323 `results` or FR-352 `native-run-result/2` | FR-352 `native-run-result/2`. FR-323 keeps the request and the per-item disposition vocabulary (O-27). |
+| OQ-3 | The five AD-016 amendments this record requires | Accepted. They are QC-13 to QC-17, filed as one QSpec AD-016 amendment PR after IR #139 merges (TK-10). |
+| OQ-4 | Tickets for the work no ticket owns | Opened at the #212 consolidation, as listed in Tickets to open at #212. |
+| OQ-5 | The replay executor key (ADR-012 §13.2 Q1) | Option 1: a typed `QualifiedName` (O-11), resolved against the recompiled package's declarations. AD-016 arrow 7 stays unchanged. R-06 names this lookup as its one exception. The packet and the replay request carry it (QC-8). Option 2 (node id) is not taken. |
+
+Cross-questions Q209-8 (to the ADR-011 author) and Q210-1 to Q210-4 (to the
+ADR-012 author) were sent by the #205 coordinator on 2026-09-19.
+
+Tickets to open at #212. Each row is one proposed ticket. Where an ADR-011
+row or an existing QSpec issue already covers the work, no second ticket is
+opened.
+
+| # | Proposed change | Proposed owner and repository |
+| --- | --- | --- |
+| TK-01 | QSL replay executor entry: digest-addressed recompilation, `package_id` and source-digest checks, `QualifiedName` selection (O-26, C-13). #231 excludes replay execution and #217 owns integration only. Recommendation: joins #214's function migration, which already carries function identity through the package. | QSL, with #214 |
+| TK-02 | The v2 emitter (AD-016 WP6, O-02, C-03). Covered by ADR-011 T-8 (M-4); no second ticket. | QSL (ADR-011 T-8) |
+| TK-03 | RT and CG adoption of `quire-exact` (AD-016 WP5a, WP5b) and the RT C-06 mapping table. The QSL-side extraction is ADR-011 T-6 and the RT agreement retarget ADR-011 T-9. | RT and CG |
+| TK-04 | IR: the O-25 packet members, the WP9 map (C-09), and FR-322 reader code completeness (OBS-035). IR #137 covers only the FR-031-AC-3 witness test. | IR |
+| TK-05 | CG obligation identity conformance (O-09, C-19, C-20, C-22, C-25). | CG |
+| TK-06 | FR-323 and FR-331 replay and counterexample members: QC-1, QC-6, QC-8, QC-9. | QSpec (`quire-specification`) |
+| TK-07 | FR-201 digest domains: QC-2 and QC-4. | QSpec |
+| TK-08 | Model-owned node-identity vectors (QC-3), FR-321 duplicate-selection code (QC-5), FR-322 dependency node reference (QC-10) and catalog codes for stage limits and internal fault (QC-11). | QSpec |
+| TK-09 | Candidate-set wire (QC-12). Covered by QSpec #134 scope item 4; no second ticket. | QSpec #134 |
+| TK-10 | One AD-016 amendment PR: QC-13 to QC-17 (OQ-3 ruling), after IR #139 merges. QC-7 (the WP9 parity carrier) is proposed to join it. | QSpec |
 
 ### 9. ADR-010 items decided
 
@@ -850,7 +873,7 @@ Primary-owner items:
 | DA-15 | O-18: one domain-labelled digest record in QSL `digest`. |
 | DA-16 | O-13: `quire-exact`; RT and QSL hold no kernel copies. |
 | DA-17 | O-10: layer-owned kinds with named mappings (AD-016). |
-| DA-18 | O-11: qualified names resolved only by the checker; the replay executor key is OQ-5. |
+| DA-18 | O-11: qualified names resolved only by the checker; the replay executor key is a typed `QualifiedName` (OQ-5 ruling). |
 | OBS-005 | O-13: `quire-exact` is the canonical owner; crate direction Q209-4. |
 | OBS-006 | O-03: native references are `ValueTypeRef::Native`; the `quire/native` pseudo-package refuses. |
 | OBS-017 | O-15: two `CheckedPackage` types; complete-V1 canonical, native-v1 lane-private. |
@@ -862,7 +885,7 @@ Primary-owner items:
 | OBS-023 | O-17, O-23: one catalog revision per build; the native-v1 copy is lane-private. |
 | OBS-024 | O-23: re-vendor at the pin; heads check 4. |
 | OBS-025 | O-21: `model::accounting` folds into the kernel meter. |
-| OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; which version `run` produces is OQ-1. |
+| OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |
 | OBS-027 | O-25: IR `Witness{transcript}` admitted through `parse`, with derived accessors. |
 | OBS-032 | O-13: single kernel ends the RT/QSL drift. |
 | OBS-034 | O-23, T-9: pin literals and `pins.json` checked equal to the lock (#215); `RevisionPin` representation. |
@@ -872,16 +895,16 @@ Secondary-owner items (the #211 part only):
 
 | Item | Decision |
 | --- | --- |
-| OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket OQ-4. |
+| OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket ADR-011 T-8. |
 | OBS-031 | O-23: the pin versus current-head rule; QI ownership Q209-7. |
 | OBS-037 | R-10, O-15: wire-admitted `v2::AdmittedPackage` values never become checked typestate; the handoffs are lane-private, and removal of the bypass is decided in #209. |
-| OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key left to OQ-5; the conflicting #205 text is Q209-5. |
+| OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key a typed `QualifiedName` (OQ-5 ruling); the conflicting #205 text is Q209-5. |
 | OBS-041 | O-23: one lock holds one revision of each git dependency. |
 
 ## Consequences
 
 - Every object in #211's list has one owner per layer, one implementing ticket
-  or an OQ-4 entry, one serialized authority, and an equality kind or a
+  or a Tickets to open at #212 row, one serialized authority, and an equality kind or a
   not-an-identity statement. Every remaining duplicate is either a layer-owned
   type with a named conversion (§4) or a lane-private type (§6).
 - #213 and #231 implement from §3 and §7 without choosing an owner. #212 can
@@ -893,9 +916,10 @@ Secondary-owner items (the #211 part only):
 - The byte transfers in `value/model_query.rs`, `NodeKey::from_bytes` and the
   caller-supplied `object_keys` map lose their role; #213 S-2 replaces them with
   typed reference components and the checker's model correspondence.
-- Twelve QSpec changes (QC-1 to QC-12), five AD-016 amendments (OQ-3), one
-  replay-result authority question (OQ-2) and one replay-key question (OQ-5)
-  go to QSpec and the owner. Work that waits on them is listed in §7 and §8.
+- Seventeen QSpec changes go to QSpec: QC-1 to QC-12, and the five accepted
+  AD-016 amendments QC-13 to QC-17. They are filed as TK-06 to TK-10. Work that
+  waits on them is listed in §7 and §8. The owner questions OQ-1 to OQ-5 are
+  ruled (2026-09-19).
 - ADR-012 §13.2 questions 1 to 4 are answered in OQ-5, O-10, O-17, O-14 and
   O-19; O-20's owner row is decided in #222. The nine ADR-011 questions to
   #211 are answered in §3.1 (T-1 to T-9); Q209-8 asks ADR-011 to align its I2
