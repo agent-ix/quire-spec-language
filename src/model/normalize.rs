@@ -171,10 +171,11 @@
 //! stage," so phase 4's own charges — every `normalize.redefinition-check`,
 //! every phase-4 `normalize.fact`, every `normalize.conflict-check` — must
 //! all be admitted before the refusal they expose is reported. `build`
-//! stores the first such refusal it finds, of any of these shapes, in
-//! `Built::phase4_refusal` and keeps resolving every remaining type and
-//! target group, so every later phase-4 charge amount is still computed
-//! correctly; `charge_all` charges through the last
+//! stores whichever such refusal ranks earliest in charge order, of any of
+//! these shapes (`record_phase4_refusal`'s own doc, next to
+//! [`Phase4Accounting`]), in `Built::phase4_refusal` and keeps resolving
+//! every remaining type and target group, so every later phase-4 charge
+//! amount is still computed correctly; `charge_all` charges through the last
 //! `normalize.conflict-check` and returns that refusal only once every
 //! phase-4 charge has been admitted. An earlier `Incomplete` still wins,
 //! matching `:482`'s "a stage that reports a refusal ends checking: no
@@ -708,12 +709,14 @@ struct Built {
     /// redefiner needs no entry at all (`value-accounting.md:456`'s own
     /// `c >= 2` condition); replayed by `charge_all`.
     conflict_check_work: Vec<u64>,
-    /// The first `derivation-conflict`/`redefinition-target` refusal phase
-    /// 4 finds, held here rather than returned by `build` (see the module
-    /// docs): `apply_redefinitions` keeps resolving every remaining type
-    /// and target group after finding it, so every later phase-4 charge
-    /// amount above is still computed correctly, and `charge_all` reports
-    /// this refusal only once every phase-4 charge is admitted.
+    /// Whichever phase-4 refusal — `derivation-conflict`,
+    /// `redefinition-target`, or `RedefinitionUnreachable` — ranks earliest
+    /// in charge order (`record_phase4_refusal`'s own doc), held here rather
+    /// than returned by `build` (see the module docs): `apply_redefinitions`
+    /// keeps resolving every remaining type and target group after finding
+    /// one, so every later phase-4 charge amount above is still computed
+    /// correctly, and `charge_all` reports this refusal only once every
+    /// phase-4 charge is admitted.
     phase4_refusal: Option<ModelRefusal>,
 }
 
@@ -1164,12 +1167,14 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     let mut conflict_check_work: Vec<u64> = Vec::new();
     let mut phase4_fact_count: u64 = 0;
     let mut phase4_refusal: Option<ModelRefusal> = None;
+    let mut phase4_refusal_rank: Option<(u8, ProducerKey)> = None;
     let mut accounting = Phase4Accounting {
         type_fact_counts: &type_fact_counts,
         owner_ancestor_sets: &owner_ancestor_sets,
         conflict_check_work: &mut conflict_check_work,
         phase4_fact_count: &mut phase4_fact_count,
         refusal: &mut phase4_refusal,
+        refusal_rank: &mut phase4_refusal_rank,
     };
     // A truncated phase-3 path set (a tight fact budget already exceeded by
     // the time every type's own phase 2/3 above has run) cannot resolve
@@ -1195,7 +1200,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
                 &mut member_preimages,
                 &mut hidden,
                 &mut accounting,
-            )?;
+            );
         }
     }
 
@@ -1294,11 +1299,58 @@ struct Phase4Accounting<'a> {
     /// [`Fact`] construction here at all (see the module docs), so it
     /// contributes nothing to this count.
     phase4_fact_count: &'a mut u64,
-    /// The first `derivation-conflict`/`redefinition-target` refusal found
-    /// so far across every `type_key` this pass has resolved (see
-    /// [`Built::phase4_refusal`]'s own doc) — set at most once; a later
-    /// group's own ambiguity is not recorded once this is already `Some`.
+    /// The phase-4 refusal this pass reports (see [`Built::phase4_refusal`]'s
+    /// own doc): whichever refusal phase 4 exposes ranks earliest in charge
+    /// order, not merely the first one this pass's own per-`type_key` walk
+    /// happens to encounter. Set only by `record_phase4_refusal`, which also
+    /// maintains `refusal_rank` alongside it.
     refusal: &'a mut Option<ModelRefusal>,
+    /// The charge-order rank of whatever refusal `refusal` currently holds
+    /// (see `record_phase4_refusal`'s own doc for what a rank is and how
+    /// candidates are compared against it).
+    refusal_rank: &'a mut Option<(u8, ProducerKey)>,
+}
+
+/// Charge-order stage for `record_phase4_refusal`'s own rank key: lower
+/// values rank earlier. `normalize.redefinition-check` charges every
+/// redefinition record before phase 4's own `normalize.fact` charges, which
+/// in turn precede every `normalize.conflict-check` charge
+/// (`value-accounting.md:455`, `:456`), so a redefinition-check-stage
+/// refusal always outranks a conflict-check-stage refusal, regardless of
+/// which type or target group this pass's own per-`type_key` walk happens
+/// to reach first.
+const REDEFINITION_CHECK_STAGE: u8 = 0;
+/// See [`REDEFINITION_CHECK_STAGE`]'s own doc.
+const CONFLICT_CHECK_STAGE: u8 = 1;
+
+/// Records `refusal` as `accounting`'s own phase-4 refusal only if `(stage,
+/// key.clone())` ranks earlier, in charge order, than whatever rank
+/// `accounting.refusal_rank` already holds — never merely because
+/// `accounting.refusal` is still `None`: `stage` is
+/// [`REDEFINITION_CHECK_STAGE`] or [`CONFLICT_CHECK_STAGE`], and `key` is
+/// the producer key the exposing stage itself ascends by — a redefinition
+/// record's own key for `REDEFINITION_CHECK_STAGE` (`value-accounting.md:455`),
+/// or the contested target's effective member key for
+/// `CONFLICT_CHECK_STAGE` (`:456`). A candidate that does not rank earlier
+/// changes nothing: `:481`'s "checking is exhaustive within a stage" only
+/// requires every phase-4 charge to still run, not that the recorded
+/// refusal track the order this pass's own walk happens to visit types and
+/// target groups in.
+fn record_phase4_refusal(
+    accounting: &mut Phase4Accounting<'_>,
+    stage: u8,
+    key: &ProducerKey,
+    refusal: ModelRefusal,
+) {
+    let rank = (stage, key.clone());
+    let replace = match accounting.refusal_rank.as_ref() {
+        None => true,
+        Some(current) => rank < *current,
+    };
+    if replace {
+        *accounting.refusal_rank = Some(rank);
+        *accounting.refusal = Some(refusal);
+    }
 }
 
 /// Phase 4 (TC-195 N06): field redefinition only — operation-member
@@ -1340,7 +1392,7 @@ fn apply_redefinitions(
     member_preimages: &mut HashMap<(ProducerKey, ProducerKey), EffectiveDeclarationPreimage>,
     hidden: &mut HashSet<(ProducerKey, ProducerKey)>,
     accounting: &mut Phase4Accounting<'_>,
-) -> Result<(), ModelRefusal> {
+) {
     let mut owner_paths: HashMap<ProducerKey, Vec<ProducerKey>> = HashMap::new();
     owner_paths.insert(type_key.clone(), Vec::new());
     for ancestor in paths {
@@ -1504,7 +1556,7 @@ fn apply_redefinitions(
                 }
             }
 
-            if winner.is_none() && accounting.refusal.is_none() {
+            if winner.is_none() {
                 // TC-196 R07's second shape: among the undominated edges, the
                 // most-derived owners (those no *other* edge's owner properly
                 // descends from) are all the identical owner — contending
@@ -1527,11 +1579,13 @@ fn apply_redefinitions(
                 // redefining member's own declaration key (never its
                 // redefinition record's key) and the one contended target.
                 //
-                // Recorded in `accounting.refusal` rather than returned here
-                // (see the module docs and `winner_index`'s own comment
-                // above): only the *first* ambiguity found is kept, so this
-                // whole branch is skipped once `accounting.refusal` is
-                // already `Some`.
+                // `normalize.conflict-check` exposes this ambiguity
+                // (`value-accounting.md:456`), so `record_phase4_refusal`
+                // below ranks it by `CONFLICT_CHECK_STAGE` and this group's
+                // own `target_key` — `:456`'s "ascending by effective member
+                // key" — rather than keeping whichever ambiguity this pass's
+                // own per-`type_key` walk happens to reach first (see the
+                // module docs and `record_phase4_refusal`'s own doc).
                 let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
                 for edge in &edges {
                     let mut dominated_by_another = false;
@@ -1556,7 +1610,7 @@ fn apply_redefinitions(
                     && most_derived
                         .iter()
                         .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
-                *accounting.refusal = Some(if same_owner {
+                let candidate = if same_owner {
                     let mut redefiners: Vec<String> = most_derived
                         .iter()
                         .map(|edge| edge.redefining.identity.clone())
@@ -1599,7 +1653,8 @@ fn apply_redefinitions(
                             edge_paths.join(" and ")
                         ),
                     }
-                });
+                };
+                record_phase4_refusal(accounting, CONFLICT_CHECK_STAGE, &target_key, candidate);
             }
             winner
         };
@@ -1607,14 +1662,26 @@ fn apply_redefinitions(
         let member_key = (type_key.clone(), target_key.clone());
         if !member_preimages.contains_key(&member_key) {
             // `normalize.redefinition-check` exposes this refusal
-            // (`value-accounting.md:455`), so it is a phase-4-stage refusal
-            // exactly like the dominance ambiguities above: held in
-            // `accounting.refusal` rather than returned here (see the module
-            // docs), so every remaining type and target group is still
-            // resolved and every later phase-4 charge amount is still
-            // computed correctly. Only the first refusal found is kept.
-            if accounting.refusal.is_none() {
-                *accounting.refusal = Some(ModelRefusal {
+            // (`value-accounting.md:455`), so `record_phase4_refusal` below
+            // ranks it by `REDEFINITION_CHECK_STAGE` and the least of this
+            // group's own redefinition records' producer keys — `:455`'s
+            // own "ascending by the record's own producer key" order; every
+            // edge in this group shares the same unreachable target, so
+            // whichever of them sorts first is the one that order would
+            // check first. Held in `accounting.refusal` rather than
+            // returned here (see the module docs), so every remaining type
+            // and target group is still resolved and every later phase-4
+            // charge amount is still computed correctly.
+            let least_record_key = edges
+                .iter()
+                .map(|edge| &edge.record_key)
+                .min()
+                .expect("a target group always has at least one edge");
+            record_phase4_refusal(
+                accounting,
+                REDEFINITION_CHECK_STAGE,
+                least_record_key,
+                ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::RedefinitionUnreachable {
                         member: target_key.clone(),
@@ -1624,8 +1691,8 @@ fn apply_redefinitions(
                         "redefinition target {} is not an effective member of {}",
                         target_key.identity, type_key.identity
                     ),
-                });
-            }
+                },
+            );
             continue 'targets;
         }
 
@@ -1641,9 +1708,15 @@ fn apply_redefinitions(
                     // Same deferred-refusal treatment as the target check
                     // above: this redefining member is not itself an
                     // effective member of `type_key`, which
-                    // `normalize.redefinition-check` also exposes.
-                    if accounting.refusal.is_none() {
-                        *accounting.refusal = Some(ModelRefusal {
+                    // `normalize.redefinition-check` also exposes — ranked
+                    // by this one edge's own `record_key`, since unlike the
+                    // target check above this failure is specific to a
+                    // single record, not shared by the whole group.
+                    record_phase4_refusal(
+                        accounting,
+                        REDEFINITION_CHECK_STAGE,
+                        &edge.record_key,
+                        ModelRefusal {
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::RedefinitionUnreachable {
                                 member: edge.redefining.clone(),
@@ -1653,8 +1726,15 @@ fn apply_redefinitions(
                                 "redefining member {} is not an effective member of {}",
                                 edge.redefining.identity, type_key.identity
                             ),
-                        });
-                    }
+                        },
+                    );
+                    // `continue 'targets` here leaves this group
+                    // half-processed — any earlier edge's own derive facts
+                    // in this loop are already counted, and the winning
+                    // edge's own target is not hidden — but that is
+                    // harmless: the outcome is a refusal regardless, once
+                    // every remaining phase-4 charge is admitted (see the
+                    // module docs).
                     continue 'targets;
                 }
             };
@@ -1739,8 +1819,6 @@ fn apply_redefinitions(
     for (_, amount) in conflict_charges {
         accounting.conflict_check_work.push(amount);
     }
-
-    Ok(())
 }
 
 /// Whether `p_owner` strictly dominates `q_owner`: `p_owner` is a proper
