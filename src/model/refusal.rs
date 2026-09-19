@@ -314,6 +314,17 @@ pub enum ModelRefusalCause {
     /// A domain package record does not export the required [`crate::model::key`]
     /// kind for its role.
     WrongExport,
+    /// Two records in the same domain package share one [`DeclarationKey`]
+    /// (FR-154: "Two nodes share one identity"). Under #131's flat
+    /// `DeclarationKey` (`package`/`node` only, no `revision`/`digest`), a
+    /// domain package that declares the same node identity twice is no
+    /// longer distinguishable by revision and must refuse rather than
+    /// silently let the later record replace or shadow the earlier one in
+    /// every by-key index this module builds.
+    ConflictingBinding {
+        /// The key more than one record declares.
+        key: DeclarationKey,
+    },
     /// A systems relationship names an endpoint absent from the domain package.
     UnknownRelationship {
         /// The absent relationship.
@@ -549,6 +560,7 @@ impl ModelRefusalCause {
             Self::ForeignUniverse { .. } => "foreign-universe",
             Self::AbsentKey { .. } => "absent-key",
             Self::WrongExport => "wrong-export",
+            Self::ConflictingBinding { .. } => "conflicting-binding",
             Self::UnknownRelationship { .. } => "unknown-relationship",
             Self::UnknownSourcePort { .. } => "unknown-source-port",
             Self::UnknownTargetPort { .. } => "unknown-target-port",
@@ -660,6 +672,7 @@ mod tests {
             ModelRefusalCause::ForeignUniverse { .. } => "foreign-universe",
             ModelRefusalCause::AbsentKey { .. } => "absent-key",
             ModelRefusalCause::WrongExport => "wrong-export",
+            ModelRefusalCause::ConflictingBinding { .. } => "conflicting-binding",
             ModelRefusalCause::UnknownRelationship { .. } => "unknown-relationship",
             ModelRefusalCause::UnknownSourcePort { .. } => "unknown-source-port",
             ModelRefusalCause::UnknownTargetPort { .. } => "unknown-target-port",
@@ -795,6 +808,7 @@ mod tests {
             },
             ModelRefusalCause::AbsentKey { key: Vec::new() },
             ModelRefusalCause::WrongExport,
+            ModelRefusalCause::ConflictingBinding { key: key("p") },
             ModelRefusalCause::UnknownRelationship {
                 relationship: key("p"),
             },

@@ -199,6 +199,17 @@ fn fixture_f1_with_version(version: &str) -> DomainPackage {
     domain_package
 }
 
+/// A digest-only variant of [`fixture_f1`], for the l05 correspondence test's
+/// third case: same `identity` and `version` as `fixture_f1()` — only
+/// `digest` differs (its first byte flipped), so the `ForeignModelSelection`
+/// check is exercised over a header that disagrees in exactly one component
+/// at a time, not just `identity` (the base l05 test) or `version` (F13).
+fn fixture_f1_with_different_digest() -> DomainPackage {
+    let mut domain_package = fixture_f1();
+    domain_package.model_selection.digest[0] ^= 0xff;
+    domain_package
+}
+
 fn view_of(domain_package: &DomainPackage) -> EffectiveView {
     match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
@@ -333,8 +344,10 @@ fn l01_all_instances_selects_subtype_population_once() {
             &reference_key(&universe, &a, "a2"),
             &reference_key(&universe, &b, "b1"),
         ],
-        // #131's DeclarationKey reshape changed every effective id here, and
-        // with it `type_identity`'s ascending order between A and B.
+        // #131's DeclarationKey reshape and the #197 RULE_INHERIT/RULE_REDEFINE
+        // fact-input fix (ancestor_paths pushes `record.general`, redefine
+        // facts input `edge.redefining`) each changed every effective id
+        // here, and with them `type_identity`'s ascending order between A and B.
         "canonical reference-key order: every A member precedes every B member"
     );
     // Outputs clause: a typed reference to the queried type, bounded [0, 3]
@@ -1089,6 +1102,46 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 fn l05_view_from_a_different_bundle_version_refuses_at_admission() {
     let view = view_of(&fixture_f1_with_version("1"));
     let domain_package = fixture_f1_with_version("2");
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignModelSelection {
+                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    expected: domain_package.model_selection.clone(),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
+    }
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// The l05 correspondence check's third case: same `identity` and `version`
+/// as the view's own selection, only `digest` differs. Neither the base l05
+/// test (identity-only mismatch) nor F13's version-only variant above
+/// exercises a pure digest mismatch, and `DomainPackageRef::fixture` derives
+/// its digest from the selection placeholder alone, so an identity/version-
+/// only comparison would miss this case entirely.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l05_view_from_a_domain_package_with_a_different_digest_refuses_at_admission() {
+    let view = view_of(&fixture_f1());
+    let domain_package = fixture_f1_with_different_digest();
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
@@ -2218,6 +2271,99 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
              two-hop chain model.C.x -> model.B.x -> model.A.x, got {other:?}"
         ),
     }
+}
+
+/// PR #177 review finding 1: `field_write_covered`'s `redefinition_reaches`
+/// call compares `DeclarationKey`s by their full derived `PartialEq`
+/// (`package`, `node`), not `.node` alone -- a write naming `model.A.x` in
+/// package `other/pkg` does not reach a grant for `model.A.x` in package
+/// `test/orders`, even though both share the display node `model.A.x`. This
+/// behavior predates QSL #171 (`field_write_covered` already compared full
+/// keys; #171 only fixed how many hops the walk takes), but nothing in this
+/// file pinned it: every other field-write test here uses
+/// `DeclarationKey::fixture`'s fixed `test/orders` package on both the
+/// write and the grant, so it cannot tell full-key equality apart from
+/// node-only comparison. Retargets the pre-#131 revision-differing
+/// regression test: under the dropped `revision`/`digest` fields, a
+/// `package`-differing key is now the only way to construct two
+/// `DeclarationKey`s that share a display node but are not equal.
+///
+/// Mutation used: in `field_write_covered`'s closure, compared
+/// `candidate.node == write.node` instead of full equality
+/// (`effect.modifies.contains(candidate)`). This whole test file stayed
+/// green except this test, which went from `Refused` to `Admitted`;
+/// reverted.
+#[test]
+#[trace("FR-046-AC-3")]
+fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_name() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.package"),
+        vec![
+            object_type("model.A"),
+            field_member("model.A.x", "model.A", "model.A"),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let write_in_another_package = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.A.x".to_owned(),
+    };
+    let pre_document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![PopulationMember {
+            object: "a1".to_owned(),
+            type_identity: DeclarationKey::fixture("model.A"),
+            field_values: vec![MemberFieldValues {
+                field: write_in_another_package.clone(),
+                values: vec!["a2".to_owned()],
+            }],
+        }],
+    };
+    let post_document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![PopulationMember {
+            object: "a1".to_owned(),
+            type_identity: DeclarationKey::fixture("model.A"),
+            field_values: vec![MemberFieldValues {
+                field: write_in_another_package.clone(),
+                values: vec!["a9".to_owned()],
+            }],
+        }],
+    };
+    let effect = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")], // package "test/orders"
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&domain_package, &view, &p1_population_key()),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    assert_eq!(
+        outcome,
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::FrameViolation,
+            cause: ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                object: "a1".to_owned(),
+                field: write_in_another_package.clone(),
+            },
+            detail: "invocation changes object a1's field model.A.x, outside the operation's \
+                      declared modifies frame"
+                .to_owned(),
+        })
+    );
 }
 
 /// Item 5: an object that changes its most-specific type between pre and

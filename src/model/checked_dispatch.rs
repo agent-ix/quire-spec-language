@@ -19,8 +19,9 @@
 //! Pure: no intake, no I/O. It takes a caller-supplied [`DomainPackage`] and an
 //! [`OperationClauses`] side table naming each candidate's own clause
 //! `Expression` and signature. `DomainPackage` carries no `Expression` payload —
-//! adding one would perturb the producer-interface-1.3.0 correspondence
-//! every other rung of this crate keys against — so this is where a real
+//! adding one would perturb the
+//! `model-effective-declaration.schema.json`/`model-complete.md`
+//! correspondence every other rung of this crate keys against — so this is where a real
 //! intake (`agent-ix/quire-specification#131`) will eventually plug in its
 //! own clause source in place of a test-built side table; nothing else here
 //! needs to change when it does.

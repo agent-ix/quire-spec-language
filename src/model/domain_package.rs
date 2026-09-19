@@ -384,7 +384,7 @@ impl DomainPackageRecord {
 
 /// A domain package selection: `{identity, version, digest_domain: "sha256-jcs",
 /// digest}` (FR-321, `model-complete.md`:50).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DomainPackageRef {
     /// The domain package's own identity (e.g. `test/orders`).
     pub identity: String,
@@ -392,6 +392,19 @@ pub struct DomainPackageRef {
     pub version: String,
     /// The SHA-256 digest of the domain package's JCS bytes.
     pub digest: [u8; 32],
+}
+
+impl std::fmt::Debug for DomainPackageRef {
+    /// Prints `digest` as hex, not 32 decimal bytes — readable in refusal
+    /// payloads (e.g. `ForeignModelSelection { expected }`) the way the
+    /// deleted `ProducerDigest`'s own hex `Debug` was.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DomainPackageRef")
+            .field("identity", &self.identity)
+            .field("version", &self.version)
+            .field("digest", &super::key::hex(&self.digest))
+            .finish()
+    }
 }
 
 impl DomainPackageRef {
@@ -423,10 +436,21 @@ impl DomainPackageRef {
     /// `tests/model_normalization.rs`.
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture(placeholder: impl Into<String>) -> Self {
+        Self::fixture_with_version(placeholder, "1")
+    }
+
+    /// [`Self::fixture`], with an explicit `version` rather than the
+    /// hard-wired `"1"` — needed to reach F1 as version `2` under
+    /// placeholder `n01v2` (TC-195 N09's third clause).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_with_version(
+        placeholder: impl Into<String>,
+        version: impl Into<String>,
+    ) -> Self {
         use sha2::{Digest, Sha256};
         Self {
             identity: "test/orders".to_owned(),
-            version: "1".to_owned(),
+            version: version.into(),
             digest: Sha256::digest(placeholder.into().as_bytes()).into(),
         }
     }
