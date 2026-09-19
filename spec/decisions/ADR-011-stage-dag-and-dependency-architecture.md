@@ -227,8 +227,8 @@ distinct nominal type with private constructors in its stage module.
 | Edge | From → to | Admitted input | Output | Edge owner |
 |---|---|---|---|---|
 | E1 | S0 → S1 | Source bytes, `SourceIdentity`, limits | Lossless CST | QSL `cst` |
-| E2 | S1 → S2 | A CST with no error or recovery node | Parsed forms | QSL `forms`; family form builders from #210 |
-| E3 | S2 → S3 | Parsed forms, admitted domain packages (I1), layer-3 `library` import views (I2), library lock | Checked semantic graph | QSL `check`; family checkers from #210 |
+| E2 | S1 → S2 | A CST with no error or recovery node | Parsed forms | QSL `forms`; family form builders (ADR-012 §2) |
+| E3 | S2 → S3 | Parsed forms, admitted domain packages (I1), layer-3 `library` import views (I2), library lock | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
 | E4 | S3 → S4 | Checked semantic graph | Linked checked package (in-process), and v2 bytes on request | QSL `package` |
 | E5 | S4 → S5 | `quire.checked-package/v2` bytes only, admitted under the §4 verified binding (supported version, digest equal to declared identity, identity pinned by the request) | IR `CheckedPackageV2`, then IR nodes | IR reader. The wire contract is QSpec's. |
 | E6 | S4 → S6a | In-process linked checked package, typed arguments, object environment, `Meter` | `Evaluation` / `Outcome` | QSL `value::expression` |
@@ -291,7 +291,7 @@ by design, and no later stage may recover it.
 |---|---|---|---|---|---|
 | E1 | Minted, lossless | Minted: spans against `SourceIdentity` and revision; I3 adds the document `SourceMap` | none | Edition read from source | none |
 | E2 | Dropped | Carried: each form holds the span of its CST node | none: forms carry position only | Edition carried | Declared bounds and extents carried as syntax |
-| E3 | none | Carried: QSL, the only span minter, keys the source map by checked node id | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201) and `DeclarationKey{package, node}` (AD-016 arrow 1). One id per node occurrence within a package. The cross-package key is `PackageNodeKey{package: package_id, node: NodeKey}` in `library` (ADR-013 T-3); it is unique across the package and every I2 view in one check. | Dependency and domain-package identities resolved and recorded | Bounds and extents typed. The capability report is recorded without negotiation; #210 decides its content. |
+| E3 | none | Carried: QSL, the only span minter, keys the source map by checked node id | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201) and `DeclarationKey{package, node}` (AD-016 arrow 1). One id per node occurrence within a package. The cross-package key is `PackageNodeKey{package: package_id, node: NodeKey}` in `library` (ADR-013 T-3); it is unique across the package and every I2 view in one check. | Dependency and domain-package identities resolved and recorded | Bounds and extents typed. The `capability_report` is recorded without negotiation: exactly one entry per checked item that has `Requirements`, keyed by its checked identity, holding the capability kinds (the #134 vocabulary), the declared extent and the authored bound. It holds no backend, candidate or disposition (ADR-012 §13.5). |
 | E4 | none | Carried: source map by node id, in the package | Carried verbatim | **Minted**: package identity and digest, v2 schema version | Carried as v2 `bounded_domain`, `model_population` and `capability_report` |
 | E5 | none | Carried as `CheckedSourceMapEntry`, never re-minted | Carried read-only as `CheckedNodeId` and `CheckedDomainPackageRef` | Checked: an unsupported v2 contract version refuses | Carried; `requires-bound` derived once from the IR table |
 | E6 | none | Carried: `Evaluation.location` from the node id | Carried | Package identity bound to the evaluation | none |
@@ -613,7 +613,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 
 | Edge | Target | Owning change |
 |---|---|---|
-| IR root → QSL (normal and dev, f1700a9) | **Removed** in the IR change that lands predicate and temporal admission over v2 forms, with #218 and #223 (M-6d). | IR change (Tickets to open at #212); #218, #223 |
+| IR root → QSL (normal and dev, f1700a9) | **Removed** in the IR change that lands predicate and temporal admission over the v2 value, expression and temporal nodes at v2 intake, with #218 and #223 (M-6d). | Contract IR #141; #218, #223 |
 | QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6b with #217 |
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6b with #217 |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
@@ -737,11 +737,11 @@ against the combined Layer 1 architecture.
 | # | #212 | Change | Stages and edges | QSL modules | Other repositories | Must not |
 |---|---|---|---|---|---|---|
 | 1 | 1 | Exact scalar operator | S2 form, S3 check, S4 v2 arm, S6a kernel operation, E7 CG render arm | `forms`, `check`, `package`, `quire-exact` | IR `Operator` row, CG render arm, QSpec vector (AD-016 scenario 1) | evaluate in `command`; add a `negotiate_*` in QSL |
-| 2 | 2 | New semantic form (for example sum type and exhaustive case, #221) | S2 builder, S3 family checker, S4 v2 node, S6a evaluator, E7 when a backend supports it | `forms`, `check`, `package`, `value::expression` | QSpec wire (v2 node), IR reader row, CG arm when supported | edit unrelated families; dispatch on strings. #210 decides the family contract. |
+| 2 | 2 | New semantic form (for example sum type and exhaustive case, #221) | S2 builder, S3 family checker, S4 v2 node, S6a evaluator, E7 when a backend supports it | `forms`, `check`, `package`, `value::expression` | QSpec wire (v2 node), IR reader row, CG arm when supported | edit unrelated families; dispatch on strings; add a `_` arm at a dispatch seam. Family hooks per ADR-012 §2 and §8. |
 | 3 | none | Model-bound construct | I1 intake, S3 `model`, S4 `model_population` | `model::intake`, `model` | FCD emitter (AD-016 scenario 5) | read FCD types outside `model::intake`; re-derive the bound after S4; extend `NativeModelProfile`, which retires with SEAM-1 |
 | 4 | 3 | Scoped protocol clause (frame or scoped anchor) | S2, S3 clause checker, S4 v2 clause and frame node, E7 frame obligation (`unsupported` until IR #109) | `forms`, `check`, `package` | IR `ClauseKind` and frame lowering, RT observation kind, CG harness (AD-016 scenarios 2 and 7) | emit through `protocol_artifact` (FB-03) |
-| 5 | none | Temporal operator | S2, S3 temporal checker, S4 v2 temporal form, S6a temporal evaluator | `forms`, `check`, `package`, `temporal` | IR temporal admission from v2 (not QSL types, FB-05) | import a wire module from `temporal`. #210 and #222 decide boundedness. |
-| 6 | 5 | Unbounded request | S3 records the extent. S4 carries it. The item settles `requires-bound` or `unsupported` with no oracle or harness, with the settling step decided under the #210/#229 answer (§2.1). #185's own rule (an unadvertised claim settles `unsupported` with a warning) is an input to that answer. | `check`, `package` | IR `requires-bound` row (AD-016 scenario 4) | narrow the domain silently; report `proved` for an unbounded claim |
+| 5 | none | Temporal operator | S2, S3 temporal checker, S4 v2 temporal form, S6a temporal evaluator | `forms`, `check`, `package`, `temporal` | IR temporal admission from v2 (not QSL types, FB-05) | import a wire module from `temporal`. #222 decides boundedness. |
+| 6 | 5 | Unbounded request | S3 records the extent. S4 carries it. The item settles `requires-bound` or `unsupported` with no oracle or harness, settled by CG `negotiate_*` over the `route` candidate set (§2.1, ADR-012 §7.2). #185's own rule (an unadvertised claim settles `unsupported` with a warning) is an input to that answer. | `check`, `package` | IR `requires-bound` row (AD-016 scenario 4) | narrow the domain silently; report `proved` for an unbounded claim |
 | 7 | 7 | New backend | Declares one `BackendDescriptor` in its own repository (ADR-012 §12.3), which the driver adds to the registry value. At E7 it consumes S5 IR and the `route` candidate sets, settles dispositions in `negotiate_*`, emits artifacts, returns typed outcomes in #231 envelopes. If it replays, it replays through the S1 to S4 recompile and S6a via E9. | none | the backend repository; QSpec for any new wire | parse QSL; depend on QSL types other than the replay entry; mint spans or identities (FB-01, FB-05) |
 | 8 | 4 | Model-bound identity change that preserves provenance | I1 intake re-admits the domain package with its new identity. S3 re-resolves and mints new `DeclarationKey`s; source spans keep their node-id keys. S4 mints a new package identity. Consumers pinned to the old identity refuse at the I2 binding (§4) until their lock names the new one. | `model::intake`, `model`, `check`, `package`, `library` | FCD emitter; IR reads the new identity from v2 | re-key spans by anything other than node id; accept the old identity in a lock for the new package |
 | 9 | 6 | Nested counterexample and native replay | S6b yields a counterexample. E8 builds the packet with a typed `Witness`. E9 recompiles the digest-addressed source through S1 to S4, checks `package_id`, decodes the witness, runs S6a, and resolves the node id to its nested span through the v2 source map. The skeleton spine (§1.1) is the first run. | I2 reader in `package`, `value::expression` | IR packet and witness, CG replay adapter, #231 envelope | type the witness outside `Witness::decode`; replay through a stub; repair a disagreement |
@@ -779,14 +779,19 @@ ticket that L1-D1 relaxes. Stage placement matches the relaxed edges:
 
 ## Questions handed to sibling tickets
 
-To #210:
+Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
 
-- The per-stage family hooks at S2 (form builder), S3 (checker), S4 (v2
-  emission arm) and S6a (evaluator), and how a missing hook fails.
-- What S3 records in `capability_report` once composed `requests` disposition
-  has left QSL (FB-12).
-- The v2 family forms that replace IR's predicate and temporal admission of
-  QSL types (§7.1).
+- **Family hooks.** ADR-011 S2 form builder, ADR-011 S3 `check` and
+  `requirements`, ADR-011 S4 `package` emission, ADR-011 S6a `evaluate`. A
+  missing hook is a compile error: every dispatch seam has one arm per family
+  and no `_` arm. A family that does not take part in a stage has an explicit
+  arm returning a typed `unsupported` refusal with a catalog code.
+- **`capability_report`.** Exactly one entry per checked item that has
+  `Requirements`: kinds, extent and bound. No backend, candidate or
+  disposition (§2.2 E3).
+- **IR admission.** IR's predicate admission reads the v2 value and expression
+  nodes, and its temporal admission reads the v2 temporal nodes, decoded at v2
+  intake (Contract IR #141; §7.1).
 
 Answered by ADR-013 (#211, QSL PR #236) §3.1 and applied above: stage type
 names (T-1), digest form and I2 re-checking (T-2), `PackageNodeKey` (T-3),
@@ -823,9 +828,8 @@ The owner delegated these to the #205 coordinator.
 - **#205 wording.** Amended; OBS-038 and OBS-039 are closed against it (§9).
 - **Ticket creation.** Consolidated by the coordinator at the #212 gate, once
   ADR-011, ADR-012 and ADR-013 agree (table below).
-- **Sibling questions.** Sent to the ADR-012 and ADR-013 authors. Until they
-  answer, those items stay "decided in #210/#211". ADR-013 has answered the
-  #211 items (§Questions).
+- **Sibling questions.** Answered by ADR-012 §13.5 and ADR-013 §3.1 and
+  applied in this record (§Questions).
 
 ## Tickets to open at #212
 
@@ -835,7 +839,7 @@ The owner delegated these to the #205 coordinator.
 | T-2 | The skeleton spine (§1.1) as a tracked ticket | CG, with QSL M-4 |
 | T-3 | Add the lane deletions M-6b to M-6e to the exit criteria of #217, #220, #222, #218, #223, #221 and #214 | QSL (issue text for those tickets) |
 | T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
-| T-5 | IR predicate and temporal admission over v2 forms, and removal of the IR root → QSL edge | IR, with #218 and #223 |
+| T-5 | Confirm that Contract IR #141 (v2 intake admission of value, expression and temporal nodes) also removes the IR root → QSL edge | IR #141, with #218 and #223 |
 | T-6 | X-1 `quire-exact` extraction, with its kernel gate under §2.3 and the #205 edge X-1 → #213 | QSL and RT (AD-016 WP5a, WP5b) |
 | T-7 | M-2 (`model` below `check`, `semantic_value`) with the #205 edge M-2 → #214 | QSL |
 | T-8 | M-4 (S4 v2 emitter and I2 reader) | QSL, before #216 |
@@ -854,7 +858,8 @@ The owner delegated these to the #205 coordinator.
   not in Layer 5. The other old lanes are deleted with their replacements.
 - IR and CG lose their typed access to QSL except the replay entry (the S1 to S4
   compile entry and S6a). IR's predicate and temporal projections return over v2
-  forms that #210 and QSpec define.
+  value, expression and temporal nodes decoded at IR v2 intake (Contract IR
+  #141).
 - Proof gates counted by #205 gain an `unreached` failure and a mutation
   control per claimed module (§2.3). Kernel proof evidence does not count until RT #53 adds a
   harness and a mutation control in `src/exact/`.
