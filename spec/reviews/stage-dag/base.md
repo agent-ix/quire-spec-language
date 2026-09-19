@@ -227,3 +227,30 @@ CHANGES: one medium (R4-1). R4-2 and R4-3 can land in the same revision.
 | R4-1 (medium) | §2.1 E9 details and the §4 dependency binding: `replay` builds each dependency's view by compiling its QC-1 source bytes through S1 to S4 and verifying the emitted v2 bytes. The expected `package_id` is the one the proved package records (ADR-013 QC-10), covered by the packet's `package_id` check. A mismatch refuses `DependencyIdentityMismatch`, catalog code `stale_dependency`, as the other ADR-013 O-26 dependency refusals do. |
 | R4-2 (low) | `DependencyIdentityMismatch` carries catalog code `stale_dependency` everywhere ADR-011 names it (§2.1 E9, §2.3 E4 and E9, §4). ADR-013 adds it to O-26 and C-13. |
 | R4-3 (low) | The §2.3 E6 failure row lists `FamilyOutcome::Refused(FamilyRefusal)` beside the kernel `Outcome` refusals. |
+
+## Round 5 (HEAD a4ce336)
+
+Delta c31ebbf..a4ce336, checked against ADR-012 at e71986a and ADR-013 at
+ea89294.
+
+### Round-5 fix check
+
+| Finding | Status |
+| --- | --- |
+| R4-1 (medium) | Resolved: E9 details and §4 item 2 say `replay` builds each view from QC-1 source through S4 and verifies it; the expected id is the proved package's QC-10 record. Matches ADR-013 O-26. |
+| R4-2 (low) | Resolved: `DependencyIdentityMismatch` with `stale_dependency` in §2.3 E4 and E9 and §4; ADR-013 O-26 and C-13 list it. |
+| R4-3 (low) | Resolved: §2.3 E6 lists `FamilyOutcome::Refused(FamilyRefusal)`. |
+
+ADR-011 says nothing that gives RT a `NodeKey`, and it states no argument
+keying that conflicts with ADR-013 O-26 (`WireNodeId`).
+
+### Round-5 new findings
+
+- **R5-1 (low).** ADR-011 says each `capability_report` entry holds
+  capability "kinds" (§2.2 E3 :307, Questions :846). ADR-012 at e71986a says
+  each item has exactly one capability kind (:189, :858, FR-057). Fix: "the
+  item's one capability kind" in both places.
+
+### Round-5 verdict
+
+CHANGES: one low (R5-1), a two-line wording fix.
