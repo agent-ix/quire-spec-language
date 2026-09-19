@@ -197,11 +197,11 @@ The requested capability vocabulary, its version, its refusals and the split
 between admission, registration and negotiation are specified in
 [FR-057](FR-057-admit-shared-capability-kinds.md), aligned with
 [quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md).
-`linking::composed::requests::Capability` still declares a different
-four-member request vocabulary, and `requests::report` still reads a
-caller-declared backend's support. Remaining work: #213 replaces that type with
-FR-057's canonical `Capability` and removes backend reading from admission;
-#185 builds registration and routing. TC-115 then exercises FR-036-AC-6 over FR-057 kinds.
+`linking::composed::requests::Capability` declares a four-member request
+vocabulary, and `requests::report` reads a caller-declared backend's support.
+Remaining work: #213 for FR-057's canonical `Capability` and backend-free
+admission; #185 for registration and routing; TC-115 over FR-057 kinds after
+both.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
 runtime requirements. TC-114 exercises common nominal types across state,

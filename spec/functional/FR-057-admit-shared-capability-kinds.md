@@ -98,8 +98,6 @@ The QSL composed linker SHALL match a capability label by exact equality of its
 decoded UTF-8 bytes with one admitted label.
 
 The QSL composed linker SHALL NOT normalize a received label before matching.
-Case folding, trimming, separator substitution, Unicode normalization and
-display-form conversion are not applied.
 
 The QSL composed linker SHALL treat two `Capability` values as equal exactly
 when their labels are byte-equal.
@@ -120,8 +118,6 @@ package accounting.
 
 The QSL composed linker SHALL serialize a `Capability` value as its exact
 FR-290 label as a JSON string.
-
-A Rust variant name, debug form or display string is not a serialized form.
 
 When QSL emits a serialized carrier of capability labels, QSL SHALL declare
 vocabulary identity `quire.capability-kind/v1` in it.
@@ -162,8 +158,8 @@ affect admission of the other pairs.
 
 The QSL composed linker SHALL record for each requested item exactly one
 kind: the kind the FR-290 claim-form assignment table gives its clause's own
-claim form. An expression nested in a clause, such as a function application or
-a `case` expression, SHALL add no kind:
+claim form. The QSL composed linker SHALL record no kind for an expression
+nested in a clause, such as a function application or a `case` expression:
 
 | Claim form | Kind |
 | --- | --- |
@@ -218,7 +214,8 @@ If a backend advertises an absent or unknown kind, or a mode other than
 `bounded` or `unbounded`, or repeats a registered backend identity, then the
 registry SHALL refuse that backend's registration with `invalid_capability`
 (`absent-kind`, `unknown-kind`, `unknown-mode` or `duplicate-backend`), keyed by
-backend identity, and the backend advertises nothing.
+backend identity. The refused registration contributes nothing, and any
+registration already held under that identity stands.
 
 For each admitted item, the registry SHALL compute the candidate set under the
 FR-290 candidate-set rule from one immutable registry snapshot, and SHALL pass
@@ -264,7 +261,7 @@ These cases are distinct. None of them is reported as another.
 | Unknown kind | QSL admission | Refusal `invalid_capability`/`unknown-kind`. |
 | Unsupported vocabulary version | QSL carrier read | Refusal `invalid_capability`/`unsupported-version`. |
 | Backend absence: the candidate set is empty | Negotiation | `unsupported`, with one warning naming the item's kind and any named backend; `unsupported_projection`/`unsupported-requested-capability`. |
-| Unsupported claim: the one candidate's arm does not discharge this IR form | Negotiation | `unsupported`, warned, with that arm's catalog cause. |
+| Unsupported claim: the one candidate's arm does not discharge this IR form | Negotiation | `unsupported`, warned; `unsupported_projection`/`unsupported-requested-capability` (quire-specification FR-272). |
 | Unbounded extent on a bounded-only candidate, finite bound available | Negotiation | `requires-bound`; the extent and bound predicate are [#222](https://github.com/agent-ix/quire-spec-language/issues/222)'s. |
 | Unbounded extent on a bounded-only candidate, no finite bound | Negotiation | `unsupported`, warned; `unsupported_projection`/`unbounded-extent`. |
 | Several candidates and no named backend, an unregistered or arm-less named backend, inconsistent candidates, or no extent classification | Negotiation | `invalid-request`, with its `invalid_capability` cause. |
@@ -315,7 +312,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-5 | The admission entry point takes no registry or backend parameter. Admitting the same requested pairs yields identical admitted pairs and static meaning whatever backends are registered. A declaration whose names resolved reaches its family checker without any capability request. | Test (TC-155) |
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
-| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode, or repeating a registered identity, is refused with `invalid_capability` and its cause, keyed by backend identity, and advertises nothing. Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
+| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode, or repeating a registered identity, is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
 | FR-057-AC-9 | Given a supplied run result that is a timeout, FR-331 `unsupported` with `unsupported_projection`/`tool-unavailable`, or FR-331 `failed` with that cause after a passing probe, routing keeps the item's `supported` disposition, reports it as neither a refusal nor a hold, and does not re-route it to another candidate or mode. Recording either tool result itself is quire-specification FR-290-AC-8's evidence. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; a nested expression adds no kind; a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153) |
 

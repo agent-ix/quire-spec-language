@@ -22,7 +22,8 @@ FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 and FR-057-AC-9.
 
 1. Link one protocol declaration and one state declaration with two required
    requested pairs: `global-conformance` on the protocol declaration and
-   `operation-contract` on the state declaration. Check that the admission
+   `operation-contract` on the state declaration. Add a temporal declaration
+   with no requested pairs. Check that the admission
    entry point takes no registry or backend parameter.
 2. Admit the pairs under three registries: empty, one backend advertising only
    (`global-conformance`, `bounded`), and two backends advertising different
@@ -49,12 +50,13 @@ FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 and FR-057-AC-9.
 
 - Step 1: the entry point has no registry or backend parameter.
 - Step 2: admitted pairs, static components and handoff are identical in all
-  three runs. Both declarations reach their family checker with no capability
+  three runs. All three declarations, including the temporal declaration with
+  no requested pairs, reach their family checker with no capability
   request selecting them.
 - Step 3: each registration refuses with `invalid_capability`
   (`unknown-kind`, `absent-kind`, `unknown-mode`, `duplicate-backend`), keyed
-  by backend identity, and that backend advertises nothing; the first
-  registration of the repeated identity stands.
+  by backend identity; each refused registration contributes nothing, and the
+  registration already held under the repeated identity stands.
 - Step 4: the unnamed request carries both backends as (identity, manifest
   digest) candidates ordered by identity then digest, and no chosen one; the named request carries exactly the named
   backend; the backend lacking the kind yields an empty candidate set; the
