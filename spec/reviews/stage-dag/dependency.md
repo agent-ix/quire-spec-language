@@ -188,3 +188,50 @@ The crate DAG has none. After the fixes: none detected.
   IR #109.
 - Checked the IR imports in `src/` of the worktree (`located_json.rs:5`,
   `state/evaluation.rs:15`), and checked that `src/lowering/target.rs` exists.
+
+## Round 2 (HEAD 5cbd853)
+
+Reviewed the revised ADR-011 at 5cbd853 against the round-1 findings. Checked
+module imports in `src/` of the worktree and re-read the bodies of #185 and
+#212. AD-016 is not reopened. Design choices listed under the ADR's Owner
+questions are not re-argued.
+
+### Resolution of round-1 findings
+
+| ID | Status | Reason |
+|---|---|---|
+| FND-001 | Resolved | §6.2 SEAM-4 now retires with SEAM-1 in M-6. §7.3 M-6 slice M-6d removes the IT-010 path and the QSL dev dependencies. The two §7.1 rows name M-6. #217 only makes CG → QSL normal. The IT-010 Consequence bullet is replaced by the skeleton spine (§1.1). |
+| FND-002 | Resolved | M-6a rewires `run` and `compile` onto the spine inside M-6, with a structured refusal for constructs the spine does not cover yet. M-6 depends on nothing after #216, so the #216 → CLI → #232 → #225 → #216 cycle is gone. The missing M-6 ticket and the #205 layer amendment are Owner question 1. |
+| FND-003 | Resolved | §1 I2 row: the reader is in layer-4 `package`, the view type is in layer-3 `library`, and orchestration passes the view into E3. §2.1 E3 admits layer-3 `library` import views. The I2-in-`check` alternative is rejected under Alternatives Considered. |
+| FND-004 | Partly | §7.1 removes IR root → QSL before #216, and IR #140 is named for `replay_with_native_runtime`. The IR removal ticket has no number (Owner question 4). §7.3 orders M-6 "after M-4 and #185" but not after IR #140. M-6c deletes `package::NativePackage`, which IR head still calls, so current-head goes red between M-6c and the IR changes. #216 is still gated correctly. |
+| FND-005 | Partly | §6.1 adds layer R `route`, the #185 row names it, and §6.2 moves `lowering::target` to `route`. The E7 consumer path is still undefined, and it breaks FB-05 (FND-015). |
+| FND-006 | Partly | X-1, M-2 and the RT agreement retarget are routed to Owner question 6. No ticket is named yet, and the X-1 → #213 and M-2 → #214 edges are not asked of #205. |
+| FND-007 | Resolved | §6.1 gives every layer an explicit order and adds the rule for same-layer edges. The F order matches today's imports once M-1 lands (`QSL:source.rs:3`, `QSL:diagnostic.rs:3`, `QSL:source_map.rs:3`). `tool` is below 6. The `located_json` IR import is removed by M-1, and the `state` IR import by M-6 (§6.2). Layer 5 `state` and `simulation` do not import each other today, so the order holds. |
+| FND-008 | Resolved | FB-05's exception now covers the I2 reader and the S6a `CheckedPackage::call`. §2.1 E9 reads the package through the I2 reader. §7.1 labels the CG → QSL edge the same way. |
+| FND-009 | Resolved | §10 adds rows 8 and 9 and a #212 column. The mapping matches the #212 body (row 4 → 3, row 6 → 5, row 8 → 4, row 9 → 6). Rows 3 and 5 are marked as not in #212. |
+| FND-010 | Resolved | The Implementing tickets table labels #222 as the boundedness design and #213 as the implementer of the bound types. §2.3 says the same. |
+| FND-011 | Resolved | M-5 keeps evaluation in layer-5 `value::expression`, so the AD-016 arrow 7 path stays unchanged (§4, §6.2). §4 binds renaming to AD-016 Owner decision 6. |
+| FND-012 | Not resolved | #131 and #132 are still not mentioned. This is low and does not block. |
+| FND-013 | Resolved | The frontmatter now has `depends_on` AD-016. |
+
+### New findings
+
+| ID | Severity | Summary | Refs |
+|---|---|---|---|
+| FND-014 | high | **The §6.1 allow-list forbids edges that §7.1 and the module map require.** §6.1 calls "Depends on" an exhaustive allow-list and lists external ecosystem crates where they are allowed (layer 4 names `quire-contract-model`). Layer 3 lists "2, F, K" only, but §7.1 admits QSL → FCD through `model::intake` (layer 3). The I3 adapter `quire_source` (`QSL:quire_source.rs:6,9`, quire-rs behind feature `quire-extraction`) is mapped to "I3" in §6.2 but has no §6.1 layer. So the quire-rs edge has no row, and Consequences says a module with no layer is a defect #226 reports. The layer 6 extraction path (`QSL:command/extraction.rs:11`) also reaches quire-rs, which no layer 6 cell admits. #226 would fail on edges the ADR approves. **Fix:** in layer 3, add "FCD, for `model::intake` only". Place `quire_source` in a layer, for example F after `source` or its own I3 row, with "quire-rs (feature `quire-extraction`)" in Depends on. In layer 6, admit quire-rs behind the same feature, or send extraction through the I3 adapter only. | ADR-011 §6.1, §6.2 `quire_source` row, §7.1 QSL → FCD row, Consequences · `QSL:quire_source.rs:6` · `QSL:command/extraction.rs:11` |
+| FND-015 | high | **No legal crate path connects the `route` registry to E7.** `route` is a QSL layer-R module, and E7 admits "the targets `route` selected" (§2.1). #185 says backends populate the registry and "Kani registers as one backend", and §10 row 7 says a new backend "registers in the #185 registry". A backend registering in, or reading the selection from, a QSL Rust type breaks FB-05, whose exception covers only the I2 reader and S6a. §10 row 7 itself says the backend must not "depend on QSL types other than the replay entry". The other direction is closed as well: QSL → CG would close a cycle with the normal CG → QSL edge (FB-11). So neither registration nor the selection can cross as a Rust type, and the ADR names no data form for them. **Fix:** decide that the crossing is data, not types. Backends advertise through a capability manifest in a QSpec-authored format that `route` reads. The selection reaches CG as data in the v2 `capability_report` or in the #231 request envelope, never as a QSL type. Add the manifest format and the selection carrier to the #210 and #229 questions. Otherwise, move the registry out of QSL and update §6.1, the #185 row and §10 row 7. | ADR-011 §1 diagram (`R` → `S5`), §2.1 E7, §3 FB-05 and FB-11, §6.1 layer R, §10 row 7 · #185 body |
+
+### Round 2 verdict
+
+**REVISE.** All four round-1 high findings are resolved or no longer block:
+FND-001, FND-002 and FND-003 are resolved, and FND-004 is partly resolved with
+#216 still gated correctly. Two new high findings block acceptance, and both
+are text fixes that need no compatibility layer:
+
+- FND-014: the §6.1 allow-list omits the FCD and quire-rs edges and gives
+  `quire_source` no layer.
+- FND-015: nothing admitted carries `route` registration and selection to CG.
+
+The §7.1 crate DAG stays acyclic. The §6.1 module DAG is acyclic over QSL
+modules. Once FND-014 is fixed, it is also complete over the admitted external
+edges.

@@ -138,3 +138,49 @@ the same revision.
 - **Not applied.** US → FR → StR traceability and the EARS and
   hidden-assumption CLI probes do not apply to a design ADR with no
   requirement statements.
+
+## Round 2 (HEAD 5cbd853)
+
+Re-reviewed the revised ADR-011 at 5cbd853 against the round-1 findings, the
+`src/` tree at the same revision, AD-016 on `origin/main` and the #212 gate
+body. Owner questions 1 to 8 are not re-litigated.
+
+### Resolution of round-1 findings
+
+| ID | Status | Reason |
+| --- | --- | --- |
+| FND-001 | Partly | FB-05, the §7.1 CG → QSL label, §10 row 7 and the §1 mermaid (`S4 -.-> S8`) now name one replay entry: the I2 reader plus `CheckedPackage::call`. The dependency contradiction is gone. The reader's output type still does not match what E9 calls (FND-018). |
+| FND-002 | Partly | §4 "Verified binding" defines three conditions, and FB-03, I2 and E9 cite it. E5 is still not covered: the §2.1 E5 row names no binding, and the §2.2 E5 Version cell checks only the v2 contract version. |
+| FND-003 | Resolved | Terms now defines "Checked" as a value of an S3 or S4 output type, and names the I2 reader as a second producer. See FND-020 for E4. |
+| FND-004 | Resolved | §6.1 makes the Depends-on column an exhaustive allow-list. Layer 5 is "4, 3, F, K" with no layer 2, and #226 enforces the column. |
+| FND-005 | Not resolved | §6.2 now maps `value` by submodule, but the split breaks the §6.1 rule "K depends on none". The whole of `composite` (`TypeEnvironment`, `ObjectTypeDeclaration`) goes to K. See FND-017. |
+| FND-006 | Resolved | §6.2 maps `syntax` to `forms` (M-3). `check`, `facts`, `termination` and `ir` go to `check`, and `refusal` is split (M-5). |
+| FND-007 | Resolved | §6.1 and §6.2 move `checked_dispatch` and `check_field_refinement_obligation` to `check`, and `accounting` to K. These are the only `model` → `value::expression` imports (`src/model/checked_dispatch.rs:109`, `conformance.rs:89-92,894`). |
+| FND-008 | Resolved | §4 limits the rule to QSL types. It deletes the native-v1 type with SEAM-1, renames nothing (Owner decision 6), and leaves the RT and IR types where AD-016 puts them. |
+| FND-009 | Not resolved | §1 still says "No stage after S3 re-resolves a name". The E9 details list what the #231 envelope carries, but not how the `function: &str` for `CheckedPackage::call` (AD-016 arrow 7) is taken from the obligation's checked identity. |
+| FND-010 | Partly | §7.3 orders X-1, M-2 and M-5, orders the M-6 slices, and puts M-4 before M-6. Owner question 6 routes the M-2 ticket. M-4 still has no owning change, either in the ticket table or in the Owner questions. M-3 and M-5 still have no order between them. |
+| FND-011 | Resolved | The §7.3 M-5 row says "layer-3 `check` (S3)" and "layer-5 `value::expression` (S6a)". |
+| FND-012 | Partly | SEAM-1 now lists the `command` submodules. The §6.2 `package` row still sends only `NativePackage` to SEAM-1 and says "the I2 reader is here". But `package::intake`, `reading`, `wire`, `encoding` and `features` implement native-linked-package/1 (FR-019, FR-020; `src/package/reading.rs:2`, `wire.rs:2`). |
+| FND-013 | Resolved | Decision 8 now requires the mutation control for each claimed module (§2.3). |
+| FND-014 | Resolved | §6.2 sends the `negotiate_*` predicates to RT, CG negotiates (arrow 3), and #210 owns the predicate list. |
+| FND-015 | Resolved | §10 adds rows 8 and 9 for #212 scenarios 4 and 6. The #212 column matches the #212 gate list, and row 3 notes that `NativeModelProfile` retires with SEAM-1. |
+| FND-016 | Partly | The frontmatter now `depends_on` AD-016, and the ticket table adds #219, #220, #221, #223, RT #53, IR #140 and IR #109. #29 and #133, which §5 cites, are still missing from the table. |
+
+### New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-017 | high | The §6.2 `value` split makes K depend on higher layers, which gives a module cycle. §6.1 says K depends on "none in the ecosystem", but the code tells otherwise. The kernel `Value` (`composite.rs:132-158`) has `Quantity`, `Enum(EnumValue)`, `Reference(ObjectReference)` and `Population(Arc<PopulationBinding>)` variants. The ADR maps `quantity`, `enumeration` and `reference` to layer-3 `semantic_value`, and `PopulationBinding` to layer-3 `model` (`composite.rs:31`). `Refusal` imports `expression::WrongSnapshotCause` and F `diagnostic::Code` (`outcome.rs:10,13`). `division` and `ieee` import `definition` (`division.rs:8`, `ieee.rs:24`). `collection` imports `key` (`collection.rs:25`), and `equality` imports `enumeration` and `quantity`. `model::population` imports the K `Meter` (`population.rs:146-149`), so K → `model` → K is a cycle. This fails the #212 pass condition "The proposed crate/module DAG remains acyclic". X-1 cannot land as mapped. The revision introduced this when it replaced the round-1 catch-all with a named split. Fix: put the payload types of every `Value` and `Refusal` variant in K as parts of the AD-016 row types, or name the edge cuts X-1 makes (for example: the `Population` variant leaves the kernel `Value`, `Refusal` carries a kernel code type, and `WrongSnapshotCause` moves to K). Give the list to #211 as the kernel-list question, with the constraint that K depends on nothing, and put that question back under "Questions handed to sibling tickets". Keep `TypeEnvironment` and `ObjectTypeDeclaration` out of K (round-1 FND-005). | ADR-011 §6.1 K row, §6.2 `value` rows, §7.3 X-1 · AD-016 Shared-type strategy · #212 Pass conditions |
+| FND-018 | medium | The I2 reader's output type does not match what E9 needs. §1 I2 and M-4 say the reader yields a layer-3 `library` "import view". E9 reads "the S4 package … through the QSL I2 reader" and then calls `CheckedPackage::call`, which is a method on the layer-4 S4 in-process type (§4). No rule says the reader can yield an S4 in-process package, or that an import view can be executed. Fix: state that the I2 reader has two outputs, an import view for E3 and a verified S4 in-process package for E9, both under the §4 binding. Hand the question of whether v2 carries enough to execute to #211 or QSpec. | ADR-011 §1 I2, §2.1 E9, §4, §7.3 M-4 · AD-016 arrow 7 |
+| FND-019 | medium | §6.2 still has an upward edge and a module with no row. `value::library` maps to layer-3 `library`, but it imports `value::package_identity` (`library.rs:25`), which maps to layer-4 `package`. The §6.1 allow-list forbids that edge. `value::containment` (FR-143 `ValueGraph`, used by `protocol_artifact`) has no row. Fix: map `package_identity` to layer 3 (it is a structural preimage reader with no wire I/O) or cut the import. Add a row for `containment`. | ADR-011 §6.1, §6.2 · `src/value/library.rs:25`, `src/value/containment.rs:2-7` |
+| FND-020 | low | Terms says a checked value has "two producers": S3 and the I2 reader. E4 `package` also builds the S4 output type from an S3 graph, and §4 makes the S4 constructor private to `package`. Fix: name the producers as S3 (check), S4 (E4 link) and the I2 reader. | ADR-011 Terms, §2.1 E4, §4 |
+
+### Round-2 verdict
+
+**ACCEPT WITH FINDINGS.** The dependency contradiction behind the round-1
+blocker FND-001 is gone, and its remainder is FND-018. Nine round-1 findings are resolved, five are partly
+resolved, and two (FND-005, FND-009) are not resolved. FND-017 (high) is new:
+the named `value` split makes K depend on layers 3 and F and creates a K ↔
+`model` cycle. It must be fixed before ADR-011 is accepted or #212 runs.
+FND-018, FND-019, FND-002, FND-009 and FND-010 (medium) should be fixed in the
+same revision. FND-012, FND-016 and FND-020 (low) may follow.
