@@ -8,25 +8,7 @@ use std::{path::Path, process::Command};
 use serde_json::Value;
 
 use crate::error::{Code, Error, Result};
-use crate::graph::{Edge, EdgeKind, Repo};
-
-fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
-    let haystack = source.unwrap_or(name);
-    if name == "quire-spec-language" || haystack.contains("quire-spec-language") {
-        Some(Repo::Qsl)
-    } else if name == "quire-contract-ir"
-        || name == "quire-contract-model"
-        || haystack.contains("quire-contract-ir")
-    {
-        Some(Repo::Ir)
-    } else if name == "quire-contract-runtime" || haystack.contains("quire-contract-runtime") {
-        Some(Repo::Rt)
-    } else if name == "quire-contract-codegen" || haystack.contains("quire-contract-codegen") {
-        Some(Repo::Cg)
-    } else {
-        None
-    }
-}
+use crate::graph::{classify, Edge, EdgeKind, Repo};
 
 /// Run `cargo metadata` for the crate at `manifest_path` and return every
 /// resolved normal/dev edge whose source and target both classify as one of

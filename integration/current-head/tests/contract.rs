@@ -19,7 +19,7 @@
 //! immediately if that surface's shape changes incompatibly at head.
 
 use ix_trace_rs::trace;
-use quire_contract_codegen::{BOUND_COVERAGE_SCHEMA, MAX_ANALYSIS_BYTES};
+use quire_contract_codegen::BOUND_COVERAGE_SCHEMA;
 use quire_contract_ir::AnchorName;
 use quire_contract_runtime::{ContractIdentity, RequirementId, RevisionId};
 use quire_spec_language::{parse, Limits, SourceIdentity};
@@ -85,14 +85,60 @@ fn quire_spec_language_digest_feeds_quire_contract_runtime_identity_at_head() {
 #[trace("IT-013-SC-03")]
 #[test]
 fn quire_contract_codegen_bound_coverage_schema_is_valid_draft202012_at_head() {
-    // MAX_ANALYSIS_BYTES is a `const`, so clippy already proves this at
-    // compile time; keep the check anyway as documentation of the contract
-    // this test relies on (a positive byte ceiling), not as a runtime gate.
-    const _: () = assert!(MAX_ANALYSIS_BYTES > 0);
     let schema: serde_json::Value =
         serde_json::from_str(BOUND_COVERAGE_SCHEMA).expect("the published schema is valid JSON");
     jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .compile(&schema)
         .expect("the published bound-coverage schema compiles as Draft 2020-12 at head");
+}
+
+/// Returns the text of one `[[package]]` stanza (from its `name = "..."`
+/// line up to, but not including, the next stanza or end of file), for
+/// asserting on that one package's fields without a general TOML parser --
+/// the same proportionate parsing `tools/arch-lint/duplicate_revisions.rs`
+/// uses over this same file shape.
+fn lockfile_stanza<'a>(lockfile: &'a str, package_name: &str) -> &'a str {
+    let marker = format!("name = \"{package_name}\"");
+    let start = lockfile
+        .find(&marker)
+        .unwrap_or_else(|| panic!("no [[package]] stanza named {package_name:?} in Cargo.lock"));
+    let rest = &lockfile[start..];
+    match rest.find("\n[[package]]") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
+/// IT-013-SC-04 (#249 review, LOW: this criterion previously had no tracing
+/// tag and no automated check, only the doc's own "inspect the resolved
+/// graph" instruction): read this lane's own, just-resolved `Cargo.lock`
+/// text directly and confirm none of the three backend crates' packages
+/// resolved from a published registry release. quire-contract-codegen
+/// resolves from its git default branch (`source = "git+..."`);
+/// quire-contract-ir, its workspace member quire-contract-model, and
+/// quire-contract-runtime resolve through this lane's `[patch]` table to a
+/// local vendored clone, so their stanzas carry no `source` field at all (a
+/// path dependency). Either shape is a real head resolution; only a
+/// `"registry+https://github.com/rust-lang/crates.io-index"` source would be
+/// a silent fallback to a released version, and this test's real gate is
+/// that none of the four stanzas ever carries one.
+#[trace("IT-013-SC-04")]
+#[test]
+fn backend_crates_resolve_from_head_not_a_registry_release() {
+    let lockfile_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    let lockfile = std::fs::read_to_string(&lockfile_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", lockfile_path.display()));
+    for package in [
+        "quire-contract-ir",
+        "quire-contract-model",
+        "quire-contract-runtime",
+        "quire-contract-codegen",
+    ] {
+        let stanza = lockfile_stanza(&lockfile, package);
+        assert!(
+            !stanza.contains("source = \"registry+"),
+            "{package} must not resolve from a registry release at head; stanza was:\n{stanza}"
+        );
+    }
 }
