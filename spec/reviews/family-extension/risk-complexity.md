@@ -165,3 +165,19 @@ The revision adds no compatibility layer, no fallback and no string dispatch.
 the clause's own function, so it is not a monolithic checker.
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-002 | Fixed: the CG and IR tickets are numbered (Codegen #86, Contract IR #141) in §14.1. |
+| FND-004 | Fixed: §4.3 assigns `Present` and `Value` to `Value`, `Deref` to `StateModel` and `Pre` to `ProtocolClause`. It also states that the one `Expression` enum lives in the `forms` core, and that a variant's owner is the family whose hook its arm calls. |
+| FND-006 | Fixed: the S1 row lists only matches on `FamilyKind` (the `catalog_code()` prefix and the stage-participation table). The calls into `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms. |
+| FND-013 | Fixed: the §12.2 Requirements row states that a new kind is a QSpec FR-290 edit under QSpec #134, settled before #212 judges scenario 3. |
+| FND-014 | Fixed: §9 names the `#[string_edge]` tool attribute and the `xtask string-edge` scan. #214 owns it (§14.1), and IR, CG and RT run the same scan (§14.2). |
+| FND-015 | Fixed: §7.2 has the orchestrating binary pass every registered `BackendId` through CG's conversion before negotiation, and refuse the run if one has no CG kind. |
+| FND-016 | Fixed: §5.3 states that S1–S4 and their match sites are in the one QSL crate (§1). Cross-repository seams are probed in their own repositories. |

@@ -129,3 +129,18 @@ New findings:
 | FND-014 | low | Mixed-mode ambiguity. Candidates match on kind alone, so an unbounded-mode backend and a bounded-only backend for the same kind make every unbounded request that names no backend `invalid-request`, although only one candidate could settle `supported`. This follows from the stated rule and is raised with the owner in §13.4 Q2. Fix: state this case in §7.2 or §12.3 so #212 scenario 7 records it. | ADR-012 §1.1, §7.2, §12.3, §13.4 Q2 |
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-008 | Fixed: §7.4 states that a failure after the tool starts is a backend outcome mapped through S8, and §7.4 covers only the probe before the run. |
+| FND-009 | Fixed: the §8 Replay row sends a `Relation` claim to the S1 `Relation` arm, `Refused(FamilyNotNativelyEvaluable)`, category `refusal`. `ReferenceEvaluation` returns `Outcome<Self::Observed>`, so state-observing families return their observation. |
+| FND-011 | Fixed: §12.3 states that a second registrant for a kind makes requests that name no backend settle `invalid-request`, and that #212 scenario 7 records it. |
+| FND-012 | Fixed: §2 and §7.2 step 1 send every requested item, with or without `Requirements`, to `negotiate_*` exactly once. |
+| FND-013 | Fixed: §5.2 separates the paths. A CLI argument naming an unknown backend is refused at the edge and forms no request. A request that names one settles `invalid-request`. |
+| FND-014 | Fixed: §12.3 states the mixed-mode case, and QSpec #134 records `invalid-request` with no preference order as the rule. |

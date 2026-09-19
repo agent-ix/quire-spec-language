@@ -141,3 +141,20 @@ New findings:
 | FND-014 | low | The §9 `#[string_edge]` lint gate has no owner and no mechanism. Clippy has no such lint, so it needs a custom lint (for example dylint) or an `xtask` scan. "Every string comparison outside a marked function" also catches comparisons of user values that select no behaviour. Fix: in §14, give the gate to #214 for QSL. State that it flags string comparisons and matches on string literals in non-test code outside `#[string_edge]` functions, with an allow-list for value comparisons. | ADR-012 §9, §14 |
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-001 | Fixed: §5.3 states that every S1–S4 enum and match site is in the one QSL crate, so one probe build reports them all. The seams that cross repositories are probed where their enums are defined. |
+| FND-003 | Fixed: §5.3 names the probe carrier for each of S5–S9, and cites AD-016 `make heads` drift checks 1 and 7 as the cross-repository evidence. |
+| FND-004 | Fixed: §5.3 "Dispositions end to end" runs the #185 exit corpus, including §3's absent-capability case, in the test harness downstream of CG and asserts §7.3. |
+| FND-005 | Fixed: §7.4 names the fault-injection test (tool missing, pin mismatch), asserts the ADR-013 QC-9 result, replaces the IT-010 `expect` and gives it to Codegen #86. |
+| FND-007 | Fixed: the Consequences table maps scenarios 1 and 6 and names the ADR-011 layer check that `check` and the family modules do not depend on `route`. |
+| FND-008 | Fixed: §12's lead-in names an inspection of each row against the #209 module map at #212, and a changed-paths check on the #187 and #218 landing PRs. Both §12 tables name exact modules or paths per row, including the RT and CG `ValueType` match sites. |
+| FND-009 | Fixed: §12.1 tests include the QSpec #115 sum and `case` vectors (FR-143, FR-146). |
+| FND-014 | Fixed: §9 scopes the `xtask string-edge` scan to non-test code with an allow-list for value comparisons. #214 owns it, and Contract IR #141, Codegen #86 and the RT ticket run it (§14.2). |

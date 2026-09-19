@@ -9,7 +9,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-012
     type: reviews
 ---
-# Scope-boundary review: ADR-012 semantic-family extension contracts
+# SR-480: Scope-boundary review of ADR-012
 
 ## Summary
 
@@ -140,3 +140,14 @@ the #222 bound design, the #229 vocabulary and absence policy, the #213 type
 and the #185 registry as "decided in", and it does not redesign them.
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-002 | Fixed: the arrow-7 key is a typed `QualifiedName` (ADR-013 O-11, by owner ruling), and AD-016 arrow 7 is kept, so there is no QSpec amendment (§8, §13.2 Q1). The candidate-set field is QSpec's (§13.4). The CG and IR tickets are Codegen #86 and Contract IR #141. |
+| FND-004 | Fixed in 6b9a603: the QSL `negotiate_*` copy removal belongs to #185 in §14.1, §14.2 and OBS-004, matching ADR-010 §7. |

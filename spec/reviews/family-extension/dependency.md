@@ -240,3 +240,20 @@ FND-016, FND-017 and FND-020 are addressed in the ADR commit that follows
 
 FND-018 is covered by the #86 body amendment in §14.2. FND-019 (the RT ticket)
 stays with the RT owner.
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-002 | Fixed: §14.2 adds Contract IR #109, the temporal IR form that `negotiate_*` takes, as a prerequisite of #188 and #189 closure. |
+| FND-008 | Fixed: §14.2 asks #229 to cite §6 and §7.1 as the selection mechanics it consumes, so both records state the overlap. |
+| FND-015 | Fixed with FND-016: §14.2 makes #229 and QSpec #134 prerequisites of #212. |
+| FND-016 | Fixed: §14.1 records #86 → Contract IR #141 and #86, #141 → QSpec #134; §14.2 adds the #212 edges and judges scenarios 5 and 7 on #86 and #141 being open. |
+| FND-017 | Fixed: the §14.2 bullet reads "#185 (exit), #188, #189, #217: add Codegen #86 as a prerequisite". |
+| FND-018 | Fixed: the §14.2 #86 bullet adds the §7.4 solver-absence test, the CG S6 enum matches and the string-edge scan. |
+| FND-019 | Routed: the RT enum-match ticket is the RT owner's (§14.1 RT row). It is open until the RT owner files it. |
+| FND-020 | Fixed: §14.2 states that the disposition exit cases run in a test harness downstream of CG, so there is no #225 edge. |

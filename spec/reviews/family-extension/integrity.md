@@ -255,3 +255,18 @@ follows 9045cd5:
 - §5.1 reads "These rules".
 
 FND-023 (ticket naming style) is left as is.
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-018 | Fixed in part: the body cites ADR-011 by QSL PR #235 and ADR-013 by QSL PR #236. Routed: the frontmatter edges to ADR-011 and ADR-013 land when those PRs merge, because `quire validate --strict` resolves an edge target only on a merged record. |
+| FND-019 | Fixed: §10 OBS-004 uses AD-016's term, RT capability predicates. The predicate list is decided by AD-016 WP7. |
+| FND-020 | Fixed: QSpec #134 is cited for the frame and sum/case kinds, mode advertisement and the FR-290 Kani wording (§12, §13.3, OBS-013). The four-kind and preference-order questions are closed, and OBS-003's removal is unconditional. |
+| FND-021 | Fixed: every ADR-011 stage and edge id carries the `ADR-011` prefix. |
+| FND-022 | Fixed: §5.1 reads "These rules make the failure certain". |
+| FND-023 | Fixed: every IR and CG ticket is cited as `Contract IR #n` or `Codegen #n`, and §5.1 states the CG revision of `kani_obligations.rs:454` (CG `origin/main` on 2026-09-19). |
