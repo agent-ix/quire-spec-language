@@ -105,3 +105,63 @@ record the round-2 state. The current ADR-011 text governs these rows:
 
 Coordinator input folded into the same pass: the answers to ADR-012 §13.1,
 consistency with ADR-012 L1-D1 ticket edges, and "the #134 vocabulary".
+
+## Round 3 (HEAD 22fa948)
+
+Independent single-reviewer pass for the #205 coordinator, in two steps. The
+first step reviewed f781e32 in full. The second checked only the delta
+f781e32 → 22fa948, plus consistency with ADR-012 at 10664aa (QSL PR #234) and
+ADR-013 at 4152eb8 (QSL PR #236), read with `git show`.
+
+Findings from the f781e32 review, and their state at 22fa948:
+
+| Finding | Severity | State at 22fa948 |
+| --- | --- | --- |
+| H-1: `library` (layer 3) converted a layer-4 `VerifiedPackage`, a 3 → 4 cycle | high | Resolved. `VerifiedPackage`, the §4 binding and `ImportView` are in layer-3 `library`. The layer-4 reader calls down (§1 I2, §4, §6.1). Matches ADR-013 T-1 and O-15. |
+| M-1: the replay entry had no layer, and E9 ownership differed from ADR-013 O-26, C-13 and TK-01 | medium | Resolved. The layer-6 `replay` facade is the TK-01 executor entry and the only CG-callable API (FB-05, T-12, §6.1). ADR-013 TK-01 names it. |
+| M-2: X-1 owner differed from #213 S-1, and the QC-15 blocker was unrecorded | medium | Resolved. X-1 is #213 S-1, gated by TK-10 and QC-15. Matches ADR-013 S-1. IR #139 is merged at 954c2f2, as ADR-011 says. |
+| M-3: S6a over a package with imports had no admitted input | medium | Resolved. S4 closure carries checked dependency packages compiled from source, and E6 admits the closure. `ImportView` serves E3 only. See SR-467 FND-014 for the remaining binding rule. |
+| L-1: scenario 9 named the I2 reader | low | Resolved |
+| L-2: scenario 7 and §1 said `BackendDescriptor` | low | Resolved in ADR-011. ADR-012 §12.3 still says it (SR-468 FND-025). |
+| L-3: SEAM-1 omitted `package::view` | low | Resolved |
+| L-4: FB-05 could not be checked by `cargo tree` alone | low | Resolved: T-12 adds an API-surface check |
+| L-5: `state` and `temporal` were listed as layer-5 modules | low | Resolved |
+| L-6: `NodeKey` minting versus "K is a leaf" | low | Resolved in ADR-013 O-04: one kernel constructor from a digest, which only `check` calls. Its enforcer is SR-470 FND-017. |
+
+Coordinator checklist at 22fa948:
+
+- `VerifiedPackage` and the §4 binding are in layer-3 `library`, and the
+  `package` reader calls down: yes.
+- The layer-6 `replay` facade is the only CG-callable API (T-12) and is
+  ADR-013 TK-01: yes.
+- X-1 is ADR-013 S-1, gated by TK-10 and QC-15: yes.
+- M-6 is split into lanes a to e, each old path is deleted in its
+  replacement PR, and only M-6a lands before #216: yes, and ADR-013 Q209-1
+  now agrees.
+- E9 selects by `QualifiedName`, and a packet with no transcript settles
+  `reproduced-without-witness`: yes. See SR-467 FND-015 for the carrier
+  naming.
+- Dependencies compile from source into the S4 closure, and `ImportView`
+  serves E3 only: yes. See SR-467 FND-014.
+
+New findings from the delta and from cross-record comparison:
+
+| Record | ID | Severity | Summary |
+| --- | --- | --- | --- |
+| SR-468 | FND-021 | medium | `PackageNodeKey` shape contradicts ADR-013 T-3 |
+| SR-467 | FND-014 | medium | No rule binds a source-compiled dependency to the verified view that E3 resolved against |
+| SR-470 | FND-017 | medium | ADR-013 relies on T-12 to police kernel identity constructors, but T-12 covers only CG's use of `replay` |
+| SR-467 | FND-015 | low | Packet carrier named `witness: Option<Witness>`; ADR-013 O-25 names `source: ReplaySource` |
+| SR-468 | FND-022 | low | ADR-013 Q209-5 quotes superseded FB-05 text |
+| SR-468 | FND-023 | low | ADR-013 O-04 cites "ADR-011 M-3" for dependency compilation |
+| SR-468 | FND-024 | low | ADR-013 Context still calls IR PR #139 open |
+| SR-468 | FND-025 | low | ADR-012 §12.3 still declares a `BackendDescriptor` in the backend's repository |
+| SR-472 | FND-011 | low | Who lands `replay`: the skeleton (T-2) or TK-01 with #214 |
+
+Mermaid blocks contain no `;`.
+`quire validate --strict --summary` over ADR-011, `spec/spec.md` and the eight
+review records: 10/10 grammar-clean.
+
+Round-3 verdict: CHANGES. No high findings remain. The three medium findings
+need text changes before #212: two in ADR-011, and ADR-013 must change with
+FND-021. The low findings can land in the same revisions.

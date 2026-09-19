@@ -123,3 +123,20 @@ FND-009, came in with the revision: the ADR places the capability registry in
 QSL, but no legal edge or wire carries registration into it or selection out of
 it to E7. FND-010 is medium and can be fixed in the same revision. The
 remaining items routed under "Owner questions" are acceptable as routed.
+
+## Round 3 (HEAD 22fa948)
+
+Delta review f781e32 → 22fa948, with ADR-012 at 10664aa and ADR-013 at
+4152eb8. Replay ownership is now split one way in all three records. CG
+reconstructs and compares. QSL layer-6 `replay` recompiles, checks identities
+and calls S6a. IR holds the packet.
+
+### Round-3 new findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | Who lands `replay` differs. ADR-011 §6.2 says it is "landed with the skeleton spine (T-2)". ADR-013 TK-01 recommends that the executor entry "joins #214's function migration". **Fix:** name one: the skeleton lands the first `replay`, and TK-01 widens it with #214, or the reverse. | ADR-011:595 · ADR-013 TK-01 |
+
+### Round-3 verdict
+
+ACCEPT WITH FINDINGS.

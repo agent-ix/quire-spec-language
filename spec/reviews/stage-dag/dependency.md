@@ -235,3 +235,17 @@ are text fixes that need no compatibility layer:
 The §7.1 crate DAG stays acyclic. The §6.1 module DAG is acyclic over QSL
 modules. Once FND-014 is fixed, it is also complete over the admitted external
 edges.
+
+## Round 3 (HEAD 22fa948)
+
+Delta review f781e32 → 22fa948. §6.1 is acyclic again. `library` (layer 3)
+holds `VerifiedPackage`, the §4 binding and `ImportView`, and `package` (layer
+4) calls down into it, so no layer-3 module depends on layer 4. The new
+layer-6 `replay` row depends on layers 1 to 5, F and K, and `command` may
+depend on `replay`. The §7.1 crate graph labels CG → QSL "replay facade only".
+X-1 is #213 S-1, blocked by TK-10 and QC-15. No new findings in this analysis
+area. SR-467 FND-014 records the dependency-binding rule that E4 lacks.
+
+### Round-3 verdict
+
+ACCEPT.

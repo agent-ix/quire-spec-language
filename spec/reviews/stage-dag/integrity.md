@@ -184,3 +184,26 @@ the named `value` split makes K depend on layers 3 and F and creates a K ↔
 `model` cycle. It must be fixed before ADR-011 is accepted or #212 runs.
 FND-018, FND-019, FND-002, FND-009 and FND-010 (medium) should be fixed in the
 same revision. FND-012, FND-016 and FND-020 (low) may follow.
+
+## Round 3 (HEAD 22fa948)
+
+Delta review f781e32 → 22fa948, plus cross-record consistency with ADR-012 at
+10664aa and ADR-013 at 4152eb8. FND-018's successor (the two-output I2 design)
+is superseded: I2 yields `VerifiedPackage` and `ImportView` in layer-3
+`library`, and E9 recompiles through `replay`. The citations of ADR-013 T-1,
+T-2, T-6, T-7, TK-01, TK-10, QC-1 and QC-15 match ADR-013 at 4152eb8.
+
+### Round-3 new findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-021 | medium | `PackageNodeKey` has two shapes. ADR-011 says a `WireNodeId` "becomes a `NodeKey`, and so part of a `PackageNodeKey`", and §2.2 E3 defines `PackageNodeKey{package: package_id, node: NodeKey}`, "unique across the package and every I2 view in one check". ADR-013 T-3 and O-04 define `PackageNodeKey{package: package_id, node: WireNodeId}`, and make a bare `NodeKey` unique across packages (QC-18). At E3 an I2 view holds only `WireNodeId`s, so the ADR-011 E3 cell describes a key R-10 forbids at that stage. #213 S-3 would get two type definitions. **Fix:** align ADR-011:185 and :297 with T-3. | ADR-011:185, :297 · ADR-013 T-3, O-04, R-10 |
+| FND-022 | low | ADR-013 Q209-5 quotes FB-05 as "…the QSL replay entry", the layer-6 `replay` facade "over the S1 to S4 compile entry and the S6a `CheckedPackage::call`". ADR-011 FB-05 now reads "the public API of the QSL layer-6 `replay` module, and nothing else". The quotation is no longer in ADR-011. | ADR-013 Q209-5 · ADR-011:383 |
+| FND-023 | low | ADR-013 O-04 says an import's `WireNodeId` resolves in "the dependency compiled from source under the ADR-011 M-3 ruling". ADR-011 M-3 adds S2 `forms`. Dependency compilation is ADR-011 §1 S4 and E4. | ADR-013 O-04 · ADR-011:173, :232, M-3 |
+| FND-024 | low | ADR-013 Context says IR PR #139 is "at head `417ec86` (open)". It merged at 954c2f2, which ADR-011 §7.3 X-1 states correctly. | ADR-013 Context · ADR-011 X-1 |
+| FND-025 | low | ADR-011 scenario 7 cites ADR-012 §12.3 for "declares its provider manifest". ADR-012 §12.3 still reads "one `BackendDescriptor` … in the backend's repository", although its own §7.1 and ADR-013 T-7 make the manifest the descriptor. | ADR-011:761 · ADR-012 §12.3 |
+
+### Round-3 verdict
+
+CHANGES: FND-021 needs ADR-011 and ADR-013 to agree before #212. FND-022 to
+FND-025 are text fixes in ADR-013 and ADR-012.
