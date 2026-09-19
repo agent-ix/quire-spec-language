@@ -70,12 +70,19 @@
 //!
 //! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
 //! every contributing declaration in the cycle, rotated to start at its
-//! least key, from the one type whose own walk finds it first
-//! ([`ancestor_paths`]'s own `?`-propagated `Err`) — this rung does not also
-//! continue walking every remaining type to reproduce R01's exact
-//! six-`normalize.cycle-check`-charge, deduplicated-across-both-walks
-//! accounting; only the refusal's own shape is reproduced, a recorded scope
-//! choice like phase 4's own dominance-check reuse above.
+//! least key. [`ancestor_paths`] charges every closing extension it finds
+//! (`value-accounting.md:491`: "a closing extension is charged even when
+//! its cycle's edge set was already reported") and keeps walking past it —
+//! this frame's remaining siblings, every other frame still on its stack,
+//! and, in `build`'s own per-type loop, every remaining type — rather than
+//! stopping at the first one, so R01's own six-`normalize.cycle-check`
+//! accounting across both types' walks is reproduced exactly (QSL #193).
+//! `build` deduplicates the refusals themselves by edge set, keeping only
+//! each distinct cycle's own first (charge-order-earliest) closing
+//! extension, per `model-complete.md`:292-295's "each cycle is refused
+//! exactly once" — collected in `Built::phase3_refusals` and reported only
+//! once every phase 2/3 charge has admitted (`:505-511`'s "every refusal
+//! that work exposes is reported, in charge order, when its stage ends").
 //!
 //! Phase 4's own dominance check (deciding which of several redefiners of
 //! the same target wins) asks a different question than phase 3's own
@@ -165,23 +172,29 @@
 //! No phase-4 refusal is ever returned by `build` itself, whichever shape it
 //! takes: an owner ancestry with no unique dominant redefiner
 //! (`derivation-conflict`, or `redefinition-target` for R07's same-owner
-//! shape), a redefinition target that is not an effective member of its
-//! owning type, or a redefining member that is not itself an effective
-//! member (both the latter surfacing as `RedefinitionUnreachable`).
-//! `value-accounting.md:481` states "checking is exhaustive within a
-//! stage," so phase 4's own charges — every `normalize.redefinition-check`,
-//! every phase-4 `normalize.fact`, every `normalize.conflict-check` — must
-//! all be admitted before the refusal they expose is reported. `build`
-//! stores whichever such refusal ranks earliest in charge order, of any of
-//! these shapes (`record_phase4_refusal`'s own doc, next to
-//! [`Phase4Accounting`]), in `Built::phase4_refusal` and keeps resolving
-//! every remaining type and target group, so every later phase-4 charge
-//! amount is still computed correctly; `charge_all` charges through the last
-//! `normalize.conflict-check` and returns that refusal only once every
-//! phase-4 charge has been admitted. An earlier `Incomplete` still wins,
-//! matching `:482`'s "a stage that reports a refusal ends checking: no
-//! later stage runs or charges" — phase 5's own `normalize.declaration`/
-//! `normalize.hash` charges never run once this refusal is pending.
+//! shape), or a redefinition target that is not a member inherited by its
+//! owning type (`invalid_model_binding`/`redefinition-target`, QSL #184 —
+//! the target key resolves to a real declaration elsewhere in the domain
+//! package, just not one of that owner's own effective members, so this is
+//! not a dangling reference). `value-accounting.md:481` states "checking is
+//! exhaustive within a stage," so phase 4's own charges — every
+//! `normalize.redefinition-check`, every phase-4 `normalize.fact`, every
+//! `normalize.conflict-check` — must all be admitted before the refusals
+//! they expose are reported. `build` collects every such refusal, of any of
+//! these shapes, tagged with its own [`Phase4Rank`]
+//! (`record_phase4_refusal`'s own doc, next to [`Phase4Accounting`]), and
+//! keeps resolving every remaining type and target group regardless, so
+//! every later phase-4 charge amount is still computed correctly; once every
+//! call has returned, `build` sorts the whole collection into charge order
+//! and stores it in `Built::phase4_refusals`. `charge_all` charges through
+//! the last `normalize.conflict-check` and returns every one of these
+//! refusals, together, in that charge order, only once every phase-4 charge
+//! has been admitted (`:505-511`'s "every refusal that work exposes is
+//! reported, in charge order, when its stage ends"; QSL #195). An earlier
+//! `Incomplete` still wins, matching `:482`'s "a stage that reports a
+//! refusal ends checking: no later stage runs or charges" — phase 5's own
+//! `normalize.declaration`/`normalize.hash` charges never run once these
+//! refusals are pending.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
@@ -231,7 +244,12 @@ pub enum NormalizeOutcome {
     /// Normalization completed within the given limits.
     Completed(EffectiveView),
     /// A real defect refused normalization outright; no effective view.
-    Refused(ModelRefusal),
+    /// `value-accounting.md:505-511`: "every refusal that work exposes is
+    /// reported, in charge order, when its stage ends" -- every refusal a
+    /// stage exposes is reported together, never only the first, so this
+    /// never carries an empty vector: a real defect always exposes at least
+    /// one refusal.
+    Refused(Vec<ModelRefusal>),
     /// A `ModelNormalizationLimitsV1` counter was exhausted; no effective view.
     Incomplete(Incomplete),
 }
@@ -545,15 +563,55 @@ fn fact_budget_exceeded(limits: &ModelNormalizationLimits, facts_so_far: u64) ->
     facts_so_far > limits.derivation_facts || facts_so_far > limits.work_units
 }
 
+/// One generalization cycle a `root_key`'s own ancestor walk closes: the
+/// closing extension's own [`ModelRefusal`] (`SpecializationCycle`, keyed by
+/// its rotated edge listing) and the path length charged to it
+/// (`normalize.cycle-check`'s own `work_units += L`,
+/// `value-accounting.md:491`). `edge_set` is the same rotated node listing
+/// the refusal's own `detail` reports, kept structured here so refusals
+/// found by different types' own walks that close the identical cycle can
+/// be recognized as the same cycle and deduplicated
+/// (`model-complete.md`:292-295: "each cycle is refused ... exactly once,
+/// keyed by the set of its supertype edges").
+struct ClosingCycle {
+    refusal: ModelRefusal,
+    /// The extended path that closes this cycle — the same shape as
+    /// [`AncestorPath::path`], reused as this closing extension's own
+    /// [`PendingFact::inputs`] (`closes_cycle: true`) so it sorts into
+    /// `normalize.cycle-check`/`normalize.fact` charge order
+    /// (`value-accounting.md:490`) exactly like an ordinary ancestor-path
+    /// fact from the same type, and its length is `normalize.cycle-check`'s
+    /// own `work_units += L` (`:491`).
+    path: Vec<DeclarationKey>,
+    edge_set: Vec<DeclarationKey>,
+}
+
+/// [`ancestor_paths`]'s own result: every ordinary ancestor path (`paths`,
+/// unchanged meaning) plus every generalization cycle this same walk closed
+/// (`closing_cycles`) — one entry per closing extension, not deduplicated
+/// here (`build` deduplicates by `edge_set` across every type's own walk;
+/// see the module docs). The walk never stops at its first closing
+/// extension: `value-accounting.md:491`'s "a closing extension is charged
+/// even when its cycle's edge set was already reported" requires every
+/// closing extension's own `normalize.cycle-check` charge to still occur,
+/// which needs every remaining branch, and every remaining type in `build`'s
+/// own per-type loop, still walked rather than abandoned at the first cycle
+/// found.
+struct AncestorWalk {
+    paths: Vec<AncestorPath>,
+    closing_cycles: Vec<ClosingCycle>,
+}
+
 /// Every ancestor path of `root_key`, in DFS pre-order over ascending-key
-/// direct generalizations, capped at `budget` entries. Explicit stack, not
-/// native recursion: domain package data is caller-supplied and may describe a
+/// direct generalizations, capped at `budget` entries (paths and closing
+/// cycles counted together against that cap). Explicit stack, not native
+/// recursion: domain package data is caller-supplied and may describe a
 /// cycle.
 fn ancestor_paths(
     root_key: &DeclarationKey,
     index: &Index,
     budget: usize,
-) -> Result<Vec<AncestorPath>, ModelRefusal> {
+) -> Result<AncestorWalk, ModelRefusal> {
     struct Frame {
         directs: Vec<DeclarationKey>,
         next: usize,
@@ -568,8 +626,9 @@ fn ancestor_paths(
         visited: vec![root_key.clone()],
     }];
     let mut out = Vec::new();
+    let mut closing_cycles: Vec<ClosingCycle> = Vec::new();
     loop {
-        if out.len() >= budget {
+        if out.len() + closing_cycles.len() >= budget {
             break;
         }
         let stack_len = stack.len();
@@ -612,12 +671,14 @@ fn ancestor_paths(
             // [A, B], rotated to start at the least key A"). E.g. A -> C,
             // C -> B, B -> C lists `[model.B, model.C]`, not
             // `[model.A, model.C, model.B]`.
-            // Scope decision: this rung stops at the first cycle a type's
-            // own walk finds (line ~723's `?`) rather than continuing to
-            // walk every remaining type and deduplicating repeated closures,
-            // so it does not reproduce R01's exact six-`normalize.cycle-check`
-            // charge count across both types' walks — only the refusal's own
-            // code/cause/contributing-declarations shape.
+            // TC-196 R01: a closing extension is charged its own
+            // `normalize.cycle-check` even when its cycle's edge set was
+            // already reported, and enumeration continues past it -- to
+            // this frame's remaining siblings, to every other frame still on
+            // `stack`, and (in `build`'s own per-type loop) to every
+            // remaining type -- so every closing extension anywhere in the
+            // domain package is charged, not only the first one this walk
+            // finds.
             let mut chain = frame.visited.clone();
             if let Some(start) = chain.iter().position(|key| key == &ancestor_key) {
                 chain.drain(..start);
@@ -631,7 +692,7 @@ fn ancestor_paths(
                 chain.rotate_left(least);
             }
             let listing: Vec<&str> = chain.iter().map(|key| key.node.as_str()).collect();
-            return Err(ModelRefusal {
+            let refusal = ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
                     ancestor: ancestor_key.clone(),
@@ -643,7 +704,13 @@ fn ancestor_paths(
                     specific_key.node,
                     listing.join(", ")
                 ),
+            };
+            closing_cycles.push(ClosingCycle {
+                refusal,
+                path: new_path,
+                edge_set: chain,
             });
+            continue;
         }
         out.push(AncestorPath {
             path: new_path.clone(),
@@ -658,7 +725,10 @@ fn ancestor_paths(
             visited: new_visited,
         });
     }
-    Ok(out)
+    Ok(AncestorWalk {
+        paths: out,
+        closing_cycles,
+    })
 }
 
 /// One fact awaiting replayed accounting, tagged with what it charges.
@@ -670,6 +740,14 @@ struct PendingFact {
     /// `Some(path_len)` for a phase-3 type-level fact (charges
     /// `normalize.cycle-check` first); `None` otherwise.
     cycle_check_len: Option<usize>,
+    /// Whether this entry is a closing extension (`value-accounting.md:491`:
+    /// "a closing extension is charged even when its cycle's edge set was
+    /// already reported"; `model-complete.md`:513: "whose `normalize.fact`
+    /// is not charged"): its own `normalize.cycle-check` still charges, but
+    /// it derives no fact, so `charge_all` skips its `normalize.fact`
+    /// charge and it is never counted toward `derivation_facts`. `false`
+    /// for every ordinary phase 2/3 fact.
+    closes_cycle: bool,
 }
 
 /// One declaration awaiting replayed `normalize.declaration`/`normalize.hash`,
@@ -679,8 +757,29 @@ struct PendingDeclaration {
 }
 
 struct Built {
+    /// Every `model-complete.md`:81 refusal FR-154's per-node checks expose,
+    /// in node order, already deduplicated (a reference naming a refused
+    /// node is not reported again). Non-empty only when intake itself
+    /// refuses: `charge_all` reports these, once every `normalize.record`
+    /// charge is admitted, and phase 2 onward never runs
+    /// (`model-complete.md`:80: "Intake reports every such refusal in node
+    /// order, and then no later phase runs"). Every other field below is a
+    /// placeholder (empty/default) when this is non-empty — phase 2 onward
+    /// never ran to populate them.
+    intake_refusals: Vec<ModelRefusal>,
     phase2_facts: Vec<PendingFact>,
     phase3_facts: Vec<PendingFact>,
+    /// Every distinct generalization cycle phase 3 exposes, ascending by
+    /// the closing extension's own charge-order position (owning type, then
+    /// path), deduplicated by edge set
+    /// (`model-complete.md`:292-295: "each cycle is refused ... exactly
+    /// once, keyed by the set of its supertype edges"). Non-empty only when
+    /// phase 3 refuses; `charge_all` reports these once every phase 2/3
+    /// charge (`normalize.record`, `normalize.fact`, `normalize.cycle-check`)
+    /// is admitted, before phase 4 ever charges
+    /// (`value-accounting.md:509`: "a stage that reports a refusal ends
+    /// checking: no later stage runs or charges").
+    phase3_refusals: Vec<ModelRefusal>,
     declarations: Vec<PendingDeclaration>,
     view: EffectiveView,
     universe: ObjectUniverse,
@@ -719,15 +818,18 @@ struct Built {
     /// redefiner needs no entry at all (`value-accounting.md:456`'s own
     /// `c >= 2` condition); replayed by `charge_all`.
     conflict_check_work: Vec<u64>,
-    /// Whichever phase-4 refusal — `derivation-conflict`,
-    /// `redefinition-target`, or `RedefinitionUnreachable` — ranks earliest
-    /// in charge order (`record_phase4_refusal`'s own doc), held here rather
-    /// than returned by `build` (see the module docs): `apply_redefinitions`
-    /// keeps resolving every remaining type and target group after finding
-    /// one, so every later phase-4 charge amount above is still computed
-    /// correctly, and `charge_all` reports this refusal only once every
-    /// phase-4 charge is admitted.
-    phase4_refusal: Option<ModelRefusal>,
+    /// Every phase-4 refusal — `derivation-conflict` or `redefinition-target`
+    /// — `apply_redefinitions` exposes across every type and target group,
+    /// ascending by charge order (`record_phase4_refusal`'s own doc), held
+    /// here rather than returned by `build` (see the module docs):
+    /// `apply_redefinitions` keeps resolving every remaining type and target
+    /// group regardless of what it has already found, so every later
+    /// phase-4 charge amount above is still computed correctly, and
+    /// `charge_all` reports every refusal here, together, only once every
+    /// phase-4 charge is admitted (`value-accounting.md:505-511`: "every
+    /// refusal that work exposes is reported, in charge order, when its
+    /// stage ends").
+    phase4_refusals: Vec<ModelRefusal>,
 }
 
 /// Refuses a [`DomainPackageRecord`] that names a type key absent from the domain package's
@@ -739,16 +841,18 @@ struct Built {
 /// [`DeclarationKey`] (`package`/`node`, #131): a reference matching some
 /// declared type's `node` but naming a different `package` is exactly as
 /// dangling as one matching nothing.
-fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<(), ModelRefusal> {
+fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
     // FR-321: "Missing required properties, duplicate keys, out-of-domain
     // values and non-canonical encodings refuse before consumption." An
-    // empty `package`/`node`/`identity`/`version` string is schema
-    // `minLength`-invalid (out of domain) under
-    // `model-effective-declaration.schema.json`'s `$defs.DeclarationKey` and
-    // FR-321's own `ModelSelectionArtifact` shape, so it refuses before any
-    // reference is resolved or any key comparison runs -- checked first,
-    // ahead of the collision check below, matching FR-154's own row order
-    // (`malformed-declaration` before `conflicting-binding`).
+    // empty `identity`/`version` string is schema `minLength`-invalid (out
+    // of domain) under FR-321's own `ModelSelectionArtifact` shape.
+    // `value-accounting.md:507-508`: "a refusal decided by an intake
+    // admission check before a stage's first charge is reported first" --
+    // this selection check precedes every `normalize.record` charge
+    // (`model-complete.md`:72: intake reads each IR node only "then",
+    // after admitting the package and its selection), so it refuses
+    // immediately, with no charge at all, unlike the per-node checks
+    // `validate_references` runs once node reading has begun.
     if domain_package.model_selection.identity.is_empty()
         || domain_package.model_selection.version.is_empty()
     {
@@ -761,6 +865,262 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
             ),
         });
     }
+    Ok(())
+}
+
+/// Every FR-154 per-node check for one already-key-validated node, in
+/// FR-154's own table order, the object id check first
+/// (`model-complete.md`:81). Returns the first failing check for this node,
+/// or `None` when the node admits — `validate_references` collects every
+/// node's own first failure rather than stopping at the first node that
+/// fails (`model-complete.md`:80: "Intake reports every such refusal in
+/// node order").
+fn check_node<'a>(
+    record: &'a DomainPackageRecord,
+    index: &Index,
+    seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
+) -> Option<ModelRefusal> {
+    let key = record.key();
+    // `model-complete.md`:81: within a node, the malformed-declaration
+    // check is that node's own first check, ahead of any
+    // dangling-reference or collision check for that same node -- an
+    // empty `package`/`node` is schema `minLength`-invalid (FR-321,
+    // out of domain) so it refuses before this node's own key is ever
+    // looked up in `index` or compared against `seen_keys`.
+    if key.package.is_empty() || key.node.is_empty() {
+        return Some(ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::MalformedDeclaration,
+            detail: format!("declaration key has an empty package or node: {key:?}"),
+        });
+    }
+    match record {
+        DomainPackageRecord::ObjectType(t) => {
+            // `specific` is always this same record's own `t.key`,
+            // already inserted into `index.types` from this identical
+            // record under QSpec's inline `supertypes[]` shape
+            // (`model-complete.md`:155) -- so an "unknown specific" is
+            // structurally unreachable and there is no matching
+            // `ModelRefusalCause` variant for it.
+            for general in &t.supertypes {
+                if !index.types.contains(general) {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: t.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "object type {} names supertype {}, which is not a declared object type",
+                            t.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::FieldMember(member) => {
+            if !index.types.contains(&member.owner) {
+                return Some(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: member.key.clone(),
+                        owner: member.owner.clone(),
+                    },
+                    detail: format!(
+                        "field member {} names owner {}, which is not a declared object type",
+                        member.key.node, member.owner.node
+                    ),
+                });
+            }
+            if let Some(redefines) = &member.redefines {
+                if !index.field_member_keys.contains(redefines)
+                    && !index.operation_member_keys.contains(redefines)
+                {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: member.key.clone(),
+                            member: redefines.clone(),
+                        },
+                        detail: format!(
+                            "field member {} redefines {}, which is not a declared field or operation member",
+                            member.key.node, redefines.node
+                        ),
+                    });
+                }
+            }
+            for subsetted in &member.subsets {
+                if !index.field_member_keys.contains(subsetted)
+                    && !index.operation_member_keys.contains(subsetted)
+                {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: member.key.clone(),
+                            member: subsetted.clone(),
+                        },
+                        detail: format!(
+                            "field member {} subsets {}, which is not a declared field or operation member",
+                            member.key.node, subsetted.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::ScalarType(_) => {}
+        DomainPackageRecord::OperationMember(op) => {
+            if !index.types.contains(&op.owner) {
+                return Some(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: op.key.clone(),
+                        owner: op.owner.clone(),
+                    },
+                    detail: format!(
+                        "operation member {} names owner {}, which is not a declared object type",
+                        op.key.node, op.owner.node
+                    ),
+                });
+            }
+            for parameter in &op.parameters {
+                if !index.types.contains(&parameter.value_type)
+                    && !index.known_scalars.contains(&parameter.value_type)
+                {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownValueType {
+                            operation: op.key.clone(),
+                            parameter: Some(parameter.key.clone()),
+                            value_type: parameter.value_type.clone(),
+                        },
+                        detail: format!(
+                            "operation {} parameter {} names value type {}, which is not a declared type",
+                            op.key.node,
+                            parameter.key.node,
+                            parameter.value_type.node
+                        ),
+                    });
+                }
+            }
+            if let Some(result) = &op.result {
+                if !index.types.contains(&result.value_type)
+                    && !index.known_scalars.contains(&result.value_type)
+                {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownValueType {
+                            operation: op.key.clone(),
+                            parameter: None,
+                            value_type: result.value_type.clone(),
+                        },
+                        detail: format!(
+                            "operation {} result names value type {}, which is not a declared type",
+                            op.key.node, result.value_type.node
+                        ),
+                    });
+                }
+            }
+            for field in &op.effect.modifies {
+                if !index.field_member_keys.contains(field) {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownFieldWrite {
+                            operation: op.key.clone(),
+                            field: field.clone(),
+                        },
+                        detail: format!(
+                            "operation {} effect writes {}, which is not a declared field member",
+                            op.key.node, field.node
+                        ),
+                    });
+                }
+            }
+            for target in op.effect.creates.iter().chain(&op.effect.deletes) {
+                if !index.types.contains(target) {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownEffectType {
+                            operation: op.key.clone(),
+                            type_name: target.clone(),
+                        },
+                        detail: format!(
+                            "operation {} effect names type {}, which is not a declared object type",
+                            op.key.node, target.node
+                        ),
+                    });
+                }
+            }
+            if let Some(redefines) = &op.redefines {
+                if !index.field_member_keys.contains(redefines)
+                    && !index.operation_member_keys.contains(redefines)
+                {
+                    return Some(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: op.key.clone(),
+                            member: redefines.clone(),
+                        },
+                        detail: format!(
+                            "operation member {} redefines {}, which is not a declared field or operation member",
+                            op.key.node, redefines.node
+                        ),
+                    });
+                }
+            }
+        }
+        // FR-152 systems-model records validate their own references
+        // independently (crate::model::systems); FR-150's phase 1 does
+        // not concern itself with them.
+        DomainPackageRecord::Component(_)
+        | DomainPackageRecord::Endpoint(_)
+        | DomainPackageRecord::Relationship(_) => {}
+        // model-complete.md's "Populations" row: each member type names
+        // a declared object type; a missing one refuses
+        // `missing_declaration`/`missing-name`.
+        DomainPackageRecord::Population(population) => {
+            for type_name in &population.member_types {
+                if !index.types.contains(type_name) {
+                    return Some(ModelRefusal {
+                        code: Code::MissingDeclaration,
+                        cause: ModelRefusalCause::UnknownPopulationMemberType {
+                            population: population.key.clone(),
+                            type_name: type_name.clone(),
+                        },
+                        detail: format!(
+                            "population {} names member type {}, which is not a declared object type",
+                            population.key.node, type_name.node
+                        ),
+                    });
+                }
+            }
+        }
+    }
+    if !seen_keys.insert(key) {
+        return Some(ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+            detail: format!(
+                "{} is declared by more than one record in this domain package",
+                key.node
+            ),
+        });
+    }
+    None
+}
+
+/// Every FR-154 refusal the domain package's own nodes expose, in node
+/// order (`model-complete.md`:73: "Nodes are read ascending by declaration
+/// key"), one refusal per failing node (`check_node`'s own doc: the first
+/// failing check for that node, in FR-154's table order). Never stops at
+/// the first failing node -- TC-195 N08's own two refusals, reported
+/// together in node order, are exactly this shape
+/// (`model-complete.md`:80). `domain_package` is caller-supplied, not
+/// validated on the way in except for this function's own empty-component
+/// and colliding-key checks, which run first per node. Membership is
+/// checked by the record's whole [`DeclarationKey`] (`package`/`node`,
+/// #131): a reference matching some declared type's `node` but naming a
+/// different `package` is exactly as dangling as one matching nothing.
+fn validate_references(domain_package: &DomainPackage, index: &Index) -> Vec<ModelRefusal> {
     // `model-complete.md`:73: "Nodes are read ascending by declaration key."
     // Every following check -- the per-node malformed-key check, the
     // dangling-reference checks, and the collision check -- runs over this
@@ -781,234 +1141,13 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
     // earlier one in `Index`'s by-key maps/sets.
     let mut seen_keys: std::collections::HashSet<&DeclarationKey> =
         std::collections::HashSet::new();
+    let mut refusals = Vec::new();
     for record in records {
-        let key = record.key();
-        // `model-complete.md`:81: within a node, the malformed-declaration
-        // check is that node's own first check, ahead of any
-        // dangling-reference or collision check for that same node -- an
-        // empty `package`/`node` is schema `minLength`-invalid (FR-321,
-        // out of domain) so it refuses before this node's own key is ever
-        // looked up in `index` or compared against `seen_keys`.
-        if key.package.is_empty() || key.node.is_empty() {
-            return Err(ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::MalformedDeclaration,
-                detail: format!("declaration key has an empty package or node: {key:?}"),
-            });
-        }
-        match record {
-            DomainPackageRecord::ObjectType(t) => {
-                // `specific` is always this same record's own `t.key`,
-                // already inserted into `index.types` from this identical
-                // record under QSpec's inline `supertypes[]` shape
-                // (`model-complete.md`:155) -- so an "unknown specific" is
-                // structurally unreachable and there is no matching
-                // `ModelRefusalCause` variant for it.
-                for general in &t.supertypes {
-                    if !index.types.contains(general) {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownGeneral {
-                                supertype: t.key.clone(),
-                                general: general.clone(),
-                            },
-                            detail: format!(
-                                "object type {} names supertype {}, which is not a declared object type",
-                                t.key.node, general.node
-                            ),
-                        });
-                    }
-                }
-            }
-            DomainPackageRecord::FieldMember(member) => {
-                if !index.types.contains(&member.owner) {
-                    return Err(ModelRefusal {
-                        code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownOwner {
-                            member: member.key.clone(),
-                            owner: member.owner.clone(),
-                        },
-                        detail: format!(
-                            "field member {} names owner {}, which is not a declared object type",
-                            member.key.node, member.owner.node
-                        ),
-                    });
-                }
-                if let Some(redefines) = &member.redefines {
-                    if !index.field_member_keys.contains(redefines)
-                        && !index.operation_member_keys.contains(redefines)
-                    {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownMember {
-                                record: member.key.clone(),
-                                member: redefines.clone(),
-                            },
-                            detail: format!(
-                                "field member {} redefines {}, which is not a declared field or operation member",
-                                member.key.node, redefines.node
-                            ),
-                        });
-                    }
-                }
-                for subsetted in &member.subsets {
-                    if !index.field_member_keys.contains(subsetted)
-                        && !index.operation_member_keys.contains(subsetted)
-                    {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownMember {
-                                record: member.key.clone(),
-                                member: subsetted.clone(),
-                            },
-                            detail: format!(
-                                "field member {} subsets {}, which is not a declared field or operation member",
-                                member.key.node, subsetted.node
-                            ),
-                        });
-                    }
-                }
-            }
-            DomainPackageRecord::ScalarType(_) => {}
-            DomainPackageRecord::OperationMember(op) => {
-                if !index.types.contains(&op.owner) {
-                    return Err(ModelRefusal {
-                        code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownOwner {
-                            member: op.key.clone(),
-                            owner: op.owner.clone(),
-                        },
-                        detail: format!(
-                            "operation member {} names owner {}, which is not a declared object type",
-                            op.key.node, op.owner.node
-                        ),
-                    });
-                }
-                for parameter in &op.parameters {
-                    if !index.types.contains(&parameter.value_type)
-                        && !index.known_scalars.contains(&parameter.value_type)
-                    {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownValueType {
-                                operation: op.key.clone(),
-                                parameter: Some(parameter.key.clone()),
-                                value_type: parameter.value_type.clone(),
-                            },
-                            detail: format!(
-                                "operation {} parameter {} names value type {}, which is not a declared type",
-                                op.key.node,
-                                parameter.key.node,
-                                parameter.value_type.node
-                            ),
-                        });
-                    }
-                }
-                if let Some(result) = &op.result {
-                    if !index.types.contains(&result.value_type)
-                        && !index.known_scalars.contains(&result.value_type)
-                    {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownValueType {
-                                operation: op.key.clone(),
-                                parameter: None,
-                                value_type: result.value_type.clone(),
-                            },
-                            detail: format!(
-                                "operation {} result names value type {}, which is not a declared type",
-                                op.key.node, result.value_type.node
-                            ),
-                        });
-                    }
-                }
-                for field in &op.effect.modifies {
-                    if !index.field_member_keys.contains(field) {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownFieldWrite {
-                                operation: op.key.clone(),
-                                field: field.clone(),
-                            },
-                            detail: format!(
-                                "operation {} effect writes {}, which is not a declared field member",
-                                op.key.node, field.node
-                            ),
-                        });
-                    }
-                }
-                for target in op.effect.creates.iter().chain(&op.effect.deletes) {
-                    if !index.types.contains(target) {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownEffectType {
-                                operation: op.key.clone(),
-                                type_name: target.clone(),
-                            },
-                            detail: format!(
-                                "operation {} effect names type {}, which is not a declared object type",
-                                op.key.node, target.node
-                            ),
-                        });
-                    }
-                }
-                if let Some(redefines) = &op.redefines {
-                    if !index.field_member_keys.contains(redefines)
-                        && !index.operation_member_keys.contains(redefines)
-                    {
-                        return Err(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownMember {
-                                record: op.key.clone(),
-                                member: redefines.clone(),
-                            },
-                            detail: format!(
-                                "operation member {} redefines {}, which is not a declared field or operation member",
-                                op.key.node, redefines.node
-                            ),
-                        });
-                    }
-                }
-            }
-            // FR-152 systems-model records validate their own references
-            // independently (crate::model::systems); FR-150's phase 1 does
-            // not concern itself with them.
-            DomainPackageRecord::Component(_)
-            | DomainPackageRecord::Endpoint(_)
-            | DomainPackageRecord::Relationship(_) => {}
-            // model-complete.md's "Populations" row: each member type names
-            // a declared object type; a missing one refuses
-            // `missing_declaration`/`missing-name`.
-            DomainPackageRecord::Population(population) => {
-                for type_name in &population.member_types {
-                    if !index.types.contains(type_name) {
-                        return Err(ModelRefusal {
-                            code: Code::MissingDeclaration,
-                            cause: ModelRefusalCause::UnknownPopulationMemberType {
-                                population: population.key.clone(),
-                                type_name: type_name.clone(),
-                            },
-                            detail: format!(
-                                "population {} names member type {}, which is not a declared object type",
-                                population.key.node, type_name.node
-                            ),
-                        });
-                    }
-                }
-            }
-        }
-        if !seen_keys.insert(key) {
-            return Err(ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
-                detail: format!(
-                    "{} is declared by more than one record in this domain package",
-                    key.node
-                ),
-            });
+        if let Some(refusal) = check_node(record, index, &mut seen_keys) {
+            refusals.push(refusal);
         }
     }
-    Ok(())
+    refusals
 }
 
 /// Pass one: build the complete normalization, refusing outright on a real
@@ -1019,8 +1158,38 @@ fn build(
     domain_package: &DomainPackage,
     limits: &ModelNormalizationLimits,
 ) -> Result<Built, ModelRefusal> {
+    validate_selection(domain_package)?;
     let index = Index::build(domain_package);
-    validate_references(domain_package, &index)?;
+    // QSL #199: every `normalize.record` charge (one per IR node, in node
+    // order) runs before any intake refusal is reported -- `validate_references`
+    // itself never charges anything; it is `charge_all` that charges the
+    // whole `domain_package.records` sequence and only then consults this
+    // result (see `Built::intake_refusals`'s own doc).
+    let intake_refusals = validate_references(domain_package, &index);
+    if !intake_refusals.is_empty() {
+        // `model-complete.md`:80: "Intake reports every such refusal in
+        // node order, and then no later phase runs" -- phase 2 onward never
+        // ran, so every other field below is its own placeholder.
+        return Ok(Built {
+            intake_refusals,
+            phase2_facts: Vec::new(),
+            phase3_facts: Vec::new(),
+            phase3_refusals: Vec::new(),
+            declarations: Vec::new(),
+            view: EffectiveView {
+                model_selection: domain_package.model_selection.clone(),
+                declarations: Vec::new(),
+            },
+            universe: ObjectUniverse {
+                model_selection: domain_package.model_selection.clone(),
+                root_types: Vec::new(),
+            },
+            redefinition_check_work: Vec::new(),
+            phase4_fact_count: 0,
+            conflict_check_work: Vec::new(),
+            phase4_refusals: Vec::new(),
+        });
+    }
     let type_keys = index.sorted_type_keys();
 
     let mut phase2_facts = Vec::new();
@@ -1042,12 +1211,26 @@ fn build(
     // iteration already ran.
     let mut type_paths: HashMap<DeclarationKey, Vec<AncestorPath>> = HashMap::new();
 
+    // QSL #193: every distinct generalization cycle any type's own walk
+    // closes, tagged with the same `(type_key, path)` charge-order key its
+    // own `PendingFact` sorts by (`sort_facts`), collected build-wide across
+    // every type in the loop below and deduplicated by edge set only after
+    // the loop finishes (`model-complete.md`:292-295's "each cycle is
+    // refused ... exactly once"; see the module docs).
+    let mut cycle_candidates: Vec<(
+        DeclarationKey,
+        Vec<DeclarationKey>,
+        ModelRefusal,
+        Vec<DeclarationKey>,
+    )> = Vec::new();
+
     for type_key in &type_keys {
         phase2_facts.push(PendingFact {
             owner_key: None,
             declared_key: type_key.clone(),
             inputs: vec![type_key.clone()],
             cycle_check_len: None,
+            closes_cycle: false,
         });
         facts_so_far += 1;
         let mut derivation = vec![Fact {
@@ -1062,7 +1245,8 @@ fn build(
         // twice per type), and again for phase 4's own owner-path
         // bookkeeping just below (the same F10 lesson applied there too).
         let budget = remaining_fact_budget(limits, facts_so_far);
-        let paths = ancestor_paths(type_key, &index, budget)?;
+        let walk = ancestor_paths(type_key, &index, budget)?;
+        let paths = walk.paths;
         for ancestor in &paths {
             let inputs = ancestor.path.clone();
             phase3_facts.push(PendingFact {
@@ -1070,6 +1254,7 @@ fn build(
                 declared_key: type_key.clone(),
                 inputs: inputs.clone(),
                 cycle_check_len: Some(ancestor.path.len()),
+                closes_cycle: false,
             });
             facts_so_far += 1;
             derivation.push(Fact {
@@ -1077,6 +1262,26 @@ fn build(
                 rule: RULE_INHERIT,
                 inputs,
             });
+        }
+        // Every closing extension this type's own walk found is charged its
+        // own `normalize.cycle-check` (QSL #193) but derives no fact
+        // (`closes_cycle: true`); its refusal is only a *candidate* until
+        // every type has been walked and duplicates across types have been
+        // removed, below.
+        for closing in walk.closing_cycles {
+            phase3_facts.push(PendingFact {
+                owner_key: None,
+                declared_key: type_key.clone(),
+                inputs: closing.path.clone(),
+                cycle_check_len: Some(closing.path.len()),
+                closes_cycle: true,
+            });
+            cycle_candidates.push((
+                type_key.clone(),
+                closing.path,
+                closing.refusal,
+                closing.edge_set,
+            ));
         }
 
         let preimage = EffectiveDeclarationPreimage {
@@ -1099,6 +1304,7 @@ fn build(
                 declared_key: member.key.clone(),
                 inputs: vec![member.key.clone()],
                 cycle_check_len: None,
+                closes_cycle: false,
             });
             member_preimages.insert(
                 (type_key.clone(), member.key.clone()),
@@ -1128,6 +1334,7 @@ fn build(
                     declared_key: member.key.clone(),
                     inputs: inputs.clone(),
                     cycle_check_len: None,
+                    closes_cycle: false,
                 });
                 facts_so_far += 1;
                 let entry = member_preimages
@@ -1150,6 +1357,21 @@ fn build(
         }
 
         type_paths.insert(type_key.clone(), paths);
+    }
+
+    // QSL #193: deduplicate cycle refusal candidates by edge set, keeping
+    // each distinct cycle's own first (charge-order-earliest) closing
+    // extension (`model-complete.md`:292-295), sorted the same way
+    // `sort_facts` orders their own `PendingFact` entries (type key, then
+    // path) so `phase3_refusals`' own order matches the charge order
+    // `charge_all` reports them in.
+    cycle_candidates.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    let mut seen_edge_sets: HashSet<Vec<DeclarationKey>> = HashSet::new();
+    let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
+    for (_, _, refusal, edge_set) in cycle_candidates {
+        if seen_edge_sets.insert(edge_set) {
+            phase3_refusals.push(refusal);
+        }
     }
 
     // Phase 4: every type's own field-redefinition conflicts, run only now
@@ -1250,17 +1472,16 @@ fn build(
         redefinition_check_work.push(m.saturating_add(length_amount(r)));
     }
 
-    let mut conflict_check_work: Vec<u64> = Vec::new();
+    let mut conflict_charges: Vec<(EffectiveId, DeclarationKey, u64)> = Vec::new();
     let mut phase4_fact_count: u64 = 0;
-    let mut phase4_refusal: Option<ModelRefusal> = None;
-    let mut phase4_refusal_rank: Option<(u8, Option<DeclarationKey>, DeclarationKey)> = None;
+    let mut phase4_refusal_candidates: Vec<(Phase4Rank, ModelRefusal)> = Vec::new();
     let mut accounting = Phase4Accounting {
         type_fact_counts: &type_fact_counts,
         owner_ancestor_sets: &owner_ancestor_sets,
-        conflict_check_work: &mut conflict_check_work,
+        type_effective_ids: &type_effective_ids,
+        conflict_charges: &mut conflict_charges,
         phase4_fact_count: &mut phase4_fact_count,
-        refusal: &mut phase4_refusal,
-        refusal_rank: &mut phase4_refusal_rank,
+        refusals: &mut phase4_refusal_candidates,
     };
     // A truncated phase-3 path set (a tight fact budget already exceeded by
     // the time every type's own phase 2/3 above has run) cannot resolve
@@ -1272,8 +1493,13 @@ fn build(
     // triggered the truncation runs, in charge order, before it ever
     // reaches phase 4's own charges below -- it already reports the correct
     // `Incomplete` there, never consulting `redefinition_check_work`/
-    // `conflict_check_work` computed from truncated data (QSL #145).
-    if !fact_budget_exceeded(limits, facts_so_far) {
+    // `conflict_charges` computed from truncated data (QSL #145). Likewise,
+    // a non-empty `phase3_refusals` (QSL #193) means phase 3 itself already
+    // exposed a refusal that `charge_all` reports before phase 4 ever
+    // charges (`value-accounting.md:509`'s "a stage that reports a refusal
+    // ends checking: no later stage runs or charges"), so phase 4's own
+    // resolution is skipped here too.
+    if !fact_budget_exceeded(limits, facts_so_far) && phase3_refusals.is_empty() {
         for type_key in &type_keys {
             let paths = type_paths
                 .get(type_key)
@@ -1289,6 +1515,27 @@ fn build(
             );
         }
     }
+    conflict_charges.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    let conflict_check_work: Vec<u64> = conflict_charges
+        .into_iter()
+        .map(|(_, _, amount)| amount)
+        .collect();
+    phase4_refusal_candidates.sort_by(|a, b| a.0.cmp(&b.0));
+    // A `normalize.redefinition-check` refusal's rank is the redefining
+    // member's own key alone (`Phase4Rank::RedefinitionCheck`), matching
+    // `redefinition_check_work`'s own domain-package-wide, once-per-record
+    // charge above: every descendant type that independently reaches the
+    // same broken redefining member (through generalization) derives the
+    // identical rank and an identical refusal, so a dedup by rank here
+    // keeps each redefinition-check refusal reported exactly once, the same
+    // cardinality as its own charge. A `normalize.conflict-check` refusal's
+    // rank also carries the resolving type's own effective identity, so two
+    // different types' own conflicts never collapse into each other here.
+    phase4_refusal_candidates.dedup_by(|a, b| a.0 == b.0);
+    let phase4_refusals: Vec<ModelRefusal> = phase4_refusal_candidates
+        .into_iter()
+        .map(|(_, refusal)| refusal)
+        .collect();
 
     // Phase 5 (identities only; charging is replayed separately).
     let mut declarations: Vec<PendingDeclaration> = Vec::new();
@@ -1305,10 +1552,18 @@ fn build(
             visible: true,
         });
     }
+    // QSL #195: `normalize.declaration` charges "effective types, then
+    // effective members, each ascending by effective member key"
+    // (`value-accounting.md:494`) -- `(owner effective type identity,
+    // original declaration key)` (`model-complete.md`:206), not the owner's
+    // producer `DeclarationKey`. `type_effective_ids` is fully populated for
+    // every type by the loop above, so this lookup never falls back.
     let mut member_keys: Vec<(DeclarationKey, DeclarationKey)> =
         member_preimages.keys().cloned().collect();
     member_keys.sort_by(|(owner_a, decl_a), (owner_b, decl_b)| {
-        owner_a.cmp(owner_b).then_with(|| decl_a.cmp(decl_b))
+        type_effective_ids[owner_a]
+            .cmp(&type_effective_ids[owner_b])
+            .then_with(|| decl_a.cmp(decl_b))
     });
     for key in member_keys {
         let visible = !hidden.contains(&key);
@@ -1340,15 +1595,17 @@ fn build(
     };
 
     Ok(Built {
+        intake_refusals: Vec::new(),
         phase2_facts,
         phase3_facts,
+        phase3_refusals,
         declarations,
         view,
         universe,
         redefinition_check_work,
         phase4_fact_count,
         conflict_check_work,
-        phase4_refusal,
+        phase4_refusals,
     })
 }
 
@@ -1379,7 +1636,21 @@ struct RedefinitionEdge {
 struct Phase4Accounting<'a> {
     type_fact_counts: &'a HashMap<DeclarationKey, u64>,
     owner_ancestor_sets: &'a HashMap<DeclarationKey, HashSet<DeclarationKey>>,
-    conflict_check_work: &'a mut Vec<u64>,
+    /// Every type's own effective identity, populated by `build`'s phase
+    /// 2/3 loop before any `apply_redefinitions` call — QSL #195: the
+    /// effective member key (`model-complete.md`:206) orders both
+    /// `conflict_charges` below and `build`'s own member-declaration
+    /// sequence by an owner's *effective* identity, not its producer
+    /// `DeclarationKey`.
+    type_effective_ids: &'a HashMap<DeclarationKey, EffectiveId>,
+    /// Every phase-4 `normalize.conflict-check` charge's own exact
+    /// `work_units` amount, tagged with its charge-order key: `(owner
+    /// effective type identity, target key)` — `value-accounting.md:456`'s
+    /// "ascending by effective member key" — collected build-wide, across
+    /// every `type_key`'s own call to this function, and sorted into final
+    /// charge order once, in `build`, only after every call has returned
+    /// (QSL #195; see the module docs).
+    conflict_charges: &'a mut Vec<(EffectiveId, DeclarationKey, u64)>,
     /// The running count of phase-4 redefine facts awaiting their own
     /// `normalize.fact` charge (see [`Built::phase4_fact_count`]'s own
     /// doc) — field redefinition only, exactly like `member_preimages`/
@@ -1387,67 +1658,45 @@ struct Phase4Accounting<'a> {
     /// [`Fact`] construction here at all (see the module docs), so it
     /// contributes nothing to this count.
     phase4_fact_count: &'a mut u64,
-    /// The phase-4 refusal this pass reports (see [`Built::phase4_refusal`]'s
-    /// own doc): whichever refusal phase 4 exposes ranks earliest in charge
-    /// order, not merely the first one this pass's own per-`type_key` walk
-    /// happens to encounter. Set only by `record_phase4_refusal`, which also
-    /// maintains `refusal_rank` alongside it.
-    refusal: &'a mut Option<ModelRefusal>,
-    /// The charge-order rank of whatever refusal `refusal` currently holds
-    /// (see `record_phase4_refusal`'s own doc for what a rank is and how
-    /// candidates are compared against it).
-    refusal_rank: &'a mut Option<(u8, Option<DeclarationKey>, DeclarationKey)>,
+    /// Every phase-4 refusal this pass exposes, across every `type_key`'s
+    /// own call, each tagged with its own [`Phase4Rank`] — every one, not
+    /// only the earliest (`value-accounting.md:505-511`: "every refusal
+    /// that work exposes is reported, in charge order, when its stage
+    /// ends"; QSL #195). Sorted into final charge order once, in `build`,
+    /// only after every call has returned. Set only by
+    /// `record_phase4_refusal`.
+    refusals: &'a mut Vec<(Phase4Rank, ModelRefusal)>,
 }
 
-/// Charge-order stage for `record_phase4_refusal`'s own rank key: lower
-/// values rank earlier. `normalize.redefinition-check` charges every
-/// redefining member before phase 4's own `normalize.fact` charges, which
-/// in turn precede every `normalize.conflict-check` charge
-/// (`value-accounting.md:455`, `:456`), so a redefinition-check-stage
-/// refusal always outranks a conflict-check-stage refusal, regardless of
-/// which type or target group this pass's own per-`type_key` walk happens
-/// to reach first.
-const REDEFINITION_CHECK_STAGE: u8 = 0;
-/// See [`REDEFINITION_CHECK_STAGE`]'s own doc.
-const CONFLICT_CHECK_STAGE: u8 = 1;
+/// Charge-order rank of one phase-4 refusal candidate: lower sorts earlier.
+/// `normalize.redefinition-check` charges every redefining member before
+/// phase 4's own `normalize.fact` charges, which in turn precede every
+/// `normalize.conflict-check` charge (`value-accounting.md:455`, `:456`), so
+/// every `RedefinitionCheck` variant sorts ahead of every `ConflictCheck`
+/// variant (`#[derive(Ord)]` on an enum ranks earlier-declared variants
+/// first). `RedefinitionCheck` carries the redefining member's own key alone
+/// (`:455`: "ascending by declaration key"); `ConflictCheck` carries the
+/// contested group's own effective member key — `(owner effective type
+/// identity, target key)` (`:456`: "ascending by effective member key",
+/// `model-complete.md`:206) — not the owning type's producer `DeclarationKey`
+/// (QSL #195).
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Phase4Rank {
+    RedefinitionCheck(DeclarationKey),
+    ConflictCheck(EffectiveId, DeclarationKey),
+}
 
-/// Records `refusal` as `accounting`'s own phase-4 refusal only if `(stage,
-/// type_key.cloned(), key.clone())` ranks earlier, in charge order, than
-/// whatever rank `accounting.refusal_rank` already holds — never merely
-/// because `accounting.refusal` is still `None`: `stage` is
-/// [`REDEFINITION_CHECK_STAGE`] or [`CONFLICT_CHECK_STAGE`], and
-/// `(type_key, key)` is the pair the exposing stage itself ascends by.
-/// `normalize.redefinition-check` (`value-accounting.md:455`) ascends by
-/// the redefining member's own key alone, so redefinition-check
-/// callers pass `type_key: None` and `key` as that member's own key.
-/// `normalize.conflict-check` (`:456`) charges "per type, in `type_keys`
-/// order, and only then by target" (`model-complete.md:160` puts the
-/// owning type first in the effective member key), so conflict-check
-/// callers pass `type_key: Some(&the contested group's own type_key)` and
-/// `key` as the contested target's own key — `Option`, not a placeholder
-/// value, because `None` always sorts before `Some(_)`, matching
-/// `REDEFINITION_CHECK_STAGE` (`0`) always sorting before
-/// `CONFLICT_CHECK_STAGE` (`1`) regardless of any particular type's own
-/// identity. A candidate that does not rank earlier changes nothing:
-/// `:481`'s "checking is exhaustive within a stage" only requires every
-/// phase-4 charge to still run, not that the recorded refusal track the
-/// order this pass's own walk happens to visit types and target groups in.
+/// Appends `(rank, refusal)` to `accounting.refusals`. Every phase-4 refusal
+/// any call exposes is kept, not only whichever ranks earliest — `build`
+/// sorts the whole collection by `Phase4Rank` once every `type_key` has been
+/// processed, then reports every entry, in that charge order, as
+/// `Built::phase4_refusals` (QSL #195; see the module docs).
 fn record_phase4_refusal(
     accounting: &mut Phase4Accounting<'_>,
-    stage: u8,
-    type_key: Option<&DeclarationKey>,
-    key: &DeclarationKey,
+    rank: Phase4Rank,
     refusal: ModelRefusal,
 ) {
-    let rank = (stage, type_key.cloned(), key.clone());
-    let replace = match accounting.refusal_rank.as_ref() {
-        None => true,
-        Some(current) => rank < *current,
-    };
-    if replace {
-        *accounting.refusal_rank = Some(rank);
-        *accounting.refusal = Some(refusal);
-    }
+    accounting.refusals.push((rank, refusal));
 }
 
 /// Phase 4 (TC-195 N06): field redefinition only — operation-member
@@ -1490,6 +1739,17 @@ fn apply_redefinitions(
     hidden: &mut HashSet<(DeclarationKey, DeclarationKey)>,
     accounting: &mut Phase4Accounting<'_>,
 ) {
+    // QSL #195: every `normalize.conflict-check` charge and refusal this
+    // call exposes is tagged by `type_key`'s own *effective* identity, not
+    // its producer `DeclarationKey` — `build` populates `type_effective_ids`
+    // for every type before any `apply_redefinitions` call (see the module
+    // docs).
+    let owner_effective_id = accounting
+        .type_effective_ids
+        .get(type_key)
+        .cloned()
+        .expect("build populates type_effective_ids for every type before phase 4 runs");
+
     let mut owner_paths: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
     owner_paths.insert(type_key.clone(), Vec::new());
     for ancestor in paths {
@@ -1568,12 +1828,11 @@ fn apply_redefinitions(
     // targets interleaved by that one key, never field targets as a block
     // followed by operation targets as a block. Each loop below still
     // resolves (and, for fields, hides/derives) its own kind in its own
-    // pass, but neither pushes its charge amount straight to
-    // `accounting.conflict_check_work`; both collect `(target key, amount)`
-    // here, and charges from both loops are sorted by effective member key
-    // before being pushed, once, after both loops
-    // (`value-accounting.md:456`).
-    let mut conflict_charges: Vec<(DeclarationKey, u64)> = Vec::new();
+    // pass, but neither sorts its own charge amount locally (QSL #195):
+    // both push straight to `accounting.conflict_charges`, tagged with this
+    // call's own `owner_effective_id`, and `build` sorts the whole
+    // build-wide collection by effective member key once, after every
+    // `type_key`'s own call has returned.
 
     'targets: for target_key in target_keys {
         let mut edges = groups.remove(&target_key).expect("just listed");
@@ -1622,7 +1881,8 @@ fn apply_redefinitions(
                         .unwrap_or(0)
                 })
                 .sum();
-            conflict_charges.push((
+            accounting.conflict_charges.push((
+                owner_effective_id.clone(),
                 target_key.clone(),
                 fact_total.saturating_mul(c.saturating_sub(1)),
             ));
@@ -1685,14 +1945,12 @@ fn apply_redefinitions(
                 //
                 // `normalize.conflict-check` exposes this ambiguity
                 // (`value-accounting.md:456`), so `record_phase4_refusal`
-                // below ranks it by `CONFLICT_CHECK_STAGE` and this group's
-                // own `(type_key, target_key)` — `:456`'s "per type, in
-                // `type_keys` order, and only then by target"
-                // (`model-complete.md:160` puts the owning type first in the
-                // effective member key) — rather than keeping whichever
-                // ambiguity this pass's own per-`type_key` walk happens to
-                // reach first (see the module docs and
-                // `record_phase4_refusal`'s own doc).
+                // below ranks it `Phase4Rank::ConflictCheck(owner_effective_id,
+                // target_key)` — `:456`'s "ascending by effective member
+                // key" (`model-complete.md:206`: owner effective type
+                // identity, then original declaration key) — rather than
+                // this group's own producer-key `type_key` (QSL #195; see
+                // the module docs and `record_phase4_refusal`'s own doc).
                 let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
                 for edge in &edges {
                     let mut dominated_by_another = false;
@@ -1763,9 +2021,7 @@ fn apply_redefinitions(
                 };
                 record_phase4_refusal(
                     accounting,
-                    CONFLICT_CHECK_STAGE,
-                    Some(type_key),
-                    &target_key,
+                    Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone()),
                     candidate,
                 );
             }
@@ -1776,16 +2032,16 @@ fn apply_redefinitions(
         if !member_preimages.contains_key(&member_key) {
             // `normalize.redefinition-check` exposes this refusal
             // (`value-accounting.md:455`), so `record_phase4_refusal` below
-            // ranks it by `REDEFINITION_CHECK_STAGE` and the least of this
-            // group's own redefining members' own keys — `:455`'s own
-            // "ascending by the member's own key" order (there is no
-            // separate redefinition-record key under QSpec's inline shape);
-            // every edge in this group shares the same unreachable target,
-            // so whichever of them sorts first is the one that order would
-            // check first. Held in `accounting.refusal` rather than
-            // returned here (see the module docs), so every remaining type
-            // and target group is still resolved and every later phase-4
-            // charge amount is still computed correctly.
+            // ranks it by the least of this group's own redefining members'
+            // own keys — `:455`'s own "ascending by the member's own key"
+            // order (there is no separate redefinition-record key under
+            // QSpec's inline shape); every edge in this group shares the
+            // same unreachable target, so whichever of them sorts first is
+            // the one that order would check first. Collected into
+            // `accounting.refusals` rather than returned here (see the
+            // module docs), so every remaining type and target group is
+            // still resolved and every later phase-4 charge amount is still
+            // computed correctly.
             //
             // This exact member can also be reached, and fail the identical
             // check for the identical reason, at more than one `type_key`
@@ -1794,24 +2050,27 @@ fn apply_redefinitions(
             // identically) -- naming `least_edge.owner` rather than
             // `type_key` keeps the reported refusal the same regardless of
             // which of those tied candidates this pass happens to keep.
+            //
+            // QSL #184: the spec's own name for this refusal is
+            // `invalid_model_binding`/`redefinition-target` ("target is not
+            // a member inherited by its owning type"), not
+            // `dangling_reference`/`RedefinitionUnreachable` -- the target
+            // key does resolve to a real declaration somewhere in the
+            // domain package (it is simply not one of `least_edge.owner`'s
+            // own effective members), so it is not a dangling reference.
             let least_edge = edges
                 .iter()
                 .min_by(|a, b| a.redefining.cmp(&b.redefining))
                 .expect("a target group always has at least one edge");
             record_phase4_refusal(
                 accounting,
-                REDEFINITION_CHECK_STAGE,
-                None,
-                &least_edge.redefining,
+                Phase4Rank::RedefinitionCheck(least_edge.redefining.clone()),
                 ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: target_key.clone(),
-                        owner: least_edge.owner.clone(),
-                    },
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::RedefinitionTarget,
                     detail: format!(
-                        "redefinition target {} is not an effective member of {}",
-                        target_key.node, least_edge.owner.node
+                        "{} redefines {}, which is not a member {} inherits",
+                        least_edge.redefining.node, target_key.node, least_edge.owner.node
                     ),
                 },
             );
@@ -1906,15 +2165,11 @@ fn apply_redefinitions(
                     .unwrap_or(0)
             })
             .sum();
-        conflict_charges.push((
+        accounting.conflict_charges.push((
+            owner_effective_id.clone(),
             target_key.clone(),
             fact_total.saturating_mul(c.saturating_sub(1)),
         ));
-    }
-
-    conflict_charges.sort_by(|a, b| a.0.cmp(&b.0));
-    for (_, amount) in conflict_charges {
-        accounting.conflict_check_work.push(amount);
     }
 }
 
@@ -1947,14 +2202,14 @@ fn sort_facts(facts: &mut [PendingFact]) {
 
 /// Pass two: replay the exact `ModelNormalizationLimitsV1` charge sequence
 /// over an already-built [`Built`] result.
-/// `charge_all`'s own denial: an ordinary metered [`Incomplete`], or
-/// `built`'s own [`Built::phase4_refusal`] reported once every phase-4
-/// charge (through the last `normalize.conflict-check`) is admitted (see the
-/// module docs). `From<Incomplete>` lets `meter.charge(...)?` keep working
-/// unchanged throughout `charge_all`.
+/// `charge_all`'s own denial: an ordinary metered [`Incomplete`], or one of
+/// `built`'s own refusal-vec fields (`intake_refusals`, `phase3_refusals`,
+/// `phase4_refusals`), each reported only once every charge its own stage
+/// admits (see the module docs). `From<Incomplete>` lets
+/// `meter.charge(...)?` keep working unchanged throughout `charge_all`.
 enum ChargeAllDenial {
     Incomplete(Incomplete),
-    Refused(ModelRefusal),
+    Refused(Vec<ModelRefusal>),
 }
 
 impl From<Incomplete> for ChargeAllDenial {
@@ -1986,6 +2241,12 @@ fn charge_all(
         )?;
     }
 
+    // QSL #199: every `normalize.record` charge above is admitted before
+    // this is ever consulted -- `Built::intake_refusals`'s own doc.
+    if !built.intake_refusals.is_empty() {
+        return Err(ChargeAllDenial::Refused(built.intake_refusals.clone()));
+    }
+
     let mut fact_count: u64 = 0;
     let mut phase2_owned: Vec<PendingFact> = built.phase2_facts.clone();
     sort_facts(&mut phase2_owned);
@@ -2004,10 +2265,28 @@ fn charge_all(
                 Charge::new(ChargePoint::NormalizeCycleCheck).work(length_amount(path_len)),
             )?;
         }
+        // QSL #193: a closing extension is charged its own
+        // `normalize.cycle-check` above but derives no fact
+        // (`value-accounting.md:491`; `PendingFact::closes_cycle`'s own
+        // doc), so it is skipped here rather than also charged
+        // `normalize.fact` and counted toward `derivation_facts`.
+        if fact.closes_cycle {
+            continue;
+        }
         fact_count += 1;
         meter.charge(
             Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
         )?;
+    }
+
+    // QSL #193: every phase 2/3 charge above (`normalize.record`,
+    // `normalize.fact`, `normalize.cycle-check`) is admitted before this is
+    // ever consulted -- `Built::phase3_refusals`' own doc.
+    // `value-accounting.md:509`: "a stage that reports a refusal ends
+    // checking: no later stage runs or charges" -- phase 4's own charges
+    // below never run once this is reported.
+    if !built.phase3_refusals.is_empty() {
+        return Err(ChargeAllDenial::Refused(built.phase3_refusals.clone()));
     }
 
     for work in &built.redefinition_check_work {
@@ -2038,13 +2317,13 @@ fn charge_all(
     // `value-accounting.md:481`'s "checking is exhaustive within a stage":
     // every phase-4 charge above (`normalize.redefinition-check`, every
     // phase-4 `normalize.fact`, every `normalize.conflict-check`) is
-    // admitted before `built.phase4_refusal` (see the module docs) is
+    // admitted before `built.phase4_refusals` (see the module docs) is
     // reported -- an earlier `Incomplete` already returned via `?` above
     // wins instead. `:482`'s "a stage that reports a refusal ends checking:
     // no later stage runs or charges" -- phase 5's own charges below never
-    // run once this refusal is reported.
-    if let Some(refusal) = &built.phase4_refusal {
-        return Err(ChargeAllDenial::Refused(refusal.clone()));
+    // run once these refusals are reported.
+    if !built.phase4_refusals.is_empty() {
+        return Err(ChargeAllDenial::Refused(built.phase4_refusals.clone()));
     }
 
     let mut decl_count: u64 = 0;
@@ -2101,7 +2380,9 @@ pub fn normalize_with_meter(
     let mut meter = Meter::new(limits);
     let built = match build(domain_package, &limits) {
         Ok(built) => built,
-        Err(refusal) => return (NormalizeOutcome::Refused(refusal), meter),
+        // `validate_selection`'s own immediate refusal (see its own doc):
+        // decided before any charge at all, so it is always the sole entry.
+        Err(refusal) => return (NormalizeOutcome::Refused(vec![refusal]), meter),
     };
     let outcome = match charge_all(domain_package, &built, &mut meter) {
         Ok(()) => NormalizeOutcome::Completed(built.view),
@@ -2114,12 +2395,21 @@ pub fn normalize_with_meter(
 /// The object universe `domain_package` normalizes to, independent of `charge_all`'s
 /// bookkeeping (test and caller convenience; recomputes via [`build`], under
 /// [`ModelNormalizationLimits::UNLIMITED`]). Under `UNLIMITED` nothing ever
-/// runs out, so `build`'s own deferred `Built::phase4_refusal` (see the
-/// module docs) is surfaced here directly rather than replayed through
-/// `charge_all`.
+/// runs out, so `build`'s own deferred refusal-vec fields (`intake_refusals`,
+/// `phase3_refusals`, `phase4_refusals` — see the module docs) are surfaced
+/// here directly rather than replayed through `charge_all`, checked in that
+/// same stage order; this convenience wrapper returns only the first refusal
+/// of whichever stage exposes one, not the full charge-ordered bundle
+/// [`NormalizeOutcome::Refused`] carries.
 pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, ModelRefusal> {
     let built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)?;
-    if let Some(refusal) = built.phase4_refusal {
+    if let Some(refusal) = built.intake_refusals.into_iter().next() {
+        return Err(refusal);
+    }
+    if let Some(refusal) = built.phase3_refusals.into_iter().next() {
+        return Err(refusal);
+    }
+    if let Some(refusal) = built.phase4_refusals.into_iter().next() {
         return Err(refusal);
     }
     Ok(built.universe)

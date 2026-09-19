@@ -698,6 +698,12 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(refusal.code, Code::InvalidModelBinding);
             assert_eq!(
                 refusal.cause,

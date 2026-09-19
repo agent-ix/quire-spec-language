@@ -769,6 +769,12 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
@@ -802,6 +808,12 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
         .push(object_type("model.orphan", vec!["model.no-such-type"]));
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
@@ -838,6 +850,12 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
     ));
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal,
                 ModelRefusal {
@@ -877,7 +895,7 @@ fn a_field_members_subsets_naming_an_undeclared_member_refuses_instead_of_droppi
             ),
         ],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
+    let expected = NormalizeOutcome::Refused(vec![ModelRefusal {
         code: quire_spec_language::diagnostic::Code::DanglingReference,
         cause: ModelRefusalCause::UnknownMember {
             record: DeclarationKey::fixture("model.A.y"),
@@ -886,7 +904,7 @@ fn a_field_members_subsets_naming_an_undeclared_member_refuses_instead_of_droppi
         detail: "field member model.A.y subsets model.A.no-such-member, \
                  which is not a declared field or operation member"
             .to_owned(),
-    });
+    }]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
@@ -909,7 +927,7 @@ fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of
             operation_member_redefining("model.A.op", "model.A", Some("model.A.no-such-member")),
         ],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
+    let expected = NormalizeOutcome::Refused(vec![ModelRefusal {
         code: quire_spec_language::diagnostic::Code::DanglingReference,
         cause: ModelRefusalCause::UnknownMember {
             record: DeclarationKey::fixture("model.A.op"),
@@ -918,7 +936,7 @@ fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of
         detail: "operation member model.A.op redefines model.A.no-such-member, \
                  which is not a declared field or operation member"
             .to_owned(),
-    });
+    }]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
@@ -937,6 +955,12 @@ fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of
 fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
     match normalize(&fixture_n06_conflict(), ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
@@ -1026,6 +1050,12 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
     ) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
@@ -1067,6 +1097,12 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
         ModelNormalizationLimits::UNLIMITED,
     ) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
@@ -1230,6 +1266,12 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::DanglingReference
             );
@@ -1266,6 +1308,12 @@ fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
@@ -1301,6 +1349,12 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
@@ -1320,13 +1374,12 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
 
 /// FR-154: "Intake reports every declaration refusal in node order, and
 /// then no later phase runs. Within one node, every check of the table that
-/// fails reports, in table order." A record's own dangling-reference check
-/// (row 4, `missing-name` in FR-154's own vocabulary -- `UnknownOwner` here)
-/// is reported for an *earlier* node even though a *later* node's
-/// duplicate-key check (row 6, `conflicting-binding`) would otherwise also
-/// fail -- node order dominates table/row order, and `validate_references`
-/// never runs a standalone collision pre-pass over every record before
-/// checking any one node's own dangling references.
+/// fails reports, in table order." Both an *earlier* node's own
+/// dangling-reference check (row 4, `missing-name` in FR-154's own
+/// vocabulary -- `UnknownOwner` here) and a *later* node's own duplicate-key
+/// check (row 6, `conflicting-binding`) are reported -- FR-154 reports every
+/// refusal intake exposes, in node order, never only the earliest -- with
+/// the earlier node's own refusal first.
 #[trace("TC-195", "FR-154")]
 #[test]
 fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_conflicting_binding() {
@@ -1338,16 +1391,25 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
             object_type("model.B", vec![]),
         ],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::DanglingReference,
-        cause: ModelRefusalCause::UnknownOwner {
-            member: DeclarationKey::fixture("model.A.y"),
-            owner: DeclarationKey::fixture("model.no-such-owner"),
+    let expected = NormalizeOutcome::Refused(vec![
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            cause: ModelRefusalCause::UnknownOwner {
+                member: DeclarationKey::fixture("model.A.y"),
+                owner: DeclarationKey::fixture("model.no-such-owner"),
+            },
+            detail: "field member model.A.y names owner model.no-such-owner, \
+                     which is not a declared object type"
+                .to_owned(),
         },
-        detail: "field member model.A.y names owner model.no-such-owner, \
-                 which is not a declared object type"
-            .to_owned(),
-    });
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::ConflictingBinding {
+                key: DeclarationKey::fixture("model.B"),
+            },
+            detail: "model.B is declared by more than one record in this domain package".to_owned(),
+        },
+    ]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
@@ -1370,16 +1432,25 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
             field_member("model.A.y", "model.no-such-owner", "model.A.y"),
         ],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::DanglingReference,
-        cause: ModelRefusalCause::UnknownOwner {
-            member: DeclarationKey::fixture("model.A.y"),
-            owner: DeclarationKey::fixture("model.no-such-owner"),
+    let expected = NormalizeOutcome::Refused(vec![
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            cause: ModelRefusalCause::UnknownOwner {
+                member: DeclarationKey::fixture("model.A.y"),
+                owner: DeclarationKey::fixture("model.no-such-owner"),
+            },
+            detail: "field member model.A.y names owner model.no-such-owner, \
+                     which is not a declared object type"
+                .to_owned(),
         },
-        detail: "field member model.A.y names owner model.no-such-owner, \
-                 which is not a declared object type"
-            .to_owned(),
-    });
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::ConflictingBinding {
+                key: DeclarationKey::fixture("model.B"),
+            },
+            detail: "model.B is declared by more than one record in this domain package".to_owned(),
+        },
+    ]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
@@ -1388,19 +1459,32 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
 
 /// A conflicting key that sorts *before* a dangling reference elsewhere:
 /// two `model.A` records plus a dangling owner at `model.Z.y`. `"model.A" <
-/// "model.Z.y"` as UTF-8 bytes, so node `A`'s own duplicate-key check must
-/// win in every input order, unlike the two tests above where the dangling
-/// node happens to sort first.
+/// "model.Z.y"` as UTF-8 bytes, so node `A`'s own duplicate-key check
+/// reports first in every input order, unlike the two tests above where the
+/// dangling node happens to sort first; `Z.y`'s own dangling-owner refusal
+/// is still reported after it (FR-154: every refusal, in node order).
 #[trace("TC-195", "FR-154")]
 #[test]
 fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_nodes_dangling_owner() {
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-        cause: ModelRefusalCause::ConflictingBinding {
-            key: DeclarationKey::fixture("model.A"),
+    let expected = NormalizeOutcome::Refused(vec![
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::ConflictingBinding {
+                key: DeclarationKey::fixture("model.A"),
+            },
+            detail: "model.A is declared by more than one record in this domain package".to_owned(),
         },
-        detail: "model.A is declared by more than one record in this domain package".to_owned(),
-    });
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            cause: ModelRefusalCause::UnknownOwner {
+                member: DeclarationKey::fixture("model.Z.y"),
+                owner: DeclarationKey::fixture("model.no-such-owner"),
+            },
+            detail: "field member model.Z.y names owner model.no-such-owner, \
+                     which is not a declared object type"
+                .to_owned(),
+        },
+    ]);
 
     let dangling_first = DomainPackage::new(
         DomainPackageRef::fixture("bundle.f2-conflict-sorts-first-a"),
@@ -1448,6 +1532,12 @@ fn n04_empty_declaration_key_component_refuses_malformed_declaration() {
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
@@ -1468,6 +1558,12 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
     let domain_package = DomainPackage::new(model_selection, vec![object_type("model.A", vec![])]);
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
@@ -1490,13 +1586,13 @@ fn n04_empty_model_selection_version_refuses_malformed_declaration() {
         model_selection.clone(),
         vec![object_type("model.A", vec![])],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
+    let expected = NormalizeOutcome::Refused(vec![ModelRefusal {
         code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
         cause: ModelRefusalCause::MalformedDeclaration,
         detail: format!(
             "domain package selection has an empty identity or version: {model_selection:?}"
         ),
-    });
+    }]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
@@ -1519,11 +1615,11 @@ fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
             supertypes: Vec::new(),
         })],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
+    let expected = NormalizeOutcome::Refused(vec![ModelRefusal {
         code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
         cause: ModelRefusalCause::MalformedDeclaration,
         detail: format!("declaration key has an empty package or node: {key:?}"),
-    });
+    }]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
@@ -1535,10 +1631,11 @@ fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
 /// that same node. This pins the axis across two different nodes: an
 /// earlier-sorting node (`test/orders`/`A.y`) has a genuine dangling owner,
 /// a later-sorting node (`zzz.package`/empty `node`) is itself malformed.
-/// The earlier node's own dangling-owner refusal must win, since
-/// `validate_references` now reads nodes ascending by declaration key
-/// (H1, `model-complete.md`:73) and only then applies each node's own
-/// malformed-first-then-dangling row order.
+/// The earlier node's own dangling-owner refusal is reported first, since
+/// `validate_references` reads nodes ascending by declaration key (H1,
+/// `model-complete.md`:73); the later node's own malformed-declaration
+/// refusal is still reported after it (FR-154: every refusal, in node
+/// order).
 #[trace("TC-195", "FR-150-AC-3", "FR-154")]
 #[test]
 fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
@@ -1551,26 +1648,113 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
         vec![
             field_member("model.A.y", "model.no-such-owner", "model.A.y"),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                key: malformed_key,
+                key: malformed_key.clone(),
                 interface_features: None,
                 supertypes: Vec::new(),
             }),
         ],
     );
-    let expected = NormalizeOutcome::Refused(ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::DanglingReference,
-        cause: ModelRefusalCause::UnknownOwner {
-            member: DeclarationKey::fixture("model.A.y"),
-            owner: DeclarationKey::fixture("model.no-such-owner"),
+    let expected = NormalizeOutcome::Refused(vec![
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            cause: ModelRefusalCause::UnknownOwner {
+                member: DeclarationKey::fixture("model.A.y"),
+                owner: DeclarationKey::fixture("model.no-such-owner"),
+            },
+            detail: "field member model.A.y names owner model.no-such-owner, \
+                     which is not a declared object type"
+                .to_owned(),
         },
-        detail: "field member model.A.y names owner model.no-such-owner, \
-                 which is not a declared object type"
-            .to_owned(),
-    });
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::MalformedDeclaration,
+            detail: format!("declaration key has an empty package or node: {malformed_key:?}"),
+        },
+    ]);
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         expected
     );
+}
+
+/// TC-195 N08 (`spec/test-cases/TC-195-model-normalization-provenance.md`:62):
+/// "after three `normalize.record` charges, two refusals in node order and
+/// no effective view." This crate's `FieldMemberRecord` has no `presence`
+/// property to reproduce N08's own first refusal byte-for-byte, so this
+/// pins the same shape over two nodes this crate's own checks refuse
+/// instead: every `normalize.record` charge admits before intake's own
+/// refusals are ever reported (`Built::intake_refusals`'s own doc), and
+/// every node's own refusal is collected, in node order -- `model.A.y`'s
+/// dangling owner (`UnknownOwner`) and `model.B`'s dangling generalization
+/// (`UnknownGeneral`). `"model.A.y" < "model.B"` as UTF-8 bytes
+/// (`model-complete.md`:73), so `A.y`'s own refusal is collected first.
+/// `work_units = 1` pins the exact boundary: only the first of the two
+/// `normalize.record` charges (`value-accounting.md`:489) admits, so intake
+/// is never consulted and neither refusal is ever reported; `work_units =
+/// 2` admits both charges and reports both refusals.
+#[trace("TC-195", "FR-150-AC-3", "FR-154")]
+#[test]
+fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_in_node_order() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n08-two-intake-refusals"),
+        vec![
+            field_member("model.A.y", "model.no-such-owner", "model.A.y"),
+            object_type("model.B", vec!["model.no-such-type"]),
+        ],
+    );
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 1;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 1,
+                    consumed: 1,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeRecord,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at the second normalize.record charge, got {other:?}"),
+    }
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 2;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                vec![
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownOwner {
+                            member: DeclarationKey::fixture("model.A.y"),
+                            owner: DeclarationKey::fixture("model.no-such-owner"),
+                        },
+                        detail: "field member model.A.y names owner model.no-such-owner, \
+                                 which is not a declared object type"
+                            .to_owned(),
+                    },
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: DeclarationKey::fixture("model.B"),
+                            general: DeclarationKey::fixture("model.no-such-type"),
+                        },
+                        detail: "object type model.B names supertype model.no-such-type, \
+                                 which is not a declared object type"
+                            .to_owned(),
+                    },
+                ]
+            );
+        }
+        other => {
+            panic!("expected Refused([UnknownOwner for A.y, UnknownGeneral for B]), got {other:?}")
+        }
+    }
 }
 
 /// A root type plus seven levels of two distinct types apiece (15 records
@@ -1900,6 +2084,12 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
@@ -1943,6 +2133,12 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
@@ -2776,6 +2972,250 @@ fn fixture_n06_conflict_with_unrelated_cycle() -> DomainPackage {
     DomainPackage::new(DomainPackageRef::fixture("bundle.n06-cycle"), records)
 }
 
+/// A minimal diamond conflict (`R`, `D1 <- R`, `D2 <- R`, `O9 <- D1, D2`,
+/// both `D1.w1`/`D2.w2` redefining `R.w`) with every own identity built
+/// from `prefix`, so two calls with different prefixes produce two
+/// structurally identical, independently conflicting families.
+fn fixture_diamond_conflict_family(prefix: &str) -> Vec<DomainPackageRecord> {
+    let root = format!("ix://{prefix}/R");
+    let d1 = format!("ix://{prefix}/D1");
+    let d2 = format!("ix://{prefix}/D2");
+    let owner = format!("ix://{prefix}/O9");
+    let field = format!("ix://{prefix}/R/w");
+    let f1 = format!("ix://{prefix}/D1/w1");
+    let f2 = format!("ix://{prefix}/D2/w2");
+    vec![
+        object_type(&root, vec![]),
+        object_type(&d1, vec![&root]),
+        object_type(&d2, vec![&root]),
+        object_type(&owner, vec![&d1, &d2]),
+        field_member(&field, &root, &root),
+        field_member_redefining(&f1, &d1, &root, Some(&field), vec![]),
+        field_member_redefining(&f2, &d2, &root, Some(&field), vec![]),
+    ]
+}
+
+/// Two independent `fixture_diamond_conflict_family` instances, prefixed
+/// `aaa` and `zzz`: `"ix://aaa/O9" < "ix://zzz/O9"` as UTF-8 bytes, so
+/// `aaa`'s own conflict sorts first by producer `DeclarationKey` -- QSL
+/// #195's own pre-fix, buggy order. `aaa`'s and `zzz`'s own effective
+/// identities (content hashes of their own canonicalized preimage bytes,
+/// `model-complete.md`:206) do not follow that same byte order: empirically
+/// (confirmed by hand, independent of which family's records are appended
+/// first in `records`, ruling out array-position as the cause) `zzz`'s own
+/// effective identity sorts *before* `aaa`'s, opposite producer-key order,
+/// so this fixture pins the two orders apart.
+fn fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key() -> DomainPackage {
+    let mut records = fixture_diamond_conflict_family("aaa");
+    records.extend(fixture_diamond_conflict_family("zzz"));
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n06-effective-order"),
+        records,
+    )
+}
+
+/// QSL #195: `normalize.conflict-check` charges ascending by *effective*
+/// member key (`value-accounting.md:456`; `model-complete.md`:206's
+/// `(owner effective type identity, original declaration key)`), not by
+/// the owning type's producer `DeclarationKey` -- `apply_redefinitions`
+/// used to sort `type_keys` and tag every conflict-check charge and
+/// refusal by `type_key` itself. `fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key`
+/// pins the fix directly: `zzz`'s own `derivation-conflict` is reported
+/// first, ahead of `aaa`'s, even though `"ix://aaa/O9" <
+/// "ix://zzz/O9"` as producer keys -- the pre-fix code would have reported
+/// `aaa` first.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
+    let domain_package =
+        fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key();
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                vec![
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://zzz/O9"),
+                            member: DeclarationKey::fixture("ix://zzz/R/w"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("ix://zzz/D1/w1"),
+                                DeclarationKey::fixture("ix://zzz/D2/w2"),
+                            ],
+                        },
+                        detail: "type ix://zzz/O9 has 2 undominated redefinitions of ix://zzz/R/w: \
+                                  [ix://zzz/D1, ix://zzz/D1/w1, ix://zzz/R/w] and \
+                                  [ix://zzz/D2, ix://zzz/D2/w2, ix://zzz/R/w]"
+                            .to_string(),
+                    },
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://aaa/O9"),
+                            member: DeclarationKey::fixture("ix://aaa/R/w"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("ix://aaa/D1/w1"),
+                                DeclarationKey::fixture("ix://aaa/D2/w2"),
+                            ],
+                        },
+                        detail: "type ix://aaa/O9 has 2 undominated redefinitions of ix://aaa/R/w: \
+                                  [ix://aaa/D1, ix://aaa/D1/w1, ix://aaa/R/w] and \
+                                  [ix://aaa/D2, ix://aaa/D2/w2, ix://aaa/R/w]"
+                            .to_string(),
+                    },
+                ]
+            );
+        }
+        other => panic!(
+            "expected Refused([derivation-conflict for zzz, derivation-conflict for aaa]), got {other:?}"
+        ),
+    }
+}
+
+/// Two unrelated owner types, each with exactly one direct field member:
+/// `ix://aaa/Owner` (field `x`, a short JCS preimage) and `ix://zzz/Owner`
+/// (field `yyyyyyyyyyyyyyyyyyyy`, a longer one). `"ix://aaa/Owner" <
+/// "ix://zzz/Owner"` as producer `DeclarationKey`s, so QSL #195's own
+/// pre-fix, buggy order would hash `aaa`'s member before `zzz`'s. `aaa`'s
+/// and `zzz`'s own effective identities do not follow that byte order
+/// (confirmed by hand, the same inversion as
+/// `fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key`,
+/// and independent of which family's records are appended first in
+/// `records`): `zzz`'s own effective identity sorts before `aaa`'s.
+fn fixture_two_owners_where_effective_identity_disagrees_with_producer_key() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n08-declaration-order"),
+        vec![
+            object_type("ix://aaa/Owner", vec![]),
+            field_member("ix://aaa/Owner/x", "ix://aaa/Owner", "ix://aaa/Owner"),
+            object_type("ix://zzz/Owner", vec![]),
+            field_member(
+                "ix://zzz/Owner/yyyyyyyyyyyyyyyyyyyy",
+                "ix://zzz/Owner",
+                "ix://zzz/Owner",
+            ),
+        ],
+    )
+}
+
+/// QSL #195: `normalize.declaration` (and the `normalize.hash` charge that
+/// backs it) charges effective members ascending by effective member key
+/// (`value-accounting.md:494`; `model-complete.md`:206's `(owner effective
+/// type identity, original declaration key)`), not by the owning type's
+/// producer `DeclarationKey` -- `build()` used to sort `member_keys` by the
+/// owner's own producer key. Both owner types' own declarations are hashed
+/// first (`367` bytes each, identical shape, so their own order does not
+/// distinguish the fix); both together consume `734`. The exact boundary is
+/// pinned by hand: at `hashed_bytes = 1263` the next charge is still
+/// `zzz`'s `530`-byte member (not yet admitted); at `hashed_bytes = 1264`
+/// (`734 + 530`) that charge has been admitted and the next charge is
+/// `aaa`'s own, smaller, `492`-byte member -- proving `zzz`'s own member
+/// was hashed *before* `aaa`'s, even though
+/// `"ix://aaa/Owner" < "ix://zzz/Owner"` as producer keys. The pre-fix code
+/// would have hashed `aaa`'s smaller member first, reporting `next_charge:
+/// 530` (still `zzz`'s, now the *last* one) at `hashed_bytes = 1264`
+/// instead.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n08_declaration_charges_order_by_effective_identity_not_producer_key() {
+    let domain_package = fixture_two_owners_where_effective_identity_disagrees_with_producer_key();
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.hashed_bytes = 1263;
+    assert_eq!(
+        normalize(&domain_package, limits),
+        NormalizeOutcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::HashedBytes,
+            limit: 1263,
+            consumed: 734,
+            next_charge: 530,
+            charge_point: ChargePoint::NormalizeHash,
+        }),
+        "zzz's own member (530 bytes) must still be the next charge one byte short of admitting it"
+    );
+    limits.hashed_bytes = 1264;
+    assert_eq!(
+        normalize(&domain_package, limits),
+        NormalizeOutcome::Incomplete(Incomplete {
+            limit_kind: LimitKind::HashedBytes,
+            limit: 1264,
+            consumed: 1264,
+            next_charge: 492,
+            charge_point: ChargePoint::NormalizeHash,
+        }),
+        "zzz's own member (530 bytes) must be admitted first, leaving aaa's own \
+         smaller member (492 bytes) as the next charge"
+    );
+}
+
+#[trace("TC-195", "TC-196", "FR-150-AC-3", "FR-150-AC-8", "FR-151-AC-2")]
+#[test]
+fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
+    let domain_package = fixture_n06_conflict_with_unrelated_cycle();
+
+    for work_units in 18u64..=45 {
+        let mut limits = ModelNormalizationLimits::UNLIMITED;
+        limits.work_units = work_units;
+        match normalize(&domain_package, limits) {
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+                assert_eq!(incomplete.limit, work_units);
+                assert!(
+                    matches!(
+                        incomplete.charge_point,
+                        ChargePoint::NormalizeRecord
+                            | ChargePoint::NormalizeFact
+                            | ChargePoint::NormalizeCycleCheck
+                    ),
+                    "work_units={work_units} stopped at {:?}, a phase-4 charge point -- \
+                     phase 3 must exhaust its own charges before phase 4 ever starts",
+                    incomplete.charge_point
+                );
+            }
+            other => panic!("expected Incomplete at work_units={work_units}, got {other:?}"),
+        }
+    }
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 45;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 45,
+                    consumed: 45,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at work_units=45, got {other:?}"),
+    }
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 46;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                vec![ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::SpecializationCycle {
+                        ancestor: DeclarationKey::fixture("model.Y"),
+                        via: DeclarationKey::fixture("model.Z"),
+                    },
+                    detail: "model.Y generalizes back to itself via model.Z, \
+                              through the cycle [model.Y, model.Z]"
+                        .to_string(),
+                }]
+            );
+        }
+        other => panic!("expected Refused([SpecializationCycle]) at work_units=46, got {other:?}"),
+    }
+}
+
 #[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
 #[test]
 fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
@@ -2784,6 +3224,12 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
         ModelNormalizationLimits::UNLIMITED,
     ) {
         NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
@@ -2941,6 +3387,12 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal,
                 ModelRefusal {
                     code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
@@ -2963,11 +3415,11 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
     }
 }
 
-/// The deferred-refusal treatment covers `RedefinitionUnreachable` -- a
-/// redefinition record whose own target, or whose redefining member, is
-/// not an effective member of its owner -- exactly like the dominance
-/// refusals in `n06_conflict_refusal_waits_for_every_phase4_charge_to_admit`
-/// above: `apply_redefinitions` holds it in `accounting.refusal` and moves
+/// The deferred-refusal treatment covers `RedefinitionTarget` -- a
+/// redefinition record whose own target is not an effective member of its
+/// owner -- exactly like the dominance refusals in
+/// `n06_conflict_refusal_waits_for_every_phase4_charge_to_admit` above:
+/// `apply_redefinitions` collects it into `accounting.refusals` and moves
 /// on to the next target group, rather than returning it directly out of
 /// `build()`. `fixture_n06_conflict_with_unreachable_redefiner` adds type
 /// `E` (no generalization) with `redef.E` (`E`, `E.y` redefines `A.x`):
@@ -2975,8 +3427,8 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
 /// `E`, so this redefinition's own target is unreachable, alongside `D`'s
 /// own dominance conflict over the same `A.x` (from `fixture_n06_conflict`).
 ///
-/// `E`'s own `RedefinitionUnreachable` wins over `D`'s `derivation-conflict`
-/// under `UNLIMITED`: `record_phase4_refusal` ranks a
+/// `E`'s own `RedefinitionTarget` refusal wins over `D`'s
+/// `derivation-conflict` under `UNLIMITED`: `record_phase4_refusal` ranks a
 /// `normalize.redefinition-check`-stage refusal (`value-accounting.md:455`)
 /// ahead of a `normalize.conflict-check`-stage refusal (`:456`), since every
 /// redefinition-check charge precedes every phase-4 fact charge, which in
@@ -2984,20 +3436,14 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
 /// its own redefinition-check charge, long before `D`'s ambiguity is even
 /// checked at its own later conflict-check charge, regardless of `D`
 /// sorting before `E` in `type_keys`' ascending identity order.
-///
-/// Revert probe: hand-reverting the two `apply_redefinitions` sites that
-/// hold this refusal back to an eager `return Err(...)` makes
-/// `work_units = 30` report `Refused(RedefinitionUnreachable)` with zero
-/// charges replayed instead of `Incomplete` -- confirmed by hand, then
-/// restored.
 #[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
 #[test]
 fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
     let domain_package = fixture_n06_conflict_with_unreachable_redefiner();
 
     // A `work_units` budget that runs out inside phase 2/3's own charges
-    // reports `Incomplete` there, never `E`'s own `RedefinitionUnreachable`
-    // refusal (which the pre-fix code would have returned immediately,
+    // reports `Incomplete` there, never `E`'s own `RedefinitionTarget`
+    // refusal (which an eager `return Err(...)` would report immediately,
     // with zero charges replayed).
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 30;
@@ -3017,26 +3463,19 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
         other => panic!("expected Incomplete at a phase 2/3 normalize.cycle-check, got {other:?}"),
     }
 
-    // Under `UNLIMITED`, every phase-4 charge is admitted, and `E`'s own
-    // `RedefinitionUnreachable` -- ranked ahead of `D`'s conflict, since it
-    // belongs to the earlier-charged redefinition-check stage -- is the
-    // refusal reported (see the doc comment above).
+    // Under `UNLIMITED`, every phase-4 charge is admitted, and QSL #195:
+    // `build` reports every phase-4 refusal in charge order, not only the
+    // earliest-charged one, so both `E`'s own `RedefinitionTarget` refusal
+    // and `D`'s own conflict are reported, `E`'s own refusal first, since
+    // it belongs to the earlier-charged redefinition-check stage (see the
+    // doc comment above).
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal,
-                ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: DeclarationKey::fixture("ix://test/orders/A/x"),
-                        owner: DeclarationKey::fixture("model.E"),
-                    },
-                    detail: "redefinition target ix://test/orders/A/x is not an effective member of model.E"
-                        .to_string(),
-                }
-            );
+            assert_eq!(refusal, unreachable_redefiner_refusals());
         }
-        other => panic!("expected Refused(RedefinitionUnreachable) for E, got {other:?}"),
+        other => panic!(
+            "expected Refused([RedefinitionTarget for E, DerivationConflict for D]), got {other:?}"
+        ),
     }
 
     // The exact `work_units` bound between the last-admitted phase-4 charge
@@ -3044,8 +3483,8 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
     // `normalize.conflict-check` charge's own price (`4`, added to `54`
     // already consumed through phase 3, redefinition-check and every
     // phase-4 fact); `58` admits it and reports the refusal -- `E`'s
-    // `RedefinitionUnreachable`, ranked ahead of `D`'s conflict (see the doc
-    // comment above).
+    // `RedefinitionTarget` refusal, ranked ahead of `D`'s conflict (see the
+    // doc comment above).
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 57;
     match normalize(&domain_package, limits) {
@@ -3070,32 +3509,56 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
     limits.work_units = 58;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal,
-                ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: DeclarationKey::fixture("ix://test/orders/A/x"),
-                        owner: DeclarationKey::fixture("model.E"),
-                    },
-                    detail: "redefinition target ix://test/orders/A/x is not an effective member of model.E"
-                        .to_string(),
-                }
-            );
+            assert_eq!(refusal, unreachable_redefiner_refusals());
         }
         other => {
-            panic!("expected Refused(RedefinitionUnreachable) at work_units=65, got {other:?}")
+            panic!("expected Refused([RedefinitionTarget for E, DerivationConflict for D]) at work_units=58, got {other:?}")
         }
     }
 }
 
+/// `E`'s own `RedefinitionTarget` refusal (redefinition-check stage) and
+/// `D`'s own `derivation-conflict` (conflict-check stage), in charge order
+/// -- the whole-outcome shape `fixture_n06_conflict_with_unreachable_redefiner`
+/// reports under `UNLIMITED` (QSL #195: every phase-4 refusal, not only the
+/// earliest-charged one).
+fn unreachable_redefiner_refusals() -> Vec<ModelRefusal> {
+    vec![
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::RedefinitionTarget,
+            detail:
+                "model.E.y redefines ix://test/orders/A/x, which is not a member model.E inherits"
+                    .to_string(),
+        },
+        ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::DerivationConflict {
+                type_: DeclarationKey::fixture("ix://test/orders/D"),
+                member: DeclarationKey::fixture("ix://test/orders/A/x"),
+                redefiners: vec![
+                    DeclarationKey::fixture("model.B.x2"),
+                    DeclarationKey::fixture("model.C.x3"),
+                ],
+            },
+            detail:
+                "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
+                      [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
+                      [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
+                    .to_string(),
+        },
+    ]
+}
+
 /// The conflict-check owner (`J`) sorts before the redefinition-check owner
-/// (`K`) in `type_keys`' ascending order, yet `K`'s own
-/// `RedefinitionUnreachable` -- a `normalize.redefinition-check`-stage
-/// refusal (`value-accounting.md:455`) -- ranks ahead of `J`'s own
-/// `derivation-conflict` -- a `normalize.conflict-check`-stage refusal
-/// (`:456`) -- and is the refusal `build` reports, exactly as
-/// `record_phase4_refusal` ranks them.
+/// (`K`) in `type_keys`' ascending order. QSL #195: `build` reports every
+/// phase-4 refusal in charge order, not only the earliest-charged one, so
+/// both `K`'s own `RedefinitionTarget` refusal -- a
+/// `normalize.redefinition-check`-stage refusal (`value-accounting.md:455`)
+/// -- and `J`'s own `derivation-conflict` -- a
+/// `normalize.conflict-check`-stage refusal (`:456`) -- are reported, with
+/// `K`'s own refusal first: every redefinition-check charge precedes every
+/// conflict-check charge, exactly as `record_phase4_refusal` ranks them.
 #[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
 #[test]
 fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refusal() {
@@ -3104,18 +3567,35 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
-                ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: DeclarationKey::fixture("model.G.g"),
-                        owner: DeclarationKey::fixture("model.K"),
+                vec![
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::RedefinitionTarget,
+                        detail:
+                            "model.K.k redefines model.G.g, which is not a member model.K inherits"
+                                .to_string(),
                     },
-                    detail: "redefinition target model.G.g is not an effective member of model.K"
-                        .to_string(),
-                }
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("model.J"),
+                            member: DeclarationKey::fixture("model.G.g"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("model.H.h2"),
+                                DeclarationKey::fixture("model.I.i3"),
+                            ],
+                        },
+                        detail: "type model.J has 2 undominated redefinitions of model.G.g: \
+                                  [model.H, model.H.h2, model.G.g] and \
+                                  [model.I, model.I.i3, model.G.g]"
+                            .to_string(),
+                    },
+                ]
             );
         }
-        other => panic!("expected Refused(RedefinitionUnreachable) for K, got {other:?}"),
+        other => panic!(
+            "expected Refused([RedefinitionTarget for K, DerivationConflict for J]), got {other:?}"
+        ),
     }
 }
 
@@ -3125,8 +3605,10 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
 /// in `type_keys` order, and only then by target within that type
 /// (`value-accounting.md:456`; `model-complete.md:160` puts the owning
 /// type first in the effective member key), and `B9` sorts before `D`, so
-/// `B9`'s own conflict-check is charged first and `record_phase4_refusal`
-/// ranks its refusal ahead of `D`'s.
+/// `B9`'s own conflict-check is charged first. QSL #195: `build` reports
+/// every phase-4 refusal in charge order, not only the earliest-charged
+/// one, so `record_phase4_refusal` reports both, `B9`'s own refusal ahead
+/// of `D`'s.
 #[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
 #[test]
 fn n06_conflict_check_refusal_ranks_by_type_before_target() {
@@ -3135,24 +3617,41 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
-                ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::DerivationConflict {
-                        type_: DeclarationKey::fixture("ix://n06/B9"),
-                        member: DeclarationKey::fixture("ix://n06/M/w"),
-                        redefiners: vec![
-                            DeclarationKey::fixture("ix://n06/M1/w1"),
-                            DeclarationKey::fixture("ix://n06/M2/w2"),
-                        ],
+                vec![
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://n06/B9"),
+                            member: DeclarationKey::fixture("ix://n06/M/w"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("ix://n06/M1/w1"),
+                                DeclarationKey::fixture("ix://n06/M2/w2"),
+                            ],
+                        },
+                        detail: "type ix://n06/B9 has 2 undominated redefinitions of ix://n06/M/w: \
+                                  [ix://n06/M1, ix://n06/M1/w1, ix://n06/M/w] and \
+                                  [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
+                            .to_string(),
                     },
-                    detail: "type ix://n06/B9 has 2 undominated redefinitions of ix://n06/M/w: \
-                              [ix://n06/M1, ix://n06/M1/w1, ix://n06/M/w] and \
-                              [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
-                        .to_string(),
-                }
+                    ModelRefusal {
+                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://test/orders/D"),
+                            member: DeclarationKey::fixture("ix://test/orders/A/x"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("model.B.x2"),
+                                DeclarationKey::fixture("model.C.x3"),
+                            ],
+                        },
+                        detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
+                                  [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
+                                  [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
+                            .to_string(),
+                    },
+                ]
             );
         }
-        other => panic!("expected Refused(derivation-conflict) for B9, got {other:?}"),
+        other => panic!("expected Refused([derivation-conflict for B9, derivation-conflict for D]), got {other:?}"),
     }
 }
 
@@ -3170,19 +3669,22 @@ fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_desce
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
+                refusal.len(),
+                1,
+                "expected exactly one refusal: {refusal:?}"
+            );
+            let refusal = refusal[0].clone();
+            assert_eq!(
                 refusal,
                 ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: DeclarationKey::fixture("model.A.x"),
-                        owner: DeclarationKey::fixture("model.E"),
-                    },
-                    detail: "redefinition target model.A.x is not an effective member of model.E"
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::RedefinitionTarget,
+                    detail: "model.E.y redefines model.A.x, which is not a member model.E inherits"
                         .to_string(),
                 }
             );
         }
-        other => panic!("expected Refused(RedefinitionUnreachable) naming E, got {other:?}"),
+        other => panic!("expected Refused(RedefinitionTarget) naming E, got {other:?}"),
     }
 }
 
