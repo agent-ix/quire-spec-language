@@ -937,8 +937,8 @@ dispositions and for the merge order.
 
 | Item | Scope | Disposition | Layer 1 link or cited fact |
 |---|---|---|---|
-| QSL PR #228@a43e951 `task/120-normalize-order` | `src/model/normalize.rs` charge and refusal order | keep | merges first |
-| QSL PR #204@6eee1f3 `task/176-173-174-dispatch` | dispatch through inherited operations, redefinition conflicts, query-only | keep | round 1 implements #176(b); merges second; changes `src/model/checked_dispatch.rs` (OBS-007 site) |
+| QSL PR #228@a43e951 `task/120-normalize-order` | `src/model/normalize.rs` charge and refusal order | keep | merges second (after #204) |
+| QSL PR #204@6eee1f3 `task/176-173-174-dispatch` | dispatch through inherited operations, redefinition conflicts, query-only | keep | round 1 implements #176(b); merged first as ba9e33b; changes `src/model/checked_dispatch.rs` (OBS-007 site) |
 | QSL PR #200@13b6687 `task/131-intake-wiring` | Semantic IR 2.0.0 domain-package intake (`model::intake`) | keep | waits on FCD PR #200; merges third; OBS-006, OBS-014, OBS-041 |
 | timed-refund spec worktree (uncommitted, tip d2f4345) | FR-050 timed-refund handoff constants | defer | waits on #211 |
 | QSpec PR #59@0ced0f4 | FR-300 control-to-temporal mapping | defer | waits on #210 |
@@ -951,7 +951,7 @@ dispositions and for the merge order.
 
 Single writer: Agent A writes `src/model/normalize.rs`,
 `src/model/conformance.rs` and `src/model/refusal.rs`. Merge order:
-#228 → #204 → #200 (ARCH-01 "Rulings applied" and §3).
+#204 (merged as ba9e33b) → #228 → #200; #228 builds on #204's typed `RedefinitionTarget`.
 
 All other ARCH-01 items (stale-merged and superseded branches, the #28 matrix
 lane, and PRs whose disposition names no Layer 1 ticket) are outside Layer 1
