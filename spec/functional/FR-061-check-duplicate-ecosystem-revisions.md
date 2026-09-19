@@ -46,9 +46,9 @@ quire-contract-ir's workspace member publishes under).
 The check SHALL group ecosystem packages by name and report a name whose
 distinct `source` values (after deduplication) number more than one.
 
-A package with no `source` field (a path dependency or a workspace member)
-SHALL be treated as its own distinct source value, not merged with a git or
-registry source of the same name.
+The check SHALL treat a package with no `source` field (a path dependency or a
+workspace member) as its own distinct source value, and SHALL NOT merge it
+with a git or registry source of the same name.
 
 This check intentionally does not flag two *different* ecosystem crate names
 resolving to the same repository at different revisions (for example
