@@ -218,10 +218,15 @@ pub enum ModelRefusalCause {
     UnprovedRefinement,
     /// A redefinition whose target is not a member inherited by its owning
     /// type, or two or more members of one type that redefine one target
-    /// with no single valid candidate remaining after dominance.
+    /// with no single valid candidate remaining after dominance (#204 round
+    /// 1: typed like [`Self::DerivationConflict`], the sibling cause for
+    /// the other R07 ambiguity shape).
     RedefinitionTarget {
-        /// Every redefining member this refusal names, in domain package
-        /// order.
+        /// The contending redefining members sharing one owner, with no
+        /// single owner dominating a resolvable choice among them, or every
+        /// redefining member naming an unreachable target. Empty where no
+        /// redefining member's own claim is even known (a construction site
+        /// with no candidate edge to name).
         redefiners: Vec<DeclarationKey>,
         /// The contended or unreachable redefinition target.
         target: DeclarationKey,
@@ -273,7 +278,10 @@ pub enum ModelRefusalCause {
         /// The newly declared, conflicting type.
         declared_type: EffectiveId,
     },
-    /// A population binding has no declared maximum to select against.
+    /// An operator is applied to a binding it cannot act on: a population
+    /// binding with no declared maximum to select against, or (FR-151,
+    /// `quire.model.dispatch.single/v1`) a dispatch target with a declared
+    /// result and effect set that disqualify it as a query.
     OperatorIneligible,
     /// A selected population count exceeds its declared maximum.
     AboveMaximum {
