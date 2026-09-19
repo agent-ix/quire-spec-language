@@ -1090,7 +1090,10 @@ pub fn resolve_redefinition_target(
         });
     let Some(target) = own_redefines else {
         return Ok(RedefinitionTargetOutcome::Refused {
-            cause: ModelRefusalCause::RedefinitionTarget,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: vec![redefining.clone()],
+                target: redefining.clone(),
+            },
             candidate: None,
         });
     };
@@ -1106,7 +1109,10 @@ pub fn resolve_redefinition_target(
     }
 
     Ok(RedefinitionTargetOutcome::Refused {
-        cause: ModelRefusalCause::RedefinitionTarget,
+        cause: ModelRefusalCause::RedefinitionTarget {
+            redefiners: vec![redefining.clone()],
+            target: target.clone(),
+        },
         candidate: Some((redefining.clone(), target)),
     })
 }
