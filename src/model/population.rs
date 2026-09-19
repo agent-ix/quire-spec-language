@@ -1071,10 +1071,17 @@ fn field_values_equal(
 /// [`BundleRecord`] slice rather than a whole [`Bundle`] lets either call
 /// site pass its own already-available `&bundle.records`. Equality is
 /// `ProducerKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
-/// `digest`, all four) throughout, matching
-/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
-/// (`tests/model_conformance.rs`): two records can share a display identity
-/// while differing in revision, so identity-only comparison is not safe here.
+/// `digest`, all four) at both call sites -- a write naming a field at one
+/// revision does not reach a grant for the same identity at a different
+/// revision. Pinned by
+/// `enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name`
+/// here (`tests/model_population.rs`) and by
+/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name`
+/// at the `conformance` call site (`tests/model_conformance.rs`); only the
+/// `conformance` closure changed comparison this way -- this module's own
+/// `field_write_covered` already compared full keys before QSL #171, so
+/// [`field_write_covered`]'s behavior is unchanged by this change, only its
+/// walk's reach (one hop to unbounded, both fixed here together).
 pub(super) fn redefinition_reaches(
     records: &[BundleRecord],
     field: &ProducerKey,
