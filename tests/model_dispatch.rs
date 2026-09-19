@@ -5,10 +5,11 @@
 //! call graph, both out of scope for `crate::model::dispatch` (see its
 //! module docs) — this file does not claim coverage of them.
 //!
-//! Fixtures follow TC-195/196's own convention: G is F2 (`model.A`,
+//! Fixtures follow TC-195/196's own convention: G is F2-shaped (`model.A`,
 //! `model.B`, `model.C`, `model.D`; `B`,`C` -> `A`; `D` -> `B`, `D` -> `C`),
-//! whose effective type identities are TC-195 N02's ground truth: `D` =
-//! `51796212` < `C` = `7c28ad04` < `B` = `b9953c43` < `A` = `f1cc59cd`.
+//! using this file's own synthetic node identities rather than TC-195's own
+//! `test/orders` ground-truth nodes (`tests/model_normalization.rs` owns
+//! the exact ground-truth digests; this file only needs G's structure).
 
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
@@ -18,43 +19,33 @@ use quire_spec_language::model::dispatch::{
 };
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+    OperationMemberRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
-}
-
-fn redefinition(
-    identity: &str,
-    owner: &str,
-    redefining: &str,
-    redefined: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
 /// A parameterless, resultless `size`-shaped operation with an empty effect
 /// frame, exactly as much signature as dispatch linking itself inspects.
-fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord {
+/// `redefines` is `Some(target)` when this operation declares
+/// `model-complete.md:162`'s inline `redefines` property (QSpec's own
+/// shape, not a separate redefinition record).
+fn operation(
+    identity: &str,
+    owner: &str,
+    has_body: bool,
+    redefines: Option<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -64,6 +55,7 @@ fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord
         has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body,
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -71,14 +63,10 @@ fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord
 /// `A`, `model.D` <= `B`, `D` <= `C`).
 fn fixture_g() -> Vec<DomainPackageRecord> {
     vec![
-        object_type("model.A"),
-        object_type("model.B"),
-        object_type("model.C"),
-        object_type("model.D"),
-        supertype("model.gen.B-A", "model.B", "model.A"),
-        supertype("model.gen.C-A", "model.C", "model.A"),
-        supertype("model.gen.D-B", "model.D", "model.B"),
-        supertype("model.gen.D-C", "model.D", "model.C"),
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
+        object_type("model.C", vec!["model.A"]),
+        object_type("model.D", vec!["model.B", "model.C"]),
     ]
 }
 
@@ -108,13 +96,12 @@ fn unlimited_meter() -> quire_spec_language::model::accounting::Meter {
 #[test]
 fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -134,7 +121,7 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
     let linked = |subtype: &str| {
         table
             .linked_for(&DeclarationKey::fixture(subtype))
-            .map(|c| c.identity.clone())
+            .map(|c| c.node.clone())
     };
     assert_eq!(linked("model.D"), Some("model.B.size".to_owned()));
     assert_eq!(linked("model.C"), Some("model.A.size".to_owned()));
@@ -168,13 +155,12 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -207,13 +193,12 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -247,27 +232,24 @@ fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
 #[test]
 fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(operation("model.C.size", "model.C", true));
-    records.push(operation("model.D.size", "model.D", false));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
-    records.push(redefinition(
-        "model.redef.C.size",
-        "model.C",
+    records.push(operation(
         "model.C.size",
-        "model.A.size",
+        "model.C",
+        true,
+        Some("model.A.size"),
     ));
-    records.push(redefinition(
-        "model.redef.D.size",
-        "model.D",
+    records.push(operation(
         "model.D.size",
-        "model.A.size",
+        "model.D",
+        false,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records.clone());
     let view = effective_view(&domain_package);
@@ -285,14 +267,11 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     };
     assert_eq!(refusals.len(), 1);
     let refusal = &refusals[0];
-    assert_eq!(refusal.subtype.identity, "model.D");
+    assert_eq!(refusal.subtype.node, "model.D");
     assert_eq!(refusal.code, Code::AmbiguousDispatch);
     assert_eq!(refusal.cause, ModelRefusalCause::MultipleUndominated);
-    let mut candidate_names: Vec<&str> = refusal
-        .candidates
-        .iter()
-        .map(|c| c.identity.as_str())
-        .collect();
+    let mut candidate_names: Vec<&str> =
+        refusal.candidates.iter().map(|c| c.node.as_str()).collect();
     candidate_names.sort_unstable();
     assert_eq!(
         candidate_names,
@@ -301,12 +280,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     let dominance_names: std::collections::HashSet<(String, String)> = refusal
         .dominance_pairs
         .iter()
-        .map(|pair| {
-            (
-                pair.dominant.identity.clone(),
-                pair.dominated.identity.clone(),
-            )
-        })
+        .map(|pair| (pair.dominant.node.clone(), pair.dominated.node.clone()))
         .collect();
     assert!(dominance_names.contains(&("model.B.size".to_owned(), "model.A.size".to_owned())));
     assert!(dominance_names.contains(&("model.C.size".to_owned(), "model.A.size".to_owned())));
@@ -317,7 +291,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     let mut resolved_records = records;
     for record in &mut resolved_records {
         if let DomainPackageRecord::OperationMember(op) = record {
-            if op.key.identity == "model.D.size" {
+            if op.key.node == "model.D.size" {
                 op.has_body = true;
             }
         }
@@ -339,7 +313,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     assert_eq!(
         table
             .linked_for(&DeclarationKey::fixture("model.D"))
-            .map(|c| c.identity.as_str()),
+            .map(|c| c.node.as_str()),
         Some("model.D.size")
     );
 }
@@ -352,13 +326,12 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
 #[test]
 fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", false));
-    records.push(operation("model.B.size", "model.B", false));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", false, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        false,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -375,11 +348,10 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
         panic!("expected an ambiguous outcome, got {outcome:?}");
     };
     assert_eq!(refusals.len(), 4);
-    let subtypes: Vec<&str> = refusals
-        .iter()
-        .map(|r| r.subtype.identity.as_str())
-        .collect();
-    assert_eq!(subtypes, vec!["model.D", "model.C", "model.B", "model.A"]);
+    let subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
+    // Subtype order follows the view's own ascending effective-identity
+    // order, i.e. each type's computed hash.
+    assert_eq!(subtypes, vec!["model.A", "model.D", "model.C", "model.B"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals
         .iter()
@@ -400,21 +372,20 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
 
 /// D04: D01 with every domain package record supplied in reverse declared order and
 /// `B.size` declared before `A.size`. Linking depends only on the
-/// (authority, identity, revision, digest)-sorted family and the effective
+/// `DeclarationKey` (`package`, `node`)-sorted family and the effective
 /// view's own ascending-identity subtype order, never on registration or
 /// source order (FR-151-AC-5): the same table results.
 #[trace("TC-196", "FR-151-AC-5")]
 #[test]
 fn d04_registration_order_does_not_change_the_linked_table() {
     let mut records = fixture_g();
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
+    records.push(operation("model.A.size", "model.A", true, None));
     records.reverse();
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -433,7 +404,7 @@ fn d04_registration_order_does_not_change_the_linked_table() {
     let linked = |subtype: &str| {
         table
             .linked_for(&DeclarationKey::fixture(subtype))
-            .map(|c| c.identity.as_str())
+            .map(|c| c.node.as_str())
     };
     assert_eq!(linked("model.D"), Some("model.B.size"));
     assert_eq!(linked("model.C"), Some("model.A.size"));
@@ -448,13 +419,12 @@ fn d04_registration_order_does_not_change_the_linked_table() {
 #[test]
 fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -471,68 +441,41 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
         panic!("expected an open-closure outcome, got {outcome:?}");
     };
     assert_eq!(unclosed.cause, ModelRefusalCause::UnclosedMethodSet);
-    assert_eq!(unclosed.operation.identity, "model.A.size");
+    assert_eq!(unclosed.operation.node, "model.A.size");
     assert!(meter.admitted_charges().is_empty());
 }
 
-/// PR #144 review finding #2 regression: two operation members sharing a
-/// display identity but differing in revision must classify and resolve
-/// independently in `DispatchIndex` — never one collapsing/overwriting the
-/// other by identity alone (the exact defect class PR #140 fixed in
-/// `normalize.rs`). Mirrors
-/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
-/// in `tests/model_normalization.rs`.
+/// FR-154: "Two nodes share one identity" refuses
+/// `invalid_model_binding`/`conflicting-binding`. Retargets the pre-#131
+/// `f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survive`
+/// regression test: under the dropped `revision`/`digest` fields, two
+/// `OperationMember` records that once differed only in `revision` now
+/// share the exact same `DeclarationKey`, and `normalize` -- which every
+/// real pipeline runs before `link_dispatch` ever sees a domain package --
+/// must refuse before either candidate reaches `DispatchIndex`.
 #[trace("TC-196")]
 #[test]
-fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let op1_key = DeclarationKey::fixture("model.A.size");
-    let mut op2_key = DeclarationKey::fixture("model.A.size");
-    op2_key.revision.value = "2".to_owned();
+fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.f2-dispatch-revision"),
+        DomainPackageRef::fixture("bundle.f2-dispatch-conflict"),
         vec![
-            object_type("model.A"),
-            DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: op1_key.clone(),
-                owner: DeclarationKey::fixture("model.A"),
-                parameters: Vec::new(),
-                result: None,
-                effect: OperationEffect::default(),
-                has_own_precondition: false,
-                own_postcondition_clauses: Vec::new(),
-                has_body: true,
-            }),
-            DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: op2_key,
-                owner: DeclarationKey::fixture("model.A"),
-                parameters: Vec::new(),
-                result: None,
-                effect: OperationEffect::default(),
-                has_own_precondition: false,
-                own_postcondition_clauses: Vec::new(),
-                has_body: false,
-            }),
+            object_type("model.A", vec![]),
+            operation("model.A.size", "model.A", true, None),
+            operation("model.A.size", "model.A", false, None),
         ],
     );
-    let view = effective_view(&domain_package);
-
-    let mut meter = unlimited_meter();
-    let outcome = link_dispatch(
-        &domain_package,
-        &view,
-        &op1_key,
-        GeneralizationClosure::Closed,
-        &mut meter,
-    );
-
-    let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
-        panic!("expected a linked dispatch table, got {outcome:?}");
-    };
-    let linked = table
-        .linked_for(&DeclarationKey::fixture("model.A"))
-        .expect("model.A must link to the revision-1 candidate, which has a body");
-    // Revision "2" (no body) must never silently overwrite revision "1"
-    // (has a body) in `DispatchIndex.operations` by shared identity alone.
-    assert_eq!(linked, &op1_key);
-    assert_eq!(linked.revision.value, "1");
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingBinding {
+                    key: DeclarationKey::fixture("model.A.size"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
+        }
+    }
 }

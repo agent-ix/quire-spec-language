@@ -102,29 +102,22 @@ pub enum ModelRefusalCause {
     SpecializationCycle {
         /// The ancestor that closes the cycle.
         ancestor: DeclarationKey,
-        /// The supertype record the cycle is discovered via.
+        /// The object type whose own `supertypes[]` entry the cycle is
+        /// discovered via.
         via: DeclarationKey,
     },
-    /// A field, operation, redefinition or subsetting record names an owner
-    /// that is not a declared object type.
+    /// A field or operation member names an owner that is not a declared
+    /// object type.
     UnknownOwner {
-        /// The record naming the owner.
+        /// The member naming the owner.
         member: DeclarationKey,
         /// The absent owner.
         owner: DeclarationKey,
     },
-    /// A supertype record names a specific that is not a declared
-    /// object type.
-    UnknownSpecific {
-        /// The supertype record.
-        supertype: DeclarationKey,
-        /// The absent specific.
-        specific: DeclarationKey,
-    },
-    /// A supertype record names a general that is not a declared
-    /// object type.
+    /// An object type's own `supertypes[]` property names a general that is
+    /// not a declared object type.
     UnknownGeneral {
-        /// The supertype record.
+        /// The owning object type.
         supertype: DeclarationKey,
         /// The absent general.
         general: DeclarationKey,
@@ -154,10 +147,10 @@ pub enum ModelRefusalCause {
         /// The absent type.
         type_name: DeclarationKey,
     },
-    /// A redefinition or subsetting record names a member absent from its
-    /// owner.
+    /// A field or operation member's own `redefines` or `subsets` property
+    /// names a member absent from its owner.
     UnknownMember {
-        /// The redefinition or subsetting record.
+        /// The member declaring the `redefines`/`subsets` property.
         record: DeclarationKey,
         /// The absent member.
         member: DeclarationKey,
@@ -178,27 +171,6 @@ pub enum ModelRefusalCause {
         member: DeclarationKey,
         /// The owner it is not an effective member of.
         owner: DeclarationKey,
-    },
-    /// A domain package record's producer interface is neither normalized nor a
-    /// recognized refusal (outside FR-150's supported wire range).
-    UnsupportedWire {
-        /// The unsupported producer interface version. A wire version
-        /// string, not a [`DeclarationKey`]: every site supplies the plain
-        /// `interface_version` field, not a producer key.
-        version: String,
-    },
-    /// A domain package record has no producer revision to select.
-    WrongModelSelection {
-        /// The record with no producer revision.
-        key: DeclarationKey,
-    },
-    /// A producer key's digest domain does not match
-    /// [`crate::model::key::PRODUCER_DIGEST_DOMAIN`].
-    DigestDomainMismatch {
-        /// The producer key.
-        key: DeclarationKey,
-        /// Its actual (wrong) digest domain.
-        domain: String,
     },
     /// A required item does not supply the producer capability its
     /// interface revision requires.
@@ -335,6 +307,17 @@ pub enum ModelRefusalCause {
     /// A domain package record does not export the required [`crate::model::key`]
     /// kind for its role.
     WrongExport,
+    /// Two records in the same domain package share one [`DeclarationKey`]
+    /// (FR-154: "Two nodes share one identity"). Under #131's flat
+    /// `DeclarationKey` (`package`/`node` only, no `revision`/`digest`), a
+    /// domain package that declares the same node identity twice is no
+    /// longer distinguishable by revision and must refuse rather than
+    /// silently let the later record replace or shadow the earlier one in
+    /// every by-key index this module builds.
+    ConflictingBinding {
+        /// The key more than one record declares.
+        key: DeclarationKey,
+    },
     /// A systems relationship names an endpoint absent from the domain package.
     UnknownRelationship {
         /// The absent relationship.
@@ -360,25 +343,25 @@ pub enum ModelRefusalCause {
         /// The target port.
         target: DeclarationKey,
     },
-    /// A conformance redefinition record names a redefining member absent
-    /// from the domain package.
+    /// `check_field_redefinition`'s `redefining_key` argument names a field
+    /// absent from the domain package.
     UnknownRedefining {
         /// The absent redefining member.
         member: DeclarationKey,
     },
-    /// A conformance redefinition record names a redefined member absent
-    /// from the domain package.
+    /// `check_field_redefinition`'s `redefined_key` argument names a field
+    /// absent from the domain package.
     UnknownRedefined {
         /// The absent redefined member.
         member: DeclarationKey,
     },
-    /// A conformance subsetting record names a subsetting member absent
+    /// `check_subsetting`'s `subsetting_key` argument names a field absent
     /// from the domain package.
     UnknownSubsetting {
         /// The absent subsetting member.
         member: DeclarationKey,
     },
-    /// A conformance subsetting record names a subsetted member absent
+    /// `check_subsetting`'s `subsetted_key` argument names a field absent
     /// from the domain package.
     UnknownSubsetted {
         /// The absent subsetted member.
@@ -445,8 +428,6 @@ pub enum ModelRefusalCause {
     SubsettingViolation {
         /// The object whose subsetting feature is violated.
         object: String,
-        /// The subsetting record.
-        record: DeclarationKey,
         /// The subsetting field.
         subsetting: DeclarationKey,
         /// The subsetted field.
@@ -541,7 +522,6 @@ impl ModelRefusalCause {
             Self::GeneralizationDepthExceeded { .. } => "generalization-depth-exceeded",
             Self::SpecializationCycle { .. } => "specialization-cycle",
             Self::UnknownOwner { .. } => "unknown-owner",
-            Self::UnknownSpecific { .. } => "unknown-specific",
             Self::UnknownGeneral { .. } => "unknown-general",
             Self::UnknownValueType { .. } => "unknown-value-type",
             Self::UnknownFieldWrite { .. } => "unknown-field-write",
@@ -549,9 +529,6 @@ impl ModelRefusalCause {
             Self::UnknownMember { .. } => "unknown-member",
             Self::DerivationConflict { .. } => "derivation-conflict",
             Self::RedefinitionUnreachable { .. } => "redefinition-unreachable",
-            Self::UnsupportedWire { .. } => "unsupported-wire",
-            Self::WrongModelSelection { .. } => "wrong-model-selection",
-            Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
             Self::ConformanceDepth { .. } => "conformance-depth",
             Self::VarianceResult => "variance-result",
@@ -573,6 +550,7 @@ impl ModelRefusalCause {
             Self::ForeignUniverse { .. } => "foreign-universe",
             Self::AbsentKey { .. } => "absent-key",
             Self::WrongExport => "wrong-export",
+            Self::ConflictingBinding { .. } => "conflicting-binding",
             Self::UnknownRelationship { .. } => "unknown-relationship",
             Self::UnknownSourcePort { .. } => "unknown-source-port",
             Self::UnknownTargetPort { .. } => "unknown-target-port",
@@ -655,7 +633,6 @@ mod tests {
             }
             ModelRefusalCause::SpecializationCycle { .. } => "specialization-cycle",
             ModelRefusalCause::UnknownOwner { .. } => "unknown-owner",
-            ModelRefusalCause::UnknownSpecific { .. } => "unknown-specific",
             ModelRefusalCause::UnknownGeneral { .. } => "unknown-general",
             ModelRefusalCause::UnknownValueType { .. } => "unknown-value-type",
             ModelRefusalCause::UnknownFieldWrite { .. } => "unknown-field-write",
@@ -663,9 +640,6 @@ mod tests {
             ModelRefusalCause::UnknownMember { .. } => "unknown-member",
             ModelRefusalCause::DerivationConflict { .. } => "derivation-conflict",
             ModelRefusalCause::RedefinitionUnreachable { .. } => "redefinition-unreachable",
-            ModelRefusalCause::UnsupportedWire { .. } => "unsupported-wire",
-            ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
-            ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::UnsuppliedProducerRecord => "unsupplied-producer-record",
             ModelRefusalCause::ConformanceDepth { .. } => "conformance-depth",
             ModelRefusalCause::VarianceResult => "variance-result",
@@ -687,6 +661,7 @@ mod tests {
             ModelRefusalCause::ForeignUniverse { .. } => "foreign-universe",
             ModelRefusalCause::AbsentKey { .. } => "absent-key",
             ModelRefusalCause::WrongExport => "wrong-export",
+            ModelRefusalCause::ConflictingBinding { .. } => "conflicting-binding",
             ModelRefusalCause::UnknownRelationship { .. } => "unknown-relationship",
             ModelRefusalCause::UnknownSourcePort { .. } => "unknown-source-port",
             ModelRefusalCause::UnknownTargetPort { .. } => "unknown-target-port",
@@ -733,10 +708,6 @@ mod tests {
                 member: key("p"),
                 owner: key("p"),
             },
-            ModelRefusalCause::UnknownSpecific {
-                supertype: key("p"),
-                specific: key("p"),
-            },
             ModelRefusalCause::UnknownGeneral {
                 supertype: key("p"),
                 general: key("p"),
@@ -766,14 +737,6 @@ mod tests {
             ModelRefusalCause::RedefinitionUnreachable {
                 member: key("p"),
                 owner: key("p"),
-            },
-            ModelRefusalCause::UnsupportedWire {
-                version: String::new(),
-            },
-            ModelRefusalCause::WrongModelSelection { key: key("p") },
-            ModelRefusalCause::DigestDomainMismatch {
-                key: key("p"),
-                domain: String::new(),
             },
             ModelRefusalCause::UnsuppliedProducerRecord,
             ModelRefusalCause::ConformanceDepth { from: key("p") },
@@ -830,6 +793,7 @@ mod tests {
             },
             ModelRefusalCause::AbsentKey { key: Vec::new() },
             ModelRefusalCause::WrongExport,
+            ModelRefusalCause::ConflictingBinding { key: key("p") },
             ModelRefusalCause::UnknownRelationship {
                 relationship: key("p"),
             },
@@ -869,7 +833,6 @@ mod tests {
             },
             ModelRefusalCause::SubsettingViolation {
                 object: String::new(),
-                record: key("p"),
                 subsetting: key("p"),
                 subsetted: key("p"),
             },

@@ -20,10 +20,9 @@ use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord, RedefinitionRecord, SubsettingRecord,
-    SupertypeRecord,
+    ObjectTypeRecord, OperationEffect, PopulationRecord,
 };
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId, Revision};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     OfferedSelection,
@@ -56,19 +55,38 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
 fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageRecord {
+    field_member_redefining(identity, owner, value_type, None, vec![])
+}
+
+/// `field_member`, plus this field's own inline `redefines`
+/// (`model-complete.md`:162) and `subsets` (`model-complete.md`:161)
+/// properties -- never a separate redefinition or subsetting record.
+fn field_member_redefining(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         value_type: DeclarationKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
+        subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -78,6 +96,21 @@ fn field_member_mult(
     value_type: &str,
     lower: u64,
     upper: Option<u64>,
+) -> DomainPackageRecord {
+    field_member_mult_redefining(identity, owner, value_type, lower, upper, None, vec![])
+}
+
+/// `field_member_mult`, plus this field's own inline `redefines` and
+/// `subsets` properties -- never a separate redefinition or subsetting
+/// record.
+fn field_member_mult_redefining(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    lower: u64,
+    upper: Option<u64>,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
 ) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
@@ -89,42 +122,8 @@ fn field_member_mult(
             ordered: false,
             unique: true,
         },
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
-}
-
-fn subsetting(
-    identity: &str,
-    owner: &str,
-    subsetting: &str,
-    subsetted: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Subsetting(SubsettingRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        subsetting: DeclarationKey::fixture(subsetting),
-        subsetted: DeclarationKey::fixture(subsetted),
-    })
-}
-
-fn redefinition(
-    identity: &str,
-    owner: &str,
-    redefining: &str,
-    redefined: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
+        subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -166,10 +165,9 @@ fn fixture_f1_with_extent(extent: Extent) -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n01"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
             population_record(P1_POPULATION, &["model.A", "model.B"], extent),
         ],
     )
@@ -186,17 +184,27 @@ fn fixture_f1() -> DomainPackage {
 fn fixture_other_universe() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n02"),
-        vec![object_type("model.A")],
+        vec![object_type("model.A", vec![])],
     )
 }
 
-/// A revision-only variant of [`fixture_f1`], for the view/domain package
-/// correspondence test below: same `export.identity` and, since
-/// `DomainPackageRef::fixture` derives its digest from the identity string
-/// alone, the same `export.digest` too — only `export.revision` differs.
-fn fixture_f1_with_revision(revision: &str) -> DomainPackage {
+/// A version-only variant of [`fixture_f1`], for the view/domain package
+/// correspondence test below: same `identity` and digest as
+/// `fixture_f1()` — only `version` differs.
+fn fixture_f1_with_version(version: &str) -> DomainPackage {
     let mut domain_package = fixture_f1();
-    domain_package.model_selection.export.revision = Revision::producer_object(revision);
+    domain_package.model_selection.version = version.to_owned();
+    domain_package
+}
+
+/// A digest-only variant of [`fixture_f1`], for the l05 correspondence test's
+/// third case: same `identity` and `version` as `fixture_f1()` — only
+/// `digest` differs (its first byte flipped), so the `ForeignModelSelection`
+/// check is exercised over a header that disagrees in exactly one component
+/// at a time, not just `identity` (the base l05 test) or `version` (F13).
+fn fixture_f1_with_different_digest() -> DomainPackage {
+    let mut domain_package = fixture_f1();
+    domain_package.model_selection.digest[0] ^= 0xff;
     domain_package
 }
 
@@ -303,7 +311,7 @@ fn l01_all_instances_selects_subtype_population_once() {
     let binding = match admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -330,11 +338,11 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(
         selected_a.members().iter().collect::<Vec<_>>(),
         [
-            &reference_key(&universe, &b, "b1"),
             &reference_key(&universe, &a, "a1"),
             &reference_key(&universe, &a, "a2"),
+            &reference_key(&universe, &b, "b1"),
         ],
-        "canonical reference-key order: every B member precedes every A member"
+        "canonical reference-key order: every A member precedes every B member"
     );
     // Outputs clause: a typed reference to the queried type, bounded [0, 3]
     // (this binding's declared_maximum), never a bare unbounded set.
@@ -401,7 +409,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
     let binding = match admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -450,7 +458,7 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
         admit_binding(
             &open_extent,
             &open_view,
-            &p1("bundle.n01"),
+            &p1("test/orders"),
             &p1_population_key(),
             GeneralizationClosure::Closed,
             Some(3),
@@ -459,9 +467,9 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
         AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::IncompleteScope {
-                selection: "bundle.n01".to_string(),
+                selection: "test/orders".to_string(),
             },
-            detail: "population model.pop.p1 for bundle.n01 does not declare extent: closed"
+            detail: "population model.pop.p1 for test/orders does not declare extent: closed"
                 .to_string(),
         })
     );
@@ -477,7 +485,7 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
         admit_binding(
             &domain_package,
             &view,
-            &p1("bundle.n01"),
+            &p1("test/orders"),
             &p1_population_key(),
             GeneralizationClosure::Open,
             Some(3),
@@ -486,10 +494,10 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
         AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::UnclosedSubtypes {
-                selection: "bundle.n01".to_string(),
+                selection: "test/orders".to_string(),
                 type_name: Some(DeclarationKey::fixture("model.A")),
             },
-            detail: "model selection bundle.n01 naming model.A does not have a closed \
+            detail: "model selection test/orders naming model.A does not have a closed \
                      generalization graph"
                 .to_string(),
         })
@@ -540,7 +548,7 @@ fn l03_lookup_undefined_mode() {
     let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
     let rb = LookupKey {
         static_type: DeclarationKey::fixture("model.B"),
@@ -602,7 +610,7 @@ fn l03_lookup_empty_mode() {
     let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
     let rb = LookupKey {
         static_type: DeclarationKey::fixture("model.B"),
@@ -656,7 +664,7 @@ fn l03_lookup_refused_mode() {
     let view = view_of(&domain_package);
     let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
     let rc = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
@@ -699,7 +707,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     let view = view_of(&domain_package);
     let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
     let ra = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
@@ -740,7 +748,7 @@ fn l04_lookup_foreign_universe_refuses() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
     let other = fixture_other_universe();
     let foreign_universe = object_universe(&other).unwrap().identity();
@@ -788,7 +796,7 @@ fn l04_lookup_foreign_universe_refuses() {
 fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let mut document = p1("bundle.n01");
+    let mut document = p1("test/orders");
     document.members.push(member("a1", "model.B"));
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -841,7 +849,7 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
 fn l05_duplicate_collapses_and_recovers_l01() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let mut document = p1("bundle.n01");
+    let mut document = p1("test/orders");
     document.members.push(member("a1", "model.A"));
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -888,7 +896,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
 fn l05_foreign_type_refuses() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let mut document = p1("bundle.n01");
+    let mut document = p1("test/orders");
     document.members.push(member("z1", "model.Z"));
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -934,7 +942,7 @@ fn l06_cardinality_bound_and_incomplete() {
     let binding = match admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(2),
@@ -970,7 +978,7 @@ fn l06_cardinality_bound_and_incomplete() {
     let bounded = match admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -1024,11 +1032,12 @@ fn l06_cardinality_bound_and_incomplete() {
 /// TC-198's own admission-time `modelIdentity` check: a population document
 /// naming a `modelIdentity` other than the admitting domain package's own refuses
 /// before any `binding.member` charge. Every other test in this file admits
-/// `p1("bundle.n01")` against `fixture_f1()`, whose own `modelIdentity` is
-/// also `bundle.n01`, so this path was untested.
+/// `p1("test/orders")` against `fixture_f1()`, whose own `modelIdentity` is
+/// also `test/orders` (`DomainPackageRef::fixture`'s fixed identity), so
+/// this path was untested.
 ///
 /// Mutation used: in `admit_binding`, changed the `modelIdentity` guard's
-/// condition from `document.model_identity != domain_package.model_selection.export.
+/// condition from `document.model_identity != domain_package.model_selection.
 /// identity` to `false` (never fires), which let the mismatched document
 /// proceed to `AdmissionOutcome::Admitted` instead of refusing — the
 /// `Refused(foreign_reference/foreign-model-selection)` assertion went red
@@ -1072,27 +1081,67 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 /// `domain_package` separately and, before this test, never checked that they
 /// correspond — the same mismatch class removed from `all_instances`/
 /// `lookup` themselves, just moved one level up. Pins the check with a
-/// revision-only divergence (same `export.identity` and `export.digest` as
+/// version-only divergence (same `identity` and digest as
 /// `fixture_f1()` — `DomainPackageRef::fixture` derives the digest from the
-/// identity string alone, so an identity-only comparison would miss this)
-/// to prove the check compares the full `DomainPackageRef` header, not just
-/// `export.identity`.
+/// selection placeholder alone, so an identity-only comparison would miss
+/// this) to prove the check compares the full `DomainPackageRef` header,
+/// not just `identity`.
 ///
 /// Mutation used: narrowed the check from `view.model_selection !=
-/// domain_package.model_selection` to `view.model_selection.export.identity !=
-/// domain_package.model_selection.export.identity`, which let this revision-only
+/// domain_package.model_selection` to `view.model_selection.identity !=
+/// domain_package.model_selection.identity`, which let this version-only
 /// mismatch admit instead of refusing — red as expected, reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
-fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
-    let view = view_of(&fixture_f1_with_revision("1"));
-    let domain_package = fixture_f1_with_revision("2");
+fn l05_view_from_a_different_bundle_version_refuses_at_admission() {
+    let view = view_of(&fixture_f1_with_version("1"));
+    let domain_package = fixture_f1_with_version("2");
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignModelSelection {
+                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    expected: domain_package.model_selection.clone(),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
+        }
+    }
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// The l05 correspondence check's third case: same `identity` and `version`
+/// as the view's own selection, only `digest` differs. Neither the base l05
+/// test (identity-only mismatch) nor F13's version-only variant above
+/// exercises a pure digest mismatch, and `DomainPackageRef::fixture` derives
+/// its digest from the selection placeholder alone, so an identity/version-
+/// only comparison would miss this case entirely.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l05_view_from_a_domain_package_with_a_different_digest_refuses_at_admission() {
+    let view = view_of(&fixture_f1());
+    let domain_package = fixture_f1_with_different_digest();
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -1130,7 +1179,7 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     let outcome = admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -1170,7 +1219,7 @@ fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
         admit_binding(
             &open_extent,
             &view,
-            &p1("bundle.n01"),
+            &p1("test/orders"),
             &p1_population_key(),
             GeneralizationClosure::Closed,
             Some(3),
@@ -1179,9 +1228,9 @@ fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
         AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::IncompleteScope {
-                selection: "bundle.n01".to_string(),
+                selection: "test/orders".to_string(),
             },
-            detail: "population model.pop.p1 for bundle.n01 does not declare extent: closed"
+            detail: "population model.pop.p1 for test/orders does not declare extent: closed"
                 .to_string(),
         })
     );
@@ -1211,7 +1260,7 @@ fn admission_refuses_a_population_key_from_another_domain_package() {
         admit_binding(
             &domain_package,
             &view,
-            &p1("bundle.n01"),
+            &p1("test/orders"),
             &foreign_key,
             GeneralizationClosure::Closed,
             Some(3),
@@ -1224,8 +1273,8 @@ fn admission_refuses_a_population_key_from_another_domain_package() {
                 expected: domain_package.model_selection.clone(),
             },
             detail: format!(
-                "population key {} names no Population declaration of domain package bundle.n01",
-                foreign_key.identity
+                "population key {} names no Population declaration of domain package test/orders",
+                foreign_key.node
             ),
         })
     );
@@ -1258,7 +1307,7 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
     let outcome = admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -1311,7 +1360,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     let outcome = admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
@@ -1368,7 +1417,7 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
     let binding = match admit_binding(
         &domain_package,
         &view,
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(5),
@@ -1412,16 +1461,17 @@ fn r06_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.r06pop"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member_mult("model.A.all", "model.A", "model.A", 0, Some(5)),
-            field_member_mult("model.A.some", "model.A", "model.B", 0, Some(3)),
-            subsetting(
-                "model.subset.some-all",
-                "model.A",
+            field_member_mult_redefining(
                 "model.A.some",
-                "model.A.all",
+                "model.A",
+                "model.B",
+                0,
+                Some(3),
+                None,
+                vec!["model.A.all"],
             ),
             population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
@@ -1434,7 +1484,7 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
     let document = PopulationDocument {
-        model_identity: "bundle.r06pop".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![
             member_with_fields(
                 "a1",
@@ -1463,20 +1513,18 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
                 refusal.cause,
                 ModelRefusalCause::SubsettingViolation {
                     object: "a1".to_owned(),
-                    record: DeclarationKey::fixture("model.subset.some-all"),
                     subsetting: DeclarationKey::fixture("model.A.some"),
                     subsetted: DeclarationKey::fixture("model.A.all"),
                 }
             );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("a3"));
-            assert!(refusal.detail.contains("model.A.some"));
-            assert!(refusal.detail.contains("model.A.all"));
             assert!(
-                refusal.detail.contains("model.subset.some-all"),
-                "the detail must name the subsetting record, got: {}",
+                refusal.detail.contains("model.A.some"),
+                "the detail must name the subsetting field, got: {}",
                 refusal.detail
             );
+            assert!(refusal.detail.contains("model.A.all"));
         }
         other => {
             panic!("expected Refused(invalid_runtime_input/subsetting-violation), got {other:?}")
@@ -1510,7 +1558,7 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
     let document = PopulationDocument {
-        model_identity: "bundle.r06pop".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![
             member_with_fields(
                 "a1",
@@ -1558,7 +1606,7 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
     let document = PopulationDocument {
-        model_identity: "bundle.r06pop".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![
             member_with_fields(
                 "a1",
@@ -1684,8 +1732,8 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     };
     let post = match admit_invocation(
         invocation_context(&domain_package, &view, &p1_population_key()),
-        &p1("bundle.n01"),
-        &p1_minus_a2("bundle.n01"),
+        &p1("test/orders"),
+        &p1_minus_a2("test/orders"),
         &declared,
         &mut pre_meter,
         &mut post_meter,
@@ -1728,8 +1776,8 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
 
     let outcome = admit_invocation(
         invocation_context(&domain_package, &view, &p1_population_key()),
-        &p1("bundle.n01"),
-        &p1_minus_a2("bundle.n01"),
+        &p1("test/orders"),
+        &p1_minus_a2("test/orders"),
         &declared,
         &mut pre_meter,
         &mut post_meter,
@@ -1760,7 +1808,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
     let view = view_of(&domain_package);
     let effect = empty_effect();
     let post_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![
             member("a1", "model.A"),
             member("a2", "model.A"),
@@ -1778,7 +1826,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
 
     let outcome = admit_invocation(
         invocation_context(&domain_package, &view, &p1_population_key()),
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &post_document,
         &declared,
         &mut pre_meter,
@@ -1810,7 +1858,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "a1",
             "model.A",
@@ -1818,7 +1866,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
         )],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "a1",
             "model.A",
@@ -1900,7 +1948,7 @@ fn ordering_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.ordering"),
         vec![
-            object_type("model.A"),
+            object_type("model.A", vec![]),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.ordered"),
                 owner: DeclarationKey::fixture("model.A"),
@@ -1911,6 +1959,8 @@ fn ordering_bundle() -> DomainPackage {
                     ordered: true,
                     unique: true,
                 },
+                subsets: Vec::new(),
+                redefines: None,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.unordered"),
@@ -1922,6 +1972,8 @@ fn ordering_bundle() -> DomainPackage {
                     ordered: false,
                     unique: true,
                 },
+                subsets: Vec::new(),
+                redefines: None,
             }),
             population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
@@ -1944,7 +1996,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
     let domain_package = ordering_bundle();
     let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        model_identity: "bundle.ordering".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "a1",
             "model.A",
@@ -1952,7 +2004,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
         )],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.ordering".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "a1",
             "model.A",
@@ -1999,7 +2051,7 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     let domain_package = ordering_bundle();
     let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        model_identity: "bundle.ordering".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "a1",
             "model.A",
@@ -2007,7 +2059,7 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
         )],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.ordering".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "a1",
             "model.A",
@@ -2055,12 +2107,10 @@ fn redefinition_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            field_member("model.B.x", "model.B", "model.A"),
-            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            field_member_redefining("model.B.x", "model.B", "model.A", Some("model.A.x"), vec![]),
             population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
     )
@@ -2075,16 +2125,12 @@ fn redefinition_chain_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.chain"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
             field_member("model.A.x", "model.A", "model.A"),
-            field_member("model.B.x", "model.B", "model.A"),
-            field_member("model.C.x", "model.C", "model.A"),
-            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
-            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            field_member_redefining("model.B.x", "model.B", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining("model.C.x", "model.C", "model.A", Some("model.B.x"), vec![]),
             population_record(
                 P1_POPULATION,
                 &["model.A", "model.B", "model.C"],
@@ -2094,24 +2140,19 @@ fn redefinition_chain_bundle() -> DomainPackage {
     )
 }
 
-/// Item 7: a field write is covered by `effect.modifies` when it
-/// "reaches one through redefinition records" (FR-151's own effect-
+/// Item 7: a field write is covered by `effect.modifies` when it reaches one
+/// through a member's own inline `redefines` property (FR-151's own effect-
 /// inclusion rule), not only by an exact key match. The operation declares
 /// only the redefined ancestor member, `model.A.x`; the population document
-/// writes the redefining member, `model.B.x` -- admitted because it reaches
-/// `model.A.x` through the one `RedefinitionRecord` above.
-///
-/// Mutation used: in `field_write_covered`, removed the `bundle.records...`
-/// redefinition-reaching branch (direct match only). This test went red as
-/// expected (`Refused(frame_violation/unauthorized-change)` instead of
-/// `Admitted`); reverted.
+/// writes the redefining member, `model.B.x` -- admitted because `model.B.x`
+/// itself names `model.A.x` as its `redefines` target above.
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_redefinition() {
     let domain_package = redefinition_bundle();
     let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        model_identity: "bundle.redef".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "b1",
             "model.B",
@@ -2119,7 +2160,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
         )],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.redef".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "b1",
             "model.B",
@@ -2174,7 +2215,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
     let domain_package = redefinition_chain_bundle();
     let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        model_identity: "bundle.redef.chain".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "c1",
             "model.C",
@@ -2182,7 +2223,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
         )],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.redef.chain".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member_with_fields(
             "c1",
             "model.C",
@@ -2220,59 +2261,64 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
 
 /// PR #177 review finding 1: `field_write_covered`'s `redefinition_reaches`
 /// call compares `DeclarationKey`s by their full derived `PartialEq`
-/// (`authority`, `identity`, `revision`, `digest`), not `.identity` alone --
-/// a write naming `model.A.x` at revision "2" does not reach a grant for
-/// `model.A.x` at revision "1", even though both share the display identity
-/// `model.A.x`. This behavior predates QSL #171 (`field_write_covered`
-/// already compared full keys; #171 only fixed how many hops the walk
-/// takes), but nothing in this file pinned it: every other field-write test
-/// here uses `DeclarationKey::fixture`'s revision "1" on both the write and the
-/// grant, so it cannot tell full-key equality apart from identity-only
-/// comparison.
+/// (`package`, `node`), not `.node` alone -- a write naming `model.A.x` in
+/// package `other/pkg` does not reach a grant for `model.A.x` in package
+/// `test/orders`, even though both share the display node `model.A.x`. This
+/// behavior predates QSL #171 (`field_write_covered` already compared full
+/// keys; #171 only fixed how many hops the walk takes), but nothing in this
+/// file pinned it: every other field-write test here uses
+/// `DeclarationKey::fixture`'s fixed `test/orders` package on both the
+/// write and the grant, so it cannot tell full-key equality apart from
+/// node-only comparison. Retargets the pre-#131 revision-differing
+/// regression test: under the dropped `revision`/`digest` fields, a
+/// `package`-differing key is now the only way to construct two
+/// `DeclarationKey`s that share a display node but are not equal.
 ///
 /// Mutation used: in `field_write_covered`'s closure, compared
-/// `candidate.identity == write.identity` instead of full equality
+/// `candidate.node == write.node` instead of full equality
 /// (`effect.modifies.contains(candidate)`). This whole test file stayed
 /// green except this test, which went from `Refused` to `Admitted`;
 /// reverted.
 #[test]
 #[trace("FR-046-AC-3")]
-fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name() {
+fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_name() {
     let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.redef.revision"),
+        DomainPackageRef::fixture("bundle.redef.package"),
         vec![
-            object_type("model.A"),
+            object_type("model.A", vec![]),
             field_member("model.A.x", "model.A", "model.A"),
             population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
     );
     let view = view_of(&domain_package);
-    let mut write_at_revision_2 = DeclarationKey::fixture("model.A.x");
-    write_at_revision_2.revision.value = "2".to_owned();
+    let write_in_another_package = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.A.x".to_owned(),
+    };
     let pre_document = PopulationDocument {
-        model_identity: "bundle.redef.revision".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![PopulationMember {
             object: "a1".to_owned(),
             type_identity: DeclarationKey::fixture("model.A"),
             field_values: vec![MemberFieldValues {
-                field: write_at_revision_2.clone(),
+                field: write_in_another_package.clone(),
                 values: vec!["a2".to_owned()],
             }],
         }],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.redef.revision".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![PopulationMember {
             object: "a1".to_owned(),
             type_identity: DeclarationKey::fixture("model.A"),
             field_values: vec![MemberFieldValues {
-                field: write_at_revision_2.clone(),
+                field: write_in_another_package.clone(),
                 values: vec!["a9".to_owned()],
             }],
         }],
     };
     let effect = OperationEffect {
-        modifies: vec![DeclarationKey::fixture("model.A.x")], // revision "1"
+        modifies: vec![DeclarationKey::fixture("model.A.x")], // package "test/orders"
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -2297,7 +2343,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
             code: Code::FrameViolation,
             cause: ModelRefusalCause::FrameFieldWriteOutsideGrant {
                 object: "a1".to_owned(),
-                field: write_at_revision_2,
+                field: write_in_another_package.clone(),
             },
             detail: "invocation changes object a1's field model.A.x, outside the operation's \
                       declared modifies frame"
@@ -2326,11 +2372,11 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member("a1", "model.A"), member("b1", "model.B")],
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![member("a1", "model.B"), member("b1", "model.B")],
     };
     let effect = OperationEffect {
@@ -2389,9 +2435,9 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let pre_document = p1("bundle.n01"); // a1, a2, b1
+    let pre_document = p1("test/orders"); // a1, a2, b1
     let post_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![
             member("a1", "model.A"),
             member("a2", "model.A"),
@@ -2454,7 +2500,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
         deletes: Vec::new(),
     };
     let post_document = PopulationDocument {
-        model_identity: "bundle.n01".to_owned(),
+        model_identity: "test/orders".to_owned(),
         members: vec![
             member("a1", "model.A"),
             member("a2", "model.A"),
@@ -2471,7 +2517,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
         invocation_context(&domain_package, &view, &p1_population_key()),
-        &p1("bundle.n01"),
+        &p1("test/orders"),
         &post_document,
         &declared,
         &mut pre_meter,
@@ -2521,8 +2567,8 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
         invocation_context(&domain_package, &view, &p1_population_key()),
-        &p1("bundle.n01"),
-        &p1_minus_a2("bundle.n01"),
+        &p1("test/orders"),
+        &p1_minus_a2("test/orders"),
         &declared,
         &mut pre_meter,
         &mut post_meter,
@@ -2583,8 +2629,8 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
         invocation_context(&domain_package, &view, &p1_population_key()),
-        &p1("bundle.n01"),
-        &p1("bundle.n01"),
+        &p1("test/orders"),
+        &p1("test/orders"),
         &declared,
         &mut pre_meter,
         &mut post_meter,
