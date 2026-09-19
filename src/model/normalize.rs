@@ -4,10 +4,9 @@
 //! 5 (canonicalize).
 //!
 //! Phase 4 here covers exactly TC-195 N06's shape: **field** members' own
-//! explicit `redefines` property (`model-complete.md`:159/160 — QSpec's own
-//! inline shape, not a separate redefinition record), resolved by the same
-//! proper-descendant dominance FR-151 dispatch later reuses (a redefining
-//! owner that is a proper descendant of every other contesting owner wins
+//! explicit `redefines` property (`model-complete.md`:159/160), resolved by
+//! the same proper-descendant dominance FR-151 dispatch later reuses (a
+//! redefining owner that is a proper descendant of every other contesting owner wins
 //! outright; two or more undominated owners refuse `derivation-conflict`).
 //! `quire.model.normalize.subset/v1` (explicit subsetting) derives no
 //! replacement member — FR-150 says so explicitly ("subsetting never
@@ -593,15 +592,13 @@ fn ancestor_paths(
                 ),
             });
         }
-        // The type whose own `supertypes[]` this frame walks: the owning
-        // node of the edge about to be taken (F1: a refusal cites the
-        // owning node, never a separate generalization record's own key,
-        // which no longer exists under QSpec's inline shape).
+        // The type whose own `supertypes[]` this frame walks: a refusal
+        // cites this owning node's own key.
         let specific_key = frame
             .visited
             .last()
             .cloned()
-            .unwrap_or_else(|| root_key.clone());
+            .expect("every Frame is seeded with root_key and only ever grows visited");
         let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
         let mut new_path = frame.path.clone();
@@ -766,8 +763,35 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
             ),
         });
     }
-    for record in &domain_package.records {
+    // `model-complete.md`:73: "Nodes are read ascending by declaration key."
+    // Every following check -- the per-node malformed-key check, the
+    // dangling-reference checks, and the collision check -- runs over this
+    // sorted order, not `domain_package.records`' own input order, so two
+    // domain packages that differ only in record order refuse identically.
+    let mut records: Vec<&DomainPackageRecord> = domain_package.records.iter().collect();
+    records.sort_by(|a, b| a.key().cmp(b.key()));
+    // FR-154's own row order: node (declaration) order first, then table
+    // order within one node -- `missing-name` (row 4) before
+    // `conflicting-binding` (row 6). Folded into one pass over the sorted
+    // `records`, not several: a standalone collision pre-pass over every
+    // record before any dangling-reference check ran would report a *later*
+    // node's duplicate key ahead of an *earlier* node's own dangling
+    // reference, applying FR-154's table order globally instead of within
+    // each node -- the wrong axis. Under #131's flat `DeclarationKey`
+    // (`package`/`node` only), two records that would once have been
+    // distinguished by `revision`/`digest` now collide for real and must
+    // refuse here, not silently let the later record replace or shadow the
+    // earlier one in `Index`'s by-key maps/sets.
+    let mut seen_keys: std::collections::HashSet<&DeclarationKey> =
+        std::collections::HashSet::new();
+    for record in records {
         let key = record.key();
+        // `model-complete.md`:81: within a node, the malformed-declaration
+        // check is that node's own first check, ahead of any
+        // dangling-reference or collision check for that same node -- an
+        // empty `package`/`node` is schema `minLength`-invalid (FR-321,
+        // out of domain) so it refuses before this node's own key is ever
+        // looked up in `index` or compared against `seen_keys`.
         if key.package.is_empty() || key.node.is_empty() {
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
@@ -775,30 +799,14 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                 detail: format!("declaration key has an empty package or node: {key:?}"),
             });
         }
-    }
-    // FR-154's own row order: node (declaration) order first, then table
-    // order within one node -- `missing-name` (row 4) before
-    // `conflicting-binding` (row 6). Folded into one pass over
-    // `domain_package.records`, not two: a standalone collision pre-pass
-    // over every record before any dangling-reference check ran would
-    // report a *later* node's duplicate key ahead of an *earlier* node's own
-    // dangling reference, applying FR-154's table order globally instead of
-    // within each node -- the wrong axis. Under #131's flat `DeclarationKey`
-    // (`package`/`node` only), two records that would once have been
-    // distinguished by `revision`/`digest` now collide for real and must
-    // refuse here, not silently let the later record replace or shadow the
-    // earlier one in `Index`'s by-key maps/sets.
-    let mut seen_keys: std::collections::HashSet<&DeclarationKey> =
-        std::collections::HashSet::new();
-    for record in &domain_package.records {
         match record {
             DomainPackageRecord::ObjectType(t) => {
                 // `specific` is always this same record's own `t.key`,
                 // already inserted into `index.types` from this identical
-                // record -- an "unknown specific" is therefore structurally
-                // unreachable under QSpec's inline `supertypes[]` shape
-                // (`model-complete.md`:155), unlike the separate-record
-                // shape a standalone `Supertype` producer key once allowed.
+                // record under QSpec's inline `supertypes[]` shape
+                // (`model-complete.md`:155) -- so an "unknown specific" is
+                // structurally unreachable and there is no matching
+                // `ModelRefusalCause` variant for it.
                 for general in &t.supertypes {
                     if !index.types.contains(general) {
                         return Err(ModelRefusal {
@@ -992,7 +1000,6 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                 }
             }
         }
-        let key = record.key();
         if !seen_keys.insert(key) {
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
@@ -1820,53 +1827,17 @@ fn apply_redefinitions(
             inputs.push(edge.target.clone());
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
-            let entry = match member_preimages.get_mut(&redefining_key) {
-                Some(entry) => entry,
-                None => {
-                    // Same deferred-refusal treatment as the target check
-                    // above: this redefining member is not itself an
-                    // effective member of `type_key`, which
-                    // `normalize.redefinition-check` also exposes — ranked
-                    // by this one edge's own `redefining` key, since unlike
-                    // the target check above this failure is specific to a
-                    // single member, not shared by the whole group.
-                    //
-                    // This edge's `redefining` key can likewise be reached,
-                    // and fail the identical check for the identical
-                    // reason, at more than one `type_key` whenever a
-                    // descendant of `edge.owner` also inherits it (both tie
-                    // at the same `redefining` key) -- naming `edge.owner`
-                    // rather than `type_key` keeps the reported refusal the
-                    // same regardless of which of those tied candidates
-                    // this pass happens to keep, matching the target check
-                    // above.
-                    record_phase4_refusal(
-                        accounting,
-                        REDEFINITION_CHECK_STAGE,
-                        None,
-                        &edge.redefining,
-                        ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::RedefinitionUnreachable {
-                                member: edge.redefining.clone(),
-                                owner: edge.owner.clone(),
-                            },
-                            detail: format!(
-                                "redefining member {} is not an effective member of {}",
-                                edge.redefining.node, edge.owner.node
-                            ),
-                        },
-                    );
-                    // `continue 'targets` here leaves this group
-                    // half-processed — any earlier edge's own derive facts
-                    // in this loop are already counted, and the winning
-                    // edge's own target is not hidden — but that is
-                    // harmless: the outcome is a refusal regardless, once
-                    // every remaining phase-4 charge is admitted (see the
-                    // module docs).
-                    continue 'targets;
-                }
-            };
+            // Always present: `owner_paths.get(owner)` above already
+            // restricted every edge in this group to an `owner` that is
+            // either `type_key` itself or one of its ancestors in `paths`,
+            // and phase 3's own per-type loop inserts a `member_preimages`
+            // entry for every direct member of `type_key` and of every
+            // ancestor along `paths` -- `edge.redefining` is one such direct
+            // member of `edge.owner`, so `(type_key, edge.redefining)` was
+            // already inserted before this phase-4 pass ever runs.
+            let entry = member_preimages.get_mut(&redefining_key).expect(
+                "a redefining member whose owner reaches type_key is always one of type_key's own effective members, inserted by phase 3 above",
+            );
             let ordinal = entry.derivation.len();
             entry.derivation.push(Fact {
                 ordinal,

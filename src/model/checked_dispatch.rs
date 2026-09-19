@@ -263,9 +263,8 @@ fn declaration_order(domain_package: &DomainPackage) -> BTreeMap<DeclarationKey,
 }
 
 /// `candidate` together with every operation reaching it by any chain of
-/// members' own inline `redefines` property (`model-complete.md`:162,
-/// QSpec's own shape, not a separate redefinition record): the full static
-/// FR-146 reachability set [`ancestor_closure`] needs for
+/// members' own inline `redefines` property (`model-complete.md`:162): the
+/// full static FR-146 reachability set [`ancestor_closure`] needs for
 /// [`DispatchCandidate::precondition_clauses`]. Bounded breadth-first walk
 /// over an explicit queue, never native recursion; refuses at the depth
 /// bound instead of silently truncating the closure.

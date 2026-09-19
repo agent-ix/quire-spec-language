@@ -1513,7 +1513,6 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
                 refusal.cause,
                 ModelRefusalCause::SubsettingViolation {
                     object: "a1".to_owned(),
-                    record: DeclarationKey::fixture("model.A.some"),
                     subsetting: DeclarationKey::fixture("model.A.some"),
                     subsetted: DeclarationKey::fixture("model.A.all"),
                 }

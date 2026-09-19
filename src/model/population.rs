@@ -869,7 +869,6 @@ pub fn admit_binding(
                             code: Code::InvalidRuntimeInput,
                             cause: ModelRefusalCause::SubsettingViolation {
                                 object: key.object.clone(),
-                                record: edge.subsetting.clone(),
                                 subsetting: edge.subsetting.clone(),
                                 subsetted: edge.subsetted.clone(),
                             },

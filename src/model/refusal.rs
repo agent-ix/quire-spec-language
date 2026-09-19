@@ -113,14 +113,6 @@ pub enum ModelRefusalCause {
         /// The absent owner.
         owner: DeclarationKey,
     },
-    /// A supertype record names a specific that is not a declared
-    /// object type.
-    UnknownSpecific {
-        /// The supertype record.
-        supertype: DeclarationKey,
-        /// The absent specific.
-        specific: DeclarationKey,
-    },
     /// A supertype record names a general that is not a declared
     /// object type.
     UnknownGeneral {
@@ -435,8 +427,6 @@ pub enum ModelRefusalCause {
     SubsettingViolation {
         /// The object whose subsetting feature is violated.
         object: String,
-        /// The subsetting record.
-        record: DeclarationKey,
         /// The subsetting field.
         subsetting: DeclarationKey,
         /// The subsetted field.
@@ -531,7 +521,6 @@ impl ModelRefusalCause {
             Self::GeneralizationDepthExceeded { .. } => "generalization-depth-exceeded",
             Self::SpecializationCycle { .. } => "specialization-cycle",
             Self::UnknownOwner { .. } => "unknown-owner",
-            Self::UnknownSpecific { .. } => "unknown-specific",
             Self::UnknownGeneral { .. } => "unknown-general",
             Self::UnknownValueType { .. } => "unknown-value-type",
             Self::UnknownFieldWrite { .. } => "unknown-field-write",
@@ -643,7 +632,6 @@ mod tests {
             }
             ModelRefusalCause::SpecializationCycle { .. } => "specialization-cycle",
             ModelRefusalCause::UnknownOwner { .. } => "unknown-owner",
-            ModelRefusalCause::UnknownSpecific { .. } => "unknown-specific",
             ModelRefusalCause::UnknownGeneral { .. } => "unknown-general",
             ModelRefusalCause::UnknownValueType { .. } => "unknown-value-type",
             ModelRefusalCause::UnknownFieldWrite { .. } => "unknown-field-write",
@@ -718,10 +706,6 @@ mod tests {
             ModelRefusalCause::UnknownOwner {
                 member: key("p"),
                 owner: key("p"),
-            },
-            ModelRefusalCause::UnknownSpecific {
-                supertype: key("p"),
-                specific: key("p"),
             },
             ModelRefusalCause::UnknownGeneral {
                 supertype: key("p"),
@@ -848,7 +832,6 @@ mod tests {
             },
             ModelRefusalCause::SubsettingViolation {
                 object: String::new(),
-                record: key("p"),
                 subsetting: key("p"),
                 subsetted: key("p"),
             },
