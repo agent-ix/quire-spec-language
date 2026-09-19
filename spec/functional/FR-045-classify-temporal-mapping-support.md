@@ -155,3 +155,14 @@ encode. Naming them is not discharging them.
   `ix://agent-ix/quire-specification/FR-095` — the TL formula, valuation request
   and correspondence record — depends on `quire-contract-ir#63`,
   `quire-contract-ir#64` and actual TL capability, and is not implemented here.
+
+## Status
+
+The reviewed correspondence table this requirement restates is retained as
+the `SUPPORT_TABLE` constant in `src/temporal/mapping.rs`, tagged with the
+same `ix://agent-ix/quire-specification/FR-095` baseline
+(`4d6230eb8aa9766ff3017360962f2d6368d74cb3`) this requirement's Behavior
+section cites; the classifier reads that constant, never a duplicated copy.
+The baseline stays pinned to that revision until
+`ix://agent-ix/quire-specification#112` lands a reviewed revision of the
+source table; only a landed revision moves this pin.

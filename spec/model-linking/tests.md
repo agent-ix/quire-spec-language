@@ -237,7 +237,11 @@ controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
 boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
 stage grant no checked or executable package. Status records local runs, not
-ecosystem acceptance. The FR-036-AC-3, FR-040-AC-4/5, FR-042-AC-3, FR-047-AC-1,
+ecosystem acceptance. TC-115's requested-capability report exercises
+`linking::composed::requests::Capability`'s current four link-stage labels;
+[agent-ix/quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185)
+realigns that vocabulary to `quire-specification` FR-290's six protocol claim
+kinds and does not change TC-115's passing status until it lands. The FR-036-AC-3, FR-040-AC-4/5, FR-042-AC-3, FR-047-AC-1,
 FR-048-AC-8 and FR-049-AC-5 rows and the TC-114, TC-132 and TC-136 summaries name
 domain-package declarations as model inputs; they record the local NativeModel
 runs and stay 🚧 until #131 and #132 deliver domain-package intake and the
