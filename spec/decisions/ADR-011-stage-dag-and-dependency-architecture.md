@@ -172,7 +172,7 @@ flowchart LR
 | S3 Checked semantic graph | Checked nodes with minted node ids and declaration identities, resolved against admitted domain packages and dependency import views | QSL `check` (today `value::expression` check, `model::checked_dispatch`, `value::library`) over `model` | arrow 1 output |
 | S4 Linked checked package | The checked graph linked with the checked packages of its dependencies, each compiled from its digest-addressed source through S1 to S4, with package identity and source map. The closure carries checked dependency nodes, never wire-admitted ones. Two forms: in-process, and `quire.checked-package/v2` wire. | QSL `package` | arrow 2 producer |
 | S5 Contract IR | Target-neutral IR nodes read from the v2 wire | IR `quire-contract-model` (`CheckedPackageV2::read`, `::lower`) | arrow 2 consumer |
-| S6a Reference execution | `Outcome` of evaluating a checked package: completed, undefined, refused or incomplete. Deterministic and free of side effects: the same package, arguments, object environment and meter budget give the same outcome. | QSL `value::expression` evaluate and `CheckedPackage::call` (the AD-016 arrow 7 path), over the `quire-exact` kernel | arrow 7 executor |
+| S6a Reference execution | `FamilyOutcome` of evaluating a checked package: the kernel `Outcome` (completed, undefined, refused or incomplete), or a `FamilyRefusal` for a family that sits out evaluation. Deterministic and free of side effects: the same package, arguments, object environment and meter budget give the same outcome. | QSL `value::expression` evaluate and `CheckedPackage::call` (the AD-016 arrow 7 path), over the `quire-exact` kernel | arrow 7 executor |
 | S6b Bounded proof | Per-item negotiation disposition, then one IR `KaniOutcome` per supported item | CG (per-item negotiation, oracle, `kani_obligations`), RT ops, host ABI and `negotiate_*` predicates, IR `src/kani` outcome | arrows 3 to 6 |
 | S7 Typed witness | `CounterexamplePacket` with a typed `Witness` | IR `src/kani` (packet and witness types) | arrow 6 output |
 | S8 Native replay | Parity verdict: the S6a result under the reconstructed input, compared with the S6b result | CG replay adapter (reconstruction and comparator), QSL layer-6 `replay` (S1 to S4 recompile, then S6a as executor) | arrow 7 |
@@ -231,9 +231,9 @@ distinct nominal type with private constructors in its stage module.
 | E3 | S2 → S3 | Parsed forms, admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, library lock | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
 | E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its digest-addressed source through S1 to S4, whose recomputed `package_id` equals that of the verified view E3 resolved against (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
 | E5 | S4 → S5 | `quire.checked-package/v2` bytes only, admitted under the §4 verified binding (supported version, digest equal to declared identity, identity pinned by the request) | IR `CheckedPackageV2`, then IR nodes | IR reader. The wire contract is QSpec's. |
-| E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` / `Outcome` | QSL `value::expression` |
+| E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` / `FamilyOutcome` | QSL `value::expression` |
 | E7 | S5 → S6b | IR nodes with `capability_report`, bounds, and the `route` candidate sets, passed by the orchestrating binary | `ObligationRecord` per requested item. For `supported` items: oracle, harness and one `KaniOutcome`. | CG, with RT ops and IR outcome (AD-016 arrows 3 to 6) |
-| E8 | S6b → S7 | Kani run of a `supported` item | `CounterexamplePacket{source: ReplaySource}`, where `ReplaySource` is `Witness(Witness)` or `Input(values)` (ADR-013 O-25) | IR |
+| E8 | S6b → S7 | Kani run of a `supported` item | `CounterexamplePacket{source: ReplaySource}`, where `ReplaySource` is `Witness(Witness)` or `Input(values)` (ADR-013 O-25; the AD-016 amendment is ADR-013 QC-20) | IR |
 | E9 | S7 → S8 | The replay request: the IR packet plus the #231 envelope members (state environment, accounting limits and the outcome→verdict map), and the digest-addressed source of the proved package and of its domain and dependency packages (QC-1 byte provision) | Parity verdict | CG replay adapter, through QSL layer-6 `replay` only. `replay` recompiles the source through S1 to S4 into a `CheckedPackage` whose closure carries the checked dependency nodes (E4). It checks that `package_id` equals the packet's (ADR-013 T-2, O-26), that each `RawSourceRef` source digest matches, and the §4 dependency binding for each dependency, selects the function by `QualifiedName`, then calls the S6a executor. No `CheckedPackage` is built from wire bytes. |
 
 E9 details:
@@ -244,7 +244,7 @@ E9 details:
 - A packet whose `package_id` differs from the recompiled package's refuses
   with a typed cause and yields no verdict.
 - The packet's `source` is a `ReplaySource`: `Witness(Witness)` or
-  `Input(values)`, never both (ADR-013 O-25). A `Witness`-sourced replay
+  `Input(values)`, never both (ADR-013 O-25, ADR-013 QC-20). A `Witness`-sourced replay
   derives its input from the transcript by `decode`. An `Input`-sourced
   replay runs from the stored input, settles AD-016 WP9 category
   `reproduced-without-witness`, and never counts as backend evidence.
@@ -315,8 +315,10 @@ source text or CST to recover meaning (§3 FB-01).
 Every stage returns a structured result: its output, or a refusal with typed
 causes and catalog codes. Stages S1 to S4 and the I2 reader return
 `Result<Staged<T>, StageFailure<C>>`, with `StageFailure` variants `Refused`,
-`Limit(LimitExceeded)` and `Fault(InternalFault)` in F `diagnostic`; S6a keeps
-the kernel `Outcome<T>` (ADR-013 T-4). The canonical outcome and refusal
+`Limit(LimitExceeded)` and `Fault(InternalFault)` in F `diagnostic`; S6a
+returns the layer-3 `check`-core `FamilyOutcome { Evaluated(kernel::Outcome),
+Refused(FamilyRefusal) }`, whose `Evaluated` arm carries the kernel
+`Outcome<T>` unchanged (ADR-013 T-4, O-16). The canonical outcome and refusal
 types are ADR-013's, and #213 implements them. #222 designs boundedness on the edges, and
 #231 implements the typed proof-result, witness and replay envelopes on E8 and
 E9. The rules below decide only what may cross an edge.
@@ -479,7 +481,7 @@ enforces it; before #226, §3's interim rule applies.
 | 1 | `token` < `lexer` < `cst` | S1 | F |
 | 2 | `forms` core < family form builders | S2 | 1, F |
 | I3 | `quire_source` | S0 intake adapter | F, K; quire-rs only under feature `quire-extraction` |
-| 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
+| 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types, `FamilyOutcome` and `FamilyRefusal`) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
 | 4 | `package` | S4, I2 byte reader (verification calls `library`) | 3, F, K; `quire-contract-model` for v2 wire constants and round-trip tests only |
 | 5 | `value::expression` core (S6a) < family evaluators under `value::expression`, including the state and temporal evaluators < `simulation` | S6a | 4, 3, F, K |
 | R | `route` (#185 registry and router) | selection over S4 | 4, 3, F, K |
@@ -823,10 +825,12 @@ Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
   call a family's hooks have one arm per family and no `_` arm, and the
   ADR-012 seam S1 stage-participation table has one entry per family
   (ADR-012 §5.1). A family that sits out a stage has an explicit, hand-written
-  arm. At the ADR-011 S6a evaluation stage, that arm returns the kernel
-  `Refused` with a named cause; for `Relation` the cause is
-  `FamilyNotNativelyEvaluable`, category `refusal` (ADR-013 O-16). At lowering
-  and proof stages, the arm returns `unsupported` with a catalog code.
+  arm. At the ADR-011 S6a evaluation stage, that arm returns a
+  `FamilyOutcome::Refused` with a named `FamilyRefusal`; for `Relation` it is
+  `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`,
+  category `refusal` (ADR-013 O-16). The kernel `Refusal` carries no family
+  cause. At lowering and proof stages, the arm returns `unsupported` with a
+  catalog code.
 - **`capability_report`.** Exactly one entry per checked item that has
   `Requirements`: kinds, extent and bound. No backend, candidate or
   disposition (§2.2 E3).
