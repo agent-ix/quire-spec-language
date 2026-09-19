@@ -50,7 +50,7 @@ fn operation_member(identity: &str, owner: &str) -> BundleRecord {
         parameters: Vec::new(),
         result: None,
         effect: OperationEffect {
-            field_writes: Vec::new(),
+            modifies: Vec::new(),
             creates: Vec::new(),
             deletes: Vec::new(),
         },

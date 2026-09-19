@@ -107,12 +107,12 @@ pub struct OperationResult {
     pub multiplicity: Multiplicity,
 }
 
-/// An operation's producer-supplied effect frame: `{fieldWrites, creates,
+/// An operation's producer-supplied effect frame: `{modifies, creates,
 /// deletes}` (FR-151's `quire.model.conformance.effect/v1`).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OperationEffect {
     /// Field members this operation writes.
-    pub field_writes: Vec<ProducerKey>,
+    pub modifies: Vec<ProducerKey>,
     /// Object types this operation creates.
     pub creates: Vec<ProducerKey>,
     /// Object types this operation deletes.

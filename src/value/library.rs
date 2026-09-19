@@ -9,11 +9,13 @@
 //! [`LibraryPackage`] carries those bytes as produced by the CheckedPackage V2
 //! writer. Resolution recomputes every `package_id` from them and validates the
 //! preimage structurally before any import is followed. Each export node key is
-//! the `node_id` of the `identity_projection` node whose nominal
-//! `qualified_declaration` spells the exported name. QSpec 7d7943a gives no
-//! other node an explicit declared name, so an export no nominal declaration
-//! spells is `missing_declaration` with cause `undeclared-export`, never a
-//! guessed node. A package's local declarations are exactly its exports.
+//! the `node_id` of the `identity_projection` node whose `declaration
+//! .qualified_name` spells the exported name; on a nominal node that name must
+//! equal its nominal `qualified_declaration`, else the package is refused as
+//! `declaration-nominal-mismatch`. QSpec d227270 gives no other node an
+//! explicit declared name, so an export no node's `declaration` spells is
+//! `missing_declaration` with cause `undeclared-export`, never a guessed node.
+//! A package's local declarations are exactly its exports.
 
 use std::collections::BTreeMap;
 
@@ -133,9 +135,13 @@ pub enum LibraryCause {
     DefinitionCycle,
     /// A member value is invalid at its member path.
     InvalidValue,
-    /// An export name matches no nominal declaration in the package's
-    /// identity projection.
+    /// An export name matches no projection node's `declaration
+    /// .qualified_name`.
     UndeclaredExport,
+    /// A projection node's top-level `declaration.qualified_name` disagrees
+    /// with its nominal `qualified_declaration`, or is absent while a
+    /// nominal `qualified_declaration` is present.
+    DeclarationNominalMismatch,
 }
 
 impl LibraryCause {
@@ -151,6 +157,7 @@ impl LibraryCause {
             Self::DefinitionCycle => "definition-cycle",
             Self::InvalidValue => "invalid-value",
             Self::UndeclaredExport => "undeclared-export",
+            Self::DeclarationNominalMismatch => "declaration-nominal-mismatch",
         }
     }
 }
@@ -252,7 +259,15 @@ impl LibraryRefusal {
         match self {
             Self::StaleDependency { .. } => Code::StaleDependency,
             Self::MissingImport { .. } => Code::MissingImport,
-            Self::PackageIdMismatch { .. }
+            Self::InvalidPreimage {
+                defect: PreimageDefect::AmbiguousDeclaration { .. },
+                ..
+            } => Code::AmbiguousDeclaration,
+            Self::InvalidPreimage {
+                defect: PreimageDefect::DeclarationNominalMismatch { .. },
+                ..
+            }
+            | Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. }
@@ -265,6 +280,14 @@ impl LibraryRefusal {
     /// The FR-272 cause.
     pub fn cause(&self) -> LibraryCause {
         match self {
+            Self::InvalidPreimage {
+                defect: PreimageDefect::AmbiguousDeclaration { .. },
+                ..
+            } => LibraryCause::AmbiguousName,
+            Self::InvalidPreimage {
+                defect: PreimageDefect::DeclarationNominalMismatch { .. },
+                ..
+            } => LibraryCause::DeclarationNominalMismatch,
             Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)

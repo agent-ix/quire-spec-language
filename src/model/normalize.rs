@@ -762,7 +762,7 @@ fn validate_references(bundle: &Bundle, index: &Index) -> Result<(), ModelRefusa
                         });
                     }
                 }
-                for field in &op.effect.field_writes {
+                for field in &op.effect.modifies {
                     if !index.field_member_keys.contains(field) {
                         return Err(ModelRefusal {
                             code: Code::DanglingReference,
@@ -1731,7 +1731,7 @@ fn referenced_keys(record: &BundleRecord) -> Vec<&ProducerKey> {
             if let Some(result) = &record.result {
                 keys.push(&result.value_type);
             }
-            for field in &record.effect.field_writes {
+            for field in &record.effect.modifies {
                 keys.push(field);
             }
             for target in record.effect.creates.iter().chain(&record.effect.deletes) {
