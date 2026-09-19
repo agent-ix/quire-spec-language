@@ -164,14 +164,6 @@ pub enum ModelRefusalCause {
         /// The undominated redefining members, in domain package order.
         redefiners: Vec<DeclarationKey>,
     },
-    /// A redefinition edge's target or redefining member is not an
-    /// effective member of its owner.
-    RedefinitionUnreachable {
-        /// The unreachable member.
-        member: DeclarationKey,
-        /// The owner it is not an effective member of.
-        owner: DeclarationKey,
-    },
     /// A required item does not supply the producer capability its
     /// interface revision requires.
     UnsuppliedProducerRecord,
@@ -224,16 +216,19 @@ pub enum ModelRefusalCause {
     /// A redefinition narrows a fact FR-146 has no proof form to establish,
     /// or narrows past an established fact with no supporting proof.
     UnprovedRefinement,
-    /// More than one redefinition target candidate remains after dominance
-    /// (L4, #204 round 1: typed like [`Self::DerivationConflict`], the
-    /// sibling cause for the other R07 ambiguity shape).
+    /// A redefinition whose target is not a member inherited by its owning
+    /// type, or two or more members of one type that redefine one target
+    /// with no single valid candidate remaining after dominance (#204 round
+    /// 1: typed like [`Self::DerivationConflict`], the sibling cause for
+    /// the other R07 ambiguity shape).
     RedefinitionTarget {
         /// The contending redefining members sharing one owner, with no
-        /// single owner dominating a resolvable choice among them. Empty
-        /// where no redefining member's own claim is even known (a
-        /// construction site with no candidate edge to name).
+        /// single owner dominating a resolvable choice among them, or every
+        /// redefining member naming an unreachable target. Empty where no
+        /// redefining member's own claim is even known (a construction site
+        /// with no candidate edge to name).
         redefiners: Vec<DeclarationKey>,
-        /// The contended redefinition target.
+        /// The contended or unreachable redefinition target.
         target: DeclarationKey,
     },
     /// A population document or effective view names a model selection
@@ -544,7 +539,6 @@ impl ModelRefusalCause {
             Self::UnknownEffectType { .. } => "unknown-effect-type",
             Self::UnknownMember { .. } => "unknown-member",
             Self::DerivationConflict { .. } => "derivation-conflict",
-            Self::RedefinitionUnreachable { .. } => "redefinition-unreachable",
             Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
             Self::ConformanceDepth { .. } => "conformance-depth",
             Self::VarianceResult => "variance-result",
@@ -655,7 +649,6 @@ mod tests {
             ModelRefusalCause::UnknownEffectType { .. } => "unknown-effect-type",
             ModelRefusalCause::UnknownMember { .. } => "unknown-member",
             ModelRefusalCause::DerivationConflict { .. } => "derivation-conflict",
-            ModelRefusalCause::RedefinitionUnreachable { .. } => "redefinition-unreachable",
             ModelRefusalCause::UnsuppliedProducerRecord => "unsupplied-producer-record",
             ModelRefusalCause::ConformanceDepth { .. } => "conformance-depth",
             ModelRefusalCause::VarianceResult => "variance-result",
@@ -749,10 +742,6 @@ mod tests {
                 type_: key("p"),
                 member: key("p"),
                 redefiners: vec![key("p")],
-            },
-            ModelRefusalCause::RedefinitionUnreachable {
-                member: key("p"),
-                owner: key("p"),
             },
             ModelRefusalCause::UnsuppliedProducerRecord,
             ModelRefusalCause::ConformanceDepth { from: key("p") },
