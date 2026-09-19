@@ -132,9 +132,15 @@ Terms used below:
    path other than the spine is deleted in the PR that lands its spine
    replacement; the checked-package producer lane goes before gate #216 (M-6).
 8. A proof gate discharges at least one proposition over the code it claims.
-   Compiling the code under the prover is necessary, not sufficient (RT #53).
-   Each claimed module also has a mutation control that turns the gate red
-   (§2.3).
+   The proof's expectation SHALL be derived independently of the function
+   under proof. Where an oracle and the code under proof share a helper, a
+   mutation of that helper moves both sides together and the proposition
+   holds vacuously. Evidence: a mutation of each shared helper is run and
+   shown to fail the proof. The floor on discharged checks counts SUCCESS
+   checks only. An UNREACHABLE check is subtracted: it is never counted as
+   discharged, and no check of any other status is. Compiling the code under the prover is necessary, not
+   sufficient (RT #53). Each claimed module also has a mutation control that
+   turns the gate red (§2.3).
 9. Compatibility disposition for every change in this record is **none**. QSL
    is prerelease, and each replaced path is removed in the change that lands
    its successor.
@@ -213,7 +219,10 @@ with the same verdict, green in CI. It is built in parallel with Layers 1 and
 - #217's function-application exemplar is the first widening of that spine,
   not the first proof. #218 widens it to frames and scoped clauses.
 - It meets §2.3: its gate discharges at least one proposition over the code it
-  claims, and its injected violation is the mutation control.
+  claims, counting SUCCESS checks only; its expectation is derived
+  independently of the function under proof, a run mutation of each helper
+  shared between oracle and code under proof fails it, and its injected
+  violation is the mutation control.
 - It meets FB-07: replay runs through S6a. A stubbed executor or a
   predetermined verdict does not count.
 - It counts as evidence for E1 to E4 only for the stages its input actually
@@ -308,7 +317,7 @@ by design, and no later stage may recover it.
 |---|---|---|---|---|---|
 | E1 | Minted, lossless | Minted: spans against `SourceIdentity` and revision; I3 adds the document `SourceMap` | none | Edition read from source | none |
 | E2 | Dropped | Carried: each form holds the span of its CST node | none: forms carry position only | Edition carried | Declared bounds and extents carried as syntax |
-| E3 | none | Carried: QSL, the only span minter, keys the source map by checked node id | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201) and `DeclarationKey{package, node}` (AD-016 arrow 1). One id per node occurrence within a package. The node-identity preimage includes the declaring package's `name@version` (QC-18), so a bare `NodeKey` is unique across packages (ADR-013 O-04). A reference into an I2 view is `PackageNodeKey{package: package_id, node: WireNodeId}` in `library` (ADR-013 T-3); it names the view's node without making a `NodeKey` from wire bytes. | Dependency and domain-package identities resolved and recorded | Bounds and extents typed. The `capability_report` is recorded without negotiation: exactly one entry per checked item that has `Requirements`, keyed by its checked identity, holding the item's one capability kind (the #134 vocabulary, FR-057), the declared extent and the authored bound. It holds no backend, candidate or disposition (ADR-012 §13.5). |
+| E3 | none | Carried: QSL, the only span minter, keys the source map by checked node id | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201). A node bound to a domain-package declaration carries that declaration's `DeclarationKey{package, node}`, which the domain package assigns and I1 intake admits; QSL never mints one (ADR-013 O-03, C-02). One id per node occurrence within a package. The node-identity preimage includes the declaring package's `name@version` (QC-18), so a bare `NodeKey` is unique across packages (ADR-013 O-04). A reference into an I2 view is `PackageNodeKey{package: package_id, node: WireNodeId}` in `library` (ADR-013 T-3); it names the view's node without making a `NodeKey` from wire bytes. | Dependency and domain-package identities resolved and recorded | Bounds and extents typed. The `capability_report` is recorded without negotiation: exactly one entry per checked item that has `Requirements`, keyed by its checked identity, holding the item's one capability kind (the #134 vocabulary, FR-057), the declared extent and the authored bound. It holds no backend, candidate or disposition (ADR-012 §13.5). |
 | E4 | none | Carried: source map by node id, in the package | Carried verbatim | **Minted**: package identity and digest, v2 schema version | Carried as v2 `bounded_domain`, `model_population` and `capability_report` |
 | E5 | none | Carried as `CheckedSourceMapEntry`, never re-minted | Carried read-only as `CheckedNodeId` and `CheckedDomainPackageRef` | Checked: an unsupported v2 contract version refuses | Carried; `requires-bound` derived once from the IR table |
 | E6 | none | Carried: `Evaluation.location` from the node id | Carried | Package identity bound to the evaluation | none |
@@ -363,13 +372,28 @@ claims. Compiling the code under the prover is necessary, not sufficient: RT
 `src/exact/` compiled under Kani and the obligation count did not move
 (RT #53).
 
+The proof's expectation SHALL be derived independently of the function under
+proof. Where an oracle and the code under proof share a helper, a mutation of
+that helper moves both sides together and the proposition holds vacuously: on
+the RT #57 harness over `src/exact/`, both sides went through `decode`, and a
+mutated `decode` left the proof VERIFICATION SUCCESSFUL (#245).
+
 Each counted gate publishes a checked-in list of the modules it claims. For
-each claimed module, the gate passes only if both of these hold:
+each claimed module, the gate passes only if all of these hold:
 
 1. The prover transcript shows at least one discharged check location inside
-   that module.
+   that module. A discharged check is a SUCCESS check. The floor counts
+   SUCCESS checks only. An UNREACHABLE check is subtracted: it is never
+   counted as discharged, and no check of any other status is.
 2. At least one mutation control injected inside that module turns the gate
    red.
+3. For each helper that the oracle or expectation shares with the code under
+   proof, a mutation of that helper is run and shown to fail the proof.
+
+A helper is shared when the oracle or expectation and the function under
+proof both call it, directly or transitively. Each counted gate also
+publishes a checked-in list of its shared helpers beside its claimed-module
+list. An empty list is stated as empty.
 
 A claimed module that the prover compiles but where it reaches no proposition
 is reported as `unreached`, and the gate fails. #219 verifies this rule on the
@@ -401,7 +425,7 @@ inspection, and #212 re-walks them against the scenarios.
 | FB-07 | Replay through any executor other than S6a, or replay evidence from an injected stub executor | AD-016 arrow 7 | IR `replay_with_native_runtime` → `runtime::execute` (removed by IR #140); stubbed CG and IR replay executors (OBS-028) | #217, #219 |
 | FB-08 | A witness typed by any means other than IR `Witness::parse` and `decode` | AD-016 arrow 7: `decode` is the only typing step | IT-010 splits Kani stdout into an `i64` (OBS-002) | #217, #219 |
 | FB-09 | A CLI command makes a semantic decision, or reads diagnostic text | §5 | none known | #230, then #226 |
-| FB-10 | A proof gate claims a module over which it discharges no proposition | §2.3 | RT `src/exact/` (RT #53) | §2.3 gate owners, #219 |
+| FB-10 | A proof gate claims a module over which it discharges no SUCCESS check, or shares a helper between its expectation and the code under proof without a run mutation of that helper that fails the proof | §2.3 | RT `src/exact/` (RT #53); the RT #57 harness's shared `decode` (#245) | §2.3 gate owners, #219 |
 | FB-11 | A dependency or test-time edge that closes a cycle between QSL, IR, RT and CG | §7.1 | QSL ⇄ CG and QSL ⇄ RT test-time cycles (OBS-040) | the same direction check over normal and dev edges (T-12) |
 | FB-12 | Capability negotiation in S3 | AD-016: QSL admission negotiates nothing. #210 owns the capability-selection contract, #213 the `Capability` value type, and #185 is the only registry and router. | composed `requests::report` (ADR-010 OBS-003, a #210 item) | #216 "#185 alone owns registry/routing" evidence |
 
@@ -778,7 +802,7 @@ No other crate extraction is approved.
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1, #213 S-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). Stage type names are ADR-013 T-1's. |
 | OBS-034 (secondary) | Direction per §7.1. Pin representation: ADR-013 T-9 `RevisionPin` (full 40-character sha and lock source). |
-| RT #53 | Proof-stage acceptance (§2.3): a gate discharges at least one proposition over the code it claims. RT #53 owns the RT `src/exact/` gate until X-1. |
+| RT #53 | Proof-stage acceptance (§2.3): a gate discharges at least one proposition over the code it claims, counting SUCCESS checks only; its expectation is derived independently of the function under proof, and a run mutation of each shared helper fails the proof (#245). RT #53 owns the RT `src/exact/` gate until X-1. |
 
 ## 10. Change scenarios
 
@@ -796,7 +820,7 @@ against the combined Layer 1 architecture.
 | 5 | none | Temporal operator | S2, S3 temporal checker, S4 v2 temporal form, S6a temporal evaluator | `forms`, `check`, `package`, `value::expression` (temporal evaluator) | IR temporal admission from v2 (not QSL types, FB-05) | import a wire module from the temporal evaluator. #222 decides boundedness. |
 | 6 | 5 | Unbounded request | S3 records the extent. S4 carries it. The item settles `requires-bound` or `unsupported` with no oracle or harness, settled by CG `negotiate_*` over the `route` candidate set (§2.1, ADR-012 §7.2). #185's own rule (an unadvertised claim settles `unsupported` with a warning) is an input to that answer. | `check`, `package` | IR `requires-bound` row (AD-016 scenario 4) | narrow the domain silently; report `proved` for an unbounded claim |
 | 7 | 7 | New backend | Declares its provider manifest in its own repository (ADR-012 §12.3), which the driver adds to the registry value. At E7 it consumes S5 IR and the `route` candidate sets, settles dispositions in `negotiate_*`, emits artifacts, returns typed outcomes in #231 envelopes. If it replays, it replays through the QSL `replay` facade via E9. | none | the backend repository; QSpec for any new wire | parse QSL; depend on any QSL API other than the `replay` facade; mint spans or identities (FB-01, FB-05) |
-| 8 | 4 | Model-bound identity change that preserves provenance | I1 intake re-admits the domain package with its new identity. S3 re-resolves and mints new `DeclarationKey`s; source spans keep their node-id keys. S4 mints a new package identity. Consumers pinned to the old identity refuse at the I2 binding (§4) until their lock names the new one. | `model::intake`, `model`, `check`, `package`, `library` | FCD emitter; IR reads the new identity from v2 | re-key spans by anything other than node id; accept the old identity in a lock for the new package |
+| 8 | 4 | Model-bound identity change that preserves provenance | I1 intake re-admits the domain package with its new identity and the `DeclarationKey`s that the domain package assigns (ADR-013 O-03). S3 re-resolves and mints new node ids for nodes bound to changed declarations (ADR-013 C-02); source spans keep their node-id keys. S4 mints a new package identity. Consumers pinned to the old identity refuse at the I2 binding (§4) until their lock names the new one. | `model::intake`, `model`, `check`, `package`, `library` | FCD emitter; IR reads the new identity from v2 | re-key spans by anything other than node id; accept the old identity in a lock for the new package |
 | 9 | 6 | Nested counterexample and native replay | S6b yields a counterexample. E8 builds the packet with a typed `Witness`. E9 calls `replay`, which recompiles the digest-addressed source through S1 to S4, checks `package_id` and the source digests, and runs S6a on the decoded witness. The node id is looked up as a `NodeKey` in the recompiled package and resolved to its nested span through the v2 source map. The skeleton spine (§1.1) is the first run. | `replay`, over S1 to S4 and `value::expression` | IR packet and witness, CG replay adapter, #231 envelope | type the witness outside `Witness::decode`; replay through a stub; repair a disagreement |
 
 ## Answers to ADR-012 (#210) §13.1
@@ -904,7 +928,7 @@ The owner delegated these to the #205 coordinator.
 | T-7 | M-2 (`model` below `check`, `semantic_value`) with the #205 edge M-2 → #214 | QSL |
 | T-8 | M-4 (S4 v2 emitter and I2 reader) | QSL, before #216 |
 | T-9 | RT `qsl-agreement` retarget to `quire-exact` against QSpec vectors | RT, after X-1 |
-| T-10 | CG generated-harness gate: claimed-module list, `unreached` failure, mutation control | CG |
+| T-10 | CG generated-harness gate under §2.3: claimed-module list, `unreached` failure, SUCCESS-only discharge floor, mutation control, shared-helper list, and a run mutation of each shared helper that fails the proof (#245) | CG |
 | T-11 | Proof-stage acceptance (§2.3) as a proposed QSpec NFR binding RT and CG proof gates | QSpec |
 | T-12 | Proposed #215 scope amendment: backend direction check (FB-05, FB-11); the single API-surface check, which fails any caller outside these rules: (a) CG calls only the layer-6 `replay` facade (FB-05), (b) only `check` calls the kernel `NodeKey` constructor (ADR-013 O-04), (c) only `model` calls the kernel `EffectiveId` constructor (ADR-013 O-05); and duplicate-revision check on QSL's lock (§7.1). Until then #216 and #219 check all three by inspection. | QSL #215 (issue text) |
 
@@ -920,9 +944,13 @@ The owner delegated these to the #205 coordinator.
   layer-6 `replay` facade. IR's predicate and temporal projections return over v2
   value, expression and temporal nodes decoded at IR v2 intake (Contract IR
   #141).
-- Proof gates counted by #205 gain an `unreached` failure and a mutation
-  control per claimed module (§2.3). Kernel proof evidence does not count until RT #53 adds a
-  harness and a mutation control in `src/exact/`.
+- Proof gates counted by #205 gain an `unreached` failure, a SUCCESS-only
+  discharge count, a mutation control per claimed module and a run mutation
+  of each helper shared between oracle and code under proof (§2.3). Kernel
+  proof evidence does not count until RT #53 adds a harness whose expectation
+  is derived independently of the function under proof in `src/exact/`, with
+  a run mutation of each shared helper that fails the proof, and a mutation
+  control there.
 - The skeleton spine is the proof-and-replay evidence counted by #205 gates
   until #217 lands.
 

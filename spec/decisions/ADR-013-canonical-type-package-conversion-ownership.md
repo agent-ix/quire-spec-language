@@ -478,7 +478,7 @@ Equality: lexical on the capability wire string.
 | Public type | CG's disposition plus the declared finite domain per argument. A `proved` result qualifies only over that declared subset, and the subset is part of the obligation identity (AD-016 arrow 5, O-09). |
 | Serialized authority | FR-331 request `domains`, `limits`, `requested claims`; FR-331 `dispositions`. |
 | Conversions | authored bound → negotiation → `supported` over a declared finite domain, `requires-bound`, or `unsupported` (C-25). An unbounded domain is never narrowed implicitly. |
-| Validation and diagnostics | IR `requires-bound` is the single predicate (AD-016). An unbounded claim settles `requires-bound`, an unadvertised claim `unsupported` with a warning, and a malformed request `invalid-request`, each as one FR-331 disposition with its catalog code (AD-016 terminal-disposition rule). |
+| Validation and diagnostics | IR `requires-bound` is the single predicate (AD-016). An unbounded claim settles as ADR-012 §1.1 states: `requires-bound` on a bounded-only candidate when a finite bound is available, `unsupported` with a warning when none is, and the form's own disposition on an unbounded-mode candidate. An unadvertised claim settles `unsupported` with a warning, and a malformed request `invalid-request`, each as one FR-331 disposition with its catalog code (AD-016 terminal-disposition rule). |
 | Equality | lexical on the FR-331 disposition string. |
 
 #### O-21 Bounds, limits and accounting (DA-12, OBS-025)
@@ -510,7 +510,7 @@ executor, total). None narrows an unbounded domain.
 Validation and diagnostics: a bound outside its type refuses with
 `BoundViolation`; an exhausted meter yields `Incomplete` with its charge point
 and limit (O-16); a stage limit refuses with `LimitExceeded` (T-4); an
-unbounded proof claim settles `requires-bound` (O-20).
+unbounded proof claim settles as O-20 states.
 
 Equality: not an identity. Each bound value compares under its owning type.
 
@@ -698,7 +698,7 @@ else with a typed cause (R-07). "Test" names the evidence and who supplies it.
 | C-22 | kernel `Value` → finite harness domain | CG | In-domain only; otherwise `requires-bound` or refusal, never narrowing | CG adverse test with an out-of-domain value |
 | C-23 | FR-331 terminal record → QSL proof-result envelope | QSL (#231) | Category-preserving (O-16) | #231 test per O-16 proof row |
 | C-24 | Capability wire string ↔ layer capability enum | each consuming layer | Total; unknown value refuses | Per-layer test over the QSpec #134 (FR-290) vocabulary |
-| C-25 | Authored bound → negotiation disposition | CG | Never narrows an unbounded domain | CG test with an unbounded domain returning `requires-bound` |
+| C-25 | Authored bound → negotiation disposition | CG | Never narrows an unbounded domain | CG tests with an unbounded domain: `requires-bound` with an available finite bound, `unsupported` (warned) without one, and no narrowing |
 | C-26 | Checked type node → kernel `ValueType` | QSL checker | Total over the checked type nodes; a sum keeps its node id and variant identities | #213 S-3 test per type-node form, including a sum |
 | C-27 | `BackendId` ↔ `backend` wire member | #185 registry type, each reader | Identity kept verbatim; digest domain checked first | #185 round trip; adverse test with a wrong digest domain |
 | C-28 | FR-331 provider manifest → QSL `BackendDescriptor` | QSL `route` (#185) | Keeps provider identity, manifest digest and every capability; an unknown capability refuses | #185 test over a pinned manifest fixture |
