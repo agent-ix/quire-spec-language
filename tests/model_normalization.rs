@@ -1508,16 +1508,23 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> Bundle {
 /// `normalize.record`/`normalize.fact`/`normalize.cycle-check` charge, plus
 /// the three `normalize.redefinition-check` charges' own `2 + 3 + 6 = 11`
 /// work) is exactly enough to admit every charge up to and including the
-/// last `normalize.redefinition-check`, denying only the
-/// `normalize.conflict-check` that follows it -- and its reported
-/// `next_charge` is exactly `18`.
+/// last `normalize.redefinition-check`. It no longer denies at
+/// `normalize.conflict-check` there (QSL #169): ten phase-4 redefine facts
+/// -- two per redefinition record reaching the type that resolves it,
+/// `2` at `B` + `2` at `C` + `6` at `D` (see
+/// `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`
+/// below for the full count) -- are now charged as `normalize.fact` first,
+/// so `54` denies at the first of those instead. `work_units = 64`
+/// (`54 + 10`) is the boundary that now lands exactly before
+/// `normalize.conflict-check`, whose reported `next_charge` is still
+/// exactly `18`.
 ///
 /// Revert probe: reverting the `Σ (c − 1) × f(o)` charge back to a flat,
 /// unconditional `Charge::new(ChargePoint::NormalizeConflictCheck)` (no
 /// `.work(...)` override, i.e. PR #167's own pre-fix shape) makes both
-/// assertions below fail -- the exact-bound one because `work_units = 54`
+/// assertions below fail -- the exact-bound one because `work_units = 64`
 /// then completes outright (a flat charge of 1 fits), and the total
-/// because `100` no longer matches. Confirmed by hand: reintroducing that
+/// because `110` no longer matches. Confirmed by hand: reintroducing that
 /// exact one-line regression locally reproduces both failures, then
 /// removing it again restores this test to green.
 #[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
@@ -1547,7 +1554,85 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
         1,
         "exactly one contested group (A.x, reachable at D) across the whole build"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 100);
+    // #169: 100 before this fix -- the ten phase-4 redefine facts (see
+    // `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`)
+    // were never charged as `normalize.fact`.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 110);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 64;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 64);
+            assert_eq!(incomplete.consumed, 64);
+            assert_eq!(incomplete.next_charge, 18);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+        }
+        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
+    }
+}
+
+/// QSL #169: phase-4 redefine facts (`RULE_REDEFINE`) are themselves
+/// derivation facts and must be charged as `normalize.fact`
+/// (`value-accounting.md:453`: "each derivation fact before it is formed:
+/// phase 2, then phase 3, then phase 4 ... `derivation_facts=k`"), in the
+/// order `value-accounting.md:455`/`:456` fix relative to phase 4's own two
+/// checks: `normalize.redefinition-check` fires "before its first
+/// `normalize.fact`" and `normalize.conflict-check` fires "after its last
+/// `normalize.fact`" -- so the correct phase-4 charge sequence is
+/// redefinition-check, then every phase-4 `normalize.fact` (ascending by
+/// `(owner producer key, declaration producer key, inputs)`, `:453`), then
+/// conflict-check. Before this fix, `charge_all` went straight from
+/// `redefinition_check_work` to `conflict_check_work`, so these facts
+/// existed in the effective view's own derivation (`apply_redefinitions`
+/// already pushed them) but were never counted toward `derivation_facts` or
+/// `work_units`.
+///
+/// `fixture_n06_resolved` (reused from
+/// `n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o` above,
+/// same hand-verified `m`/`f(o)` values) produces exactly ten phase-4
+/// redefine facts -- two per redefinition record reaching the type that
+/// resolves it (`quire.model.normalize.redefine/v1`,
+/// `model-complete.md:231`: "one fact on (T, redefining feature) and one on
+/// (T, redefined feature)"), for every record reaching that type, contested
+/// or not:
+///
+/// - at `B`: `redef.B` reaches only `B` -- 2 facts (`B.x2`, `A.x`).
+/// - at `C`: `redef.C` reaches only `C` -- 2 facts (`C.x3`, `A.x`).
+/// - at `D`: `redef.B`, `redef.C` and `redef.D` all reach `D` -- 3 records
+///   x 2 facts = 6 facts (`B.x2`, `A.x`, `C.x3`, `A.x`, `D.x4`, `A.x`).
+///
+/// Total: `2 + 2 + 6 = 10`.
+///
+/// Cross-checked against the crate: `work_units` for a completed
+/// (`UNLIMITED`) run rises from the pre-fix `100`
+/// (`n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o`'s own
+/// total) to `110` -- the ten new `normalize.fact` charges, one work unit
+/// each -- and `derivation_facts` peaks at `30` (the pre-existing `20`
+/// phase-2/3 facts plus these ten). At `work_units = 54` (exactly the
+/// pre-fix boundary: `43` phase-1/2/3 plus `11` for the three
+/// `normalize.redefinition-check` charges), the next charge is now the
+/// *first* phase-4 `normalize.fact` (`next_charge = 1`), never
+/// `normalize.conflict-check` -- the pre-fix defect reported `Incomplete` at
+/// `normalize.conflict-check` here because the ten facts in between were
+/// never charged.
+///
+/// Revert probe: dropping this fix's phase-4 `normalize.fact` charge loop
+/// back out of `charge_all` reproduces both failures here -- `work_units`
+/// reads `100`, not `110`, and the bounded run denies at
+/// `normalize.conflict-check`, not `normalize.fact` -- confirmed by hand:
+/// reverting the change locally reproduces both, restoring it returns this
+/// test to green.
+#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[test]
+fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks() {
+    let bundle = fixture_n06_resolved();
+
+    let (outcome, meter) = normalize_with_meter(&bundle, ModelNormalizationLimits::UNLIMITED);
+    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 110);
+    assert_eq!(meter.consumed(LimitKind::DerivationFacts), 30);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 54;
@@ -1556,10 +1641,16 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
             assert_eq!(incomplete.limit, 54);
             assert_eq!(incomplete.consumed, 54);
-            assert_eq!(incomplete.next_charge, 18);
-            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeConflictCheck);
+            assert_eq!(
+                incomplete.next_charge, 1,
+                "the first phase-4 normalize.fact charge, never once with a \
+                 flat cost other than one work unit"
+            );
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
         }
-        other => panic!("expected Incomplete at normalize.conflict-check, got {other:?}"),
+        other => {
+            panic!("expected Incomplete at the first phase-4 normalize.fact charge, got {other:?}")
+        }
     }
 }
 
@@ -1570,7 +1661,10 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
 /// shape that walked one unconditionally regardless of `edges.len()`.
 ///
 /// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this bundle completes at exactly `work_units = 37`, and its
+/// unlimited, this bundle completes at exactly `work_units = 39` (`37`
+/// before QSL #169: the single redefinition record still produces its own
+/// two phase-4 redefine facts -- one on `B2.x2`, one on the redefined
+/// `A.x` -- now charged as `normalize.fact`, `+2`), and its
 /// one `normalize.redefinition-check` charge is exactly `2` (`m = 2`:
 /// `B2`'s own effective members are `A.x`, inherited, and `B2.x2`, direct;
 /// `r = 0`: the only redefinition record examined in this build).
@@ -1605,7 +1699,7 @@ fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
         0,
         "a single redefiner has nothing to dominate and admits no conflict-check charge"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 37);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 39);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 19;
@@ -1996,15 +2090,21 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// (`6`), regardless of which target key sorts first.
 ///
 /// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this bundle completes at exactly `work_units = 89`, and
-/// `work_units = 58` is exactly enough to admit every charge up to and
-/// including the last `normalize.redefinition-check`, denying at the first
-/// `normalize.conflict-check` -- the operation group's `6`, not the field
-/// group's `5`.
+/// unlimited, this bundle completes at exactly `work_units = 95` (`89`
+/// before QSL #169: the field redefinition group alone produces six phase-4
+/// redefine facts, `+6` -- two at `B` for `redef.z1` reaching only `B`, and
+/// four at `C` for `redef.z1`/`redef.z2` both reaching `C`; the operation
+/// group's own two records contribute no facts at all, since operation
+/// members never enter `member_preimages` and get no `Fact` here, only a
+/// `normalize.conflict-check` charge -- see the module docs), and
+/// `work_units = 64` (`58 + 6`) is exactly enough to admit every charge up
+/// to and including these six phase-4 `normalize.fact` charges, denying at
+/// the first `normalize.conflict-check` -- the operation group's `6`, not
+/// the field group's `5`.
 ///
 /// Revert probe: reverting `apply_redefinitions` back to each loop pushing
 /// its own charge straight to `conflict_check_work` (the pre-fix shape)
-/// makes the `work_units = 58` assertion fail -- `next_charge` becomes `5`
+/// makes the `work_units = 64` assertion fail -- `next_charge` becomes `5`
 /// (the field group, charged first again) instead of `6` -- confirmed by hand:
 /// reverting the two loops to push directly, locally, reproduces the
 /// failure; restoring the collect-sort-push shape returns this test to
@@ -2044,15 +2144,17 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
         2,
         "one contested group for A.z (field) and one for A.a (operation)"
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 89);
+    // #169: 89 before this fix -- the field redefinition group's own six
+    // phase-4 redefine facts were never charged as `normalize.fact`.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 95);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 58;
+    limits.work_units = 64;
     match normalize(&bundle, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 58);
-            assert_eq!(incomplete.consumed, 58);
+            assert_eq!(incomplete.limit, 64);
+            assert_eq!(incomplete.consumed, 64);
             assert_eq!(
                 incomplete.next_charge, 6,
                 "model.A.a sorts before model.A.z, so the operation group's \

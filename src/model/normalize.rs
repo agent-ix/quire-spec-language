@@ -121,7 +121,7 @@
 //! owner-path bookkeeping rather than recomputed a second time (PR #140
 //! F10's "don't walk the identical DFS twice" lesson).
 //!
-//! Phase 4's two charge points price this work exactly as
+//! Phase 4's charge points price this work exactly as
 //! `proposals/quire-v1/definitions/value-accounting.md` states, not a flat
 //! one work unit (QSL #145 scope item 2):
 //! `normalize.redefinition-check` (`:455`) charges `m + r` once per
@@ -149,6 +149,20 @@
 //! redefinition's owner can sort after the type currently being processed
 //! in `type_keys`' ascending order, and its own member/fact counts must
 //! already exist regardless.
+//!
+//! The redefine facts phase 4 itself derives (`RULE_REDEFINE`, one on the
+//! redefining feature and one on the redefined feature per redefinition
+//! record reaching a type — `model-complete.md:231`) are themselves
+//! derivation facts, exactly like phase 2's qualify facts and phase 3's
+//! inherit facts, and `value-accounting.md:453` prices every derivation
+//! fact as `normalize.fact` regardless of which phase formed it (QSL #169).
+//! `apply_redefinitions` already built these facts into the view before
+//! this fix; the fix (`build`'s `phase4_facts` field, replayed by
+//! `charge_all` between `normalize.redefinition-check` and
+//! `normalize.conflict-check`, matching `:455`'s "before its first
+//! `normalize.fact`" and `:456`'s "after its last `normalize.fact`") only
+//! adds the missing charge — the view, and every identity it produces, is
+//! unchanged.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
@@ -650,6 +664,30 @@ struct Built {
     /// type reaching it) pair; replayed by
     /// `charge_all`.
     redefinition_check_work: Vec<u64>,
+    /// Every phase-4 redefine fact (`RULE_REDEFINE`) awaiting its own
+    /// `normalize.fact` charge (QSL #169): `quire.model.normalize.redefine/v1`
+    /// derives "one fact on (T, redefining feature) and one on (T, redefined
+    /// feature)" per redefinition record reaching `T`
+    /// (`model-complete.md:231`), for every record reaching `T`, contested
+    /// or not — `apply_redefinitions` already builds these two
+    /// [`Fact`]s into the redefining and target members' own
+    /// [`EffectiveDeclarationPreimage`] (the view is unchanged by this
+    /// field); this is that same pair, tagged for the *charge* replay
+    /// `phase2_facts`/`phase3_facts` already get. `value-accounting.md:453`
+    /// orders every derivation fact "phase 2, then phase 3, then phase 4,
+    /// each ascending by (owner producer key, declaration producer key,
+    /// inputs)" — the identical `sort_facts` ordering `phase2_facts`/
+    /// `phase3_facts` already replay under, reused verbatim rather than a
+    /// second sort rule. `charge_all` charges these between
+    /// `redefinition_check_work` and `conflict_check_work`.
+    /// `value-accounting.md:455` puts `normalize.redefinition-check`
+    /// "before its first `normalize.fact`" and `:456` puts
+    /// `normalize.conflict-check` "after its last `normalize.fact`" — so
+    /// this field's charges belong strictly between the other two, never
+    /// interleaved with them. Empty whenever phase 4's own resolution loop
+    /// did not run at all (a phase-2/3 fact budget already exhausted; see
+    /// the module docs), exactly like `conflict_check_work` in that case.
+    phase4_facts: Vec<PendingFact>,
     /// Every phase-4 `normalize.conflict-check` charge's own exact
     /// `work_units` amount (`Σ (c − 1) × f(o)`, `value-accounting.md:456`),
     /// one entry per (effective type, redefined member) group with `c >= 2`
@@ -1104,10 +1142,12 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     }
 
     let mut conflict_check_work: Vec<u64> = Vec::new();
+    let mut phase4_facts: Vec<PendingFact> = Vec::new();
     let mut accounting = Phase4Accounting {
         type_fact_counts: &type_fact_counts,
         owner_ancestor_sets: &owner_ancestor_sets,
         conflict_check_work: &mut conflict_check_work,
+        phase4_facts: &mut phase4_facts,
     };
     // A truncated phase-3 path set (a tight fact budget already exceeded by
     // the time every type's own phase 2/3 above has run) cannot resolve
@@ -1193,6 +1233,7 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         view,
         universe,
         redefinition_check_work,
+        phase4_facts,
         conflict_check_work,
     })
 }
@@ -1210,18 +1251,25 @@ struct RedefinitionEdge {
 
 /// Every cross-type input and output `apply_redefinitions` needs beyond its
 /// own `type_key`'s local bookkeeping, grouped into one `&mut` borrow
-/// (rather than three separate parameters) so the function stays within
+/// (rather than four separate parameters) so the function stays within
 /// clippy's `too_many_arguments` ceiling. `type_fact_counts`/
 /// `owner_ancestor_sets` are build-wide, read-only lookups (`f(o)`,
 /// `value-accounting.md:456`, and each owner's own proper-ancestor set);
-/// `conflict_check_work` is a build-wide accumulator mutated across every
-/// `type_key`'s own call. `normalize.redefinition-check`'s own charge
-/// sequence — and the `m` it needs — is not built here at all: `build`
-/// computes it once, bundle-wide, before any `apply_redefinitions` call.
+/// `conflict_check_work` and `phase4_facts` (QSL #169) are build-wide
+/// accumulators mutated across every `type_key`'s own call.
+/// `normalize.redefinition-check`'s own charge sequence — and the `m` it
+/// needs — is not built here at all: `build` computes it once, bundle-wide,
+/// before any `apply_redefinitions` call.
 struct Phase4Accounting<'a> {
     type_fact_counts: &'a HashMap<ProducerKey, u64>,
     owner_ancestor_sets: &'a HashMap<ProducerKey, HashSet<ProducerKey>>,
     conflict_check_work: &'a mut Vec<u64>,
+    /// Every phase-4 redefine fact awaiting its own `normalize.fact` charge
+    /// (see [`Built::phase4_facts`]'s own doc) — field redefinition only,
+    /// exactly like `member_preimages`/`hidden`: an operation-member
+    /// redefinition edge never reaches [`Fact`] construction here at all
+    /// (see the module docs), so it contributes nothing to this list.
+    phase4_facts: &'a mut Vec<PendingFact>,
 }
 
 /// Phase 4 (TC-195 N06): field redefinition only — operation-member
@@ -1551,6 +1599,16 @@ fn apply_redefinitions(
                 rule: RULE_REDEFINE,
                 inputs: inputs.clone(),
             });
+            // QSL #169: the redefining feature's own fact, awaiting its
+            // `normalize.fact` charge alongside phase 2/3's (`Built::phase4_facts`'s
+            // own doc; `model-complete.md:231`'s "one fact on (T, redefining
+            // feature)").
+            accounting.phase4_facts.push(PendingFact {
+                owner_key: Some(type_key.clone()),
+                declared_key: edge.redefining.clone(),
+                inputs: inputs.clone(),
+                cycle_check_len: None,
+            });
             if i != winner_index {
                 hidden.insert(redefining_key);
             }
@@ -1562,7 +1620,18 @@ fn apply_redefinitions(
             target_entry.derivation.push(Fact {
                 ordinal,
                 rule: RULE_REDEFINE,
+                inputs: inputs.clone(),
+            });
+            // QSL #169: the redefined (target) feature's own fact —
+            // `model-complete.md:231`'s "one ... on (T, redefined feature)"
+            // — one entry per redefinition record reaching this target, not
+            // one per target: a `c >= 2` group appends one here for every
+            // contesting edge.
+            accounting.phase4_facts.push(PendingFact {
+                owner_key: Some(type_key.clone()),
+                declared_key: target_key.clone(),
                 inputs,
+                cycle_check_len: None,
             });
         }
         hidden.insert(member_key);
@@ -1685,6 +1754,25 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
     for work in &built.redefinition_check_work {
         meter.charge(Charge::new(ChargePoint::NormalizeRedefinitionCheck).work(*work))?;
     }
+
+    // QSL #169: phase-4 redefine facts are derivation facts too
+    // (`value-accounting.md:453`) and are charged as `normalize.fact` here,
+    // continuing the same `fact_count`/`derivation_facts` sequence phase
+    // 2/3 already ran -- strictly between `normalize.redefinition-check`
+    // ("before its first `normalize.fact`", `:455`) and
+    // `normalize.conflict-check` ("after its last `normalize.fact`",
+    // `:456`). See `Built::phase4_facts`'s own doc for why these carry no
+    // `normalize.cycle-check` (that charge is phase-3 type-level facts
+    // only).
+    let mut phase4_owned: Vec<PendingFact> = built.phase4_facts.clone();
+    sort_facts(&mut phase4_owned);
+    for _fact in &phase4_owned {
+        fact_count += 1;
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
+        )?;
+    }
+
     for work in &built.conflict_check_work {
         meter.charge(Charge::new(ChargePoint::NormalizeConflictCheck).work(*work))?;
     }
