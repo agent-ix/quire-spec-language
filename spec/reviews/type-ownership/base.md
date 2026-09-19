@@ -134,3 +134,23 @@ files reports 10/10 grammar-clean.
 Round-3 verdict: CHANGES. PR2-H1 blocks. PR2-M1 to PR2-M3 are cross-ADR
 contradictions that must be resolved in one of the three ADRs before the #212
 gate. PR2-L1 to PR2-L4 are low.
+
+## Author fixes (round 3)
+
+Rulings by Agent A under the owner's delegation (2026-09-19). Sibling pins:
+ADR-011 at `1666d02`, ADR-012 at `eecf825`.
+
+| ID | Disposition | Where |
+| --- | --- | --- |
+| PR2-H1 | Fixed. RT and CG never mint a `NodeKey` or read one from a wire; every wire id is a `WireNodeId`, converted only by QSL lookup (E4 for imports, the layer-6 `replay` facade at E9 for packets and requests). RT holds `NodeKey`s only as in-process values from S6a. The kernel enum and sum payload carry `VariantId` only. C-11 reconstructs arguments keyed by `WireNodeId`. Enforcement cites the widened ADR-011 T-12 API-surface check (a) CG → `replay` only, (b) `check` → `NodeKey`, (c) `model` → `EffectiveId`. | O-04, O-05, O-14, O-25, T-6, C-11 |
+| PR2-M1 | No change. ADR-013 T-3 (`node: WireNodeId`) stands; ADR-011 E3 follows it. | T-3 |
+| PR2-M2 | Fixed. QC-20 amends AD-016 arrow 6 and the Packet row to `source: ReplaySource`; it joins the TK-10 amendment PR. Counts now twenty QSpec changes, six AD-016 amendments. ADR-011 E8 follows. | O-25, QC-20, OQ-3, TK-10, Context, Consequences |
+| PR2-M3 | Fixed. The kernel `Refusal` holds kernel causes only. S6a returns the layer-3 `check`-core `FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }`; `FamilyRefusal` carries `FamilyNotNativelyEvaluable` and maps to category `refusal` in F `diagnostic`. ADR-012 follows at `eecf825`. | O-16, O-17, T-6, Q210-3 |
+| PR2-L1 | Fixed. Pins are ADR-011 `1666d02` and ADR-012 `eecf825`. | Context |
+| PR2-L2 | Fixed. The dependency compile cite is ADR-011 §1 S4 and E4/I2. | O-04 |
+| PR2-L3 | Fixed. Q209-2 cites ADR-011 §8 for `ResolvedSourcePackage`. | Q209-2 |
+| PR2-L4 | Fixed. OQ-3 records the confirmation of QC-15's six types and no others. | OQ-3 |
+| ADR-011 R3 low (FB-05 quote) | Fixed. Q209-5 paraphrases FB-05 with a §3 cite. | Q209-5 |
+| ADR-011 R3 low (IR #139) | Fixed. IR PR #139 is merged at `954c2f2`. | Context, TK-10 |
+| ADR-011 R3 low (TK-01) | Fixed. The skeleton spine (ADR-011 T-2) lands the `replay` facade first; #214 widens it per family. | TK-01 |
+| ADR-011 §4 dependency binding | No change. ADR-013 lists no E4 or E9 refusal codes, so `DependencyIdentityMismatch` is not added. | none |
