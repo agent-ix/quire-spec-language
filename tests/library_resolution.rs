@@ -73,6 +73,7 @@ fn projection_node(label: &str, declaration: Option<&str>) -> Value {
             "qualified_declaration": [declaration],
             "version": "quire.enum-declaration-node/v1",
         });
+        node["declaration"] = json!({"qualified_name": [declaration]});
     }
     node
 }
@@ -576,10 +577,28 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     } else {
         (second_r, node_r.clone())
     };
-    let duplicate_declaration = preimage_value(vec![first_declaration, second_declaration]);
+    let ambiguous_declaration = preimage_value(vec![first_declaration, second_declaration]);
     let scalar_node = preimage_value(vec![json!(0)]);
 
-    let cases: [MalformedCase; 18] = [
+    // The top-level `declaration` disagrees with the nominal
+    // `qualified_declaration` (`declaration-nominal-mismatch`).
+    let mut mismatched_declaration = valid.clone();
+    mismatched_declaration["identity_projection"][0]["declaration"] = json!({"qualified_name": ["S"]});
+    // `declaration` is absent although the node is nominal.
+    let mut missing_declaration = valid.clone();
+    missing_declaration["identity_projection"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("declaration");
+    // `declaration` is not `{qualified_name}`: wrong type.
+    let mut declaration_wrong_type = valid.clone();
+    declaration_wrong_type["identity_projection"][0]["declaration"] = json!(42);
+    // `declaration` is not `{qualified_name}`: an extra member.
+    let mut declaration_extra_member = valid.clone();
+    declaration_extra_member["identity_projection"][0]["declaration"] =
+        json!({"qualified_name": ["R"], "surplus": 0});
+
+    let cases: [MalformedCase; 21] = [
         (jcs(&wrong_version), &["R"], PreimageDefect::Version),
         (
             jcs(&missing_member),
@@ -664,9 +683,36 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
             },
         ),
         (
-            jcs(&duplicate_declaration),
+            jcs(&mismatched_declaration),
             &[],
-            PreimageDefect::DuplicateDeclaration { index: 1 },
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::DeclarationNominalMismatch,
+            },
+        ),
+        (
+            jcs(&missing_declaration),
+            &[],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::DeclarationNominalMismatch,
+            },
+        ),
+        (
+            jcs(&declaration_wrong_type),
+            &[],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::Declaration,
+            },
+        ),
+        (
+            jcs(&declaration_extra_member),
+            &[],
+            PreimageDefect::Node {
+                index: 0,
+                defect: NodeDefect::Declaration,
+            },
         ),
     ];
     let importer = over_l("P", "1", id("L@1"));
@@ -690,6 +736,37 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
             LibraryCause::InvalidValue,
         );
     }
+
+    // Two distinct node ids declaring one name `R`: `ambiguous-name`, a
+    // different `Code`/`LibraryCause` family than the loop above, so it is
+    // asserted separately with both node keys in ascending digest order.
+    let ambiguous = with_preimage(jcs(&ambiguous_declaration), &[]);
+    let (first_node, second_node) = if hex("L@1::R") < hex("L@1::S") {
+        (node("L@1::R"), node("L@1::S"))
+    } else {
+        (node("L@1::S"), node("L@1::R"))
+    };
+    let expected_ambiguous = LibraryRefusal::InvalidPreimage {
+        library: name("L"),
+        defect: PreimageDefect::AmbiguousDeclaration {
+            name: "R".to_owned(),
+            nodes: [first_node, second_node],
+        },
+    };
+    assert_eq!(expected_ambiguous.member_path(), Some("/identity_preimage"));
+    assert_library_refusal(
+        resolve_libraries(&importer, std::slice::from_ref(&ambiguous)),
+        &expected_ambiguous,
+        Code::AmbiguousDeclaration,
+        LibraryCause::AmbiguousName,
+    );
+    assert_library_refusal(
+        check_migration(&library_l(), &ambiguous),
+        &expected_ambiguous,
+        Code::AmbiguousDeclaration,
+        LibraryCause::AmbiguousName,
+    );
+
     assert_eq!(
         with_preimage(jcs(&valid), &["R"]),
         library_l(),

@@ -35,12 +35,12 @@ const NODE_REQUIRED: [&str; 7] = [
     "body",
 ];
 
-/// `declaration` is the checked-package-v2 `ApplicationNode` preimage's own
-/// name member (QSpec proposals/checked-package-v2/node-identity-preimage
-/// .schema.json's `Declaration`). Complete V1 at this pin declares no
-/// application node, so this reader admits the member on the nominal node
-/// kinds it does declare without deriving anything from it: every export this
-/// pin's fixtures name still resolves through `nominal_identity_preimage`.
+/// `declaration` is the projection node's own name member (checked-package-v2
+/// README.md's "Declarations" section): a named, source-declared node carries
+/// `declaration: {qualified_name}` exactly when it has a declaration source
+/// occurrence. On a nominal node it must equal the nominal
+/// `qualified_declaration`, and every export resolves only through this
+/// member, never through `nominal_identity_preimage` directly.
 const NODE_OPTIONAL: [&str; 3] = [
     "recursion_group",
     "nominal_identity_preimage",
@@ -79,10 +79,14 @@ pub enum PreimageDefect {
         /// The node's index in `identity_projection`.
         index: usize,
     },
-    /// Projection node `index` repeats an earlier node's qualified declaration.
-    DuplicateDeclaration {
-        /// The node's index in `identity_projection`.
-        index: usize,
+    /// Two projection nodes carry equal `declaration.qualified_name` values
+    /// (`ambiguous-name`). `nodes` holds both node keys in ascending digest
+    /// order.
+    AmbiguousDeclaration {
+        /// The repeated qualified name.
+        name: String,
+        /// Both node keys, in ascending digest order.
+        nodes: [NodeKey; 2],
     },
 }
 
@@ -102,8 +106,15 @@ pub enum NodeDefect {
     SchemaVersion,
     /// `node_tag` is not a V2 semantic graph node tag.
     NodeTag,
-    /// A nominal `qualified_declaration` is not a non-empty identifier array.
+    /// A nominal `qualified_declaration` or a top-level `declaration` is not
+    /// a non-empty identifier array, or `declaration` is not exactly
+    /// `{qualified_name}`.
     Declaration,
+    /// A node's `declaration.qualified_name` disagrees with its nominal
+    /// `qualified_declaration`, or the node carries a nominal
+    /// `qualified_declaration` with no `declaration` member
+    /// (`declaration-nominal-mismatch`).
+    DeclarationNominalMismatch,
 }
 
 /// The validated node keys of one identity preimage, by nominal qualified
@@ -209,19 +220,48 @@ fn nominal_declaration(nominal: &Value) -> Result<Option<String>, NodeDefect> {
     qualified(segments).map(Some)
 }
 
-/// The nominal `qualified_declaration` a projection node carries. Complete V1
-/// at this pin names no other node, so only enum, dimension and unit nodes
-/// declare an exportable name.
+/// The `qualified_name` of a top-level `declaration` member, which must be
+/// exactly `{qualified_name}`.
+fn declared_name(value: &Value) -> Result<String, NodeDefect> {
+    let object = value.as_object().ok_or(NodeDefect::Declaration)?;
+    if object.len() != 1 {
+        return Err(NodeDefect::Declaration);
+    }
+    let segments = object
+        .get("qualified_name")
+        .and_then(Value::as_array)
+        .ok_or(NodeDefect::Declaration)?
+        .iter()
+        .map(|segment| segment.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(NodeDefect::Declaration)?;
+    qualified(segments)
+}
+
+/// The declared name a projection node exports, derived from its top-level
+/// `declaration` member. On a nominal node, `declaration.qualified_name` must
+/// equal the nominal `qualified_declaration`; a nominal node with no
+/// `declaration` member is also a mismatch, since library exports resolve
+/// only through `declaration`, never through `nominal_identity_preimage`
+/// directly.
 fn declaration(node: &Map<String, Value>) -> Result<Option<String>, NodeDefect> {
     node.get("node_tag")
         .and_then(Value::as_str)
         .filter(|tag| NODE_TAGS.contains(tag))
         .ok_or(NodeDefect::NodeTag)?;
-    Ok(node
+    let nominal = node
         .get("nominal_identity_preimage")
         .map(nominal_declaration)
         .transpose()?
-        .flatten())
+        .flatten();
+    let declared = node.get("declaration").map(declared_name).transpose()?;
+    match (declared, nominal) {
+        (Some(declared), Some(nominal)) if declared != nominal => {
+            Err(NodeDefect::DeclarationNominalMismatch)
+        }
+        (None, Some(_)) => Err(NodeDefect::DeclarationNominalMismatch),
+        (declared, _) => Ok(declared),
+    }
 }
 
 fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect> {
@@ -248,7 +288,7 @@ fn projected_node(value: &Value) -> Result<(NodeKey, Option<String>), NodeDefect
 /// ascending UTF-8 byte order, no insignificant whitespace and one string and
 /// number spelling per value. That is RFC 8785 JCS for every preimage whose
 /// member names are ASCII, which is every name this schema defines and every
-/// name QSpec 7d7943a gives a projection node. It is stricter than JCS, never
+/// name QSpec d227270 gives a projection node. It is stricter than JCS, never
 /// weaker: a preimage that JCS would order differently (member names outside
 /// ASCII, whose UTF-16 code-unit order differs from their UTF-8 byte order) is
 /// refused as [`PreimageDefect::NonCanonical`] rather than admitted under a
@@ -291,8 +331,11 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         }
         previous = Some(key);
         if let Some(declared) = declared {
-            if declarations.insert(declared, key).is_some() {
-                return Err(PreimageDefect::DuplicateDeclaration { index });
+            if let Some(earlier) = declarations.insert(declared.clone(), key) {
+                return Err(PreimageDefect::AmbiguousDeclaration {
+                    name: declared,
+                    nodes: [earlier, key],
+                });
             }
         }
     }

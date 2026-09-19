@@ -102,9 +102,9 @@ pub struct OwnerSubject {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct ModelSubject {
-    /// Nonempty identity.
+    /// The domain package identity.
     pub identity: String,
-    /// Nonempty node.
+    /// The IR node identity.
     pub node: String,
 }
 
