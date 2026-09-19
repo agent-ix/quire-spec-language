@@ -106,3 +106,47 @@ assignment. None needs the ownership decisions reworked.
 - The QI heads workspace is absent, per ADR-010 §6.
 - Issue bodies for #211, #213, #217 and #231 were read with `gh issue view`.
 - Nothing was built, run or committed. The only file written is this review.
+
+## Round 2 (commit 0042691)
+
+This round re-checks FND-001 to FND-016 against ADR-013 at 0042691: §4 (C-01 to
+C-25), §1 evidence paragraph, O-22 Tests row, O-25 admission, §7 and §8. It
+uses the same evidence clones as round 1. Also checked: IR PR #139 is still
+open at head 417ec86, and CG #50 is open ("Canonicalize and replay every
+backend counterexample through native execution").
+
+| Round-1 ID | Severity | Status at 0042691 | Reason |
+|---|---|---|---|
+| FND-001 | high | resolved | C-01 names a #131 intake test over a pinned FCD fixture. C-03 names an emitter golden test against the v2 positive fixtures, with TC-233 as the reference. C-15 names a totality test in each layer against the vendored catalog. Heads check 4 appears only as drift detection (O-23), and heads checks 1, 2 and 7 are no longer named. The emitter has no ticket, and §7 and OQ-4 say so. |
+| FND-002 | high | resolved | C-02 names model-owned node-identity vectors (QC-3, a QSpec change that blocks #213 S-2) and a #213 S-2 test against them. TC-195 moved to O-05. |
+| FND-003 | high | resolved differently | C-13's evidence is now executor tests with three vectors: a meaning-affecting edit refuses by `package_id`, a presentation-only edit refuses by source digest, and a missing input refuses. The owner is not #217, as round 1 proposed. It is an OQ-4 ticket that does not exist yet, and §7 states that #231 excludes replay execution. The obligation is now assigned and blocked in the open, which is acceptable for a Layer 1 record. Presentation-only edits now refuse rather than pass, because O-26 compares `RawSourceRef` digests. That is consistent with the spans argument in O-26. |
+| FND-004 | medium | unresolved in part (now low) | C-06 now names an RT test over all six IR kinds, and says each kind "maps to an RT kind or refuses with a typed cause". The record still does not say which RT kind `Assertion`, `Case` and `Information` map to, or which of them refuse. So the test has no fixed expected result. Refusing an admitted IR kind also sits awkwardly with R-07: a conversion is total over its admitted input. Carried forward as FND-017. |
+| FND-005 | medium | resolved | Every one of the 10 kinds now has exactly one O-16 row. `Unavailable` maps to unsupported, and `Inconclusive` has its own category. C-09 names an IR test over all ten kinds, C-08 names one adverse test per evaluation row, and C-23 names a #231 test per proof row. OQ-3 (d) carries the WP9 amendment. |
+| FND-006 | medium | resolved | O-22 now defers the order of the version refusal to each contract's own refusal order, and adds a Tests row: IR TC-048, QSpec TC-255, and a #231 unknown-version test for each envelope it reads. |
+| FND-007 | medium | resolved | C-11 names the vendored seed vector and a CG widening test at `i64::MIN` and `i64::MAX` (CG #50). It also adds the rule that the join is by parameter node id. Who vendors the seed vector (WP9) is still not named. That is minor. |
+| FND-008 | medium | resolved | C-12 names a CG contract test (CG #50) plus the #231 round trip of the request type. |
+| FND-009 | medium | resolved differently | The §1 evidence paragraph names #213 adverse tests that change display text, diagnostic text and collection order, plus a static check in the #226 drift gate. The reordered-`concrete_vals` case is now covered by C-11's rule that the join is by parameter node id. |
+| FND-010 | medium | resolved | §1 and O-15 name `compile_fail` tests on every public constructor path (#213). O-04 removes `NodeKey::from_bytes`. |
+| FND-011 | medium | resolved | O-03, C-01 and §7 name a #131 adverse test for the `quire/native` refusal, which must land before PR #200 merges. |
+| FND-012 | low | resolved | C-04 now reads "IR TC-048; QSpec TC-217". |
+| FND-013 | low | unresolved in part | C-16 now names "Digest members of the v2 positive and negative fixtures (#213 S-2)". At QSpec 818f555, `fixtures/adverse.json` has only two digest mutations, both cross-domain (`cross-domain-package-id`, `cross-domain-source-digest`). No fixture has uppercase hex, a 63- or 65-character digest, a prefixed form or an absent domain. So the format refusals in O-18 have no case. Carried forward as FND-018. |
+| FND-014 | low | resolved | C-07 names a round trip of every `value_kind` in the v2 positive fixtures and the complete-value vectors (#213 S-1). C-14 names a source-map lookup test (#213 S-4). The O-12 case "a tag naming no node refuses at replay" still has no named test. That is minor, and it is not carried forward. |
+| FND-015 | low | resolved | C-10 now says "Stores the selected, trimmed assertion block", and names a #231 byte-for-byte envelope round trip. |
+| FND-016 | low | resolved | C-22 names a CG adverse test with an out-of-domain value. O-23 and §7 assign the pin-equality tests to #215. |
+
+Counts: 12 resolved, 2 resolved differently, 2 unresolved in part (both now
+low).
+
+New or carried-forward findings:
+
+| ID | Severity | Summary | Refs |
+|----|----------|---------|------|
+| FND-017 | low | Carried forward from FND-004. C-06 names an RT test, but no expected result. O-10 or C-06 should give the six-row map (IR kind → RT kind, or the typed refusal) so the RT test can check it. If a kind refuses, say why that input is not admitted under R-07. | ADR-013 O-10; §4 C-06; R-07 |
+| FND-018 | low | Carried forward from FND-013. C-16's fixtures have no case for the format refusals: uppercase hex, wrong length, prefixed form, absent domain. Either name a #213 S-2 property test over those forms, or add a QSpec change (QC table) for the mutations. | ADR-013 §4 C-16; O-18 |
+| FND-019 | medium | The new O-25 Admission row says a `Witness` "is admitted only through `parse`, including on deserialization", and that "a transcript that differs from its own selected block refuses". At IR PR #139 head 417ec86 (still the head), `Witness` has `#[derive(Deserialize)]` with a `pub transcript` field. Its own doc comment says `Deserialize` "bypasses [`Witness::parse`] and its structural validation entirely" (`src/kani/witness.rs:95-107`). The existing tests refuse an untrustworthy transcript at replay (`tc_042_replay_counterexample_refuses_witness_with_untrustworthy_transcript`), not when the witness is deserialized. The record adds a rule that the witness it adopts does not meet, and it names no test and no owner for the change. **Fix:** in O-25 or §7, name the IR PR #139 change: `Deserialize` goes through `parse` (for example `#[serde(try_from = "String")]`), and the field is no longer `pub`. Name its test: deserializing a cover transcript, an untrimmed transcript, and a two-block transcript each refuses. | ADR-013 O-25 Admission; §7 IR PR #139 |
+| FND-020 | low | The new O-25 rule "the packet's `input` must equal that decode or reconstruction refuses" has no named test. IR `tc_042_replay_counterexample_marks_agreement_not_witness_backed_for_none` covers only the `witness: None` half. **Fix:** name a CG #50 adverse test in which a witness-backed packet has an `input` that differs from its decode. | ADR-013 O-25; §4 C-12 |
+
+Round-2 verdict: ACCEPT WITH FINDINGS. All three round-1 `high` findings are
+closed, and no `high` finding is open. One new `medium` (FND-019) and three
+`low` findings remain. FND-019 should be fixed in O-25 or §7 before #231
+starts, because #231 waits on IR PR #139 being merged at a recorded sha.

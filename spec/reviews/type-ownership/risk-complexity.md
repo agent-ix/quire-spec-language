@@ -101,3 +101,32 @@ No `spec/reviews/type-ownership/failure-domain.md` exists at 660aa25. The
 identity and purity gaps this review overlaps with are FND-007 (a witness that
 is checked only when read) and FND-004 (where replay sources come from). A
 failure-domain review should look at both.
+
+## Round 2 (commit 0042691)
+
+Reviewed ADR-013 at 0042691. I read the full revised record and compared it
+with 660aa25. I re-checked IR PR #139 (head still 417ec86, still open) and QSL
+`origin/main:src/value/expression/mod.rs:18`, where the evaluator imports
+`value::accounting::Meter`.
+
+| Round-1 ID | Status | Reason |
+| --- | --- | --- |
+| FND-001 | resolved | The §7 #213 row now points to "all of O-01 to O-23 that name #213". Every table cell names a slice: O-23 moves to #215, O-01 and O-03 are split between #131 and S-2. The six slices S-1 to S-6 carry the objects I checked cell by cell, and each slice has its gate. The ticket split is marked as an owner action. The kernel slice's scope and gate have a leftover problem: FND-011. |
+| FND-002 | resolved differently | The record names no RT or CG owner. It lists RT and CG kernel adoption (WP5a, WP5b) as work no ticket owns and routes it to OQ-4. Q209-4 now asks how RT and CG pin a kernel in the QSL repository without a pin-bump cycle. Until OQ-4 is answered, the two kernels coexist. The record now states that openly and gives the fix a named owner question. |
+| FND-003 | resolved | Context says the five differing cells wait for their QSpec amendment. OQ-3 gains (d) and (e) and a reopen rule. The §7 gates tie S-1 to OQ-3 (c) and #231 to OQ-3 (a). |
+| FND-004 | resolved | QC-1 adds a digest-addressed byte provision to FR-323. O-26 says the executor never reads a path or search location and refuses when an input is missing or its digest differs. The rejected alternative is recorded. |
+| FND-005 | resolved differently | #231 says "No replay execution". The executor entry (C-13) is work no ticket owns (OQ-4), with a recommendation to put it in #214, rather than going to #217. O-24 gives the IR map to IR with no ticket, and #231 keeps only the QSL-side reader (C-23). |
+| FND-006 | resolved differently | #231 is not split into tickets. Its §7 gate says the result half also waits on OQ-2, and QC-7 carries the parity field. That is enough for the owner to split #231 during tasking. |
+| FND-007 | resolved | The O-25 Admission row requires admission only through `parse`, including on deserialization. #231 waits for #139 to merge at a recorded sha. Who implements that rule on the IR side is not assigned: FND-012. |
+| FND-008 | resolved | R-09 names the #226 drift gate as its enforcement, and §7 gives #215/#226 the R-09 and R-06 static checks. `CanonicalDigest` and `ByteDigest` are out of §6 and fold into O-18 under S-2. |
+| FND-009 | resolved | Consequences and §7 cite PR #200 at `9e59dde`. The outstanding work is now #131's adverse test for the pseudo-package refusal. |
+| FND-010 | resolved | Status says a #209, #210, #222 or #229 decision that contradicts a §3 cell reopens that cell only. |
+
+New findings from the revision:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | S-1's gate and kernel scope put all of #213 on the slowest dependency, and they split the kernel across slices. All of S-2 to S-6 wait on S-1, and S-1 waits on OQ-3 (c), which is a QSpec amendment. So all of #213 waits on QSpec. Yet OQ-3 (c) only concerns adding `EffectiveId` and the reference identities to the kernel, and that belongs to O-05, which is in S-2. S-1 also moves `NodeKey`, values and outcomes, but not `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, `BoundedInteger`, `CardinalityBound` or `BoundViolation`. AD-016's kernel row (line 295) lists all of these as kernel types. Kernel `Value` operations use them: `CheckedPackage::call` takes `&mut Meter`, and the evaluator imports `value::accounting::Meter` (QSL `src/value/expression/mod.rs:18`). O-21 puts the "single meter" in S-6, gated on #222 acceptance. Read literally, S-1 builds a kernel whose operations depend on types still in QSL `value`, or it pulls them in without saying so. Moving the whole kernel row is also the largest single move in #213, so S-1 is the slice most likely to exceed 1–3 sessions. Fix: make S-1 exactly the AD-016 kernel row (including `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location` and the bound value types), gated on Q209-4 only. Move the `EffectiveId` and reference-identity kernel additions to S-2 with O-05, gated on OQ-3 (c). Limit S-6's O-21 item to the `model::accounting` fold and the #222 bound types. If S-1 still looks larger than 3 sessions, say where it splits (crate and type move; then retargeting QSL consumers). | ADR-013 §7 slice table (S-1, S-2, S-6), O-05, O-13, O-21, OQ-3 (c); AD-016 line 295; QSL `src/value/expression/mod.rs:18` |
+| FND-012 | low | Nobody owns the witness admission rule on the IR side. O-25 requires `Witness` to be admitted only through `parse`, including on deserialization. At IR PR #139 head 417ec86 (still open), `Witness` derives `Deserialize` with a `pub transcript` field (`src/kani/witness.rs:99-108`). The §7 #231 gate asks only that #139 merge "at a recorded sha". The OQ-4 list of unowned IR work names the packet members, the WP9 map and reader codes, but not this rule. #231 could start against a merged `Witness` that still admits any transcript. Fix: make the #231 gate "#139 merged with admission through `parse` on deserialization", or add the admission rule to the OQ-4 IR list. | ADR-013 O-25 Admission row, §7 #231 row, OQ-4; IR PR #139@417ec86 `src/kani/witness.rs:99-108` |
+
+Round-2 verdict: ACCEPT WITH FINDINGS (0 high, 1 medium, 1 low). No high finding remains. FND-001 is resolved; FND-011 is the leftover slicing problem and does not block.

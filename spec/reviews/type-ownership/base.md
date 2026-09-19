@@ -55,3 +55,29 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 | --- | --- | --- | --- |
 | FND-001 | low | The checklist rules for US, FR and TC quality and the six test-coverage rules do not apply, because the ADR has no acceptance criteria. They are recorded as not applicable, not as passed. Normative requirement text belongs to #213 and #231. | ADR-013 |
 | FND-002 | low | The item-id schemes `R-`, `O-`, `C-`, `Q209-`, `Q210-` and `OQ-` are local to ADR-013 and are not catalog id kinds. Layer 2 tickets must cite them in the form `ADR-013 O-nn` to stay unambiguous next to ADR-010 `OBS-` and `DA-` ids. Fixed in round 1: the Decision section states this citation form. | ADR-013 §3, §4, §8 |
+
+## Round 2 (commit 0042691)
+
+Re-checked after the round-1 revision. The id kinds are now `R-01` to `R-10`,
+`O-01` to `O-27`, `C-01` to `C-25`, `S-1` to `S-6`, `QC-1` to `QC-7`, `Q209-1`
+to `Q209-7`, `Q210-1` to `Q210-4`, `Q222-1` and `Q222-2`, `Q229-1`, and `OQ-1`
+to `OQ-4`. Each runs in sequence with no gaps and is defined once. Every
+cross-reference resolves. The Mermaid block still contains no `;`. A scan for
+compatibility, fallback, migration and transitional wording finds none in the
+decision text. `quire validate --strict --summary` on ADR-013, spec.md and the
+eight review files reports 10/10 grammar-clean.
+
+- FND-001: unchanged, not applicable.
+- FND-002: resolved. The Decision section states the citation form and now
+  lists every local id kind.
+
+Round-2 verdict: ACCEPT WITH FINDINGS (FND-001 only).
+
+## After round 2
+
+The round-2 medium and low findings in all eight reviews are resolved in the
+ADR. The same commit adds coordinator-requested answers: ADR-012 §13.2
+questions (OQ-5, O-10, O-14, O-17, O-19; O-20 decided in #222) and the nine
+ADR-011 questions to #211 (§3.1, T-1 to T-9, with QC-10 to QC-12 and Q209-8).
+§3.1 was added after round 2 and has had no separate review round; the two-round
+limit applies.
