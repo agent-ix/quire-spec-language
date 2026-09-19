@@ -166,3 +166,22 @@ New content checked:
 The round found nothing new. `quire validate --strict --summary` passes on the ADR and the changed records.
 
 PR review verdict at eecf825: PASS.
+
+## Round 4 (PR review, delta fdcdc41..e71986a)
+
+Checked against ADR-013 at 5d08cd7 (QSL PR #236) and FR-057 at the head of QSL PR #237 (`task/229-capability-spec`).
+
+- RT lookup by `WireNodeId`, with RT holding no `NodeKey` (§9, §13.5): matches ADR-013 O-04 (line 166) and R-06.
+- `FamilyRefusal::catalog_code()` yields the code, and F maps the code to a category (§2, §13.5): matches ADR-013 O-16 and O-17 (lines 366-370 and 404-405).
+- Backend absence against capability absence (§7.3, §8), and exactly one kind per item, where kind none requests no backend (§1.1, §2, §7.2): matches FR-057's claim-form table, its absence table and AC-10.
+
+New findings (low, not blocking):
+
+| ID | Sev | Finding | Location |
+| --- | --- | --- | --- |
+| PR-N6 | low | §12.2 is still conditional ("if FR-057 assigns one; otherwise none", "S7 only if a kind is added", "when a kind is assigned"). FR-057 now assigns `operation-contract` to frame obligations, an existing kind, so §12.2 can state that and drop the S7 condition. | ADR-012:770, 780 |
+| PR-N7 | low | The §7.2 empty-set row and the §7.3 warning name only the kind. FR-057 and FR-290-AC-4 also name any backend the request named. | ADR-012:535, 562-563 |
+
+`quire validate --strict --summary` passes.
+
+PR review verdict at e71986a: PASS (PR-N6 and PR-N7 are optional wording fixes).
