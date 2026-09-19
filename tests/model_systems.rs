@@ -13,9 +13,9 @@ use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
 use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, ComponentRecord, EndpointRecord, DomainPackageRef, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord, PortDirection, RelationshipDirection,
-    RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, EndpointRecord,
+    Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord, PortDirection,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -53,24 +53,38 @@ fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
     })
 }
 
-fn field_member(identity: &str, owner: &str, value_type: &str, m: Multiplicity) -> DomainPackageRecord {
-    DomainPackageRecord::FieldMember(quire_spec_language::model::domain_package::FieldMemberRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
-        multiplicity: m,
-    })
+fn field_member(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    m: Multiplicity,
+) -> DomainPackageRecord {
+    DomainPackageRecord::FieldMember(
+        quire_spec_language::model::domain_package::FieldMemberRecord {
+            key: DeclarationKey::fixture(identity),
+            owner: DeclarationKey::fixture(owner),
+            value_type: DeclarationKey::fixture(value_type),
+            multiplicity: m,
+        },
+    )
 }
 
 fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(quire_spec_language::model::domain_package::SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
+    DomainPackageRecord::Supertype(
+        quire_spec_language::model::domain_package::SupertypeRecord {
+            key: DeclarationKey::fixture(identity),
+            specific: DeclarationKey::fixture(specific),
+            general: DeclarationKey::fixture(general),
+        },
+    )
 }
 
-fn component(identity: &str, owning_type: &str, value_type: &str, m: Multiplicity) -> DomainPackageRecord {
+fn component(
+    identity: &str,
+    owning_type: &str,
+    value_type: &str,
+    m: Multiplicity,
+) -> DomainPackageRecord {
     DomainPackageRecord::Component(ComponentRecord {
         key: DeclarationKey::fixture(identity),
         owning_type: DeclarationKey::fixture(owning_type),
@@ -215,7 +229,9 @@ fn find_relationship<'a>(
     records
         .iter_mut()
         .find_map(|record| match record {
-            DomainPackageRecord::Relationship(relationship) if relationship.key.identity == identity => {
+            DomainPackageRecord::Relationship(relationship)
+                if relationship.key.identity == identity =>
+            {
                 Some(relationship)
             }
             _ => None,
@@ -223,17 +239,25 @@ fn find_relationship<'a>(
         .unwrap_or_else(|| panic!("fixture Y has no relationship {identity}"))
 }
 
-fn find_endpoint<'a>(records: &'a mut [DomainPackageRecord], identity: &str) -> &'a mut EndpointRecord {
+fn find_endpoint<'a>(
+    records: &'a mut [DomainPackageRecord],
+    identity: &str,
+) -> &'a mut EndpointRecord {
     records
         .iter_mut()
         .find_map(|record| match record {
-            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.identity == identity => Some(endpoint),
+            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.identity == identity => {
+                Some(endpoint)
+            }
             _ => None,
         })
         .unwrap_or_else(|| panic!("fixture Y has no endpoint {identity}"))
 }
 
-fn find_component<'a>(records: &'a mut [DomainPackageRecord], identity: &str) -> &'a mut ComponentRecord {
+fn find_component<'a>(
+    records: &'a mut [DomainPackageRecord],
+    identity: &str,
+) -> &'a mut ComponentRecord {
     records
         .iter_mut()
         .find_map(|record| match record {
@@ -325,7 +349,8 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
             .target
             .type_identity = DeclarationKey::fixture("model.Sys.pump.out");
     });
-    let classification = classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
     match check_allocation(
         &classification,
         &DeclarationKey::fixture("model.Pump.alloc"),

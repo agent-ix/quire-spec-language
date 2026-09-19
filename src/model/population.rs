@@ -133,12 +133,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::diagnostic::Code;
-use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, SupertypeRecord, DomainPackageRef, OperationEffect, SubsettingRecord,
-};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
-use crate::model::key::{EffectiveId, DeclarationKey};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, OperationEffect,
+    PopulationRecord, SubsettingRecord, SupertypeRecord,
+};
+use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
@@ -403,11 +404,13 @@ pub struct PopulationMember {
     pub field_values: Vec<MemberFieldValues>,
 }
 
-/// An FCD FR-121 population document: `{closed_world, model_identity, members}`.
+/// An FCD FR-121 population document: `{model_identity, members}`. The
+/// population's extent (FR-153, FR-208:50) is not part of this runtime
+/// document; it is declared once, statically, on the domain package's own
+/// [`PopulationRecord`], which [`admit_binding`] takes as a separate
+/// parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationDocument {
-    /// Whether the document declares `closedWorld: true`.
-    pub closed_world: bool,
     /// The document's own declared `modelIdentity`, which must name the
     /// binding's `DomainPackageRef` export identity.
     pub model_identity: String,
@@ -569,10 +572,11 @@ pub enum AdmissionOutcome {
     Incomplete(AdmissionIncomplete),
 }
 
-/// Admits `document` against `domain_package`/`view` into a [`PopulationBinding`],
-/// per FR-153's "Environment key and closure". Decides, without a charge and
-/// in order, `view`'s correspondence to `domain_package`, the `modelIdentity` check,
-/// object closure and subtype closure; then charges `binding.member` for
+/// Admits `document` against `domain_package`/`view`/`population` into a
+/// [`PopulationBinding`], per FR-153's "Environment key and closure". Decides,
+/// without a charge and in order, `view`'s correspondence to `domain_package`,
+/// the `modelIdentity` check, object closure (`population.extent`) and
+/// subtype closure; then charges `binding.member` for
 /// each member record in document order, deciding foreign-type and then
 /// duplicate-collapse/conflicting-identity after each charge. Stops at the
 /// first refusal or denied charge.
@@ -595,6 +599,7 @@ pub fn admit_binding(
     domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
+    population: &PopulationRecord,
     subtype_closure: GeneralizationClosure,
     declared_maximum: Option<u64>,
     meter: &mut AdmissionMeter,
@@ -625,15 +630,15 @@ pub fn admit_binding(
             ),
         });
     }
-    if !document.closed_world {
+    if population.extent != Extent::Closed {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::IncompleteScope {
                 selection: domain_package.model_selection.export.identity.clone(),
             },
             detail: format!(
-                "population document for {} does not declare closedWorld: true",
-                domain_package.model_selection.export.identity
+                "population {} for {} does not declare extent: closed",
+                population.key.identity, domain_package.model_selection.export.identity
             ),
         });
     }
@@ -850,16 +855,19 @@ pub fn admit_binding(
 // ---------------------------------------------------------------------------
 
 /// [`admit_invocation`]'s shared admission context for its pre and post
-/// bindings: the same domain package, effective view, subtype closure and declared
-/// maximum -- the same population role, admitted at the invocation's two
-/// instants. Grouped into one type rather than four parameters so
-/// `admit_invocation` stays within this crate's argument-count convention.
+/// bindings: the same domain package, effective view, population declaration,
+/// subtype closure and declared maximum -- the same population role,
+/// admitted at the invocation's two instants. Grouped into one type rather
+/// than five parameters so `admit_invocation` stays within this crate's
+/// argument-count convention.
 #[derive(Clone, Copy)]
 pub struct InvocationContext<'a> {
     /// The domain package both instants are admitted against.
     pub domain_package: &'a DomainPackage,
     /// The domain package's already-normalized, already-charged effective view.
     pub view: &'a EffectiveView,
+    /// The population role's own declaration record, carrying its extent.
+    pub population: &'a PopulationRecord,
     /// The model selection's subtype closure.
     pub subtype_closure: GeneralizationClosure,
     /// The population role's declared maximum, or `None`.
@@ -958,6 +966,7 @@ pub fn admit_invocation(
         context.domain_package,
         context.view,
         pre_document,
+        context.population,
         context.subtype_closure,
         context.declared_maximum,
         pre_meter,
@@ -969,6 +978,7 @@ pub fn admit_invocation(
         context.domain_package,
         context.view,
         post_document,
+        context.population,
         context.subtype_closure,
         context.declared_maximum,
         post_meter,
@@ -1090,7 +1100,9 @@ pub(super) fn redefinition_reaches(
             return true;
         }
         let Some(redefined) = records.iter().find_map(|record| match record {
-            DomainPackageRecord::Redefinition(redefinition) if redefinition.redefining == current => {
+            DomainPackageRecord::Redefinition(redefinition)
+                if redefinition.redefining == current =>
+            {
                 Some(redefinition.redefined.clone())
             }
             _ => None,
@@ -1110,7 +1122,11 @@ pub(super) fn redefinition_reaches(
 /// writes against its redefined ancestor's. Walks the full chain
 /// ([`redefinition_reaches`]), not just one hop: `modifies: [model.A.x]`
 /// covers a write to `model.C.x` through `model.C.x -> model.B.x -> model.A.x`.
-fn field_write_covered(domain_package: &DomainPackage, effect: &OperationEffect, field: &DeclarationKey) -> bool {
+fn field_write_covered(
+    domain_package: &DomainPackage,
+    effect: &OperationEffect,
+    field: &DeclarationKey,
+) -> bool {
     redefinition_reaches(&domain_package.records, field, |candidate| {
         effect.modifies.contains(candidate)
     })
@@ -1390,10 +1406,9 @@ pub enum AllInstancesOutcome {
 }
 
 fn is_object_type(domain_package: &DomainPackage, key: &DeclarationKey) -> bool {
-    domain_package
-        .records
-        .iter()
-        .any(|record| matches!(record, DomainPackageRecord::ObjectType(object) if &object.key == key))
+    domain_package.records.iter().any(
+        |record| matches!(record, DomainPackageRecord::ObjectType(object) if &object.key == key),
+    )
 }
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type

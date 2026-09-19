@@ -309,6 +309,36 @@ pub struct SubsettingRecord {
     pub subsetted: DeclarationKey,
 }
 
+/// FR-153's population declaration extent: `closed` or `open`. Object
+/// closure holds exactly when a population's extent is `closed`
+/// (FR-153:68); `open` is admission's own `incomplete_population`
+/// unknown-closure case for object closure, distinct from
+/// [`GeneralizationClosure`](crate::model::dispatch::GeneralizationClosure)'s
+/// subtype closure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Extent {
+    /// The population's object closure holds.
+    Closed,
+    /// The population's object closure does not hold.
+    Open,
+}
+
+/// An FR-153/FR-208:50 population declaration record: `{key, member_types,
+/// extent}`. Lists the population's declared member types and carries one
+/// population-level `extent`; a member type carries no multiplicity of its
+/// own here — the declared maximum `N` stays on the binding
+/// ([`crate::model::population::admit_binding`]'s own `declared_maximum`
+/// parameter).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationRecord {
+    /// This record's own original producer key.
+    pub key: DeclarationKey,
+    /// The population's declared member types' original producer keys.
+    pub member_types: Vec<DeclarationKey>,
+    /// The population's declared extent.
+    pub extent: Extent,
+}
+
 /// One producer record, in the domain package's declared order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DomainPackageRecord {
@@ -332,6 +362,8 @@ pub enum DomainPackageRecord {
     Endpoint(EndpointRecord),
     /// FCD FR-115 relationship (FR-152 Connection/Allocation candidate).
     Relationship(RelationshipRecord),
+    /// FR-153 population declaration.
+    Population(PopulationRecord),
 }
 
 impl DomainPackageRecord {
@@ -348,6 +380,7 @@ impl DomainPackageRecord {
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
             Self::Relationship(record) => &record.key,
+            Self::Population(record) => &record.key,
         }
     }
 }

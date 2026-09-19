@@ -71,7 +71,7 @@
 use std::collections::HashMap;
 
 use crate::diagnostic::Code;
-use crate::model::key::{EffectiveId, DeclarationKey};
+use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     all_instances, conforms, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,

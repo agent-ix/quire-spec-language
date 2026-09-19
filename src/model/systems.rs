@@ -45,10 +45,11 @@ use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
-use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, ComponentRecord, EndpointRecord, PortDirection, RelationshipRecord,
-};
 use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
+use crate::model::domain_package::{
+    ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord, PortDirection,
+    RelationshipRecord,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 
@@ -187,7 +188,10 @@ fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
 /// producer key, charging `systems.kind` once per record before resolving
 /// it. Exhaustive under the limits: every no-kind cascade is reported, in
 /// this same order, never stopping at the first.
-pub fn classify(domain_package: &DomainPackage, meter: &mut Meter) -> Result<SystemsClassification, Incomplete> {
+pub fn classify(
+    domain_package: &DomainPackage,
+    meter: &mut Meter,
+) -> Result<SystemsClassification, Incomplete> {
     let mut components: Vec<&ComponentRecord> = Vec::new();
     let mut endpoints: Vec<&EndpointRecord> = Vec::new();
     let mut relationships: Vec<&RelationshipRecord> = Vec::new();
@@ -210,7 +214,8 @@ pub fn classify(domain_package: &DomainPackage, meter: &mut Meter) -> Result<Sys
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Redefinition(_)
-            | DomainPackageRecord::Subsetting(_) => {}
+            | DomainPackageRecord::Subsetting(_)
+            | DomainPackageRecord::Population(_) => {}
         }
     }
     components.sort_by_key(|component| component.key.clone());

@@ -7,17 +7,18 @@
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, DomainPackageRef, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, PostconditionClause, RedefinitionRecord, ScalarTypeRecord, SubsettingRecord,
-};
 use quire_spec_language::model::conformance::{
     check_field_redefinition, check_field_refinement_obligation, check_operation_redefinition,
     check_subsetting, resolve_redefinition_target, AxisFailure, ConformanceCheckOutcome,
     ConformanceOutcome, RedefinitionTargetOutcome,
 };
-use quire_spec_language::model::key::{EffectiveId, DeclarationKey, RULE_REDEFINE};
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+    OperationResult, PostconditionClause, RedefinitionRecord, ScalarTypeRecord, SubsettingRecord,
+    SupertypeRecord,
+};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
@@ -39,7 +40,12 @@ fn object_type(identity: &str) -> DomainPackageRecord {
     })
 }
 
-fn field_member(identity: &str, owner: &str, value_type: &str, m: Multiplicity) -> DomainPackageRecord {
+fn field_member(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    m: Multiplicity,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -64,7 +70,12 @@ fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
     })
 }
 
-fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> DomainPackageRecord {
+fn redefinition(
+    identity: &str,
+    owner: &str,
+    redefining: &str,
+    redefined: &str,
+) -> DomainPackageRecord {
     DomainPackageRecord::Redefinition(RedefinitionRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -73,7 +84,12 @@ fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) 
     })
 }
 
-fn subsetting(identity: &str, owner: &str, subsetting: &str, subsetted: &str) -> DomainPackageRecord {
+fn subsetting(
+    identity: &str,
+    owner: &str,
+    subsetting: &str,
+    subsetted: &str,
+) -> DomainPackageRecord {
     DomainPackageRecord::Subsetting(SubsettingRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
