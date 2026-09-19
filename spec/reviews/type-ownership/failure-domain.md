@@ -125,3 +125,26 @@ Round-2 verdict: ACCEPT WITH FINDINGS. All five round-1 high findings are
 resolved and no high finding remains. One medium and two low findings are new;
 each can be fixed by editing a cell or adding an item to §7 or §8, without
 changing an owner.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+- The replay failure modes are consistent. An `Input`-sourced packet settles
+  `reproduced-without-witness` and is never backend evidence (O-25, O-27).
+  ADR-011 E9 states the same rule. A `package_id` or source digest mismatch
+  refuses.
+- O-16 now has its validation row. Simulation converges into S6a, so it gets
+  no separate category map.
+- O-22 names the unsupported-version code, and QC-19 adds the unknown node
+  kind code.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-M3 | medium | S6a cannot carry a non-kernel refusal cause. T-6 moves `WrongSnapshotCause` out of the kernel `Refusal`, yet `FamilyNotNativelyEvaluable` is put in. `Outcome::Refused(Refusal)` has no place for a `value::expression` cause. Name the S6a result type that wraps the kernel `Outcome` and carries family causes. | ADR-013 366-368, 401-402, 654 · ADR-012@10664aa 239-240, 596, 852 |
+
+Round-3 verdict: CHANGES (see base.md; PR2-M3 is this analysis's finding).

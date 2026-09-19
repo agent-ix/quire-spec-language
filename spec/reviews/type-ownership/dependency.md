@@ -214,3 +214,32 @@ New findings from the revision:
 | FND-014 | low | O-03 and the Consequences add a new condition to the open QSL PR #200: "#131 adds an adverse test for that refusal before PR #200 merges". ADR-013 is Proposed and is accepted at #212, and PR #200 is expected to merge before then, so the ADR cannot enforce this. Fix: word it as a request to #131, or put the adverse test in #213 S-2 alongside the O-03 rework. | ADR-013 O-03, C-01, Consequences · QSL PR #200 head 9e59dde |
 
 Round-2 verdict: ACCEPT WITH FINDINGS. No finding is high. FND-011 and FND-012 are medium and do not block.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+Dependency edges checked in the delta:
+
+- `VerifiedPackage`, the §4 binding and `ImportView` are in layer-3
+  `library`, and `package` calls down into it. This matches ADR-011 I2, §4,
+  §6.1 and its new rejected alternative. There is no layer 3 → 4 edge.
+- The TK-01 executor entry is the layer-6 `replay` facade, the only QSL
+  surface CG uses. This matches ADR-011 FB-05 and §6.1.
+- The canonical clause kind is in the layer-3 `check` core, and `package`
+  depends downward. This matches ADR-011 §6.1 and ADR-012 S5.
+- X-1 is #213 S-1, gated by TK-10 (QC-15). This matches ADR-011 X-1, §7 and
+  T-6. The kernel stays a leaf: `CatalogCode` and the category type are in F
+  `diagnostic`, and the new ids are opaque digests.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-H1 | high | The kernel `NodeKey` and `EffectiveId` constructors are `pub`, and no check covers their callers. ADR-011 T-12 checks only CG → QSL. RT and CG depend on `quire-exact` and can mint. | ADR-013 166, 178 · ADR-011@22fa948 383, 865 |
+| PR2-M1 | medium | The `PackageNodeKey` field type differs between ADR-013 T-3 and ADR-011 E3. | ADR-013 651 · ADR-011@22fa948 297 |
+| PR2-L2 | low | O-04 cites "ADR-011 M-3" for dependency compile. M-3 is the S2 `forms` move, and the rule is ADR-011 E4 and I2. | ADR-013 168 |
+
+Round-3 verdict: CHANGES (PR2-H1).

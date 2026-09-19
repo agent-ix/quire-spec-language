@@ -218,3 +218,25 @@ New findings introduced by the revision:
 
 Round-2 verdict: ACCEPT WITH FINDINGS. No high finding remains. FND-020 and
 FND-021 are medium and should be fixed before the #212 gate; FND-022 is low.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+- FND-020 to FND-022 stay resolved. The delta adds no new category collapse.
+  The O-16 rows for the `Input`-sourced replay (`reproduced-without-witness`)
+  and the `Relation` arm keep each category distinct.
+- The round-1 PR identity findings are resolved: package-scoped node ids
+  (QC-18), `WireNodeId` for wire ids, and T-8 matching O-26.
+
+New identity findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-H1 | high | No named check enforces `NodeKey` minting. ADR-011 T-12 checks only CG's use of the `replay` facade and the backend direction. RT and CG also need `NodeKey`s for kernel enum and sum values but can only read `WireNodeId`s. | ADR-013 166, 178, 314, 654, 676 · ADR-011@22fa948 383, 865 |
+| PR2-M1 | medium | `PackageNodeKey.node` is a `WireNodeId` in ADR-013 T-3 and a `NodeKey` in ADR-011 E3 and I2. | ADR-013 168, 651 · ADR-011@22fa948 185, 297 |
+| PR2-M3 | medium | `FamilyNotNativelyEvaluable` is a family-dispatch cause placed in the kernel `Refusal`, which carries only kernel causes. | ADR-013 366-368, 401-402, 654 |
+
+Round-3 verdict: CHANGES (PR2-H1).

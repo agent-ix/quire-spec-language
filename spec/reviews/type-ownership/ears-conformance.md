@@ -123,3 +123,21 @@ New findings introduced by, or left exposed by, the revision:
 Round-2 verdict: ACCEPT WITH FINDINGS. All twelve round-1 findings are
 resolved, seven as proposed and five by a different fix; the residuals of FND-001, FND-004 and FND-007 are carried as FND-013, FND-014 and FND-016. The four new findings
 are low, and none blocks.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3.
+
+- The new local ids QC-18 and QC-19 run in sequence, are each defined once,
+  and are cited by TK-08 and the Consequences count ("Nineteen QSpec
+  changes").
+- The Mermaid block still has no `;` in any label.
+- The delta adds no compatibility, fallback or migration wording. "No version
+  bump per kind" (O-14) is a prerelease wire rule, not a compatibility layer.
+- No new wording finding. The cross-ADR citation errors (PR2-L1 to PR2-L3)
+  are recorded in base.md.
+
+Round-3 verdict: no EARS or wording finding in this analysis; the overall
+verdict is CHANGES (base.md).

@@ -81,3 +81,56 @@ questions (OQ-5, O-10, O-14, O-17, O-19; O-20 decided in #222) and the nine
 ADR-011 questions to #211 (§3.1, T-1 to T-9, with QC-10 to QC-12 and Q209-8).
 §3.1 was added after round 2 and has had no separate review round; the two-round
 limit applies.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8 only, against ADR-011 at
+22fa948 (PR #235) and ADR-012 at 10664aa (PR #234). The first PR review
+(head 5609e3a) returned CHANGES with findings H1 to H3, M1 to M9, lows and
+nits. Line numbers below are ADR-013 lines at 4152eb8.
+
+Round-1 PR findings, re-checked:
+
+- H1 resolved. O-25 carries `ReplaySource` (`Witness` or `Input`, never
+  both) and an `Input` replay settles `reproduced-without-witness`. ADR-011
+  E9 at 22fa948 states the same rule.
+- H2 resolved. `CatalogCode` and the category type are in F `diagnostic`;
+  member, variant and unit identities are opaque kernel digests (QC-15).
+- H3 partly resolved. `from_bytes` is removed, `from_hex` is no longer public,
+  both identities are minted from a digest, and T-3 holds a `WireNodeId`.
+  The enforcement claim and the RT and CG path remain open (PR2-H1).
+- M1 to M9 resolved: T-8 matches O-26; the capability vocabulary is QSpec
+  #134's; the O-26 request adds the #231 envelope members; QC-18 gives node
+  ids package scope; O-09 and QC-14 record the ADR-011 E7 note; simulation
+  converges into S6a; Q209-5 quotes FB-05; O-14 and QC-19 match ADR-012
+  (in-place node-kind revision); T-4 uses `Locus`.
+- Lows and nits resolved, except that Q209-2 still cites ADR-011 §1 (PR2-L3).
+
+Coordinator cross-ADR checks: `VerifiedPackage` in layer-3 `library` agrees
+with ADR-011 I2, §4 and §6.1. The layer-6 `replay` facade as the TK-01 entry
+agrees with ADR-011 §6.1. The clause kind in the layer-3 `check` core agrees
+with ADR-011 §6.1 and ADR-012 S5. `Relation` → `Refused(FamilyNotNativelyEvaluable)`
+agrees with ADR-012 §2, §8 and §13.5 (but see PR2-M3). X-1 = #213 S-1 gated by
+TK-10 and QC-15 agrees with ADR-011 X-1 and T-6. `102c8bb` is an ancestor of
+22fa948.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-H1 | high | The `NodeKey` minting rule is still unenforceable across crates, and RT and CG have no legal source of `NodeKey`s. O-04 says "the ADR-011 T-12 API-surface check fails any other caller", but ADR-011 T-12 checks only that CG uses the `replay` facade and the backend `cargo tree` direction. No check covers RT or CG calling the kernel constructor, or QSL modules other than `check` calling it. O-04 also says RT and CG "receive `NodeKey`s only in the packets and requests they are handed", while every node id read from a wire is a `WireNodeId`. The kernel enum and sum shape (O-14, T-6) and the C-11 reconstruction to kernel `Value`s need a `NodeKey`, so CG and RT must call the constructor. Fix: either give the kernel enum and sum payload an opaque digest newtype, like `VariantId`, so RT and CG never need a `NodeKey`, or route every wire → `NodeKey` step through the `replay` lookup. Then name a check that exists, or ask ADR-011 to extend T-12 to kernel constructor callers. | ADR-013 166, 178, 314, 654, 676 · ADR-011@22fa948 383, 865 |
+| PR2-M1 | medium | `PackageNodeKey` has two definitions. ADR-013 T-3 has `PackageNodeKey{package: package_id, node: WireNodeId}`. ADR-011 at 22fa948 E3 has `PackageNodeKey{package: package_id, node: NodeKey}`, and ADR-011 I2 says a `WireNodeId` becomes part of a `PackageNodeKey` only after the E4 lookup. Fix: one ADR changes to match the other. | ADR-013 168, 651 · ADR-011@22fa948 185, 297 |
+| PR2-M2 | medium | `CounterexamplePacket.source: ReplaySource` replaces the accepted AD-016 arrow 6 output and Replay-ownership Packet row (`witness: Option<Witness>`), and no QC amends AD-016. QC-6 and QC-8 amend FR-331 and FR-323 only, QC-7 covers only the WP9 parity carrier, and OQ-3 accepts QC-13 to QC-17. ADR-011 E8 at 22fa948 still outputs `CounterexamplePacket{witness: Option<Witness>}`. Fix: add the Packet row change to QC-7, or add a QC, and have ADR-011 E8 cite it. Or keep `witness: Option<Witness>` plus a stored input and state the one-of rule over those fields. | ADR-013 568, 577, 806, 807, 863 · AD-016 Arrow 6, Replay ownership (Packet) · ADR-011@22fa948 236 |
+| PR2-M3 | medium | `FamilyNotNativelyEvaluable` is placed in the kernel `Refusal`, but the kernel `Refusal` "carries only the kernel's own typed cause", and T-6 moves the family cause `WrongSnapshotCause` out of it. A family-dispatch cause makes the leaf kernel name a QSL family concept. The same question applies to family causes in S6a outcomes: `Outcome::Refused(Refusal)` cannot hold a `value::expression` cause once `WrongSnapshotCause` leaves. Fix: state how an S6a result carries a non-kernel refusal cause (for example an S6a result type that wraps the kernel `Outcome`), and put `FamilyNotNativelyEvaluable` there. ADR-012 §2, §8 and §13.5 must follow. | ADR-013 366-368, 401-402, 654, 839 · ADR-012@10664aa 239-240, 596, 852 |
+| PR2-L1 | low | The sibling-head pin is stale. Context pins ADR-011 at f781e32 and ADR-012 at 43677c9, but the delta cites text that exists only later (the `replay` facade, the ADR-011 E9 `ReplaySource` rule and the T-12 API-surface check). Fix: pin 22fa948 and 10664aa, or the merged heads. | ADR-013 60-61 |
+| PR2-L2 | low | O-04 says "the dependency compiled from source under the ADR-011 M-3 ruling". ADR-011 M-3 is "Add S2 `forms`". The rule is ADR-011 E4 and I2. | ADR-013 168 · ADR-011@22fa948 185, 232 |
+| PR2-L3 | low | Q209-2 still says ADR-011 §1 answers which stage owns `ResolvedSourcePackage`. ADR-011 §1 does not name it. ADR-011 §8 maps C2 to I2 and `library`, as O-15 now says. | ADR-013 825, 325 |
+| PR2-L4 | low | QC-15 now lists six named types (`EffectiveId`, `UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`) "and no other". OQ-3 records the owner's acceptance of QC-13 to QC-17 before this list existed. Fix: record the owner's confirmation of the widened QC-15 in OQ-3, or in TK-10. | ADR-013 814, 863, 885 |
+
+Mermaid still has no `;`. SR-482 to SR-489 are unchanged and collision-free.
+`quire validate --strict --summary` on ADR-013, spec.md and the eight review
+files reports 10/10 grammar-clean.
+
+Round-3 verdict: CHANGES. PR2-H1 blocks. PR2-M1 to PR2-M3 are cross-ADR
+contradictions that must be resolved in one of the three ADRs before the #212
+gate. PR2-L1 to PR2-L4 are low.

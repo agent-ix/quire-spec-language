@@ -130,3 +130,25 @@ New findings from the revision:
 | FND-012 | low | Nobody owns the witness admission rule on the IR side. O-25 requires `Witness` to be admitted only through `parse`, including on deserialization. At IR PR #139 head 417ec86 (still open), `Witness` derives `Deserialize` with a `pub transcript` field (`src/kani/witness.rs:99-108`). The §7 #231 gate asks only that #139 merge "at a recorded sha". The OQ-4 list of unowned IR work names the packet members, the WP9 map and reader codes, but not this rule. #231 could start against a merged `Witness` that still admits any transcript. Fix: make the #231 gate "#139 merged with admission through `parse` on deserialization", or add the admission rule to the OQ-4 IR list. | ADR-013 O-25 Admission row, §7 #231 row, OQ-4; IR PR #139@417ec86 `src/kani/witness.rs:99-108` |
 
 Round-2 verdict: ACCEPT WITH FINDINGS (0 high, 1 medium, 1 low). No high finding remains. FND-001 is resolved; FND-011 is the leftover slicing problem and does not block.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+- The S-1 slice is now bounded: exactly the kernel row plus the QC-15
+  component types. `CatalogCode` and the category type move to S-5.
+- The top remaining risk is PR2-H1. If the kernel enum and sum shape keeps a
+  `NodeKey`, CG harness generation and RT evaluation need a public minting
+  path. That undoes the single-minter rule that the #213 identity work
+  depends on.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-H1 | high | See base.md. The `NodeKey` minting is unenforced, and the RT and CG `NodeKey` source is unspecified. | ADR-013 166, 314, 654, 676 |
+| PR2-L4 | low | QC-15 widened to six named types after OQ-3 was accepted. It needs the owner's confirmation before TK-10 is filed. | ADR-013 814, 863, 885 |
+
+Round-3 verdict: CHANGES (PR2-H1).
