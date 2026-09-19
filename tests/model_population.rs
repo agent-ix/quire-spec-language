@@ -24,7 +24,7 @@ use quire_spec_language::model::bundle::{
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
 use quire_spec_language::model::normalize::{
-    normalize, object_universe, EffectiveView, ModelRefusalCause, NormalizeOutcome,
+    normalize, object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     OfferedSelection,
 };
 use quire_spec_language::model::population::{
@@ -2026,6 +2026,95 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
              two-hop chain model.C.x -> model.B.x -> model.A.x, got {other:?}"
         ),
     }
+}
+
+/// PR #177 review finding 1: `field_write_covered`'s `redefinition_reaches`
+/// call compares `ProducerKey`s by their full derived `PartialEq`
+/// (`authority`, `identity`, `revision`, `digest`), not `.identity` alone --
+/// a write naming `model.A.x` at revision "2" does not reach a grant for
+/// `model.A.x` at revision "1", even though both share the display identity
+/// `model.A.x`. This behavior predates QSL #171 (`field_write_covered`
+/// already compared full keys; #171 only fixed how many hops the walk
+/// takes), but nothing in this file pinned it: every other field-write test
+/// here uses `ProducerKey::fixture`'s revision "1" on both the write and the
+/// grant, so it cannot tell full-key equality apart from identity-only
+/// comparison.
+///
+/// Mutation used: in `field_write_covered`'s closure, compared
+/// `candidate.identity == write.identity` instead of full equality
+/// (`effect.field_writes.contains(candidate)`). This whole test file stayed
+/// green except this test, which went from `Refused` to `Admitted`;
+/// reverted.
+#[test]
+#[trace("FR-046-AC-3")]
+fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.redef.revision"),
+        vec![
+            object_type("model.A"),
+            field_member("model.A.x", "model.A", "model.A"),
+        ],
+    );
+    let view = view_of(&bundle);
+    let mut write_at_revision_2 = ProducerKey::fixture("model.A.x");
+    write_at_revision_2.revision.value = "2".to_owned();
+    let pre_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.redef.revision".to_owned(),
+        members: vec![PopulationMember {
+            object: "a1".to_owned(),
+            type_identity: ProducerKey::fixture("model.A"),
+            field_values: vec![MemberFieldValues {
+                field: write_at_revision_2.clone(),
+                values: vec!["a2".to_owned()],
+            }],
+        }],
+    };
+    let post_document = PopulationDocument {
+        closed_world: true,
+        model_identity: "bundle.redef.revision".to_owned(),
+        members: vec![PopulationMember {
+            object: "a1".to_owned(),
+            type_identity: ProducerKey::fixture("model.A"),
+            field_values: vec![MemberFieldValues {
+                field: write_at_revision_2.clone(),
+                values: vec!["a9".to_owned()],
+            }],
+        }],
+    };
+    let effect = OperationEffect {
+        field_writes: vec![ProducerKey::fixture("model.A.x")], // revision "1"
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_invocation(
+        invocation_context(&bundle, &view),
+        &pre_document,
+        &post_document,
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    );
+    assert_eq!(
+        outcome,
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::FrameViolation,
+            cause: ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                object: "a1".to_owned(),
+                field: write_at_revision_2,
+            },
+            detail: "invocation changes object a1's field model.A.x, outside the operation's \
+                      declared fieldWrites frame"
+                .to_owned(),
+        })
+    );
 }
 
 /// Item 5: an object that changes its most-specific type between pre and

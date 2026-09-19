@@ -1060,27 +1060,36 @@ fn field_values_equal(
 /// the chain is pre-flattened into direct edges to every ancestor -- this
 /// walk is what actually flattens it, at each call site that needs to know.
 ///
-/// Bounded by `bundle.records.len()` hops (an acyclic chain can never visit
-/// more distinct fields than there are records at all) and refuses -- stops
-/// and returns `false`, never loops -- past that bound, so a malformed
-/// bundle with a redefinition cycle cannot hang this walk.
+/// Bounded by `records.len()` hops (an acyclic chain can never visit more
+/// distinct fields than there are records at all) and refuses -- stops and
+/// returns `false`, never loops -- past that bound, so a malformed bundle
+/// with a redefinition cycle cannot hang this walk.
 ///
-/// Written to be shared: `crate::model::conformance`'s own effect-escape
-/// check (`check_operation_redefinition`, `conformance.rs:583`) has the
-/// identical one-hop gap this function fixes here, and can call this same
-/// walk once it needs the fix (tracked, not fixed in this change: QSL #171).
-fn redefinition_reaches(
-    bundle: &Bundle,
+/// Shared by [`field_write_covered`] here and by
+/// `crate::model::conformance`'s effect-escape check
+/// (`check_operation_redefinition`'s "Effect" axis). Taking a
+/// [`BundleRecord`] slice rather than a whole [`Bundle`] lets either call
+/// site pass its own already-available `&bundle.records`. Equality is
+/// `ProducerKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
+/// `digest`, all four) at both call sites -- a write naming a field at one
+/// revision does not reach a grant for the same identity at a different
+/// revision. Pinned by
+/// `enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name`
+/// here (`tests/model_population.rs`) and by
+/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name`
+/// at the `conformance` call site (`tests/model_conformance.rs`).
+pub(super) fn redefinition_reaches(
+    records: &[BundleRecord],
     field: &ProducerKey,
     admits: impl Fn(&ProducerKey) -> bool,
 ) -> bool {
     let mut current = field.clone();
-    let bound = bundle.records.len();
+    let bound = records.len();
     for _ in 0..=bound {
         if admits(&current) {
             return true;
         }
-        let Some(redefined) = bundle.records.iter().find_map(|record| match record {
+        let Some(redefined) = records.iter().find_map(|record| match record {
             BundleRecord::Redefinition(redefinition) if redefinition.redefining == current => {
                 Some(redefinition.redefined.clone())
             }
@@ -1102,7 +1111,7 @@ fn redefinition_reaches(
 /// ([`redefinition_reaches`]), not just one hop: `field_writes: [model.A.x]`
 /// covers a write to `model.C.x` through `model.C.x -> model.B.x -> model.A.x`.
 fn field_write_covered(bundle: &Bundle, effect: &OperationEffect, field: &ProducerKey) -> bool {
-    redefinition_reaches(bundle, field, |candidate| {
+    redefinition_reaches(&bundle.records, field, |candidate| {
         effect.field_writes.contains(candidate)
     })
 }
