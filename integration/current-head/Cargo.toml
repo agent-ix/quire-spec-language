@@ -1,0 +1,53 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+# FR-058 (ADR-011 §7.1 T-12, #215): the current-head integration lane.
+#
+# This crate is intentionally NOT a member of the root `../../Cargo.toml`
+# `[workspace]`; running it never changes the root `Cargo.lock`'s pinned
+# revisions (FR-058-AC-1). It depends on quire-spec-language by path and on
+# quire-contract-runtime and quire-contract-codegen at each repository's
+# current head, and patches quire-spec-language's own transitive
+# quire-contract-ir dependency to head as well, so the lane runs the same
+# code the exact-pin lane runs, against head instead of a pin.
+name = "qsl-integration-current-head"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "FR-058 current-head cross-repository integration lane for QSL/IR/RT/CG."
+
+[dependencies]
+quire-spec-language = { path = "../..", default-features = false }
+# Declared at the exact source quire-spec-language's own root `Cargo.toml`
+# pins (same `rev`), so the `[patch]` below overrides this declaration and
+# quire-spec-language's identical transitive one to the same vendored-head
+# clone together. Cargo refuses to `[patch]` a git source with a different
+# branch/rev of the *same* git URL ("points to the same source"); redirecting
+# to a local path clone of the current head, as this patch does, is Cargo's
+# supported mechanism for this ("prepare" below keeps that clone fresh).
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
+quire-contract-runtime = { git = "https://github.com/agent-ix/quire-contract-runtime", branch = "main" }
+quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", branch = "main" }
+jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
+serde_json = "=1.0.151"
+
+# `tool/` is this lane's CLI (`prepare`, `revision-log`,
+# `check-incompatible-fixture`), deliberately kept in its own manifest; see
+# tool/Cargo.toml.
+
+# `current-head-lane prepare` clones/refreshes quire-contract-ir's default
+# branch into `.vendor/quire-contract-ir` (git-ignored) before every build;
+# see FR-058, this crate's README and `src/main.rs`. This does not touch
+# quire-spec-language's dev-dependency `quire-contract-ir-historical` (a
+# different package name, `quire-contract-ir`, from the same repository),
+# which stays pinned -- that alias is QSL's own deliberate
+# historical-compatibility fixture, not part of this lane.
+[patch."https://github.com/agent-ix/quire-contract-ir"]
+quire-contract-model = { path = ".vendor/quire-contract-ir/crates/quire-contract-model" }
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -1,0 +1,30 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+# FR-058 (#215): the current-head lane's own CLI tool (`prepare`,
+# `revision-log`, `check-incompatible-fixture`). Deliberately its own
+# manifest with no cross-repository dependency and no `[patch]`: the lane
+# manifest one directory up (`../Cargo.toml`) patches quire-contract-ir to a
+# local vendored clone that `prepare` itself creates, so this tool cannot
+# live in that same manifest without a chicken-and-egg dependency-resolution
+# failure (Cargo resolves a manifest's full dependency graph, patches
+# included, before building any one of its targets). This tool only shells
+# out to `git` and `cargo` as subprocesses against the other manifests.
+name = "qsl-integration-current-head-tool"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+serde_json = "=1.0.151"
+
+[[bin]]
+name = "current-head-lane"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
