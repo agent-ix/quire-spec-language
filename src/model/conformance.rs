@@ -9,7 +9,8 @@
 //! [`crate::model::domain_package::DomainPackage`], not [`crate::model::normalize`]'s
 //! [`crate::model::normalize::EffectiveView`]: it builds its own
 //! [`crate::model::key::EffectiveDeclarationPreimage`]-shaped queries over
-//! the domain package's [`RedefinitionRecord`]/[`SubsettingRecord`]s, so field
+//! the domain package's field/operation members' own inline `redefines`/
+//! `subsets` properties (`model-complete.md`:161/162), so field
 //! redefinition (already exposed by `normalize`'s phase 4) and operation
 //! redefinition (out of scope there, see its module docs) are checked
 //! uniformly here.
@@ -39,16 +40,14 @@
 //!   operation bodies this rung does not model. Every `conformance.axis`
 //!   charge costs a flat one work unit; this is a recorded scope choice,
 //!   not silent drift from the spec's numbers.
-//! - `resolve_redefinition_target`'s ambiguity ruling (two valid, distinct
-//!   inherited targets for the same redefining member) is an interpretation
-//!   call: FR-151's own prose motivates it only informally. It is recorded
-//!   here, not asserted as unambiguous spec fidelity. TC-196 R07 reports
-//!   both the "zero valid targets" and "several distinct valid targets"
-//!   shapes under the identical `redefinition-target` cause ("the same
-//!   refusal"), so [`RedefinitionTargetOutcome::Refused`] keeps one cause
-//!   tag for both; its `valid_targets` field (QSL #146) still lets a caller
-//!   tell the two failure shapes apart from the outcome alone, without
-//!   recomputing `candidates` itself.
+//! - `resolve_redefinition_target` resolves a redefining member's own single
+//!   inline `redefines` property (`model-complete.md`:162) against exactly
+//!   the one target it names: either that target is a genuinely inherited
+//!   member and the call resolves, or it is not and the call refuses
+//!   `redefinition-target` with [`RedefinitionTargetOutcome::Refused`]'s
+//!   `candidate` naming the `(redefining, stated target)` pair. There is no
+//!   "several distinct valid targets" shape to rule on: a member names at
+//!   most one `redefines` target, never a set of candidates to choose among.
 //!
 //!   TC-196 R07's other shape — two distinct redefining members (e.g. `B/z`
 //!   and `B/z2`) contending for the identical single inherited target — is
@@ -83,7 +82,7 @@ use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, OperationMemberRecord,
-    PostconditionClause, RedefinitionRecord, SubsettingRecord, SupertypeRecord,
+    PostconditionClause,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -137,31 +136,29 @@ pub enum ConformanceCheckOutcome {
 }
 
 /// The outcome of resolving which inherited member a redefining member's
-/// redefinition record(s) actually target.
+/// own inline `redefines` property (`model-complete.md`:162) actually
+/// targets.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RedefinitionTargetOutcome {
-    /// Exactly one valid inherited target.
+    /// A valid inherited target.
     Resolved(DeclarationKey),
-    /// Zero or multiple valid inherited targets; every checked record and
-    /// its named target, in domain package order.
+    /// `redefining`'s own `redefines` names no genuinely inherited member:
+    /// either it names a member declared directly on `redefining`'s own
+    /// owner rather than a proper ancestor, or the owner does not actually
+    /// specialize the named target's declaring type.
     Refused {
-        /// FR-151's cause tag: always [`ModelRefusalCause::RedefinitionTarget`]
-        /// — TC-196 R07 reports both failure shapes under "the same refusal"
-        /// (see the module docs).
+        /// FR-151's cause tag.
         cause: ModelRefusalCause,
-        /// The record/target pairs considered.
-        candidates: Vec<(DeclarationKey, DeclarationKey)>,
-        /// The distinct valid (genuinely inherited) targets among
-        /// `candidates`: empty for the "zero valid targets" shape, two or
-        /// more for the "several distinct valid targets" shape — the
-        /// distinction QSL #146 found collapsed into one cause with no way
-        /// to tell the two shapes apart from the outcome alone.
-        valid_targets: Vec<DeclarationKey>,
+        /// `redefining`'s own `(redefining key, stated target)` pair —
+        /// `None` when `redefining` declares no `redefines` at all. Its
+        /// inline `redefines` property (`model-complete.md`:162) is
+        /// singular, so this is at most one candidate.
+        candidate: Option<(DeclarationKey, DeclarationKey)>,
     },
 }
 
 struct ConformanceIndex {
-    generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
     fields: HashMap<DeclarationKey, FieldMemberRecord>,
     /// A `BTreeMap`, not a `HashMap`: [`check_field_refinement_obligation`]
     /// scans `.values()` for the (assumed unique) writer of a field, and a
@@ -172,27 +169,29 @@ struct ConformanceIndex {
     /// Original member key -> its declaring type's key, for fields and
     /// operations alike.
     member_owner: HashMap<DeclarationKey, DeclarationKey>,
-    redefinitions: Vec<RedefinitionRecord>,
 }
 
-/// Builds the `specific key -> its generalization records` map every
-/// bounded conformance walk in `crate::model` (this module and
+/// Builds the `specific key -> its declared supertypes[]` map every bounded
+/// conformance walk in `crate::model` (this module and
 /// [`crate::model::dispatch`]) needs. One builder, so the map's shape is a
 /// single fact rather than a duplicated field-by-field copy. Keyed on the
 /// full [`DeclarationKey`], not the display identity alone (PR #140 F2): two
-/// generalization records whose `specific` shares a display identity but
-/// differs in revision must both index their own distinct ancestor set,
-/// never silently overwrite one another.
+/// object types whose key shares a display identity but differs in revision
+/// must both index their own distinct ancestor set, never silently overwrite
+/// one another. `supertypes` is an inline property of the object type itself
+/// (`model-complete.md`:155).
 pub(super) fn generals_by_specific(
     domain_package: &DomainPackage,
-) -> HashMap<DeclarationKey, Vec<SupertypeRecord>> {
-    let mut generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>> = HashMap::new();
+) -> HashMap<DeclarationKey, Vec<DeclarationKey>> {
+    let mut generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
     for record in &domain_package.records {
-        if let DomainPackageRecord::Supertype(general) = record {
-            generals_by_specific
-                .entry(general.specific.clone())
-                .or_default()
-                .push(general.clone());
+        if let DomainPackageRecord::ObjectType(object_type) = record {
+            if !object_type.supertypes.is_empty() {
+                generals_by_specific
+                    .entry(object_type.key.clone())
+                    .or_default()
+                    .extend(object_type.supertypes.iter().cloned());
+            }
         }
     }
     generals_by_specific
@@ -205,10 +204,9 @@ impl ConformanceIndex {
         let mut operations = BTreeMap::new();
         let mut scalars = HashMap::new();
         let mut member_owner = HashMap::new();
-        let mut redefinitions = Vec::new();
         for record in &domain_package.records {
             match record {
-                DomainPackageRecord::ObjectType(_) | DomainPackageRecord::Supertype(_) => {}
+                DomainPackageRecord::ObjectType(_) => {}
                 DomainPackageRecord::FieldMember(field) => {
                     member_owner.insert(field.key.clone(), field.owner.clone());
                     fields.insert(field.key.clone(), field.clone());
@@ -220,10 +218,6 @@ impl ConformanceIndex {
                     member_owner.insert(operation.key.clone(), operation.owner.clone());
                     operations.insert(operation.key.clone(), operation.clone());
                 }
-                DomainPackageRecord::Redefinition(redefinition) => {
-                    redefinitions.push(redefinition.clone());
-                }
-                DomainPackageRecord::Subsetting(_) => {}
                 // FR-152 systems-model records are not conformance-checked
                 // by this module (crate::model::systems owns them); FR-153
                 // population declarations are not conformance-checked here
@@ -240,7 +234,6 @@ impl ConformanceIndex {
             operations,
             scalars,
             member_owner,
-            redefinitions,
         }
     }
 }
@@ -269,7 +262,7 @@ impl ConformanceIndex {
 /// `label` is the refusal detail's own subject phrase (`"conformance check
 /// from"`).
 fn walk_ancestors<B>(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     s: &DeclarationKey,
     label: &str,
     mut visit: impl FnMut(&DeclarationKey, &DeclarationKey) -> ControlFlow<B>,
@@ -288,14 +281,14 @@ fn walk_ancestors<B>(
                 cause: ModelRefusalCause::ConformanceDepth { from: s.clone() },
                 detail: format!(
                     "{label} {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
-                    s.identity
+                    s.node
                 ),
             });
         }
         for general in generals_by_specific.get(&current).into_iter().flatten() {
-            match visit(&current, &general.general) {
+            match visit(&current, general) {
                 ControlFlow::Break(value) => return Ok(ControlFlow::Break(value)),
-                ControlFlow::Continue(()) => stack.push(general.general.clone()),
+                ControlFlow::Continue(()) => stack.push(general.clone()),
             }
         }
     }
@@ -313,7 +306,7 @@ fn walk_ancestors<B>(
 /// applicability and dominance) reuse this one implementation rather than a
 /// second copy.
 pub(super) fn type_conforms(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     s: &DeclarationKey,
     t: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {
@@ -370,25 +363,26 @@ fn missing_member(cause: ModelRefusalCause, identity: &str, role: &str) -> Model
 /// (`quire.model.conformance.variance/v1`, `.../multiplicity/v1`).
 pub fn check_field_redefinition(
     domain_package: &DomainPackage,
-    record: &RedefinitionRecord,
+    redefining_key: &DeclarationKey,
+    redefined_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
     let index = ConformanceIndex::build(domain_package);
-    let Some(redefining) = index.fields.get(&record.redefining) else {
+    let Some(redefining) = index.fields.get(redefining_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
-                member: record.redefining.clone(),
+                member: redefining_key.clone(),
             },
-            &record.redefining.identity,
+            &redefining_key.node,
             "redefining field",
         ));
     };
-    let Some(redefined) = index.fields.get(&record.redefined) else {
+    let Some(redefined) = index.fields.get(redefined_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefined {
-                member: record.redefined.clone(),
+                member: redefined_key.clone(),
             },
-            &record.redefined.identity,
+            &redefined_key.node,
             "redefined field",
         ));
     };
@@ -410,7 +404,7 @@ pub fn check_field_redefinition(
             cause: ModelRefusalCause::VarianceResult,
             detail: format!(
                 "{} does not conform to {}",
-                redefining.value_type.identity, redefined.value_type.identity
+                redefining.value_type.node, redefined.value_type.node
             ),
         }),
         Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -441,32 +435,33 @@ pub fn check_field_redefinition(
     }
 }
 
-/// Checks a subsetting record's `subsetting-type` and `multiplicity` axes
+/// Checks a subsetting pair's `subsetting-type` and `multiplicity` axes
 /// (same rule as field redefinition, different cause on the type axis).
 /// Runtime population-membership checking
 /// (`binding.subset-value`/`subsetting-violation`) is FR-153 territory, not
 /// this static check.
 pub fn check_subsetting(
     domain_package: &DomainPackage,
-    record: &SubsettingRecord,
+    subsetting_key: &DeclarationKey,
+    subsetted_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
     let index = ConformanceIndex::build(domain_package);
-    let Some(subsetting) = index.fields.get(&record.subsetting) else {
+    let Some(subsetting) = index.fields.get(subsetting_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetting {
-                member: record.subsetting.clone(),
+                member: subsetting_key.clone(),
             },
-            &record.subsetting.identity,
+            &subsetting_key.node,
             "subsetting field",
         ));
     };
-    let Some(subsetted) = index.fields.get(&record.subsetted) else {
+    let Some(subsetted) = index.fields.get(subsetted_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetted {
-                member: record.subsetted.clone(),
+                member: subsetted_key.clone(),
             },
-            &record.subsetted.identity,
+            &subsetted_key.node,
             "subsetted field",
         ));
     };
@@ -491,7 +486,7 @@ pub fn check_subsetting(
             },
             detail: format!(
                 "{} does not conform to {}",
-                subsetting.value_type.identity, subsetted.value_type.identity
+                subsetting.value_type.node, subsetted.value_type.node
             ),
         }),
         Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -527,25 +522,26 @@ pub fn check_subsetting(
 /// construction, per the module docs) but are still charged.
 pub fn check_operation_redefinition(
     domain_package: &DomainPackage,
-    record: &RedefinitionRecord,
+    redefining_key: &DeclarationKey,
+    redefined_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
     let index = ConformanceIndex::build(domain_package);
-    let Some(redefining) = index.operations.get(&record.redefining) else {
+    let Some(redefining) = index.operations.get(redefining_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
-                member: record.redefining.clone(),
+                member: redefining_key.clone(),
             },
-            &record.redefining.identity,
+            &redefining_key.node,
             "redefining operation",
         ));
     };
-    let Some(redefined) = index.operations.get(&record.redefined) else {
+    let Some(redefined) = index.operations.get(redefined_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefined {
-                member: record.redefined.clone(),
+                member: redefined_key.clone(),
             },
-            &record.redefined.identity,
+            &redefined_key.node,
             "redefined operation",
         ));
     };
@@ -592,7 +588,7 @@ pub fn check_operation_redefinition(
                     },
                     detail: format!(
                         "parameter {display_index}: expected {} to conform to {}",
-                        dp.value_type.identity, rp.value_type.identity
+                        dp.value_type.node, rp.value_type.node
                     ),
                 }),
                 Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -632,7 +628,7 @@ pub fn check_operation_redefinition(
                     cause: ModelRefusalCause::VarianceResult,
                     detail: format!(
                         "{} does not conform to {}",
-                        rr.value_type.identity, dr.value_type.identity
+                        rr.value_type.node, dr.value_type.node
                     ),
                 }),
                 Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -689,7 +685,7 @@ pub fn check_operation_redefinition(
                 },
                 detail: format!(
                     "write {} is not covered by the redefined effect",
-                    write.identity
+                    write.node
                 ),
             });
         }
@@ -717,7 +713,7 @@ pub fn check_operation_redefinition(
                     cause: ModelRefusalCause::EffectEscape {
                         field: entry.clone(),
                     },
-                    detail: format!("{} is not covered by the redefined effect", entry.identity),
+                    detail: format!("{} is not covered by the redefined effect", entry.node),
                 });
             }
         }
@@ -898,29 +894,30 @@ fn format_interval(interval: &ProvedInterval) -> String {
 /// module docs for the [`PostconditionClause`] scope decision this rests on.
 pub fn check_field_refinement_obligation(
     domain_package: &DomainPackage,
-    record: &RedefinitionRecord,
+    redefining_key: &DeclarationKey,
+    redefined_key: &DeclarationKey,
 ) -> Result<ConformanceOutcome, ModelRefusal> {
     let index = ConformanceIndex::build(domain_package);
-    let Some(redefining) = index.fields.get(&record.redefining) else {
+    let Some(redefining) = index.fields.get(redefining_key) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefining {
-                member: record.redefining.clone(),
+                member: redefining_key.clone(),
             },
-            &record.redefining.identity,
+            &redefining_key.node,
             "redefining field",
         ));
     };
-    let Some(redefined) = index.fields.get(&record.redefined) else {
+    let Some(redefined) = index.fields.get(redefined_key) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefined {
-                member: record.redefined.clone(),
+                member: redefined_key.clone(),
             },
-            &record.redefined.identity,
+            &redefined_key.node,
             "redefined field",
         ));
     };
 
-    let same_type = redefining.value_type.identity == redefined.value_type.identity;
+    let same_type = redefining.value_type.node == redefined.value_type.node;
     let raises_lower = redefining.multiplicity.lower > redefined.multiplicity.lower;
     let single_valued = redefining.multiplicity.upper.is_some_and(|u| u <= 1);
 
@@ -943,10 +940,11 @@ pub fn check_field_refinement_obligation(
     }
 
     let writer = index.operations.values().find(|operation| {
-        operation.effect.modifies.iter().any(|field| {
-            field.identity == record.redefined.identity
-                || field.identity == record.redefining.identity
-        })
+        operation
+            .effect
+            .modifies
+            .iter()
+            .any(|field| field.node == redefined_key.node || field.node == redefining_key.node)
     });
     let Some(writer) = writer else {
         // No exposed operation writes this field: nothing to discharge.
@@ -954,17 +952,16 @@ pub fn check_field_refinement_obligation(
     };
 
     let mut clauses: Vec<&PostconditionClause> = writer.own_postcondition_clauses.iter().collect();
-    for redefinition in &index.redefinitions {
-        if redefinition.redefined.identity == writer.key.identity
-            && redefinition.owner.identity == record.owner.identity
-        {
-            if let Some(overriding) = index.operations.get(&redefinition.redefining) {
-                clauses.extend(overriding.own_postcondition_clauses.iter());
-            }
+    for operation in index.operations.values() {
+        let Some(target) = &operation.redefines else {
+            continue;
+        };
+        if target.node == writer.key.node && operation.owner.node == redefining.owner.node {
+            clauses.extend(operation.own_postcondition_clauses.iter());
         }
     }
     let names_field = |key: &DeclarationKey| -> bool {
-        key.identity == record.redefined.identity || key.identity == record.redefining.identity
+        key.node == redefined_key.node || key.node == redefining_key.node
     };
 
     // FR-146's own rule: a projection onto the field a narrowing redefinition
@@ -989,7 +986,7 @@ pub fn check_field_refinement_obligation(
                 cause: ModelRefusalCause::UnprovedRefinement,
                 detail: format!(
                     "{} narrows the multiplicity of {} with no establishing presence fact (obligation field-presence)",
-                    record.redefining.identity, record.redefined.identity
+                    redefining_key.node, redefined_key.node
                 ),
             }]))
         };
@@ -1002,7 +999,7 @@ pub fn check_field_refinement_obligation(
             cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
                 "{} narrows a collection upper bound, which no FR-146 fact form expresses (obligation no-proof-form)",
-                record.redefining.identity
+                redefining_key.node
             ),
         }]));
     }
@@ -1044,7 +1041,7 @@ pub fn check_field_refinement_obligation(
                     cause: ModelRefusalCause::UnprovedRefinement,
                     detail: format!(
                         "no establishing interval fact for {} (obligation field-domain)",
-                        record.redefining.identity
+                        redefining_key.node
                     ),
                 }])),
             }
@@ -1055,23 +1052,22 @@ pub fn check_field_refinement_obligation(
             cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
                 "{} narrows an object-typed domain, which no FR-146 fact form expresses (obligation no-proof-form)",
-                record.redefining.identity
+                redefining_key.node
             ),
         }])),
     }
 }
 
-/// Resolves which of `redefining`'s stated redefinition records name a
-/// genuinely inherited target: a member declared on a proper ancestor of
-/// `owner`, never `owner` itself. Zero or several distinct valid targets
-/// refuse `redefinition-target` naming every candidate — never an arbitrary
-/// pick among them.
+/// Resolves whether `redefining`'s own inline `redefines` property
+/// (`model-complete.md`:162) names a genuinely inherited target: a member
+/// declared on a proper ancestor of `redefining`'s own owner (read from the
+/// index, never a caller-supplied claim), not on that owner itself.
 ///
 /// This covers R07's *first* shape only: one redefining member queried in
-/// isolation, whose own stated records resolve to zero or multiple targets.
-/// It cannot see sibling redefiners of the same target (querying `B/z` alone
-/// has no visibility into `B/z2`), so it does not — and cannot — detect
-/// R07's *second* shape, several distinct members all redefining one shared
+/// isolation, whose own stated `redefines` resolves or does not. It cannot
+/// see sibling redefiners of the same target (querying `B/z` alone has no
+/// visibility into `B/z2`), so it does not — and cannot — detect R07's
+/// *second* shape, several distinct members all redefining one shared
 /// inherited target. That contention check runs where the real boundary can
 /// see every redefiner at once: `normalize.rs`'s phase 4
 /// (`apply_redefinitions`), not here. This function is currently unwired
@@ -1079,47 +1075,39 @@ pub fn check_field_refinement_obligation(
 /// composes it into the real pipeline's `conformance.axis` accounting.
 pub fn resolve_redefinition_target(
     domain_package: &DomainPackage,
-    owner: &DeclarationKey,
     redefining: &DeclarationKey,
 ) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
     let index = ConformanceIndex::build(domain_package);
-    let mut candidates: Vec<(DeclarationKey, DeclarationKey)> = Vec::new();
-    let mut valid: Vec<DeclarationKey> = Vec::new();
 
-    for record in &index.redefinitions {
-        if record.owner.identity != owner.identity
-            || record.redefining.identity != redefining.identity
-        {
-            continue;
-        }
-        candidates.push((record.key.clone(), record.redefined.clone()));
-        let Some(target_owner) = index.member_owner.get(&record.redefined) else {
-            continue;
-        };
-        if target_owner == owner {
-            continue; // declared directly on `owner`, not inherited.
-        }
-        if type_conforms(&index.generals_by_specific, owner, target_owner)? {
-            valid.push(record.redefined.clone());
-        }
-    }
-
-    let mut distinct: Vec<DeclarationKey> = Vec::new();
-    for target in &valid {
-        if !distinct
-            .iter()
-            .any(|existing| existing.identity == target.identity)
-        {
-            distinct.push(target.clone());
-        }
-    }
-
-    match distinct.len() {
-        1 => Ok(RedefinitionTargetOutcome::Resolved(distinct.remove(0))),
-        _ => Ok(RedefinitionTargetOutcome::Refused {
+    let own_redefines = index
+        .fields
+        .get(redefining)
+        .and_then(|field| field.redefines.clone())
+        .or_else(|| {
+            index
+                .operations
+                .get(redefining)
+                .and_then(|operation| operation.redefines.clone())
+        });
+    let Some(target) = own_redefines else {
+        return Ok(RedefinitionTargetOutcome::Refused {
             cause: ModelRefusalCause::RedefinitionTarget,
-            candidates,
-            valid_targets: distinct,
-        }),
+            candidate: None,
+        });
+    };
+
+    let owner = index.member_owner.get(redefining).expect(
+        "redefining names a declared field or operation member, indexed by ConformanceIndex::build under its own owner",
+    );
+    if let Some(target_owner) = index.member_owner.get(&target) {
+        if target_owner != owner && type_conforms(&index.generals_by_specific, owner, target_owner)?
+        {
+            return Ok(RedefinitionTargetOutcome::Resolved(target));
+        }
     }
+
+    Ok(RedefinitionTargetOutcome::Refused {
+        cause: ModelRefusalCause::RedefinitionTarget,
+        candidate: Some((redefining.clone(), target)),
+    })
 }

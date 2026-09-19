@@ -333,10 +333,7 @@ fn evaluate_unresolvable_lookup(
             return Err(model_refusal(ModelRefusal {
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::TypeMismatch,
-                detail: format!(
-                    "{} does not conform to {}",
-                    static_type.identity, target.identity
-                ),
+                detail: format!("{} does not conform to {}", static_type.node, target.node),
             }))
         }
         Err(refusal) => return Err(model_refusal(refusal)),

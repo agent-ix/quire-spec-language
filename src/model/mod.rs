@@ -6,8 +6,10 @@
 //! QSL does not yet receive a `quire.model.complete/v1` domain package from a live
 //! Semantic IR 2.0.0 intake (`agent-ix/quire-specification#131`'s intake half,
 //! blocked on `agent-ix/filament-core-data#173`, unmerged as of this rung).
-//! [`domain_package::DomainPackage`] is the producer interface `1.3.0` domain package shape that
-//! intake will eventually supply; everything else in this module is a pure
+//! [`domain_package::DomainPackage`] is the
+//! `model-effective-declaration.schema.json`/`model-complete.md` domain
+//! package shape FR-154 defines, the shape intake will eventually supply;
+//! everything else in this module is a pure
 //! function of that value, so wiring a real intake later replaces only how a
 //! [`domain_package::DomainPackage`] is constructed, never how it is normalized, queried or
 //! dispatched against.
