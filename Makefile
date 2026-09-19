@@ -48,3 +48,53 @@ ci-clean-build:
 	cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
 
 ci: ci-default-features ci-all-features ci-clean-build
+
+# FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
+# checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and
+# FR-060 report real, already-tracked findings against QSL's own current
+# head (ADR-011 OBS-029, ADR-013 OBS-018), owned by #213/#211, not by this
+# target's caller. `arch-lint-direction` needs real local checkouts of the
+# three backend repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
+IR_CLONE ?=
+RT_CLONE ?=
+CG_CLONE ?=
+
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint
+
+arch-lint-direction:
+	cargo run --locked --bin arch-lint -- direction \
+		--qsl . --ir $(IR_CLONE) --rt $(RT_CLONE) --cg $(CG_CLONE)
+
+arch-lint-api-surface:
+	cargo run --locked --bin arch-lint -- api-surface --qsl .
+
+arch-lint-duplicate-revisions:
+	cargo run --locked --bin arch-lint -- duplicate-revisions --lockfile Cargo.lock
+
+# Runs the two checks that need only this repository. `arch-lint-direction`
+# needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is run separately.
+arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions
+
+# FR-058 (ADR-011 §7.1 T-12, #215): the current-head integration lane. Not
+# part of `ci:` -- it needs network access to fetch each repository's
+# default branch head, and it is a separate lane from the exact-pin build
+# `ci:` verifies. See integration/current-head/README.md.
+.PHONY: integration-current-head-prepare integration-current-head integration-current-head-revision-log integration-current-head-incompatible-fixture
+
+# Refreshes the local clones the lane's [patch] entries need. Run this first,
+# and again any time quire-contract-ir's head should be picked up again.
+integration-current-head-prepare:
+	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
+		prepare --vendor-root integration/current-head/.vendor
+
+integration-current-head:
+	cargo test --manifest-path integration/current-head/Cargo.toml
+
+integration-current-head-revision-log:
+	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
+		revision-log --qsl . --manifest integration/current-head/Cargo.toml \
+		--vendor-root integration/current-head/.vendor
+
+integration-current-head-incompatible-fixture:
+	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
+		check-incompatible-fixture --manifest integration/current-head/fixtures/incompatible/Cargo.toml
