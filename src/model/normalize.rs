@@ -1697,7 +1697,7 @@ fn apply_redefinitions(
                 for edge in &edges {
                     let mut dominated_by_another = false;
                     for other in &edges {
-                        if other.owner.node == edge.owner.node {
+                        if other.owner == edge.owner {
                             continue;
                         }
                         if owner_dominates(
@@ -1716,7 +1716,7 @@ fn apply_redefinitions(
                 let same_owner = !most_derived.is_empty()
                     && most_derived
                         .iter()
-                        .all(|edge| edge.owner.node == most_derived[0].owner.node);
+                        .all(|edge| edge.owner == most_derived[0].owner);
                 let candidate = if same_owner {
                     let mut redefiners: Vec<String> = most_derived
                         .iter()
