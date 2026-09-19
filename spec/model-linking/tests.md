@@ -148,9 +148,6 @@ per-group counts before moving this row to Passed.
 | FR-056 | FR-056-AC-7 | TC-145, TC-147 | 🚧 Planned; #131 |
 | FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Planned; #131 |
 
-FR-057-AC-7 uses Inspection of the QSL source tree at the #213 PR rather than a
-Test Case.
-
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
 invented for that criterion.
@@ -196,7 +193,7 @@ invented for that criterion.
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
 | TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_models.rs, tests/composed_namespace.rs, tests/composed_definitions.rs, tests/composed_definition_source.rs, tests/composed_linking.rs, tests/composed_scopes.rs, tests/composed_binding.rs, src/linking/composed/arena.rs) |
-| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | ✅ Passed locally (tests/composed_admission_stages.rs) |
+| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 AC-5 and AC-8 passed locally (tests/composed_admission_stages.rs); AC-6 over FR-057 kinds planned, #213/#185 |
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
@@ -221,9 +218,9 @@ invented for that criterion.
 | TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 Planned; #131 |
 | TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
 | IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
-| TC-153 | Admit exactly the six capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4 | 🚧 Planned; #213 |
-| TC-154 | Refuse a capability carrier with an unsupported vocabulary version | Unit | P0 | FR-057-AC-3 | 🚧 Planned; #213 |
-| TC-155 | Keep admission backend-independent and settle backend absence as unsupported | Integration | P0 | FR-057-AC-5, FR-057-AC-6 | 🚧 Planned; #185 |
+| TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 Planned; #213 |
+| TC-154 | Refuse a capability carrier with an unsupported vocabulary version | Unit | P0 | FR-057-AC-3 | 🚧 Planned; #211/#213 |
+| TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8, FR-057-AC-9 | 🚧 Planned; #213 (AC-5), #185 (AC-6, AC-8, AC-9) |
 
 ## Composed language admission (L2)
 
@@ -241,13 +238,14 @@ declaration-owned role portions, with further tagged unit tests in
 the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
 controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
-boundary. `quire coverage` reports FR-036 8 of 8 backed. Names resolved at this
+boundary. Every FR-036 criterion except AC-9 (TC-148, #131) has a tagged test; FR-036-AC-6's test runs
+over the four-member vocabulary that #213 replaces. Names resolved at this
 stage grant no checked or executable package. Status records local runs, not
-ecosystem acceptance. FR-036-AC-6 now names FR-057 capability kinds. TC-115's merged controls still
+ecosystem acceptance. FR-036-AC-6 names FR-057 capability kinds. TC-115's merged controls
 use the four-member request vocabulary in
 `linking::composed::requests::Capability`, so the FR-036-AC-6 row is 🚧 until
-#213 delivers the canonical `Capability` and #185 moves backend support into
-registration and routing.
+#213 delivers the canonical `Capability` and removes backend reading from
+admission, and #185 builds registration and routing.
 The FR-036-AC-3, FR-040-AC-4/5, FR-042-AC-3, FR-047-AC-1,
 FR-048-AC-8 and FR-049-AC-5 rows and the TC-114, TC-132 and TC-136 summaries name
 domain-package declarations as model inputs; they record the local NativeModel
@@ -301,10 +299,14 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-036 | FR-036-AC-9 | TC-148 | 🚧 Planned; #131 |
 | FR-057 | FR-057-AC-1 | TC-153 | 🚧 Planned; #213 |
 | FR-057 | FR-057-AC-2 | TC-153 | 🚧 Planned; #213 |
-| FR-057 | FR-057-AC-3 | TC-154 | 🚧 Planned; #213 |
+| FR-057 | FR-057-AC-3 | TC-154 | 🚧 Planned; #211/#213 |
 | FR-057 | FR-057-AC-4 | TC-153 | 🚧 Planned; #213 |
-| FR-057 | FR-057-AC-5 | TC-155 | 🚧 Planned; #185 |
+| FR-057 | FR-057-AC-5 | TC-155 | 🚧 Planned; #213 |
 | FR-057 | FR-057-AC-6 | TC-155 | 🚧 Planned; #185 |
+| FR-057 | FR-057-AC-7 | TC-153 | 🚧 Planned; #213 |
+| FR-057 | FR-057-AC-8 | TC-155 | 🚧 Planned; #185 |
+| FR-057 | FR-057-AC-9 | TC-155 | 🚧 Planned; #185 |
+| FR-057 | FR-057-AC-10 | TC-153 | 🚧 Planned; #213, #217, #191, #192 |
 | FR-040 | FR-040-AC-1 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-2 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-3 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
