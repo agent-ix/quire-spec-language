@@ -353,6 +353,250 @@ fn fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test() -> DomainP
     )
 }
 
+/// Two object types, `test/orders:model.A` and `other/pkg:model.A`, share
+/// the display node `model.A` but are unrelated: neither generalizes the
+/// other, and both directly generalize `model.Root`. Each declares its own
+/// field redefining `model.Root.x`, and `model.D` generalizes both, so
+/// `apply_redefinitions` must resolve the redefiners of `model.Root.x` by
+/// each owner's whole `DeclarationKey`, not by `node` alone — a `node`-only
+/// comparison would treat the two unrelated owners as one, changing this
+/// derivation conflict into a false "one owner, several redefiners"
+/// (`RedefinitionTarget`) refusal instead.
+fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> DomainPackage {
+    let owner_orders = DeclarationKey {
+        package: "test/orders".to_owned(),
+        node: "model.A".to_owned(),
+    };
+    let owner_other = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.A".to_owned(),
+    };
+    let root = DeclarationKey::fixture("model.Root");
+    let root_x = DeclarationKey::fixture("model.Root.x");
+    let d = DeclarationKey::fixture("model.D");
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.cross-package-conflict"),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: root.clone(),
+                interface_features: None,
+                supertypes: vec![],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: owner_orders.clone(),
+                interface_features: None,
+                supertypes: vec![root.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: owner_other.clone(),
+                interface_features: None,
+                supertypes: vec![root.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: d.clone(),
+                interface_features: None,
+                supertypes: vec![owner_orders.clone(), owner_other.clone()],
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: root_x.clone(),
+                owner: root.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: None,
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey {
+                    package: "test/orders".to_owned(),
+                    node: "model.A.x2".to_owned(),
+                },
+                owner: owner_orders.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: Some(root_x.clone()),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.A.x3".to_owned(),
+                },
+                owner: owner_other.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: Some(root_x.clone()),
+            }),
+        ],
+    )
+}
+
+/// The same-owner test in `apply_redefinitions` (immediately above the
+/// `derivation-conflict`/`redefinition-target` split) compares owners by
+/// their whole `DeclarationKey`, not by `node` alone: `test/orders:model.A`
+/// and `other/pkg:model.A` are two unrelated owners that happen to share a
+/// display node, so their two redefiners of `model.Root.x` are a genuine
+/// derivation conflict, never a same-owner ambiguity.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_redefinition_target(
+) {
+    match normalize(
+        &fixture_derivation_conflict_across_packages_sharing_an_owner_node(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: DeclarationKey::fixture("model.D"),
+                        member: DeclarationKey::fixture("model.Root.x"),
+                        redefiners: vec![
+                            DeclarationKey {
+                                package: "other/pkg".to_owned(),
+                                node: "model.A.x3".to_owned(),
+                            },
+                            DeclarationKey {
+                                package: "test/orders".to_owned(),
+                                node: "model.A.x2".to_owned(),
+                            },
+                        ],
+                    },
+                    detail: "type model.D has 2 undominated redefinitions of model.Root.x: \
+                              [model.A, model.A.x3, model.Root.x] and \
+                              [model.A, model.A.x2, model.Root.x]"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict), got {other:?}"),
+    }
+}
+
+/// `test/orders:model.Shared` and `other/pkg:model.Shared` share a display
+/// node, and `other/pkg:model.Shared` genuinely descends from
+/// `test/orders:model.Shared` (a real, full-key dominance relation, not a
+/// node collision): the dominance loop in `apply_redefinitions` must compare
+/// owners by their whole `DeclarationKey`, not by `node` alone, to exclude
+/// the dominated owner's own redefiner from the same-owner test. `D2`
+/// inherits `low`'s single redefiner and `mid`'s two contending redefiners
+/// of `model.Root.x`; only `mid`'s two remain once `low`'s is correctly
+/// excluded, so the refusal names a same-owner ambiguity of exactly two
+/// redefiners, never three.
+fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descendant(
+) -> DomainPackage {
+    let root = DeclarationKey::fixture("model.Root");
+    let root_x = DeclarationKey::fixture("model.Root.x");
+    let low = DeclarationKey {
+        package: "test/orders".to_owned(),
+        node: "model.Shared".to_owned(),
+    };
+    let mid = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.Shared".to_owned(),
+    };
+    let d2 = DeclarationKey::fixture("model.D2");
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.cross-package-dominance"),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: root.clone(),
+                interface_features: None,
+                supertypes: vec![],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: low.clone(),
+                interface_features: None,
+                supertypes: vec![root.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: mid.clone(),
+                interface_features: None,
+                supertypes: vec![low.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: d2.clone(),
+                interface_features: None,
+                supertypes: vec![mid.clone()],
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: root_x.clone(),
+                owner: root.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: None,
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey {
+                    package: "test/orders".to_owned(),
+                    node: "model.Shared.w".to_owned(),
+                },
+                owner: low.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: Some(root_x.clone()),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.Shared.z1".to_owned(),
+                },
+                owner: mid.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: Some(root_x.clone()),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.Shared.z2".to_owned(),
+                },
+                owner: mid.clone(),
+                value_type: root.clone(),
+                multiplicity: MULTIPLICITY_0_1,
+                subsets: vec![],
+                redefines: Some(root_x.clone()),
+            }),
+        ],
+    )
+}
+
+/// The dominance loop (the fix's first line) must compare owners by their
+/// whole key: `other/pkg:model.Shared` genuinely dominates
+/// `test/orders:model.Shared` and must exclude its redefiner from the
+/// same-owner test, even though the two owners share a display node.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn r07_a_same_node_owner_genuinely_dominated_across_packages_is_excluded_from_the_same_owner_test()
+{
+    match normalize(
+        &fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descendant(),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::RedefinitionTarget,
+                    detail: "model.Shared declares 2 redefining members \
+                              (model.Shared.z1, model.Shared.z2) that all redefine \
+                              model.Root.x, with no single valid target"
+                        .to_string(),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
+}
+
 /// Finds the effective member declared with original identity
 /// `original_identity` under owner effective type `owner`, regardless of
 /// its `visible` bit — phase 4 retains hidden entries in the view.
@@ -361,7 +605,7 @@ fn find_member<'a>(
     owner: &EffectiveId,
     original_identity: &str,
 ) -> &'a quire_spec_language::model::normalize::ViewEntry {
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.as_ref() == Some(owner)
@@ -384,7 +628,7 @@ fn find<'a>(
     view: &'a quire_spec_language::model::normalize::EffectiveView,
     short_hex: &str,
 ) -> &'a quire_spec_language::model::normalize::ViewEntry {
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| entry.effective_id.short_hex() == short_hex)
         .unwrap_or_else(|| panic!("no declaration with identity {short_hex} in {view:?}"))
@@ -469,7 +713,7 @@ fn assert_declaration_matches_vector(
     name: &str,
 ) {
     let entry = view
-        .declarations
+        .declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.as_ref() == owner
@@ -490,7 +734,7 @@ fn assert_declaration_matches_vector(
 fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
     let vectors = vectors();
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations.len(), 4);
+    assert_eq!(view.declarations().len(), 4);
 
     assert_declaration_matches_vector(&vectors, &view, None, "ix://test/orders/A", "n01-type-A");
     assert_declaration_matches_vector(&vectors, &view, None, "ix://test/orders/B", "n01-type-B");
@@ -537,7 +781,7 @@ fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
 fn n02_normalizes_f2_diamond_inheritance_to_the_exact_ground_truth_identities() {
     let vectors = vectors();
     let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations.len(), 8);
+    assert_eq!(view.declarations().len(), 8);
 
     for node in [
         "ix://test/orders/A",
@@ -622,7 +866,7 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
         fixture_f1().records,
     );
     let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations.len(), 4);
+    assert_eq!(view.declarations().len(), 4);
 
     // Every declaration is byte-equal to n01-view's: version binds nothing
     // about an effective declaration's own identity.
@@ -745,7 +989,7 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
     let selection_digest =
         quire_spec_language::model::key::hex(&fixture_f1().model_selection.digest);
 
-    for entry in &view.declarations {
+    for entry in view.declarations() {
         assert_ne!(
             entry.effective_id.hex(),
             selection_digest,
@@ -1881,26 +2125,13 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
     );
 }
 
-#[trace("TC-195")]
-#[test]
-fn n10_unsorted_view_refuses_by_the_semantic_check() {
-    let mut view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    assert!(view.declarations.len() >= 2);
-    view.declarations.swap(0, 1);
-    let refusal = view
-        .validate_order()
-        .expect_err("a view whose declarations are no longer ascending must be refused");
-    assert_eq!(
-        refusal.cause,
-        ModelRefusalCause::UnsortedView {
-            at: view.declarations[1].effective_id.clone(),
-        }
-    );
-    assert_eq!(
-        refusal.code,
-        quire_spec_language::diagnostic::Code::InvalidModelBinding
-    );
-}
+// TC-195 N10 (a view whose declarations are not ascending by effective
+// identity refuses `invalid_model_binding`/`unsorted-view`) is now a unit
+// test, `crate::model::normalize::tests::n10_unsorted_view_refuses_by_the_semantic_check`:
+// `EffectiveView`'s fields are private outside `crate::model::normalize`
+// (#151: construction only through `normalize`), so an out-of-crate
+// integration test can no longer build a deliberately unsorted view to
+// exercise `validate_order` directly.
 
 /// TC-195 N01's exact charge sequence and per-declaration JCS lengths —
 /// three `normalize.record` (`A`, `A/x`, `B`; the `Supertype` record `B` ->
@@ -2373,7 +2604,7 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     match outcome {
-        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations().len(), 13),
         other => panic!("expected Completed, got {other:?}"),
     }
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 103);
@@ -2422,7 +2653,7 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
     }
     limits.work_units = 103;
     match normalize(&domain_package, limits) {
-        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations().len(), 13),
         other => panic!("expected Completed at work_units=103, got {other:?}"),
     }
 }
@@ -2535,7 +2766,7 @@ fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
         };
 
         let winner = view
-            .declarations
+            .declarations()
             .iter()
             .find(|entry| {
                 entry.preimage.original.node == "model.Owner.x2"
@@ -2630,7 +2861,7 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
 
         if n_parents == 128 {
             assert_eq!(
-                view.declarations.len(),
+                view.declarations().len(),
                 134,
                 "129 type declarations (G000..G127, O) plus 5 member \
                  declarations (G000.x and G000.w at G000's own view; O's own \
@@ -2639,7 +2870,7 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
         }
 
         let owner_o = view
-            .declarations
+            .declarations()
             .iter()
             .find(|entry| {
                 entry.preimage.owner_effective_type.is_none()
