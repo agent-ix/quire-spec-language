@@ -4,7 +4,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::simulation::frontier::{Frontier, Limit};
+use crate::simulation::frontier::{Frontier, Limit, StateKey};
 
 /// A finite-branching transition system the engine explores without
 /// interpreting.
@@ -21,9 +21,9 @@ pub trait TransitionSystem {
     /// consider them.
     fn initial(&self) -> Vec<Self::State>;
 
-    /// The full canonical state key as bytes. Two states are the same state
-    /// to the engine exactly when their keys are byte-equal.
-    fn key(&self, state: &Self::State) -> Vec<u8>;
+    /// The full canonical state key. Two states are the same state to the
+    /// engine exactly when their keys are equal.
+    fn key(&self, state: &Self::State) -> StateKey;
 
     /// The transitions enabled from `state`, in the order the system wants
     /// them explored. The engine preserves this order exactly.
@@ -35,8 +35,7 @@ pub trait TransitionSystem {
 pub struct Limits {
     /// Greatest number of distinct discovered states, by key equality.
     pub max_states: usize,
-    /// Greatest breadth-first depth expanded; a state discovered at this
-    /// depth is not itself expanded.
+    /// States at depth `>= max_depth` are not expanded.
     pub max_depth: usize,
     /// Greatest number of transitions explored, counting every edge the
     /// engine looks at, including ones that coalesce into an already-known
@@ -44,27 +43,27 @@ pub struct Limits {
     pub max_transitions: usize,
 }
 
+/// Aggregate counts for one exploration run, whatever stopped it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Stats {
+    /// Distinct states discovered.
+    pub states: usize,
+    /// Transitions explored.
+    pub transitions: usize,
+    /// Deepest state discovered.
+    pub depth: usize,
+}
+
 /// The result of one exploration run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome {
     /// The frontier went empty: every declared choice and schedule was
     /// visited.
-    Exhaustive {
-        /// Distinct states discovered.
-        states: usize,
-        /// Transitions explored.
-        transitions: usize,
-        /// Deepest state discovered.
-        depth: usize,
-    },
+    Exhaustive(Stats),
     /// An explicit bound stopped the run before the frontier went empty.
     Bounded {
-        /// Distinct states discovered.
-        states: usize,
-        /// Transitions explored.
-        transitions: usize,
-        /// Deepest state discovered.
-        depth: usize,
+        /// Counts at the moment the run stopped.
+        stats: Stats,
         /// The unexpanded keys, in the order the run would have expanded
         /// them next.
         frontier: Frontier,
@@ -74,12 +73,8 @@ pub enum Outcome {
     /// The poll callback requested cancellation before the frontier went
     /// empty.
     Cancelled {
-        /// Distinct states discovered.
-        states: usize,
-        /// Transitions explored.
-        transitions: usize,
-        /// Deepest state discovered.
-        depth: usize,
+        /// Counts at the moment the run stopped.
+        stats: Stats,
         /// The unexpanded keys, in the order the run would have expanded
         /// them next.
         frontier: Frontier,
@@ -89,7 +84,7 @@ pub enum Outcome {
 /// One queued, not-yet-expanded discovered state.
 struct Queued<S> {
     state: S,
-    key: Vec<u8>,
+    key: StateKey,
     depth: usize,
 }
 
@@ -104,32 +99,25 @@ pub fn explore<S: TransitionSystem>(
     limits: Limits,
     mut poll: impl FnMut() -> bool,
 ) -> Outcome {
-    let mut visited: HashSet<Vec<u8>> = HashSet::new();
+    let mut visited: HashSet<StateKey> = HashSet::new();
     let mut queue: VecDeque<Queued<S::State>> = VecDeque::new();
     let mut states = 0usize;
-    let mut transitions = 0usize;
-    let mut depth_reached = 0usize;
 
-    let frontier_of = |head: Vec<Vec<u8>>, queue: &VecDeque<Queued<S::State>>| -> Frontier {
-        let mut frontier = head;
-        frontier.extend(queue.iter().map(|item| item.key.clone()));
-        frontier
-    };
-
+    // Admit as many initial states as `max_states` allows, in the system's
+    // own order, deduplicating by key. A state the cap refuses still
+    // belongs in the frontier — it was discovered, just never queued — so
+    // the scan never stops early: it always sees every initial state before
+    // deciding whether the run is bounded.
+    let mut blocked_initial: Vec<StateKey> = Vec::new();
     for state in system.initial() {
         let key = system.key(&state);
         if visited.contains(&key) {
             continue;
         }
         if states >= limits.max_states {
-            let frontier = frontier_of(vec![key], &queue);
-            return Outcome::Bounded {
-                states,
-                transitions,
-                depth: depth_reached,
-                frontier,
-                limit: Limit::States,
-            };
+            visited.insert(key.clone());
+            blocked_initial.push(key);
+            continue;
         }
         visited.insert(key.clone());
         states += 1;
@@ -139,23 +127,49 @@ pub fn explore<S: TransitionSystem>(
             depth: 0,
         });
     }
+    if !blocked_initial.is_empty() {
+        let mut frontier: Frontier = queue.iter().map(|item| item.key.clone()).collect();
+        frontier.extend(blocked_initial);
+        return Outcome::Bounded {
+            stats: Stats {
+                states,
+                transitions: 0,
+                depth: 0,
+            },
+            frontier,
+            limit: Limit::States,
+        };
+    }
+
+    let mut transitions = 0usize;
+    let mut depth_reached = 0usize;
+
+    let frontier_of = |head: Vec<StateKey>, queue: &VecDeque<Queued<S::State>>| -> Frontier {
+        let mut frontier = head;
+        frontier.extend(queue.iter().map(|item| item.key.clone()));
+        frontier
+    };
 
     while let Some(Queued { state, key, depth }) = queue.pop_front() {
         if poll() {
             let frontier = frontier_of(vec![key], &queue);
             return Outcome::Cancelled {
-                states,
-                transitions,
-                depth: depth_reached,
+                stats: Stats {
+                    states,
+                    transitions,
+                    depth: depth_reached,
+                },
                 frontier,
             };
         }
         if depth >= limits.max_depth {
             let frontier = frontier_of(vec![key], &queue);
             return Outcome::Bounded {
-                states,
-                transitions,
-                depth: depth_reached,
+                stats: Stats {
+                    states,
+                    transitions,
+                    depth: depth_reached,
+                },
                 frontier,
                 limit: Limit::Depth,
             };
@@ -164,9 +178,11 @@ pub fn explore<S: TransitionSystem>(
             if transitions >= limits.max_transitions {
                 let frontier = frontier_of(vec![key.clone()], &queue);
                 return Outcome::Bounded {
-                    states,
-                    transitions,
-                    depth: depth_reached,
+                    stats: Stats {
+                        states,
+                        transitions,
+                        depth: depth_reached,
+                    },
                     frontier,
                     limit: Limit::Transitions,
                 };
@@ -177,11 +193,17 @@ pub fn explore<S: TransitionSystem>(
                 continue;
             }
             if states >= limits.max_states {
-                let frontier = frontier_of(vec![key.clone(), successor_key], &queue);
+                // `key` (still unexpanded) comes first, then whatever was
+                // already queued ahead of it, then this successor — it was
+                // the last of the three to be discovered.
+                let mut frontier = frontier_of(vec![key.clone()], &queue);
+                frontier.push(successor_key);
                 return Outcome::Bounded {
-                    states,
-                    transitions,
-                    depth: depth_reached,
+                    stats: Stats {
+                        states,
+                        transitions,
+                        depth: depth_reached,
+                    },
                     frontier,
                     limit: Limit::States,
                 };
@@ -198,9 +220,9 @@ pub fn explore<S: TransitionSystem>(
         }
     }
 
-    Outcome::Exhaustive {
+    Outcome::Exhaustive(Stats {
         states,
         transitions,
         depth: depth_reached,
-    }
+    })
 }
