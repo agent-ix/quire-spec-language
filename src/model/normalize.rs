@@ -161,14 +161,18 @@
 //! `normalize.conflict-check`, matching `:455`'s "before its first
 //! `normalize.fact`" and `:456`'s "after its last `normalize.fact`".
 //!
-//! A phase-4 refusal (`derivation-conflict` or `redefinition-target`: an
-//! owner ancestry with no unique dominant redefiner) is never returned by
-//! `build` itself. `value-accounting.md:481` states "checking is exhaustive
-//! within a stage," so phase 4's own charges — every
-//! `normalize.redefinition-check`, every phase-4 `normalize.fact`, every
-//! `normalize.conflict-check` — must all be admitted before the refusal
-//! they expose is reported. `build` stores the first such refusal it finds
-//! in `Built::phase4_refusal` and keeps resolving every remaining type and
+//! No phase-4 refusal is ever returned by `build` itself, whichever shape it
+//! takes: an owner ancestry with no unique dominant redefiner
+//! (`derivation-conflict`, or `redefinition-target` for R07's same-owner
+//! shape), a redefinition target that is not an effective member of its
+//! owning type, or a redefining member that is not itself an effective
+//! member (both the latter surfacing as `RedefinitionUnreachable`).
+//! `value-accounting.md:481` states "checking is exhaustive within a
+//! stage," so phase 4's own charges — every `normalize.redefinition-check`,
+//! every phase-4 `normalize.fact`, every `normalize.conflict-check` — must
+//! all be admitted before the refusal they expose is reported. `build`
+//! stores the first such refusal it finds, of any of these shapes, in
+//! `Built::phase4_refusal` and keeps resolving every remaining type and
 //! target group, so every later phase-4 charge amount is still computed
 //! correctly; `charge_all` charges through the last
 //! `normalize.conflict-check` and returns that refusal only once every
@@ -1415,7 +1419,7 @@ fn apply_redefinitions(
     // (`value-accounting.md:456`).
     let mut conflict_charges: Vec<(ProducerKey, u64)> = Vec::new();
 
-    for target_key in target_keys {
+    'targets: for target_key in target_keys {
         let mut edges = groups.remove(&target_key).expect("just listed");
         edges.sort_by(|a, b| {
             a.owner
@@ -1602,17 +1606,27 @@ fn apply_redefinitions(
 
         let member_key = (type_key.clone(), target_key.clone());
         if !member_preimages.contains_key(&member_key) {
-            return Err(ModelRefusal {
-                code: Code::DanglingReference,
-                cause: ModelRefusalCause::RedefinitionUnreachable {
-                    member: target_key.clone(),
-                    owner: type_key.clone(),
-                },
-                detail: format!(
-                    "redefinition target {} is not an effective member of {}",
-                    target_key.identity, type_key.identity
-                ),
-            });
+            // `normalize.redefinition-check` exposes this refusal
+            // (`value-accounting.md:455`), so it is a phase-4-stage refusal
+            // exactly like the dominance ambiguities above: held in
+            // `accounting.refusal` rather than returned here (see the module
+            // docs), so every remaining type and target group is still
+            // resolved and every later phase-4 charge amount is still
+            // computed correctly. Only the first refusal found is kept.
+            if accounting.refusal.is_none() {
+                *accounting.refusal = Some(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: target_key.clone(),
+                        owner: type_key.clone(),
+                    },
+                    detail: format!(
+                        "redefinition target {} is not an effective member of {}",
+                        target_key.identity, type_key.identity
+                    ),
+                });
+            }
+            continue 'targets;
         }
 
         for (i, edge) in edges.iter().enumerate() {
@@ -1621,19 +1635,29 @@ fn apply_redefinitions(
             inputs.push(edge.target.clone());
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
-            let entry = member_preimages
-                .get_mut(&redefining_key)
-                .ok_or_else(|| ModelRefusal {
-                    code: Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: edge.redefining.clone(),
-                        owner: type_key.clone(),
-                    },
-                    detail: format!(
-                        "redefining member {} is not an effective member of {}",
-                        edge.redefining.identity, type_key.identity
-                    ),
-                })?;
+            let entry = match member_preimages.get_mut(&redefining_key) {
+                Some(entry) => entry,
+                None => {
+                    // Same deferred-refusal treatment as the target check
+                    // above: this redefining member is not itself an
+                    // effective member of `type_key`, which
+                    // `normalize.redefinition-check` also exposes.
+                    if accounting.refusal.is_none() {
+                        *accounting.refusal = Some(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: ModelRefusalCause::RedefinitionUnreachable {
+                                member: edge.redefining.clone(),
+                                owner: type_key.clone(),
+                            },
+                            detail: format!(
+                                "redefining member {} is not an effective member of {}",
+                                edge.redefining.identity, type_key.identity
+                            ),
+                        });
+                    }
+                    continue 'targets;
+                }
+            };
             let ordinal = entry.derivation.len();
             entry.derivation.push(Fact {
                 ordinal,

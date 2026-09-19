@@ -16,7 +16,7 @@ use quire_spec_language::model::bundle::{
 };
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
-    normalize, normalize_with_meter, ModelRefusalCause, NormalizeOutcome,
+    normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -142,6 +142,25 @@ fn fixture_n06_resolved() -> Bundle {
         "model.A.x",
     ));
     Bundle::new(ModelSelection::fixture("bundle.n06"), records)
+}
+
+/// `fixture_n06_conflict` plus a type `E` with no generalization, field
+/// `E.y` of `A`'s value type, and redefinition record `redef.E` (`E`,
+/// `E.y` redefines `A.x`). `E` does not inherit `A`, so `A.x` is not an
+/// effective member of `E` -- this redefinition record's own target is
+/// unreachable from its owner, distinct from N06's own dominance conflict
+/// at `D`.
+fn fixture_n06_conflict_with_unreachable_redefiner() -> Bundle {
+    let mut records = fixture_n06_conflict().records;
+    records.push(object_type("model.E"));
+    records.push(field_member("model.E.y", "model.E", "model.A"));
+    records.push(redefinition(
+        "model.redef.E",
+        "model.E",
+        "model.E.y",
+        "model.A.x",
+    ));
+    Bundle::new(ModelSelection::fixture("bundle.n06e"), records)
 }
 
 /// TC-196 R07's second shape (origin/main, after QSpec #86): `B` itself
@@ -2240,40 +2259,38 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
     }
 }
 
-/// PR #178 review finding 1: a phase-4 refusal (`derivation-conflict`/
-/// `redefinition-target`) must not short-circuit `build()` before
-/// `charge_all` replays phase 4's own charges. `value-accounting.md:481`'s
-/// "checking is exhaustive within a stage" means every
-/// `normalize.redefinition-check`, every phase-4 `normalize.fact` and every
-/// `normalize.conflict-check` for `fixture_n06_conflict` (`B.x2`/`C.x3`,
-/// undominated redefiners of `A.x` reaching `D`) must be admitted before the
-/// `derivation-conflict` refusal they expose is reported; a tighter limit
-/// that runs out first reports that `Incomplete` instead, never the
-/// refusal.
+/// A phase-4 refusal (`derivation-conflict`/`redefinition-target`) does not
+/// short-circuit `build()` before `charge_all` replays phase 4's own
+/// charges. `value-accounting.md:481`'s "checking is exhaustive within a
+/// stage" means every `normalize.redefinition-check`, every phase-4
+/// `normalize.fact` and every `normalize.conflict-check` for
+/// `fixture_n06_conflict` (`B.x2`/`C.x3`, undominated redefiners of `A.x`
+/// reaching `D`) must be admitted before the `derivation-conflict` refusal
+/// they expose is reported; a tighter limit that runs out first reports
+/// that `Incomplete` instead, never the refusal.
 ///
-/// `fixture_n06_conflict`'s exact phase-4 shape (recounted, matching PR
-/// #178's review): `redef.B` reaches only `B` (2 facts), `redef.C` reaches
-/// only `C` (2 facts), and both `redef.B`/`redef.C` reach `D` (4 facts) --
-/// eight phase-4 facts total. A completed (`UNLIMITED`) run charges 27
-/// `derivation_facts` (19 through phase 2/3 plus these 8) and 57
-/// `work_units` (40 through phase 3, `+5` for the two
-/// `normalize.redefinition-check` charges, `+8` for the phase-4 facts,
-/// `+4` for the one `normalize.conflict-check` group) before reporting the
-/// refusal.
+/// `fixture_n06_conflict`'s exact phase-4 shape: `redef.B` reaches only `B`
+/// (2 facts), `redef.C` reaches only `C` (2 facts), and both
+/// `redef.B`/`redef.C` reach `D` (4 facts) -- eight phase-4 facts total. A
+/// completed (`UNLIMITED`) run charges 27 `derivation_facts` (19 through
+/// phase 2/3 plus these 8) and 57 `work_units` (40 through phase 3, `+5`
+/// for the two `normalize.redefinition-check` charges, `+8` for the
+/// phase-4 facts, `+4` for the one `normalize.conflict-check` group) before
+/// reporting the refusal.
 ///
-/// Revert probe: reverting `build()` to return the phase-4 refusal directly
-/// (its pre-review shape) makes every case below fail -- `derivation_facts
-/// = 19` reports `Refused` instead of `Incomplete`, and every `work_units`
-/// case in `16..=56` reports `Refused` instead of `Incomplete` -- confirmed
-/// by hand: reverting `build`/`charge_all` locally reproduces every
-/// failure, restoring them returns this test to green.
+/// Revert probe: hand-reverting `build()` to return the phase-4 refusal
+/// directly makes every case below fail -- `derivation_facts = 19` reports
+/// `Refused` instead of `Incomplete`, and every `work_units` case in
+/// `16..=56` reports `Refused` instead of `Incomplete` -- confirmed by
+/// hand: reverting `build`/`charge_all` locally reproduces every failure,
+/// restoring them returns this test to green.
 #[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
 #[test]
 fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
     let bundle = fixture_n06_conflict();
 
-    // Repro 1: a `derivation_facts` budget that exhausts exactly at the
-    // 19th phase-2/3 fact -- one short of the first phase-4 fact -- reports
+    // A `derivation_facts` budget that exhausts exactly at the 19th
+    // phase-2/3 fact -- one short of the first phase-4 fact -- reports
     // `Incomplete` at that first phase-4 `normalize.fact`, never the
     // `derivation-conflict` refusal `D`'s own resolution would otherwise
     // expose.
@@ -2295,10 +2312,9 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         other => panic!("expected Incomplete at the first phase-4 normalize.fact, got {other:?}"),
     }
 
-    // Repro 2, `45..=52`: new with this fix -- these `work_units` land
-    // inside the eight phase-4 `normalize.fact` charges, after both
-    // `normalize.redefinition-check` charges and before the one
-    // `normalize.conflict-check` charge.
+    // `work_units` in `45..=52` land inside the eight phase-4
+    // `normalize.fact` charges, after both `normalize.redefinition-check`
+    // charges and before the one `normalize.conflict-check` charge.
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 48;
     match normalize(&bundle, limits) {
@@ -2317,11 +2333,8 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         other => panic!("expected Incomplete at a phase-4 normalize.fact, got {other:?}"),
     }
 
-    // Repro 2, `16..=39`: already broken on `main` before this PR --
-    // `fact_budget_exceeded` compares only the fact count against
-    // `work_units`, ignoring the work units already spent on
-    // `normalize.record` and `normalize.cycle-check`, so these land inside
-    // phase 2/3's own facts, well before phase 4 starts.
+    // `work_units` in `16..=39` land inside phase 2/3's own facts, well
+    // before phase 4 starts.
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 30;
     match normalize(&bundle, limits) {
@@ -2340,6 +2353,32 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         other => panic!("expected Incomplete at a phase 2/3 normalize.fact, got {other:?}"),
     }
 
+    // `work_units = 56` is one short of the one `normalize.conflict-check`
+    // charge's own `work_units` price (`4`): 53 are already consumed (40
+    // through phase 3, `+5` redefinition-check, `+8` phase-4 facts), so the
+    // attempted 4-unit conflict-check charge would reach 57, one over the
+    // limit -- `consumed` reports that pre-charge total, not the limit
+    // itself.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 56;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 56,
+                    consumed: 53,
+                    next_charge: 4,
+                    charge_point: ChargePoint::NormalizeConflictCheck,
+                }
+            );
+        }
+        other => {
+            panic!("expected Incomplete at the normalize.conflict-check charge, got {other:?}")
+        }
+    }
+
     // `work_units = 57` is exactly enough to admit every phase-4 charge
     // (40 through phase 3, `+5` redefinition-check, `+8` phase-4 facts,
     // `+4` conflict-check), so the refusal these charges expose is finally
@@ -2349,17 +2388,153 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
     match normalize(&bundle, limits) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::DerivationConflict {
-                    type_: ProducerKey::fixture("model.D"),
-                    member: ProducerKey::fixture("model.A.x"),
-                    redefiners: vec![
-                        ProducerKey::fixture("model.B.x2"),
-                        ProducerKey::fixture("model.C.x3"),
-                    ],
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: ProducerKey::fixture("model.D"),
+                        member: ProducerKey::fixture("model.A.x"),
+                        redefiners: vec![
+                            ProducerKey::fixture("model.B.x2"),
+                            ProducerKey::fixture("model.C.x3"),
+                        ],
+                    },
+                    detail: "type model.D has 2 undominated redefinitions of model.A.x: \
+                              [model.gen.D-B, model.redef.B, model.A.x] and \
+                              [model.gen.D-C, model.redef.C, model.A.x]"
+                        .to_string(),
                 }
             );
         }
         other => panic!("expected Refused(derivation-conflict) at work_units=57, got {other:?}"),
+    }
+}
+
+/// The deferred-refusal treatment covers `RedefinitionUnreachable` -- a
+/// redefinition record whose own target, or whose redefining member, is
+/// not an effective member of its owner -- exactly like the dominance
+/// refusals in `n06_conflict_refusal_waits_for_every_phase4_charge_to_admit`
+/// above: `apply_redefinitions` holds it in `accounting.refusal` and moves
+/// on to the next target group, rather than returning it directly out of
+/// `build()`. `fixture_n06_conflict_with_unreachable_redefiner` adds type
+/// `E` (no generalization) with `redef.E` (`E`, `E.y` redefines `A.x`):
+/// since `E` does not inherit `A`, `A.x` is not an effective member of
+/// `E`, so this redefinition's own target is unreachable.
+///
+/// `type_keys` walks in ascending identity order, so `D`'s own dominance
+/// conflict (found while resolving `D`) is stored in `accounting.refusal`
+/// before `E`'s own unreachable-target refusal is found (while resolving
+/// `E`, which sorts after `D`): the first refusal found wins, so a
+/// completed (`UNLIMITED`) run reports `D`'s `derivation-conflict`, never
+/// `E`'s `RedefinitionUnreachable`.
+///
+/// Revert probe: hand-reverting the two `apply_redefinitions` sites that
+/// hold this refusal back to an eager `return Err(...)` makes
+/// `work_units = 30` report `Refused(RedefinitionUnreachable)` with zero
+/// charges replayed instead of `Incomplete` -- confirmed by hand, then
+/// restored.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
+    let bundle = fixture_n06_conflict_with_unreachable_redefiner();
+
+    // A `work_units` budget that runs out inside phase 2/3's own facts
+    // reports `Incomplete` there, never `E`'s own `RedefinitionUnreachable`
+    // refusal (which the pre-fix code would have returned immediately,
+    // with zero charges replayed).
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 30;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 30,
+                    consumed: 30,
+                    next_charge: 1,
+                    charge_point: ChargePoint::NormalizeFact,
+                }
+            );
+        }
+        other => panic!("expected Incomplete at a phase 2/3 normalize.fact, got {other:?}"),
+    }
+
+    // Under `UNLIMITED`, every phase-4 charge is admitted, and `D`'s own
+    // conflict -- found first, since `D` sorts before `E` -- is the refusal
+    // reported, not `E`'s later `RedefinitionUnreachable`.
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: ProducerKey::fixture("model.D"),
+                        member: ProducerKey::fixture("model.A.x"),
+                        redefiners: vec![
+                            ProducerKey::fixture("model.B.x2"),
+                            ProducerKey::fixture("model.C.x3"),
+                        ],
+                    },
+                    detail: "type model.D has 2 undominated redefinitions of model.A.x: \
+                              [model.gen.D-B, model.redef.B, model.A.x] and \
+                              [model.gen.D-C, model.redef.C, model.A.x]"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict) for D, got {other:?}"),
+    }
+
+    // The exact `work_units` bound between the last-admitted phase-4 charge
+    // and the refusal it exposes: `64` is one short of the one
+    // `normalize.conflict-check` charge's own price (`4`, added to `61`
+    // already consumed through phase 3, redefinition-check and every
+    // phase-4 fact); `65` admits it and reports `D`'s conflict.
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 64;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete,
+                Incomplete {
+                    limit_kind: LimitKind::WorkUnits,
+                    limit: 64,
+                    consumed: 61,
+                    next_charge: 4,
+                    charge_point: ChargePoint::NormalizeConflictCheck,
+                }
+            );
+        }
+        other => {
+            panic!("expected Incomplete at the normalize.conflict-check charge, got {other:?}")
+        }
+    }
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.work_units = 65;
+    match normalize(&bundle, limits) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::DerivationConflict {
+                        type_: ProducerKey::fixture("model.D"),
+                        member: ProducerKey::fixture("model.A.x"),
+                        redefiners: vec![
+                            ProducerKey::fixture("model.B.x2"),
+                            ProducerKey::fixture("model.C.x3"),
+                        ],
+                    },
+                    detail: "type model.D has 2 undominated redefinitions of model.A.x: \
+                              [model.gen.D-B, model.redef.B, model.A.x] and \
+                              [model.gen.D-C, model.redef.C, model.A.x]"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(derivation-conflict) at work_units=65, got {other:?}"),
     }
 }
