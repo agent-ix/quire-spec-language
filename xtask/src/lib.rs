@@ -16,13 +16,14 @@
 //! pins.
 #![forbid(unsafe_code)]
 
+pub mod cargo_pin;
 pub mod error;
 mod fsutil;
 pub mod git;
 pub mod manifest;
 pub mod tree;
 
-pub use error::{Error, Result};
+pub use error::{CommitOwner, Error, Result};
 pub use manifest::{ExternalFile, Manifest, PinnedFile, Source};
 pub use tree::Tree;
 
@@ -47,22 +48,17 @@ impl Sources<'_> {
         match commit_owner {
             CommitOwner::SelfRepo => Ok(self.workspace_root),
             CommitOwner::Qspec => self.qspec_clone.ok_or_else(|| Error::MissingClone {
+                owner: commit_owner,
                 commit: commit.to_owned(),
                 flag: "--qspec-clone",
             }),
             CommitOwner::Fcd => self.fcd_clone.ok_or_else(|| Error::MissingClone {
+                owner: commit_owner,
                 commit: commit.to_owned(),
                 flag: "--fcd-clone",
             }),
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum CommitOwner {
-    SelfRepo,
-    Qspec,
-    Fcd,
 }
 
 /// Outcome of one `revendor` run over a single manifest.
@@ -247,7 +243,7 @@ fn revendor_pinned(
     let repo = sources.repo_for(source.owner, source.commit)?;
     git::require_commit(repo, source.commit)?;
     for file in files.iter_mut() {
-        let source_path = manifest::join_dest(source.source_prefix, &file.path);
+        let source_path = manifest::join_source(source.source_prefix, &file.path);
         let bytes = git::show(repo, source.commit, &source_path)?;
         let digest = digest_of(&bytes);
         let dest = manifest::join_dest(source.dest_prefix, &file.path);
@@ -267,7 +263,30 @@ fn revendor_pinned(
 /// `tree_root` (other than `VENDOR.json` and `README.md`) must be recorded
 /// in the manifest. Needs no git repository and no network access, so it is
 /// safe to run from `cargo test`.
-pub fn revendor_check(manifest: &Manifest, tree_root: &Path) -> Result<CheckReport> {
+///
+/// `expected_fcd_commit` is this workspace's own single source of truth for
+/// the commit any `Source::Fcd` entry must be pinned to (QSL #131 PR 3, M1:
+/// `agent-ix-semantic-ir`'s rev, read from `Cargo.toml`/`Cargo.lock` by
+/// [`cargo_pin::read_agent_ix_semantic_ir_rev`]) -- never repeated by hand
+/// in `VENDOR.json`. A manifest with no `Source::Fcd` entry never reads this
+/// parameter at all.
+pub fn revendor_check(
+    manifest: &Manifest,
+    tree_root: &Path,
+    expected_fcd_commit: &str,
+) -> Result<CheckReport> {
+    for source in &manifest.sources {
+        if let Source::Fcd { commit, .. } = source {
+            if commit != expected_fcd_commit {
+                return Err(Error::FcdRevMismatch {
+                    tree_root: tree_root.to_owned(),
+                    crate_name: cargo_pin::AGENT_IX_SEMANTIC_IR,
+                    manifest_commit: commit.clone(),
+                    cargo_rev: expected_fcd_commit.to_owned(),
+                });
+            }
+        }
+    }
     let mut report = CheckReport::default();
     let mut known: BTreeSet<String> = BTreeSet::new();
     for source in &manifest.sources {

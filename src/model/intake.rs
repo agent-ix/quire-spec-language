@@ -15,10 +15,10 @@
 //!
 //! **This reader binds only what QSpec admits and refuses everything else.**
 //! It never invents a value and never drops data. Four shapes FCD emits
-//! today are FCD gaps (filed as FCD #199): bare-string core kinds
-//! (`"scalar"`/`"alias"`/...) declared directly in `types[]`, FCD's own
-//! identity form (`ix://<pkg>/type/<id>`, `ix://<pkg>/field/<Owner>-<name>`)
-//! rather than QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`), a type's inline
+//! today are FCD gaps: bare-string core kinds (`"scalar"`/`"alias"`/...)
+//! declared directly in `types[]`, FCD's own identity form
+//! (`ix://<pkg>/type/<id>`, `ix://<pkg>/field/<Owner>-<name>`) rather than
+//! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`), a type's inline
 //! `relationships[]` (FCD's `verb`/`category`/`composite` shape carries
 //! neither the role nor the full direction vocabulary QSpec's own
 //! Relationships row requires), and a non-empty operation `frame`. This
@@ -39,13 +39,13 @@ use sha2::{Digest, Sha256};
 use crate::diagnostic::Code;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
-    Extent, FieldMemberRecord, ModelSelection, Multiplicity, ObjectTypeRecord, OperationEffect,
+    Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+    PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::model::refusal::SourceSpan;
+use crate::source::{LocatedSpan, Position};
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
 /// construct or type definition IS. Kind names and modules are never
@@ -93,24 +93,20 @@ pub mod meaning {
     ];
 }
 
-/// A field's `typeRef` naming one of QSL's own native value types rather
-/// than a node of any package (Peter's ruling, PR #200 review round 2; FCD
-/// #199 is switching to this form): `ix://quire/native/<Name>` and
-/// declares no node. [`ALL`] is the closed set of `<Name>`s -- the
-/// unparameterized value-type keywords `src/token.rs`'s own grammar
-/// reserves (`Boolean`, `Integer`, `Rational`, `Decimal`, `Float32`,
-/// `Float64`, `Text`). A parameterized or generic form (`Int[..]`,
-/// `Decimal[..]`, `Reference<T>`, a collection type) is never a bare native
-/// reference: FR-151's bounded scalars (`model.Count`/`model.Small`) are
-/// package-declared [`super::domain_package::ScalarTypeRecord`]s, and a
-/// relationship's own end is read elsewhere, not through a field `typeRef`.
+/// A `typeRef` naming one of QSL's own native value types rather than a
+/// node of any package: `ix://quire/native/<Name>`, declaring no node
+/// (shared-grammar.md's `type-ref` production, ~:285-292). `<Name>` is
+/// [`super::domain_package::NativeValueType`]'s own closed set -- the
+/// unparameterized value-type keywords the grammar reserves (`Boolean`,
+/// `Integer`, `Rational`, `Decimal`, `Float32`, `Float64`, `Text`). A
+/// parameterized or generic form (`Int[..]`, `Decimal[..]`, `Reference<T>`,
+/// a collection type) is never a bare native reference: FR-151's bounded
+/// scalars (`model.Count`/`model.Small`) are package-declared
+/// [`super::domain_package::ScalarTypeRecord`]s, and a relationship's own
+/// end is read elsewhere, not through a field `typeRef`.
 pub mod native {
     /// The prefix a native value type reference carries.
     pub const PREFIX: &str = "ix://quire/native/";
-    /// The closed set of names legitimate past [`PREFIX`].
-    pub const ALL: &[&str] = &[
-        "Boolean", "Integer", "Rational", "Decimal", "Float32", "Float64", "Text",
-    ];
 }
 
 /// FCD `agent_ix_extraction_frontend::lift` did not produce a document.
@@ -172,29 +168,33 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// Returns the admitted selection and a borrow of the package's raw bytes
 /// (never cloned: the caller already owns them in `bytes_by_digest`); reads
 /// its own referent past this call for [`read_records`] to read further.
+///
+/// `offered` carries `{identity, version, digest}` -- [`DomainPackageRef`]'s
+/// own flat FR-321 shape (its `digest_domain` is implicitly `sha256-jcs`).
+/// `digest_domain` is taken as a separate string, not assumed to already be
+/// `sha256-jcs`: check 1 of the table below is exactly the question of
+/// whether the caller's offered digest domain is the one Intake accepts, so
+/// a parameter that already assumed the answer could not state that check.
 pub fn admit<'a>(
-    selection: &ModelSelection,
+    offered: &DomainPackageRef,
+    digest_domain: &str,
     bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
 ) -> Result<(DomainPackageRef, &'a [u8]), ModelRefusal> {
-    if selection.digest_domain != SHA256_JCS_DIGEST_DOMAIN {
+    if digest_domain != SHA256_JCS_DIGEST_DOMAIN {
         return Err(ModelRefusal {
             code: Code::StaleDependency,
             cause: ModelRefusalCause::DigestDomainMismatch {
                 expected: SHA256_JCS_DIGEST_DOMAIN,
-                actual: selection.digest_domain.clone(),
+                actual: digest_domain.to_owned(),
             },
             detail: format!(
-                "domain package selection {}@{} names digest domain {:?}, not {SHA256_JCS_DIGEST_DOMAIN:?}",
-                selection.identity, selection.version, selection.digest_domain
+                "domain package selection {}@{} names digest domain {digest_domain:?}, not {SHA256_JCS_DIGEST_DOMAIN:?}",
+                offered.identity, offered.version
             ),
         });
     }
-    let package_ref = DomainPackageRef {
-        identity: selection.identity.clone(),
-        version: selection.version.clone(),
-        digest: selection.digest,
-    };
-    let Some(bytes) = bytes_by_digest.get(&selection.digest) else {
+    let package_ref = offered.clone();
+    let Some(bytes) = bytes_by_digest.get(&offered.digest) else {
         return Err(ModelRefusal {
             code: Code::MissingImport,
             cause: ModelRefusalCause::MissingSelection {
@@ -202,7 +202,7 @@ pub fn admit<'a>(
             },
             detail: format!(
                 "no package bytes supplied under digest {}",
-                hex(&selection.digest)
+                hex(&offered.digest)
             ),
         });
     };
@@ -211,19 +211,19 @@ pub fn admit<'a>(
         Some(value) => Sha256::digest(jcs_bytes(value)).into(),
         None => Sha256::digest(bytes.as_slice()).into(),
     };
-    if actual_digest != selection.digest {
+    if actual_digest != offered.digest {
         return Err(ModelRefusal {
             code: Code::StaleDependency,
             cause: ModelRefusalCause::ByteDigestMismatch {
-                expected: selection.digest,
+                expected: offered.digest,
                 actual: actual_digest,
             },
             detail: format!(
                 "domain package {}@{} bytes hash to {}, not the selected {}",
-                selection.identity,
-                selection.version,
+                offered.identity,
+                offered.version,
                 hex(&actual_digest),
-                hex(&selection.digest)
+                hex(&offered.digest)
             ),
         });
     }
@@ -243,7 +243,7 @@ pub fn admit<'a>(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    if actual_identity != selection.identity || actual_version != selection.version {
+    if actual_identity != offered.identity || actual_version != offered.version {
         return Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::WrongModelSelection {
@@ -253,7 +253,7 @@ pub fn admit<'a>(
             },
             detail: format!(
                 "domain package selection names {}@{} but the package declares {actual_identity}@{actual_version}",
-                selection.identity, selection.version
+                offered.identity, offered.version
             ),
         });
     }
@@ -311,11 +311,14 @@ fn node_identity_label(value: &Value, at: &str) -> String {
 }
 
 /// The node's `origin.source.sourceIdentity`/`startLine`/`startColumn`,
-/// honestly reflecting FCD's real wire shape (see [`SourceSpan`]'s own doc
-/// comment for why this does not match QSpec's own byte-offset span shape).
-/// `(None, None)` when the node's origin is `generated`, or is itself
-/// absent or not the expected shape.
-fn node_span(value: &Value) -> (Option<String>, Option<SourceSpan>) {
+/// mapped onto [`crate::source::LocatedSpan`]'s own `{start, end}` shape.
+/// FCD's wire (matching its `extraction-frontend::diagnostics::Locus`)
+/// carries a start position only -- no byte offset and no end position --
+/// so both ends of the mapped span are that same point and its byte offset
+/// is `0`, a placeholder QSL does not treat as meaningful. `(None, None)`
+/// when the node's origin is `generated`, or is itself absent or not the
+/// expected shape.
+fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
     let Some(source) = value.get("origin").and_then(|origin| origin.get("source")) else {
         return (None, None);
     };
@@ -327,27 +330,39 @@ fn node_span(value: &Value) -> (Option<String>, Option<SourceSpan>) {
         source.get("startLine").and_then(Value::as_u64),
         source.get("startColumn").and_then(Value::as_u64),
     ) {
-        (Some(start_line), Some(start_column)) => Some(SourceSpan {
-            artifact: artifact.clone().unwrap_or_default(),
-            start_line,
-            start_column,
-        }),
+        (Some(start_line), Some(start_column)) => {
+            let position = Position {
+                byte: 0,
+                line: start_line as usize,
+                column: start_column as usize,
+            };
+            Some(LocatedSpan {
+                start: position,
+                end: position,
+            })
+        }
         _ => None,
     };
     (artifact, span)
 }
 
 /// Validates admitted document bytes against `agent-ix-semantic-ir`'s own
-/// independent reader (M5, review of PR #200) before [`read_records`] walks
-/// a single node. That crate decides `conformance/schema/input-bundle.schema.json`
-/// by wrapping the document as `{"ir": <document>}` (`input-bundle.schema.json`
-/// requires an `ir` member carrying `semantic-ir.schema.json`) and reports
-/// every defect as an RFC 6901 pointer into the wrapped bundle. On the first
+/// independent reader before [`read_records`] walks a single node. That
+/// crate decides `conformance/schema/input-bundle.schema.json` by wrapping
+/// the document as `{"ir": <document>}` (`input-bundle.schema.json` requires
+/// an `ir` member carrying `semantic-ir.schema.json`) and reports every
+/// defect as an RFC 6901 pointer into the wrapped bundle. On the first
 /// `Severity::Error` diagnostic this refuses `malformed-declaration`, naming
 /// that diagnostic's own pointer as the node and carrying its code/message
 /// in the detail, so a shape this reader's own hand-rolled checks miss (an
 /// `abstract` that is not a boolean, say) still refuses rather than being
 /// read as a default.
+///
+/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`) does not yet
+/// resolve `ix://quire/native/<Name>`: every `typeRef` under that prefix
+/// reads there as `agent-ix.semantic-ir.UNRESOLVED_TYPE_REF`, an
+/// `Error`-severity diagnostic this validator refuses like any other,
+/// until the FCD rev this crate pins recognizes the prefix.
 fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
     let malformed = |detail: String| ModelRefusal {
         code: Code::InvalidModelBinding,
@@ -367,10 +382,11 @@ fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
     })?;
     let bundle = agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), parsed)]);
     let verdict = agent_ix_semantic_ir::decide(&bundle);
-    let Some(first_error) = verdict.diagnostics.iter().find(|located| {
-        located.severity == agent_ix_semantic_ir::diag::Severity::Error
-            && !is_forward_compatible_native_type_ref(&bundle, located)
-    }) else {
+    let Some(first_error) = verdict
+        .diagnostics
+        .iter()
+        .find(|located| located.severity == agent_ix_semantic_ir::diag::Severity::Error)
+    else {
         return Ok(());
     };
     let node = if first_error.pointer.is_empty() {
@@ -390,27 +406,6 @@ fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
             first_error.pointer, first_error.code, first_error.message
         ),
     })
-}
-
-/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`) does not yet
-/// resolve `ix://quire/native/<Name>` (Peter's ruling, PR #200 review round
-/// 2; FCD #199 is landing recognition of it on FCD's own side) -- every
-/// field `typeRef` under that prefix reads there as
-/// `agent-ix.semantic-ir.UNRESOLVED_TYPE_REF`, an `Error`-severity
-/// diagnostic. [`read_field_type_ref`] is this reader's own, already-landed
-/// authority for that member (including refusing an unknown name under the
-/// prefix), so [`validate_with_semantic_ir`] does not also refuse a
-/// diagnostic that is only this validator lagging that ruling.
-fn is_forward_compatible_native_type_ref(
-    bundle: &agent_ix_semantic_ir::json::Json,
-    located: &agent_ix_semantic_ir::diag::Located,
-) -> bool {
-    located.code == agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
-        && matches!(
-            agent_ix_semantic_ir::diag::chain(bundle, &located.pointer).last(),
-            Some(agent_ix_semantic_ir::json::Json::Str(value))
-                if value.starts_with(native::PREFIX)
-        )
 }
 
 fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
@@ -437,6 +432,34 @@ fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefu
             what: what.clone(),
         },
         detail: format!("{at}: construct meaning/capability {what:?} has no reader yet"),
+    }
+}
+
+/// A native value type whose required parameters
+/// `agent-ix-semantic-ir`'s own constraint keyword vocabulary
+/// (`min`/`max`/`exclusiveMin`/`exclusiveMax`/`minLength`/`maxLength`/
+/// `pattern`/`enumValues`/`nonEmpty`/`unique`/`format`) cannot express, no
+/// matter what a producer's own field-level constraints supply -- names
+/// which parameters are missing.
+fn unsupported_native_parameters(
+    value: &Value,
+    at: &str,
+    native: NativeValueType,
+    missing: &[&str],
+) -> ModelRefusal {
+    let node = node_identity_label(value, at);
+    let what = format!("typeRef:ix://quire/native/{}", native.as_str());
+    ModelRefusal {
+        code: Code::UnsupportedConstruct,
+        cause: ModelRefusalCause::UnsupportedDeclarationForm {
+            node,
+            what: what.clone(),
+        },
+        detail: format!(
+            "{at}: typeRef: native value type {:?} requires parameter(s) {} that agent-ix-semantic-ir's constraint vocabulary cannot express",
+            native.as_str(),
+            missing.join(", ")
+        ),
     }
 }
 
@@ -487,20 +510,25 @@ impl<'a> NodeCtx<'a> {
         }
     }
 
+    /// `agent-ix-semantic-ir`'s own `identity_list` validates every present
+    /// item as an `ix://<owner>/<name>`-shaped string before
+    /// [`validate_with_semantic_ir`] lets a document reach this reader, so
+    /// each item is trusted as a string here rather than re-checked.
     fn identity_keys(
         &self,
         package: &str,
         field: &'static str,
     ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
-        self.array_field(field)?
+        Ok(self
+            .array_field(field)?
             .iter()
-            .enumerate()
-            .map(|(position, item)| {
-                item.as_str()
-                    .map(|node| declaration_key(package, node))
-                    .ok_or_else(|| self.malformed(format!("{field}[{position}]: not a string")))
+            .map(|item| {
+                let node = item
+                    .as_str()
+                    .expect("agent-ix-semantic-ir guarantees identity_list items are strings");
+                declaration_key(package, node)
             })
-            .collect()
+            .collect())
     }
 
     /// FR-154's own multiplicity shape (`model-complete.md`:167-169):
@@ -576,11 +604,12 @@ fn read_operation_parameter(
     if member_identity_name(owner_identity, node).is_none() {
         return Err(ctx.malformed(format!("identity: {node:?} is not {owner_identity}/<name>")));
     }
-    let value_type = ctx.str_field("typeRef")?;
+    let type_ref = ctx.str_field("typeRef")?;
+    let value_type = read_value_type_ref(package, &ctx, type_ref)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
     Ok(OperationParameterRecord {
         key: declaration_key(package, node),
-        value_type: declaration_key(package, value_type),
+        value_type,
         multiplicity,
     })
 }
@@ -609,19 +638,20 @@ fn read_operation_member(
         None => None,
         Some(returns) => {
             let returns_ctx = NodeCtx::new(operation, at);
-            let value_type = returns
+            let type_ref = returns
                 .get("typeRef")
                 .and_then(Value::as_str)
                 .ok_or_else(|| returns_ctx.malformed("returns.typeRef: missing or not a string"))?;
+            let value_type = read_value_type_ref(package, &returns_ctx, type_ref)?;
             let multiplicity = returns_ctx.multiplicity_of(returns, "returns.multiplicity")?;
             Some(OperationResult {
-                value_type: declaration_key(package, value_type),
+                value_type,
                 multiplicity,
             })
         }
     };
     let has_own_precondition = !ctx.array_field("pre")?.is_empty();
-    // H3 (FCD #199 gap 4): `frame` is a real QSpec capability
+    // `frame` is a real QSpec capability
     // (model-complete.md's Frames row) this reader does not yet turn into
     // an `OperationEffect`. An absent frame, or one whose `modifies`,
     // `creates` and `deletes` are all absent or empty, carries no effect
@@ -697,43 +727,45 @@ impl<'a> NodeCtx<'a> {
     }
 }
 
-/// Resolves a field's `typeRef` (FR-154's Fields row, `model-complete.md`:157:
-/// "`typeRef` names a native value type, or a type of the package"; Peter's
-/// ruling, PR #200 review round 2, on the native form). `ix://quire/native/<Name>`
-/// names one of [`native::ALL`]'s closed set and resolves to a
-/// [`DeclarationKey`] under the well-known `quire/native` pseudo-package --
-/// it declares no node of `package` itself -- refusing `malformed-declaration`
-/// for a `<Name>` outside that set rather than resolving to a made-up
-/// declaration. Any other `typeRef` must itself be `ix://<package>/<artifact
-/// id>`, a node of `package` (the same Identity-row form `read_type_identity`
-/// already enforces for a declaration's own `identity`).
-fn read_field_type_ref(
+/// Resolves a `typeRef` (field, parameter or `returns` alike -- FR-154's
+/// Fields row, `model-complete.md`:157: "`typeRef` names a native value
+/// type, or a type of the package"): the sole resolver every `typeRef` site
+/// goes through. `ix://quire/native/<Name>` names one of
+/// [`NativeValueType`]'s closed set and resolves to [`ValueTypeRef::Native`],
+/// declaring no node of `package` -- refusing `malformed-declaration` for a
+/// `<Name>` outside that set, and `unsupported_construct`/`declaration-form`
+/// for a native type whose required parameters
+/// [`unsupported_native_parameters`] names as unexpressable
+/// (shared-grammar.md's `Rational`/`Decimal`/`Text` productions). Any other
+/// `typeRef` must itself be `ix://<package>/<artifact id>`, a node of
+/// `package` (the same Identity-row form `read_type_identity` already
+/// enforces for a declaration's own `identity`), and resolves to
+/// [`ValueTypeRef::Package`].
+fn read_value_type_ref(
     package: &str,
     ctx: &NodeCtx<'_>,
     type_ref: &str,
-) -> Result<DeclarationKey, ModelRefusal> {
+) -> Result<ValueTypeRef, ModelRefusal> {
     if let Some(name) = type_ref.strip_prefix(native::PREFIX) {
-        return if native::ALL.contains(&name) {
-            // `node` carries the full identity string, matching every other
-            // `DeclarationKey` this reader builds (`declaration_key`'s own
-            // callers always pass the whole `ix://...` string, never a
-            // stripped segment).
-            Ok(DeclarationKey {
-                package: "quire/native".to_owned(),
-                node: type_ref.to_owned(),
-            })
-        } else {
-            Err(ctx.malformed(format!(
+        let native = name.parse::<NativeValueType>().map_err(|()| {
+            ctx.malformed(format!(
                 "typeRef: {type_ref:?} names no native value type QSL declares"
-            )))
-        };
+            ))
+        })?;
+        let missing = native.unsupported_parameters();
+        if !missing.is_empty() {
+            return Err(unsupported_native_parameters(
+                ctx.value, &ctx.at, native, missing,
+            ));
+        }
+        return Ok(ValueTypeRef::Native(native));
     }
     if type_identity_segment(package, type_ref).is_none() {
         return Err(ctx.malformed(format!(
             "typeRef: {type_ref:?} is not ix://quire/native/<Name> or ix://{package}/<artifact id>"
         )));
     }
-    Ok(declaration_key(package, type_ref))
+    Ok(ValueTypeRef::Package(declaration_key(package, type_ref)))
 }
 
 fn read_field_member(
@@ -748,7 +780,7 @@ fn read_field_member(
         return Err(ctx.malformed(format!("identity: {node:?} is not {owner_identity}/<name>")));
     }
     let type_ref = ctx.str_field("typeRef")?;
-    let value_type = read_field_type_ref(package, &ctx, type_ref)?;
+    let value_type = read_value_type_ref(package, &ctx, type_ref)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
     let subsets = ctx.identity_keys(package, "subsets")?;
     let redefines = ctx
@@ -794,14 +826,17 @@ fn read_object_type(
         ));
     }
     let supertypes = ctx.identity_keys(package, "supertypes")?;
-    let abstract_type = match type_value.get("abstract") {
-        None => false,
-        Some(Value::Bool(value)) => *value,
-        // M5: an `abstract` present but not a boolean never silently reads
-        // as `false` -- that would misreport a real declaration as its own
-        // opposite rather than refusing an unreadable one.
-        Some(_) => return Err(ctx.malformed("abstract: not a boolean")),
-    };
+    // `agent-ix-semantic-ir`'s own `expect_bool` guarantees `abstract`, when
+    // present, is a boolean, before this reader sees the document; absent
+    // reads as `false` (QSpec's own default for the property).
+    let abstract_type = type_value
+        .get("abstract")
+        .map(|value| {
+            value
+                .as_bool()
+                .expect("agent-ix-semantic-ir guarantees abstract is a boolean when present")
+        })
+        .unwrap_or(false);
     let interface_features = if is_interface {
         Some(ctx.identity_keys(package, "featureOrder")?)
     } else {
@@ -861,13 +896,18 @@ fn read_endpoint(
     let owner = ctx.str_field("owner")?;
     let value_type = ctx.str_field("interfaceType")?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
-    let direction = match ctx.opt_str_field("direction") {
-        Some("in") => Some(PortDirection::In),
-        Some("out") => Some(PortDirection::Out),
-        Some("inout") => Some(PortDirection::InOut),
-        Some(_) => return Err(ctx.malformed("direction: not in/out/inout")),
-        None => None,
-    };
+    // `agent-ix-semantic-ir`'s own `expect_enum` guarantees `direction`,
+    // when present, is one of `in`/`out`/`inout` before this reader sees
+    // the document; presence itself is not FCD-guaranteed, so absent stays
+    // `None` here.
+    let direction = ctx.opt_str_field("direction").map(|value| match value {
+        "in" => PortDirection::In,
+        "out" => PortDirection::Out,
+        "inout" => PortDirection::InOut,
+        other => panic!(
+            "agent-ix-semantic-ir guarantees direction is in/out/inout when present, got {other:?}"
+        ),
+    });
     Ok(EndpointRecord {
         key: declaration_key(package, node),
         owning_component: declaration_key(package, owner),
@@ -900,11 +940,16 @@ fn read_connection(
         .ok_or_else(|| ctx.malformed("targetEnd.type: missing or not a string"))?;
     let source_multiplicity = ctx.multiplicity_of(source_end, "sourceEnd.multiplicity")?;
     let target_multiplicity = ctx.multiplicity_of(target_end, "targetEnd.multiplicity")?;
+    // `agent-ix-semantic-ir`'s own `expect_enum` guarantees `flowDirection`
+    // is one of `source-to-target`/`target-to-source`/`bidirectional` when
+    // present, and `str_field` above already refused its absence.
     let direction = match ctx.str_field("flowDirection")? {
         "source-to-target" => RelationshipDirection::SourceToTarget,
         "target-to-source" => RelationshipDirection::TargetToSource,
         "bidirectional" => RelationshipDirection::Bidirectional,
-        _ => return Err(ctx.malformed("flowDirection: not a known direction")),
+        other => panic!(
+            "agent-ix-semantic-ir guarantees flowDirection is a known direction, got {other:?}"
+        ),
     };
     Ok(RelationshipRecord {
         key: declaration_key(package, node),
@@ -942,18 +987,22 @@ fn read_population(
     node: &str,
     meanings: &HashMap<(String, String), String>,
 ) -> Result<PopulationRecord, ModelRefusal> {
+    // `agent-ix-semantic-ir`'s own `POPULATION_MEMBERS` requires `kind`
+    // present with a shape `construct_kind` validates, so only the
+    // meaning-resolution (QSL's own: `kind` must resolve to POPULATION,
+    // not merely to some constructs entry) stays hand-checked here.
     let kind = ctx
         .value
         .get("kind")
-        .ok_or_else(|| ctx.malformed("kind: missing"))?;
+        .expect("agent-ix-semantic-ir guarantees kind is present on a population");
     let module = kind
         .get("module")
         .and_then(Value::as_str)
-        .ok_or_else(|| ctx.malformed("kind.module: missing or not a string"))?;
+        .expect("agent-ix-semantic-ir guarantees kind.module is a string");
     let name = kind
         .get("name")
         .and_then(Value::as_str)
-        .ok_or_else(|| ctx.malformed("kind.name: missing or not a string"))?;
+        .expect("agent-ix-semantic-ir guarantees kind.name is a string");
     match meanings.get(&(module.to_owned(), name.to_owned())) {
         Some(resolved) if resolved == meaning::POPULATION => {}
         Some(other) => {
@@ -965,10 +1014,26 @@ fn read_population(
         None => return Err(ctx.malformed("kind: names no constructs[] entry")),
     }
     let member_types = ctx.identity_keys(package, "members")?;
+    // A native value-type identity (`ix://quire/native/<Name>`) is a
+    // well-formed `ix://<owner>/<name>` string to `agent-ix-semantic-ir`
+    // (it has no concept of "native" at all), but QSpec's own population
+    // Members row admits only object types or processes -- QSL's own,
+    // stricter check.
+    if let Some(native_member) = member_types
+        .iter()
+        .find(|member| member.node.starts_with(native::PREFIX))
+    {
+        return Err(ctx.malformed(format!(
+            "members: {:?} names a native value type, not an object type or process",
+            native_member.node
+        )));
+    }
+    // `POPULATION_MEMBERS` requires `extent` present, and `expect_enum`
+    // guarantees it is `closed` or `open` when present.
     let extent = match ctx.str_field("extent")? {
         "closed" => Extent::Closed,
         "open" => Extent::Open,
-        _ => return Err(ctx.malformed("extent: not closed or open")),
+        other => panic!("agent-ix-semantic-ir guarantees extent is closed/open, got {other:?}"),
     };
     Ok(PopulationRecord {
         key: declaration_key(package, node),
@@ -981,30 +1046,34 @@ fn read_population(
 /// table states (FR-208): the sole legitimate way a type's `kind` resolves
 /// to what it IS.
 fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, ModelRefusal> {
-    let ctx = NodeCtx::new(document, "$.constructs");
+    // `agent-ix-semantic-ir`'s own top-level `IR_MEMBERS` requires
+    // `constructs` present, `CONSTRUCT_ENTRY_MEMBERS` requires each entry's
+    // `kind`/`construct` present, `construct_kind` validates `kind.module`/
+    // `kind.name` are strings, and `DECLARATION_REQUIRED` guarantees
+    // `construct.meaning` is a string -- all guaranteed before this reader
+    // sees the document.
     let constructs = document
         .get("constructs")
         .and_then(Value::as_array)
-        .ok_or_else(|| ctx.malformed("missing or not an array"))?;
+        .expect("agent-ix-semantic-ir guarantees constructs is present and an array");
     let mut index = HashMap::new();
-    for (position, entry) in constructs.iter().enumerate() {
-        let entry_ctx = NodeCtx::new(entry, format!("$.constructs[{position}]"));
+    for entry in constructs {
         let kind = entry
             .get("kind")
-            .ok_or_else(|| entry_ctx.malformed("kind: missing"))?;
+            .expect("agent-ix-semantic-ir guarantees kind is present on a constructs entry");
         let module = kind
             .get("module")
             .and_then(Value::as_str)
-            .ok_or_else(|| entry_ctx.malformed("kind.module: missing or not a string"))?;
+            .expect("agent-ix-semantic-ir guarantees kind.module is a string");
         let name = kind
             .get("name")
             .and_then(Value::as_str)
-            .ok_or_else(|| entry_ctx.malformed("kind.name: missing or not a string"))?;
+            .expect("agent-ix-semantic-ir guarantees kind.name is a string");
         let meaning = entry
             .get("construct")
             .and_then(|construct| construct.get("meaning"))
             .and_then(Value::as_str)
-            .ok_or_else(|| entry_ctx.malformed("construct.meaning: missing or not a string"))?;
+            .expect("agent-ix-semantic-ir guarantees construct.meaning is a string");
         index.insert((module.to_owned(), name.to_owned()), meaning.to_owned());
     }
     Ok(index)
@@ -1025,18 +1094,16 @@ fn read_type_node(
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
     let Some(kind) = type_value.get("kind").filter(|kind| kind.is_object()) else {
-        // M3 (FCD #199 gap 1): a bare-string kind (`"scalar"`, `"alias"`,
-        // `"record"`, ...) is a core kind FCD's own schema admits, but
-        // QSpec's declaration-kinds table has no row for a package
-        // declaring one of these directly in `types[]` -- every declared
-        // type resolves via a `constructs[]` entry to a real FR-208
-        // meaning instead. A field's own `typeRef` never names a node like
-        // this one anyway: [`read_field_type_ref`] resolves a native value
-        // type through the dedicated `ix://quire/native/<Name>` form
-        // (Peter's ruling, PR #200 review round 2), not through a
-        // bare-string-kind `types[]` declaration, so this node being
-        // refused as a top-level declaration never stops a field resolving
-        // its own type reference.
+        // A bare-string kind (`"scalar"`, `"alias"`, `"record"`, ...) is a
+        // core kind FCD's own schema admits, but QSpec's declaration-kinds
+        // table has no row for a package declaring one of these directly in
+        // `types[]` -- every declared type resolves via a `constructs[]`
+        // entry to a real FR-208 meaning instead. A field's own `typeRef`
+        // never names a node like this one anyway: [`read_value_type_ref`]
+        // resolves a native value type through the dedicated
+        // `ix://quire/native/<Name>` form, not through a bare-string-kind
+        // `types[]` declaration, so this node being refused as a top-level
+        // declaration never stops a field resolving its own type reference.
         return Err(ctx.malformed("kind: a bare-string core kind is not a declared FR-208 meaning"));
     };
     let module = kind
@@ -1079,7 +1146,7 @@ fn read_type_node(
             )?));
         }
         other if meaning::ALL.contains(&other) => {
-            // H4: a real FR-208 meaning (e.g. RECORD_VALUE_TYPE) with no
+            // A real FR-208 meaning (e.g. RECORD_VALUE_TYPE) with no
             // QSL record shape yet -- refused as a known-but-unsupported
             // declaration form, never silently folded into `ObjectTypeRecord`.
             return Err(unsupported_at(type_value, at, other));
@@ -1112,43 +1179,33 @@ pub fn read_records(
     package_identity: &str,
     document: &[u8],
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
-    let parsed: Value = match serde_json::from_slice(document) {
-        Ok(parsed) => parsed,
-        Err(err) => {
-            return Err(vec![ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: "$".to_owned(),
-                    artifact: None,
-                    span: None,
-                },
-                detail: format!("admitted document bytes do not parse as JSON: {err}"),
-            }]);
-        }
-    };
     if let Err(refusal) = validate_with_semantic_ir(document) {
         return Err(vec![refusal]);
     }
+    // `agent-ix-semantic-ir`'s own independent parser (called above by
+    // `validate_with_semantic_ir`) already confirmed these bytes are UTF-8
+    // and parse as JSON, so a second, divergent parse failure here would be
+    // an internal bug, not a real document defect -- trusted rather than
+    // refused a second time.
+    let parsed: Value = serde_json::from_slice(document)
+        .expect("validate_with_semantic_ir already confirmed these bytes parse as JSON");
     let meanings = match meaning_index(&parsed) {
         Ok(meanings) => meanings,
         Err(refusal) => return Err(vec![refusal]),
     };
-    let types = match parsed.get("types").and_then(Value::as_array) {
-        Some(types) => types,
-        None => {
-            return Err(vec![malformed_at(
-                &parsed,
-                "$.types",
-                "missing or not an array",
-            )])
-        }
-    };
+    // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
+    // `expect_array` guarantees it is an array; `populations` is optional
+    // but array-shaped when present.
+    let types = parsed
+        .get("types")
+        .and_then(Value::as_array)
+        .expect("agent-ix-semantic-ir guarantees types is present and an array");
     let populations: &[Value] = match parsed.get("populations") {
         None => &[],
-        Some(populations) => match populations.as_array() {
-            Some(populations) => populations,
-            None => return Err(vec![malformed_at(&parsed, "$.populations", "not an array")]),
-        },
+        Some(populations) => populations
+            .as_array()
+            .map(Vec::as_slice)
+            .expect("agent-ix-semantic-ir guarantees populations is an array when present"),
     };
 
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
@@ -1224,13 +1281,15 @@ mod tests {
         version: &str,
         digest_domain: &str,
         digest: [u8; 32],
-    ) -> ModelSelection {
-        ModelSelection {
-            identity: identity.to_owned(),
-            version: version.to_owned(),
-            digest_domain: digest_domain.to_owned(),
-            digest,
-        }
+    ) -> (DomainPackageRef, String) {
+        (
+            DomainPackageRef {
+                identity: identity.to_owned(),
+                version: version.to_owned(),
+                digest,
+            },
+            digest_domain.to_owned(),
+        )
     }
 
     #[test]
@@ -1239,11 +1298,9 @@ mod tests {
         let digest = digest_of(&bytes);
         let mut map = BTreeMap::new();
         map.insert(digest, bytes.clone());
-        let (package_ref, admitted_bytes) = admit(
-            &selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest),
-            &map,
-        )
-        .unwrap();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let (package_ref, admitted_bytes) = admit(&offered, &digest_domain, &map).unwrap();
         assert_eq!(package_ref.identity, "acme/orders");
         assert_eq!(package_ref.version, "1");
         assert_eq!(package_ref.digest, digest);
@@ -1252,10 +1309,10 @@ mod tests {
 
     #[test]
     fn admits_a_whitespace_variant_under_the_same_jcs_digest() {
-        // M1: the digest is taken over JCS bytes, not the raw bytes
-        // verbatim, so a byte-different-but-JCS-equivalent re-encoding of
-        // the same document (extra whitespace here) still admits under the
-        // digest recorded for the compact encoding.
+        // The digest is taken over JCS bytes, not the raw bytes verbatim,
+        // so a byte-different-but-JCS-equivalent re-encoding of the same
+        // document (extra whitespace here) still admits under the digest
+        // recorded for the compact encoding.
         let compact = package_bytes("acme/orders", "1");
         let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&compact).unwrap()));
         let padded = b"  \n\t"
@@ -1266,26 +1323,25 @@ mod tests {
         assert_ne!(padded, compact, "the two encodings are byte-different");
         let mut map = BTreeMap::new();
         map.insert(digest, padded.clone());
-        let (package_ref, admitted_bytes) = admit(
-            &selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest),
-            &map,
-        )
-        .unwrap();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let (package_ref, admitted_bytes) = admit(&offered, &digest_domain, &map).unwrap();
         assert_eq!(package_ref.digest, digest);
         assert_eq!(admitted_bytes, padded.as_slice());
     }
 
-    // L1 (review of PR #200): these five `admit` refusal tests assert the
-    // whole `ModelRefusal` -- `code`, every typed field of the matched
-    // `ModelRefusalCause` variant, and `detail` -- not just `.code`/
-    // `.cause.as_str()`, so a regression that keeps the right tag but drops
-    // or corrupts a typed field (the wrong `expected` digest domain, the
-    // caller's own `selection` echoed back wrong) still fails the test.
+    // These five `admit` refusal tests assert the whole `ModelRefusal` --
+    // `code`, every typed field of the matched `ModelRefusalCause` variant,
+    // and `detail` -- not just `.code`/`.cause.as_str()`, so a regression
+    // that keeps the right tag but drops or corrupts a typed field (the
+    // wrong `expected` digest domain, the caller's own selection echoed
+    // back wrong) still fails the test.
 
     #[test]
     fn refuses_foreign_digest_domain() {
         let map = BTreeMap::new();
-        let refusal = admit(&selection("acme/orders", "1", "sha1", [0; 32]), &map).unwrap_err();
+        let (offered, digest_domain) = selection("acme/orders", "1", "sha1", [0; 32]);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -1304,8 +1360,9 @@ mod tests {
     #[test]
     fn refuses_missing_bytes() {
         let map = BTreeMap::new();
-        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, [0; 32]);
-        let refusal = admit(&selection_value, &map).unwrap_err();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, [0; 32]);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -1329,11 +1386,9 @@ mod tests {
         let actual_digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(wrong_digest, bytes);
-        let refusal = admit(
-            &selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, wrong_digest),
-            &map,
-        )
-        .unwrap_err();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, wrong_digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -1357,8 +1412,9 @@ mod tests {
         let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
-        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&selection_value, &map).unwrap_err();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -1379,19 +1435,20 @@ mod tests {
         );
     }
 
-    /// L2 (review of PR #200): `admit`'s version-only mismatch -- the
-    /// selected bytes' own package identity matches the selection but the
-    /// version does not -- is a distinct branch of the same
-    /// `WrongModelSelection` check from `refuses_wrong_package_identity`'s
-    /// identity mismatch, so it gets its own whole-outcome test.
+    /// `admit`'s version-only mismatch -- the selected bytes' own package
+    /// identity matches the selection but the version does not -- is a
+    /// distinct branch of the same `WrongModelSelection` check from
+    /// `refuses_wrong_package_identity`'s identity mismatch, so it gets its
+    /// own whole-outcome test.
     #[test]
     fn refuses_version_only_mismatch() {
         let bytes = package_bytes("acme/orders", "2");
         let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
-        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&selection_value, &map).unwrap_err();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -1412,7 +1469,7 @@ mod tests {
         );
     }
 
-    /// L2: `admit`'s non-JSON-bytes case is a distinct branch from
+    /// `admit`'s non-JSON-bytes case is a distinct branch from
     /// `refuses_wrong_package_identity`'s JSON-but-wrong-identity case --
     /// bytes that are not JSON at all never reach a `package.identity`
     /// comparison, so `parsed` stays `None` and both `actual_identity`/
@@ -1423,8 +1480,9 @@ mod tests {
         let digest = digest_of(&bytes);
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
-        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let refusal = admit(&selection_value, &map).unwrap_err();
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -1526,9 +1584,20 @@ mod tests {
     #[test]
     fn refuses_a_document_that_is_not_json() {
         let refusals = read_records("acme/orders", b"not json").unwrap_err();
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "$".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "admitted document bytes do not parse as JSON for \
+                          agent-ix-semantic-ir: an unrecognised literal at byte 0"
+                    .to_owned(),
+            }]
+        );
     }
 
     #[test]
@@ -1544,9 +1613,20 @@ mod tests {
         )
         .to_string();
         let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
-        assert!(refusals[0].detail.contains("bare-string core kind"));
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Count".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0]: kind: a bare-string core kind is not a declared \
+                          FR-208 meaning"
+                    .to_owned(),
+            }]
+        );
     }
 
     #[test]
@@ -1567,9 +1647,20 @@ mod tests {
         )
         .to_string();
         let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
-        assert!(refusals[0].detail.contains("identity"));
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/type/Order".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0]: identity: \"ix://acme/orders/type/Order\" is not \
+                          ix://acme/orders/<artifact id>"
+                    .to_owned(),
+            }]
+        );
     }
 
     /// M5: an `abstract` present but not a boolean is exactly the shape
@@ -1601,24 +1692,22 @@ mod tests {
         )
         .to_string();
         let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
-        match &refusals[0].cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-                assert!(
-                    node.contains("abstract"),
-                    "the refusal names the validator's own pointer to the \
-                     offending member, got {node:?}"
-                );
-            }
-            other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
-        }
-        assert!(
-            refusals[0].detail.contains("agent-ix-semantic-ir"),
-            "the detail names the validator that refused this, not this \
-             reader's own hand-rolled check: {:?}",
-            refusals[0].detail
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "/ir/types/0/abstract".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "agent-ix-semantic-ir refused this document at \
+                          /ir/types/0/abstract (agent-ix.semantic-ir.SCHEMA_VIOLATION): \
+                          abstract is a boolean"
+                    .to_owned(),
+            }],
+            "the refusal names the validator's own pointer to the offending member and \
+             the validator that refused this, not this reader's own hand-rolled check"
         );
     }
 
@@ -1649,9 +1738,8 @@ mod tests {
         })
     }
 
-    /// A one-type, one-field document exercising [`read_field_type_ref`]'s
-    /// own resolution (Peter's ruling, PR #200 review round 2), wrapping
-    /// `field`'s `typeRef` in `field`.
+    /// A one-type, one-field document, wrapping `field`'s `typeRef` in
+    /// `field`.
     fn document_with_one_field(field: Value) -> Vec<u8> {
         wire_envelope(
             "acme/orders",
@@ -1675,7 +1763,7 @@ mod tests {
                 // package type -- `agent-ix-semantic-ir`'s own
                 // `UNRESOLVED_TYPE_REF` rule requires the reference to
                 // resolve to a declared identity, same as QSL's own
-                // `read_field_type_ref`.
+                // `read_value_type_ref`.
                 wire_type(
                     "ix://acme/orders/OtherType",
                     serde_json::json!({"module": "acme/orders", "name": "order"}),
@@ -1687,69 +1775,76 @@ mod tests {
         .into_bytes()
     }
 
+    // `agent-ix-semantic-ir` at the pinned rev does not yet resolve
+    // `ix://quire/native/<Name>` (every such reference reads there as
+    // `UNRESOLVED_TYPE_REF`, an `Error`-severity diagnostic
+    // `validate_with_semantic_ir` refuses like any other), so a native
+    // typeRef cannot yet be exercised successfully end to end through
+    // `read_records`. These tests drive [`read_value_type_ref`] directly,
+    // the same resolver every field/parameter/`returns` typeRef site calls.
+
     #[test]
-    fn resolves_a_known_native_type_ref_to_the_quire_native_pseudo_package() {
-        let document = document_with_one_field(wire_field(
-            "ix://acme/orders/Widget/flag",
-            "flag",
-            "ix://quire/native/Boolean",
-        ));
-        let records = read_records("acme/orders", &document)
-            .expect("a known native typeRef reads, never refuses");
-        let field = records
-            .iter()
-            .find_map(|record| match record {
-                DomainPackageRecord::FieldMember(field) => Some(field),
-                _ => None,
-            })
-            .expect("the document declares exactly one field member");
-        assert_eq!(
-            field.value_type,
-            DeclarationKey {
-                package: "quire/native".to_owned(),
-                node: "ix://quire/native/Boolean".to_owned(),
-            },
-            "a native typeRef resolves under the well-known quire/native \
-             pseudo-package, declaring no node of the field's own package"
-        );
+    fn resolves_a_known_native_type_ref() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Boolean")
+            .expect("a known, unparameterized native typeRef resolves");
+        assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
     #[test]
     fn refuses_an_unknown_native_type_ref_as_malformed_declaration() {
-        let document = document_with_one_field(wire_field(
-            "ix://acme/orders/Widget/flag",
-            "flag",
-            "ix://quire/native/Frobnicate",
-        ));
-        let refusals = read_records("acme/orders", &document)
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Frobnicate")
             .expect_err("a native-prefixed typeRef naming no native value type refuses");
-        assert_eq!(refusals.len(), 1);
-        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
         assert_eq!(
-            refusals[0].cause,
-            ModelRefusalCause::IntakeMalformedDeclaration {
-                node: "ix://acme/orders/Widget/flag".to_owned(),
-                artifact: None,
-                span: None,
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Widget/flag".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0].fields[0]: typeRef: \"ix://quire/native/Frobnicate\" \
+                          names no native value type QSL declares"
+                    .to_owned(),
             }
-        );
-        assert_eq!(
-            refusals[0].detail,
-            "$.types[0].fields[0]: typeRef: \"ix://quire/native/Frobnicate\" names no \
-             native value type QSL declares"
         );
     }
 
-    // L2 (review of PR #200): `read_records`'s own two hand-rolled
-    // `unsupported_at` refusals -- H3's non-empty operation `frame` and
-    // H5c's non-empty type-level `relationships[]` -- and its H4
-    // known-but-unsupported-FR-208-meaning refusal are the branches that
-    // survive M5's `validate_with_semantic_ir` gate: FCD's own schema and
-    // `constructs.rs` rules permit all three shapes generically (`frame`,
-    // `relationships` and an FR-208 `meaning` string are all optional,
-    // free-form members from FCD's point of view), so a document reaching
-    // them is schema-valid and these are genuinely this reader's own
-    // narrower-than-FCD refusals, not the validator's.
+    /// H3: `Rational`/`Decimal`/`Text` are parameterized in shared-grammar.md,
+    /// and `agent-ix-semantic-ir`'s own constraint keyword vocabulary has no
+    /// `dmin`/`dmax`/`profile` keyword at all -- so these refuse
+    /// unconditionally, naming which parameters are unexpressable, never
+    /// resolving to a made-up declaration.
+    #[test]
+    fn refuses_a_parameterized_native_type_as_unsupported() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Decimal")
+            .expect_err(
+                "Decimal requires dmin/dmax, which the constraint vocabulary cannot express",
+            );
+        assert_eq!(refusal.code, Code::UnsupportedConstruct);
+        assert_eq!(refusal.cause.as_str(), "declaration-form");
+        assert!(
+            refusal.detail.contains("dmin") && refusal.detail.contains("dmax"),
+            "the detail names the missing parameters: {:?}",
+            refusal.detail
+        );
+    }
+
+    // `read_records`'s own two hand-rolled `unsupported_at` refusals -- a
+    // non-empty operation `frame` and a non-empty type-level
+    // `relationships[]` -- and its known-but-unsupported-FR-208-meaning
+    // refusal are branches that survive `validate_with_semantic_ir`'s gate:
+    // FCD's own schema and `constructs.rs` rules permit all three shapes
+    // generically (`frame`, `relationships` and an FR-208 `meaning` string
+    // are all optional, free-form members from FCD's point of view), so a
+    // document reaching them is schema-valid and these are genuinely this
+    // reader's own narrower-than-FCD refusals, not the validator's.
 
     /// A two-type document -- `Widget` (the node under test) and
     /// `OtherType` (a real node of the package for a `target`/`creates`
@@ -1795,8 +1890,8 @@ mod tests {
         .into_bytes()
     }
 
-    /// H3 (FCD #199 gap 4): an operation `frame` that actually declares
-    /// something -- here a `creates` naming a real type of the document --
+    /// An operation `frame` that actually declares something -- here a
+    /// `creates` naming a real type of the document --
     /// refuses as a known-but-unsupported declaration form. It is never
     /// silently read as `OperationEffect::default()`, unlike an absent
     /// frame or one whose `modifies`/`creates`/`deletes` are all empty.
@@ -1840,8 +1935,8 @@ mod tests {
         );
     }
 
-    /// H5c (FCD #199 gap 3): a type's own non-empty inline `relationships[]`
-    /// -- FCD's `verb`/`category`/`composite`/`target` wire shape, carrying
+    /// A type's own non-empty inline `relationships[]` -- FCD's
+    /// `verb`/`category`/`composite`/`target` wire shape, carrying
     /// neither a role nor QSpec's own direction vocabulary -- refuses as a
     /// known-but-unsupported declaration form.
     #[test]
@@ -1881,7 +1976,7 @@ mod tests {
         );
     }
 
-    /// H4: a real FR-208 meaning (`RECORD_VALUE_TYPE`) FCD's own schema
+    /// A real FR-208 meaning (`RECORD_VALUE_TYPE`) FCD's own schema
     /// accepts generically -- any string in `kind`'s resolved `meaning` is
     /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
     /// yet, refuses as a known-but-unsupported declaration form rather than
@@ -1968,9 +2063,9 @@ mod tests {
         );
     }
 
-    /// L2: `read_population`'s own "kind: resolves to {other}, not
+    /// `read_population`'s own "kind: resolves to {other}, not
     /// POPULATION" branch, the one `read_population` refusal that survives
-    /// M5's gate -- `agent-ix-semantic-ir`'s own `population_schema`
+    /// `validate_with_semantic_ir`'s gate -- `agent-ix-semantic-ir`'s own `population_schema`
     /// (`schema.rs`) checks a population's `kind` resolves to *some*
     /// constructs entry, never that its resolved meaning is specifically
     /// `POPULATION` -- unlike this same document's `extent`
@@ -2031,7 +2126,7 @@ mod tests {
         );
     }
 
-    /// L2: `read_type_identity`'s own package-scoping check --
+    /// `read_type_identity`'s own package-scoping check --
     /// `agent-ix-semantic-ir`'s `is_semantic_identity` (`diag.rs`) accepts
     /// any lowercase owner segment, never checking it against the
     /// document's own `package.identity`, so a type identity naming a
@@ -2075,6 +2170,191 @@ mod tests {
         );
     }
 
+    /// `read_field_member`'s own member-identity-form check
+    /// (`member_identity_name`, model-complete.md's Identity row): a field
+    /// member's identity is exactly `<owner identity>/<member name>` --
+    /// `agent-ix-semantic-ir`'s own `is_semantic_identity` (`diag.rs`)
+    /// accepts any lowercase-owner, near-arbitrary-name identity string, so
+    /// a field identity that swaps the required `/` for a `-` reads as
+    /// schema-valid to FCD and reaches this reader's own check.
+    #[test]
+    fn refuses_a_member_identity_not_shaped_owner_slash_name() {
+        let document = document_with_one_field(wire_field(
+            "ix://acme/orders/Widget-other",
+            "other",
+            "ix://acme/orders/OtherType",
+        ));
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a field identity that is not exactly <owner identity>/<member name> is malformed",
+        );
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Widget-other".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0].fields[0]: identity: \"ix://acme/orders/Widget-other\" \
+                          is not ix://acme/orders/Widget/<name>"
+                    .to_owned(),
+            }]
+        );
+    }
+
+    /// `read_value_type_ref`'s own package-scoping check: a `typeRef`
+    /// naming a different package's node (not `ix://quire/native/<Name>`,
+    /// not `ix://<this field's own package>/<artifact id>`) is schema-valid
+    /// to `agent-ix-semantic-ir` (it only requires the reference to resolve
+    /// to *some* declared identity, `UNRESOLVED_TYPE_REF`), so this reaches
+    /// this reader's own check, distinct from
+    /// `refuses_a_type_identity_naming_a_different_package_as_malformed_declaration`'s
+    /// same check over a type-definition node's own `identity` rather than
+    /// a `typeRef`.
+    #[test]
+    fn refuses_a_foreign_package_type_ref_as_malformed_declaration() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([
+                wire_type(
+                    "ix://acme/orders/Widget",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({
+                        "supertypes": [],
+                        "fields": [wire_field(
+                            "ix://acme/orders/Widget/other",
+                            "other",
+                            "ix://acme/other/Thing",
+                        )],
+                        "operations": [],
+                    }),
+                ),
+                // Declared, so `agent-ix-semantic-ir`'s own resolution
+                // succeeds -- this reaches this reader's own package-scoping
+                // check on the `typeRef`, not FCD's `UNRESOLVED_TYPE_REF`.
+                wire_type(
+                    "ix://acme/other/Thing",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                ),
+            ]),
+        )
+        .to_string()
+        .into_bytes();
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a typeRef naming a different package's node is not this field's own package",
+        );
+        assert_eq!(
+            refusals,
+            vec![
+                ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: "ix://acme/orders/Widget/other".to_owned(),
+                        artifact: None,
+                        span: None,
+                    },
+                    detail: "$.types[0].fields[0]: typeRef: \"ix://acme/other/Thing\" is not \
+                              ix://quire/native/<Name> or ix://acme/orders/<artifact id>"
+                        .to_owned(),
+                },
+                ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: "ix://acme/other/Thing".to_owned(),
+                        artifact: None,
+                        span: None,
+                    },
+                    detail: "$.types[1]: identity: \"ix://acme/other/Thing\" is not \
+                              ix://acme/orders/<artifact id>"
+                        .to_owned(),
+                },
+            ]
+        );
+    }
+
+    /// `read_connection`'s own `sourceEnd`/`targetEnd` multiplicity
+    /// requirement is stricter than `agent-ix-semantic-ir`'s own
+    /// `connection_end` schema (`schema.rs`), which requires only `type`
+    /// and treats `multiplicity` as optional -- so a connection end with no
+    /// multiplicity at all is schema-valid to FCD and reaches this reader's
+    /// own check.
+    #[test]
+    fn refuses_a_connection_end_with_no_multiplicity() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([
+                wire_construct(
+                    "acme/orders",
+                    "order",
+                    meaning::OBJECT_TYPE,
+                    serde_json::json!({}),
+                ),
+                wire_construct(
+                    "acme/orders",
+                    "connection",
+                    meaning::SYSTEMS_CONNECTION,
+                    serde_json::json!({
+                        "fields": "forbidden",
+                        "flowDirection": "required",
+                        "operations": "forbidden",
+                        "sourceEnd": "required",
+                        "targetEnd": "required",
+                    }),
+                ),
+            ]),
+            serde_json::json!([
+                wire_type(
+                    "ix://acme/orders/PumpOut",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                ),
+                wire_type(
+                    "ix://acme/orders/TankIn",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                ),
+                wire_type(
+                    "ix://acme/orders/Pipe",
+                    serde_json::json!({"module": "acme/orders", "name": "connection"}),
+                    serde_json::json!({
+                        "sourceEnd": {"type": "ix://acme/orders/PumpOut"},
+                        "targetEnd": {
+                            "type": "ix://acme/orders/TankIn",
+                            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                        },
+                        "flowDirection": "source-to-target",
+                    }),
+                ),
+            ]),
+        )
+        .to_string()
+        .into_bytes();
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a connection end with no multiplicity at all is stricter than \
+             agent-ix-semantic-ir's own optional check",
+        );
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Pipe".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[2]: sourceEnd.multiplicity: missing multiplicity".to_owned(),
+            }]
+        );
+    }
+
     #[test]
     fn resolves_a_package_type_ref_to_a_node_of_the_package() {
         let document = document_with_one_field(wire_field(
@@ -2093,10 +2373,10 @@ mod tests {
             .expect("the document declares exactly one field member");
         assert_eq!(
             field.value_type,
-            DeclarationKey {
+            ValueTypeRef::Package(DeclarationKey {
                 package: "acme/orders".to_owned(),
                 node: "ix://acme/orders/OtherType".to_owned(),
-            },
+            }),
             "a package-scoped typeRef resolves under the field's own package, \
              exactly as its own identity string names"
         );

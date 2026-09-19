@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use xtask::{
+    cargo_pin,
     error::{Error, Result},
     manifest::Manifest,
     revendor, revendor_check, Sources, Tree,
@@ -110,12 +111,13 @@ fn run_check(workspace_root: &Path, args: &Args) -> Result<String> {
     if args.fcd_clone.is_some() {
         return Err(Error::CheckRefusesFcdClone);
     }
+    let expected_fcd_commit = cargo_pin::read_agent_ix_semantic_ir_rev(workspace_root)?;
     let mut summary = String::new();
     let mut clean = true;
     for tree in trees(args.tree) {
         let manifest_path = tree.manifest_path(workspace_root);
         let manifest = Manifest::load(&manifest_path)?;
-        let report = revendor_check(&manifest, &tree.root(workspace_root))?;
+        let report = revendor_check(&manifest, &tree.root(workspace_root), &expected_fcd_commit)?;
         summary.push_str(&format!(
             "{}: {} matched, {} drifted, {} stray\n",
             tree.dir_name(),

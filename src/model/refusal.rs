@@ -14,26 +14,9 @@
 
 use std::collections::BTreeSet;
 
-use crate::model::domain_package::{DomainPackageRef, Multiplicity};
+use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-
-/// A read node's source span (`model-complete.md`:85-89's own `{artifact,
-/// start, end}` shape names byte offsets into a named artifact). FCD's real
-/// wire (`origin.source`) carries neither an artifact id nor byte offsets:
-/// it carries `sourceIdentity` (an `ix://` identity, not QSpec's bare
-/// artifact id) and `startLine`/`startColumn` (one-based line/column
-/// counts, not byte offsets). [`crate::model::intake`] reads that real wire
-/// shape honestly rather than fabricating the byte offsets QSpec's own
-/// shape names but FCD's wire does not carry.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SourceSpan {
-    /// FCD's `origin.source.sourceIdentity`.
-    pub artifact: String,
-    /// FCD's `origin.source.startLine` (one-based).
-    pub start_line: u64,
-    /// FCD's `origin.source.startColumn` (one-based).
-    pub start_column: u64,
-}
+use crate::source::LocatedSpan;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// three sites (#163 review finding: a revision-only mismatch must stay
@@ -149,7 +132,7 @@ pub enum ModelRefusalCause {
         /// instead — the two construction sites' only difference in shape.
         parameter: Option<DeclarationKey>,
         /// The absent value type.
-        value_type: DeclarationKey,
+        value_type: ValueTypeRef,
     },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
@@ -216,9 +199,9 @@ pub enum ModelRefusalCause {
     /// field's value type.
     SubsettingType {
         /// The subsetting field's value type.
-        subsetting: DeclarationKey,
+        subsetting: ValueTypeRef,
         /// The subsetted field's value type.
-        subsetted: DeclarationKey,
+        subsetted: ValueTypeRef,
     },
     /// Two compared items disagree in kind, arity or declared type where
     /// FR-151/FR-152 require agreement.
@@ -229,9 +212,9 @@ pub enum ModelRefusalCause {
         /// The parameter's position.
         index: usize,
         /// The redefining (declared) parameter's value type.
-        declared: DeclarationKey,
+        declared: ValueTypeRef,
         /// The redefined parameter's value type.
-        redefined: DeclarationKey,
+        redefined: ValueTypeRef,
     },
     /// A redefining operation's effect writes a field the redefined
     /// operation's effect does not cover.
@@ -455,16 +438,20 @@ pub enum ModelRefusalCause {
     IntakeMalformedDeclaration {
         /// The node's own identity string, exactly as the wire supplied it
         /// -- not a [`DeclarationKey`], since the identity itself may be
-        /// the very thing that is malformed (FCD #199 gap 2, the identity
-        /// form).
+        /// the very thing that is malformed.
         node: String,
-        /// The node's source artifact (`SourceSpan::artifact`), or `None`
-        /// when the node's origin is `generated` rather than `source`, or
-        /// is itself absent or malformed.
+        /// The node's source artifact (FCD's `origin.source.sourceIdentity`),
+        /// or `None` when the node's origin is `generated` rather than
+        /// `source`, or is itself absent or malformed.
         artifact: Option<String>,
-        /// The node's source span, or `None` under the same conditions as
-        /// `artifact`.
-        span: Option<SourceSpan>,
+        /// The node's source position, mapped from FCD's `origin.source`
+        /// (`startLine`/`startColumn`, one-based) into
+        /// [`crate::source::LocatedSpan`]'s own `{start, end}` shape. FCD's
+        /// wire carries a start position only, no byte offset and no end
+        /// position, so both ends of the mapped span are that same point
+        /// and its byte offset is `0` -- a placeholder QSL does not treat
+        /// as meaningful. `None` under the same conditions as `artifact`.
+        span: Option<LocatedSpan>,
     },
     /// A type's resolved construct meaning, or a member capability, is real
     /// under FR-208 but [`crate::model::intake`] has no reader for it yet
@@ -694,9 +681,10 @@ impl std::fmt::Display for ModelRefusalCause {
 mod tests {
     use serde_json::Value;
 
-    use super::{ModelRefusalCause, OfferedSelection, SourceSpan};
-    use crate::model::domain_package::{DomainPackageRef, Multiplicity};
+    use super::{ModelRefusalCause, OfferedSelection};
+    use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::{digest_of, DeclarationKey};
+    use crate::source::{LocatedSpan, Position};
 
     fn key(identity: &str) -> DeclarationKey {
         DeclarationKey::fixture(identity)
@@ -829,7 +817,7 @@ mod tests {
             ModelRefusalCause::UnknownValueType {
                 operation: key("p"),
                 parameter: Some(key("p")),
-                value_type: key("p"),
+                value_type: ValueTypeRef::Package(key("p")),
             },
             ModelRefusalCause::UnknownFieldWrite {
                 operation: key("p"),
@@ -860,14 +848,14 @@ mod tests {
                 to: multiplicity(),
             },
             ModelRefusalCause::SubsettingType {
-                subsetting: key("p"),
-                subsetted: key("p"),
+                subsetting: ValueTypeRef::Package(key("p")),
+                subsetted: ValueTypeRef::Package(key("p")),
             },
             ModelRefusalCause::TypeMismatch,
             ModelRefusalCause::VarianceParameter {
                 index: 0,
-                declared: key("p"),
-                redefined: key("p"),
+                declared: ValueTypeRef::Package(key("p")),
+                redefined: ValueTypeRef::Package(key("p")),
             },
             ModelRefusalCause::EffectEscape { field: key("p") },
             ModelRefusalCause::UnprovedRefinement,
@@ -948,10 +936,17 @@ mod tests {
             ModelRefusalCause::IntakeMalformedDeclaration {
                 node: String::new(),
                 artifact: Some(String::new()),
-                span: Some(SourceSpan {
-                    artifact: String::new(),
-                    start_line: 1,
-                    start_column: 1,
+                span: Some(LocatedSpan {
+                    start: Position {
+                        byte: 0,
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Position {
+                        byte: 0,
+                        line: 1,
+                        column: 1,
+                    },
                 }),
             },
             ModelRefusalCause::UnsupportedDeclarationForm {
