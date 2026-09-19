@@ -13,161 +13,145 @@ relationships:
 
 ## Summary
 
-Reviewed commit faa1731 on `task/206-observed-architecture`: ADR-010 and its
-index row in `spec/spec.md` (line 385, which is correct). ADR-010 is a
-descriptive record, not a requirement set. It has one obligation, from #206:
-"every assertion has an evidence path and revision". The only way to verify that
-obligation is to inspect the cited code at the pinned revisions. `quoin advise`
-applies to requirement obligations, so this review does not use it. Every
-finding below comes from reading the cited code.
+Round 2. Reviewed commit 432e615 on `task/206-observed-architecture`, against
+round 1 at faa1731. ADR-010 is a descriptive record. Its one obligation, from
+#206, is that every assertion has an evidence path and a revision. This round
+checks each round-1 finding, and every citation that is new or changed in the
+faa1731..432e615 diff. It does not re-check the whole record.
 
-Citations checked: 253. They cover QSL (187), IR (27), CG (20), RT (13),
-QSpec (3) and QI (3). Of these, 241 held and 12 failed. A citation held when the
-file exists at the pinned sha, the named symbol is within 5 lines of the cited
-line, and the claim is true. The 12 failures are:
+All three round-1 `high` findings are fixed. Of the 12 round-1 findings, 11 are
+resolved and 1 is partially resolved (FND-008). None is unresolved.
 
-- Four derive/read cells in the checked-handoff table name the wrong file.
-- The C5 `InputRefusal` cell names the wrong file.
-- The IR root → IR model Cargo edge has the wrong dependency kind.
-- ValueNode is described as "i64 only", which is false.
-- The claim about which files call B8 is false.
-- Three S2/S3 example edges cite doc comments, not `use` items.
-- The `Code` variant count is off by one.
+The new and changed citations hold, with seven exceptions, all listed below.
+That covers the code citations, the 12 negative-evidence cells, the §3.1 module
+table and the GitHub facts. Every `absent:` cell returns nothing at its pinned
+revision. The §3.1 module table was recounted in full with the stated method:
+all 31 rows match on both lines and public items.
 
-Four more cells hold but are imprecise. Some presence claims have no line
-number. A few assertions have no citation. Several PR #200 citations have no
-revision.
+The two `medium` findings:
 
-The data verified end to end: pin staleness (9 of 9), the vendored-tree lag
-(144 and 10), the open-issue count (68, which matches the §7 rows), the
-largest-file line counts, and the §1, §6.1, §5 and §9 tallies.
+- The record says no CI job runs IT-010. In fact a manually dispatched CI run
+  does run it, and it fails there.
+- The §7.5 downstream-issue rule is stated as exhaustive, but it misses issues
+  that mapped QSL bodies cite.
 
-Verdict: REJECT. The three `high` findings (FND-001, FND-002, FND-003) are
-blocking under this review's rules. Each one needs only a corrected citation or
-reworded sentence. No structural rework is needed. With those fixed, the record
-would be ACCEPT WITH FINDINGS.
+Verdict: ACCEPT WITH FINDINGS. No `high` finding is open. The two `medium` and
+five `low` findings are corrections to wording, counts or citations. None needs
+structural rework.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 |----|----------|---------|------|
-| FND-001 | high | §2.2 checked-handoff table cites derive/read at `QSL:protocol_artifact/checked_handoff.rs:139`, `:156`, `:177`, `:193`. Those lines are a closing brace, the field `json_depth`, `fn result` and `self.usage`. The functions live in other files. Corrected: checked predicate derive `QSL:protocol_artifact/checked_predicate.rs:139`, read `QSL:protocol_artifact/checked_predicate.rs:156`. Temporal subject derive `QSL:protocol_artifact/temporal_subject.rs:177`, read `QSL:protocol_artifact/temporal_subject.rs:193`. The format constants at `checked_handoff.rs:1585-1586` are correct. | ADR-010 §2.2 |
-| FND-002 | high | §3.2 row "IR root → IR model, normal, 53cc03c, `IR:Cargo.toml:37`" is false. Line 37 is under `[dev-dependencies]` (`quire-contract-model-owner`, rev 53cc03c). IR root's normal dependency on the model crate is a workspace path dependency. Corrected: normal `IR:Cargo.toml:21` (`path = "crates/quire-contract-model"`). Dev-only pin 53cc03c `IR:Cargo.toml:37`. §6.3's "IR model 53cc03c" row should also say the IR-side use is dev. | ADR-010 §3.2, §6.3 |
-| FND-003 | high | DA-06 "`runtime::input::ValueNode` (i64 only)" and OBS-019 "Runtime values are i64 only" are false. `ValueNode` has 10 variants: Boolean, Integer, Text, Enum, Record, Absent, Present, Sequence, Reference, Object (`QSL:runtime/input.rs:94`). Only its integer payload is `i64` (`QSL:runtime/input.rs:101-104`). AD-016 itself says the relevant gap is "no function variant" (`QSpec:spec/assurance/AD-016-semantic-family-extension-path.md:238`). Corrected wording: "runtime `ValueNode` integers are fixed-width `i64` and it has no function variant". | ADR-010 §5 DA-06, §9.2 OBS-019 |
-| FND-004 | medium | C5 cites `InputRefusal` at `QSL:value/expression/evaluate.rs:105`, which is the body of `charge_call`. Corrected: `QSL:value/expression/mod.rs:105`. | ADR-010 §2.3 C5 |
-| FND-005 | medium | "Callers of B8: only `examples/protocol-handoff/producer.rs:1200-1566` and `tests/compiled_protocol_v2.rs`" is false. At least 20 test files call `native::admit`/`emit`/`admit_v2`/`admit_v3`, for example `QSL:tests/native_protocol_emission.rs`, `QSL:tests/composed_state_evaluation.rs` and `QSL:tests/native_temporal_owner.rs`. Also, `producer.rs:1200` is `linking::admit_namespace`, not B8. The underlying point, that B8 has no non-test and non-example caller, holds. Corrected: "B8 has no caller in `src/` outside `protocol_artifact::native`. Callers are the example (`QSL:examples/protocol-handoff/producer.rs:1411,1415,1566`) and tests under `QSL:tests/`". OBS-011 uses the same citation. | ADR-010 §2.2, §9.2 OBS-011 |
-| FND-006 | medium | §3.1 cites the S2/S3 closing edges at doc comments, not `use` items: `QSL:value/collection.rs:170`, `QSL:model/accounting.rs:5` and `QSL:temporal.rs:15`. The stated method is `use crate::…` edges. The edges are real. The counts value→model ×39 and model→value ×27 match every textual mention including comments (38 and 27). They do not match non-comment lines (8 and 7). Corrected examples: value→model `QSL:value/composite.rs:31`, model→value `QSL:model/domain_package.rs:14`, temporal→protocol_artifact `QSL:temporal.rs:29`. State what the ×39 and ×27 counts count. | ADR-010 §3.1 |
-| FND-007 | medium | Some citations for presence claims have no line number, which breaks the record's own `<prefix>:<path>:<line>` convention. Corrected: quire-rs optional dependency `QSL:Cargo.toml:26` (feature `:17`). Wire formats `QSL:wire_format.rs:27` (native-run/1), `:29` (native-compile/1), `:31` (native-run-result/1), `:37` (native-state-input/1), `:39` (native-linked-package/1). `CLOCK_PREFIX` `QSL:temporal.rs:50`. Catalog 1-draft.3 `QSL:complete/diagnostic.rs:13`. `object_keys` bridge `QSL:model/checked_dispatch.rs:657`. `NativeType` `QSL:checking/types.rs:12`. "sha256-jcs" `QSL:model/key.rs:23`. `quire.value.accounting/v1` `QSL:value/accounting.rs:2`. KANI_SHA256 `QSL:tests/configversion_backends.rs:34`. CG pins.json claim `CG:assurance/pins.json:26`. FR-322 16 codes `IR:tests/fixtures/checked-package/PROVENANCE:117-127`. Absence claims (`QSL:Cargo.toml` with no dependency, `QSL:model/` tree, `QI:Makefile`) can reasonably stay without a line. | ADR-010 §1, §3.2, §3.3, §4.2, §4.3, §5, §9.2 |
-| FND-008 | low | Some assertions have no citation. Exit codes 20/21/22/30: cite `QSL:main.rs:24-25,113-115,138` and `QSL:command.rs:227-232`. "`NativePackage::read_verified` recompiles from source": cite `QSL:package.rs:233-246`. "Reached through `RunSelection::Extracted`": cite `QSL:command/compilation.rs:26,36`. The §3.2 IR-type use counts (`ValueType` 212 and others) and the §3.1 fan-in, fan-out and public-item tables name a method but no reproducible command. | ADR-010 §2.1, §3.1, §3.2 |
-| FND-009 | low | Citations to PR #200 (`PR #200 src/model/intake.rs`, "2104 lines") carry no revision, although #206 requires one for every assertion. The claims hold at PR head 13b6687 (`src/model/intake.rs` +2104). Corrected: `PR #200@13b6687:src/model/intake.rs`. | ADR-010 §1, §8, §9.2 OBS-006 |
-| FND-010 | low | DA-10 says `Diagnostic` has a "44-variant `Code`". The enum at `QSL:diagnostic.rs:51` has 45 variants (IoError … CardinalityOutOfBound). Corrected: 45. | ADR-010 §5 DA-10 |
-| FND-011 | low | A11 "asserted :946" is 3 lines early. `:946` closes the `post` binding, and the verdict assertion is `QSL:tests/configversion_backends.rs:948-951` (`native_verdict` at `:949`). The same applies in §1 and OBS-002. | ADR-010 §1, §2.1 A11, §9.2 OBS-002 |
-| FND-012 | low | "`replay_with_native_runtime` … sole caller is one IR unit test" (§6.2, OBS-028). The sole caller is an integration test, `IR:tests/kani_replay.rs:240` (TC-042), not a unit test. Corrected: "sole caller is IR integration test `IR:tests/kani_replay.rs:240`". | ADR-010 §6.2, §9.2 OBS-028 |
+| FND-001 | medium | The claim that no CI job runs IT-010 is false. §2.1 says "QSL CI is `workflow_dispatch` only and installs no cargo-kani (`QSL:.github/workflows/ci.yml:3-4,13-16`), so no CI job runs IT-010". The Summary counts row and OBS-002 say the same ("not run by CI", "no CI job runs it"). But the dispatched job runs `cargo test --locked --workspace --no-default-features` and `--all-features` (`QSL:.github/workflows/ci.yml:22,26`). `tests/configversion_backends.rs` has no `required-features` in `QSL:Cargo.toml` and no `#[ignore]`, so both runs compile and execute IT-010. With no cargo-kani installed, the IT-010 Kani tests panic at `QSL:tests/configversion_backends.rs:513` (`expect("cargo-kani 0.67.0 must be installed")`). Corrected: "QSL CI runs only on manual dispatch (`ci.yml:3-4`). A dispatched run executes IT-010 through `cargo test --workspace` (`ci.yml:22,26`) but installs no cargo-kani, so IT-010 fails there (`tests/configversion_backends.rs:513`). No CI run passes IT-010." Change the Summary counts row to "test-only, never passes in CI". | ADR-010 Summary counts, §2.1, §9.2 OBS-002 |
+| FND-002 | medium | The §7.5 rule is stated as complete, and it is not. It says §7.5 holds "every downstream issue referenced in the body of an issue mapped in §7.1–§7.4", and the Summary counts row repeats this ("Every downstream issue cited by a mapped QSL issue body", 28). Mapped bodies at 2026-09-19 cite downstream issues that §7.5 leaves out: QSpec #63 (QSL #1, lines 6 and 131, "Blocked until agent-ix/quire-specification#63 Task-010 passes"), QSpec #104 (#155), QSpec #13 (#42), spec-objects-business #8 (#133) and quire-wasm #6 (#207). Either add them and update the count, or narrow the rule in words, for example "open issues in the QSpec, IR, RT, CG and FCD repositories cited by architecture-relevant bodies", so that the rule and the count agree. | ADR-010 Summary counts, §7.5 |
+| FND-003 | low | This is the rest of round-1 FND-008. The §3.2 "IR types used inside QSL (use counts)" (`ValueType` 212, `SymbolName` 103, … `DeclarationEnvironment` 20) still has no reproducible command, and §4.4 reuses the 212. The counts depend on the method: `git grep -c -w ValueType de627b5 -- src ':!src/value' ':!src/model' ':!src/complete'` gives 219 lines, not 212. State the exact pattern and path set that gives 212. The §3.1 fan-in and fan-out method is now stated, and the other FND-008 items are cited. | ADR-010 §3.2, §4.4 |
+| FND-004 | low | S2 says "model→value: 7 `use crate::value` items". The §3.1 method excludes `#[cfg(test)]` modules, and under it the count is 6: `QSL:model/checked_dispatch.rs:97`, `QSL:model/conformance.rs:90`, `QSL:model/domain_package.rs:14`, `QSL:model/key.rs:19`, `QSL:model/normalize.rs:208` and `QSL:model/population.rs:146`. The 7th, `QSL:model/checked_dispatch.rs:860`, is inside `mod tests` (`#[cfg(test)]` at :850). The value→model count holds: 8 items in 6 files. | ADR-010 §3.1 S2 |
+| FND-005 | low | FR-290 is cited as a whole file for claims about specific lines, which breaks the `<prefix>:<path>:<line>` convention. The claims are "6 protocol claim kinds", "QSL's enum aligns to its 6" and "names quire-spec-language's Kani backend as a registrant". Corrected: six labels `QSpec:spec/objects/protocol/FR-290-protocol-claim-kind.md:33`, QSL `Capability` alignment `:34-37`, Kani backend registrant `:50`. This applies to §1.2 (Codegen row), DA-11, OBS-012 and OBS-013. | ADR-010 §1.2, §5 DA-11, §9.2 OBS-012, OBS-013 |
+| FND-006 | low | The Context says open PRs are cited "at their heads on 2026-09-19", and issue bodies are cited at 2026-09-19T17:02Z. Two of the cited shas were not the heads at that time: QSL #204 `6eee1f3` (head 2b02528 from 16:46:39Z) and IR #139 `64982f1` (head 417ec86 from 16:49:19Z). Every cited claim holds at both shas. #204 touches the same four `src/model` files, and `src/kani/witness.rs` exists at both #139 heads. So the record stays reproducible, but the wording is inaccurate. Corrected: "at the named revisions", or give the time of the head snapshot. Also, QSL #204 merged at 17:04:35Z (ba9e33b), closing #173, #174 and #176 and changing the OBS-007 site. §8's PR-sensitive list already routes that change to #208. | ADR-010 Context, §8 |
+| FND-007 | low | The §9.2 "Load" paragraph says #211's 33 items "fall into three groups". The three groups listed hold 21 items. Twelve items are in none of them: DA-09, DA-10, DA-12, DA-13, DA-15, OBS-006, OBS-021, OBS-025, OBS-026, OBS-027, OBS-035 and OBS-039. Either add a group for outcomes, refusals, accounting, provenance and witness, or say that the groups are examples. The count and owner tallies (18, 6 and 17 findings; 33, 18 and 8 items) were recomputed from the tables and hold. | ADR-010 §9.2 |
+
+## Round 1 resolution
+
+| Round-1 ID | Severity | Status at 432e615 | Reason |
+|---|---|---|---|
+| FND-001 | high | resolved | The checked-handoff rows now cite `checked_predicate.rs:139,156` and `temporal_subject.rs:177,193`. Both are `pub fn derive` and `pub fn read` at those lines. |
+| FND-002 | high | resolved | §3.2 now has "IR root → IR model, normal, workspace path, `IR:Cargo.toml:21`" and a separate dev self-pin row for `:37`. §6.3 gives the kind "normal / dev". Both check out at 553b6d1. |
+| FND-003 | high | resolved | DA-06 and OBS-019 now say "10 variants; its integers are fixed-width `i64` and it has no function variant", citing `runtime/input.rs:94,101-104`, and OBS-019 cites AD-016:238. |
+| FND-004 | medium | resolved | C5 cites `InputRefusal` at `value/expression/mod.rs:105` (`pub enum InputRefusal`). |
+| FND-005 | medium | resolved | The B8 caller sentence is reworded. `git grep` finds no `native::admit`/`emit` call in `src/` outside `protocol_artifact/native`. The example lines 1411, 1415 and 1566 are B8 calls, and both cited test files call B8. OBS-011 is updated too. |
+| FND-006 | medium | resolved | S2 and S3 now cite `use` items (`value/composite.rs:31`, `model/domain_package.rs:14`, `temporal.rs:29`) and state what the counts count. The model→value count is off by one (new FND-004). |
+| FND-007 | medium | resolved | Every presence cell listed in round 1 now has a line number, and every one was checked. Absence cells use the new `absent:` form, and all 12 return nothing. FR-290 cells were missed in round 1 and are raised as new FND-005. |
+| FND-008 | low | partially resolved | Exit codes, `read_verified` and `RunSelection::Extracted` are now cited and hold. The §3.1 fan-in and fan-out method is stated. The §3.2 IR-type use counts still have no command (new FND-003). |
+| FND-009 | low | resolved | Every PR #200 citation now carries `@13b6687`, and the Context lists all cited PR heads. At 13b6687 the diff adds `src/model/intake.rs` with 2104 lines, `intake.rs:109,710-722` holds, `Cargo.toml:37-38,42` holds, and `Cargo.lock:1077,1098` holds. |
+| FND-010 | low | resolved | DA-10 now says 45-variant `Code`. |
+| FND-011 | low | resolved | §1.1, A11 and OBS-002 cite `:948-951`, and no `:946` remains. |
+| FND-012 | low | resolved | §6.2 and OBS-028 say "IR integration test `IR:tests/kani_replay.rs:240`". It is the only caller outside the `src/kani/mod.rs:31` re-export. |
+
+Counts: 11 resolved, 1 partially resolved, 0 unresolved.
 
 ## Method
 
-Each citation was read with `git -C <clone> show <sha>:<path>` or
-`git grep -n` at the pinned sha. Local clones were used for all 7 repositories.
-The pinned shas are QSL de627b5, IR 553b6d1, CG a4b2a73, RT d97bc0b, QSpec
-3a79dce and QI 40cff46. Nothing was checked out and nothing was built. PR and
-issue facts came from read-only `gh`. A citation held when the file exists at
-the sha, the symbol is within 5 lines of the cited line, and the claim is true.
-Variant counts were taken by listing the enum's variant lines.
+Each citation was read at its pinned sha with `git -C <clone> show <sha>:<path>`
+and `git grep -n`. Nothing was checked out, built or committed. Clones and shas:
 
-Citations checked (✗ = failed, ~ = held with a note):
+- QSL de627b5; PR heads 13b6687 (#200), 6eee1f3 (#204) and a43e951 (#228)
+- IR 553b6d1 and a5154d3
+- CG a4b2a73 and 5e2a6a9
+- RT d97bc0b
+- QSpec 3a79dce
+- QI 40cff46
 
-- **QSL §1 / §2.1 (lane A):** `value/package_identity.rs:13,15,334` ·
-  `Cargo.toml:36,43,44` · `source_map.rs:30` · `value/expression/refusal.rs:32` ·
-  `linking/composed/requests.rs:20,36,80,282` · `value/division.rs:223` ·
-  `value/ieee.rs:830,882` · `value/expression/mod.rs:71,234,635,659` ·
-  `tests/configversion_backends.rs:32-33,34,252,259,543,597,789,831,843-857,871,900`,
-  `:946` ~ · `source.rs:94,189` · `diagnostic.rs:306` · `parser.rs:13,25` ·
-  `syntax.rs:57,324` · `model_source.rs:225,248` · `linking.rs:190,202,295,319` ·
-  `command/compilation.rs:~95` · `checking.rs:263,302` · `checking/proof.rs:660` ·
-  `package.rs:141,202,224,252` · `package/view.rs:39-46` ·
-  `lowering.rs:140,228,274,283,385` · `lowering/wire.rs:51` ·
-  `lowering/target.rs:39-46` · `runtime/execution.rs:23,43,97` ·
-  `runtime/validation.rs:181` · `runtime/evaluation.rs:40` · `cli.rs:59-126` ·
-  `command.rs:309,315,321,326` · `mapped.rs:110,138` · `quire_source.rs:312`.
-- **QSL §2.2 (lane B):** `parser.rs:43,55` · `syntax/composed.rs:10,18` ·
-  `linking/composed.rs:303,375` · `linking/composed/binding.rs:16,79,180` ·
-  `linking/composed/models.rs:70,278` · `checking/composed.rs:266,311` ·
-  `checking/composed/proofs.rs:157,217` · `protocol_artifact/native/mod.rs:82,104` ·
-  `protocol_artifact/native/temporal_v2.rs:170` ·
-  `protocol_artifact/native/temporal_v3.rs:49` · `protocol_artifact/intake.rs:520` ·
-  `protocol_artifact/v2/intake.rs:476` · `protocol_artifact/v3/intake.rs:211` ·
-  `protocol_artifact/mod.rs:387` · `protocol_artifact/v2/refusal.rs:141` ·
-  `protocol_artifact/v3/refusal.rs:38` · `state/evaluation.rs:35,45` ·
-  `state/input.rs:277,316` · `temporal.rs:58,145` · `temporal/result.rs:213` ·
-  `protocol_artifact/checked_handoff.rs:139` ✗, `:156` ✗, `:177` ✗, `:193` ✗,
-  `:1585-1586` · `protocol_artifact/native_temporal/request.rs:1317` ·
-  `protocol_artifact/native_temporal/result.rs:754` ·
-  `protocol_artifact/native_temporal/common.rs:13-14` ·
-  `protocol_artifact/native_temporal/v2.rs:22-24,397,535` ·
-  `examples/protocol-handoff/producer.rs:1200-1566` ✗ (the "only callers" claim).
-- **QSL §2.3–§2.6 (lanes C, D, absences):** `complete/mod.rs:103` ·
-  `complete/cst.rs:189` · `complete/diagnostic.rs:183` ·
-  `complete/package.rs:587,625,690,847,861,1340` ·
-  `value/expression/refusal.rs:363` · `value/expression/evaluate.rs:51`,
-  `:105` ✗ · `value/outcome.rs:18,103` · `model/normalize.rs:218,230,2102` ·
-  `value/library.rs:181,374` · `model/checked_dispatch.rs:154,653` ·
-  `simulation/explore.rs:59,97` · `simulation/sample.rs:95` ·
-  `simulation/trace.rs:97` · `model/domain_package.rs:441`. "No consumer of
-  `LoweredSourceGraph` outside `src/complete`" and "`checked_dispatch_operation`
-  is the only non-test `Expression` producer" were confirmed by `git grep`.
-- **QSL §3–§5:** `diagnostic.rs:3,320,324`, `:51` ✗ (count) · `source.rs:3` ·
-  `linking/composed/models.rs:11` · `native_model/admission.rs:12` ·
-  `value/collection.rs:170` ✗ · `model/accounting.rs:5` ✗ · `temporal.rs:15` ✗ ·
-  `protocol_artifact/native_temporal/common.rs:11` · `linking.rs:69` ·
-  `model/key.rs:72` · `value/node.rs:18,22` · `value/composite.rs:36,67,132,158` ·
-  `checking/types.rs:462` · `state/input.rs:43,207,307` ·
-  `runtime/input.rs:94` ✗ (claim) · `syntax.rs:294` ·
-  `value/expression/syntax.rs:86` · `value/outcome.rs:171,175` ·
-  `model/systems.rs:269` · `protocol_artifact/validate.rs:287,291` ·
-  `state/evaluation.rs:2478-2484,2781-2783` · `protocol_artifact/mod.rs:1-8,49,57` ·
-  `protocol_artifact/v2/mod.rs:19` · `protocol_artifact/v3/mod.rs:14` ·
-  `wire_format.rs:33-35` · `native_model.rs:27-28` ·
-  `linking/composed/definition_source.rs:240` ·
-  `checking/composed/proofs/engine.rs:579` ·
-  `resources/native-v1/VENDOR.json:20` · `resources/complete-value/VENDOR.json:64`
-  (the sha256 values at :21 and :65 differ, as claimed) ·
-  `value/accounting.rs:143,392,465` · `model/accounting.rs:127,201,244` ·
-  `tests/fixtures/native-lowering/Cargo.toml:14`. Line counts:
-  `state/evaluation.rs` 3110, `model/normalize.rs` 2189.
-- **IR:** `Cargo.toml:24,38`, `:37` ✗ (kind) · `src/kani/replay.rs:13-20,55,80,88` ·
-  `crates/quire-contract-model/src/canonical.rs:68` ·
-  `crates/quire-contract-model/src/expression.rs:189` (8 variants) ·
-  `crates/quire-contract-model/src/identity.rs:833` (6 variants) ·
-  `crates/quire-contract-model/src/checked_package/dispatch.rs:28,65` ·
-  `checked_package/v2/mod.rs:104,622` · `checked_package/v2/lower.rs:117,135` ·
-  `checked_package/shared.rs:65` (13 variants), `:269` ·
-  `src/predicate/admission.rs:92` · `src/temporal/admission.rs:590` ·
-  `src/kani/arithmetic.rs:40` · `src/kani/dispatch.rs:88` ·
-  `src/kani/outcome.rs:8-29` (10 variants), `:33` · `src/kani/abi.rs:21` ·
-  `spec/contract/FR-031-bounded-kani-dispatch-replay-provenance.md:15,23,31,39` ·
-  `tests/fixtures/checked-package/PROVENANCE` ·
-  sole caller of `replay_with_native_runtime` ~ (FND-012).
-- **CG:** `Cargo.toml:17,18,27,28` · `src/exact_scalar.rs:571,1370` ·
-  `src/oracle.rs:14,17,504` · `src/composite_equality.rs:568,799` ·
-  `src/kani.rs:357` · `src/kani_obligations.rs:292,454,828` (the only
-  `negotiate_*` in `src/`) · `src/kani_execution.rs:454` ·
-  `src/bounded_kani_replay.rs:11,57-60` ·
-  `tests/bounded_kani_corpus.rs:204-210,376` ·
-  `tests/exact_scalar_support/agreement.rs:24` · `assurance/pins.json`.
-- **RT:** `src/exact/ieee.rs:819` · `src/exact/division.rs:217` ·
-  `conformance/qsl-agreement/Cargo.toml:18` ·
-  `src/exact/composite.rs:42` (13 variants), `:135` (12 variants) ·
-  `src/exact/outcome.rs:83` (13 variants, against QSL's 15) ·
-  `src/observation.rs:26` (5 variants) · `src/lib.rs:55-56` ·
-  `src/exact/expression.rs:291,583,742` · `src/exact/mod.rs:6-11` ·
-  `conformance/qsl-agreement/tests/tc_191_function_application.rs:54`.
-- **QSpec:** `proposals/checked-package-v2/schema.json` (exists) ·
-  `spec/objects/protocol/FR-290-protocol-claim-kind.md` (exists) ·
-  `spec/assurance/AD-016-semantic-family-extension-path.md:238`.
-- **QI:** `src/lib.rs:4` · `Cargo.toml:16-18` (empty `[dependencies]`) ·
-  `Makefile` (no `heads` target; tree has no `heads/`).
-- **Derived data:** §6.3 pin staleness via `git rev-list --count` (26, 7, 33,
-  6, 13, 15, 78, 19, 5: all match) · vendored lag 4d6230e..3a79dce = 144 and
-  d227270..3a79dce = 10 · 68 open QSL issues (`gh issue list`) match the §7
-  rows one to one · §1 tally 5/1/8 · §6.1 24/2/6 · §5 13/4/1 · §9.2 owner
-  tally 13/6/17.
+A citation held when the file exists at the sha, the symbol is within 5 lines
+of the cited line, and the claim is true. GitHub facts came from read-only `gh`.
+
+What was checked:
+
+- **QSL, new or changed cells:**
+  - `command/compilation.rs:26,36,94,101-103`
+  - `tests/configversion_backends.rs:32-34,252,259,262,509-526,543-544,597,789,820-821,831,837,840,843-857,871,948-951`
+  - `.github/workflows/ci.yml` (whole file) ✗ (FND-001)
+  - `main.rs:24-25,113-115,138` · `command.rs:227-232` · `package.rs:233-246`
+  - `protocol_artifact/checked_predicate.rs:139,156` · `protocol_artifact/temporal_subject.rs:177,193` · `protocol_artifact/v2/intake.rs:476`
+  - `examples/protocol-handoff/producer.rs:1411,1415,1566` · `tests/native_protocol_emission.rs` · `tests/compiled_protocol_v2.rs`
+  - `value/expression/mod.rs:105`
+  - `simulation/explore.rs:59,97` · `simulation/sample.rs:83,95` · `simulation/trace.rs:41,53,97`
+  - `wire_format.rs:27,29,31,37,39` · `lib.rs:13-44`
+  - S1 entering edges: `package/reading.rs:10`, `parser.rs:3,4`, `syntax.rs:3`, `lexer.rs:3`, `checking.rs:14`, `formal_source.rs:7`, `package.rs:20`, `runtime/execution.rs:4`
+  - S2 and S3 edges: `value/composite.rs:31` · `model/domain_package.rs:14` ✗ count (FND-004) · `temporal.rs:29,50`
+  - `Cargo.toml:17,26` and the absence cells · `Cargo.lock` (resolves CG's IR to 04eb6f8)
+  - `tests/fixtures/native-lowering/Cargo.toml:14` · `tests/native_backend.rs:281` · `package/view.rs:39,46` (STANDARD e897f81 is a QSpec commit)
+  - `model/key.rs:23,26,157` · `value/model_query.rs:108,123` (the only production `from_bytes` caller) · `value/node.rs:18,22,49` · `model/checked_dispatch.rs:657` · `model/population.rs:376`
+  - `checking/types.rs:12` · `runtime/input.rs:94,101-104` · `complete/diagnostic.rs:13` · `value/accounting.rs:2,143` · `model/accounting.rs:127` · `source.rs:94` · `resources/native-v1/VENDOR.json:20`
+- **Negative evidence** (all 12 empty):
+  - QSL `src/`: `CheckedPackageV2` · `kani` (also case-insensitive) · `native-run-result/2`
+  - QSL `src/model`: `mod intake`
+  - `crate::lowering` and `EXECUTABLE_PROJECTION` in the five X5 paths
+  - QSL `Cargo.toml`: `quire-exact` · `quire-contract-runtime` · `filament`
+  - RT `src`: `replay` (case-insensitive)
+  - QI `Makefile`: `heads`
+- **§3.1 module table:** all 31 rows recounted with the stated line and
+  public-item method. All match.
+- **PR citations:**
+  - `PR #200@13b6687:src/model/intake.rs:109,710-722` · `Cargo.toml:37-38,42` · `Cargo.lock:1077,1098`
+  - `src/model` diff stats for #228, #204 and #200 against de627b5, which back the single-writer row
+- **IR:**
+  - `Cargo.toml:21,24,37,38` · `IR@a5154d3:Cargo.toml:24`
+  - `src/kani/replay.rs:3-6,13-20,41,55-67,80-97`
+  - `src/predicate/admission.rs:91-92` (QSL f1700a9 types, also in `temporal/admission.rs:6`)
+  - `tests/kani_replay.rs:240` · `tests/fixtures/checked-package/PROVENANCE:117-127`
+- **CG:** `CG@5e2a6a9:src/oracle.rs:14,17` · `assurance/pins.json:26` ·
+  `Cargo.toml:17,18,27,28`.
+- **QSpec:** `FR-290-protocol-claim-kind.md` ✗ no line numbers (FND-005). The lines
+  are 33, 34-37 and 50.
+- **GitHub:**
+  - The 9 PR head shas: 2 were already superseded at 17:02Z (FND-006).
+  - The ARCH-01 comment 5743530928 (16:35:16Z): merge order #228 → #204 → #200, and the 10 §8 dispositions.
+  - #205: the 7 ownership boundaries, the four Layer 1 design tickets, and "#185 sole capability registry/routing implementation owner".
+  - #209: the "Required design" flow. #212: seven scenarios and the failure rule.
+  - #185 dependencies. The "Woven in after" edges and declared prerequisites of #186–#198.
+  - `updatedAt` for the 11 L1-D1 issues: all match.
+  - §7.1 prerequisites for #213, #216, #217, #218, #222, #229, #230, #231 and #232.
+  - A scan of all 68 open QSL bodies for downstream references ✗ (FND-002).
+- **Derived data:**
+  - Summary counts: 41 findings, 53 reference claims (14 + 7 + 32) and 31 modules.
+  - §1.2 tally: 0 agree, 5 partial, 2 disagree.
+  - §9.2 owner tally: 18, 6 and 17. Load: 33, 18 and 8 of 59.
+  - §7.5 row count: 28.
+
+## Round 2 resolution (author)
+
+Recorded by the authoring agent; the round-2 verdict stands.
+
+- FND-001 resolved: §2.1, OBS-002 and the Summary row state that IT-010 runs on
+  every full `cargo test` gate and fails at `configversion_backends.rs:513`
+  without cargo-kani.
+- FND-002 resolved: §7.5 rule widened and table completed (34 rows).
+- FND-003 partly resolved: §3.2 states the counting method and marks the counts
+  approximate, with the plain-grep figure.
+- FND-004 resolved: S2 says 6 non-test items and names the test-only seventh.
+- FND-005 resolved: FR-290 cells cite `:33-34,49-51`.
+- FND-006 resolved: Context records the advanced heads and the #204 merge
+  (`ba9e33b`, 17:04:35Z).
+- FND-007 resolved: the §9.2 load paragraph has four groups covering all 33
+  #211 items.

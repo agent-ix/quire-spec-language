@@ -12,68 +12,100 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-010 (ARCH-00 observed architecture baseline, #206) and its
-`spec/spec.md` index row at quire-spec-language commit faa1731. The failure-domain
-checklist was adapted to a descriptive record. It covers three things: trust
-boundaries at the observed handoffs, identity confusion between duplicate types
-and digest domains, and unstated failure modes in the cross-repository handoffs.
-It also checks whether the record's own claims could mislead a Layer 1 owner
-(#209, #210, #211). Evidence was spot-checked at QSL de627b5, IR 553b6d1,
-CG a4b2a73 and QSpec 3a79dce.
+Round 2. Reviewed ADR-010 (ARCH-00 observed architecture baseline, #206) at
+quire-spec-language commit 432e615, against the round-1 findings raised at
+faa1731 and the revision diff between the two. The failure-domain checklist was
+adapted to a descriptive record, as in round 1. It covers trust boundaries at
+the observed handoffs, identity confusion between duplicate types and digest
+domains, and unstated failure modes in the cross-repository handoffs. Evidence
+was re-checked at QSL de627b5, IR 553b6d1, RT d97bc0b, CG a4b2a73 (and CG
+5e2a6a9 for the IT-010 chain) and QI 40cff46.
 
-Most spot-checked citations are accurate. The record keeps intended design apart
-from observed code. Two omissions are blocking. First, the wire-admission bypass
-also feeds the cross-repository checked-predicate and temporal-subject handoffs
-to IR, and the record does not say so. Second, one identity domain
-(`EffectiveId`) is missing from the ownership table, and QSL code converts it
-into the semantic-node domain. Both fixes add rows or cells and change no
-conclusion elsewhere.
+Both round-1 blocking findings are resolved. OBS-037 and a new §4.4 row now
+record the wire-admission bypass into the checked-predicate and temporal-subject
+handoffs to IR. `EffectiveId` is now in DA-02, §4.2, §4.4 and OBS-018, with the
+correct `pub(crate)` `from_bytes` site. The five medium findings and both low
+findings are resolved; one (evidence form) leaves a small residue.
 
-Verdict: REJECT. Two high findings (FND-001, FND-002) block acceptance at the
-#208 gate. Once they are fixed and the medium findings are dispositioned, the
-expected verdict is ACCEPT WITH FINDINGS.
+The revision adds one medium problem. §3.2 and OBS-040 now say the IT-010 chain
+has a single cross-revision guard (the digest equality at `:543-544`). The same
+test file also pins the CG and IR revisions in `Cargo.lock` and checks
+`IR_CANDIDATE_REVISION` (`:504-507`), and it leaves RT 8a4d02b with only a
+length check (`:508`). Three low findings cover framing and wording.
+
+Verdict: ACCEPT WITH FINDINGS. No high findings remain. One medium and three
+low findings are open, all fixable by editing cells without changing a
+conclusion or an owner.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | Trust boundary missing at a cross-repository handoff. OBS-015 and §4.4 record `protocol_artifact::read` admitting untrusted wire data only into the `state` and `temporal` evaluators. That same wire-admitted `v2::AdmittedPackage` is also the only input to `checked_predicate::derive`/`read` and `temporal_subject::derive`/`read`. Their outputs (`ValidatedCheckedPredicate` and the temporal subject) are the inputs of IR `predicate::project` and `temporal::project`, which IR documents as "constructor-private QSL checked leaves". A Layer 1 owner reading §2.2 and §6.2 would think "checked" here means compiler-checked, but these values have no source-compile provenance. This fails the #206 criterion that bypasses be explicit. Fix: extend OBS-015 (or add OBS-037, owner #209, secondary #211) and add a §4.4 row: "wire-admitted `AdmittedPackage` → checked-predicate / temporal-subject → IR projection; skips source compile and check". Cite the evidence in Refs. | `QSL:protocol_artifact/mod.rs:1-8`; `QSL:protocol_artifact/v2/intake.rs:476`; `QSL:protocol_artifact/checked_predicate.rs:139,156`; `QSL:protocol_artifact/temporal_subject.rs:176,192`; `IR:src/predicate/admission.rs:91-92`; ADR-010 §2.2, §4.4, §6.2, OBS-015 |
-| FND-002 | high | Identity domain missing from the ownership table, and the cross-domain conversion is misdescribed. `model::key::EffectiveId` (domain `quire.model.effective-declaration/v1`, `QSL:model/key.rs:26,157`) is a shared identity type, but it appears in neither §5 nor DA-01/DA-02. The only production call of `NodeKey::from_bytes` is `QSL:value/model_query.rs:108`. There, the 32 bytes of `ReferenceKey.type_identity: EffectiveId` (`QSL:model/population.rs:376`) are reused as a `NodeKey`, whose domain is `quire.checked-semantic-node/v1`. §4.2 and §4.4 instead say "any digest → NodeKey" and give no call site. They cite `QSL:value/node.rs:22`, which is the struct declaration, not the function (the function is at :48). They also omit that `from_bytes` is `pub(crate)`. As a result, the record implies a public bypass that does not exist and hides the cross-domain conversion that does. Fix: add `EffectiveId` (with `ReferenceKey` and `ObjectReference`) to DA-02, or as a new DA row owned by #211. Rewrite the §4.2 and §4.4 rows as "`EffectiveId` → `NodeKey` byte transfer, `pub(crate)`, `QSL:value/model_query.rs:108`, `QSL:value/node.rs:48`". Add the conversion to OBS-018. | `QSL:value/node.rs:18,22,48`; `QSL:value/model_query.rs:108`; `QSL:model/key.rs:26,157,166`; `QSL:model/population.rs:376`; ADR-010 §4.2, §4.4, §5 DA-02, OBS-018 |
-| FND-003 | medium | The typed in-memory handoffs from IR to QSL are tied to QSL f1700a9, but the record states that only as a staleness count. IR main's `predicate::project`, `temporal::project` and `replay_with_native_runtime(&NativePackage)` take QSL Rust types from the pinned QSL f1700a9 (`IR:Cargo.toml:24`). A value produced by QSL main (de627b5) is a different type from a different crate, so QSL main cannot pass it to IR main without serializing it. §6.2 names these input types without a revision, and OBS-029 describes the edge only as "78 behind". A Layer 1 owner could therefore read these as live handoffs from QSL main. Fix: tag the §6.2 inputs with "QSL f1700a9 types". In OBS-029, state that the typed handoffs in this edge cannot be reached from QSL main. | `IR:Cargo.toml:24`; `IR:src/kani/replay.rs:3-6,80`; `IR:src/predicate/admission.rs:91-92`; ADR-010 §6.2, OBS-029 |
-| FND-004 | medium | The record does not state how replay fails at the handoff. IR `validate_packet` checks only that `witness` is non-empty. Neither `replay_counterexample` nor `replay_with_native_runtime` passes the witness to the executor. The executor gets `FiniteInput` or the caller's `reconstruct`. Agreement is accepted when `kind == Counterexample` or `truth() == Some(false)`, and a native result that disagrees is reported as `Inconclusive`. OBS-027 describes the witness only as a type-shape problem (`String` vs `Option<Witness>`). #211 could then decide on a typed witness while assuming replay already reads it. Fix: add to OBS-027 (owner #211) and OBS-028 (owner #209) that replay never reads the witness content. Also record that a disagreement is reported as `Inconclusive` with code `kani_native_replay_disagreement`. | `IR:src/kani/replay.rs:39-51,55-71,80-97`; ADR-010 OBS-027, OBS-028 |
-| FND-005 | medium | The IT-010 handoff (A9–A11) misstates its failure modes and leaves out its only version guard. The A9 "none typed" cell hides that each consumer step calls `.unwrap()` and panics (`:543,545,597,871`). `playback_i64` reads only the first `vec![…]` row and needs exactly 8 bytes (`:843-857`), so a harness with more than one nondeterministic value is silently cut to the first value. `native_verdict` returns `None` outside `DOMAIN` (`:261`). The projection's format constant comes from IR model 53cc03c, but the consumer is IR 04eb6f8, which is also the IR that CG 5e2a6a9 pins. The only check that the two revisions agree is the digest-equality assertion at `:545`, and it appears at one of the three consumer sites. Fix: change the Refusal cells of A9 and A10 to "test panic (`unwrap`)" and "first row only; `None`". Add the IT-010 revision chain (IR model 53cc03c → IR 04eb6f8 → CG 5e2a6a9 → RT 8a4d02b) to §3.2 and DA-14, with `:545` as the single cross-revision guard. | `QSL:tests/configversion_backends.rs:32-33,261,543-545,597,843-857,871`; `CG@5e2a6a9:Cargo.toml:17,26`; ADR-010 §2.1 A9–A11, §3.2, DA-14 |
-| FND-006 | medium | Wrong evidence path for the checked-handoff rows. The §2.2 table "Checked handoffs inside lane B" cites derive and read at `QSL:protocol_artifact/checked_handoff.rs:139,156,177,193`. That is a private module (`QSL:protocol_artifact/mod.rs:12`), and at those lines are `exhausted()`, a `Usage` field and `Report` accessors. The public entries are in `checked_predicate.rs:139,156` and `temporal_subject.rs:176,192`, with the private implementations at `checked_handoff.rs:1687,1753`. Because these rows are a handoff, #206's evidence-link criterion is not met for them. Fix: correct the four citations. The format rows at `:1585-1586` are correct. | `QSL:protocol_artifact/checked_predicate.rs:139,156`; `QSL:protocol_artifact/temporal_subject.rs:176,192`; `QSL:protocol_artifact/checked_handoff.rs:1687,1753`; ADR-010 §2.2 |
-| FND-007 | medium | Absence claims cannot be re-checked. The Evidence convention requires `<prefix>:<path>:<line>`. Absence claims instead cite a file with no line and no search method, so a Layer 1 owner cannot confirm the absence at the pinned revision. Examples: X1, X5 and X7; §1 rows 2–3; OBS-005, OBS-026 and OBS-031 (`QSL:Cargo.toml`, `QSL:wire_format.rs`, `QSL:model/` tree, `QI:Makefile`). Some presence claims also lack a line: OBS-014 `QSL:temporal.rs`, DA-02 `QSL:model/checked_dispatch.rs` (the map is at `:657`), DA-05 `QSL:checking/types.rs`, DA-15 `QSL:model/key.rs`, and the §1 Kani sha row (`QSL:tests/configversion_backends.rs:34`). Fix: add a negative-evidence form to the Evidence convention, for example "`git grep -n '<pattern>' <sha> -- <path>` returns nothing", and use it in every ABSENT cell. Add line numbers to the presence cells listed. | ADR-010 §Evidence convention, §1, §2.6, §3.3, OBS-005, OBS-014, OBS-026, OBS-031, DA-02, DA-05, DA-15 |
-| FND-008 | low | A possible identity collision in PR #200 is not recorded. PR #200 maps `ix://quire/native/<Name>` to `DeclarationKey{package:"quire/native", …}`. This is a pseudo-package inside the same key space as real domain packages. The diff reserves no `quire/native` package identity, and `read_field_type_ref` matches the native prefix before it resolves a package's own types. OBS-006 records only that the PR disagrees with AD-016. Fix: add the collision to OBS-006 as an observed PR failure mode, owner #211. | PR #200 `src/model/intake.rs` (`read_field_type_ref`); ADR-010 OBS-006, §8 |
-| FND-009 | low | §8 contradicts itself on merge order. The table's Notes column says #228 "merges first" and #204 "merges second". The paragraph under it sets #204 → #228 → #200 and says the coordinator's order governs. A reader of the table alone gets the wrong order for the single-writer files. Fix: make the Notes column match the governing order, or remove the ordinal notes from the table. | ADR-010 §8 |
+| FND-001 | medium | Cross-revision guards on the IT-010 chain are misstated. §3.2 ("the only cross-revision guard is `:543-544`") and OBS-040 ("its only cross-revision guard is one digest equality") are wrong. Test `locked_backend_graph_has_one_reviewed_ir_and_pinned_kani` (IT-010-SC-01) checks that the lock holds CG 5e2a6a9 (`:504`), exactly one `quire-contract-ir` at IR 04eb6f8 (`:505-506`), and `codegen::IR_CANDIDATE_REVISION == IR_REVISION` (`:507`). So the IR 04eb6f8 ↔ CG 5e2a6a9 pairing is guarded. The unguarded link is RT 8a4d02b: `RUNTIME_REVISION` is checked only for length 40 (`:508`) and is used unchecked in the generated manifests (`:821`). The statement "the only check that IR model 53cc03c and IR 04eb6f8 agree is `:543-544`" in the §2.1 preconditions paragraph is correct and can stay. Fix: in §3.2 and OBS-040, list `:504-507` as the lock and revision guards. State that the producer ↔ consumer format agreement is checked only at `:543-544`, and that RT 8a4d02b has no revision check beyond length (`:508`). Owner unchanged (#209; DA-14 #211). | `QSL:tests/configversion_backends.rs:502-508,543-544,821` · `CG@5e2a6a9:src/oracle.rs:14,17` · ADR-010 §3.2, OBS-040, DA-14 |
+| FND-002 | low | The `EffectiveId` → `NodeKey` transfer is framed only as a bypass, and its normative source is left out. `QSL:value/model_query.rs:10-16` calls the transfer "the documented canonical encoding" required by FR-143. It says a reference's `type` is literally the `quire.model.effective-declaration/v1` digest and that `NodeKey` "carr[ies] no domain tag of its own". `NodeKey::from_bytes` is documented as a "same-domain identity bridged from another 32-byte digest type" (`QSL:value/node.rs:44-48`). That conflicts with `NODE_KEY_DOMAIN = "quire.checked-semantic-node/v1"` (`QSL:value/node.rs:17-18`), which the DA-02 row cites as `NodeKey`'s domain. There is also a second reverse transfer, in `resolve_target` (`QSL:value/model_query.rs:155`), which §4.2 and OBS-018 do not list. The bypass reading hides that the code and FR-143 require this bridge, and that the two in-code domain statements disagree. That disagreement is the decision #211 has to make. Fix: in DA-02 and OBS-018, cite `model_query.rs:10-16`, FR-143 and `node.rs:17-18,44-48` as the conflicting domain statements, and add `:155` to the reverse-transfer cells. In §4.4, write "FR-143-sanctioned byte transfer across two declared domains" in place of "skips the node-id digest domain". | `QSL:value/model_query.rs:10-16,108,123,155` · `QSL:value/node.rs:17-18,44-49` · ADR-010 §4.2, §4.4, DA-02, OBS-018 |
+| FND-003 | low | OBS-028 contradicts its own evidence. It now names `IR:tests/kani_replay.rs:240` as the sole caller of `replay_with_native_runtime`, and that function always runs the real `runtime::execute` (`IR:src/kani/replay.rs:88`); only `reconstruct` is caller-supplied. The next sentence says "Every call site injects a stub returning the expected verdict". That is true of the CG sites and of the IR `replay_counterexample` test sites (`IR:tests/kani_replay.rs:208,213,221`). It is not true of `:240`. Fix: scope the sentence to "every `replay_counterexample` call site (CG, and IR tests `:208-221`)". | `IR:src/kani/replay.rs:80-97` · `IR:tests/kani_replay.rs:208-221,240` · `CG:src/bounded_kani_replay.rs:57-60` · ADR-010 OBS-028 |
+| FND-004 | low | Residue of round-1 FND-007 (evidence that cannot be re-checked). X4's evidence ("no consumer of `LoweredSourceGraph` outside `src/complete`") is not written in the new `absent:` form. OBS-011 and §2.2 still cite `QSL:tests/native_protocol_emission.rs` and `QSL:tests/compiled_protocol_v2.rs` with no line. The `(RT, case-insensitive)` qualifier on `absent: replay in src` departs from the convention's `git grep -n -F` definition, which is case-sensitive. The claims themselves were re-run and hold. Fix: write X4 as `absent: LoweredSourceGraph in src/` excluding `src/complete`. Give the test citations a line. Add an `absent-i:` variant (meaning `git grep -n -i -F`) to the Evidence convention. | ADR-010 §Evidence convention, §2.2, §2.6 X4, §1.2, OBS-011, OBS-038 |
+
+## Round 1 resolution
+
+Round 1 reviewed faa1731 (SR-459 round 1, verdict REJECT). Status against
+432e615:
+
+| Round-1 ID | Severity | Status | Reason |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | OBS-037 (#209, secondary #211), a §4.4 row, a §4.1 boundary row, a §2.2 note and the §6.2 "QSL f1700a9" input tags record the wire-admitted `v2::AdmittedPackage` → checked predicate / temporal subject → IR projection bypass. The citations were checked (`checked_predicate.rs:139,156`, `temporal_subject.rs:177,193`, `v2/intake.rs:476`, `IR predicate/admission.rs:92`). |
+| FND-002 | high | resolved | `EffectiveId` and `ReferenceKey.type_identity` are in DA-02. §4.2 has both transfer directions with `model_query.rs:108,123`. §4.4 and OBS-018 cite `pub(crate)` `from_bytes` at `node.rs:49`, which was checked. The framing gap that remains is new FND-002 (low). |
+| FND-003 | medium | resolved | §3.2 paragraph, §6.2 inputs and OBS-029 state that IR's typed handoffs take QSL f1700a9 types and that QSL main cannot reach them without serializing. |
+| FND-004 | medium | resolved | §6.2 paragraph, OBS-027 and OBS-028 state that replay checks only that the witness is non-empty and reports disagreement as `Inconclusive` with `kani_native_replay_disagreement`. Line citations `:41,61,62,65,87,89,92` were checked. |
+| FND-005 | medium | resolved | A9 is now "test panic (`unwrap`/`expect`)", A10 is "first `vec![…]` row only, exactly 8 bytes", A11 is "`None` outside `DOMAIN` (:262)". The revision chain is in §3.2, DA-14 and OBS-040. The new text overstates the single guard; see new FND-001. |
+| FND-006 | medium | resolved | §2.2 checked-handoff rows now cite the public `checked_predicate.rs` and `temporal_subject.rs` entries. |
+| FND-007 | medium | partially resolved | The Evidence convention now defines `absent: <pattern> in <path>`, and it is used in §1, §2.6, §3.2, §3.3 and the OBS rows. The presence cells named in round 1 now carry lines. The small residue is new FND-004 (low). |
+| FND-008 | low | resolved | OBS-006 records the `quire/native` pseudo-package sharing the domain-package key space and the prefix-first match in `read_field_type_ref`, owner #211. |
+| FND-009 | low | resolved | The §8 Notes column (first, second, third) now matches the governing order #228 → #204 → #200. |
+
+Counts: 8 resolved, 1 partially resolved, 0 unresolved.
 
 ## Method
 
-- Checklist, adapted to a descriptive record. The four checks were:
-  - Extension points and trust boundaries: at each observed handoff, where does
-    admitted data come from, and what does its type name claim?
+- Checklist, adapted to a descriptive record:
+  - Trust boundaries: where admitted data comes from at each observed handoff,
+    and what its type name claims.
   - Entity identity: which uniqueness key and digest domain each identity type
     uses, and where bytes move between domains.
   - Evaluation purity: whether caller-supplied closures in replay are recorded
     as what decides the verdict.
   - Topology: dependency cycles and version skew along the IT-010 chain.
-- Spot checks confirmed as accurate: `QSL:linking.rs:69`, `QSL:model/key.rs:72`,
-  `QSL:value/node.rs:18`, `QSL:value/package_identity.rs:13,15,334`,
-  `QSL:checking.rs:263`, `QSL:value/expression/mod.rs:71,635`,
-  `QSL:diagnostic.rs:306-324`, `QSL:protocol_artifact/mod.rs:1-8`,
-  `QSL:package/view.rs:39-46`, `QSL:lowering/wire.rs:51`, `QSL:Cargo.toml:36,43,44`,
-  `QSL:tests/configversion_backends.rs:32-33,252,259,843-857,946`,
-  `QSL:linking/composed/definition_source.rs:240`, `QSL:wire_format.rs` (/1 only),
-  `QSL:command/compilation.rs:~95`, `IR:Cargo.toml:24,37,38`,
-  `IR:src/kani/replay.rs:13-20,55,80-97`, `CG:Cargo.toml:17,18,28`,
-  `CG:src/bounded_kani_replay.rs:11`, `CG:tests/bounded_kani_corpus.rs:204-210,376`,
-  `QSpec:spec/assurance/AD-016-semantic-family-extension-path.md:238`.
-- Spot checks that failed: `QSL:value/node.rs:22` as the location of `from_bytes`
-  (FND-002), and `QSL:protocol_artifact/checked_handoff.rs:139,156,177,193`
-  (FND-006).
-- Collision check: `linking::DeclarationKey` and `model::key::DeclarationKey` are
-  never imported in the same source file at de627b5, so the name clash does not
-  cause confusion inside the crate. The crate root re-exports only native-v1
-  names. No finding was raised.
-- RT and FCD citations were not spot-checked because no local clone at the pinned
-  revision was available.
+- Scope: round-1 findings and the `faa1731..432e615` diff of
+  `spec/decisions/`. Owner assignments follow the coordinator's constraint
+  (#209, #210, #211 primary; #229 secondary only). No finding asks to change an
+  owner.
+- Re-checked at the pinned revisions: `QSL:value/node.rs:17-18,44-49`;
+  `QSL:value/model_query.rs:10-16,108,123,155`; `QSL:model/population.rs:376`;
+  `QSL:protocol_artifact/checked_predicate.rs:139,156`;
+  `QSL:protocol_artifact/temporal_subject.rs:177,193`;
+  `QSL:protocol_artifact/v2/intake.rs:476`;
+  `QSL:tests/configversion_backends.rs:34,262,502-508,543-544,597,821,837,840,843-857,871,948-951`;
+  `IR:src/kani/replay.rs:13-20,39-51,55-71,80-97`;
+  `IR:src/predicate/admission.rs:92`; `IR:src/temporal/admission.rs:590`;
+  `IR:tests/kani_replay.rs:208-221,240`; `CG@5e2a6a9:src/oracle.rs:14,17`.
+- Absence claims re-run with `git grep -n -F`: `kani` (case-insensitive) in QSL
+  `src/`; `CheckedPackageV2`, `native-run-result/2` in QSL `src/`; `mod intake`
+  in QSL `src/model`; `crate::lowering` and `EXECUTABLE_PROJECTION` in the X5
+  paths (plus `src/temporal.rs`, which the `src/temporal` pathspec does not
+  cover); `replay` (case-insensitive) in RT `src`; `heads` in QI `Makefile`. All
+  return nothing, as the record states.
+
+## Round 2 resolution (author)
+
+Recorded by the authoring agent; the round-2 verdict stands.
+
+- FND-001 resolved: §2.1, §3.2 and OBS-040 name the IR ↔ CG pairing check at
+  `configversion_backends.rs:504-507` and state that RT 8a4d02b is checked only
+  for hash length at :508.
+- FND-002 resolved: OBS-018 and §4.2 add the reverse transfer at
+  `model_query.rs:155` and record the FR-143 comment (`:10-16`) against
+  `NODE_KEY_DOMAIN` (`node.rs:17-18`) as the #211 decision.
+- FND-003 resolved: OBS-028 limits the stub claim to `replay_counterexample`
+  call sites.
+- FND-004 resolved: X4 uses `absent:` with `excluding`; OBS-011 and §2.2 cite
+  test lines; the convention defines `absent-i:` for case-insensitive checks.

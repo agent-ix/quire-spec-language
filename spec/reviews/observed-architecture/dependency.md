@@ -13,65 +13,102 @@ relationships:
 
 ## Summary
 
-Reviewed commit faa1731 on `task/206-observed-architecture` (ADR-010 and its
-index row in `spec/spec.md`). ADR-010 is a descriptive record, not a requirement
-set, so this pass checks the dependency data it records instead of building a
-requirement DAG. It covers four things: crate, repository and module dependency
-direction, cycles and bypasses (#206 acceptance); the §7 ticket map "consumes"
-data compared with the #205 dependency graph and the current issue bodies; how
-L1-D1 frames the #185 question; and whether enablement tickets are kept apart
-from feature tickets.
+Round 2. Reviewed commit 432e615 on `task/206-observed-architecture`, against
+the round-1 review of faa1731. ADR-010 is a descriptive record, so this pass
+checks the dependency data it records: crate, repository and module dependency
+direction, cycles and bypasses (#206 acceptance), the §7 prerequisite data
+compared with the #205 dependency graph and the current issue bodies, the L1-D1
+framing of the #185 question, and the enablement and feature split.
 
-The in-crate SCC analysis, the IR root ⇄ QSL cycle, the list of bypass paths and
-the 68-row issue coverage all hold. The following do not:
+The revision resolves every blocking round-1 finding:
 
-- Two Cargo citations name the wrong crate or dependency kind. One of them hides
-  a transitive normal dependency from CG to QSL.
-- The repository-cycle count of 1 rests on an edge-kind rule the record never
-  states. §3.2 and §6.3 contradict each other on QSL → RT.
-- L1-D1 misstates what #185 depends on and says no ladder ticket is ordered
-  after #185. The "woven in after" chain orders every one of them after it.
-- The §8 merge order contradicts itself.
+- §3.2 now cites CG → IR root (package quire-contract-ir) and records the
+  transitive normal edge CG → IR root a5154d3 → QSL f1700a9.
+- §3.2 states an edge rule and lists three cycles under it: IR ⇄ QSL, QSL ⇄ CG
+  and QSL ⇄ RT.
+- L1-D1 separates the "woven in after" sequencing edges from the declared
+  technical prerequisites. It matches the current issue bodies, with their
+  `updatedAt` times.
+- §8 gives one merge order, #228 → #204 → #200, with the ARCH-01 comment ID and
+  time.
 
-Verdict: REJECT. FND-001, FND-002, FND-003 and FND-004 are blocking.
+Round 1 also asked for four structural changes, and the revision makes all four:
+
+- §7.1 has a separate "Declared prerequisites" column, and every row in it
+  matches its issue body.
+- DA-11 records the #213 / #185 / #205 statements on who owns the capability
+  type.
+- Every §7 table has a Class column.
+- The SCC S1 diagram is strongly connected.
+
+The open findings are one medium and six low. The medium finding (FND-001) is
+that the new edge rule names no set of repositories, so the cycle count of 3 is
+complete only for the Context-table repositories. The low findings are
+completeness and labelling gaps in the new tables.
+
+Verdict: ACCEPT WITH FINDINGS. No finding is high, so none blocks.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 |---|---|---|---|
-| FND-001 | high | §3.2 row "CG → IR model, normal, a5154d3, `CG:Cargo.toml:17`" and the mermaid edge `CG → IRCM` are wrong. `CG:Cargo.toml:17` declares package `quire-contract-ir`, which is the IR root crate, not `quire-contract-model`. At a5154d3 the IR root has a normal dependency on QSL f1700a9 (`IR@a5154d3:Cargo.toml:24`), so CG has a transitive normal dependency on QSL. CG also has a direct dev dependency on QSL 21c507e (`CG:Cargo.toml:28`), and QSL has a dev dependency on CG (`QSL:Cargo.toml:43`). The record shows none of this, and OBS-034's count of QSL revisions misses that f1700a9 reaches CG builds. Fix: relabel the row and the diagram edge as "CG → IR root (package quire-contract-ir)". Add the transitive edge CG → IR root → QSL f1700a9 (normal). Record the QSL ⇄ CG repository relationship in §3.2 and OBS-029, or in a new OBS. | ADR-010 §3.2, §6.3, OBS-029, OBS-034 · `CG:Cargo.toml:17,28` · `IR@a5154d3:Cargo.toml:24` · `QSL:Cargo.toml:43` |
-| FND-002 | high | The count "Cross-repository repo cycles: 1" (Summary counts, §3.2) rests on an edge-kind rule the record does not state. The rule used for IR ⇄ QSL is "the repositories depend on each other", with normal edges both ways. Applied to dev and test edges it also yields QSL ⇄ CG (QSL dev → CG 5e2a6a9; CG dev → QSL 21c507e plus the transitive normal edge in FND-001) and QSL ⇄ RT. For QSL ⇄ RT the edges are the QSL test fixture crate at `QSL:tests/fixtures/native-lowering/Cargo.toml:14` → RT 8a4d02b, built by `QSL:tests/native_backend.rs:281`, and `RT:conformance/qsl-agreement` → QSL. #206 acceptance requires known cycles to be explicit. Fix: state which edge kinds (normal, dev, test fixture) define a repository cycle, then list every cycle under that rule with the kind of each edge, and correct the count. | ADR-010 Summary counts, §3.2 · #206 Acceptance · `QSL:tests/fixtures/native-lowering/Cargo.toml:14` · `RT:conformance/qsl-agreement/Cargo.toml:18` |
-| FND-003 | high | L1-D1 misstates the #185 question it hands to #210, in two ways. (a) It says #185 depends on "#212, #229 and QSpec #116". The current #185 body (retitled "[V1-A08] Lowering target registry and routing over the canonical Capability type", edited 2026-09-19T16:49Z) also depends on #213 and says #185 consumes #213's `Capability` type and does not own it. (b) It says "None of #186–#198 states one". Every ladder body carries an ordering edge: #186 "Woven in after V1-A08" (A08 is #185), #187 after A09, #188 after A10, #189 after A11, #191 after A12, #192 after the spec-versioning gate, and #198 after A14. So all seven are ordered after #185 by transitive sequencing. It also omits #186 → #231, and #188's statement that an unbounded formula with "no registered liveness backend settles `unsupported`", which is #185 registry behaviour. Fix: restate the observed edges from the current bodies and pin the retrieval time. Separate the "woven in after" sequencing edges from declared technical prerequisites. Reframe L1-D1 as "which of the existing sequencing edges from #185 are real capability-dispatch prerequisites, and which may be relaxed". | ADR-010 §9.1 L1-D1 · #185, #186, #187, #188, #189, #191, #192, #198 bodies · #205 "Existing consumers" |
-| FND-004 | high | §8 contradicts itself on merge order. The table notes say #228 "merges first", #204 "merges second" and #200 "merges third". The prose below says "Merge order: #204 → #228 → #200 as set by the #205 coordinator", and says that order governs over #207. The coordinator ruling has no evidence citation. Both ARCH-01 statements on #207 (the Rulings table and §3) give #228 → #204 → #200, and Decision 4 says dispositions follow ARCH-01. Fix: cite the coordinator ruling (comment URL and time) or drop it. Make the table notes and the prose give the same single order. | ADR-010 §8, Decision 4 · #207 ARCH-01 comment (Rulings, §3) |
-| FND-005 | medium | The §7.1 "Consumes" column mixes three relations: Layer 1 decision consumed, gate inputs, and prerequisite tickets. Read as dependencies, several rows disagree with the issue bodies. #213 lists only #211, but its body depends on #212 and #222 and consumes #229. #214 lists only #210, but its body lists #210, #211, #212 and #213. #216 lists "#209 and #211", but its body lists #213, #214, #215, #231, #229, #185, #131, #132 and #164. #218 omits #217 and QSpec #101/#106. #220 omits #216 and #219. #221 omits #216. #222 lists #210, but its body and #205 give #212 plus QSpec #112/#113. #223 omits #216 and #218/#219. #225 omits #216 and #224. The #205 graph itself leaves out edges the bodies declare: #213 → #185, #231 → #216, #231 → #186, and #232 → #230. Fix: split the column into "Layer 1 decision owner" and "Declared prerequisites (issue body, retrieval time)". Add a short table recording each disagreement between the #205 graph and the issue bodies as an observation for #208 or #212. | ADR-010 §7.1 · #205 "Dependency graph" · #213, #214, #216, #218, #220–#225, #230, #231 bodies |
-| FND-006 | medium | The record does not note that the program disagrees with itself on who owns the Capability type. #205 lists #185 as "sole capability enum/registry implementation owner". The #185 body says it consumes the canonical `Capability` from #213 and must not own a competing enum. #213 and #216 say #213 owns the value type and #185 only registration and routing. The §7.1 row for #185 assigns DA-11 without resolving this, and DA-11 is exactly this ambiguity. Fix: add the disagreement to DA-11's observed owners (or to a new OBS) with the #205, #185, #213 and #216 citations, so #210 or #229 decides it explicitly. | ADR-010 §5 DA-11, §7.1 #185 row · #205 Layer 2 list · #185, #213, #216 bodies |
-| FND-007 | medium | DA-11 and OBS-012 (capability vocabulary and its alignment with FR-290) are owned by #210, with #229 as a secondary input. Decision 3 limits owners to #209, #210 and #211. But #229 is a Layer 1 ticket whose scope is exactly the six-kind vocabulary and absence policy. #212 passes only if "Capability vocabulary/absence policy is accepted in #229", and #185 and #213 both depend on #229. With #229 as secondary, the dependency path #229 → #213 → #185 has no decision owner in the record. Fix: allow #229 as an owner in Decision 3 and give it the vocabulary part of DA-11 and OBS-012. Keep backend-selection dispatch with #210, or state why #210 decides the vocabulary before #229 does. | ADR-010 Decision 3, §9.2 OBS-012, §9.3 DA-11 · #229, #212 bodies |
-| FND-008 | medium | §3.2 row "IR root → IR model, normal, 53cc03c, `IR:Cargo.toml:37`" and §6.3 "IR model 53cc03c at `IR:Cargo.toml:37`" cite a dev dependency (`quire-contract-model-owner`, `[dev-dependencies]`). The IR root's normal dependency on the model crate is the in-workspace path dependency at `IR:Cargo.toml:21`. Fix: change the normal row to cite `IR:Cargo.toml:21` (path). Record `:37` as a dev-only self-pin to 53cc03c, labelled as such in §6.3. | ADR-010 §3.2, §6.3 · `IR:Cargo.toml:21,37` |
-| FND-009 | medium | Two dependency statements contradict each other or the code. (a) §3.2 "QSL → RT: none" against §6.3 "RT 8a4d02b at `QSL:tests/fixtures/native-lowering/Cargo.toml:14`", which is a test fixture crate that QSL tests build. (b) The §3.2 mermaid attaches the edge "normal dep QSL rev f1700a9 78 behind" to node IRH (IR historical 04eb6f8). IR at 04eb6f8 has no QSL dependency, so the only drawn repository cycle sits on the wrong node. The prose correctly names IR root at 553b6d1. Fix: change the QSL → RT row to "test fixture, 8a4d02b". Add an IR-root node at 553b6d1 and move the edge to it. | ADR-010 §3.2 · `IR@04eb6f8:Cargo.toml` · `IR:Cargo.toml:24` · `QSL:tests/fixtures/native-lowering/Cargo.toml:14` |
-| FND-010 | medium | Enablement and feature work are not separated. §7 maps every issue to a Layer 1 owner but never classifies it as enablement, feature, gate or unrelated. Enablement placed inside the feature ladder is left implicit: #185 (A08) is capability-registry enablement, #231 is envelope enablement, and #232 is a bounded #122 feature child listed among the architecture tickets. #205 needs this split to put enablement before dependent features. Fix: add a Class column (enablement, feature, gate, unrelated) to §7.1 to §7.5. Record that #185 and #186 sit in the #1 feature ladder while acting as enablement for later rungs. | ADR-010 §7 · #205 Layered delivery · #185, #231, #232 bodies |
-| FND-011 | low | L1-D1 limits the #185 question to QSL #186–#198. #205 places #185 before "proof-dependent backend breadth", which also covers the downstream backend work #223 names (Codegen Verus #84, Contract IR SMT/runtime #136) and #217, which already depends on #185. Fix: either widen L1-D1 to name these downstream consumers, or state that they are out of scope and which ticket decides them. | ADR-010 §9.1 · #205 "Existing consumers" · #223 body |
-| FND-012 | low | Issue-body evidence is mutable and carries no revision. L1-D1 and §7 cite issue bodies with no retrieval time, and #185 was edited about two seconds after faa1731 was committed, so the record is stale on arrival (FND-003). Several code citations also break the `<prefix>:<path>:<line>` convention: `QSL:Cargo.toml` (quire-rs is `:26`), `QSL:wire_format.rs`, `QSL:temporal.rs`, `QSL:model/checked_dispatch.rs`, and "`QSL:tests/configversion_backends.rs` constants". Fix: give a retrieval timestamp (or an issue `updatedAt`) for every issue-body citation. Add line numbers where a positive claim is made. Keep line-less citations only for claims of absence, and mark them so. | ADR-010 Evidence convention, §1, §3.2, §4.3, §9.1 |
-| FND-013 | low | The §3.1 SCC S1 diagram is not strongly connected as drawn: no edge enters `parser`, and `lexer`, `package`, `syntax` and `formal_source` have no path back to the rest. The closing-edge table cites only the edges that close the cycle. The membership looks correct: `QSL:package/reading.rs:10` and `QSL:linking/composed/inventory.rs:127` reach `parser` through the root re-export. Fix: add one cited edge into each S1 member that has none, so the SCC claim can be checked from the record. | ADR-010 §3.1 · `QSL:package/reading.rs:10` · `QSL:linking/composed/inventory.rs:127` |
+| FND-001 | medium | The §3.2 edge rule ("a Cargo dependency of any kind … or a Cargo manifest that the repository's tests write or build") does not say which repositories it covers, yet the Summary counts row and the cycle table present "3" as the complete list under that rule. Applied as written, the rule also gives: (a) IR root → quire-protocol 34d1752 as a normal edge (`IR:Cargo.toml:23`), where quire-protocol has a normal dependency on QSL f1700a9 (`quire-protocol@34d1752:Cargo.toml:11`) and a dev dependency on IR model 53cc03c (`quire-protocol@34d1752:Cargo.toml:22`). That makes a fourth cycle, IR ⇄ quire-protocol, and a second path from IR, and so from CG, to QSL f1700a9. (b) An IR test-built manifest, `IR:tests/fixtures/bridge-qsl-consumer/Cargo.toml:13` → QSL f1700a9, built at `IR:tests/cycle_free_model.rs:276`. This adds no new QSL cycle, but it is an edge that §3.2 leaves out. OBS-029 says the IR typed handoffs pin QSL f1700a9. quire-protocol is a second consumer inside IR's build that pins the same revision. Fix: limit the edge rule to the Context-table repositories and say that transitive paths through other repositories are recorded but not counted, or add the quire-protocol edges and the IR ⇄ quire-protocol cycle and correct the count. Either way, add the IR fixture edge to the §3.2 table. | ADR-010 Summary counts, §3.2 edge rule and cycle table, OBS-029 · `IR:Cargo.toml:23` · `quire-protocol@34d1752:Cargo.toml:11,22` · `IR:tests/fixtures/bridge-qsl-consumer/Cargo.toml:13` · `IR:tests/cycle_free_model.rs:276` |
+| FND-002 | low | The §7.5 rule is "every downstream issue referenced in the body of an issue mapped in §7.1–§7.4", but the table leaves out five downstream references in mapped bodies. QSpec #104 (open) is cited by #155. QSpec #63 (closed; #1 is "Blocked until … #63 Task-010 passes") and quire-research #28 are cited by #1. QSpec #13 is cited by #42. quire-wasm #6 (closed) is cited by #207. The "Count: 28" row and the Summary row "Every downstream issue cited …" therefore overstate how complete the table is. Fix: add these references, or narrow the rule (for example, to open issues other than the #205 non-goals) and recount. | ADR-010 §7.5, Summary counts · #155, #1, #42, #207 bodies |
+| FND-003 | low | The table "Declared prerequisites that the #205 'Dependency graph' does not draw" states no rule for whether an edge counts as drawn when it appears only transitively. Two rows are drawn transitively: #232 ← #216 (`#224 + #216 → #225 → #232`) and #231 ← #211 (`#211 → #212 → … → #213 → #231`). Other direct edges from the bodies that the graph draws only transitively are left out: #214 ← #210/#211/#212, #215 ← #209/#211, #185 ← #229/#212/QSpec #116, #216 ← #229/#213/#185/#231, and #230 ← #224. Fix: state "not drawn as a direct edge" and list every such edge, or state "not reachable" and drop the two transitive rows. | ADR-010 §7.1 side table · #205 "Dependency graph" (updated 16:53:56Z) · #214, #215, #185, #216, #230, #231, #232 bodies |
+| FND-004 | low | L1-D1 has three residual gaps. (a) It lists "#187 on #172" and "#198 on … #168" as declared technical prerequisites, but #172 and #168 are QSL PRs that merged on 2026-09-19 at 01:33Z and 2026-09-18 at 22:57Z, both before de627b5. They are already met, not open edges. (b) It names only #188 as depending on #185 registry behaviour. #189 says the same: "a claim over it that no registered backend can discharge settles `unsupported`". (c) It does not cite #1's "architecture-aware execution order" checklist, which puts #185 first and says "#185 moves ahead of proof/backend work that requires dispatch". That checklist is a sequencing source separate from the "woven in after" lines. Fix: mark #172 and #168 as merged PRs, add #189 to the registry-behaviour sentence, and cite the #1 ordering. | ADR-010 §9.1 L1-D1 · #1, #187, #189, #198 bodies · QSL PR #168, PR #172 |
+| FND-005 | low | OBS-034 says "Five QSL revisions are in use" but lists only four QSL revisions: f1700a9, 21c507e, ea39f91 and de627b5. The fifth item, "QSL's own IR pins", is not a QSL revision. Fix: say four, or name the fifth QSL revision. | ADR-010 OBS-034 · §6.3 |
+| FND-006 | low | The §3.2 mermaid draws dependency edges (from dependent to dependency) and data-flow edges in the same arrow style, pointing in opposite directions, with no legend. `IRH --> CG` reads as "IR 04eb6f8 depends on CG", but the dependency runs the other way: CG 5e2a6a9 pins IR 04eb6f8 (`CG@5e2a6a9:src/oracle.rs:14`). `Kani --> QSL` and the `QSpec -.-> QSL` vendoring edges also point in the direction data flows. Fix: add a legend, or draw data-flow edges in a distinct style, for example labelled `-. data .->`. | ADR-010 §3.2 mermaid · `CG@5e2a6a9:src/oracle.rs:14` |
+| FND-007 | low | Citation gaps left from round-1 FND-012 and FND-013. (a) OBS-012, OBS-013, DA-11 and the §1 rows cite `QSpec:spec/objects/protocol/FR-290-protocol-claim-kind.md` with no line number, although each makes a positive claim, for example that FR-290 says QSL's enum aligns to its six kinds. (b) The SCC S1 table cites no edge into `native_model`, which is reached only through linking→native_model (`QSL:linking.rs:15`). It also gives no citation for the checking→linking half of that two-cycle (`QSL:checking.rs:15`). (c) The §7.5 rows for RT #51 and IR #137 cite "§8", but §8 names neither RT PR #52 nor IR #137. Fix: add line numbers and the two edge citations, and point the RT #51 and IR #137 rows at the ARCH-01 comment rather than §8. | ADR-010 §1.1, §3.1, §5 DA-11, §7.5, OBS-012, OBS-013 · `QSL:linking.rs:15` · `QSL:checking.rs:15` · ARCH-01 comment on #207 |
+
+## Round 1 resolution
+
+Round 1 reviewed faa1731 and raised 13 findings (4 high, 6 medium, 3 low).
+Against 432e615: 11 are resolved, 2 are partially resolved and 0 are unresolved.
+
+| Round-1 ID | Severity | Status | Reason |
+|---|---|---|---|
+| FND-001 | high | resolved | §3.2 and the mermaid now show CG → IR root (package quire-contract-ir) at `CG:Cargo.toml:17`. The transitive CG → IR a5154d3 → QSL f1700a9 edge (checked at `IR@a5154d3:Cargo.toml:24`), CG dev → QSL 21c507e and the QSL ⇄ CG cycle are recorded. The OBS-034 count left behind is now FND-005. |
+| FND-002 | high | resolved | An edge rule is stated, and the three QSL cycles are listed with the kind of each edge. Every edge checks out: QSL→CG `QSL:Cargo.toml:43`; CG→QSL `CG:Cargo.toml:28`; the QSL fixture → RT 8a4d02b, built at `QSL:tests/native_backend.rs:281`; RT qsl-agreement `[dev-dependencies]` → QSL ea39f91. The rule's unbounded scope is now FND-001. |
+| FND-003 | high | resolved | L1-D1 now lists #185's dependency on #213 and the fact that it consumes #213's `Capability`. It separates the sequencing edges from the technical prerequisites and adds #186 → #231 and the #188 registry behaviour. It pins the retrieval time and each body's `updatedAt`, and every item matches the current bodies. Remaining gaps are FND-004. |
+| FND-004 | high | resolved | §8 and Decision 4 give one order, #228 → #204 → #200, citing issuecomment-5743530928 at 2026-09-19T16:35:16Z. That order matches the ARCH-01 "Rulings applied" section and §3. |
+| FND-005 | medium | resolved | §7.1 now separates "Layer 1 decision consumed" from "Declared prerequisites (issue body)", and all 28 rows match the bodies retrieved at 17:02Z. A side table records where the #205 graph differs from the bodies; its criterion is FND-003. |
+| FND-006 | medium | resolved | DA-11 records that #213 owns the canonical `Capability`, that #185 owns only registration and routing, and #205's "sole capability registry/routing implementation owner" (the #205 wording has changed since round 1). |
+| FND-007 | medium | resolved | Decision 3 now places #229 as secondary on OBS-012, OBS-013 and DA-11: #229 decides the normative vocabulary and #210 decides the architecture boundary. Under the coordinator's constraint (owners limited to #209/#210/#211, with #229 secondary), this covers the #229 → #213 → #185 path. |
+| FND-008 | medium | resolved | §3.2 cites the path dependency at `IR:Cargo.toml:21` and labels `:37` as a dev self-pin. §6.3 matches. |
+| FND-009 | medium | resolved | §3.2 adds a "QSL tests → RT, test-time, 8a4d02b" row. The mermaid attaches the f1700a9 edge to a new IR-root node at 553b6d1 (IRR). |
+| FND-010 | medium | resolved | §7.1–§7.5 carry a Class column (record, design, gate, enablement, conformance, feature, fix, unrelated). #185 is marked enablement inside the #1 ladder, and #232 is marked as a feature child of #122. |
+| FND-011 | low | resolved | L1-D1 names #217 and the #223 backend-breadth owners, CG #84 and IR #136, under "Outside the ladder". |
+| FND-012 | low | partially resolved | Issue-body retrieval time and `updatedAt` are recorded, and the line-less QSL citations from round 1 now carry lines. The FR-290 positive citations still have none (FND-007 a). |
+| FND-013 | low | partially resolved | Edges into eight S1 members are now cited, and the diagram is strongly connected. The entry into `native_model` and the checking→linking edge are still uncited (FND-007 b). |
 
 ## Method
 
-- Read ADR-010 at faa1731 in full, together with its `spec/spec.md` relationship
-  and index row (line 385).
-- Read #206, #205 (including its dependency graph), and the bodies of #185,
-  #186–#198, #207–#232 and the ARCH-01 comment on #207, all as of 2026-09-19.
-  Confirmed that `gh issue list --state open` returns exactly the 68 issues §7
-  maps.
-- Spot-checked Cargo manifests with `git show <sha>:<path>`:
-  - QSL de627b5 `Cargo.toml` lines 26, 36, 43 and 44, and
-    `tests/fixtures/native-lowering/Cargo.toml`.
-  - IR 553b6d1, a5154d3 and 04eb6f8 `Cargo.toml`.
-  - CG a4b2a73 and 5e2a6a9 `Cargo.toml`.
-  - RT 4e33052 and d97bc0b `Cargo.toml`.
-  - `QSL:Cargo.toml:36,43,44` and `IR:Cargo.toml:24` are cited correctly.
-    `IR:Cargo.toml:37` and `CG:Cargo.toml:17` are mislabelled (FND-001,
-    FND-008).
-- Spot-checked the in-crate edges into `parser` and `lexer` for SCC S1
-  (FND-013).
-- The following pass: the stage graph's dependency direction (link runs before
-  check, recorded as OBS-009), the bypass inventory (§4.4), the in-crate SCC
-  counts, and the one-owner-per-item assignment in §9.
+- Read ADR-010 at 432e615 in full and the diff `faa1731..432e615 -- spec/decisions`.
+- Checked the Cargo manifests with `git grep` and `git show` at QSL de627b5, IR
+  553b6d1 and a5154d3, IR model 53cc03c, CG a4b2a73, CG 5e2a6a9
+  (`src/oracle.rs`), RT d97bc0b (`conformance/qsl-agreement`), quire-protocol
+  34d1752, quire-observation 9ac80e9 and quire-rs 8b8020e.
+- Checked the SCC S1 entering edges against `use crate::` lines at de627b5.
+- Re-read the bodies and `updatedAt` times of #1, #185–#198 and #205–#232 as of
+  2026-09-19, plus the ARCH-01 comment on #207. Checked the GitHub blocked-by
+  and blocking links on #185 and #186, both empty. Checked the state of QSL PRs
+  #168 and #172, QSpec #63 and #104, and quire-wasm #6.
+- Scanned every open QSL issue body for downstream issue references and compared
+  them with §7.5.
+
+## Round 2 resolution (author)
+
+Recorded by the authoring agent; the round-2 verdict stands.
+
+- FND-001 resolved: the §3.2 edge rule is limited to the seven Context-table
+  repositories and names quire-protocol as out of scope; the IR test fixture
+  edge to QSL f1700a9 is added.
+- FND-002 resolved: §7.5 completed (34 rows).
+- FND-003 resolved: the undrawn-edges table states it is a sample and that
+  transitive-only edges count as not drawn.
+- FND-004 resolved: L1-D1 marks #172 and #168 as merged PRs, names #189 and
+  cites #1's execution order.
+- FND-005 resolved: OBS-034 says four QSL revisions.
+- FND-006 resolved: mermaid legend added; data-flow arrows labelled.
+- FND-007 resolved: FR-290 lines, `linking.rs:15` and `checking/proof.rs:20`
+  cited; §7.5 IR #137 and RT #51 cite the ARCH-01 comment.

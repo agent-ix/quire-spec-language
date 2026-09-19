@@ -101,3 +101,31 @@ medium and should be fixed before the #208 gate).
   descriptive ADR. The hidden-assumption probes were applied as a check for
   intended design described as present. No such case was found: every
   AD-016 / #205 element is stated as a reference with an observed verdict.
+
+## Round 1 resolution (author, commit after 432e615)
+
+Recorded by the authoring agent; this analysis was ACCEPT WITH FINDINGS and was
+not rerun.
+
+- FND-001 resolved: §2.2 cites `checked_predicate.rs:139,156` and
+  `temporal_subject.rs:177,193`.
+- FND-002 resolved: §7 states that a cited §9 item keeps its §9 owner; the
+  #222, #217, #231 and #189 rows name both owners.
+- FND-003 resolved: #232 is Layer 5.
+- FND-004 partly resolved: #229 is named as a Layer 1 ticket in Context,
+  Decision 1 and Consequences, and as secondary input on OBS-012, OBS-013 and
+  DA-11. Primary owners stay within #209, #210 and #211 per the #206 brief;
+  Decision 3 states why.
+- FND-005 resolved: §2.5, §2.6, OBS-009 and Summary cite #209 and quote it.
+- FND-006 resolved: one merge order, #228 → #204 → #200, from ARCH-01.
+- FND-007 resolved: PR heads pinned; `PR #n@<sha>:` prefix added.
+- FND-008 resolved: line numbers added; negative-evidence form for absences;
+  `output_mapping.rs` full path.
+- FND-009 resolved: lane D outputs and Refusal column.
+- FND-010 resolved: two-cycle wording, 45-variant `Code`, §6.1 no longer
+  double-counts QSL-side claims (29 downstream), `IR:tests/kani_replay.rs:240`.
+- FND-011 resolved: `QSL:temporal.rs:29`.
+- FND-012 resolved: DA-18 Names added (14 DUPLICATE, 4 AMBIGUOUS).
+- FND-013 open (low): OBS-028 and OBS-034 remain bundled; each still has one
+  owner.
+- FND-014 resolved: §7.2 notes #185 (A08) is mapped in §7.1.
