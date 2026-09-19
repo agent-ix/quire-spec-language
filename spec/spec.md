@@ -36,6 +36,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-010
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-012
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-048
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-049
@@ -383,6 +385,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-047](functional/FR-047-evaluate-finite-object-reference-graphs.md) | FR | Retrospective L4 finite graph contract under #66; implementation/evidence reconciliation pending |
 | [ADR-009](decisions/ADR-009-graph-path-witness-content.md) | ADR | Proposed; open question: what a graph path witness carries |
 | [ADR-010](decisions/ADR-010-observed-architecture-baseline.md) | ADR | Proposed; observed QSL and backend architecture baseline and Layer 1 decision items (#206) |
+| [ADR-012](decisions/ADR-012-semantic-family-extension-contracts.md) | ADR | Proposed; semantic-family extension and dispatch contracts, capability selection mechanics and L1-D1 (#210) |
 | [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
 | [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Implemented exact admitted `/1` and `/2` composed-evaluation input and typed-outcome boundary; `/2` compensation expressions completed under #101 |
 | [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
