@@ -698,14 +698,14 @@ fn l03_lookup_refused_mode() {
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
 }
 
-/// #166 review finding L3: `refused` mode's absence detail must report a
-/// malformed (non-UTF-8) identity as distinguishable from a well-formed
-/// identity string -- never `"c9 is not a member..."` prose that could be
-/// mistaken for a real, well-formed object identity that merely happens to
-/// contain non-printable characters. `lookup` reports it as
-/// `"identity bytes 0x<hex> (not UTF-8)"`, a shape no real member's own
-/// identity string (always valid UTF-8, `PopulationDocument`'s member
-/// records) can ever produce.
+/// `refused` mode's absence detail must report a malformed (non-UTF-8)
+/// identity as distinguishable from a well-formed identity string -- never
+/// `"c9 is not a member..."` prose that could be mistaken for a real,
+/// well-formed object identity that merely happens to contain
+/// non-printable characters. `lookup` reports it as `"identity bytes
+/// 0x<hex> (not UTF-8)"`, a shape no real member's own identity string
+/// (always valid UTF-8, `PopulationDocument`'s member records) can ever
+/// produce.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
 fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
@@ -729,28 +729,23 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
         AbsenceMode::Refused,
         &mut meter,
     );
-    match outcome {
-        LookupOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::AbsentKey {
-                    key: vec![0xFF, 0xFE],
-                }
-            );
-            assert_eq!(
-                refusal.detail,
-                "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
-            );
-        }
-        other => panic!("expected Refused(invalid_runtime_input/absent-key), got {other:?}"),
-    }
+    assert_eq!(
+        outcome,
+        LookupOutcome::Refused(ModelRefusal {
+            code: Code::InvalidRuntimeInput,
+            cause: ModelRefusalCause::AbsentKey {
+                key: vec![0xFF, 0xFE],
+            },
+            detail: "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
+                .to_string(),
+        })
+    );
 }
 
-/// #166 review finding M2: `LookupKey.object`'s raw bytes are the only
-/// input `lookup` uses to decide well-formedness -- there is no separate
-/// caller-asserted classification to get out of sync with them. A present
-/// member's identity, passed through as plain UTF-8 bytes (exactly how
+/// `LookupKey.object`'s raw bytes are the only input `lookup` uses to
+/// decide well-formedness -- there is no separate caller-asserted
+/// classification to get out of sync with them. A present member's
+/// identity, passed through as plain UTF-8 bytes (exactly how
 /// [`bridge_lookup_key`](quire_spec_language::value) and [`lookup_key`]
 /// both build it), is found.
 #[test]
