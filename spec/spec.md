@@ -164,6 +164,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-007
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -393,3 +395,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131 |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
+| [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
