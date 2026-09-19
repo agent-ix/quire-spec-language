@@ -259,15 +259,31 @@ pub struct ViewEntry {
 
 /// A `quire.model.effective-view/v1` result: every effective declaration a
 /// [`DomainPackageRef`] admits, sorted ascending by effective identity.
+///
+/// Both fields are private; [`normalize`] is this type's only constructor, so
+/// a caller cannot hand-build or alter a view (its `declarations` cannot be
+/// substituted for some other domain package's while keeping a matching
+/// `model_selection` header) and admission never needs to re-normalize a
+/// caller-supplied view to trust it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectiveView {
     /// The model selection this view was normalized under.
-    pub model_selection: DomainPackageRef,
+    model_selection: DomainPackageRef,
     /// Every admitted declaration, ascending by [`EffectiveId`].
-    pub declarations: Vec<ViewEntry>,
+    declarations: Vec<ViewEntry>,
 }
 
 impl EffectiveView {
+    /// The model selection this view was normalized under.
+    pub fn model_selection(&self) -> &DomainPackageRef {
+        &self.model_selection
+    }
+
+    /// Every admitted declaration, ascending by [`EffectiveId`].
+    pub fn declarations(&self) -> &[ViewEntry] {
+        &self.declarations
+    }
+
     fn to_json(&self) -> serde_json::Value {
         use serde_json::{Map, Value};
         let mut object = Map::new();
@@ -1921,7 +1937,7 @@ fn resolve_redefinition_contest(
     let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
     for edge in edges.iter().copied() {
         let dominated_by_another = edges.iter().any(|other| {
-            other.owner.node != edge.owner.node
+            other.owner != edge.owner
                 && owner_dominates(owner_ancestor_sets, &other.owner, &edge.owner)
         });
         if !dominated_by_another {
@@ -1931,7 +1947,7 @@ fn resolve_redefinition_contest(
     let same_owner = !most_derived.is_empty()
         && most_derived
             .iter()
-            .all(|edge| edge.owner.node == most_derived[0].owner.node);
+            .all(|edge| edge.owner == most_derived[0].owner);
 
     Err(if same_owner {
         let mut redefiners: Vec<String> = most_derived
@@ -2173,4 +2189,51 @@ pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse,
         return Err(refusal);
     }
     Ok(built.universe)
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+
+    /// A synthetic type-level [`ViewEntry`] whose own effective identity is
+    /// `byte` repeated 32 times, for a hand-built [`EffectiveView`] that
+    /// exercises [`EffectiveView::validate_order`] directly. Unit-test-only:
+    /// `EffectiveView`'s fields are private outside this module, so a
+    /// deliberately unsorted view can only be built here, in-module, never
+    /// by an integration test simulating an external caller.
+    fn entry(byte: u8) -> ViewEntry {
+        ViewEntry {
+            effective_id: EffectiveId::from_digest_bytes([byte; 32]),
+            preimage: EffectiveDeclarationPreimage {
+                owner_effective_type: None,
+                original: DeclarationKey::fixture("model.A"),
+                derivation: Vec::new(),
+            },
+            visible: true,
+        }
+    }
+
+    /// TC-195 N10: a view whose declarations are not ascending by effective
+    /// identity refuses `invalid_model_binding`/`unsorted-view`, naming the
+    /// first out-of-order entry's own effective identity.
+    #[trace("TC-195")]
+    #[test]
+    fn n10_unsorted_view_refuses_by_the_semantic_check() {
+        let view = EffectiveView {
+            model_selection: DomainPackageRef::fixture("test/orders"),
+            declarations: vec![entry(2), entry(1)],
+        };
+        let refusal = view
+            .validate_order()
+            .expect_err("a view whose declarations are no longer ascending must be refused");
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::UnsortedView {
+                at: view.declarations()[1].effective_id.clone(),
+            }
+        );
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+    }
 }
