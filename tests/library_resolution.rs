@@ -583,7 +583,8 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     // The top-level `declaration` disagrees with the nominal
     // `qualified_declaration` (`declaration-nominal-mismatch`).
     let mut mismatched_declaration = valid.clone();
-    mismatched_declaration["identity_projection"][0]["declaration"] = json!({"qualified_name": ["S"]});
+    mismatched_declaration["identity_projection"][0]["declaration"] =
+        json!({"qualified_name": ["S"]});
     // `declaration` is absent although the node is nominal.
     let mut missing_declaration = valid.clone();
     missing_declaration["identity_projection"][0]
