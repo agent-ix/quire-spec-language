@@ -243,8 +243,9 @@ explicit `Relation` arm. The seam returns a QSL layer-3 `check`-core type,
 `FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }`,
 because the kernel `Refusal` carries only kernel causes. `FamilyRefusal`
 carries the family-dispatch causes, starting with
-`FamilyNotNativelyEvaluable`, and F `diagnostic` maps it to category
-`refusal` (ADR-013 O-16). The `Relation` arm returns
+`FamilyNotNativelyEvaluable`. `FamilyRefusal::catalog_code()` yields the code,
+and F `diagnostic` maps the code to category `refusal` (ADR-013 O-16); F
+`diagnostic` does not name `FamilyRefusal`. The `Relation` arm returns
 `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`. The rule is general: at an evaluation stage, a family that
 sits out the stage has a typed arm that returns `FamilyOutcome::Refused` with
 a named `FamilyRefusal` cause. At a lowering or proof stage, the arm returns
@@ -663,7 +664,7 @@ repositories.
 | `CapabilityId(String)` (`QSL:src/complete/package.rs:690`) | no | replaced by the #213 capability type | #213 |
 | IR `CheckedNodeTag::from_wire`, `required_by(tag, form: &str)`, `DispatchIndex::resolve(&str)`, and the `as_str()` sites in IR `src/kani/` | no | wire strings decoded at v2 intake into closed tag and form enums; no vocabulary re-derived from a wire string after intake | Contract IR #141 |
 | CG `semantic_form == "call"`, `node_tag == "state" && semantic_form == "frame"` | no | CG matches on IR's enums (seam S6) | CG (Codegen #86) |
-| RT function lookup by name | no | keyed by the checked declaration node id (`NodeKey`, ADR-013 O-04); the checker resolved the name (ADR-013 R-06) | RT |
+| RT function lookup by name | no | keyed by the wire node id (`WireNodeId`, ADR-013 O-04) that RT receives in IR wire data. This is an id lookup, not name resolution, so ADR-013 R-06 holds. RT holds no `NodeKey` | RT |
 
 The IR, CG and RT rows describe code in those repositories. This record
 states the contract; the change belongs to their own tickets (§14).
@@ -856,8 +857,8 @@ item 6, §7.2).
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (Contract IR #141) and admits them there (#218 and #223 with Contract IR #109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
-| ADR-013: how RT obtains `NodeKey`s | RT gets `NodeKey`s only as in-process values from QSL through ADR-011 S6a, never from the wire. A node id read from a wire is a `WireNodeId` (ADR-013 O-04), and RT does not convert it. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (mapped in F `diagnostic`); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (`FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the code to the category); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on
