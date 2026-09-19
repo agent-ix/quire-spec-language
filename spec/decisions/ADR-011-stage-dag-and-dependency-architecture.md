@@ -670,8 +670,9 @@ Gate #216 is evaluated per lane. At #216, M-6a has landed: no CLI command or
 library API produces a checked package, v2 bytes or a backend artifact except
 through the spine. The M-6b to M-6e lanes are not checked-package producers;
 their "old path unreachable" evidence belongs to the gate after each
-replacement (#219 for M-6b, #224 for M-6c to M-6e). This reading of #216 is
-listed under Tickets to open at #212.
+replacement (#219 for M-6b, #224 for M-6c to M-6e). This per-lane reading of
+#216 is an owner ruling (2026-09-19); the coordinator amends the text of #216,
+#219 and #224 at the #212 consolidation (T-4).
 
 No other crate extraction is approved.
 
@@ -813,6 +814,9 @@ The owner delegated these to the #205 coordinator.
   PR that lands its spine replacement (§7.3). Nothing runs side by side, and
   nothing working is removed early. The skeleton spine covers proof-and-replay
   evidence until #217.
+- **#216 per lane.** Confirmed: #216 checks the checked-package producer
+  lane; #219 and #224 check the other lanes after their replacements (§7.3,
+  T-4).
 - **Composed checker.** Deleted. Everything reaches IR through the one S4
   spine (SEAM-2, M-6e).
 - **#205 wording.** Amended; OBS-038 and OBS-039 are closed against it (§9).
@@ -828,7 +832,7 @@ The owner delegated these to the #205 coordinator.
 | T-1 | M-6a: the CLI `run` and `compile` rewire onto the spine, `format` retarget, `lower` and native-linked-package/1 deletion, before #216 (a Layer 2 move that amends #205's layer plan) | QSL, Layer 2, with #214 |
 | T-2 | The skeleton spine (§1.1) as a tracked ticket | CG, with QSL M-4 |
 | T-3 | Add the lane deletions M-6b to M-6e to the exit criteria of #217, #220, #222, #218, #223, #221 and #214 | QSL (issue text for those tickets) |
-| T-4 | #216 evaluated per lane: the producer lane at #216, the other lanes at #219 and #224 (§7.3) | QSL #216, #219, #224 (issue text) |
+| T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
 | T-5 | IR predicate and temporal admission over v2 forms, and removal of the IR root → QSL edge | IR, with #218 and #223 |
 | T-6 | X-1 `quire-exact` extraction, with its kernel gate under §2.3 and the #205 edge X-1 → #213 | QSL and RT (AD-016 WP5a, WP5b) |
 | T-7 | M-2 (`model` below `check`, `semantic_value`) with the #205 edge M-2 → #214 | QSL |
