@@ -788,7 +788,7 @@ const IMPLEMENTED_IN_DEFERRED_FAMILY: [&str; 1] = ["dispatch.select"];
 
 /// Every charge point genuinely unimplemented anywhere in this crate, in
 /// ascending order.
-const DEFERRED_POINTS: [&str; 21] = [
+const DEFERRED_POINTS: [&str; 20] = [
     "conformance.axis",
     "dispatch.candidate",
     "dispatch.dominance",
