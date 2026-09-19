@@ -361,7 +361,7 @@ fn find_member<'a>(
     owner: &EffectiveId,
     original_identity: &str,
 ) -> &'a quire_spec_language::model::normalize::ViewEntry {
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.as_ref() == Some(owner)
@@ -384,7 +384,7 @@ fn find<'a>(
     view: &'a quire_spec_language::model::normalize::EffectiveView,
     short_hex: &str,
 ) -> &'a quire_spec_language::model::normalize::ViewEntry {
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| entry.effective_id.short_hex() == short_hex)
         .unwrap_or_else(|| panic!("no declaration with identity {short_hex} in {view:?}"))
@@ -469,7 +469,7 @@ fn assert_declaration_matches_vector(
     name: &str,
 ) {
     let entry = view
-        .declarations
+        .declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.as_ref() == owner
@@ -490,7 +490,7 @@ fn assert_declaration_matches_vector(
 fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
     let vectors = vectors();
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations.len(), 4);
+    assert_eq!(view.declarations().len(), 4);
 
     assert_declaration_matches_vector(&vectors, &view, None, "ix://test/orders/A", "n01-type-A");
     assert_declaration_matches_vector(&vectors, &view, None, "ix://test/orders/B", "n01-type-B");
@@ -537,7 +537,7 @@ fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
 fn n02_normalizes_f2_diamond_inheritance_to_the_exact_ground_truth_identities() {
     let vectors = vectors();
     let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations.len(), 8);
+    assert_eq!(view.declarations().len(), 8);
 
     for node in [
         "ix://test/orders/A",
@@ -622,7 +622,7 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
         fixture_f1().records,
     );
     let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.declarations.len(), 4);
+    assert_eq!(view.declarations().len(), 4);
 
     // Every declaration is byte-equal to n01-view's: version binds nothing
     // about an effective declaration's own identity.
@@ -745,7 +745,7 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
     let selection_digest =
         quire_spec_language::model::key::hex(&fixture_f1().model_selection.digest);
 
-    for entry in &view.declarations {
+    for entry in view.declarations() {
         assert_ne!(
             entry.effective_id.hex(),
             selection_digest,
@@ -1697,26 +1697,13 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
     );
 }
 
-#[trace("TC-195")]
-#[test]
-fn n10_unsorted_view_refuses_by_the_semantic_check() {
-    let mut view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    assert!(view.declarations.len() >= 2);
-    view.declarations.swap(0, 1);
-    let refusal = view
-        .validate_order()
-        .expect_err("a view whose declarations are no longer ascending must be refused");
-    assert_eq!(
-        refusal.cause,
-        ModelRefusalCause::UnsortedView {
-            at: view.declarations[1].effective_id.clone(),
-        }
-    );
-    assert_eq!(
-        refusal.code,
-        quire_spec_language::diagnostic::Code::InvalidModelBinding
-    );
-}
+// TC-195 N10 (a view whose declarations are not ascending by effective
+// identity refuses `invalid_model_binding`/`unsorted-view`) is now a unit
+// test, `crate::model::normalize::tests::n10_unsorted_view_refuses_by_the_semantic_check`:
+// `EffectiveView`'s fields are private outside `crate::model::normalize`
+// (#151: construction only through `normalize`), so an out-of-crate
+// integration test can no longer build a deliberately unsorted view to
+// exercise `validate_order` directly.
 
 /// TC-195 N01's exact charge sequence and per-declaration JCS lengths —
 /// three `normalize.record` (`A`, `A/x`, `B`; the `Supertype` record `B` ->
@@ -2177,7 +2164,7 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
     match outcome {
-        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations().len(), 13),
         other => panic!("expected Completed, got {other:?}"),
     }
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 103);
@@ -2226,7 +2213,7 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
     }
     limits.work_units = 103;
     match normalize(&domain_package, limits) {
-        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations.len(), 13),
+        NormalizeOutcome::Completed(view) => assert_eq!(view.declarations().len(), 13),
         other => panic!("expected Completed at work_units=103, got {other:?}"),
     }
 }
@@ -2339,7 +2326,7 @@ fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
         };
 
         let winner = view
-            .declarations
+            .declarations()
             .iter()
             .find(|entry| {
                 entry.preimage.original.node == "model.Owner.x2"
@@ -2434,7 +2421,7 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
 
         if n_parents == 128 {
             assert_eq!(
-                view.declarations.len(),
+                view.declarations().len(),
                 134,
                 "129 type declarations (G000..G127, O) plus 5 member \
                  declarations (G000.x and G000.w at G000's own view; O's own \
@@ -2443,7 +2430,7 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
         }
 
         let owner_o = view
-            .declarations
+            .declarations()
             .iter()
             .find(|entry| {
                 entry.preimage.owner_effective_type.is_none()
