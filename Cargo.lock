@@ -9,7 +9,7 @@ source = "git+https://github.com/agent-ix/filament-core-data?rev=7dcb2f2c7466a77
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
- "quire-rs 0.46.0 (git+https://github.com/agent-ix/quire-rs?rev=2823a93bd3797c970c1d389afae9b893dea6f232)",
+ "quire-rs",
  "serde",
  "serde_json",
  "sha2",
@@ -1093,27 +1093,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quire-rs"
-version = "0.46.0"
-source = "git+https://github.com/agent-ix/quire-rs?rev=8b8020e665c61a11bc74f3f23b84617c80c0c442#8b8020e665c61a11bc74f3f23b84617c80c0c442"
-dependencies = [
- "globset",
- "ignore",
- "indexmap",
- "jsonschema 0.18.3",
- "loom",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "thiserror",
- "unicode-normalization",
- "uuid",
-]
-
-[[package]]
 name = "quire-spec-language"
 version = "0.2.0"
 dependencies = [
@@ -1128,7 +1107,7 @@ dependencies = [
  "quire-contract-codegen",
  "quire-contract-ir",
  "quire-contract-model",
- "quire-rs 0.46.0 (git+https://github.com/agent-ix/quire-rs?rev=8b8020e665c61a11bc74f3f23b84617c80c0c442)",
+ "quire-rs",
  "serde",
  "serde_json",
  "sha2",
@@ -1314,19 +1293,6 @@ checksum = "babfccff5773ff80657f0ecf553c7c516bdc2eb16389c0918b36b73e7015276e"
 dependencies = [
  "serde",
  "stacker",
-]
-
-[[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
 ]
 
 [[package]]
@@ -1591,12 +1557,6 @@ checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
 dependencies = [
  "tinyvec",
 ]
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "url"

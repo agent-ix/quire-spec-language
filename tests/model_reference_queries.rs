@@ -23,7 +23,7 @@ use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
@@ -80,7 +80,7 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageR
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: MULTIPLICITY_0_1,
         subsets: Vec::new(),
         redefines: None,

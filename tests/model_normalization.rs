@@ -14,7 +14,7 @@ use quire_spec_language::model::accounting::{
 };
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{
     DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_REDEFINE,
@@ -61,7 +61,7 @@ fn field_member_redefining(
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: MULTIPLICITY_0_1,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),

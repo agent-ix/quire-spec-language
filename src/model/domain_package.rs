@@ -49,6 +49,121 @@ pub struct ObjectTypeRecord {
     pub supertypes: Vec<DeclarationKey>,
 }
 
+/// QSL's own closed native value-type vocabulary (shared-grammar.md's
+/// `type-ref` production): the unparameterized value-type keywords a
+/// `typeRef` may name directly, under `ix://quire/native/<Name>`, without
+/// naming a node of any package. `Boolean`, `Integer`, `Float32` and
+/// `Float64` take no parameters. `Integer`'s own optional inline bound
+/// (`Int[lo,hi]`) is a constraint fact about the field, not a distinct
+/// value-type reference. `Rational`, `Decimal` and `Text` are parameterized
+/// in the grammar (`Rational[lo,hi;dmin,dmax]`, `Decimal[lo,hi;dmin,dmax]`,
+/// `Text[min,max;profile]`) and REQUIRE their full parameter set to resolve
+/// (see [`Self::unsupported_parameters`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeValueType {
+    /// `Boolean`.
+    Boolean,
+    /// `Integer`.
+    Integer,
+    /// `Rational`.
+    Rational,
+    /// `Decimal`.
+    Decimal,
+    /// `Float32`.
+    Float32,
+    /// `Float64`.
+    Float64,
+    /// `Text`.
+    Text,
+}
+
+impl NativeValueType {
+    /// The `<Name>` past `ix://quire/native/`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Boolean => "Boolean",
+            Self::Integer => "Integer",
+            Self::Rational => "Rational",
+            Self::Decimal => "Decimal",
+            Self::Float32 => "Float32",
+            Self::Float64 => "Float64",
+            Self::Text => "Text",
+        }
+    }
+
+    /// The required parameter names (shared-grammar.md's own labels for
+    /// each production: `Rational`/`Decimal`'s `dmin`/`dmax`, `Text`'s
+    /// `profile`) that `agent-ix-semantic-ir`'s own constraint vocabulary
+    /// (`constraint_schema`'s closed `keyword` set: `min`, `max`,
+    /// `exclusiveMin`, `exclusiveMax`, `minLength`, `maxLength`, `pattern`,
+    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for at
+    /// all -- so a `typeRef` naming this native type can never resolve, no
+    /// matter what a producer's own document supplies. `Rational`/`Decimal`
+    /// also require `lo`/`hi`, which the vocabulary's `min`/`max` do carry;
+    /// only the decimal-scale bound is unexpressable. `Boolean`, `Integer`,
+    /// `Float32` and `Float64` take no required parameter, so this is empty
+    /// for them.
+    pub fn unsupported_parameters(&self) -> &'static [&'static str] {
+        match self {
+            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 => &[],
+            Self::Rational | Self::Decimal => &["dmin", "dmax"],
+            Self::Text => &["profile"],
+        }
+    }
+}
+
+impl std::str::FromStr for NativeValueType {
+    type Err = ();
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name {
+            "Boolean" => Ok(Self::Boolean),
+            "Integer" => Ok(Self::Integer),
+            "Rational" => Ok(Self::Rational),
+            "Decimal" => Ok(Self::Decimal),
+            "Float32" => Ok(Self::Float32),
+            "Float64" => Ok(Self::Float64),
+            "Text" => Ok(Self::Text),
+            _ => Err(()),
+        }
+    }
+}
+
+/// A field, parameter or result's resolved value type: QSL's own closed
+/// native vocabulary, declaring no node of any package, or a node of some
+/// package. The sole output shape [`crate::model::intake`]'s unified
+/// `typeRef` resolver produces -- never a synthetic `DeclarationKey` under a
+/// made-up "quire/native" package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValueTypeRef {
+    /// A native value type: `ix://quire/native/<Name>`.
+    Native(NativeValueType),
+    /// A node of a package: `ix://<package>/<artifact id>`.
+    Package(DeclarationKey),
+}
+
+impl ValueTypeRef {
+    /// This value type's own declaration key, when it names a node of a
+    /// package; `None` for a native value type, which names no node.
+    pub fn as_package(&self) -> Option<&DeclarationKey> {
+        match self {
+            Self::Native(_) => None,
+            Self::Package(key) => Some(key),
+        }
+    }
+}
+
+impl std::fmt::Display for ValueTypeRef {
+    /// The value type's own identity string, exactly as a `typeRef`
+    /// resolving to it would spell it on the wire.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Native(native) => write!(f, "ix://quire/native/{}", native.as_str()),
+            Self::Package(key) => f.write_str(&key.node),
+        }
+    }
+}
+
 /// A field member of an object type: `{key, owner, value_type, multiplicity,
 /// subsets, redefines}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,8 +172,8 @@ pub struct FieldMemberRecord {
     pub key: DeclarationKey,
     /// The owning object type's original declaration key.
     pub owner: DeclarationKey,
-    /// The declared value type's original declaration key.
-    pub value_type: DeclarationKey,
+    /// The declared value type.
+    pub value_type: ValueTypeRef,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
     /// This field's declared `subsets[]` (`model-complete.md`:161): every
@@ -92,8 +207,8 @@ pub struct ScalarTypeRecord {
 pub struct OperationParameterRecord {
     /// This parameter's own original declaration key.
     pub key: DeclarationKey,
-    /// The declared parameter value type's original declaration key.
-    pub value_type: DeclarationKey,
+    /// The declared parameter value type.
+    pub value_type: ValueTypeRef,
     /// The declared parameter multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -102,8 +217,8 @@ pub struct OperationParameterRecord {
 /// entirely when the operation has no result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationResult {
-    /// The declared result value type's original declaration key.
-    pub value_type: DeclarationKey,
+    /// The declared result value type.
+    pub value_type: ValueTypeRef,
     /// The declared result multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -375,26 +490,6 @@ impl DomainPackageRecord {
             Self::Population(record) => &record.key,
         }
     }
-}
-
-/// FR-321's own `ModelSelection` (`model-complete.md`:50-51): a caller's
-/// offered `{identity, version, digest_domain, digest}`, before
-/// [`crate::model::intake::admit`]'s four-check table decides whether it
-/// admits. `digest_domain` stays a plain string here (unlike
-/// [`DomainPackageRef`]'s implicit `sha256-jcs`): check 1 of that table is
-/// exactly the question of whether this field is even the one domain Intake
-/// accepts, so a type that already assumed the answer could not state a
-/// selection check 1 refuses.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelSelection {
-    /// The domain package's own identity (e.g. `test/orders`).
-    pub identity: String,
-    /// The domain package's own version.
-    pub version: String,
-    /// The offered digest domain.
-    pub digest_domain: String,
-    /// The offered digest.
-    pub digest: [u8; 32],
 }
 
 /// A domain package selection: `{identity, version, digest_domain: "sha256-jcs",

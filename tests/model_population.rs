@@ -20,7 +20,7 @@ use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
@@ -84,7 +84,7 @@ fn field_member_redefining(
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: MULTIPLICITY_0_1,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
@@ -116,7 +116,7 @@ fn field_member_mult_redefining(
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: Multiplicity {
             lower,
             upper,
@@ -2038,7 +2038,7 @@ fn ordering_bundle() -> DomainPackage {
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.ordered"),
                 owner: DeclarationKey::fixture("model.A"),
-                value_type: DeclarationKey::fixture("model.A"),
+                value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
                 multiplicity: Multiplicity {
                     lower: 0,
                     upper: Some(5),
@@ -2051,7 +2051,7 @@ fn ordering_bundle() -> DomainPackage {
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.unordered"),
                 owner: DeclarationKey::fixture("model.A"),
-                value_type: DeclarationKey::fixture("model.A"),
+                value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
                 multiplicity: Multiplicity {
                     lower: 0,
                     upper: Some(5),

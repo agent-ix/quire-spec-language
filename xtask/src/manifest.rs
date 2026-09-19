@@ -109,6 +109,18 @@ pub(crate) fn join_dest(dest_prefix: &str, path: &str) -> String {
     }
 }
 
+/// A pinned file's repo-relative read path: `source_prefix` joined onto its
+/// own `path`, mirroring [`join_dest`] for the write side. Kept as its own
+/// named function (rather than reusing `join_dest` for both directions) so
+/// a read site and a write site never silently trade places.
+pub(crate) fn join_source(source_prefix: &str, path: &str) -> String {
+    if source_prefix.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{source_prefix}/{path}")
+    }
+}
+
 impl Source {
     /// Every tree-relative destination path this source vendors.
     pub fn dest_paths(&self) -> Vec<String> {

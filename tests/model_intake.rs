@@ -30,8 +30,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
-use quire_spec_language::model::domain_package::{DomainPackage, ModelSelection};
-use quire_spec_language::model::intake::{admit, lift_document, meaning, native, read_records};
+use quire_spec_language::model::domain_package::{DomainPackage, DomainPackageRef};
+use quire_spec_language::model::intake::{admit, lift_document, meaning, read_records};
 use quire_spec_language::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
@@ -94,15 +94,15 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(actual_digest, document.clone());
 
-    let selection = ModelSelection {
+    let offered = DomainPackageRef {
         identity: identity.clone(),
         version: version.clone(),
-        digest_domain: SHA256_JCS_DIGEST_DOMAIN.to_owned(),
         digest: actual_digest,
     };
-    let (admitted, admitted_bytes) = admit(&selection, &bytes_by_digest).expect(
-        "a selection matching the lifted package's own identity/version/digest is admitted",
-    );
+    let (admitted, admitted_bytes) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
+        .expect(
+            "a selection matching the lifted package's own identity/version/digest is admitted",
+        );
     assert_eq!(admitted.identity, identity);
     assert_eq!(admitted.version, version);
     assert_eq!(admitted_bytes, document);
@@ -142,15 +142,15 @@ fn reading_the_real_architecture_bundle_refuses_every_node_on_fcd_199_gaps() {
 
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
-    let selection = ModelSelection {
+    let offered = DomainPackageRef {
         identity: identity.clone(),
         version,
-        digest_domain: SHA256_JCS_DIGEST_DOMAIN.to_owned(),
         digest,
     };
-    let (_admitted, admitted_bytes) = admit(&selection, &bytes_by_digest).expect(
-        "a selection matching the lifted package's own identity/version/digest is admitted",
-    );
+    let (_admitted, admitted_bytes) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
+        .expect(
+            "a selection matching the lifted package's own identity/version/digest is admitted",
+        );
 
     let refusals = read_records(&identity, admitted_bytes)
         .expect_err("FCD's real wire never matches QSpec's own identity form (FCD #199 gap 2)");
@@ -325,9 +325,13 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
 /// form throughout -- `ix://<package identity>/<artifact id>` for every
 /// type-definition node, never FCD's own `ix://<pkg>/type/<id>` form -- with
 /// no `relationships[]` and no non-empty operation `frame` (FCD #199 gaps 2,
-/// 3 and 4), and `Flow`'s own `rate` field naming a native value type
-/// through `ix://quire/native/<Name>` (Peter's ruling, PR #200 review round
-/// 2). It admits through `agent-ix-semantic-ir`'s own validator (M5) --
+/// 3 and 4). Every field's `typeRef` names a package type node declared in
+/// this same document: until the FCD rev bump, `validate_with_semantic_ir`
+/// refuses any document naming a native value type
+/// (`ix://quire/native/<Name>`), so a whole-pipeline success case cannot
+/// exercise native-typeRef resolution -- that is covered separately by
+/// direct unit tests of `read_value_type_ref`. It admits through
+/// `agent-ix-semantic-ir`'s own validator (M5) --
 /// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
 /// member that validator's schema layer requires beyond the shape
 /// `crate::model::intake` itself reads -- not just this reader's own
@@ -414,7 +418,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
                     "fields": [wire_field(
                         &format!("{flow_type}/rate"),
                         "rate",
-                        &format!("{}Rational", native::PREFIX),
+                        &sys,
                     )],
                     "operations": [],
                 }),
@@ -497,14 +501,13 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let digest: [u8; 32] = Sha256::digest(&document).into();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
-    let selection = ModelSelection {
+    let offered = DomainPackageRef {
         identity: package_identity.to_owned(),
         version: "1.0.0".to_owned(),
-        digest_domain: SHA256_JCS_DIGEST_DOMAIN.to_owned(),
         digest,
     };
-    let (package_ref, admitted_bytes) =
-        admit(&selection, &bytes_by_digest).expect("a matching selection admits");
+    let (package_ref, admitted_bytes) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
+        .expect("a matching selection admits");
 
     let records = read_records(package_identity, admitted_bytes)
         .expect("a QSpec-conformant document reads with no refusals");
@@ -576,13 +579,27 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
         .expect_err("a bundle with no org: carries no identity for FCD to mint");
     match error {
         quire_spec_language::model::intake::LiftFailure::Refused(refusal) => {
-            assert!(
-                format!("{refusal:?}").contains("BundleUnidentified"),
-                "expected FCD's BundleUnidentified refusal, got: {refusal:?}"
-            );
-            assert!(
-                format!("{refusal:?}").contains("org"),
-                "expected the refusal to name the missing org:, got: {refusal:?}"
+            assert_eq!(
+                refusal,
+                agent_ix_extraction_frontend::Refusal {
+                    diagnostic: Box::new(agent_ix_extraction_frontend::Diagnostic {
+                        code: agent_ix_extraction_frontend::WireCode::Registry(
+                            agent_ix_extraction_frontend::Code::BundleUnidentified
+                        ),
+                        severity: agent_ix_extraction_frontend::Severity::Error,
+                        message: "spec/spec.md carries no `org`".to_owned(),
+                        owner: "ix://agent-ix/filament-core-data/extraction-frontend".to_owned(),
+                        locus: Some(agent_ix_extraction_frontend::Locus {
+                            source_identity: "ix://local/bundle/spec".to_owned(),
+                            path: "spec/spec.md".to_owned(),
+                            start_line: 1,
+                            start_column: 1,
+                        }),
+                        blocking: true,
+                        causes: Vec::new(),
+                        related: Vec::new(),
+                    }),
+                }
             );
         }
         other => panic!("expected LiftFailure::Refused, got {other:?}"),
@@ -624,11 +641,32 @@ fn lift_document_blocks_on_a_duplicate_identity() {
     );
     match error {
         quire_spec_language::model::intake::LiftFailure::Blocked(diagnostics) => {
-            assert!(
-                diagnostics
-                    .iter()
-                    .any(|diagnostic| format!("{diagnostic:?}").contains("DuplicateIdentity")),
-                "expected a DuplicateIdentity diagnostic among {diagnostics:?}"
+            assert_eq!(
+                diagnostics,
+                vec![agent_ix_extraction_frontend::Diagnostic {
+                    code: agent_ix_extraction_frontend::WireCode::Registry(
+                        agent_ix_extraction_frontend::Code::DuplicateIdentity
+                    ),
+                    severity: agent_ix_extraction_frontend::Severity::Error,
+                    message: "identity `ix://agent-ix/identity-service/type/FR-001Revision` \
+                              is already minted by an earlier node"
+                        .to_owned(),
+                    owner: "ix://agent-ix/filament-core-data/extraction-frontend".to_owned(),
+                    locus: Some(agent_ix_extraction_frontend::Locus {
+                        source_identity: "ix://agent-ix/identity-service/spec".to_owned(),
+                        path: "spec/functional/FR-002-note-revision.md".to_owned(),
+                        start_line: 1,
+                        start_column: 1,
+                    }),
+                    blocking: true,
+                    causes: Vec::new(),
+                    related: vec![agent_ix_extraction_frontend::Locus {
+                        source_identity: "ix://agent-ix/identity-service/spec".to_owned(),
+                        path: "spec/functional/FR-001-note.md".to_owned(),
+                        start_line: 18,
+                        start_column: 3,
+                    }],
+                }]
             );
         }
         other => panic!("expected LiftFailure::Blocked, got {other:?}"),

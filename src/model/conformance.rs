@@ -82,7 +82,7 @@ use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, OperationMemberRecord,
-    PostconditionClause,
+    PostconditionClause, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -329,6 +329,25 @@ pub(super) fn type_conforms(
     Ok(matches!(found, ControlFlow::Break(())))
 }
 
+/// [`type_conforms`], lifted to [`ValueTypeRef`]: a native value type
+/// conforms only to itself (QSL declares no generalization among native
+/// value types), and a package value type conforms exactly as
+/// [`type_conforms`] already decides. A native and a package value type
+/// never conform to one another.
+pub(super) fn value_type_conforms(
+    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
+    s: &ValueTypeRef,
+    t: &ValueTypeRef,
+) -> Result<bool, ModelRefusal> {
+    match (s, t) {
+        (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
+        (ValueTypeRef::Package(s_key), ValueTypeRef::Package(t_key)) => {
+            type_conforms(generals_by_specific, s_key, t_key)
+        }
+        _ => Ok(false),
+    }
+}
+
 /// `quire.model.conformance.multiplicity/v1`: does `from` conform to `to`?
 /// `[l1,u1] = to`, `[l2,u2] = from`: conforms exactly when `l1 <= l2` and
 /// `u2 <= u1` (`None` is unbounded, greater than every finite value), and
@@ -393,7 +412,7 @@ pub fn check_field_redefinition(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    match type_conforms(
+    match value_type_conforms(
         &index.generals_by_specific,
         &redefining.value_type,
         &redefined.value_type,
@@ -405,7 +424,7 @@ pub fn check_field_redefinition(
             cause: ModelRefusalCause::VarianceResult,
             detail: format!(
                 "{} does not conform to {}",
-                redefining.value_type.node, redefined.value_type.node
+                redefining.value_type, redefined.value_type
             ),
         }),
         Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -472,7 +491,7 @@ pub fn check_subsetting(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    match type_conforms(
+    match value_type_conforms(
         &index.generals_by_specific,
         &subsetting.value_type,
         &subsetted.value_type,
@@ -487,7 +506,7 @@ pub fn check_subsetting(
             },
             detail: format!(
                 "{} does not conform to {}",
-                subsetting.value_type.node, subsetted.value_type.node
+                subsetting.value_type, subsetted.value_type
             ),
         }),
         Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -577,7 +596,7 @@ pub fn check_operation_redefinition(
             if let Err(incomplete) = charge_axis(meter) {
                 return ConformanceCheckOutcome::Incomplete(incomplete);
             }
-            match type_conforms(&index.generals_by_specific, &dp.value_type, &rp.value_type) {
+            match value_type_conforms(&index.generals_by_specific, &dp.value_type, &rp.value_type) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
                     axis: "parameter-type",
@@ -589,7 +608,7 @@ pub fn check_operation_redefinition(
                     },
                     detail: format!(
                         "parameter {display_index}: expected {} to conform to {}",
-                        dp.value_type.node, rp.value_type.node
+                        dp.value_type, rp.value_type
                     ),
                 }),
                 Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -621,16 +640,13 @@ pub fn check_operation_redefinition(
     }
     match (&redefining.result, &redefined.result) {
         (Some(rr), Some(dr)) => {
-            match type_conforms(&index.generals_by_specific, &rr.value_type, &dr.value_type) {
+            match value_type_conforms(&index.generals_by_specific, &rr.value_type, &dr.value_type) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
                     axis: "result-type",
                     code: Code::IllTyped,
                     cause: ModelRefusalCause::VarianceResult,
-                    detail: format!(
-                        "{} does not conform to {}",
-                        rr.value_type.node, dr.value_type.node
-                    ),
+                    detail: format!("{} does not conform to {}", rr.value_type, dr.value_type),
                 }),
                 Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
             }
@@ -918,7 +934,7 @@ pub fn check_field_refinement_obligation(
         ));
     };
 
-    let same_type = redefining.value_type.node == redefined.value_type.node;
+    let same_type = redefining.value_type == redefined.value_type;
     let raises_lower = redefining.multiplicity.lower > redefined.multiplicity.lower;
     let single_valued = redefining.multiplicity.upper.is_some_and(|u| u <= 1);
 
@@ -969,7 +985,11 @@ pub fn check_field_refinement_obligation(
     // redefines carries the declared facts of the redefined PARENT member,
     // never the narrowing type — so every synthetic guard below is seeded
     // from `redefined`'s own declared scalar bounds, not `redefining`'s.
-    let domain = index.scalars.get(&redefined.value_type).copied();
+    let domain = redefined
+        .value_type
+        .as_package()
+        .and_then(|key| index.scalars.get(key))
+        .copied();
     let field_clauses: Vec<&PostconditionClause> = clauses
         .iter()
         .filter(|clause| names_field(clause.field()))
@@ -1009,8 +1029,14 @@ pub fn check_field_refinement_obligation(
     // no-proof-form when either type is not a known scalar (an object type
     // narrowing, per FR-151's own example).
     match (
-        index.scalars.get(&redefining.value_type),
-        index.scalars.get(&redefined.value_type),
+        redefining
+            .value_type
+            .as_package()
+            .and_then(|key| index.scalars.get(key)),
+        redefined
+            .value_type
+            .as_package()
+            .and_then(|key| index.scalars.get(key)),
     ) {
         (Some(&(narrow_lower, narrow_upper)), Some(_)) => {
             let interval = established.interval.clone();

@@ -9,7 +9,12 @@ use ix_trace_rs::trace;
 use std::path::{Path, PathBuf};
 
 use xtask::manifest::{ExternalFile, Manifest, PinnedFile, Source};
-use xtask::{revendor, revendor_check, Sources, Tree};
+use xtask::{cargo_pin, revendor, revendor_check, Sources, Tree};
+
+/// A placeholder FCD rev for tests whose synthetic manifest carries no
+/// `Source::Fcd` entry at all -- `revendor_check` never reads this
+/// parameter unless the manifest actually has one.
+const NO_FCD_SOURCE: &str = "0000000000000000000000000000000000000000";
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -97,10 +102,12 @@ fn copy_dir_recursive(src: &Path, dst: &Path) {
 #[trace("TC-150", "TC-152", "NFR-011-AC-2", "NFR-011-AC-4")]
 #[test]
 fn checked_in_manifests_match_the_vendored_trees_with_no_drift_or_stray_files() {
+    let root = workspace_root();
+    let expected_fcd_commit = cargo_pin::read_agent_ix_semantic_ir_rev(&root)
+        .expect("this workspace's own Cargo.toml/Cargo.lock agree on one agent-ix-semantic-ir rev");
     for tree in Tree::ALL {
-        let root = workspace_root();
         let manifest = Manifest::load(&tree.manifest_path(&root)).unwrap();
-        let report = revendor_check(&manifest, &tree.root(&root)).unwrap();
+        let report = revendor_check(&manifest, &tree.root(&root), &expected_fcd_commit).unwrap();
         assert!(
             report.is_clean(),
             "{}: drifted={:?} stray={:?}",
@@ -108,6 +115,50 @@ fn checked_in_manifests_match_the_vendored_trees_with_no_drift_or_stray_files() 
             report.drifted,
             report.stray
         );
+    }
+}
+
+/// QSL #131 PR 3, M1: the FCD rev a vendored fixture tree is read from lives
+/// in exactly one place -- this workspace's own `Cargo.toml`/`Cargo.lock`
+/// pin of `agent-ix-semantic-ir` -- never repeated by hand in `VENDOR.json`.
+/// A `Source::Fcd` entry whose own `commit` has drifted from that one place
+/// is refused, with a typed error naming both commits, before any per-file
+/// digest check runs.
+/// Tracing: TC-152.
+#[trace("TC-152", "NFR-011-AC-4")]
+#[test]
+fn revendor_check_refuses_an_fcd_source_whose_commit_disagrees_with_the_cargo_pin() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = Manifest {
+        schema_version: 1,
+        tree: "synthetic".into(),
+        sources: vec![Source::Fcd {
+            repo: "https://github.com/agent-ix/filament-core-data".into(),
+            commit: "0000000000000000000000000000000000000000".into(),
+            source_prefix: "crates/extraction-frontend/fixtures/architecture".into(),
+            dest_prefix: String::new(),
+            files: vec![PinnedFile {
+                path: "PROVENANCE.json".into(),
+                sha256: "sha256:".to_owned() + &"0".repeat(64),
+            }],
+        }],
+    };
+    let error = revendor_check(
+        &manifest,
+        dir.path(),
+        "7dcb2f2c7466a770b2362561e70ed10a8f941c1f",
+    )
+    .unwrap_err();
+    match error {
+        xtask::Error::FcdRevMismatch {
+            manifest_commit,
+            cargo_rev,
+            ..
+        } => {
+            assert_eq!(manifest_commit, "0000000000000000000000000000000000000000");
+            assert_eq!(cargo_rev, "7dcb2f2c7466a770b2362561e70ed10a8f941c1f");
+        }
+        other => panic!("expected FcdRevMismatch, got {other:?}"),
     }
 }
 
@@ -129,11 +180,11 @@ fn revendor_check_reports_a_byte_changed_after_vendoring() {
             }],
         }],
     };
-    let report = revendor_check(&manifest, dir.path()).unwrap();
+    let report = revendor_check(&manifest, dir.path(), NO_FCD_SOURCE).unwrap();
     assert!(report.is_clean());
 
     std::fs::write(dir.path().join("a.txt"), b"tampered").unwrap();
-    let report = revendor_check(&manifest, dir.path()).unwrap();
+    let report = revendor_check(&manifest, dir.path(), NO_FCD_SOURCE).unwrap();
     assert!(!report.is_clean());
     assert_eq!(report.drifted.len(), 1);
     assert_eq!(report.drifted[0].dest, "a.txt");
@@ -160,7 +211,7 @@ fn revendor_check_reports_a_missing_vendored_file() {
         }],
     };
     // a.txt is never created on disk.
-    let report = revendor_check(&manifest, dir.path()).unwrap();
+    let report = revendor_check(&manifest, dir.path(), NO_FCD_SOURCE).unwrap();
     assert!(!report.is_clean());
     assert_eq!(report.drifted.len(), 1);
     assert_eq!(report.drifted[0].dest, "a.txt");
@@ -187,10 +238,12 @@ fn revendor_check_reports_a_file_the_manifest_does_not_mention() {
             }],
         }],
     };
-    assert!(revendor_check(&manifest, dir.path()).unwrap().is_clean());
+    assert!(revendor_check(&manifest, dir.path(), NO_FCD_SOURCE)
+        .unwrap()
+        .is_clean());
 
     std::fs::write(dir.path().join("b.txt"), b"uninvited").unwrap();
-    let report = revendor_check(&manifest, dir.path()).unwrap();
+    let report = revendor_check(&manifest, dir.path(), NO_FCD_SOURCE).unwrap();
     assert!(!report.is_clean());
     assert_eq!(report.stray, vec!["b.txt".to_owned()]);
 
@@ -198,7 +251,9 @@ fn revendor_check_reports_a_file_the_manifest_does_not_mention() {
     std::fs::remove_file(dir.path().join("b.txt")).unwrap();
     std::fs::write(dir.path().join("README.md"), b"docs").unwrap();
     std::fs::write(dir.path().join("VENDOR.json"), b"{}").unwrap();
-    assert!(revendor_check(&manifest, dir.path()).unwrap().is_clean());
+    assert!(revendor_check(&manifest, dir.path(), NO_FCD_SOURCE)
+        .unwrap()
+        .is_clean());
 }
 
 /// A symlink (or any other non-regular entry) left in a vendored tree is
@@ -221,12 +276,14 @@ fn revendor_check_reports_a_symlink_as_stray() {
             }],
         }],
     };
-    assert!(revendor_check(&manifest, dir.path()).unwrap().is_clean());
+    assert!(revendor_check(&manifest, dir.path(), NO_FCD_SOURCE)
+        .unwrap()
+        .is_clean());
 
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(dir.path().join("a.txt"), dir.path().join("link")).unwrap();
-        let report = revendor_check(&manifest, dir.path()).unwrap();
+        let report = revendor_check(&manifest, dir.path(), NO_FCD_SOURCE).unwrap();
         assert!(!report.is_clean(), "a symlink must not pass as clean");
         assert_eq!(report.stray, vec!["link".to_owned()]);
     }
@@ -400,7 +457,13 @@ fn revendor_refuses_a_qspec_source_with_no_clone_given() {
         fcd_clone: None,
     };
     let error = revendor(&mut manifest, dir.path(), &sources).unwrap_err();
-    assert!(matches!(error, xtask::Error::MissingClone { .. }));
+    match error {
+        xtask::Error::MissingClone { owner, flag, .. } => {
+            assert_eq!(owner, xtask::CommitOwner::Qspec);
+            assert_eq!(flag, "--qspec-clone");
+        }
+        other => panic!("expected MissingClone, got {other:?}"),
+    }
 }
 
 /// `revendor` refuses an fcd-kind source when no clone was given, rather than
@@ -431,7 +494,13 @@ fn revendor_refuses_an_fcd_source_with_no_clone_given() {
         fcd_clone: None,
     };
     let error = revendor(&mut manifest, dir.path(), &sources).unwrap_err();
-    assert!(matches!(error, xtask::Error::MissingClone { .. }));
+    match error {
+        xtask::Error::MissingClone { owner, flag, .. } => {
+            assert_eq!(owner, xtask::CommitOwner::Fcd);
+            assert_eq!(flag, "--fcd-clone");
+        }
+        other => panic!("expected MissingClone, got {other:?}"),
+    }
 }
 
 /// Deep, real-clone-backed round trip: with `QSPEC_CLONE_PATH` pointing at a

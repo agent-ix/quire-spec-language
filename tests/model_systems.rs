@@ -74,7 +74,9 @@ fn field_member(
         quire_spec_language::model::domain_package::FieldMemberRecord {
             key: DeclarationKey::fixture(identity),
             owner: DeclarationKey::fixture(owner),
-            value_type: DeclarationKey::fixture(value_type),
+            value_type: quire_spec_language::model::domain_package::ValueTypeRef::Package(
+                DeclarationKey::fixture(value_type),
+            ),
             multiplicity: m,
             subsets: vec![],
             redefines: None,
