@@ -88,10 +88,8 @@ decisions. It does not design their content.
 | IR #140 | Replay executor wording in IR FR-031 and removal of `replay_with_native_runtime` |
 | IR #109 | Frame clauses in the Contract IR (scenario 4 only) |
 
-Changes this record needs that have no ticket yet are listed under Owner
-questions: M-6 and the skeleton spine, the IR removal of QSL-typed projections,
-X-1, M-2, M-4, the RT agreement retarget, the CG generated-harness gate rule,
-and the cross-repository direction and lock checks.
+Changes this record needs that have no ticket yet are listed under Tickets to
+open at #212.
 
 Terms used below:
 
@@ -125,7 +123,8 @@ Terms used below:
    extraction this record approves is `quire-exact`, which AD-016 Owner
    decision 2 already accepted.
 7. The four observed lanes converge or retire as §8 states. Every producer
-   path other than the spine is removed before gate #216 passes (M-6).
+   path other than the spine is deleted in the PR that lands its spine
+   replacement; the checked-package producer lane goes before gate #216 (M-6).
 8. A proof gate discharges at least one proposition over the code it claims.
    Compiling the code under the prover is necessary, not sufficient (RT #53).
    Each claimed module also has a mutation control that turns the gate red
@@ -356,7 +355,7 @@ Proof evidence from other gates counts toward the #205 gates only when those
 gates meet this rule. Kernel proof evidence today is the RT `src/exact/` gate,
 which RT #53 tracks; after X-1 it is the `quire-exact` gate. Whether this rule
 also binds RT and CG repository process outside the #205 gates is a
-cross-repository rule, routed to QSpec (Owner questions). CG #58, #59, #60 and
+cross-repository rule, proposed to QSpec as an NFR (T-11). CG #58, #59, #60 and
 #73 are defects in CG's generated-harness gate, not the gate itself.
 
 ## 3. Forbidden bypasses
@@ -370,13 +369,13 @@ inspection, and #212 re-walks them against the scenarios.
 | FB-02 | Any consumer branches on diagnostic message text, `Display` output or rendered codes instead of the typed cause | Diagnostics are output for people, not a channel between stages | CG decides Kani verdicts by string-matching rendered backend output (CG #59); it retires with #231's typed proof-result envelope | #216 evidence, #231, then #226 |
 | FB-03 | Wire-admitted data reaches an S6a evaluator, the S4 emitter or a backend as if it were checked, without the verified binding in §4 | A wire reader proves shape, not a source compile | `protocol_artifact::read` feeding `state` and `temporal` (ADR-010 OBS-015); checked-predicate and temporal-subject handoffs to IR (OBS-037) | #216 typestate evidence and "incompatible version fails without partial output", then #226 |
 | FB-04 | Lowering, execution or proof from an S2 form or any unchecked object | Checking precedes all executable lowering (§4) | none on the spine | #216 typestate evidence, then #226 |
-| FB-05 | A backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the QSL replay entry: the I2 reader and the S6a `CheckedPackage::call` (AD-016 Owner decision 5) | IR reads the v2 wire only (AD-016 Decisions) | IR root → QSL f1700a9 (OBS-029) | a direction check over each backend's `cargo tree`, owner to be named (Owner questions; proposed as a #215 scope amendment) |
+| FB-05 | A backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the QSL replay entry: the I2 reader and the S6a `CheckedPackage::call` (AD-016 Owner decision 5) | IR reads the v2 wire only (AD-016 Decisions) | IR root → QSL f1700a9 (OBS-029) | a direction check over each backend's `cargo tree`, owner to be named (T-12, a proposed #215 scope amendment) |
 | FB-06 | S3 calls a backend crate to decide a semantic question such as definedness | The backend would become a second language authority | QSL checking, composed proofs and lowering call IR `DeclarationEnvironment::check_expression` (OBS-010) | module-DAG check (§6.1) |
 | FB-07 | Replay through any executor other than S6a, or replay evidence from an injected stub executor | AD-016 arrow 7 | IR `replay_with_native_runtime` → `runtime::execute` (removed by IR #140); stubbed CG and IR replay executors (OBS-028) | #217, #219 |
 | FB-08 | A witness typed by any means other than IR `Witness::parse` and `decode` | AD-016 arrow 7: `decode` is the only typing step | IT-010 splits Kani stdout into an `i64` (OBS-002) | #217, #219 |
 | FB-09 | A CLI command makes a semantic decision, or reads diagnostic text | §5 | none known | #230, then #226 |
 | FB-10 | A proof gate claims a module over which it discharges no proposition | §2.3 | RT `src/exact/` (RT #53) | §2.3 gate owners, #219 |
-| FB-11 | A dependency or test-time edge that closes a cycle between QSL, IR, RT and CG | §7.1 | QSL ⇄ CG and QSL ⇄ RT test-time cycles (OBS-040) | the same direction check over normal and dev edges (Owner questions) |
+| FB-11 | A dependency or test-time edge that closes a cycle between QSL, IR, RT and CG | §7.1 | QSL ⇄ CG and QSL ⇄ RT test-time cycles (OBS-040) | the same direction check over normal and dev edges (T-12) |
 | FB-12 | Capability negotiation in S3 | AD-016: QSL admission negotiates nothing. #210 owns the capability-selection contract, #213 the `Capability` value type, and #185 is the only registry and router. | composed `requests::report` (ADR-010 OBS-003, a #210 item) | #216 "#185 alone owns registry/routing" evidence |
 
 ## 4. Checking precedes lowering
@@ -520,10 +519,10 @@ Seams:
 
 | Seam | Contents | Retires when | Owning change |
 |---|---|---|---|
-| SEAM-1 native-v1 | ADR-010 lane A, defined by its entry points: the `lower` command, the native `run` and `compile` paths, `package::NativePackage`, `runtime::execute`, the native-linked-package/1 format and the `lowering` targets. SEAM-1 holds every module reachable only from those entry points, including the `package` submodules `intake`, `reading`, `wire`, `encoding` and `features` (native-linked-package/1, FR-019 and FR-020): arena `syntax` and native `parser`, `linking::native`, native `checking`, `native_model`, `model_source`, `mapped`, `runtime`, and the `command` submodules `compilation`, `projection_error` and `wire`, and the native arms of `extraction` and `output`. Code shared with SEAM-2 (for example `formal_source`, which `checking::composed` imports) belongs to SEAM-2. | M-6 lands. Gate #216 cannot pass before then: "Old producer/bypass paths are unreachable" and "Do not pass while two authoritative producer paths coexist" (#216). | M-6 |
-| SEAM-2 composed | ADR-010 lane B: `syntax::composed`, `parser::composed`, `linking::composed`, `checking::composed`, and shared code such as `formal_source` | M-6 removes every SEAM-2 path that emits a downstream artifact. The composed checker remains until its binding and type-admission rules are rehomed as S3 family checkers through #210 contracts. Until then it yields diagnostics only and no lowering, execution or emission API reaches its output. `requests` backend disposition leaves QSL (FB-12). | M-6 for emission; #214, #220, #221 and #223 for the checker |
-| SEAM-3 protocol wires | `protocol_artifact` (compiled-protocol /1 to /3 emit and read; checked-predicate, temporal-subject and native-temporal handoffs) | M-6 removes every read that feeds an evaluator or a backend, and every handoff to IR. Emission returns from S4 over the checked graph. The QSpec wire question is in §Questions. | M-6 for removal; #223 and #218 for S4 emission |
-| SEAM-4 IT-010 | `tests/configversion_backends.rs` proof and replay path, QSL dev dependencies on CG 5e2a6a9 and IR 04eb6f8, and the RT test fixture crate | Removed together with SEAM-1 in M-6 | M-6 |
+| SEAM-1 native-v1 | ADR-010 lane A, defined by its entry points: the `lower` command, the native `run` and `compile` paths, `package::NativePackage`, `runtime::execute`, the native-linked-package/1 format and the `lowering` targets. SEAM-1 holds every module reachable only from those entry points, including the `package` submodules `intake`, `reading`, `wire`, `encoding` and `features` (native-linked-package/1, FR-019 and FR-020): arena `syntax` and native `parser`, `linking::native`, native `checking`, `native_model`, `model_source`, `mapped`, `runtime`, and the `command` submodules `compilation`, `projection_error` and `wire`, and the native arms of `extraction` and `output`. Code shared with SEAM-2 (for example `formal_source`, which `checking::composed` imports) belongs to SEAM-2. | Per lane (§7.3 M-6). The checked-package producer lane (M-6a) is deleted before gate #216: "Old producer/bypass paths are unreachable" and "Do not pass while two authoritative producer paths coexist" (#216). | M-6a to M-6e |
+| SEAM-2 composed | ADR-010 lane B: `syntax::composed`, `parser::composed`, `linking::composed`, `checking::composed`, and shared code such as `formal_source` | Deleted (owner ruling). Each composed family is deleted in the PR that lands its S3 family checker and S4 emission, so everything reaches IR through the one S4 spine. `requests` backend disposition leaves QSL (FB-12). | M-6e with #214, #220, #221 and #223 |
+| SEAM-3 protocol wires | `protocol_artifact` (compiled-protocol /1 to /3 emit and read; checked-predicate, temporal-subject and native-temporal handoffs) | Its reads that feed `state` and `temporal` are deleted with #220 and #222 (M-6c). Its handoffs to IR are deleted with #218 and #223, which land S4 emission over the checked graph (M-6d). The QSpec wire question is in §Questions. | M-6c, M-6d |
+| SEAM-4 IT-010 | `tests/configversion_backends.rs` proof and replay path, QSL dev dependencies on CG 5e2a6a9 and IR 04eb6f8, and the RT test fixture crate | Deleted with #217, which lands the CG replay adapter through S6a | M-6b |
 | SEAM-5 source graph | `complete::package::lower_source_graph` / `LoweredSourceGraph` (ADR-010 C3) | The S2 `forms` producer lands and replaces it | #214 (M-3) |
 
 Module table:
@@ -538,13 +537,13 @@ Module table:
 | `complete` (`cst`, `parser`, `grammar`, `diagnostic`) | 1 `cst` | S1 |
 | `complete::editor`, `complete::edit` | tool | the only consumers of a recovering CST |
 | `complete::package` (import resolution) | 3 `library` | resolves imports against I2 import views; `lower_source_graph` is SEAM-5 |
-| `format` | tool | retargeted from the arena to the CST in M-6 |
+| `format` | tool | retargeted from the arena to the CST in M-6a |
 | `syntax`, `parser` | SEAM-1 (native) and SEAM-2 (`composed`) | S2 `forms` replaces them |
 | `linking` | SEAM-1 (`native`) and SEAM-2 (`composed`) | name binding becomes an S3 phase |
 | `checking` | SEAM-1 and SEAM-2 | |
 | `formal_source` | SEAM-2 | shared native and composed code |
 | `native_model`, `model_source`, `mapped`, `runtime` | SEAM-1 | `runtime::execute` is not a replay target (AD-016). `NativeModelProfile` and its ceiling sites retire with SEAM-1. |
-| `lowering` | SEAM-1, except `lowering::target` | `lowering::target` (`src/lowering/target.rs:39-46`) is replaced by the #185 registry in `route`. M-6 removes the rest. |
+| `lowering` | SEAM-1, except `lowering::target` | `lowering::target` (`src/lowering/target.rs:39-46`) is replaced by the #185 registry in `route`. M-6b deletes the rest with #217. |
 | `quire_source` | I3 | the extraction adapter stays at S0; its call into `mapped` retires with SEAM-1 |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`) are SEAM-1; the v2 emitter and the I2 reader are new in M-4 |
 | `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `node`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row and the operations over them (X-1) |
@@ -559,8 +558,8 @@ Module table:
 | `model` (`dispatch`, `domain_package`, `key`, `normalize`, `population`, `refusal`, `systems`, `conformance` type conformance) | 3 `model` | `model::intake` is I1 |
 | `model::checked_dispatch`, `model::conformance::check_field_refinement_obligation` | 3 `check` | M-2 |
 | `model::accounting` | K `quire-exact` | one kernel `Meter` (M-2 with X-1) |
-| `state` | removed in M-6c; returns as a layer-5 family evaluator in #220 | It is typed on SEAM-1 and SEAM-3 types (`native_model`, `protocol_artifact::wire`, `ProtocolNumber`, `Locus`) and on IR `ValueType` (`state/evaluation.rs:15`, `:21`), so it is deleted, not re-typed. #220 re-adds it over checked forms and S3 `model`. |
-| `temporal` | removed in M-6c; returns as a layer-5 family evaluator in #222 and #220 | typed on `protocol_artifact::wire` and `ProtocolNumber` (`temporal/formula.rs:10`, `temporal/mapping.rs:19`), so it is deleted, not re-typed; it returns consuming checked forms only (FB-03) |
+| `state` | replaced by a layer-5 family evaluator in #220 | It is typed on SEAM-1 and SEAM-3 types (`native_model`, `protocol_artifact::wire`, `ProtocolNumber`, `Locus`) and on IR `ValueType` (`state/evaluation.rs:15`, `:21`). #220 lands the evaluator over checked forms and S3 `model` and deletes the old module in the same PR (M-6c). |
+| `temporal` | replaced by a layer-5 family evaluator in #222 | typed on `protocol_artifact::wire` and `ProtocolNumber` (`temporal/formula.rs:10`, `temporal/mapping.rs:19`). #222 lands the evaluator over checked forms only (FB-03) and deletes the old module in the same PR (M-6c). |
 | `protocol_artifact` | SEAM-3 | |
 | `simulation` | 5 `simulation` | finite exploration engine for S6a; its implementer arrives through #220 |
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
@@ -600,10 +599,10 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 
 | Edge | Target | Owning change |
 |---|---|---|
-| IR root → QSL (normal and dev, f1700a9) | **Removed** before gate #216. IR drops its predicate and temporal admission over QSL types. Predicate and temporal admission return over v2 forms with #218 and #223. | IR ticket (Owner questions); #218, #223 |
-| QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6 |
-| QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-1 and SEAM-4 | M-6 |
-| RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Owner questions) |
+| IR root → QSL (normal and dev, f1700a9) | **Removed** in the IR change that lands predicate and temporal admission over v2 forms, with #218 and #223 (M-6d). | IR change (Tickets to open at #212); #218, #223 |
+| QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6b with #217 |
+| QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6b with #217 |
+| RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5) | #217 (AD-016 WP9) |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1 (AD-016 WP5a and WP5b), ahead of #213 |
@@ -616,7 +615,7 @@ Rules:
   or in the QI `heads/` workspace for drift.
 - QSL's own `Cargo.lock` resolves exactly one revision per quire-ecosystem
   crate. A duplicate-revision check on QSL's own lock enforces it; its owner is
-  an Owner question (proposed as a #215 scope amendment).
+  proposed as a #215 scope amendment (T-12).
   AD-016 heads drift check 6 covers head drift only, because `[patch]` in
   `heads/` maps every pin to one head.
 - A dependency needed only by tests is a dev dependency.
@@ -648,27 +647,31 @@ edit `value` and `model`, so they land in that order, one at a time.
 | M-3 | Add S2 `forms` and retire SEAM-5 | 2 | parsed form types per family (#210) | #214 | none: `LoweredSourceGraph` is deleted in the same change |
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → v2 bytes; v2 bytes → verified import view | before M-6 | none |
 | M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | after M-2 and M-3, with #214 | none |
-| M-6 | Retire SEAM-1 and SEAM-4, and remove SEAM-2 and SEAM-3 emission, in Layer 2 before #216 | none | removed | after M-4 and the IR removal (Owner question 4); M-6d after the skeleton spine is green in CI; before #216 | none |
+| M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
 
-M-6 is delivered as these slices, in order:
+M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
+a working path is removed before its replacement, and no window in which an
+old path and its replacement both run:
 
-1. **M-6a.** `run` and `compile` call the spine. A construct the spine does
-   not yet cover returns a structured refusal. Backend output is v2 only
-   (M-4).
-2. **M-6b.** `format` is retargeted to the CST.
-3. **M-6c.** The `lower` command, the SEAM-1 modules, SEAM-2 and SEAM-3
-   emission, the SEAM-3 reads that feed `state` and `temporal`, and the `state`
-   `native_model` and IR imports are removed.
-4. **M-6d.** The IT-010 test path and the QSL dev dependencies on CG, IR and
-   the RT fixture crate are removed. M-6d lands only after the skeleton spine
-   is green in CI. The skeleton moves CG's dev pin on QSL from 21c507e to a
-   QSL revision that has M-4 and the S6a entry.
+| Lane | Deleted | In the PR that lands |
+|---|---|---|
+| M-6a checked-package producer | native `run` and `compile` producing packages or backend artifacts, the `lower` command, `package::NativePackage` and native-linked-package/1; `format` is retargeted to the CST | the spine for those commands: #214 with M-4, before #216 |
+| M-6b proof and replay | the IT-010 path (SEAM-4), the QSL dev dependencies on CG, IR and the RT fixture crate, the `lowering` targets except `lowering::target` | #217. Until then the skeleton spine (§1.1) is the proof-and-replay evidence. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
+| M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them | #220 (state) and #222 (temporal) |
+| M-6d protocol handoffs | SEAM-3 emission and handoffs to IR, the composed emission (B8, B9), and IR's predicate and temporal admission over QSL types with the IR root → QSL edge | #218 and #223, with the IR change |
+| M-6e composed checker | SEAM-2: each composed family is deleted in the PR that lands its S3 family checker and S4 emission. The composed checker is deleted, not kept (owner ruling). | #214, #220, #221, #223 as each family lands; the last one deletes the remainder |
 
-Between M-6 and #217, QSL has no proof or replay test. The skeleton spine
-(§1.1) is the only proof-and-replay evidence in that window, and it lives in
-CG. Between M-6 and #218 and #223, predicate, temporal and protocol handoffs
-to IR are unavailable. Between M-6 and #220 and #222, the state and temporal
-evaluators are unavailable. These gaps are Owner questions.
+A SEAM-1 module (arena `syntax` and native `parser`, `linking::native`, native
+`checking`, `native_model`, `model_source`, `mapped`, `runtime`, the native
+`command` submodules) is deleted in the lane PR that removes its last
+consumer.
+
+Gate #216 is evaluated per lane. At #216, M-6a has landed: no CLI command or
+library API produces a checked package, v2 bytes or a backend artifact except
+through the spine. The M-6b to M-6e lanes are not checked-package producers;
+their "old path unreachable" evidence belongs to the gate after each
+replacement (#219 for M-6b, #224 for M-6c to M-6e). This reading of #216 is
+listed under Tickets to open at #212.
 
 No other crate extraction is approved.
 
@@ -676,8 +679,8 @@ No other crate extraction is approved.
 
 | Lane (ADR-010) | Disposition |
 |---|---|
-| A native-v1 | **Retires** as SEAM-1 in M-6. It admits no new families (AD-016 arrow 1). |
-| B composed | **Converges.** B1 → S1 and S2. B2 to B4 → S3 binding phase. B5 → leaves QSL (FB-12, #210). B6 and B7 → S3 family checkers. B8 and B9 → S4 emission (#223, #218); the SEAM-3 emission is removed in M-6. B10 → S6a family evaluators. |
+| A native-v1 | **Retires** as SEAM-1, lane by lane (M-6). It admits no new families (AD-016 arrow 1). |
+| B composed | **Converges.** B1 → S1 and S2. B2 to B4 → S3 binding phase. B5 → leaves QSL (FB-12, #210). B6 and B7 → S3 family checkers. B8 and B9 → S4 emission (#223, #218); the SEAM-3 emission is deleted in the same PRs (M-6d). B10 → S6a family evaluators. |
 | C complete-V1 | **The spine.** C1 → S1. C2 → I2 and `library`. C3 → replaced by S2 (M-3). C4 → S3. C5 → S6a. C6 → S3 `model`. C7 → `library`. |
 | D simulation | **Converges** into S6a as the finite exploration engine. It gains an implementer only through a family evaluator (#220). |
 
@@ -686,24 +689,24 @@ No other crate extraction is approved.
 | Item | Decision |
 |---|---|
 | OBS-001 | S4 `package` owns the checked-package/v2 emitter (M-4). It is the only QSL → IR path. |
-| OBS-002 | IT-010's proof path is SEAM-4, removed in M-6. The CG replay adapter, first in the skeleton spine and then in #217, replaces it (FB-07, FB-08). |
+| OBS-002 | IT-010's proof path is SEAM-4, deleted in #217 (M-6b), which lands the CG replay adapter. The skeleton spine is the proof-and-replay evidence until then (FB-07, FB-08). |
 | OBS-007 | S2 `forms` is the only producer of check-stage input from source (SEAM-5, M-3). `model::checked_dispatch` moves to `check` (M-2). |
-| OBS-008 | One spine (lane C). Lane A retires, lane B converges, lane D joins S6a (§8). Every other producer path is removed before #216 (M-6). |
+| OBS-008 | One spine (lane C). Lane A retires, lane B converges, lane D joins S6a (§8). The other checked-package producer paths are deleted before #216 (M-6a); each other lane is deleted with its replacement (M-6). |
 | OBS-009 | Name and model binding is a phase of S3. "Linked" means S4 closure over package identities (§1). |
 | OBS-010 | S3 decides definedness itself. `check` never imports `quire-contract-model` (FB-06, §6.1). |
 | OBS-011 | The composed lane gets no lowering of its own. Its families reach IR through S4 v2 (§8). |
-| OBS-015 | Forbidden bypass FB-03. The `protocol_artifact` reads that feed `state` and `temporal` are removed in M-6; the evaluators return over checked forms (#220, #222). |
+| OBS-015 | Forbidden bypass FB-03. The `protocol_artifact` reads that feed `state` and `temporal` are deleted in the PRs that land the replacement evaluators over checked forms (#220, #222; M-6c). |
 | OBS-016 | The §6.1 layers are an exhaustive, ordered allow-list. `diagnostic` is foundation, `model` is below `check` (M-2), `temporal` imports no wire module, and the remaining S1 two-cycles leave with SEAM-1. |
 | OBS-028 | IR holds the packet and witness only. CG reconstructs. QSL S6a executes. A stubbed executor is not evidence (FB-07, §2.3). |
-| OBS-029 | The IR root → QSL edge is removed before #216 by an IR change (§7.1, FB-05; Owner questions). |
+| OBS-029 | The IR root → QSL edge is removed by the IR change that lands v2 predicate and temporal admission, with #218 and #223 (§7.1, FB-05, M-6d). |
 | OBS-030 | `value::expression::CheckedPackage::call` is the S6a entry. The CG replay adapter wires it, first in the skeleton spine and then in #217. |
 | OBS-031 | QI owns the current-head `heads/` workspace (AD-016). #215 implements it and also checks QSL's own lock for duplicate revisions (§7.1). The pin-versus-head rule is a #211 secondary. |
 | OBS-036 | The replay executor is QSL S6a (`value::expression::CheckedPackage::call`, AD-016 arrow 7). IR #140 is the implementing change: it amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. |
-| OBS-037 | Forbidden bypass FB-03. The handoffs to IR are removed in M-6 and return from S4 over the checked graph (#218, #223). |
-| OBS-038 | QSL owns reference semantics and the replay executor (AD-016 arrow 7, Owner decision 3). RT owns runtime ops, the `negotiate_*` predicates and the host ABI that generated code calls. No native replay surface belongs in IR (IR #140). #205's ownership wording assigns "native replay surfaces" to RT, which conflicts with AD-016. This record follows AD-016 and routes a #205 wording amendment to the epic owner (Owner questions). |
-| OBS-039 | Same conflict as OBS-038. This record does not reinterpret #205. The amendment is routed to the epic owner. |
-| OBS-040 | FB-11. QSL tests depend on QSpec vectors and QSL crates only. Cross-repository end-to-end tests live in CG or QI `heads/` (§7.1). The direction check is an Owner question. |
-| OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. QSL's lock holds one revision per quire crate, checked by the duplicate-revision check (Owner questions). A test-only crate stays a dev dependency. PR #200 meets these before merge. |
+| OBS-037 | Forbidden bypass FB-03. The handoffs to IR are deleted in the PRs that land S4 emission over the checked graph (#218, #223; M-6d). |
+| OBS-038 | Closed against #205 as amended (2026-09-19): "Runtime owns executable operations, exact numeric predicates and the host ABI. QSL owns reference semantics and the native replay executor (`CheckedPackage::call`, AD-016 arrow 7); Codegen reconstructs the replay request and Contract IR holds the counterexample packet." No native replay surface belongs in IR (IR #140). |
+| OBS-039 | Closed against the same #205 text. #205 and AD-016 agree. |
+| OBS-040 | FB-11. QSL tests depend on QSpec vectors and QSL crates only. Cross-repository end-to-end tests live in CG or QI `heads/` (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
+| OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. QSL's lock holds one revision per quire crate, checked by the duplicate-revision check (Tickets to open at #212). A test-only crate stays a dev dependency. PR #200 meets these before merge. |
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). #211 owns naming beyond that. |
 | OBS-034 (secondary) | Direction per §7.1. #211 owns pin representation. |
@@ -755,8 +758,9 @@ ticket that L1-D1 relaxes. Stage placement matches the relaxed edges:
   DAG.
 - #188, #189, #217 and #223 keep their #185 edge, because their exit criteria
   settle an item through `route` and E7.
-- M-6 does not wait on #185. It removes the native lowering targets, and
-  `route` replaces `lowering::target` in #185 itself.
+- M-6 adds no #185 edge. M-6b deletes the native lowering targets with #217,
+  which already waits on #185, and `route` replaces `lowering::target` in #185
+  itself.
 
 ## Questions handed to sibling tickets
 
@@ -801,52 +805,55 @@ To QSpec (wire owner):
   separate wires or are replaced by v2 forms once S4 emits them (SEAM-3). The
   format is authored in QSpec.
 
-## Owner questions
+## Owner rulings (2026-09-19)
 
-1. **M-6 ticket.** Open a Layer 2 ticket for M-6 (the CLI rewire of `run` and
-   `compile`, the `format` retarget, and the SEAM-1, SEAM-2 emission, SEAM-3
-   and SEAM-4 removal), ahead of #216. This moves the CLI onto the spine in
-   Layer 2, which amends #205's layer plan. The skeleton spine (§1.1) also
-   needs a named ticket; it could be tracked with M-6.
-2. **Accept the gaps.** Between M-6 and #217, QSL has no proof or replay test
-   of its own. Between M-6 and #218, #220, #222 and #223, predicate, temporal
-   and protocol handoffs and the state and temporal evaluators are
-   unavailable. Accept these gaps, or reorder #217 before M-6.
-3. **SEAM-2 checker.** Keep the composed checker as diagnostics-only until its
-   families rehome, or delete it in M-6.
-4. **IR ticket.** Open an IR ticket that removes IR's predicate and temporal
-   admission over QSL types and the IR root → QSL edge before #216.
-5. **#205 wording.** Amend #205's ownership wording that assigns "native replay
-   surfaces" to RT, to match AD-016 arrow 7 (OBS-038, OBS-039).
-6. **Tickets for X-1, M-2, M-4 and the RT agreement retarget**, with the #205
-   edges X-1 → #213 and M-2 → #214, and name the gate
-   that claims `quire-exact` under §2.3 after X-1.
-7. **CG generated-harness gate.** Open a CG ticket that adds the claimed-module
-   list, the `unreached` failure and the mutation control to CG's
-   generated-harness gate.
-8. **Cross-repository proof rule.** Route the §2.3 rule to QSpec if it should
-   bind RT and CG repository process beyond the #205 gates.
-9. **Cross-repository checks.** Name an owner for the backend direction check
-   (FB-05, FB-11) and the duplicate-revision check on QSL's lock (§7.1),
-   proposed as a #215 scope amendment. Until then, #216 and #219 check both by
-   inspection.
+The owner delegated these to the #205 coordinator.
+
+- **No gap window.** M-6 is split by lane, and each old path is deleted in the
+  PR that lands its spine replacement (§7.3). Nothing runs side by side, and
+  nothing working is removed early. The skeleton spine covers proof-and-replay
+  evidence until #217.
+- **Composed checker.** Deleted. Everything reaches IR through the one S4
+  spine (SEAM-2, M-6e).
+- **#205 wording.** Amended; OBS-038 and OBS-039 are closed against it (§9).
+- **Ticket creation.** Consolidated by the coordinator at the #212 gate, once
+  ADR-011, ADR-012 and ADR-013 agree (table below).
+- **Sibling questions.** Sent to the ADR-012 and ADR-013 authors. Until they
+  answer, those items stay "decided in #210/#211".
+
+## Tickets to open at #212
+
+| # | Proposed change | Proposed owner and repository |
+|---|---|---|
+| T-1 | M-6a: the CLI `run` and `compile` rewire onto the spine, `format` retarget, `lower` and native-linked-package/1 deletion, before #216 (a Layer 2 move that amends #205's layer plan) | QSL, Layer 2, with #214 |
+| T-2 | The skeleton spine (§1.1) as a tracked ticket | CG, with QSL M-4 |
+| T-3 | Add the lane deletions M-6b to M-6e to the exit criteria of #217, #220, #222, #218, #223, #221 and #214 | QSL (issue text for those tickets) |
+| T-4 | #216 evaluated per lane: the producer lane at #216, the other lanes at #219 and #224 (§7.3) | QSL #216, #219, #224 (issue text) |
+| T-5 | IR predicate and temporal admission over v2 forms, and removal of the IR root → QSL edge | IR, with #218 and #223 |
+| T-6 | X-1 `quire-exact` extraction, with its kernel gate under §2.3 and the #205 edge X-1 → #213 | QSL and RT (AD-016 WP5a, WP5b) |
+| T-7 | M-2 (`model` below `check`, `semantic_value`) with the #205 edge M-2 → #214 | QSL |
+| T-8 | M-4 (S4 v2 emitter and I2 reader) | QSL, before #216 |
+| T-9 | RT `qsl-agreement` retarget to `quire-exact` against QSpec vectors | RT, after X-1 |
+| T-10 | CG generated-harness gate: claimed-module list, `unreached` failure, mutation control | CG |
+| T-11 | Proof-stage acceptance (§2.3) as a proposed QSpec NFR binding RT and CG proof gates | QSpec |
+| T-12 | Proposed #215 scope amendment: backend direction check (FB-05, FB-11) and duplicate-revision check on QSL's lock (§7.1). Until then #216 and #219 check both by inspection. | QSL #215 (issue text) |
 
 ## Consequences
 
 - Every module has a stage, a foundation or tooling layer, or a seam with an
   owning retirement change. A module that meets none of these is a defect that
   #226's architecture-drift gate reports.
-- Gate #216 cannot pass while SEAM-1, SEAM-4 or any SEAM-2 or SEAM-3 emission
-  is reachable. The CLI therefore moves to the spine within Layer 2 (M-6), not
-  in Layer 5 (Owner question 1).
+- Gate #216 cannot pass while any old checked-package producer path is
+  reachable. The CLI therefore moves to the spine within Layer 2 (M-6a, T-1),
+  not in Layer 5. The other old lanes are deleted with their replacements.
 - IR and CG lose their typed access to QSL except the replay entry (the I2
   reader and S6a). IR's predicate and temporal projections return over v2
   forms that #210 and QSpec define.
 - Proof gates counted by #205 gain an `unreached` failure and a mutation
   control per claimed module (§2.3). Kernel proof evidence does not count until RT #53 adds a
   harness and a mutation control in `src/exact/`.
-- The skeleton spine is the only proof-and-replay evidence between M-6 and
-  #217.
+- The skeleton spine is the proof-and-replay evidence counted by #205 gates
+  until #217 lands.
 
 ## Alternatives Considered
 
