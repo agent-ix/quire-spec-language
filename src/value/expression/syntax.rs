@@ -416,9 +416,22 @@ impl FunctionDeclaration {
     }
 
     /// A declaration checked as `clause_kind`, never reachable through an
-    /// ordinary named [`Expression::Call`]: an invariant, precondition or
-    /// postcondition clause, or (crate-internal) a synthesized FR-151
-    /// dispatch candidate body or effective precondition.
+    /// ordinary named [`Expression::Call`]: an invariant or precondition
+    /// clause, or (crate-internal) a synthesized FR-151 dispatch candidate
+    /// body or effective precondition. Never [`ClauseKind::Postcondition`]:
+    /// `pre(...)` is legal exactly there, and this crate has no checked
+    /// "operation" declaration to bind a package function's `clause_kind` to
+    /// one — the only path that can actually stand behind a real
+    /// postcondition (its own `pre_anchor`/population wiring, FR-153's
+    /// eligible-operand rule) is
+    /// [`CheckedPackage::check_postcondition_expression`], a standalone
+    /// expression check outside `PackageDeclarations::functions` entirely.
+    /// Admitting it here would let any caller assembling a package hand an
+    /// ordinary function `pre(...)` legality it never earned. Panics if
+    /// asked for it — every call site controls `clause_kind` itself, so this
+    /// is a caller bug, not data this API must tolerate.
+    ///
+    /// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
         parameters: Vec<(String, ValueType)>,
@@ -427,6 +440,12 @@ impl FunctionDeclaration {
         body: Expression,
         clause_kind: ClauseKind,
     ) -> Self {
+        assert!(
+            clause_kind != ClauseKind::Postcondition,
+            "FunctionDeclaration::clause must never be given ClauseKind::Postcondition; \
+             check a real postcondition through CheckedPackage::check_postcondition_expression \
+             instead"
+        );
         Self {
             name: name.into(),
             parameters,

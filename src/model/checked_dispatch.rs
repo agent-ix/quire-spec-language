@@ -273,21 +273,25 @@ fn ancestor_closure(
     candidate: &ProducerKey,
 ) -> Result<BTreeSet<ProducerKey>, DispatchBridgeRefusal> {
     let mut closure = BTreeSet::new();
-    let mut pending: VecDeque<ProducerKey> = VecDeque::from([candidate.clone()]);
-    let mut steps: usize = 0;
-    while let Some(current) = pending.pop_front() {
+    // `depth` is `current`'s own redefinition-chain distance from
+    // `candidate` (0 for `candidate` itself), tracked per queue entry, not a
+    // running count of every node the whole closure has visited so far: a
+    // family where one member has many direct redefiners (wide, shallow
+    // fan-out) must not exhaust the same bound a genuinely deep single chain
+    // would.
+    let mut pending: VecDeque<(ProducerKey, usize)> = VecDeque::from([(candidate.clone(), 0)]);
+    while let Some((current, depth)) = pending.pop_front() {
         if !closure.insert(current.clone()) {
             continue;
         }
-        steps += 1;
-        if steps > MAX_ANCESTOR_DEPTH {
+        if depth > MAX_ANCESTOR_DEPTH {
             return Err(depth_exceeded(candidate));
         }
         for redefinition in redefinitions
             .iter()
             .filter(|redefinition| redefinition.redefining == current)
         {
-            pending.push_back(redefinition.redefined.clone());
+            pending.push_back((redefinition.redefined.clone(), depth + 1));
         }
     }
     Ok(closure)
@@ -304,19 +308,26 @@ fn ancestor_closure(
 /// ancestor clause" — the receiver is `parameters[0]`, substituted the same
 /// way as every other parameter). Memoized per candidate, since a diamond of
 /// redefinitions can reach the same ancestor from several paths; bounded by
-/// a walk-wide step counter mirroring [`ancestor_closure`]'s own bound.
+/// `depth`, the current call's own redefinition-chain distance from the
+/// *top-level* candidate this walk started at (0 there, incremented once per
+/// recursive step into a parent) — never a counter shared across every
+/// candidate [`checked_dispatch_operation`] computes this for. A family with
+/// many precondition-bearing members but no chain longer than
+/// [`MAX_ANCESTOR_DEPTH`] must not be refused just because the family is
+/// wide; a memoized hit returns immediately without consuming any of the
+/// caller's own depth budget, since its own walk already passed the bound
+/// when it was first computed.
 fn effective_terms(
     candidate: &ProducerKey,
     clauses: &OperationClauses,
     redefinitions: &[RedefinitionRecord],
     memo: &mut BTreeMap<ProducerKey, Option<Vec<Expression>>>,
-    steps: &mut usize,
+    depth: usize,
 ) -> Result<Option<Vec<Expression>>, DispatchBridgeRefusal> {
     if let Some(cached) = memo.get(candidate) {
         return Ok(cached.clone());
     }
-    *steps += 1;
-    if *steps > MAX_ANCESTOR_DEPTH {
+    if depth > MAX_ANCESTOR_DEPTH {
         return Err(depth_exceeded(candidate));
     }
     let Some(own_expression) = clauses.own_precondition.get(candidate).cloned() else {
@@ -330,7 +341,7 @@ fn effective_terms(
         .filter(|redefinition| &redefinition.redefining == candidate)
     {
         let parent = &redefinition.redefined;
-        match effective_terms(parent, clauses, redefinitions, memo, steps)? {
+        match effective_terms(parent, clauses, redefinitions, memo, depth + 1)? {
             None => {
                 memo.insert(candidate.clone(), None);
                 return Ok(None);
@@ -353,7 +364,12 @@ fn effective_terms(
 
 /// `expression` with every name bound positionally in `from` rewritten to
 /// its counterpart in `to`, leaving every shadowed occurrence (a `let`,
-/// query or accumulate/count/sum binder reusing the name) untouched.
+/// query or accumulate/count/sum binder reusing a `from` name) untouched.
+/// Capture-avoiding: a binder whose own name coincides with a `to` name is
+/// itself alpha-renamed to a fresh name before its scope is entered, so a
+/// name introduced by the rename never falls under a binder that merely
+/// happens to share that spelling in the source expression (`let b = 5 in
+/// a = a`, renamed `a -> b`, must not become `let b = 5 in b = b`).
 /// Short-circuits to a plain clone when every name already matches.
 fn rename_parameters(
     expression: &Expression,
@@ -369,54 +385,91 @@ fn rename_parameters(
     if rename.is_empty() {
         return expression.clone();
     }
-    let mut shadow = Vec::new();
-    substitute_names(expression, &rename, &mut shadow)
+    let to_names: BTreeSet<String> = rename.values().cloned().collect();
+    let mut scope: Vec<(String, Option<String>)> = Vec::new();
+    substitute_names(expression, &rename, &to_names, &mut scope)
+}
+
+/// Binds `name` for the scope about to be entered: `scope` records, for
+/// every binder currently in view, its original name and — when that name
+/// collides with a `to_names` name a rename could introduce — the fresh
+/// name it was alpha-renamed to, avoiding capture. Returns the name the
+/// rewritten binder must actually use. The caller pops `scope` once the
+/// binder's own scope (its body/step/predicate) has been rewritten.
+fn bind_name(
+    name: &str,
+    to_names: &BTreeSet<String>,
+    scope: &mut Vec<(String, Option<String>)>,
+) -> String {
+    if !to_names.contains(name) {
+        scope.push((name.to_owned(), None));
+        return name.to_owned();
+    }
+    let occupied: BTreeSet<String> = to_names
+        .iter()
+        .cloned()
+        .chain(
+            scope
+                .iter()
+                .map(|(original, alpha)| alpha.clone().unwrap_or_else(|| original.clone())),
+        )
+        .collect();
+    let mut suffix = 0usize;
+    let mut fresh = format!("{name}#dispatch-alpha{suffix}");
+    while occupied.contains(&fresh) {
+        suffix += 1;
+        fresh = format!("{name}#dispatch-alpha{suffix}");
+    }
+    scope.push((name.to_owned(), Some(fresh.clone())));
+    fresh
 }
 
 /// The full recursive rewrite [`rename_parameters`] applies: every
-/// [`Expression::Name`] not currently shadowed by an enclosing binder is
-/// looked up in `rename`; every other node is rebuilt with its children
-/// rewritten the same way. `shadow` tracks binder names currently in scope
-/// (`let`, a query's binder, or an accumulate/count/sum's accumulator and
-/// binder), pushed before recursing into their own scope and popped after.
+/// [`Expression::Name`] is looked up in `scope` (innermost binder first);
+/// a hit shadows the top-level `rename` map, using the binder's alpha-name
+/// when it has one and the original name otherwise. A name `scope` does not
+/// mention falls through to `rename`. Every binder site pushes its own
+/// [`bind_name`] result onto `scope` before recursing into its own scope and
+/// pops it after — see [`bind_name`] for how binder capture is avoided.
 fn substitute_names(
     expression: &Expression,
     rename: &BTreeMap<String, String>,
-    shadow: &mut Vec<String>,
+    to_names: &BTreeSet<String>,
+    scope: &mut Vec<(String, Option<String>)>,
 ) -> Expression {
     match expression {
         Expression::Boolean(_) | Expression::Integer(_) | Expression::Rational(..) => {
             expression.clone()
         }
         Expression::Name(name) => {
-            if shadow.contains(name) {
-                expression.clone()
-            } else {
-                match rename.get(name) {
-                    Some(renamed) => Expression::Name(renamed.clone()),
-                    None => expression.clone(),
+            for (original, alpha) in scope.iter().rev() {
+                if original == name {
+                    return match alpha {
+                        Some(fresh) => Expression::Name(fresh.clone()),
+                        None => expression.clone(),
+                    };
                 }
+            }
+            match rename.get(name) {
+                Some(renamed) => Expression::Name(renamed.clone()),
+                None => expression.clone(),
             }
         }
         Expression::Let { name, value, body } => {
-            let value = Box::new(substitute_names(value, rename, shadow));
-            shadow.push(name.clone());
-            let body = Box::new(substitute_names(body, rename, shadow));
-            shadow.pop();
-            Expression::Let {
-                name: name.clone(),
-                value,
-                body,
-            }
+            let value = Box::new(substitute_names(value, rename, to_names, scope));
+            let name = bind_name(name, to_names, scope);
+            let body = Box::new(substitute_names(body, rename, to_names, scope));
+            scope.pop();
+            Expression::Let { name, value, body }
         }
         Expression::If {
             condition,
             then,
             otherwise,
         } => Expression::If {
-            condition: Box::new(substitute_names(condition, rename, shadow)),
-            then: Box::new(substitute_names(then, rename, shadow)),
-            otherwise: Box::new(substitute_names(otherwise, rename, shadow)),
+            condition: Box::new(substitute_names(condition, rename, to_names, scope)),
+            then: Box::new(substitute_names(then, rename, to_names, scope)),
+            otherwise: Box::new(substitute_names(otherwise, rename, to_names, scope)),
         },
         Expression::Binary {
             operator,
@@ -424,33 +477,33 @@ fn substitute_names(
             right,
         } => Expression::Binary {
             operator: *operator,
-            left: Box::new(substitute_names(left, rename, shadow)),
-            right: Box::new(substitute_names(right, rename, shadow)),
+            left: Box::new(substitute_names(left, rename, to_names, scope)),
+            right: Box::new(substitute_names(right, rename, to_names, scope)),
         },
         Expression::Negate(operand) => {
-            Expression::Negate(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Negate(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Not(operand) => {
-            Expression::Not(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Not(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Field { operand, field } => Expression::Field {
-            operand: Box::new(substitute_names(operand, rename, shadow)),
+            operand: Box::new(substitute_names(operand, rename, to_names, scope)),
             field: field.clone(),
         },
         Expression::Present(operand) => {
-            Expression::Present(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Present(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Value(operand) => {
-            Expression::Value(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Value(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Deref(operand) => {
-            Expression::Deref(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Deref(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Call { name, arguments } => Expression::Call {
             name: name.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| substitute_names(argument, rename, shadow))
+                .map(|argument| substitute_names(argument, rename, to_names, scope))
                 .collect(),
         },
         Expression::Record { name, fields } => Expression::Record {
@@ -459,9 +512,9 @@ fn substitute_names(
                 .iter()
                 .map(|(field, initializer)| {
                     let initializer = match initializer {
-                        FieldInitializer::Value(value) => {
-                            FieldInitializer::Value(substitute_names(value, rename, shadow))
-                        }
+                        FieldInitializer::Value(value) => FieldInitializer::Value(
+                            substitute_names(value, rename, to_names, scope),
+                        ),
                         FieldInitializer::Null => FieldInitializer::Null,
                     };
                     (field.clone(), initializer)
@@ -472,12 +525,12 @@ fn substitute_names(
             kind: *kind,
             elements: elements
                 .iter()
-                .map(|element| substitute_names(element, rename, shadow))
+                .map(|element| substitute_names(element, rename, to_names, scope))
                 .collect(),
         },
         Expression::Convert { target, operand } => Expression::Convert {
             target: target.clone(),
-            operand: Box::new(substitute_names(operand, rename, shadow)),
+            operand: Box::new(substitute_names(operand, rename, to_names, scope)),
         },
         Expression::Query {
             query,
@@ -485,19 +538,19 @@ fn substitute_names(
             source,
             body,
         } => {
-            let source = Box::new(substitute_names(source, rename, shadow));
-            shadow.push(binder.clone());
-            let body = Box::new(substitute_names(body, rename, shadow));
-            shadow.pop();
+            let source = Box::new(substitute_names(source, rename, to_names, scope));
+            let binder = bind_name(binder, to_names, scope);
+            let body = Box::new(substitute_names(body, rename, to_names, scope));
+            scope.pop();
             Expression::Query {
                 query: *query,
-                binder: binder.clone(),
+                binder,
                 source,
                 body,
             }
         }
         Expression::Flatten(operand) => {
-            Expression::Flatten(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Flatten(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Accumulate {
             form,
@@ -508,20 +561,20 @@ fn substitute_names(
             step,
             identity,
         } => {
-            let source = Box::new(substitute_names(source, rename, shadow));
+            let source = Box::new(substitute_names(source, rename, to_names, scope));
             let identity = identity
                 .as_ref()
-                .map(|identity| Box::new(substitute_names(identity, rename, shadow)));
-            shadow.push(accumulator.clone());
-            shadow.push(binder.clone());
-            let step = Box::new(substitute_names(step, rename, shadow));
-            shadow.pop();
-            shadow.pop();
+                .map(|identity| Box::new(substitute_names(identity, rename, to_names, scope)));
+            let accumulator = bind_name(accumulator, to_names, scope);
+            let binder = bind_name(binder, to_names, scope);
+            let step = Box::new(substitute_names(step, rename, to_names, scope));
+            scope.pop();
+            scope.pop();
             Expression::Accumulate {
                 form: *form,
                 accumulator_type: accumulator_type.clone(),
-                accumulator: accumulator.clone(),
-                binder: binder.clone(),
+                accumulator,
+                binder,
                 source,
                 step,
                 identity,
@@ -533,13 +586,13 @@ fn substitute_names(
             source,
             predicate,
         } => {
-            let source = Box::new(substitute_names(source, rename, shadow));
-            shadow.push(binder.clone());
-            let predicate = Box::new(substitute_names(predicate, rename, shadow));
-            shadow.pop();
+            let source = Box::new(substitute_names(source, rename, to_names, scope));
+            let binder = bind_name(binder, to_names, scope);
+            let predicate = Box::new(substitute_names(predicate, rename, to_names, scope));
+            scope.pop();
             Expression::Count {
                 result_type: result_type.clone(),
-                binder: binder.clone(),
+                binder,
                 source,
                 predicate,
             }
@@ -550,27 +603,27 @@ fn substitute_names(
             source,
             summand,
         } => {
-            let source = Box::new(substitute_names(source, rename, shadow));
-            shadow.push(binder.clone());
-            let summand = Box::new(substitute_names(summand, rename, shadow));
-            shadow.pop();
+            let source = Box::new(substitute_names(source, rename, to_names, scope));
+            let binder = bind_name(binder, to_names, scope);
+            let summand = Box::new(substitute_names(summand, rename, to_names, scope));
+            scope.pop();
             Expression::Sum {
                 result_type: result_type.clone(),
-                binder: binder.clone(),
+                binder,
                 source,
                 summand,
             }
         }
         Expression::Size(operand) => {
-            Expression::Size(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Size(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
         Expression::Contains { collection, item } => Expression::Contains {
-            collection: Box::new(substitute_names(collection, rename, shadow)),
-            item: Box::new(substitute_names(item, rename, shadow)),
+            collection: Box::new(substitute_names(collection, rename, to_names, scope)),
+            item: Box::new(substitute_names(item, rename, to_names, scope)),
         },
         Expression::AllInstances { target, population } => Expression::AllInstances {
             target: target.clone(),
-            population: Box::new(substitute_names(population, rename, shadow)),
+            population: Box::new(substitute_names(population, rename, to_names, scope)),
         },
         Expression::Lookup {
             target,
@@ -579,8 +632,8 @@ fn substitute_names(
             absence,
         } => Expression::Lookup {
             target: target.clone(),
-            population: Box::new(substitute_names(population, rename, shadow)),
-            reference: Box::new(substitute_names(reference, rename, shadow)),
+            population: Box::new(substitute_names(population, rename, to_names, scope)),
+            reference: Box::new(substitute_names(reference, rename, to_names, scope)),
             absence: *absence,
         },
         Expression::Dispatch {
@@ -588,15 +641,15 @@ fn substitute_names(
             member,
             arguments,
         } => Expression::Dispatch {
-            receiver: Box::new(substitute_names(receiver, rename, shadow)),
+            receiver: Box::new(substitute_names(receiver, rename, to_names, scope)),
             member: member.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| substitute_names(argument, rename, shadow))
+                .map(|argument| substitute_names(argument, rename, to_names, scope))
                 .collect(),
         },
         Expression::Pre(operand) => {
-            Expression::Pre(Box::new(substitute_names(operand, rename, shadow)))
+            Expression::Pre(Box::new(substitute_names(operand, rename, to_names, scope)))
         }
     }
 }
@@ -677,7 +730,6 @@ pub fn checked_dispatch_operation(
     }
 
     let mut memo: BTreeMap<ProducerKey, Option<Vec<Expression>>> = BTreeMap::new();
-    let mut steps: usize = 0;
     let mut body_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
     let mut precondition_index: BTreeMap<ProducerKey, usize> = BTreeMap::new();
     let mut precondition_clauses_index: BTreeMap<ProducerKey, Vec<usize>> = BTreeMap::new();
@@ -685,7 +737,7 @@ pub fn checked_dispatch_operation(
     for candidate in &ordered_candidates {
         let (parameters, result) = require_signature(clauses, candidate)?;
 
-        let terms = effective_terms(candidate, clauses, &redefinitions, &mut memo, &mut steps)?;
+        let terms = effective_terms(candidate, clauses, &redefinitions, &mut memo, 0)?;
         if let Some(terms) = terms {
             let precondition_function = if terms.len() == 1 {
                 // The candidate's own clause is the only contributing term:
@@ -802,10 +854,16 @@ pub fn checked_dispatch_operation(
 
 #[cfg(test)]
 mod tests {
-    use super::{ancestor_closure, DispatchBridgeRefusal, MAX_ANCESTOR_DEPTH};
+    use std::collections::BTreeMap;
+
+    use super::{
+        ancestor_closure, effective_terms, DispatchBridgeRefusal, OperationClauses,
+        MAX_ANCESTOR_DEPTH,
+    };
     use crate::model::bundle::RedefinitionRecord;
     use crate::model::key::ProducerKey;
     use crate::model::normalize::ModelRefusalCause;
+    use crate::value::{Expression, ValueType};
 
     /// Finding #172-5: `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
     /// rather than silently truncating the closure. A straight redefinition
@@ -861,5 +919,65 @@ mod tests {
         let closure = ancestor_closure(&shallow_redefinitions, shallow_deepest)
             .expect("a chain exactly at MAX_ANCESTOR_DEPTH must not be refused");
         assert_eq!(closure.len(), shallow_keys.len());
+    }
+
+    /// A family with more precondition-bearing members than
+    /// [`MAX_ANCESTOR_DEPTH`] must not be refused when no single chain is
+    /// deep: one root plus `MAX_ANCESTOR_DEPTH + 1` direct children, each
+    /// redefining the root and each declaring its own precondition, so every
+    /// child's own walk is exactly one step deep. `memo` is shared across
+    /// every top-level [`effective_terms`] call in this loop, mirroring
+    /// [`checked_dispatch_operation`]'s own loop; before this fix, `steps`
+    /// was shared the same way, so the far-side children were wrongly
+    /// refused once the *cumulative* count of distinct nodes visited across
+    /// every prior child exceeded the bound, even though no child ever
+    /// recursed past depth 1.
+    #[test]
+    fn effective_terms_does_not_refuse_a_wide_family_with_a_shallow_chain() {
+        let root = ProducerKey::fixture("model.wide.root");
+        let self_parameters = vec![("self".to_owned(), ValueType::Boolean)];
+        let mut clauses = OperationClauses::default();
+        clauses
+            .parameters
+            .insert(root.clone(), self_parameters.clone());
+        clauses.result.insert(root.clone(), ValueType::Boolean);
+        clauses
+            .own_precondition
+            .insert(root.clone(), Expression::Boolean(true));
+
+        let child_count = MAX_ANCESTOR_DEPTH + 1;
+        let children: Vec<ProducerKey> = (0..child_count)
+            .map(|index| ProducerKey::fixture(format!("model.wide.child{index}")))
+            .collect();
+        let mut redefinitions = Vec::with_capacity(child_count);
+        for child in &children {
+            clauses
+                .parameters
+                .insert(child.clone(), self_parameters.clone());
+            clauses.result.insert(child.clone(), ValueType::Boolean);
+            clauses
+                .own_precondition
+                .insert(child.clone(), Expression::Boolean(true));
+            redefinitions.push(RedefinitionRecord {
+                key: ProducerKey::fixture(format!("model.wide.redef-{}", child.identity)),
+                owner: child.clone(),
+                redefining: child.clone(),
+                redefined: root.clone(),
+            });
+        }
+
+        let mut memo = BTreeMap::new();
+        for child in &children {
+            let terms = effective_terms(child, &clauses, &redefinitions, &mut memo, 0)
+                .unwrap_or_else(|refusal| {
+                    panic!(
+                        "a shallow one-hop walk must not exhaust the depth bound just \
+                         because {child_count} other members share it, got {refusal:?}"
+                    )
+                });
+            // Each child's own clause plus the root's: exactly two terms,
+            // never truncated by the shared `memo`.
+            assert_eq!(terms.map(|terms| terms.len()), Some(2));
+        }
     }
 }

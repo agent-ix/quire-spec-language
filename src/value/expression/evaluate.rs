@@ -958,18 +958,26 @@ impl<'a, 'm> Machine<'a, 'm> {
                 )?
             }
             NodeKind::Dispatch {
-                table, arguments, ..
+                table,
+                operation,
+                arguments,
+                ..
             } => {
                 let arguments = self.pop_many(arguments.len())?;
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant());
                 };
                 let subtype = reference.object_type();
+                // The exact call site that produced this node (`check.rs`'s
+                // `dispatch_call`), never re-derived by searching
+                // `dispatch_operations` for a `table` match: two call sites
+                // can share a table, and a `table`-only search would report
+                // whichever operation happens to come first, not the one
+                // this node's own `receiver.member(args)` actually named.
                 let operation = self
                     .scope
                     .dispatch_operations
-                    .iter()
-                    .find(|operation| operation.table == *table)
+                    .get(*operation)
                     .ok_or_else(invariant)?;
                 let table_ref = self.dispatch_tables.get(*table).ok_or_else(invariant)?;
                 charge_dispatch_select(self.meter, table_ref.candidate_count())?;
