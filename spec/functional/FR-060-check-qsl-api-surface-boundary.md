@@ -106,7 +106,7 @@ a known finding to make a run pass.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet), and rules T12-B and T12-C report the exact real call sites ADR-013 OBS-018 already names. | Test (TC-157) |
+| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rules T12-B and T12-C report every real call site ADR-013 OBS-018 already names, and report honestly if a real call site OBS-018's text does not enumerate is also found. | Test (TC-157) |
 
 ## Dependencies
 
@@ -127,5 +127,18 @@ Specified and implemented under
 [#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
 `arch-lint api-surface` subcommand (`tools/arch-lint/api_surface.rs`). T12-A is
 pending (the `replay` facade does not exist); T12-B and T12-C are live and
-currently fail against real QSL head at the OBS-018 locations, which is
-pre-existing, already-tracked debt this requirement does not remediate.
+currently fail against real QSL head. T12-C fails at exactly the two OBS-018
+locations (`src/value/model_query.rs:123,155`). T12-B fails at the one OBS-018
+location (`src/value/model_query.rs:108`) **and** one call site OBS-018's text
+does not name: `src/value/node.rs:322`, inside `NodeKey`'s own defining
+module, where the crate-internal helper `node_key_of` (itself called from
+`src/value/enumeration.rs` and `src/value/unit.rs`, neither of which is scanned
+directly -- this check's own stated textual-scan limitation) calls
+`NodeKey::of` directly. This is real, new information this check surfaces,
+not a false positive tuned away: ADR-013 O-04 states the constructor is
+"only called by the `check` stage," and, read literally, a call from the
+constructor's own defining module is not an exception this rule's allowed-
+caller list grants. Whether the defining module should be an implicit
+exception is a design question for whoever owns ADR-013/#213/#211, not
+decided by this check. This requirement does not remediate any of these
+findings.

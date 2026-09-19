@@ -45,10 +45,14 @@ against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
   treated as inside `model`), because segment matching requires a `::`
   boundary, not a textual prefix.
 - Step 5: T12-A reports `pending` (the `replay` facade module does not exist
-  yet). T12-B and T12-C report `failing`, naming the exact call sites ADR-013
-  OBS-018 already documents (`value/model_query.rs:108,123,155`). This output
-  is captured for the PR body as real, not synthetic, evidence -- the check
-  is not tuned to exclude this known finding.
+  yet). T12-C reports `failing` at exactly the two OBS-018 sites
+  (`value/model_query.rs:123,155`). T12-B reports `failing` at the OBS-018
+  site (`value/model_query.rs:108`) **and** one additional real site OBS-018's
+  text does not name (`value/node.rs:322`, the constructor's own defining
+  module, reached through the crate-internal `node_key_of` helper). This
+  output is captured for the PR body as real, not synthetic, evidence -- the
+  check is not tuned to exclude either finding, including the one beyond
+  OBS-018's documented set.
 
 ## Metadata
 
