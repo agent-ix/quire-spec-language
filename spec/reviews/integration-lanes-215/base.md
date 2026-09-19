@@ -5,7 +5,7 @@ type: SpecReview
 analysis: base
 scope: "FR-058, FR-059, FR-060, FR-061, IT-013, TC-156, TC-157, TC-158, TC-159"
 review_set: subset
-evaluated_revision: "4cd5174"
+evaluated_revision: "6f287b3"
 ---
 
 ## Summary
@@ -23,12 +23,16 @@ scoped architecture-tooling change, not a new domain model.
 
 ## Verdict
 
-**PASS.** No blocking finding. Two real defects were found and fixed during
+**PASS.** No blocking finding. Three real defects were found and fixed during
 this review pass itself (not deferred): an EARS-grammar/passive-voice defect
-in FR-059/FR-061 (fixed at `4cd5174`), and an overclaim in FR-060-AC-4/TC-157
-that the real T12-B/T12-C run reproduces ADR-013 OBS-018 exactly — the real
-run finds one additional genuine site (`src/value/node.rs:322`) OBS-018's
-text does not name, and the spec now says so (fixed at `0906f29`).
+in FR-059/FR-061 (fixed at `4cd5174`); an overclaim in FR-060-AC-4/TC-157 that
+the real T12-B/T12-C run reproduces ADR-013 OBS-018 exactly — the real run
+finds one additional genuine site (`src/value/node.rs:322`) OBS-018's text
+does not name, and the spec now says so (fixed at `0906f29`); and a
+test-tracing-tag gap (FND-004) where new tests used a stale doc-comment
+convention instead of this repo's real `#[trace(...)]` attribute, which left
+all 18 of FR-058 through FR-061's ACs showing as `unbacked_rows` in `quire
+coverage` despite real, passing tests existing.
 
 ## Findings
 
@@ -37,6 +41,7 @@ text does not name, and the spec now says so (fixed at `0906f29`).
 | FND-001 | low | `quire validate` flagged two agentless-passive SHALL statements in FR-059 and FR-061 (`ears:missing-subject`). Resolved before this review's evaluated revision. | FR-059; FR-061 |
 | FND-002 | low | FR-060-AC-4/TC-157 asserted the real T12-B/T12-C run reproduces ADR-013 OBS-018's documented sites exactly; the real run also finds `src/value/node.rs:322` (a call to `NodeKey::of` inside the constructor's own defining module, via the crate-internal `node_key_of` helper), which OBS-018's text does not name. Resolved: both documents now state the verified finding, including the site beyond OBS-018, rather than the assumption. Whether the constructor's own defining module should be an implicit allowed caller is left as an open design question for the ADR-013/#211/#213 owner, not decided by this check or this review. | FR-060; TC-157; ADR-013 OBS-018 |
 | FND-003 | low | The tool crate (`integration/current-head/tool/`) initially shipped with zero unit tests, unlike the sibling `arch-lint` tool's 20 tests with negative controls. Resolved: added unit tests for `resolved_commit`, which also caught and fixed a real bug (a source string with no `#` fragment at all returned the whole string as a fabricated commit sha instead of `None`). | `integration/current-head/tool/src/main.rs` |
+| FND-004 | low | None of the new tests in `tools/arch-lint/*.rs`, `integration/current-head/tool/src/main.rs` or `integration/current-head/tests/contract.rs` carried this repo's real, current test-tracing tag (`use ix_trace_rs::trace; #[trace("TC-...", "FR-...-AC-...")]`, confirmed via real, current examples such as `tests/text_enum_identity.rs:72` and `tests/integer_lowering.rs:68`); a stale, free-text doc-comment naming a test id in prose is not the convention (NFR-005's own `## Verification` text says so explicitly: "Legacy doc-comment tags are not the convention for new tests"). `quire coverage --scope . --json` correctly reported all 18 of FR-058 through FR-061's ACs as `unbacked_rows` as a result, despite real, passing tests existing for every one of them. Resolved: added `#[trace(...)]` attributes (and the `ix-trace-rs` dev-dependency, where a manifest did not already carry it) to every relevant test; re-running `quire coverage --scope . --json` afterward shows 0 of these 18 ids remaining in `unbacked_rows` and 0 new `status_lies` (repo-wide backed rows moved from 515/578 to 527/578). FR-058's four ACs (verified only by TC-159, which is itself `Automation: Manual`) are not required to carry a symbol tag by this repo's own convention (the same as the pre-existing `TC-010`/`NFR-005` precedent) and correctly do not appear in `unbacked_rows` or `no_symbol_rows` either. | `tools/arch-lint/graph.rs`; `tools/arch-lint/metadata.rs`; `tools/arch-lint/api_surface.rs`; `tools/arch-lint/duplicate_revisions.rs`; `integration/current-head/tool/src/main.rs`; `integration/current-head/tests/contract.rs` |
 
 ## Scope and provenance
 
@@ -89,7 +94,9 @@ requirement set (no state machine, no numeric option matrix):
 - Coverage: every AC in FR-058..061 traces to at least one TC (FR-058 AC-1..4
   → TC-159; FR-059 AC-1..6 → TC-156; FR-060 AC-1..4 → TC-157; FR-061 AC-1..4 →
   TC-158). Verified by reading each FR's Acceptance Criteria table's
-  Verification column.
+  Verification column, and machine-verified via `#[trace(...)]` tags plus a
+  clean `quire coverage --scope . --json` run (see FND-004): 0 of these 18 ACs
+  remain in `unbacked_rows`, 0 `status_lies`.
 - Option permutation: not applicable; none of the four FRs declares an
   `-OPT-` option set.
 - Constraint boundary: FR-061's path-dependency-vs-git-source boundary (no
