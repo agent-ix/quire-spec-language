@@ -28,6 +28,7 @@ fn object_type(identity: &str) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        abstract_type: false,
     })
 }
 
@@ -161,6 +162,82 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
     assert_eq!(candidate_count, 8);
     assert_eq!(subtype_count, 4);
     assert_eq!(dominance_count, 2);
+}
+
+/// D05 (`model-complete.md:156`, FR-151-AC-3: "an abstract subtype is
+/// never a dispatch target"): the same diamond as
+/// [`d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate`],
+/// with `model.B` declared abstract. `B` never enters the linked table at
+/// all (not even as a no-applicable refusal); `D` still links to
+/// `B.size` (an abstract type's own concrete subtypes remain valid
+/// candidates and targets), and the charge counts drop by exactly `B`'s own
+/// share (one fewer subtype, two fewer candidate checks, one fewer
+/// dominance enumeration since only `D` still has two applicable
+/// candidates).
+#[trace("TC-196")]
+#[test]
+fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
+    let mut records = fixture_g();
+    for record in &mut records {
+        if let DomainPackageRecord::ObjectType(object) = record {
+            if object.key == DeclarationKey::fixture("model.B") {
+                object.abstract_type = true;
+            }
+        }
+    }
+    records.push(operation("model.A.size", "model.A", true));
+    records.push(operation("model.B.size", "model.B", true));
+    records.push(redefinition(
+        "model.redef.B.size",
+        "model.B",
+        "model.B.size",
+        "model.A.size",
+    ));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
+    let view = effective_view(&domain_package);
+
+    let mut meter = unlimited_meter();
+    let outcome = link_dispatch(
+        &domain_package,
+        &view,
+        &DeclarationKey::fixture("model.A.size"),
+        GeneralizationClosure::Closed,
+        &mut meter,
+    );
+
+    let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
+        panic!("expected a linked dispatch table, got {outcome:?}");
+    };
+    let linked = |subtype: &str| {
+        table
+            .linked_for(&DeclarationKey::fixture(subtype))
+            .map(|c| c.node.clone())
+    };
+    assert_eq!(
+        linked("model.B"),
+        None,
+        "abstract B is never a dispatch target"
+    );
+    assert_eq!(linked("model.D"), Some("model.B.size".to_owned()));
+    assert_eq!(linked("model.C"), Some("model.A.size".to_owned()));
+    assert_eq!(linked("model.A"), Some("model.A.size".to_owned()));
+
+    let admitted = meter.admitted_charges();
+    let candidate_count = admitted
+        .iter()
+        .filter(|c| **c == ChargePoint::DispatchCandidate)
+        .count();
+    let subtype_count = admitted
+        .iter()
+        .filter(|c| **c == ChargePoint::DispatchSubtype)
+        .count();
+    let dominance_count = admitted
+        .iter()
+        .filter(|c| **c == ChargePoint::DispatchDominance)
+        .count();
+    assert_eq!(candidate_count, 6);
+    assert_eq!(subtype_count, 3);
+    assert_eq!(dominance_count, 1);
 }
 
 /// D01's `dispatch_candidates` boundary: the eighth `dispatch.candidate`

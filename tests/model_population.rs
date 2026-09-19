@@ -60,6 +60,7 @@ fn object_type(identity: &str) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        abstract_type: false,
     })
 }
 
@@ -914,6 +915,91 @@ fn l05_foreign_type_refuses() {
             );
         }
         other => panic!("expected Refused(foreign_reference/foreign-type), got {other:?}"),
+    }
+}
+
+/// FR-153:57/:72: a member type present in the effective view but not
+/// covered by the population's own declared `member_types` (itself, or a
+/// type conforming to one of them) is refused `foreign_reference`/
+/// `foreign-type`, distinct from [`l05_foreign_type_refuses`]'s absent-type
+/// case: `model.C` is a real declared object type here, just not one
+/// [`P1_POPULATION`] lists.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l05b_member_type_not_covered_by_population_member_types_refuses() {
+    let mut domain_package = fixture_f1();
+    domain_package.records.push(object_type("model.C"));
+
+    let view = view_of(&domain_package);
+    let mut document = p1("test/orders");
+    document.members.push(member("c1", "model.C"));
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &domain_package,
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(4),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignType {
+                    member: "c1".to_string(),
+                    type_name: DeclarationKey::fixture("model.C"),
+                }
+            );
+        }
+        other => panic!("expected Refused(foreign_reference/foreign-type), got {other:?}"),
+    }
+}
+
+/// D05 (`model-complete.md:156`): a member whose most-specific type is
+/// declared `abstract` is refused `invalid_runtime_input`/`abstract-instance`,
+/// even though that type is a real declared object type covered by the
+/// population's own `member_types`.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l05c_abstract_instance_refuses() {
+    let mut domain_package = fixture_f1();
+    for record in &mut domain_package.records {
+        if let DomainPackageRecord::ObjectType(object) = record {
+            if object.key == DeclarationKey::fixture("model.B") {
+                object.abstract_type = true;
+            }
+        }
+    }
+
+    let view = view_of(&domain_package);
+    let document = p1("test/orders"); // "b1" names `model.B`, now abstract.
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &domain_package,
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AbstractInstance {
+                    member: "b1".to_string(),
+                    abstract_type: DeclarationKey::fixture("model.B"),
+                }
+            );
+        }
+        other => panic!("expected Refused(invalid_runtime_input/abstract-instance), got {other:?}"),
     }
 }
 
