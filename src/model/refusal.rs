@@ -431,6 +431,38 @@ pub enum ModelRefusalCause {
     /// one construction site's data is the domain's own numeric
     /// lower/upper bounds, not an identity/path/name.
     MalformedDeclaration,
+    /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
+    /// digest domain is not the one domain Intake accepts.
+    DigestDomainMismatch {
+        /// The one digest domain Intake accepts (`sha256-jcs`).
+        expected: &'static str,
+        /// The selection's actual digest domain.
+        actual: String,
+    },
+    /// FR-154 Intake check 2 (`model-complete.md:68`): the package input
+    /// supplies no bytes under the selection's digest.
+    MissingSelection {
+        /// The caller's selection, already admitted past check 1.
+        selection: DomainPackageRef,
+    },
+    /// FR-154 Intake check 3 (`model-complete.md:69`): SHA-256 over the
+    /// package's JCS bytes does not equal the selected digest.
+    ByteDigestMismatch {
+        /// The selected digest.
+        expected: [u8; 32],
+        /// The digest actually computed over the supplied bytes.
+        actual: [u8; 32],
+    },
+    /// FR-154 Intake check 4 (`model-complete.md:70`): the package's own
+    /// identity and version disagree with the selection.
+    WrongModelSelection {
+        /// The caller's selection.
+        selection: DomainPackageRef,
+        /// The package's own declared identity.
+        actual_identity: String,
+        /// The package's own declared version.
+        actual_version: String,
+    },
     /// A population member declares the same field twice in its
     /// `field_values`. FR-272's `invalid_runtime_input` cause list is
     /// closed; there is no dedicated duplicate-field variant, so this is
@@ -586,6 +618,10 @@ impl ModelRefusalCause {
             Self::UnsortedDerivation { .. } => "unsorted-derivation",
             Self::DuplicatePath { .. } => "duplicate-path",
             Self::MalformedDeclaration => "malformed-declaration",
+            Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
+            Self::MissingSelection { .. } => "missing-selection",
+            Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
+            Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::DuplicateMember { .. } => "duplicate-member",
             Self::SubsettingViolation { .. } => "subsetting-violation",
             Self::FrameCreateOutsideGrant { .. }
@@ -610,7 +646,7 @@ mod tests {
     use serde_json::Value;
 
     use super::{ModelRefusalCause, OfferedSelection};
-    use crate::model::domain_package::Multiplicity;
+    use crate::model::domain_package::{DomainPackageRef, Multiplicity};
     use crate::model::key::{digest_of, DeclarationKey};
 
     fn key(identity: &str) -> DeclarationKey {
@@ -699,6 +735,10 @@ mod tests {
             ModelRefusalCause::UnsortedDerivation { .. } => "unsorted-derivation",
             ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
             ModelRefusalCause::MalformedDeclaration => "malformed-declaration",
+            ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
+            ModelRefusalCause::MissingSelection { .. } => "missing-selection",
+            ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
+            ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
             ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
             ModelRefusalCause::FrameCreateOutsideGrant { .. }
@@ -859,6 +899,22 @@ mod tests {
                 later: 0,
             },
             ModelRefusalCause::MalformedDeclaration,
+            ModelRefusalCause::DigestDomainMismatch {
+                expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
+                actual: String::new(),
+            },
+            ModelRefusalCause::MissingSelection {
+                selection: DomainPackageRef::fixture("p"),
+            },
+            ModelRefusalCause::ByteDigestMismatch {
+                expected: [0; 32],
+                actual: [0; 32],
+            },
+            ModelRefusalCause::WrongModelSelection {
+                selection: DomainPackageRef::fixture("p"),
+                actual_identity: String::new(),
+                actual_version: String::new(),
+            },
             ModelRefusalCause::DuplicateMember {
                 object: String::new(),
                 field: key("p"),

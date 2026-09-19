@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The domain package: FR-150's normalization input.
 //!
-//! QSL does not (yet) receive this domain package from a live Semantic IR 2.0.0
-//! intake (`filament-core-data#173`, unmerged); the shape below is the
-//! `model-effective-declaration.schema.json`/`model-complete.md` domain
-//! package exactly as FR-154 defines it, so normalization built against it
-//! needs no rewrite once a real intake supplies one. This module owns no
-//! registry: a [`DomainPackage`] is a value the caller passes in and
-//! [`crate::model::normalize`] consumes; nothing here is reachable except
-//! through that value.
+//! The shape below is the `model-effective-declaration.schema.json`/
+//! `model-complete.md` domain package exactly as FR-154 defines it. This
+//! module owns no registry: a [`DomainPackage`] is a value the caller passes
+//! in and [`crate::model::normalize`] consumes; nothing here is reachable
+//! except through that value. [`crate::model::intake`] admits Semantic IR
+//! 2.0.0 document bytes against a selection, but does not yet read an
+//! admitted document's IR nodes into these records, so every
+//! [`DomainPackage`] remains caller-constructed for now.
 
 use crate::model::key::DeclarationKey;
 use crate::value::OrderingOperator;

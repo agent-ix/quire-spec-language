@@ -48,13 +48,17 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
-#131 removes the `agent-ix-baseline-producer` dependency, `tests/producer_correspondence.rs`
-and the whole Producer 1.2/Filament correspondence adapter (`AdmittedProducerModel`,
-`ProducerCompatibilitySelection` and the `_with_producers` reader/admission
-family). Nothing in this prerelease repo consumed that path, so it is deleted
-outright rather than bridged. Remaining work: #131 replaces model intake with
-the `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` crates for
-domain-package model intake (FR-056), in a follow-up PR.
+#131 removed the Producer 1.2/Filament correspondence adapter and its own
+dependency, along with `tests/producer_correspondence.rs`; nothing in this
+prerelease repo consumed that path, so it was deleted outright rather than
+bridged. Model intake reads Semantic IR 2.0.0 domain
+packages (FR-056) through the `agent-ix-extraction-frontend` and
+`agent-ix-semantic-ir` crates, both pinned to
+cbbe4908e314b9cc5c7e1aaee87517218af3e632 under their declared
+AGPL-3.0-or-later grant. `tempfile` moves from a qualification-only
+dependency to a production one: `agent-ix-extraction-frontend`'s `lift` entry
+always writes its document to a required output path, and intake supplies a
+scratch directory for it.
 
 FR-020 selects the reviewed `unbounded_depth` feature on the existing serde_json
 pin. Only package intake disables the library recursion guard; its metered
