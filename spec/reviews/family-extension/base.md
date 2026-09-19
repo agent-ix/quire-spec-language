@@ -144,3 +144,24 @@ Also applied, from the #229 author's questions:
 - Candidate matching is on kind alone, and CG `negotiate_*` compares the mode (§1.1, §7.2).
 - The `Relation` refinement gates (#191, #192) emit `operation-contract` claims, one per clause implication. `refinement` is for refinement between protocols (§3).
 - Each family records the Requirements for its own claim forms. The ADR cites FR-057 for the table (§2).
+
+## Round 3 (PR review, delta 12468e3..eecf825)
+
+Checked against ADR-011 at 1666d02 (QSL PR #235) and ADR-013 at 02a504f (QSL PR #236).
+
+| ID | Status at eecf825 |
+| --- | --- |
+| PR-N1 | Closed. QSpec #134 (FR-290) owns the vocabulary in every place ADR-012 cites it. #229 appears only as QSL's alignment and the FR-057 claim form → kind table. ADR-013 Context and T-7 say the same. |
+| PR-N2 | Closed. RT keys its lookup by `NodeKey` (ADR-013 O-04). The replay executor entry is the one `QualifiedName` lookup, which matches ADR-013 R-06 and OQ-5. |
+| PR-N3 | Closed in ADR-011 1666d02 (lines 827-830): the S6a arm returns `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)`. |
+| PR-N4, PR-N5, PR-L7, PR-L10 | Closed. |
+
+New content checked:
+- §12.3 treats the descriptor as the FR-331 provider manifest, converted by QSL `route`. This matches ADR-013 T-7 and C-28, and ADR-011 E7.
+- `FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }` is in the layer-3 `check` core, and F `diagnostic` maps it to `refusal`. This matches ADR-011 layer 3 and S6a, and ADR-013 O-16 and T-6.
+- The family `check` return is renamed `CheckOutcome`, and no sibling names that type differently.
+- The §13.5 row says RT gets `NodeKey`s only in process, through S6a, which matches ADR-013 O-04.
+
+The round found nothing new. `quire validate --strict --summary` passes on the ADR and the changed records.
+
+PR review verdict at eecf825: PASS.
