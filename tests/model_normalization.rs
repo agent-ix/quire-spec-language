@@ -4507,59 +4507,93 @@ fn m2_two_redefiners_of_an_unreachable_target_are_named_in_one_refusal() {
 
 /// H1 finding, PR #228 round 2 review: the unreachable-target refusal groups
 /// by `(owner, target)`, not by `target` alone. `A` declares `A.x`; `B` (no
-/// supertypes) declares `B.z` redefining `A.x`; `D` inherits `B` (one
-/// inheritance line: `A`, `B`, `D`) and separately declares `D.w`, also
-/// redefining `A.x`. `D` does not inherit `A` (only `B`, and `B` has no
-/// supertypes of its own), so `A.x` is unreachable from `D` too, and `D`'s
-/// own phase-4 query sees *both* owners' edges (its own `D.w`, and `B.z`
-/// inherited along its one supertype edge) in a single target group --
-/// exactly the shape that grouping by `target` alone conflated. Grouped by
-/// `(owner, target)` instead, `D`'s query yields two refusals, `B.z`'s own
-/// and `D.w`'s own, each naming only its own owner's redefiner; `B.z`'s own
-/// refusal is also independently derived at `B`'s own query (`A.x` is
-/// unreachable from `B` on its own), so the two collapse to one by the
-/// domain-wide rank dedup below -- itself only correct because both queries
-/// now agree on `B.z`'s own owner. Renaming `B`/`D`/their members changes
-/// nothing about which group each redefiner lands in: grouping is by
+/// supertypes) declares `B.z` redefining `A.x`; a descendant of `B` (one
+/// inheritance line: `A`, `B`, descendant) separately declares its own
+/// redefiner of `A.x`. The descendant does not inherit `A` (only `B`, and
+/// `B` has no supertypes of its own), so `A.x` is unreachable from the
+/// descendant too, and the descendant's own phase-4 query sees *both*
+/// owners' edges (its own redefiner, and `B.z` inherited along its one
+/// supertype edge) in a single target group -- exactly the shape that
+/// grouping by `target` alone conflated. Grouped by `(owner, target)`
+/// instead, the descendant's query yields two refusals, `B.z`'s own and its
+/// own, each naming only its own owner's redefiner; `B.z`'s own refusal is
+/// also independently derived at `B`'s own query (`A.x` is unreachable from
+/// `B` on its own), so the two collapse to one by the domain-wide rank
+/// dedup below -- itself only correct because both queries now agree on
+/// `B.z`'s own owner.
+///
+/// Run under both namings (L2 ruling, PR #228 round 2 review): `model.D`
+/// sorts after `model.B` (`"model.D.w" > "model.B.z"`), `model.AA` sorts
+/// before it (`"model.AA.w" < "model.B.z"`) -- the reviewer's own repro
+/// used the `AA` ordering, the one where the old rank-only dedup
+/// misattributed and duplicated `B.z`. Renaming the descendant changes
+/// nothing about which group each redefiner lands in, and nothing about
+/// there being exactly two refusals, only their relative order (ascending
+/// by each refusal's own least redefining member): grouping is by
 /// declaration key identity, not by name.
 #[trace("TC-196", "FR-151-AC-2", "FR-150-AC-3")]
 #[test]
 fn h1_two_owners_on_one_inheritance_line_redefining_an_unreachable_target_are_each_their_own_refusal(
 ) {
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.h1"),
-        vec![
-            object_type("model.A", vec![]),
-            field_member("model.A.x", "model.A", "model.A"),
-            object_type("model.B", vec![]),
-            field_member_redefining("model.B.z", "model.B", "model.A", Some("model.A.x"), vec![]),
-            object_type("model.D", vec!["model.B"]),
-            field_member_redefining("model.D.w", "model.D", "model.A", Some("model.A.x"), vec![]),
-        ],
-    );
-    assert_eq!(
-        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::RedefinitionTarget {
-                    redefiners: vec![DeclarationKey::fixture("model.B.z")],
-                    target: DeclarationKey::fixture("model.A.x"),
-                },
-                detail: "model.B.z redefines model.A.x, which is not a member model.B inherits"
-                    .to_string(),
+    for descendant in ["model.D", "model.AA"] {
+        let redefiner = format!("{descendant}.w");
+        let domain_package = DomainPackage::new(
+            DomainPackageRef::fixture("bundle.h1"),
+            vec![
+                object_type("model.A", vec![]),
+                field_member("model.A.x", "model.A", "model.A"),
+                object_type("model.B", vec![]),
+                field_member_redefining(
+                    "model.B.z",
+                    "model.B",
+                    "model.A",
+                    Some("model.A.x"),
+                    vec![],
+                ),
+                object_type(descendant, vec!["model.B"]),
+                field_member_redefining(
+                    &redefiner,
+                    descendant,
+                    "model.A",
+                    Some("model.A.x"),
+                    vec![],
+                ),
+            ],
+        );
+        let b_refusal = ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: vec![DeclarationKey::fixture("model.B.z")],
+                target: DeclarationKey::fixture("model.A.x"),
             },
-            ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::RedefinitionTarget {
-                    redefiners: vec![DeclarationKey::fixture("model.D.w")],
-                    target: DeclarationKey::fixture("model.A.x"),
-                },
-                detail: "model.D.w redefines model.A.x, which is not a member model.D inherits"
-                    .to_string(),
+            detail: "model.B.z redefines model.A.x, which is not a member model.B inherits"
+                .to_string(),
+        };
+        let descendant_refusal = ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: vec![DeclarationKey::fixture(&redefiner)],
+                target: DeclarationKey::fixture("model.A.x"),
             },
-        ]))
-    );
+            detail: format!(
+                "{redefiner} redefines model.A.x, which is not a member {descendant} inherits"
+            ),
+        };
+        // Ascending by each refusal's own least redefining member -- the
+        // same `str` order `DeclarationKey`'s own `Ord` uses over `node`
+        // (both share `test/orders` as `package`, so this is exactly that
+        // comparison).
+        let expected = if redefiner.as_str() < "model.B.z" {
+            vec![descendant_refusal, b_refusal]
+        } else {
+            vec![b_refusal, descendant_refusal]
+        };
+        assert_eq!(
+            normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+            NormalizeOutcome::Refused(Refusals::from_vec(expected)),
+            "descendant: {descendant}"
+        );
+    }
 }
 
 /// TEST GAP (#193, PR #228 review): `n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit`

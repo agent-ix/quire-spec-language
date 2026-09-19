@@ -2577,7 +2577,7 @@ fn sort_facts(facts: &mut [PendingFact]) {
 /// `meter.charge(...)?` keep working unchanged throughout `charge_all`.
 enum ChargeAllDenial {
     Incomplete(Incomplete),
-    Refused(Vec<ModelRefusal>),
+    Refused(Refusals),
 }
 
 impl From<Incomplete> for ChargeAllDenial {
@@ -2611,10 +2611,12 @@ fn charge_all(
 
     // QSL #199: every `normalize.record` charge above is admitted before
     // this is ever consulted -- `Built::intake_refusals`'s own doc.
-    if !built.intake_refusals.is_empty() {
-        return Err(ChargeAllDenial::Refused(std::mem::take(
-            &mut built.intake_refusals,
-        )));
+    // `Refusals::try_from` in an `if let` (L1 finding, PR #228 round 2
+    // review): no `.expect()` anywhere on this path -- an empty
+    // `intake_refusals` simply does not match `Ok`, so this falls through
+    // to the phase-3/4 checks below instead of ever panicking.
+    if let Ok(refusals) = Refusals::try_from(std::mem::take(&mut built.intake_refusals)) {
+        return Err(ChargeAllDenial::Refused(refusals));
     }
 
     let mut fact_count: u64 = 0;
@@ -2654,11 +2656,10 @@ fn charge_all(
     // ever consulted -- `Built::phase3_refusals`' own doc.
     // `value-accounting.md:509`: "a stage that reports a refusal ends
     // checking: no later stage runs or charges" -- phase 4's own charges
-    // below never run once this is reported.
-    if !built.phase3_refusals.is_empty() {
-        return Err(ChargeAllDenial::Refused(std::mem::take(
-            &mut built.phase3_refusals,
-        )));
+    // below never run once this is reported. `Refusals::try_from` in an
+    // `if let` -- see the identical `intake_refusals` check above.
+    if let Ok(refusals) = Refusals::try_from(std::mem::take(&mut built.phase3_refusals)) {
+        return Err(ChargeAllDenial::Refused(refusals));
     }
 
     for work in &built.redefinition_check_work {
@@ -2693,11 +2694,10 @@ fn charge_all(
     // reported -- an earlier `Incomplete` already returned via `?` above
     // wins instead. `:482`'s "a stage that reports a refusal ends checking:
     // no later stage runs or charges" -- phase 5's own charges below never
-    // run once these refusals are reported.
-    if !built.phase4_refusals.is_empty() {
-        return Err(ChargeAllDenial::Refused(std::mem::take(
-            &mut built.phase4_refusals,
-        )));
+    // run once these refusals are reported. `Refusals::try_from` in an
+    // `if let` -- see the identical `intake_refusals` check above.
+    if let Ok(refusals) = Refusals::try_from(std::mem::take(&mut built.phase4_refusals)) {
+        return Err(ChargeAllDenial::Refused(refusals));
     }
 
     let mut decl_count: u64 = 0;
@@ -2766,11 +2766,12 @@ pub fn normalize_with_meter(
     let outcome = match charge_all(domain_package, &mut built, &mut meter) {
         Ok(()) => NormalizeOutcome::Completed(built.view),
         Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
-        Err(ChargeAllDenial::Refused(refusal)) => NormalizeOutcome::Refused(
-            refusal
-                .try_into()
-                .expect("charge_all's own Refused(refusal) is never an empty Vec"),
-        ),
+        // `ChargeAllDenial::Refused` already carries `Refusals` (L1
+        // finding, PR #228 round 2 review): `charge_all`'s own three raise
+        // sites each build it directly from an already-checked non-empty
+        // `Vec`, so there is nothing left to convert, and nothing left to
+        // panic over, here.
+        Err(ChargeAllDenial::Refused(refusals)) => NormalizeOutcome::Refused(refusals),
     };
     (outcome, meter)
 }
@@ -2798,10 +2799,12 @@ pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse,
         built.phase3_refusals,
         built.phase4_refusals,
     ] {
-        if !refusals.is_empty() {
-            return Err(refusals
-                .try_into()
-                .expect("checked non-empty by the guard above"));
+        // `Refusals::try_from` in an `if let` (L1 finding, PR #228 round 2
+        // review): no `.expect()` needed -- an empty stage's refusal `Vec`
+        // simply does not match `Ok`, so the loop moves on to the next
+        // stage instead.
+        if let Ok(refusals) = Refusals::try_from(refusals) {
+            return Err(refusals);
         }
     }
     Ok(built.universe)
