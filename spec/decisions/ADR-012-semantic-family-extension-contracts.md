@@ -532,7 +532,7 @@ runs:
 | Candidate set | Disposition settled by `negotiate_*` |
 |---|---|
 | unknown-backend | `invalid-request`, naming the unknown `BackendId` |
-| empty | `unsupported`, warned, naming the item's unmet capability kind (backend absence, §7.3) |
+| empty | `unsupported`, warned, naming the item's unmet capability kind and any backend the request named (backend absence, §7.3) |
 | more than one, request names none | `invalid-request`, naming every candidate; the caller resolves it by naming a backend |
 | exactly one | the CG `negotiate_*` arm for that backend's kind (seam S9), over the IR form and the extent rules of §1.1: `supported`, `requires-bound`, `unsupported` (warned) or `invalid-request` |
 
@@ -560,7 +560,8 @@ Backend absence (FR-290, FR-057) is an item whose candidate set is empty. At
 admission, capability absence is a different thing: the `absent-kind` refusal.
 
 - `negotiate_*` settles it `unsupported` with a warning naming the item's
-  unmet capability kind (FR-290 kinds as widened by QSpec #134), per QSpec FR-290-AC-4. The outcome constructor comes from
+  unmet capability kind (FR-290 kinds as widened by QSpec #134) and any
+  backend the request named, per FR-057 and QSpec FR-290-AC-4. The outcome constructor comes from
   #213 and the catalog code from #229.
 - No backend is invoked, and no artifact is emitted for the item at any later
   stage.
@@ -754,8 +755,8 @@ unchanged.
 ### 12.2 Add a scoped frame clause to a protocol operation
 
 Normative input: QSpec FR-340 (frame body) and QSpec #101 and #106. The
-Requirements row follows the kind FR-057's claim form → kind table (QSL PR
-#237) assigns (§13.3 Q2).
+frame obligation's kind is `operation-contract`, an existing kind, per
+FR-057 (QSL PR #237, merged; §13.3 Q2).
 
 | Stage | Change | Module or path | Seam forced |
 |---|---|---|---|
@@ -767,7 +768,7 @@ Requirements row follows the kind FR-057's claim form → kind table (QSL PR
 | Check | builder transitions into `Anchored` and `Framed` (§4.2): each anchor checked by its own scope function; each frame member resolved to node identities and checked against FR-340 eligibility on its own; `finish` checks that postcondition writes fall inside `modifies` | `check::protocol_clause` | S1, S4 |
 | Diagnostics | FR-340 frame and anchor cause codes | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md`, re-vendored to `resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
 | Checked node | `Frame` and `ScopedAnchor` checked clause subnodes of the operation node | `check` core | S3 |
-| Requirements | the frame obligation's capability kind, if FR-057 (QSL PR #237) assigns one (§13.3 Q2); otherwise none. A new kind is a QSpec FR-290 edit under QSpec #134, settled before #212 judges scenario 3 | `check::protocol_clause` | S7 only if a kind is added |
+| Requirements | the frame obligation records `operation-contract`, the kind FR-057 assigns it (§13.3 Q2). That kind exists, so the capability vocabulary is unchanged | `check::protocol_clause` | none; S7 is unchanged |
 | Evaluate | runtime frame check, `frame_violation`/`unauthorized-change` | `value::expression::protocol_clause` | S3 |
 | Package | v2 `state`/`frame` node (FR-340) and the scoped anchor node | `package` (v2 emitter, `ProtocolClause` arm) | S1, S3, S5 |
 | IR, CG | explicit `unsupported` arms until Contract IR #109 and Codegen #49 land (AD-016 "Frames and unbounded constructs") | `IR:crates/quire-contract-model/src/checked_package/v2/lower.rs`; `CG:src/kani_obligations.rs` | S6 |
@@ -777,7 +778,7 @@ Tests: frame member eligibility, one refusal per FR-340 cause; anchor scope
 refusal; out-of-order clause refusal from the builder; cross-clause write
 containment; runtime `frame_violation` evaluation; the S5 seam probe showing
 the `TemporalTrace` and `Relation` arms are forced; typed `unsupported` ledger
-test; the backend-absence corpus case when a kind is assigned. The clause
+test; the backend-absence corpus case for `operation-contract`. The clause
 kind lives in the `check` core, so no `Value` or `SumCase` module changes.
 `TemporalTrace` and `Relation` change only by their compile-forced clause-kind
 arm.

@@ -185,3 +185,10 @@ New findings (low, not blocking):
 `quire validate --strict --summary` passes.
 
 PR review verdict at e71986a: PASS (PR-N6 and PR-N7 are optional wording fixes).
+
+### Author closure (after PR review round 4)
+
+| ID | Closure |
+| --- | --- |
+| PR-N6 | Fixed: §12.2 states that FR-057 (QSL PR #237, merged) assigns frame obligations `operation-contract`, an existing kind, so S7 is unchanged. The conditional wording is removed. |
+| PR-N7 | Fixed: the §7.2 empty-candidate-set row and the §7.3 warning name the item's kind and any backend the request named (FR-057, FR-290-AC-4). |
