@@ -1200,6 +1200,7 @@ fn object_type_record(identity: &str) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        abstract_type: false,
     })
 }
 

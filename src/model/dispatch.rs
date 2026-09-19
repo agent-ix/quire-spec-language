@@ -167,12 +167,18 @@ struct DispatchIndex {
     redefinitions: Vec<RedefinitionRecord>,
     generals_by_specific:
         HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
+    /// D05 (`model-complete.md:156`, FR-151 "Dispatch rules": "For every
+    /// effective type `S` conforming to `T`... that is not abstract"):
+    /// object-type keys declared `abstract`, so [`link_dispatch`]'s subtype
+    /// enumeration excludes them from ever becoming a dispatch target.
+    abstract_types: HashSet<DeclarationKey>,
 }
 
 impl DispatchIndex {
     fn build(domain_package: &DomainPackage) -> Self {
         let mut operations = HashMap::new();
         let mut redefinitions = Vec::new();
+        let mut abstract_types = HashSet::new();
         for record in &domain_package.records {
             match record {
                 DomainPackageRecord::OperationMember(operation) => {
@@ -181,8 +187,12 @@ impl DispatchIndex {
                 DomainPackageRecord::Redefinition(redefinition) => {
                     redefinitions.push(redefinition.clone());
                 }
-                DomainPackageRecord::ObjectType(_)
-                | DomainPackageRecord::FieldMember(_)
+                DomainPackageRecord::ObjectType(object) => {
+                    if object.abstract_type {
+                        abstract_types.insert(object.key.clone());
+                    }
+                }
+                DomainPackageRecord::FieldMember(_)
                 | DomainPackageRecord::Supertype(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Subsetting(_)
@@ -196,6 +206,7 @@ impl DispatchIndex {
             operations,
             redefinitions,
             generals_by_specific: generals_by_specific(domain_package),
+            abstract_types,
         }
     }
 }
@@ -304,6 +315,9 @@ pub fn link_dispatch(
             continue; // a member entry, not a type entry.
         }
         let candidate_subtype = &entry.preimage.original;
+        if index.abstract_types.contains(candidate_subtype) {
+            continue; // D05: an abstract subtype is never a dispatch target.
+        }
         match type_conforms(
             &index.generals_by_specific,
             candidate_subtype,

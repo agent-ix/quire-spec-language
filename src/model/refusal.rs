@@ -256,12 +256,23 @@ pub enum ModelRefusalCause {
         /// `None` when the document declares no members.
         type_name: Option<DeclarationKey>,
     },
-    /// A population member names a type absent from the effective view.
+    /// A population member's type is not covered by the population's own
+    /// declared `member_types` (FR-153:57/:72: covered means the member
+    /// type itself, or a type conforming to a declared member type), or is
+    /// absent from the effective view outright.
     ForeignType {
         /// The member.
         member: String,
-        /// The absent type.
+        /// The uncovered or absent type.
         type_name: DeclarationKey,
+    },
+    /// D05 (`model-complete.md:156`): a population member's most-specific
+    /// type is abstract, which has no direct instances.
+    AbstractInstance {
+        /// The member.
+        member: String,
+        /// The member's abstract most-specific type.
+        abstract_type: DeclarationKey,
     },
     /// A population declaration's `member_types` names a type that is not a
     /// declared object type (model-complete.md's "Populations" row).
@@ -542,6 +553,7 @@ impl ModelRefusalCause {
             Self::IncompleteScope { .. } => "incomplete-scope",
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
             Self::ForeignType { .. } => "foreign-type",
+            Self::AbstractInstance { .. } => "abstract-instance",
             Self::UnknownPopulationMemberType { .. } => "missing-name",
             Self::ConflictingIdentity { .. } => "conflicting-identity",
             Self::OperatorIneligible => "operator-ineligible",
@@ -653,6 +665,7 @@ mod tests {
             ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
             ModelRefusalCause::ForeignType { .. } => "foreign-type",
+            ModelRefusalCause::AbstractInstance { .. } => "abstract-instance",
             ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing-name",
             ModelRefusalCause::ConflictingIdentity { .. } => "conflicting-identity",
             ModelRefusalCause::OperatorIneligible => "operator-ineligible",
@@ -774,6 +787,10 @@ mod tests {
             ModelRefusalCause::ForeignType {
                 member: String::new(),
                 type_name: key("p"),
+            },
+            ModelRefusalCause::AbstractInstance {
+                member: String::new(),
+                abstract_type: key("p"),
             },
             ModelRefusalCause::UnknownPopulationMemberType {
                 population: key("p"),

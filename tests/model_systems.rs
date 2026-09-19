@@ -42,6 +42,7 @@ fn object_type(identity: &str, interface_features: Option<Vec<&str>>) -> DomainP
         key: DeclarationKey::fixture(identity),
         interface_features: interface_features
             .map(|features| features.into_iter().map(DeclarationKey::fixture).collect()),
+        abstract_type: false,
     })
 }
 

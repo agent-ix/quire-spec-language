@@ -26,7 +26,7 @@ pub struct Multiplicity {
     pub unique: bool,
 }
 
-/// An object type export: `{key, interfaceFeatures}`.
+/// An object type export: `{key, interfaceFeatures, abstract}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
     /// This type's original declaration key.
@@ -36,6 +36,12 @@ pub struct ObjectTypeRecord {
     /// is a real, valid interface with zero declared features; the
     /// distinction from `None` is the capability itself, not emptiness.
     pub interface_features: Option<Vec<DeclarationKey>>,
+    /// D05 (`model-complete.md:156`): an abstract type has no direct
+    /// instances. A population member whose most-specific type is abstract
+    /// is refused (`invalid_runtime_input`/`abstract-instance`), and
+    /// dispatch covers only concrete subtypes. Named `abstract_type`, not
+    /// `abstract`, since the latter is a reserved Rust keyword.
+    pub abstract_type: bool,
 }
 
 /// A field member of an object type: `{key, owner, value_type, multiplicity}`.

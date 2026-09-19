@@ -33,6 +33,8 @@ serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
+agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "cbbe4908e314b9cc5c7e1aaee87517218af3e632" }
+agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "cbbe4908e314b9cc5c7e1aaee87517218af3e632" }
 
 [dev-dependencies]
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
