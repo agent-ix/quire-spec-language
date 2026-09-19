@@ -84,3 +84,41 @@ No failure-domain review of ADR-011 exists yet in `spec/reviews/stage-dag/`.
 The overlap with this review is FND-001 and FND-003: removal ordering
 decides whether a gate fails for lack of any proof path, or because
 composed-lane code is orphaned.
+
+## Round 2 (HEAD 5cbd853)
+
+Reviewed the revised ADR-011 at 5cbd853 against the round-1 findings. The
+main changes are the M-6 slices (§7.3), the gap statement after them, and the
+Owner questions. Choices routed to the owner under "Owner questions" are
+accepted at this layer and not re-argued here.
+
+### Resolution of round-1 findings
+
+| ID | Round 2 | Reason |
+| --- | --- | --- |
+| FND-001 | Resolved | SEAM-4 is now removed with SEAM-1 in M-6 (§6.2 SEAM-4 row, M-6d). The "lowering-target removal with #217" text is gone. §7.1 "QSL tests → RT" is owned by M-6. The proof-and-replay gap until #217 is stated in §7.3 and the Consequences, and routed as Owner question 2. |
+| FND-002 | Resolved | M-6a rewires `run` and `compile` to the spine, and M-6c removes `lower` and the native `command` submodules (§7.3, §6.2 SEAM-1). The missing ticket is routed as Owner question 1, and the text states the amendment to the #205 layer plan. |
+| FND-003 | Resolved | SEAM-1 is now defined by its entry points, and code shared with SEAM-2, including `formal_source`, belongs to SEAM-2 (§6.2 SEAM-1 and SEAM-2 rows, `formal_source` row). |
+| FND-004 | Resolved | The IR root → QSL edge is now removed before #216 (§7.1 row 1, §9 OBS-029), so before #217 makes CG → QSL normal. The CG build no longer carries two QSL revisions. The ticket is routed as Owner question 4. The one-revision rule still checks only QSL's lock. That is acceptable now that the ordering removes the case. |
+| FND-005 | Partly | §4 now defines the verified binding that FB-03 cites. M-6c removes the SEAM-3 reads that feed `state` and `temporal`, and the evaluator gap is stated (§7.3, Owner question 2). But the `state` and `temporal` modules are built on SEAM-3 types, not only on reads. The unresolved part is FND-010. |
+| FND-006 | Partly | M-6 is split into M-6a to M-6d. M-3 and M-5 are separate slices, and the single-writer order X-1 → M-2 → M-5 is stated (§7.3 preamble). M-6c still deletes every SEAM-1 module, SEAM-2 and SEAM-3 emission, and the `state` imports in one slice. No slice is sized against #205's one to three sessions. This remains medium: M-6c is mostly deletion, and FND-010 decides its size. |
+| FND-007 | Partly | Gate owners are listed per gate (§2.3). The CG gate and the `quire-exact` gate are routed as Owner questions 6 and 7. §2.3 condition 1 and the #226 census still read the prover transcript. They do not say that module attribution comes from the typed #231 proof-result envelope. This remains low. |
+| FND-008 | Resolved | X-1, M-2 and the RT agreement retarget have no tickets yet, and this is routed as Owner question 6. §7.1 now places X-1 "ahead of #213". |
+
+### New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | The skeleton spine has no ticket and no order relative to M-6d. The record now rests the M-6 → #217 window on it: "The skeleton spine (§1.1) is the only proof-and-replay evidence in that window" (§7.3, Consequences). Owner question 2 asks the owner to accept the gap on that basis. But nothing orders M-6d (which deletes IT-010) after the skeleton is green in CI. If M-6d lands first, QSL's ecosystem has no proof-and-replay evidence at all. The skeleton also needs M-4 (E5 reads v2 bytes, E9 reads through the I2 reader) and a CG → QSL edge to a revision that has M-4 and the S6a entry. §7.1 makes that edge normal only in #217, and today it is a dev pin to 21c507e. Fix: in §7.3, add "after the skeleton spine is green in CI" to M-6d's order. In §7.1, state that the skeleton moves the CG → QSL dev pin to a revision with M-4, and that #217 makes it normal. Either name the skeleton's ticket or add it to Owner question 1. | ADR-011 §1.1; §7.1 row 5; §7.3 M-6d and the gap paragraph; Consequences bullet 5; Owner question 2 |
+| FND-010 | medium | M-6c's scope for `state` and `temporal` is undefined. M-6c removes "the SEAM-3 reads that feed `state` and `temporal`, and the `state` `native_model` and IR imports". But these modules are typed over SEAM-1 and SEAM-3: `state/input.rs:6` (`protocol_artifact::{wire, ProtocolNumber}`), `state/work.rs:4` (`wire::Locus`), `state/evaluation.rs:21-22,56` (`native_model::NativeModel`, `protocol_artifact`), `temporal/formula.rs:10,572` and `temporal/mapping.rs:19` (`protocol_artifact::wire`, `ProtocolNumber`). The SEAM-3 row removes `protocol_artifact`'s reads and emission in M-6, and SEAM-1 removes `native_model`. So M-6c must either delete `state` and `temporal`, or re-type them over K, F or `semantic_value`. The record says only that the evaluators are "unavailable" until #220 and #222. The first choice empties layer 5 apart from `value::expression` and `simulation`. The second adds new design work to a deletion slice. #226 and #212 cannot check M-6c until it is decided. Fix: state in the §6.2 `state` and `temporal` rows and in M-6c which choice is made. If they are deleted, #220 and #222 re-add them, which follows Decision 9. If SEAM-3 is removed completely in M-6, say so in the SEAM-3 row. | ADR-011 §6.2 SEAM-3, `state`, `temporal` and `protocol_artifact` rows; §7.3 M-6c and the gap paragraph; `QSL:state/*.rs`, `QSL:temporal/*.rs` at 5cbd853 |
+
+No new high finding. The revision adds no compatibility layer, and it keeps
+AD-016 arrows 1, 2 and 7, Owner decision 5 and the crate graph.
+
+### Round-2 verdict
+
+ACCEPT WITH FINDINGS. Open: 0 high, 3 medium (FND-006, FND-009, FND-010) and
+1 low (FND-007). Both round-1 high findings are resolved. FND-005 and FND-006 are partly resolved, and their open parts
+are FND-010 and M-6c sizing. FND-007 remains low. FND-009 and FND-010 are
+local text fixes to §7.1, §7.3 and §6.2, and neither needs an owner decision
+beyond Owner questions 1 and 2.

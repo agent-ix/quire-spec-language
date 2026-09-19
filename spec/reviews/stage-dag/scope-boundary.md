@@ -88,3 +88,38 @@ can be fixed in the same revision.
 | FND-006 | low | §5 settles parts of #225's required decisions. #225 lists "CLI adaptation, stable exit-code mapping, and structured output rules". §5 fixes the command outcome fields ("last stage reached, terminal outcome kind, diagnostics …, identities") and the exit-code mechanism ("one total, exhaustive map … no `_` arm"). These are reasonable, but they are design content rather than stage-boundary constraints. Fix: phrase them as constraints #225 must meet: outcomes are structured and total, rendering is output-only, and no command logic reads rendered text. Move the specific field list and exit-map shape into "Questions handed to #225", or mark them as proposed inputs. | ADR-011 §5; #225 Required decisions |
 | FND-007 | low | Two wire questions are routed without naming QSpec as the authoring home. SEAM-3 says "Whether these formats remain as separate wires is decided in #211". Compiled-protocol /1 to /3 and the checked handoffs cross into IR, and #211 states that "Normative cross-repository wire/API changes are authored in QSpec". The §7.1 IR root → QSL removal names QSpec correctly. SEAM-3 and the matching "To #211" bullet do not. Fix: add "authored in QSpec" to SEAM-3 and to the #211 question. | ADR-011 §6.2 SEAM-3, Questions to #211; #211 Required design |
 | FND-008 | low | The frontmatter relationships do not record the binding input. ADR-011 declares AD-016 binding ("Its seven arrows … are binding"), but lists only `depends_on` ADR-010 and `relates_to` IT-010. The traceability graph therefore cannot show that ADR-011 depends on AD-016. Fix: add `target: ix://agent-ix/quire-specification/AD-016`, `type: depends_on` (or `references`, if cross-repository `depends_on` is not allowed). | ADR-011 frontmatter, Context bullet 2 |
+
+## Round 2 (HEAD 5cbd853)
+
+Reviewed commit: 5cbd853 (branch `task/209-stage-dag`), the same ADR file.
+Ticket bodies re-read: #185, #205, #209, #210, #212, #216 and #229. AD-016
+stays binding. Items routed under "Owner questions" count as routed.
+
+### Resolution of round-1 findings
+
+| ID | Resolution | Reason |
+| --- | --- | --- |
+| FND-001 | Partly | "(E7 selection)" is gone, and `lowering::target` now retires into a named successor, the QSL `route` module (§6.1 layer R, §6.2 `lowering` row). A "To #210 and #229" question now covers how `route` relates to E7 negotiation. Two gaps remain. Scenario 7 still says "Registers in the #185 registry" rather than "the registry #229 specifies and #185 implements". The new placement also opens FND-009 and FND-010. |
+| FND-002 | Resolved | SEAM-1's owning change is now M-6, and #216 is its gate only (§6.2 SEAM-1, Decision 7). The Layer 2 CLI move is routed to the epic owner as an amendment of #205's layer plan (Owner question 1). Residual, low: Consequences bullet 2 still states the move as a consequence without citing Owner question 1. |
+| FND-003 | Resolved | §2.2 E3 cites FR-201 and `DeclarationKey{package, node}` (AD-016 arrow 1). The §6.2 `value` row cites the AD-016 Shared-type row. §4 deletes the native-v1 type with no rename (Owner decision 6). |
+| FND-004 | Resolved | OBS-038 and OBS-039 now state the conflict with AD-016, do not reinterpret #205, and route the amendment to the epic owner (Owner question 5). Residual, low: the Alternatives bullet 3 heading still says "reading #205 literally". |
+| FND-005 | Partly | §2.3 is now scoped to the gates #205 counts (#212, #217, #219 and the skeleton), and the wider rule goes to QSpec (Owner question 8). But the "Gate owners" list and Consequences bullet 4 ("RT's gate stays red until RT #53 adds a harness and a mutation control") still apply the rule to RT's own `make kani` gate. Owner question 7 asks for a CG ticket to change CG's gate before QSpec rules. Fix: say that RT's and CG's gates come under the rule only where a #205 gate counts their evidence. |
+| FND-006 | Resolved | §5 now opens with "constraints that design must meet", and states that the field list and exit-code values belong to #225. "To #225" holds those questions. Bullet 2 reads as a minimum-content constraint. |
+| FND-007 | Resolved | SEAM-3 points to a new "To QSpec (wire owner)" question: "The format is authored in QSpec". |
+| FND-008 | Resolved | The frontmatter adds `ix://agent-ix/quire-specification/AD-016` as `depends_on`. |
+
+### New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | high | No legal edge carries the capability registry's input or output. The revision puts the #185 registry in QSL layer R (`route`, §6.1). §1 draws `route` → "selected targets" → S5, and E7's admitted input includes "the targets `route` selected" (§2.1). E7 runs in CG. But §7.1 has no QSL → CG or QSL → IR edge, and adding one would close a cycle with CG → QSL. FB-05 limits CG to the I2 reader and the S6a entry, and E5 admits "`quire.checked-package/v2` bytes only". So no crate edge or wire carries `route`'s selection into E7. Registration has the same gap in the other direction. In scenario 7 a new backend "Registers in the #185 registry" and "Must not … depend on QSL types other than the replay entry". A backend cannot register in a QSL module without a crate edge the ADR forbids. This is the #212 scenario 7 test ("add a backend"). It also fails the #212 pass condition "Cross-repository changes have a named QSpec contract owner". The decision is #209's, because it concerns an edge contract and dependency direction. Fix: say that backend advertisement into `route` and `route`'s selection toward E7 cross only as data under a QSpec-authored contract, never as a crate edge. Name the carrier: the v2 `capability_report`, a backend advertisement document, or an orchestration handoff. Route its shape to #229 ("which backend advertises support") and QSpec. Alternatively, if the registry is meant to run on the backend side, take `route` out of the QSL layers and give the placement to #229. Either way, update E7's admitted input and scenario 7 to match. | ADR-011 §1 diagram, §2.1 E7, §6.1 layer R, §7.1, FB-05, §10 scenario 7; #185 body; #229 Scope; #212 scenario 7 and pass conditions; AD-016 Owner decision 5 |
+| FND-010 | medium | Scenario 6 answers a question the ADR hands to #210 and #229. The new "To #210 and #229" question asks whether `route` filters items before E7, and which of the two writes the one terminal record per item. Scenario 6 already says "`route` and E7 settle `requires-bound` or `unsupported`", and lists `route` among its QSL modules. That decides the registry settles dispositions. §6.1 also says `route` "negotiates nothing per item". #185's body says the registry settles `unsupported` for a claim no backend advertises, so the question has a known input. Fix: in scenario 6, say that the disposition is settled under the #210/#229 answer, and drop `route` from its module list until then. Cite #185's `unsupported` rule as an input to the question. | ADR-011 §10 scenario 6, §6.1 `route` rule, Questions to #210 and #229; #185 body; AD-016 terminal-disposition rule |
+
+### Round 2 verdict
+
+REVISE. Six of the eight round-1 findings are resolved. FND-001 and FND-005 are
+partly resolved, and their residuals are low. One new blocking (high) finding,
+FND-009, came in with the revision: the ADR places the capability registry in
+QSL, but no legal edge or wire carries registration into it or selection out of
+it to E7. FND-010 is medium and can be fixed in the same revision. The
+remaining items routed under "Owner questions" are acceptable as routed.
