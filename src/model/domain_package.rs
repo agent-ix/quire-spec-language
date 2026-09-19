@@ -271,9 +271,12 @@ pub enum RelationshipDirection {
     Undirected,
 }
 
-/// FCD FR-115 relationship record: FR-152's Connection/Allocation candidate,
-/// or (when both ends name object types) a navigation-only relationship
-/// with no kind.
+/// FCD FR-115 relationship record: FR-152's Connection candidate, or (when
+/// both ends name object types) a navigation-only relationship with no
+/// kind. Never an Allocation: an allocation's wire shape names only a
+/// source and a target element and carries neither ends' multiplicity nor a
+/// direction (`model-complete.md`:335 — see [`AllocationRecord`]), so it is
+/// read as one, never folded into this shape with fabricated fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.
@@ -282,13 +285,25 @@ pub struct RelationshipRecord {
     pub source: RelationshipEnd,
     /// The target end.
     pub target: RelationshipEnd,
-    /// The producer's `semantics.category` bytes, e.g. `"allocation"`,
-    /// `"connection"`, `"composition"`. Compared verbatim, never mapped
-    /// through a closed Rust enum: FR-152 checks this field for exact byte
-    /// equality to `"allocation"` and otherwise leaves it to the producer.
-    pub category: String,
     /// The producer's `semantics.direction`.
     pub direction: RelationshipDirection,
+}
+
+/// FR-152's Allocation candidate (`model-complete.md`:335,
+/// `quire.model.systems.allocation/v1`): a source element (a Part, Port or
+/// operation) and a target element (a Part), and nothing else. Allocation
+/// compatibility has no other rule -- no multiplicity, no direction -- so
+/// this record carries none; a caller that needs one is asking a question
+/// this declaration kind has no answer to, not receiving a fabricated
+/// default.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllocationRecord {
+    /// This allocation's own original declaration key.
+    pub key: DeclarationKey,
+    /// The source element's original declaration key.
+    pub source_element: DeclarationKey,
+    /// The target element's original declaration key.
+    pub target_element: DeclarationKey,
 }
 
 /// FR-153's population declaration extent: `closed` or `open`. Object
@@ -336,8 +351,11 @@ pub enum DomainPackageRecord {
     Component(ComponentRecord),
     /// FCD FR-114 endpoint (FR-152 Port candidate).
     Endpoint(EndpointRecord),
-    /// FCD FR-115 relationship (FR-152 Connection/Allocation candidate).
+    /// FCD FR-115 relationship (FR-152 Connection candidate, or a
+    /// navigation-only relationship).
     Relationship(RelationshipRecord),
+    /// FR-152 Allocation declaration.
+    Allocation(AllocationRecord),
     /// FR-153 population declaration.
     Population(PopulationRecord),
 }
@@ -353,9 +371,30 @@ impl DomainPackageRecord {
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
             Self::Relationship(record) => &record.key,
+            Self::Allocation(record) => &record.key,
             Self::Population(record) => &record.key,
         }
     }
+}
+
+/// FR-321's own `ModelSelection` (`model-complete.md`:50-51): a caller's
+/// offered `{identity, version, digest_domain, digest}`, before
+/// [`crate::model::intake::admit`]'s four-check table decides whether it
+/// admits. `digest_domain` stays a plain string here (unlike
+/// [`DomainPackageRef`]'s implicit `sha256-jcs`): check 1 of that table is
+/// exactly the question of whether this field is even the one domain Intake
+/// accepts, so a type that already assumed the answer could not state a
+/// selection check 1 refuses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelSelection {
+    /// The domain package's own identity (e.g. `test/orders`).
+    pub identity: String,
+    /// The domain package's own version.
+    pub version: String,
+    /// The offered digest domain.
+    pub digest_domain: String,
+    /// The offered digest.
+    pub digest: [u8; 32],
 }
 
 /// A domain package selection: `{identity, version, digest_domain: "sha256-jcs",

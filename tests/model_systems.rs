@@ -13,9 +13,9 @@ use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
 use quire_spec_language::model::domain_package::{
-    ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, EndpointRecord,
-    Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord, PortDirection,
-    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
+    EndpointRecord, Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+    PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{
@@ -119,7 +119,6 @@ fn relationship(
     source_m: Multiplicity,
     target: &str,
     target_m: Multiplicity,
-    category: &str,
     direction: RelationshipDirection,
 ) -> DomainPackageRecord {
     DomainPackageRecord::Relationship(RelationshipRecord {
@@ -132,8 +131,15 @@ fn relationship(
             type_identity: DeclarationKey::fixture(target),
             multiplicity: target_m,
         },
-        category: category.to_owned(),
         direction,
+    })
+}
+
+fn allocation(identity: &str, source_element: &str, target_element: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Allocation(AllocationRecord {
+        key: DeclarationKey::fixture(identity),
+        source_element: DeclarationKey::fixture(source_element),
+        target_element: DeclarationKey::fixture(target_element),
     })
 }
 
@@ -189,26 +195,16 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
             one(),
             "model.Sys.tank.in",
             one(),
-            "connection",
             RelationshipDirection::SourceToTarget,
         ),
         operation_run(),
-        relationship(
-            "model.Pump.alloc",
-            "model.Pump.run",
-            one(),
-            "model.Sys.pump",
-            one(),
-            "allocation",
-            RelationshipDirection::SourceToTarget,
-        ),
+        allocation("model.Pump.alloc", "model.Pump.run", "model.Sys.pump"),
         relationship(
             "model.rel.parts",
             "model.Sys",
             one(),
             "model.Pump",
             mult(0, Some(3)),
-            "composition",
             RelationshipDirection::SourceToTarget,
         ),
         relationship(
@@ -217,7 +213,6 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
             one(),
             "model.Tank",
             one(),
-            "composition",
             RelationshipDirection::SourceToTarget,
         ),
     ];
@@ -244,6 +239,21 @@ fn find_relationship<'a>(
             _ => None,
         })
         .unwrap_or_else(|| panic!("fixture Y has no relationship {identity}"))
+}
+
+fn find_allocation<'a>(
+    records: &'a mut [DomainPackageRecord],
+    identity: &str,
+) -> &'a mut AllocationRecord {
+    records
+        .iter_mut()
+        .find_map(|record| match record {
+            DomainPackageRecord::Allocation(allocation) if allocation.key.node == identity => {
+                Some(allocation)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("fixture Y has no allocation {identity}"))
 }
 
 fn find_endpoint<'a>(
@@ -352,9 +362,8 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     assert!(refusal.detail.contains("actual kind Connection"));
 
     let domain_package = fixture_y(|records| {
-        find_relationship(records, "model.Pump.alloc")
-            .target
-            .type_identity = DeclarationKey::fixture("model.Sys.pump.out");
+        find_allocation(records, "model.Pump.alloc").target_element =
+            DeclarationKey::fixture("model.Sys.pump.out");
     });
     let classification =
         classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");

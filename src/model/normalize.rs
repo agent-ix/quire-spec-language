@@ -469,6 +469,7 @@ impl Index {
                 DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
                 | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Allocation(_)
                 | DomainPackageRecord::Population(_) => {}
             }
         }
@@ -975,7 +976,8 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
             // not concern itself with them.
             DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
-            | DomainPackageRecord::Relationship(_) => {}
+            | DomainPackageRecord::Relationship(_)
+            | DomainPackageRecord::Allocation(_) => {}
             // model-complete.md's "Populations" row: each member type names
             // a declared object type; a missing one refuses
             // `missing_declaration`/`missing-name`.
