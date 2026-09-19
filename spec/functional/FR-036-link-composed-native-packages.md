@@ -92,6 +92,8 @@ If a package processing budget is exhausted, then the linker SHALL report resour
 
 The compiler SHALL retain each requested clause/capability pair when handing a linked subject to downstream processing.
 
+Each requested capability SHALL name exactly one member of the shared protocol claim-kind vocabulary `ix://agent-ix/quire-specification/FR-290` fixes: `global-conformance`, `monitorability`, `local-projection`, `refinement`, `realizability` and `composition`.
+
 If a downstream checker or backend cannot admit a requested form, then the compiler SHALL retain its typed unsupported disposition without converting the package to complete success.
 
 Collect declarations before resolving forward references. Alias namespaces stay
@@ -189,18 +191,15 @@ family-check subjects, so an unsupported family body is never represented as
 checked. Assessment selections and backend support are retained as provenance and
 are never written back into the static subject.
 
-The requested claim vocabulary's target design is
+The requested claim vocabulary this requirement retains is
 [quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md)'s
 six-member closed set — `global-conformance`, `monitorability`,
 `local-projection`, `refinement`, `realizability` and `composition` — which
-`agent-ix/quire-specification#116` fixes as the shared claim-kind authority
-this requirement aligns to. The current `linking::composed::requests::Capability`
-implementation instead retains four link-stage request labels (`FamilyCheck`,
-`StateOperation`, `FiniteReplay`, `TemporalProjection`) that predate this
-alignment; they identify what a downstream backend is asked to admit at the
-link boundary, not which of FR-290's six protocol claim kinds a later stage
-dispatches. Remaining work: #185 aligns the implementation's vocabulary to
-FR-290's six kinds.
+`agent-ix/quire-specification#116` fixes as the shared claim-kind authority,
+and which FR-290's own vocabulary-authority section names
+`linking::composed::requests::Capability` as aligning to. Remaining work: #185
+delivers that vocabulary in `linking::composed::requests::Capability`, whose
+requested-capability report TC-115 exercises.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
 runtime requirements. TC-114 exercises common nominal types across state,

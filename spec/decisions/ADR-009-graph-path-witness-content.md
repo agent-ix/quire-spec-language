@@ -37,9 +37,14 @@ downstream native emission. Admitting a path witness changes the evaluator's
 output type and interacts with three settled behaviors that any witness
 content must stay consistent with: deterministic first-found order (not
 shortest path), at-most-once expansion per storage identity, and
-charge-before-work accounting. No requirement in this repository or in
-`quire-specification` currently defines what such a witness carries; FR-047
-just excludes it.
+charge-before-work accounting. FR-047 excludes a witness rather than defining
+one, and one constraint on witness content already exists upstream: the
+vendored language standard at the pinned baseline,
+`resources/native-v1/proposals/quire-v1/state-contract.md`, states that any
+returned path witness retains the actual typed edge and snapshot identities,
+and that the Boolean reachability predicate adds no shortest-path or
+canonical-witness guarantee. Any answer has to sit inside that sentence, and
+the candidates below differ in how they do so.
 
 ## Question
 
@@ -65,6 +70,12 @@ Candidate answers:
    Boolean-only; a caller who needs a path must issue a separate, explicitly
    scoped traversal request outside FR-047 (consistent with FR-047's current
    exclusion of mutable graph execution and shortest-path selection).
+
+Against the standard's sentence quoted in Context, candidate 1 carries the
+typed edge and snapshot identities it names directly, candidate 2 carries the
+snapshot identities without the edge identity, candidate 3 supplies both only
+after a caller re-runs the search, and candidate 4 leaves the sentence with no
+witness to govern. Which of these the owner selects is the open question.
 
 Answering this fixes: whether a path witness is a new evaluator output type
 or a derived replay artifact, whether its content must remain stable under

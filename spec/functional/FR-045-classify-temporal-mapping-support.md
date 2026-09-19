@@ -158,11 +158,14 @@ encode. Naming them is not discharging them.
 
 ## Status
 
-The reviewed correspondence table this requirement restates is retained as
-the `SUPPORT_TABLE` constant in `src/temporal/mapping.rs`, tagged with the
-same `ix://agent-ix/quire-specification/FR-095` baseline
+The implementation pins the reviewed source by symbol. The `SUPPORT_TABLE`
+constant in `src/temporal/mapping.rs` names
+`ix://agent-ix/quire-specification/FR-095` at the same baseline
 (`4d6230eb8aa9766ff3017360962f2d6368d74cb3`) this requirement's Behavior
-section cites; the classifier reads that constant, never a duplicated copy.
+section cites, and `classify` retains that constant on every supported
+classification, so a disposition always reports the exact source revision it
+was read against. The classifier evaluates the Behavior section's rows, which
+restate that source; the constant carries the pin, not the rows.
 The baseline stays pinned to that revision until
 `ix://agent-ix/quire-specification#112` lands a reviewed revision of the
 source table; only a landed revision moves this pin.
