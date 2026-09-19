@@ -248,9 +248,14 @@ E9 details:
   derives its input from the transcript by `decode`. An `Input`-sourced
   replay runs from the stored input, settles AD-016 WP9 category
   `reproduced-without-witness`, and never counts as backend evidence.
-- A dependency whose recomputed `package_id` differs from the one the proved
-  package resolved against refuses with the named cause
-  `DependencyIdentityMismatch` and yields no verdict (§4 dependency binding).
+- `replay` builds each dependency's view itself: it compiles that
+  dependency's QC-1 source bytes through S1 to S4, emits its v2 bytes and
+  verifies them under the §4 binding. The expected dependency `package_id` is
+  the one the proved package records for it (ADR-013 QC-10), which the
+  packet's `package_id` check already covers. A dependency whose recomputed
+  `package_id` differs refuses with `DependencyIdentityMismatch`, catalog code
+  `stale_dependency`, as the other dependency refusals in ADR-013 O-26 do, and
+  yields no verdict (§4 dependency binding).
 - The replay request carries a typed `QualifiedName` (owner ruling,
   2026-09-19). `replay` resolves it by name lookup in the recompiled package
   and passes the result to `CheckedPackage::call`. AD-016 arrow 7 is
@@ -328,12 +333,12 @@ E9. The rules below decide only what may cross an edge.
 | E1 | A CST with error or recovery nodes and its diagnostics | **Only to tooling.** The formatter and editor (`complete::editor`, `complete::edit`) may consume a recovering CST. E2 refuses a CST that has any error or recovery node. |
 | E2 | Refusal with diagnostics | No. A form is built from a complete CST or not at all. |
 | E3 | Refusal with every error diagnostic; warnings travel with a success | No. A package with an error diagnostic yields no checked graph (AD-016 arrow 1). |
-| E4 | Refusal, including `DependencyIdentityMismatch` (§4) | No. No package, and no v2 bytes. |
+| E4 | Refusal, including `DependencyIdentityMismatch` (catalog code `stale_dependency`, §4) | No. No package, and no v2 bytes. |
 | E5 | IR `CheckedPackageRefusalCode` | No. A refused package yields no IR package (AD-016 arrow 2). |
-| E6 | `Outcome::Refused`, `Undefined` or `Incomplete`; `InputRefusal` for bad arguments | `Incomplete` is a typed outcome that says a budget ran out. It is never read as `Completed`. |
+| E6 | `Outcome::Refused`, `Undefined` or `Incomplete`; `FamilyOutcome::Refused(FamilyRefusal)` for a family that sits out evaluation; `InputRefusal` for bad arguments | `Incomplete` is a typed outcome that says a budget ran out. It is never read as `Completed`. |
 | E7 | Per item: `requires-bound`, `unsupported` (warned) or `invalid-request` | **Per item only.** Each requested item settles exactly one terminal record (AD-016 terminal-disposition rule). An item not settled `supported` produces no oracle, harness or packet. Other items proceed. |
 | E8 | `KaniOutcomeKind` other than `Counterexample` | No packet without a counterexample, and no placeholder witness |
-| E9 | Identity mismatch refusal, including `DependencyIdentityMismatch` (§4); `Witness::parse` or `decode` refusal; disagreement → `inconclusive` with a typed cause | No verdict is synthesized for a refusal, and a disagreement is never repaired |
+| E9 | Identity mismatch refusal, including `DependencyIdentityMismatch` (catalog code `stale_dependency`, §4); `Witness::parse` or `decode` refusal; disagreement → `inconclusive` with a typed cause | No verdict is synthesized for a refusal, and a disagreement is never repaired |
 
 **Limits.** Every stage entry takes explicit limits: input bytes, nesting
 depth, node count and work budget, as that stage needs them. A stage that
@@ -423,11 +428,17 @@ inspection, and #212 re-walks them against the scenarios.
   compiled from source through S1 to S4, and its recomputed `package_id`
   equals the `package_id` of the verified view that E3 resolved against.
   E4 and the layer-6 `replay` facade at E9 check this for every dependency and
-  otherwise refuse with the named cause `DependencyIdentityMismatch`, yielding
-  no package and no verdict. The dependency source bytes come from:
+  otherwise refuse with `DependencyIdentityMismatch`, catalog code
+  `stale_dependency` (ADR-013 O-26, C-13), yielding no package and no
+  verdict. The dependency source bytes, and the view each check compares
+  against, come from:
   1. an ordinary compile: the S4 source resolution, which reads the same
      resolved package source that the verified view was produced from;
   2. `replay`: the QC-1 digest-addressed byte provision in the replay request.
+     `replay` compiles each dependency's bytes through S1 to S4 and verifies
+     the emitted v2 bytes to build its view. The expected `package_id` is the
+     one the proved package records for that dependency (ADR-013 QC-10),
+     covered by the packet's `package_id` check.
 - Exactly one QSL type carries each QSL stage output. Two QSL public types
   named `CheckedPackage` with different meanings (ADR-010 OBS-017, DA-04)
   break this rule. The rule is met by deleting the native-v1 type with SEAM-1

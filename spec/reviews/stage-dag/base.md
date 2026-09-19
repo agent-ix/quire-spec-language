@@ -219,3 +219,11 @@ Delta 38f811a..1666d02, checked against ADR-012 at eecf825 and ADR-013 at
 ### Round-4 verdict
 
 CHANGES: one medium (R4-1). R4-2 and R4-3 can land in the same revision.
+
+## Author fixes (round 4)
+
+| Finding | Fix |
+| --- | --- |
+| R4-1 (medium) | §2.1 E9 details and the §4 dependency binding: `replay` builds each dependency's view by compiling its QC-1 source bytes through S1 to S4 and verifying the emitted v2 bytes. The expected `package_id` is the one the proved package records (ADR-013 QC-10), covered by the packet's `package_id` check. A mismatch refuses `DependencyIdentityMismatch`, catalog code `stale_dependency`, as the other ADR-013 O-26 dependency refusals do. |
+| R4-2 (low) | `DependencyIdentityMismatch` carries catalog code `stale_dependency` everywhere ADR-011 names it (§2.1 E9, §2.3 E4 and E9, §4). ADR-013 adds it to O-26 and C-13. |
+| R4-3 (low) | The §2.3 E6 failure row lists `FamilyOutcome::Refused(FamilyRefusal)` beside the kernel `Outcome` refusals. |
