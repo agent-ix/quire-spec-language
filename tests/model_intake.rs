@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-154 intake against FCD's real architecture fixture bundle
-//! (`agent-ix/filament-core-data` at `cbbe4908e314b9cc5c7e1aaee87517218af3e632`,
-//! vendored under `tests/fixtures/architecture` and `tests/fixtures/modules`).
+//! (`agent-ix/filament-core-data`, vendored under `tests/fixtures/architecture`
+//! and `tests/fixtures/modules` at the same rev `Cargo.toml` pins its
+//! `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` git deps to -- the
+//! rev is pinned in that one place, not repeated here).
 //!
 //! `lifts_the_architecture_bundle_and_admits_it` proves
 //! `crate::model::intake::lift_document` drives FCD's real `lift` pipeline
@@ -29,12 +31,13 @@ use std::path::PathBuf;
 
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
 use quire_spec_language::model::domain_package::{DomainPackage, ModelSelection};
-use quire_spec_language::model::intake::{admit, lift_document, read_records};
+use quire_spec_language::model::intake::{admit, lift_document, meaning, native, read_records};
 use quire_spec_language::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
     ConnectionOutcome,
 };
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 fn fixtures_dir() -> PathBuf {
@@ -219,15 +222,116 @@ fn key(package: &str, identity: &str) -> DeclarationKey {
     }
 }
 
+const PLACEHOLDER_DIGEST: &str =
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
+/// The FR-154 intake document envelope `agent-ix-semantic-ir`'s own schema
+/// layer requires beyond `constructs[]`/`types[]` (M5, review of PR #200):
+/// `contractVersion`, `source`, `package`'s full required member set,
+/// `occurrences` and `extensions`, filled with schema-valid stand-ins.
+fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
+    serde_json::json!({
+        "contractVersion": "2.0.0",
+        "source": {
+            "identity": format!("ix://{package_identity}/spec"),
+            "version": "1.0.0",
+            "dialect": "spec-bundle",
+            "digest": PLACEHOLDER_DIGEST,
+        },
+        "package": {
+            "identity": package_identity,
+            "version": "1.0.0",
+            "manifestDigest": PLACEHOLDER_DIGEST,
+            "mappingVersions": [],
+            "profileVersions": [],
+            "lockDigest": PLACEHOLDER_DIGEST,
+        },
+        "occurrences": [],
+        "extensions": [],
+        "constructs": constructs,
+        "types": types,
+    })
+}
+
+fn wire_construct(module: &str, name: &str, meaning: &str, members: Value) -> Value {
+    serde_json::json!({
+        "kind": {"module": module, "name": name},
+        "moduleVersion": "1.0.0",
+        "manifestDigest": PLACEHOLDER_DIGEST,
+        "construct": {
+            "identity": "none",
+            "shape": "record",
+            "members": members,
+            "meaning": meaning,
+        },
+    })
+}
+
+/// Every member `semantic-ir.schema.json`'s `typeDefinition` requires beyond
+/// `identity`/`kind`, filled with schema-valid stand-ins; `extra`'s own
+/// members are then merged on top.
+fn wire_type(identity: &str, kind: Value, extra: Value) -> Value {
+    let mut node = serde_json::json!({
+        "identity": identity,
+        "displayName": identity,
+        "kind": kind,
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": identity,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [identity],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+    });
+    if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
+        for (key, value) in extra {
+            node.insert(key.clone(), value.clone());
+        }
+    }
+    node
+}
+
+/// Every member `semantic-ir.schema.json`'s `field` requires beyond
+/// `identity`/`typeRef`, filled with schema-valid stand-ins. The
+/// multiplicity omits `upper`/`ordered`/`unique`: `crate::model::intake`'s
+/// own reader requires `ordered`/`unique` present, but
+/// `agent-ix-semantic-ir`'s `field_rules` refuses either present at all on
+/// a single-valued (`upper <= 1`) field -- an unbounded multiplicity (no
+/// `upper`) satisfies both.
+fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
+    serde_json::json!({
+        "identity": identity,
+        "name": name,
+        "typeRef": type_ref,
+        "presence": "optional",
+        "nullable": false,
+        "defaultKind": "none",
+        "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+        "origin": {
+            "generated": {
+                "generatorIdentity": identity,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [identity],
+            }
+        },
+    })
+}
+
 /// (b): a hand-written Semantic IR 2.0.0 document using QSpec's own identity
 /// form throughout -- `ix://<package identity>/<artifact id>` for every
 /// type-definition node, never FCD's own `ix://<pkg>/type/<id>` form -- with
 /// no `relationships[]` and no non-empty operation `frame` (FCD #199 gaps 2,
-/// 3 and 4). This crate has no FCD schema validator wired in yet (M5,
-/// deferred); this document is instead hand-checked against
-/// `crates/semantic-ir/src/schema.rs`'s own `TYPE_MEMBERS`/`CONNECTION_END_MEMBERS`/
-/// `MULTIPLICITY_MEMBERS` wire shapes (the same ground truth `crate::model::intake`
-/// itself reads against), field by field, in this function's construction below.
+/// 3 and 4), and `Flow`'s own `rate` field naming a native value type
+/// through `ix://quire/native/<Name>` (Peter's ruling, PR #200 review round
+/// 2). It admits through `agent-ix-semantic-ir`'s own validator (M5) --
+/// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
+/// member that validator's schema layer requires beyond the shape
+/// `crate::model::intake` itself reads -- not just this reader's own
+/// hand-rolled checks.
 #[test]
 fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let package_identity = "test/plant";
@@ -239,106 +343,163 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let tank_in = format!("ix://{package_identity}/TankIn");
     let pipe = format!("ix://{package_identity}/Pipe");
     let pump_alloc = format!("ix://{package_identity}/PumpAlloc");
+    let sys = format!("ix://{package_identity}/Sys");
+    let pump = format!("ix://{package_identity}/Pump");
+    let tank = format!("ix://{package_identity}/Tank");
 
-    let document = serde_json::json!({
-        "package": {"identity": package_identity, "version": "1"},
-        "constructs": [
-            {
-                "kind": {"module": package_identity, "name": "object-type"},
-                "moduleVersion": "1.0.0",
-                "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                "construct": {"meaning": "quire.meaning.model.object-type/v1"},
-            },
-            {
-                "kind": {"module": package_identity, "name": "part"},
-                "moduleVersion": "1.0.0",
-                "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                "construct": {"meaning": "quire.meaning.systems.part/v1"},
-            },
-            {
-                "kind": {"module": package_identity, "name": "port"},
-                "moduleVersion": "1.0.0",
-                "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                "construct": {"meaning": "quire.meaning.systems.port/v1"},
-            },
-            {
-                "kind": {"module": package_identity, "name": "connection"},
-                "moduleVersion": "1.0.0",
-                "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                "construct": {"meaning": "quire.meaning.systems.connection/v1"},
-            },
-            {
-                "kind": {"module": package_identity, "name": "allocation"},
-                "moduleVersion": "1.0.0",
-                "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                "construct": {"meaning": "quire.meaning.systems.allocation/v1"},
-            },
-        ],
-        "types": [
-            {
-                "identity": flow_type.clone(),
-                "kind": {"module": package_identity, "name": "object-type"},
-                "supertypes": [],
-                "fields": [],
-                "operations": [],
-            },
-            {
-                "identity": sys_pump.clone(),
-                "kind": {"module": package_identity, "name": "part"},
-                "owner": format!("ix://{package_identity}/Sys"),
-                "declaredType": format!("ix://{package_identity}/Pump"),
-                "multiplicity": multiplicity_one(1, Some(1)),
-            },
-            {
-                "identity": sys_tank.clone(),
-                "kind": {"module": package_identity, "name": "part"},
-                "owner": format!("ix://{package_identity}/Sys"),
-                "declaredType": format!("ix://{package_identity}/Tank"),
-                "multiplicity": multiplicity_one(1, Some(1)),
-            },
-            {
-                "identity": pump_out.clone(),
-                "kind": {"module": package_identity, "name": "port"},
-                "owner": sys_pump.clone(),
-                "interfaceType": flow_type.clone(),
-                "direction": "out",
-                "multiplicity": multiplicity_one(1, Some(1)),
-            },
-            {
-                "identity": tank_in.clone(),
-                "kind": {"module": package_identity, "name": "port"},
-                "owner": sys_tank,
-                "interfaceType": flow_type,
-                "direction": "in",
-                "multiplicity": multiplicity_one(1, Some(1)),
-            },
-            {
-                "identity": pipe.clone(),
-                "kind": {"module": package_identity, "name": "connection"},
-                "sourceEnd": {"type": pump_out.clone(), "multiplicity": multiplicity_one(1, Some(1))},
-                "targetEnd": {"type": tank_in, "multiplicity": multiplicity_one(1, Some(1))},
-                "flowDirection": "source-to-target",
-            },
-            {
-                "identity": pump_alloc.clone(),
-                "kind": {"module": package_identity, "name": "allocation"},
-                "sourceElement": pump_out,
-                "targetElement": sys_pump,
-            },
-        ],
-    })
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([
+            wire_construct(
+                package_identity,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            ),
+            wire_construct(
+                package_identity,
+                "part",
+                meaning::SYSTEMS_PART,
+                serde_json::json!({
+                    "declaredType": "required",
+                    "fields": "forbidden",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+            wire_construct(
+                package_identity,
+                "port",
+                meaning::SYSTEMS_PORT,
+                serde_json::json!({
+                    "direction": "required",
+                    "fields": "forbidden",
+                    "interfaceType": "required",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+            wire_construct(
+                package_identity,
+                "connection",
+                meaning::SYSTEMS_CONNECTION,
+                serde_json::json!({
+                    "fields": "forbidden",
+                    "flowDirection": "required",
+                    "operations": "forbidden",
+                    "sourceEnd": "required",
+                    "targetEnd": "required",
+                }),
+            ),
+            wire_construct(
+                package_identity,
+                "allocation",
+                meaning::SYSTEMS_ALLOCATION,
+                serde_json::json!({
+                    "fields": "forbidden",
+                    "operations": "forbidden",
+                    "sourceElement": "required",
+                    "targetElement": "required",
+                }),
+            ),
+        ]),
+        serde_json::json!([
+            wire_type(
+                &flow_type,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [wire_field(
+                        &format!("{flow_type}/rate"),
+                        "rate",
+                        &format!("{}Rational", native::PREFIX),
+                    )],
+                    "operations": [],
+                }),
+            ),
+            wire_type(
+                &sys,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &pump,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &tank,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &sys_pump,
+                serde_json::json!({"module": package_identity, "name": "part"}),
+                serde_json::json!({
+                    "owner": sys.clone(),
+                    "declaredType": pump,
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &sys_tank,
+                serde_json::json!({"module": package_identity, "name": "part"}),
+                serde_json::json!({
+                    "owner": sys,
+                    "declaredType": tank,
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &pump_out,
+                serde_json::json!({"module": package_identity, "name": "port"}),
+                serde_json::json!({
+                    "owner": sys_pump.clone(),
+                    "interfaceType": flow_type.clone(),
+                    "direction": "out",
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &tank_in,
+                serde_json::json!({"module": package_identity, "name": "port"}),
+                serde_json::json!({
+                    "owner": sys_tank,
+                    "interfaceType": flow_type,
+                    "direction": "in",
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &pipe,
+                serde_json::json!({"module": package_identity, "name": "connection"}),
+                serde_json::json!({
+                    "sourceEnd": {"type": pump_out.clone(), "multiplicity": multiplicity_one(1, Some(1))},
+                    "targetEnd": {"type": tank_in, "multiplicity": multiplicity_one(1, Some(1))},
+                    "flowDirection": "source-to-target",
+                }),
+            ),
+            wire_type(
+                &pump_alloc,
+                serde_json::json!({"module": package_identity, "name": "allocation"}),
+                serde_json::json!({
+                    "sourceElement": pump_out,
+                    "targetElement": sys_pump,
+                }),
+            ),
+        ]),
+    )
     .to_string()
     .into_bytes();
 
-    // JCS bytes: `serde_json::Map` is a `BTreeMap` here (no `preserve_order`
-    // feature), so `to_string`'s member order is already sorted ascending —
-    // the same RFC 8785 JCS shape `crate::model::key::jcs_bytes` produces.
     let digest: [u8; 32] = Sha256::digest(&document).into();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document.clone());
     let selection = ModelSelection {
         identity: package_identity.to_owned(),
-        version: "1".to_owned(),
+        version: "1.0.0".to_owned(),
         digest_domain: SHA256_JCS_DIGEST_DOMAIN.to_owned(),
         digest,
     };
@@ -377,4 +538,99 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         AllocationCheckOutcome::Admitted,
         "PumpAlloc's target SysPump classifies as a Part"
     );
+}
+
+/// Write `contents` (a `(relative path, bytes)` list) under a fresh tempdir
+/// and return it.
+fn write_bundle(contents: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for (path, text) in contents {
+        let full = dir.path().join(path);
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).expect("create fixture parent dir");
+        }
+        std::fs::write(&full, text).expect("write fixture file");
+    }
+    dir
+}
+
+/// (L2) `lift_document`'s `LiftFailure::Refused` branch: FCD's real `lift`
+/// refuses a bundle outright, before extraction, when `spec.md` carries no
+/// `org` (FCD's own `BUNDLE_UNIDENTIFIED` negative, `crates/extraction-frontend/
+/// fixtures/negatives/BUNDLE_UNIDENTIFIED` at the pinned rev): FCD cannot
+/// mint even the bundle's own identity, so no document is written at all.
+#[test]
+fn lift_document_refuses_a_bundle_with_no_identity() {
+    let bundle = write_bundle(&[(
+        "spec/spec.md",
+        "---\ntype: master-requirements\nname: config-service\ntitle: \"Config Service\"\n---\n# Config Service\n",
+    )]);
+    let fixtures = fixtures_dir();
+    let module_roots = vec![
+        fixtures.join("modules/spec-objects-business"),
+        fixtures.join("modules/edge-vocabulary"),
+        fixtures.join("modules/spec-objects-architecture"),
+    ];
+
+    let error = lift_document(bundle.path(), &module_roots)
+        .expect_err("a bundle with no org: carries no identity for FCD to mint");
+    match error {
+        quire_spec_language::model::intake::LiftFailure::Refused(refusal) => {
+            assert!(
+                format!("{refusal:?}").contains("BundleUnidentified"),
+                "expected FCD's BundleUnidentified refusal, got: {refusal:?}"
+            );
+            assert!(
+                format!("{refusal:?}").contains("org"),
+                "expected the refusal to name the missing org:, got: {refusal:?}"
+            );
+        }
+        other => panic!("expected LiftFailure::Refused, got {other:?}"),
+    }
+}
+
+/// (L2) `lift_document`'s `LiftFailure::Blocked` branch: FCD's real `lift`
+/// loads and extracts the bundle, then blocks on a rules-layer diagnostic --
+/// here two entities whose constrained field alias and authored id collide
+/// on the same minted identity (FCD's own `DUPLICATE_IDENTITY` negative,
+/// `crates/extraction-frontend/fixtures/negatives/DUPLICATE_IDENTITY` at the
+/// pinned rev). Unlike `Refused`, the bundle itself loaded fine; the block
+/// happens after extraction, so `diagnostics` carries the blocking finding.
+#[test]
+fn lift_document_blocks_on_a_duplicate_identity() {
+    let bundle = write_bundle(&[
+        (
+            "spec/spec.md",
+            "---\ntype: master-requirements\nname: identity-service\norg: agent-ix\ntitle: \"Identity Service\"\n---\n# Identity Service\n",
+        ),
+        (
+            "spec/functional/FR-001-note.md",
+            "---\nid: FR-001\ntitle: Note\nobject: entity\ntype: FR\n---\n# FR-001: Note\n\n## Description\n\nAn authored fixture record whose constrained field mints the `NoteRevision`\nalias.\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| revision | Integer | 1 | min: 1 |\n| id | UUID | 1 | identity |\n",
+        ),
+        (
+            "spec/functional/FR-002-note-revision.md",
+            "---\nid: FR-001Revision\ntitle: NoteRevision\nobject: entity\ntype: FR\n---\n# FR-001Revision: NoteRevision\n\n## Description\n\nAn authored fixture record that collides with the alias minted for\n`Note.revision`.\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| id | UUID | 1 | identity |\n",
+        ),
+    ]);
+    let fixtures = fixtures_dir();
+    let module_roots = vec![
+        fixtures.join("modules/spec-objects-business"),
+        fixtures.join("modules/edge-vocabulary"),
+        fixtures.join("modules/spec-objects-architecture"),
+    ];
+
+    let error = lift_document(bundle.path(), &module_roots).expect_err(
+        "FR-001Revision's authored id collides with the alias FR-001.revision already minted",
+    );
+    match error {
+        quire_spec_language::model::intake::LiftFailure::Blocked(diagnostics) => {
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|diagnostic| format!("{diagnostic:?}").contains("DuplicateIdentity")),
+                "expected a DuplicateIdentity diagnostic among {diagnostics:?}"
+            );
+        }
+        other => panic!("expected LiftFailure::Blocked, got {other:?}"),
+    }
 }

@@ -93,6 +93,26 @@ pub mod meaning {
     ];
 }
 
+/// A field's `typeRef` naming one of QSL's own native value types rather
+/// than a node of any package (Peter's ruling, PR #200 review round 2; FCD
+/// #199 is switching to this form): `ix://quire/native/<Name>` and
+/// declares no node. [`ALL`] is the closed set of `<Name>`s -- the
+/// unparameterized value-type keywords `src/token.rs`'s own grammar
+/// reserves (`Boolean`, `Integer`, `Rational`, `Decimal`, `Float32`,
+/// `Float64`, `Text`). A parameterized or generic form (`Int[..]`,
+/// `Decimal[..]`, `Reference<T>`, a collection type) is never a bare native
+/// reference: FR-151's bounded scalars (`model.Count`/`model.Small`) are
+/// package-declared [`super::domain_package::ScalarTypeRecord`]s, and a
+/// relationship's own end is read elsewhere, not through a field `typeRef`.
+pub mod native {
+    /// The prefix a native value type reference carries.
+    pub const PREFIX: &str = "ix://quire/native/";
+    /// The closed set of names legitimate past [`PREFIX`].
+    pub const ALL: &[&str] = &[
+        "Boolean", "Integer", "Rational", "Decimal", "Float32", "Float64", "Text",
+    ];
+}
+
 /// FCD `agent_ix_extraction_frontend::lift` did not produce a document.
 ///
 /// Wraps FCD's own outcome types rather than stringifying them (matching
@@ -315,6 +335,82 @@ fn node_span(value: &Value) -> (Option<String>, Option<SourceSpan>) {
         _ => None,
     };
     (artifact, span)
+}
+
+/// Validates admitted document bytes against `agent-ix-semantic-ir`'s own
+/// independent reader (M5, review of PR #200) before [`read_records`] walks
+/// a single node. That crate decides `conformance/schema/input-bundle.schema.json`
+/// by wrapping the document as `{"ir": <document>}` (`input-bundle.schema.json`
+/// requires an `ir` member carrying `semantic-ir.schema.json`) and reports
+/// every defect as an RFC 6901 pointer into the wrapped bundle. On the first
+/// `Severity::Error` diagnostic this refuses `malformed-declaration`, naming
+/// that diagnostic's own pointer as the node and carrying its code/message
+/// in the detail, so a shape this reader's own hand-rolled checks miss (an
+/// `abstract` that is not a boolean, say) still refuses rather than being
+/// read as a default.
+fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
+    let malformed = |detail: String| ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "$".to_owned(),
+            artifact: None,
+            span: None,
+        },
+        detail,
+    };
+    let text = std::str::from_utf8(document)
+        .map_err(|err| malformed(format!("admitted document bytes are not UTF-8: {err}")))?;
+    let parsed = agent_ix_semantic_ir::json::parse(text).map_err(|err| {
+        malformed(format!(
+            "admitted document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"
+        ))
+    })?;
+    let bundle = agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), parsed)]);
+    let verdict = agent_ix_semantic_ir::decide(&bundle);
+    let Some(first_error) = verdict.diagnostics.iter().find(|located| {
+        located.severity == agent_ix_semantic_ir::diag::Severity::Error
+            && !is_forward_compatible_native_type_ref(&bundle, located)
+    }) else {
+        return Ok(());
+    };
+    let node = if first_error.pointer.is_empty() {
+        "$".to_owned()
+    } else {
+        first_error.pointer.clone()
+    };
+    Err(ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: ModelRefusalCause::IntakeMalformedDeclaration {
+            node,
+            artifact: None,
+            span: None,
+        },
+        detail: format!(
+            "agent-ix-semantic-ir refused this document at {} ({}): {}",
+            first_error.pointer, first_error.code, first_error.message
+        ),
+    })
+}
+
+/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`) does not yet
+/// resolve `ix://quire/native/<Name>` (Peter's ruling, PR #200 review round
+/// 2; FCD #199 is landing recognition of it on FCD's own side) -- every
+/// field `typeRef` under that prefix reads there as
+/// `agent-ix.semantic-ir.UNRESOLVED_TYPE_REF`, an `Error`-severity
+/// diagnostic. [`read_field_type_ref`] is this reader's own, already-landed
+/// authority for that member (including refusing an unknown name under the
+/// prefix), so [`validate_with_semantic_ir`] does not also refuse a
+/// diagnostic that is only this validator lagging that ruling.
+fn is_forward_compatible_native_type_ref(
+    bundle: &agent_ix_semantic_ir::json::Json,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    located.code == agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
+        && matches!(
+            agent_ix_semantic_ir::diag::chain(bundle, &located.pointer).last(),
+            Some(agent_ix_semantic_ir::json::Json::Str(value))
+                if value.starts_with(native::PREFIX)
+        )
 }
 
 fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
@@ -601,6 +697,45 @@ impl<'a> NodeCtx<'a> {
     }
 }
 
+/// Resolves a field's `typeRef` (FR-154's Fields row, `model-complete.md`:157:
+/// "`typeRef` names a native value type, or a type of the package"; Peter's
+/// ruling, PR #200 review round 2, on the native form). `ix://quire/native/<Name>`
+/// names one of [`native::ALL`]'s closed set and resolves to a
+/// [`DeclarationKey`] under the well-known `quire/native` pseudo-package --
+/// it declares no node of `package` itself -- refusing `malformed-declaration`
+/// for a `<Name>` outside that set rather than resolving to a made-up
+/// declaration. Any other `typeRef` must itself be `ix://<package>/<artifact
+/// id>`, a node of `package` (the same Identity-row form `read_type_identity`
+/// already enforces for a declaration's own `identity`).
+fn read_field_type_ref(
+    package: &str,
+    ctx: &NodeCtx<'_>,
+    type_ref: &str,
+) -> Result<DeclarationKey, ModelRefusal> {
+    if let Some(name) = type_ref.strip_prefix(native::PREFIX) {
+        return if native::ALL.contains(&name) {
+            // `node` carries the full identity string, matching every other
+            // `DeclarationKey` this reader builds (`declaration_key`'s own
+            // callers always pass the whole `ix://...` string, never a
+            // stripped segment).
+            Ok(DeclarationKey {
+                package: "quire/native".to_owned(),
+                node: type_ref.to_owned(),
+            })
+        } else {
+            Err(ctx.malformed(format!(
+                "typeRef: {type_ref:?} names no native value type QSL declares"
+            )))
+        };
+    }
+    if type_identity_segment(package, type_ref).is_none() {
+        return Err(ctx.malformed(format!(
+            "typeRef: {type_ref:?} is not ix://quire/native/<Name> or ix://{package}/<artifact id>"
+        )));
+    }
+    Ok(declaration_key(package, type_ref))
+}
+
 fn read_field_member(
     package: &str,
     owner_identity: &str,
@@ -612,7 +747,8 @@ fn read_field_member(
     if member_identity_name(owner_identity, node).is_none() {
         return Err(ctx.malformed(format!("identity: {node:?} is not {owner_identity}/<name>")));
     }
-    let value_type = ctx.str_field("typeRef")?;
+    let type_ref = ctx.str_field("typeRef")?;
+    let value_type = read_field_type_ref(package, &ctx, type_ref)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
     let subsets = ctx.identity_keys(package, "subsets")?;
     let redefines = ctx
@@ -621,7 +757,7 @@ fn read_field_member(
     Ok(FieldMemberRecord {
         key: declaration_key(package, node),
         owner: declaration_key(package, owner_identity),
-        value_type: declaration_key(package, value_type),
+        value_type,
         multiplicity,
         subsets,
         redefines,
@@ -894,11 +1030,13 @@ fn read_type_node(
         // QSpec's declaration-kinds table has no row for a package
         // declaring one of these directly in `types[]` -- every declared
         // type resolves via a `constructs[]` entry to a real FR-208
-        // meaning instead. A reference TO such a node (e.g. a field's
-        // `typeRef` naming a native scalar) is untouched here: this reader
-        // never checks that reference, so a bare-string-kind node being
-        // refused as a top-level declaration does not stop it resolving as
-        // a reference target.
+        // meaning instead. A field's own `typeRef` never names a node like
+        // this one anyway: [`read_field_type_ref`] resolves a native value
+        // type through the dedicated `ix://quire/native/<Name>` form
+        // (Peter's ruling, PR #200 review round 2), not through a
+        // bare-string-kind `types[]` declaration, so this node being
+        // refused as a top-level declaration never stops a field resolving
+        // its own type reference.
         return Err(ctx.malformed("kind: a bare-string core kind is not a declared FR-208 meaning"));
     };
     let module = kind
@@ -988,6 +1126,9 @@ pub fn read_records(
             }]);
         }
     };
+    if let Err(refusal) = validate_with_semantic_ir(document) {
+        return Err(vec![refusal]);
+    }
     let meanings = match meaning_index(&parsed) {
         Ok(meanings) => meanings,
         Err(refusal) => return Err(vec![refusal]),
@@ -1134,30 +1275,58 @@ mod tests {
         assert_eq!(admitted_bytes, padded.as_slice());
     }
 
+    // L1 (review of PR #200): these five `admit` refusal tests assert the
+    // whole `ModelRefusal` -- `code`, every typed field of the matched
+    // `ModelRefusalCause` variant, and `detail` -- not just `.code`/
+    // `.cause.as_str()`, so a regression that keeps the right tag but drops
+    // or corrupts a typed field (the wrong `expected` digest domain, the
+    // caller's own `selection` echoed back wrong) still fails the test.
+
     #[test]
     fn refuses_foreign_digest_domain() {
         let map = BTreeMap::new();
         let refusal = admit(&selection("acme/orders", "1", "sha1", [0; 32]), &map).unwrap_err();
-        assert_eq!(refusal.code, Code::StaleDependency);
-        assert_eq!(refusal.cause.as_str(), "digest-domain-mismatch");
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::StaleDependency,
+                cause: ModelRefusalCause::DigestDomainMismatch {
+                    expected: SHA256_JCS_DIGEST_DOMAIN,
+                    actual: "sha1".to_owned(),
+                },
+                detail: "domain package selection acme/orders@1 names digest \
+                          domain \"sha1\", not \"sha256-jcs\""
+                    .to_owned(),
+            }
+        );
     }
 
     #[test]
     fn refuses_missing_bytes() {
         let map = BTreeMap::new();
-        let refusal = admit(
-            &selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, [0; 32]),
-            &map,
-        )
-        .unwrap_err();
-        assert_eq!(refusal.code, Code::MissingImport);
-        assert_eq!(refusal.cause.as_str(), "missing-selection");
+        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, [0; 32]);
+        let refusal = admit(&selection_value, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::MissingImport,
+                cause: ModelRefusalCause::MissingSelection {
+                    selection: DomainPackageRef {
+                        identity: "acme/orders".to_owned(),
+                        version: "1".to_owned(),
+                        digest: [0; 32],
+                    },
+                },
+                detail: format!("no package bytes supplied under digest {}", hex(&[0; 32])),
+            }
+        );
     }
 
     #[test]
     fn refuses_byte_digest_mismatch() {
         let bytes = package_bytes("acme/orders", "1");
         let wrong_digest = digest_of(b"not the package");
+        let actual_digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(wrong_digest, bytes);
         let refusal = admit(
@@ -1165,8 +1334,21 @@ mod tests {
             &map,
         )
         .unwrap_err();
-        assert_eq!(refusal.code, Code::StaleDependency);
-        assert_eq!(refusal.cause.as_str(), "byte-digest-mismatch");
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::StaleDependency,
+                cause: ModelRefusalCause::ByteDigestMismatch {
+                    expected: wrong_digest,
+                    actual: actual_digest,
+                },
+                detail: format!(
+                    "domain package acme/orders@1 bytes hash to {}, not the selected {}",
+                    hex(&actual_digest),
+                    hex(&wrong_digest)
+                ),
+            }
+        );
     }
 
     #[test]
@@ -1175,27 +1357,170 @@ mod tests {
         let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
-        let refusal = admit(
-            &selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest),
-            &map,
-        )
-        .unwrap_err();
-        assert_eq!(refusal.code, Code::InvalidModelBinding);
-        assert_eq!(refusal.cause.as_str(), "wrong-model-selection");
+        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&selection_value, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::WrongModelSelection {
+                    selection: DomainPackageRef {
+                        identity: "acme/orders".to_owned(),
+                        version: "1".to_owned(),
+                        digest,
+                    },
+                    actual_identity: "acme/other".to_owned(),
+                    actual_version: "1".to_owned(),
+                },
+                detail: "domain package selection names acme/orders@1 but \
+                          the package declares acme/other@1"
+                    .to_owned(),
+            }
+        );
     }
 
+    /// L2 (review of PR #200): `admit`'s version-only mismatch -- the
+    /// selected bytes' own package identity matches the selection but the
+    /// version does not -- is a distinct branch of the same
+    /// `WrongModelSelection` check from `refuses_wrong_package_identity`'s
+    /// identity mismatch, so it gets its own whole-outcome test.
+    #[test]
+    fn refuses_version_only_mismatch() {
+        let bytes = package_bytes("acme/orders", "2");
+        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&selection_value, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::WrongModelSelection {
+                    selection: DomainPackageRef {
+                        identity: "acme/orders".to_owned(),
+                        version: "1".to_owned(),
+                        digest,
+                    },
+                    actual_identity: "acme/orders".to_owned(),
+                    actual_version: "2".to_owned(),
+                },
+                detail: "domain package selection names acme/orders@1 but \
+                          the package declares acme/orders@2"
+                    .to_owned(),
+            }
+        );
+    }
+
+    /// L2: `admit`'s non-JSON-bytes case is a distinct branch from
+    /// `refuses_wrong_package_identity`'s JSON-but-wrong-identity case --
+    /// bytes that are not JSON at all never reach a `package.identity`
+    /// comparison, so `parsed` stays `None` and both `actual_identity`/
+    /// `actual_version` default to empty strings.
     #[test]
     fn refuses_non_json_bytes_as_wrong_selection() {
         let bytes = b"not json".to_vec();
         let digest = digest_of(&bytes);
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
-        let refusal = admit(
-            &selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest),
-            &map,
-        )
-        .unwrap_err();
-        assert_eq!(refusal.cause.as_str(), "wrong-model-selection");
+        let selection_value = selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&selection_value, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::WrongModelSelection {
+                    selection: DomainPackageRef {
+                        identity: "acme/orders".to_owned(),
+                        version: "1".to_owned(),
+                        digest,
+                    },
+                    actual_identity: String::new(),
+                    actual_version: String::new(),
+                },
+                detail: "domain package selection names acme/orders@1 but \
+                          the package declares @"
+                    .to_owned(),
+            }
+        );
+    }
+
+    // M5 (review of PR #200): `read_records` now runs `validate_with_semantic_ir`
+    // before it walks a single node, so a document meant to exercise this
+    // reader's own per-node checks below (a bare-string kind, FCD's own
+    // identity form) must itself be one `agent-ix-semantic-ir`'s schema layer
+    // accepts -- these helpers fill every member `semantic-ir.schema.json`
+    // requires at the document, type-definition and constructs-entry levels
+    // with schema-valid stand-ins, so the refusal each test asserts on is
+    // this reader's own, not the validator's completeness check firing first.
+
+    const PLACEHOLDER_DIGEST: &str =
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
+    fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
+        serde_json::json!({
+            "contractVersion": "2.0.0",
+            "source": {
+                "identity": format!("ix://{package_identity}/spec"),
+                "version": "1.0.0",
+                "dialect": "spec-bundle",
+                "digest": PLACEHOLDER_DIGEST,
+            },
+            "package": {
+                "identity": package_identity,
+                "version": "1.0.0",
+                "manifestDigest": PLACEHOLDER_DIGEST,
+                "mappingVersions": [],
+                "profileVersions": [],
+                "lockDigest": PLACEHOLDER_DIGEST,
+            },
+            "occurrences": [],
+            "extensions": [],
+            "constructs": constructs,
+            "types": types,
+        })
+    }
+
+    fn wire_construct(module: &str, name: &str, meaning: &str, members: Value) -> Value {
+        serde_json::json!({
+            "kind": {"module": module, "name": name},
+            "moduleVersion": "1.0.0",
+            "manifestDigest": PLACEHOLDER_DIGEST,
+            "construct": {
+                "identity": "none",
+                "shape": "record",
+                "members": members,
+                "meaning": meaning,
+            },
+        })
+    }
+
+    /// Every member `typeDefinition` requires beyond `identity`/`kind`,
+    /// filled with schema-valid stand-ins; `extra`'s own members are then
+    /// merged on top.
+    fn wire_type(identity: &str, kind: Value, extra: Value) -> Value {
+        let mut node = serde_json::json!({
+            "identity": identity,
+            "displayName": identity,
+            "kind": kind,
+            "roles": [],
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+        });
+        if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
+            for (key, value) in extra {
+                node.insert(key.clone(), value.clone());
+            }
+        }
+        node
     }
 
     #[test]
@@ -1208,12 +1533,15 @@ mod tests {
 
     #[test]
     fn refuses_a_bare_string_kind_as_malformed_declaration() {
-        let document = serde_json::json!({
-            "constructs": [],
-            "types": [
-                {"identity": "ix://acme/orders/Count", "kind": "scalar"},
-            ],
-        })
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Count",
+                serde_json::json!("scalar"),
+                serde_json::json!({"scalar": "integer"}),
+            )]),
+        )
         .to_string();
         let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
         assert_eq!(refusals.len(), 1);
@@ -1223,29 +1551,554 @@ mod tests {
 
     #[test]
     fn refuses_fcd_own_identity_form_as_malformed_declaration() {
-        let document = serde_json::json!({
-            "constructs": [
-                {
-                    "kind": {"module": "acme/orders", "name": "order"},
-                    "moduleVersion": "1.0.0",
-                    "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                    "construct": {"meaning": meaning::OBJECT_TYPE},
-                },
-            ],
-            "types": [
-                {
-                    "identity": "ix://acme/orders/type/Order",
-                    "kind": {"module": "acme/orders", "name": "order"},
-                    "supertypes": [],
-                    "fields": [],
-                    "operations": [],
-                },
-            ],
-        })
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/type/Order",
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            )]),
+        )
         .to_string();
         let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
         assert_eq!(refusals.len(), 1);
         assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
         assert!(refusals[0].detail.contains("identity"));
+    }
+
+    /// M5: an `abstract` present but not a boolean is exactly the shape
+    /// `expect_bool` in `agent-ix-semantic-ir`'s own schema layer refuses
+    /// (`crates/semantic-ir/src/schema.rs`'s `type_definition`), so this
+    /// document never reaches `read_type_node`'s own hand-rolled `abstract`
+    /// check at all -- `validate_with_semantic_ir` refuses it first, naming
+    /// the validator's own pointer.
+    #[test]
+    fn refuses_a_non_boolean_abstract_via_the_semantic_ir_validator() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Order",
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [],
+                    "operations": [],
+                    "abstract": "yes",
+                }),
+            )]),
+        )
+        .to_string();
+        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+        match &refusals[0].cause {
+            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
+                assert!(
+                    node.contains("abstract"),
+                    "the refusal names the validator's own pointer to the \
+                     offending member, got {node:?}"
+                );
+            }
+            other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
+        }
+        assert!(
+            refusals[0].detail.contains("agent-ix-semantic-ir"),
+            "the detail names the validator that refused this, not this \
+             reader's own hand-rolled check: {:?}",
+            refusals[0].detail
+        );
+    }
+
+    /// Every member `semantic-ir.schema.json`'s `field` requires beyond
+    /// `identity`/`typeRef`, filled with schema-valid stand-ins.
+    fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
+        serde_json::json!({
+            "identity": identity,
+            "name": name,
+            "typeRef": type_ref,
+            "presence": "optional",
+            "nullable": false,
+            "defaultKind": "none",
+            // `crate::model::intake::NodeCtx::multiplicity` requires
+            // `ordered`/`unique` present on every field multiplicity it
+            // reads, but `agent-ix-semantic-ir`'s own `field_rules` refuses
+            // either key present at all on a single-valued one (`upper <=
+            // 1`, `FLAGS_ON_NON_COLLECTION`) -- an unbounded multiplicity
+            // satisfies both.
+            "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    }
+
+    /// A one-type, one-field document exercising [`read_field_type_ref`]'s
+    /// own resolution (Peter's ruling, PR #200 review round 2), wrapping
+    /// `field`'s `typeRef` in `field`.
+    fn document_with_one_field(field: Value) -> Vec<u8> {
+        wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([
+                wire_type(
+                    "ix://acme/orders/Widget",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({
+                        "supertypes": [],
+                        "fields": [field],
+                        "operations": [],
+                    }),
+                ),
+                // A real node of the package, for a `typeRef` naming a
+                // package type -- `agent-ix-semantic-ir`'s own
+                // `UNRESOLVED_TYPE_REF` rule requires the reference to
+                // resolve to a declared identity, same as QSL's own
+                // `read_field_type_ref`.
+                wire_type(
+                    "ix://acme/orders/OtherType",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                ),
+            ]),
+        )
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn resolves_a_known_native_type_ref_to_the_quire_native_pseudo_package() {
+        let document = document_with_one_field(wire_field(
+            "ix://acme/orders/Widget/flag",
+            "flag",
+            "ix://quire/native/Boolean",
+        ));
+        let records = read_records("acme/orders", &document)
+            .expect("a known native typeRef reads, never refuses");
+        let field = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) => Some(field),
+                _ => None,
+            })
+            .expect("the document declares exactly one field member");
+        assert_eq!(
+            field.value_type,
+            DeclarationKey {
+                package: "quire/native".to_owned(),
+                node: "ix://quire/native/Boolean".to_owned(),
+            },
+            "a native typeRef resolves under the well-known quire/native \
+             pseudo-package, declaring no node of the field's own package"
+        );
+    }
+
+    #[test]
+    fn refuses_an_unknown_native_type_ref_as_malformed_declaration() {
+        let document = document_with_one_field(wire_field(
+            "ix://acme/orders/Widget/flag",
+            "flag",
+            "ix://quire/native/Frobnicate",
+        ));
+        let refusals = read_records("acme/orders", &document)
+            .expect_err("a native-prefixed typeRef naming no native value type refuses");
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert_eq!(
+            refusals[0].cause,
+            ModelRefusalCause::IntakeMalformedDeclaration {
+                node: "ix://acme/orders/Widget/flag".to_owned(),
+                artifact: None,
+                span: None,
+            }
+        );
+        assert_eq!(
+            refusals[0].detail,
+            "$.types[0].fields[0]: typeRef: \"ix://quire/native/Frobnicate\" names no \
+             native value type QSL declares"
+        );
+    }
+
+    // L2 (review of PR #200): `read_records`'s own two hand-rolled
+    // `unsupported_at` refusals -- H3's non-empty operation `frame` and
+    // H5c's non-empty type-level `relationships[]` -- and its H4
+    // known-but-unsupported-FR-208-meaning refusal are the branches that
+    // survive M5's `validate_with_semantic_ir` gate: FCD's own schema and
+    // `constructs.rs` rules permit all three shapes generically (`frame`,
+    // `relationships` and an FR-208 `meaning` string are all optional,
+    // free-form members from FCD's point of view), so a document reaching
+    // them is schema-valid and these are genuinely this reader's own
+    // narrower-than-FCD refusals, not the validator's.
+
+    /// A two-type document -- `Widget` (the node under test) and
+    /// `OtherType` (a real node of the package for a `target`/`creates`
+    /// reference to resolve against, since `agent-ix-semantic-ir`'s own
+    /// `constructs.rs` rules -- `frames`'s `UNRESOLVED_FRAME_PATH`, a
+    /// relationship's own reference checks -- require these to name a real
+    /// declared node) -- with `extra` merged onto `Widget`'s own members,
+    /// on top of the `fields`/`operations`/`supertypes` every `OBJECT_TYPE`
+    /// needs present for `read_object_type` to run at all.
+    fn document_with_object_type_extra(extra: Value) -> Vec<u8> {
+        let mut widget = serde_json::json!({
+            "supertypes": [],
+            "fields": [],
+            "operations": [],
+        });
+        if let (Some(widget_obj), Some(extra_obj)) = (widget.as_object_mut(), extra.as_object()) {
+            for (key, value) in extra_obj {
+                widget_obj.insert(key.clone(), value.clone());
+            }
+        }
+        wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([
+                wire_type(
+                    "ix://acme/orders/Widget",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    widget,
+                ),
+                wire_type(
+                    "ix://acme/orders/OtherType",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                ),
+            ]),
+        )
+        .to_string()
+        .into_bytes()
+    }
+
+    /// H3 (FCD #199 gap 4): an operation `frame` that actually declares
+    /// something -- here a `creates` naming a real type of the document --
+    /// refuses as a known-but-unsupported declaration form. It is never
+    /// silently read as `OperationEffect::default()`, unlike an absent
+    /// frame or one whose `modifies`/`creates`/`deletes` are all empty.
+    #[test]
+    fn refuses_a_non_empty_operation_frame_as_unsupported() {
+        let document = document_with_object_type_extra(serde_json::json!({
+            "operations": [{
+                "identity": "ix://acme/orders/Widget/discard",
+                "name": "discard",
+                "params": [],
+                "pre": [],
+                "post": [],
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": "ix://acme/orders/Widget/discard",
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": ["ix://acme/orders/Widget/discard"],
+                    }
+                },
+                "frame": {
+                    "modifies": [],
+                    "creates": ["ix://acme/orders/OtherType"],
+                    "deletes": [],
+                },
+            }],
+        }));
+        let refusals = read_records("acme/orders", &document)
+            .expect_err("a frame that declares a creates entry is not silently dropped");
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: "ix://acme/orders/Widget/discard".to_owned(),
+                    what: "operation.frame".to_owned(),
+                },
+                detail: "$.types[0].operations[0].frame: construct meaning/capability \
+                          \"operation.frame\" has no reader yet"
+                    .to_owned(),
+            }]
+        );
+    }
+
+    /// H5c (FCD #199 gap 3): a type's own non-empty inline `relationships[]`
+    /// -- FCD's `verb`/`category`/`composite`/`target` wire shape, carrying
+    /// neither a role nor QSpec's own direction vocabulary -- refuses as a
+    /// known-but-unsupported declaration form.
+    #[test]
+    fn refuses_a_non_empty_relationships_array_as_unsupported() {
+        let document = document_with_object_type_extra(serde_json::json!({
+            "relationships": [{
+                "identity": "ix://acme/orders/Widget/owns",
+                "verb": "owns",
+                "category": "structural",
+                "composite": false,
+                "target": "ix://acme/orders/OtherType",
+                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": "ix://acme/orders/Widget/owns",
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": ["ix://acme/orders/Widget/owns"],
+                    }
+                },
+            }],
+        }));
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a non-empty relationships[] is FCD's own shape, not QSpec's Relationships row",
+        );
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: "ix://acme/orders/Widget".to_owned(),
+                    what: "relationships[]".to_owned(),
+                },
+                detail: "$.types[0].relationships: construct meaning/capability \
+                          \"relationships[]\" has no reader yet"
+                    .to_owned(),
+            }]
+        );
+    }
+
+    /// H4: a real FR-208 meaning (`RECORD_VALUE_TYPE`) FCD's own schema
+    /// accepts generically -- any string in `kind`'s resolved `meaning` is
+    /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
+    /// yet, refuses as a known-but-unsupported declaration form rather than
+    /// silently folding into `ObjectTypeRecord`.
+    #[test]
+    fn refuses_a_known_but_unsupported_fr208_meaning_as_unsupported() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "money",
+                meaning::RECORD_VALUE_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Money",
+                serde_json::json!({"module": "acme/orders", "name": "money"}),
+                serde_json::json!({}),
+            )]),
+        )
+        .to_string()
+        .into_bytes();
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a real FR-208 meaning with no QSL record shape yet refuses, not folds into \
+             ObjectTypeRecord",
+        );
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: "ix://acme/orders/Money".to_owned(),
+                    what: meaning::RECORD_VALUE_TYPE.to_owned(),
+                },
+                detail: format!(
+                    "$.types[0]: construct meaning/capability {:?} has no reader yet",
+                    meaning::RECORD_VALUE_TYPE
+                ),
+            }]
+        );
+    }
+
+    /// A construct's `meaning` is schema-free text to
+    /// `agent-ix-semantic-ir` (`vocabulary.rs`'s `DECLARATION_REQUIRED`
+    /// only requires it present and non-empty) -- FR-208's closed
+    /// [`meaning::ALL`] list is entirely this reader's own vocabulary, so a
+    /// meaning string outside it is schema-valid and reaches
+    /// [`read_type_node`]'s final `other` arm as `malformed-declaration`,
+    /// not `unsupported-construct`: an unrecognized meaning is not a known
+    /// FR-208 shape this reader merely lacks a case for.
+    #[test]
+    fn refuses_a_meaning_outside_fr208_as_malformed_declaration() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "gadget",
+                "acme.custom.meaning/v1",
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Gadget",
+                serde_json::json!({"module": "acme/orders", "name": "gadget"}),
+                serde_json::json!({}),
+            )]),
+        )
+        .to_string()
+        .into_bytes();
+        let refusals = read_records("acme/orders", &document)
+            .expect_err("a meaning outside FR-208 is not a declared vocabulary at all");
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Gadget".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0]: kind: resolves to \"acme.custom.meaning/v1\", outside \
+                          FR-208"
+                    .to_owned(),
+            }]
+        );
+    }
+
+    /// L2: `read_population`'s own "kind: resolves to {other}, not
+    /// POPULATION" branch, the one `read_population` refusal that survives
+    /// M5's gate -- `agent-ix-semantic-ir`'s own `population_schema`
+    /// (`schema.rs`) checks a population's `kind` resolves to *some*
+    /// constructs entry, never that its resolved meaning is specifically
+    /// `POPULATION` -- unlike this same document's `extent`
+    /// (`POPULATION_EXTENTS` is exactly `["closed", "open"]`, so a bad
+    /// `extent` is always FCD's own refusal first) or a dangling `kind`
+    /// (FCD's own "names no constructs entry" check, identical wording,
+    /// fires first).
+    #[test]
+    fn refuses_a_population_kind_resolving_to_a_non_population_meaning() {
+        let mut document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Widget",
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            )]),
+        );
+        document["populations"] = serde_json::json!([{
+            "identity": "ix://acme/orders/Fleet",
+            "displayName": "Fleet",
+            "kind": {"module": "acme/orders", "name": "order"},
+            "members": [],
+            "extent": "closed",
+            "origin": {
+                "generated": {
+                    "generatorIdentity": "ix://acme/orders/Fleet",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://acme/orders/Fleet"],
+                }
+            },
+        }]);
+        let document = document.to_string().into_bytes();
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a population's kind names a real constructs entry, but that entry's own \
+             meaning is object-type, not population",
+        );
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/orders/Fleet".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: format!(
+                    "$.populations[0]: kind: resolves to {:?}, not {:?}",
+                    meaning::OBJECT_TYPE,
+                    meaning::POPULATION
+                ),
+            }]
+        );
+    }
+
+    /// L2: `read_type_identity`'s own package-scoping check --
+    /// `agent-ix-semantic-ir`'s `is_semantic_identity` (`diag.rs`) accepts
+    /// any lowercase owner segment, never checking it against the
+    /// document's own `package.identity`, so a type identity naming a
+    /// different package's owner is schema-valid to FCD and reaches this
+    /// reader's own check, distinct from `refuses_fcd_own_identity_form_as_malformed_declaration`'s
+    /// same-package-wrong-segments case.
+    #[test]
+    fn refuses_a_type_identity_naming_a_different_package_as_malformed_declaration() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/other/Thing",
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({}),
+            )]),
+        )
+        .to_string()
+        .into_bytes();
+        let refusals = read_records("acme/orders", &document).expect_err(
+            "a type identity naming a different package's owner is not a node of acme/orders",
+        );
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://acme/other/Thing".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0]: identity: \"ix://acme/other/Thing\" is not \
+                          ix://acme/orders/<artifact id>"
+                    .to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn resolves_a_package_type_ref_to_a_node_of_the_package() {
+        let document = document_with_one_field(wire_field(
+            "ix://acme/orders/Widget/other",
+            "other",
+            "ix://acme/orders/OtherType",
+        ));
+        let records = read_records("acme/orders", &document)
+            .expect("a typeRef naming a node of the field's own package reads");
+        let field = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) => Some(field),
+                _ => None,
+            })
+            .expect("the document declares exactly one field member");
+        assert_eq!(
+            field.value_type,
+            DeclarationKey {
+                package: "acme/orders".to_owned(),
+                node: "ix://acme/orders/OtherType".to_owned(),
+            },
+            "a package-scoped typeRef resolves under the field's own package, \
+             exactly as its own identity string names"
+        );
     }
 }
