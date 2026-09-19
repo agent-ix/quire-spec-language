@@ -88,7 +88,7 @@ fn operation(
     owner: &str,
     parameters: Vec<(&str, &str, Multiplicity)>,
     result: Option<(&str, Multiplicity)>,
-    field_writes: Vec<&str>,
+    modifies: Vec<&str>,
     creates: Vec<&str>,
     deletes: Vec<&str>,
     own_postcondition_clauses: Vec<PostconditionClause>,
@@ -109,7 +109,7 @@ fn operation(
             multiplicity: m,
         }),
         effect: OperationEffect {
-            field_writes: field_writes.into_iter().map(ProducerKey::fixture).collect(),
+            modifies: modifies.into_iter().map(ProducerKey::fixture).collect(),
             creates: creates.into_iter().map(ProducerKey::fixture).collect(),
             deletes: deletes.into_iter().map(ProducerKey::fixture).collect(),
         },
@@ -122,7 +122,7 @@ fn operation(
 /// H (bundle `bundle.h`): types `A`, `B` (`B` <= `A`); field `model.A.x`
 /// typed `model.A` `{0,1}`; field `model.B.y` typed `model.A` `{0,1}`;
 /// operation `model.A.op(p1: model.A {0,1})`: `model.B {1,1}`, effect
-/// `{fieldWrites: [model.A.x], creates: [model.A], deletes: []}`.
+/// `{modifies: [model.A.x], creates: [model.A], deletes: []}`.
 fn fixture_h_base() -> Vec<BundleRecord> {
     vec![
         object_type("model.A"),

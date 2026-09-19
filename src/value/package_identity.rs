@@ -35,7 +35,17 @@ const NODE_REQUIRED: [&str; 7] = [
     "body",
 ];
 
-const NODE_OPTIONAL: [&str; 2] = ["recursion_group", "nominal_identity_preimage"];
+/// `declaration` is the checked-package-v2 `ApplicationNode` preimage's own
+/// name member (QSpec proposals/checked-package-v2/node-identity-preimage
+/// .schema.json's `Declaration`). Complete V1 at this pin declares no
+/// application node, so this reader admits the member on the nominal node
+/// kinds it does declare without deriving anything from it: every export this
+/// pin's fixtures name still resolves through `nominal_identity_preimage`.
+const NODE_OPTIONAL: [&str; 3] = [
+    "recursion_group",
+    "nominal_identity_preimage",
+    "declaration",
+];
 
 /// Why an identity preimage is structurally malformed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

@@ -584,10 +584,8 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         mutated(&|v| v["owner"]["authority"] = json!("")),
         mutated(&|v| v["owner"]["extra"] = json!("x")),
         mutated(&|v| v["owner"]["export"] = json!("E")),
-        mutated(&|v| v["owner"] = json!({"kind": "model", "authority": "a", "identity": "b"})),
-        mutated(&|v| {
-            v["owner"] = json!({"kind": "model", "authority": "a", "identity": "b", "export": null})
-        }),
+        mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b"})),
+        mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b", "node": null})),
         mutated(&|v| v["ordered"] = json!("true")),
     ];
     for preimage in noncanonical {
@@ -600,9 +598,7 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
             "{preimage}"
         );
     }
-    let model = mutated(&|v| {
-        v["owner"] = json!({"kind": "model", "authority": "a", "identity": "b", "export": "E"})
-    });
+    let model = mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b", "node": "E"}));
     assert!(schema.is_valid(&model));
     assert!(EnumDeclarationPreimage::from_json(model).is_ok());
 
