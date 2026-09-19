@@ -275,9 +275,11 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::resolved_commit;
+    use ix_trace_rs::trace;
 
     /// A real git dependency's resolved `source` string carries the exact
     /// commit as a trailing `#<sha>`.
+    #[trace("TC-159", "FR-058-AC-2")]
     #[test]
     fn resolved_commit_extracts_trailing_sha() {
         assert_eq!(
@@ -290,6 +292,7 @@ mod tests {
 
     /// A registry source has no `#<sha>` at all; `resolved_commit` must not
     /// invent one from a bare trailing fragment.
+    #[trace("TC-159", "FR-058-AC-2")]
     #[test]
     fn resolved_commit_is_none_without_a_fragment() {
         assert_eq!(
@@ -299,6 +302,7 @@ mod tests {
     }
 
     /// A malformed source ending in a bare `#` (empty fragment) is not a sha.
+    #[trace("TC-159", "FR-058-AC-2")]
     #[test]
     fn resolved_commit_is_none_for_an_empty_fragment() {
         assert_eq!(resolved_commit("git+https://example.com/repo#"), None);

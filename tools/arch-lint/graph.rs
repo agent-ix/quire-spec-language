@@ -192,6 +192,7 @@ pub(crate) fn check(edges: &[Edge]) -> DirectionReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     fn edge(from: Repo, to: Repo, kind: EdgeKind, via: &str) -> Edge {
         Edge {
@@ -204,6 +205,7 @@ mod tests {
 
     /// tc_arch_lint_direction_001: a clean ecosystem (only the CG -> QSL
     /// normal replay-facade edge into QSL, no cycle) reports nothing.
+    #[trace("TC-156", "FR-059-AC-1")]
     #[test]
     fn tc_arch_lint_direction_001_clean_graph_reports_nothing() {
         let edges = vec![
@@ -218,6 +220,7 @@ mod tests {
     /// tc_arch_lint_direction_002 (negative control): IR depending on QSL is
     /// the real, currently observed FB-05 violation (ADR-011 OBS-029): the
     /// only permitted edge into QSL is CG's normal dependency.
+    #[trace("TC-156", "FR-059-AC-2")]
     #[test]
     fn tc_arch_lint_direction_002_ir_to_qsl_is_fb05_violation() {
         let edges = vec![edge(
@@ -234,6 +237,7 @@ mod tests {
 
     /// tc_arch_lint_direction_003 (negative control): a dev-only edge from
     /// RT into QSL is still forbidden -- FB-05 has no dev exception.
+    #[trace("TC-156", "FR-059-AC-2")]
     #[test]
     fn tc_arch_lint_direction_003_dev_edge_into_qsl_is_violation() {
         let edges = vec![edge(
@@ -249,6 +253,7 @@ mod tests {
 
     /// tc_arch_lint_direction_004: CG's normal dependency on QSL is the one
     /// stated exception and is not reported.
+    #[trace("TC-156", "FR-059-AC-1")]
     #[test]
     fn tc_arch_lint_direction_004_cg_normal_edge_is_the_named_exception() {
         let edges = vec![edge(
@@ -264,6 +269,7 @@ mod tests {
     /// tc_arch_lint_direction_005 (negative control): CG's *dev* dependency
     /// on QSL is not the stated exception (the exception names a normal
     /// dependency only) and is reported.
+    #[trace("TC-156", "FR-059-AC-3")]
     #[test]
     fn tc_arch_lint_direction_005_cg_dev_edge_into_qsl_is_violation() {
         let edges = vec![edge(
@@ -280,6 +286,7 @@ mod tests {
     /// two-repository cycle (ADR-011 §7.1: "QSL's own Cargo.lock resolves
     /// exactly one revision per quire-ecosystem crate" is a different rule;
     /// this is FB-11's direction cycle, observed today as IR root -> QSL).
+    #[trace("TC-156", "FR-059-AC-4")]
     #[test]
     fn tc_arch_lint_direction_006_two_repo_cycle_is_fb11_violation() {
         let edges = vec![
@@ -298,6 +305,7 @@ mod tests {
 
     /// tc_arch_lint_direction_007 (negative control): a longer QSL -> CG ->
     /// RT -> QSL cycle is also caught, combining normal and dev edges.
+    #[trace("TC-156", "FR-059-AC-4")]
     #[test]
     fn tc_arch_lint_direction_007_three_repo_cycle_is_fb11_violation() {
         let edges = vec![
@@ -317,6 +325,7 @@ mod tests {
 
     /// tc_arch_lint_direction_008: a linear chain with no return edge is not
     /// a cycle.
+    #[trace("TC-156", "FR-059-AC-5")]
     #[test]
     fn tc_arch_lint_direction_008_acyclic_chain_reports_no_cycle() {
         let edges = vec![

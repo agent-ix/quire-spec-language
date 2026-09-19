@@ -218,6 +218,7 @@ pub(crate) fn evaluate(rule: &Rule, crate_root: &Path, src_root: &Path) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
     use std::fs;
 
     fn write(root: &Path, relative: &str, contents: &str) {
@@ -228,6 +229,7 @@ mod tests {
 
     /// tc_arch_lint_api_surface_001: module-path mapping matches Rust's own
     /// `mod.rs`/`foo.rs` convention and the crate-root special case.
+    #[trace("TC-157")]
     #[test]
     fn tc_arch_lint_api_surface_001_module_path_mapping() {
         assert_eq!(module_path_of(Path::new("value/node.rs")), "value::node");
@@ -242,6 +244,7 @@ mod tests {
     /// tc_arch_lint_api_surface_002: a rule whose `requires_path` marker is
     /// absent is reported `Pending`, never a silent pass with zero
     /// violations indistinguishable from "checked and clean".
+    #[trace("TC-157", "FR-060-AC-1")]
     #[test]
     fn tc_arch_lint_api_surface_002_missing_symbol_is_pending_not_vacuous_pass() {
         let dir = tempfile::tempdir().unwrap();
@@ -256,6 +259,7 @@ mod tests {
     /// tc_arch_lint_api_surface_003 (negative control): a call to the
     /// `NodeKey` constructor from a module outside the allowed list is
     /// reported as a violation, naming the file and line.
+    #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_003_disallowed_caller_is_a_violation() {
         let dir = tempfile::tempdir().unwrap();
@@ -280,6 +284,7 @@ mod tests {
 
     /// tc_arch_lint_api_surface_004: a call from an allowed caller module is
     /// not reported.
+    #[trace("TC-157", "FR-060-AC-2")]
     #[test]
     fn tc_arch_lint_api_surface_004_allowed_caller_is_not_a_violation() {
         let dir = tempfile::tempdir().unwrap();
@@ -300,6 +305,7 @@ mod tests {
     /// module that merely starts with the same prefix text (`model_query`,
     /// not `model::...`) is still a violation -- prefix matching is by path
     /// segment, not by string prefix.
+    #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_005_segment_boundary_not_string_prefix() {
         let dir = tempfile::tempdir().unwrap();

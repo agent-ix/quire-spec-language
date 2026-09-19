@@ -18,6 +18,7 @@
 //! simplest genuinely public, unrestricted surface, which still fails
 //! immediately if that surface's shape changes incompatibly at head.
 
+use ix_trace_rs::trace;
 use quire_contract_codegen::{BOUND_COVERAGE_SCHEMA, MAX_ANALYSIS_BYTES};
 use quire_contract_ir::AnchorName;
 use quire_contract_runtime::{ContractIdentity, RequirementId, RevisionId};
@@ -47,6 +48,7 @@ fn qsl_parse_digest() -> String {
     unit.source().digest().to_string()
 }
 
+#[trace("IT-013-SC-01")]
 #[test]
 fn qsl_parses_at_head() {
     let digest = qsl_parse_digest();
@@ -56,6 +58,7 @@ fn qsl_parses_at_head() {
     );
 }
 
+#[trace("IT-013-SC-01")]
 #[test]
 fn quire_contract_ir_anchor_name_round_trips_at_head() {
     let anchor = AnchorName::new("current_head_contract")
@@ -66,6 +69,7 @@ fn quire_contract_ir_anchor_name_round_trips_at_head() {
 /// Ties QSL's real parse output into quire-contract-runtime's identity type:
 /// a change to either `RevisionId`'s constructor or its borrowed-string
 /// contract would fail this call, not only an isolated RT-only unit test.
+#[trace("IT-013-SC-01", "IT-013-SC-02")]
 #[test]
 fn quire_spec_language_digest_feeds_quire_contract_runtime_identity_at_head() {
     let digest = qsl_parse_digest();
@@ -78,6 +82,7 @@ fn quire_spec_language_digest_feeds_quire_contract_runtime_identity_at_head() {
 /// still parse as valid JSON and as a valid Draft 2020-12 schema at head --
 /// the same structural check QSL's own
 /// `tests/package_construction_cases/schema.rs` runs over its own schemas.
+#[trace("IT-013-SC-03")]
 #[test]
 fn quire_contract_codegen_bound_coverage_schema_is_valid_draft202012_at_head() {
     // MAX_ANALYSIS_BYTES is a `const`, so clippy already proves this at
