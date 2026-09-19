@@ -121,8 +121,8 @@ and the stage hooks it implements.
 The "Depends on families" column is a DAG. A family reads another family's
 checked output only through that family's public checked types and the shared
 context (§2). No family calls another family's checking or lowering
-internals. #209 decides the crate and module placement; that placement keeps
-this DAG acyclic.
+internals. Families are modules in the one QSL crate (ADR-011, #209), and the
+module dependencies follow this DAG, which keeps it acyclic.
 
 `SumCase` has no edge to `StateModel`. Variant payload types resolve through
 the type environment in `CheckContext`, not through `StateModel` internals.
@@ -182,7 +182,7 @@ The shared contract is the minimum every family implements. It has six parts.
 |---|---|---|
 | Identity | Every checked node carries a stable identity, minted by QSL at check time as a function of the node's normalized content and its declaration path. It is never a counter, a display string or a collection position. | decided in #211 (DA-01, DA-02) |
 | Provenance | Every checked node maps to its source span through a source map keyed by that identity. QSL is the only minter (AD-016 arrow 1). | decided in #211 (DA-13) |
-| Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: decided in #209 |
+| Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
 | Requirements | A pure function of a checked node returns `Requirements`. Its entries are (capability kind, declared extent, authored bound). The capability set is non-empty by type. A claim that needs no backend capability yields no `Requirements` value. If such an item is requested for proof, it still reaches `negotiate_*` exactly once (§7.2). | kinds decided in #229, Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node, a refusal with a family-typed cause, or `Incomplete` when a limit or the meter is exhausted. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | outcome and refusal types decided in #211 (DA-09, DA-10) |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
@@ -403,7 +403,7 @@ or last-wins default.
 |---|---|---|---|---|---|
 | Syntax admission | Is this text a well-formed form of an admitted edition? | QSL parser; family productions | source → family `Form` | parse diagnostic; no form | that the form type-checks |
 | Semantic admission | Is this form meaningful in the language? | QSL checker; family `check` | `Form` + `CheckContext` → checked node + `Requirements` | family refusal with catalog code, or `Incomplete`; no checked node | that any backend supports it |
-| Backend capability | Which registered backends advertise the required capability kinds, and what is settled for the item? | candidates: the #185 registry (stage decided in #209). Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
+| Backend capability | Which registered backends advertise the required capability kinds, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after S4 and before E7 (ADR-011). Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
 | Runtime availability | Is the selected backend's tool present at the pinned version? | the executing adapter, after negotiation and before the run (CG for Kani) | backend descriptor → available tool identity or absence cause | solver-absence outcome (§7.4) | anything about language meaning |
 
 Consequences of the separation:
@@ -428,14 +428,16 @@ Consequences of the separation:
 | Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; Codegen #86) |
 
 The registry is an ordinary value, for example a `BTreeMap` keyed by
-`BackendId`. The orchestrating caller builds it and passes it as an argument.
+`BackendId`. The orchestrating binary builds it and passes it as an argument.
 It is not a `static`, a `OnceLock`, a thread-local, or a link-time collection
 (`inventory`, `linkme` or `ctor`). Two registries built from the same
 descriptors in any order are equal and select identically.
 
-The orchestrating caller is the CLI or driver binary. It calls QSL for the
-checked package and the candidate sets, and then calls CG with both. No QSL
-library crate depends on or calls CG (question to #209, §13.1).
+The candidate and routing steps run in the QSL `route` module (layer R),
+after S4 and before E7 (ADR-011). The orchestrating binary is a separate crate
+downstream of CG; #225 decides where it lives. It calls QSL for the checked
+package and the `route` candidate sets, then calls CG with both. No QSL
+library module depends on or calls CG (ADR-011).
 
 ### 7.2 Selection and negotiation
 
@@ -693,7 +695,7 @@ test; the absent-capability corpus case when a kind is assigned. No `Value`,
 | Stage | Change | Seam forced |
 |---|---|---|
 | Descriptor | one `BackendDescriptor` (identity, advertised (capability kind, mode) pairs, pinned tool) in the backend's repository | none |
-| Registration | the orchestrating caller adds the descriptor to the registry value | none (§5.2 failures apply) |
+| Registration | the orchestrating binary adds the descriptor to the registry value | none (§5.2 failures apply) |
 | CG | one backend kind variant, its `negotiate_*` arm and its generation arm | S9 |
 | Runner | the backend's runner and its availability probe (§7.4) | none |
 | Outcome | the backend outcome enum and its FR-331 map | S8 |
@@ -704,16 +706,14 @@ scenario 7.
 
 ## 13. Questions for siblings and the owner
 
-### 13.1 For #209
+### 13.1 For #209 (answered by ADR-011, QSL PR #235)
 
-1. Which stage and crate hosts the #185 candidate step and the routing step
-   (§7.2)?
-2. Confirm the rule that no QSL library crate depends on or calls CG, so that
-   only the orchestrating binary calls both (§7.1).
-3. Does the family DAG (§1) map to modules in one crate, or does any family
-   meet #209's extraction criteria for its own crate?
-4. Where does `CheckContext` (contents in §2) live so that family modules
-   depend on it without depending on each other?
+| Question | ADR-011 answer, adopted here |
+|---|---|
+| Stage and crate of the #185 candidate and routing steps (§7.2) | the QSL `route` module (layer R), after S4 and before E7; CG `negotiate_*` settles |
+| No QSL library crate calls CG (§7.1) | confirmed; the orchestrating binary is a separate crate downstream of CG, placed by #225 |
+| Family DAG placement (§1) | families are modules in the one QSL crate |
+| `CheckContext` placement (§2) | the `check` core |
 
 ### 13.2 For #211
 
@@ -764,9 +764,9 @@ scenario 7.
 
 | Question | Answer |
 |---|---|
-| ADR-011: per-stage hooks and how a missing hook fails | §2 and §8. A family that takes part in a stage implements its hook. A family that does not has an explicit S1 arm returning a typed `unsupported` refusal. A missing arm fails the build (§5). |
-| ADR-011: what S3 records in `capability_report` | each checked item's `Requirements`: capability kinds, declared extent and authored bound, as data (§2, §6) |
-| ADR-011: v2 family forms replacing IR's admission of QSL types | the v2 nodes emitted by the `Value` `package` hook (predicate expressions) and the `TemporalTrace` `package` hook (temporal forms). QSpec owns their spelling. IR reads them in its v2 reader (#218 and #223 with IR #109). |
+| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): S2 family form builder, S3 `check` and `requirements`, S4 `package`, S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: every S1 dispatch seam has one arm per family and no `_` arm (§5.1). A family that does not take part in a stage has an explicit, hand-written arm returning a typed `unsupported` refusal with a catalog code; that is a refusal at run time, never a silent skip. |
+| ADR-011: what S3 records in `capability_report` | exactly one entry per checked item that has `Requirements`, keyed by the item's checked identity. Each entry holds the capability kinds (vocabulary per #229 and QSpec #134), the declared extent and the authored bound (#222). Nothing else: no backend, candidate or disposition, because S3 negotiates nothing (§2, §6). |
+| ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (Contract IR #141) and admits them there (#218 and #223 with IR #109). |
 | ADR-013 Q210-1: capability wire spelling and version; backend identity value | spelling and version decided in #229; `BackendId` representation decided in #211 (§13.2 Q4) |
 | ADR-013 Q210-2 and O-20: mode vocabulary | QSL records the declared extent and bound as data; CG `negotiate_*` settles the mode (§1.1), as O-20 says. The mode and extent vocabulary and its rules are decided in #222, not #210; this record fixes only the selection mechanics that use them. #211 is asked to change O-20's Owner row to "decided in #222". |
 | ADR-013 Q210-3: family results → O-16 categories | §8: refusal, incomplete, kernel `Outcome<T>`, CG dispositions and the IR proof map. No family adds a category. |
