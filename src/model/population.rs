@@ -724,7 +724,19 @@ pub fn admit_binding(
 
     let universe = match object_universe(domain_package) {
         Ok(universe) => universe.identity(),
-        Err(refusal) => return AdmissionOutcome::Refused(refusal),
+        // `object_universe` now returns its full charge-ordered refusal
+        // bundle (L2 finding, PR #228 review); this FR-153 admission path
+        // stays single-refusal (`AdmissionOutcome::Refused`'s own shape,
+        // unchanged here), so only the first is surfaced, exactly as before
+        // this fix.
+        Err(refusals) => {
+            return AdmissionOutcome::Refused(
+                refusals
+                    .into_iter()
+                    .next()
+                    .expect("object_universe only ever returns a non-empty refusal list"),
+            )
+        }
     };
 
     // Indexed once, not re-scanned per member: `view.declarations()` and

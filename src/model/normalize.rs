@@ -238,6 +238,102 @@ pub struct ModelRefusal {
     pub detail: String,
 }
 
+/// A non-empty [`ModelRefusal`] list (L1 finding, PR #228 review):
+/// `value-accounting.md:505-511`'s "every refusal that work exposes is
+/// reported, in charge order, when its stage ends" means a real defect
+/// always exposes at least one refusal -- checked by the compiler at
+/// construction (a `first` refusal plus the `rest`, not a bare
+/// `Vec<ModelRefusal>` a caller could pass empty), not merely documented as
+/// the previous `Vec<ModelRefusal>` shape left it. Supports every read a
+/// charge-order assertion needs -- `Index<usize>`, `iter`/`IntoIterator`
+/// (both by value and by reference), and `len` -- and compares equal to a
+/// plain `Vec<ModelRefusal>` of the same refusals in the same order (in
+/// either direction), so existing charge-order assertions read and compare
+/// it exactly as before. Not `Deref<Target = [ModelRefusal]>`: `first` and
+/// `rest` are two separate fields, not one contiguous allocation, so there
+/// is no real `&[ModelRefusal]` to hand back without first materializing an
+/// owned copy.
+#[derive(Clone, Eq, PartialEq)]
+pub struct Refusals {
+    first: ModelRefusal,
+    rest: Vec<ModelRefusal>,
+}
+
+impl Refusals {
+    /// Splits a non-empty `Vec` into this type's own `first`/`rest` shape --
+    /// the shape every crate-internal producer already builds. Panics on an
+    /// empty `Vec`: every real producer already has at least one refusal in
+    /// hand (this type's own doc).
+    pub fn from_vec(refusals: Vec<ModelRefusal>) -> Self {
+        let mut iter = refusals.into_iter();
+        let first = iter
+            .next()
+            .expect("Refusals::from_vec called with an empty Vec");
+        Self {
+            first,
+            rest: iter.collect(),
+        }
+    }
+
+    /// The number of refusals (always at least one).
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        1 + self.rest.len()
+    }
+
+    /// Every refusal, in original order.
+    pub fn iter(&self) -> impl Iterator<Item = &ModelRefusal> {
+        std::iter::once(&self.first).chain(self.rest.iter())
+    }
+}
+
+impl std::fmt::Debug for Refusals {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq<Vec<ModelRefusal>> for Refusals {
+    fn eq(&self, other: &Vec<ModelRefusal>) -> bool {
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+impl PartialEq<Refusals> for Vec<ModelRefusal> {
+    fn eq(&self, other: &Refusals) -> bool {
+        other == self
+    }
+}
+
+impl IntoIterator for Refusals {
+    type Item = ModelRefusal;
+    type IntoIter =
+        std::iter::Chain<std::iter::Once<ModelRefusal>, std::vec::IntoIter<ModelRefusal>>;
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(self.first).chain(self.rest)
+    }
+}
+
+impl<'a> IntoIterator for &'a Refusals {
+    type Item = &'a ModelRefusal;
+    type IntoIter =
+        std::iter::Chain<std::iter::Once<&'a ModelRefusal>, std::slice::Iter<'a, ModelRefusal>>;
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(&self.first).chain(self.rest.iter())
+    }
+}
+
+impl std::ops::Index<usize> for Refusals {
+    type Output = ModelRefusal;
+    fn index(&self, index: usize) -> &ModelRefusal {
+        if index == 0 {
+            &self.first
+        } else {
+            &self.rest[index - 1]
+        }
+    }
+}
+
 /// The outcome of one normalization attempt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NormalizeOutcome {
@@ -246,10 +342,9 @@ pub enum NormalizeOutcome {
     /// A real defect refused normalization outright; no effective view.
     /// `value-accounting.md:505-511`: "every refusal that work exposes is
     /// reported, in charge order, when its stage ends" -- every refusal a
-    /// stage exposes is reported together, never only the first, so this
-    /// never carries an empty vector: a real defect always exposes at least
-    /// one refusal.
-    Refused(Vec<ModelRefusal>),
+    /// stage exposes is reported together, never only the first
+    /// ([`Refusals`], L1 finding, PR #228 review).
+    Refused(Refusals),
     /// A `ModelNormalizationLimitsV1` counter was exhausted; no effective view.
     Incomplete(Incomplete),
 }
@@ -570,6 +665,22 @@ fn remaining_fact_budget(limits: &ModelNormalizationLimits, facts_so_far: u64) -
     usize::try_from(room.saturating_add(1)).unwrap_or(usize::MAX)
 }
 
+/// A conservative upper bound on how many additional closing-cycle
+/// extensions this build could still admit before [`charge_all`] denies a
+/// `normalize.cycle-check` charge (H2 finding, PR #228 review). Unlike
+/// [`remaining_fact_budget`], this is `work_units` room only, never
+/// intersected with `derivation_facts` room: a closing extension charges no
+/// `normalize.fact` (`value-accounting.md:513`), so it never consumes
+/// `derivation_facts` at all, only `work_units` (its own
+/// `normalize.cycle-check` charge). `facts_so_far` is reused here as the
+/// same conservative (undercounting, so always-overestimating) proxy for
+/// `work_units` already consumed that [`remaining_fact_budget`]'s own
+/// `work_room` term uses.
+fn remaining_cycle_budget(limits: &ModelNormalizationLimits, facts_so_far: u64) -> usize {
+    let work_room = limits.work_units.saturating_sub(facts_so_far);
+    usize::try_from(work_room.saturating_add(1)).unwrap_or(usize::MAX)
+}
+
 /// Whether at least `limits.derivation_facts` or `limits.work_units` facts
 /// have already been produced, i.e. continuing to generate more can no
 /// longer change the outcome: [`charge_all`]'s real replay will already
@@ -602,6 +713,20 @@ struct ClosingCycle {
     edge_set: Vec<DeclarationKey>,
 }
 
+/// One [`ClosingCycle`] collected build-wide across `build`'s own per-type
+/// loop, tagged with the type whose walk found it (L3 finding, PR #228
+/// review: previously an anonymous 4-tuple). Sorted by `(type_key, path)` --
+/// the same charge-order key its own [`PendingFact`] sorts by
+/// (`sort_facts`) -- then deduplicated by `edge_set` only after every type
+/// has been walked (`model-complete.md`:292-295's "each cycle is refused ...
+/// exactly once"; see the module docs).
+struct CycleCandidate {
+    type_key: DeclarationKey,
+    path: Vec<DeclarationKey>,
+    refusal: ModelRefusal,
+    edge_set: Vec<DeclarationKey>,
+}
+
 /// [`ancestor_paths`]'s own result: every ordinary ancestor path (`paths`,
 /// unchanged meaning) plus every generalization cycle this same walk closed
 /// (`closing_cycles`) — one entry per closing extension, not deduplicated
@@ -619,14 +744,25 @@ struct AncestorWalk {
 }
 
 /// Every ancestor path of `root_key`, in DFS pre-order over ascending-key
-/// direct generalizations, capped at `budget` entries (paths and closing
-/// cycles counted together against that cap). Explicit stack, not native
-/// recursion: domain package data is caller-supplied and may describe a
-/// cycle.
+/// direct generalizations, capped at two independent entry counts:
+/// `fact_budget` for `paths` and `cycle_budget` for `closing_cycles` (H2
+/// finding, PR #228 review). Separate caps, not one shared cap counted
+/// against both: a closing extension charges no `normalize.fact`
+/// (`value-accounting.md:513`), so it never consumes `derivation_facts`
+/// room, only `work_units` — capping it against a budget that also
+/// subtracts `derivation_facts` (as `paths`' own cap correctly does)
+/// undercounts its true remaining room whenever `derivation_facts` is the
+/// tighter limit, truncating the walk before `charge_all`'s own replay
+/// would and returning `Refused` where the spec gives `Incomplete`. The
+/// walk keeps exploring siblings (not new depth) once `paths` reaches its
+/// own cap, so closing extensions past that point are still discovered up
+/// to `cycle_budget`. Explicit stack, not native recursion: domain package
+/// data is caller-supplied and may describe a cycle.
 fn ancestor_paths(
     root_key: &DeclarationKey,
     index: &Index,
-    budget: usize,
+    fact_budget: usize,
+    cycle_budget: usize,
 ) -> Result<AncestorWalk, ModelRefusal> {
     struct Frame {
         directs: Vec<DeclarationKey>,
@@ -644,7 +780,7 @@ fn ancestor_paths(
     let mut out = Vec::new();
     let mut closing_cycles: Vec<ClosingCycle> = Vec::new();
     loop {
-        if out.len() + closing_cycles.len() >= budget {
+        if out.len() >= fact_budget && closing_cycles.len() >= cycle_budget {
             break;
         }
         let stack_len = stack.len();
@@ -721,11 +857,24 @@ fn ancestor_paths(
                     listing.join(", ")
                 ),
             };
-            closing_cycles.push(ClosingCycle {
-                refusal,
-                path: new_path,
-                edge_set: chain,
-            });
+            if closing_cycles.len() < cycle_budget {
+                closing_cycles.push(ClosingCycle {
+                    refusal,
+                    path: new_path,
+                    edge_set: chain,
+                });
+            }
+            continue;
+        }
+        if out.len() >= fact_budget {
+            // `paths`' own cap is reached: this candidate is dropped (it
+            // would exceed `derivation_facts`/`work_units` room and
+            // `charge_all`'s real replay will refuse it anyway), and no new
+            // frame is pushed for it -- the walk does not grow new depth
+            // past this point, but `frame.next` already advanced above, so
+            // it still visits this frame's remaining siblings (and every
+            // other frame already on `stack`), which may still close cycles
+            // within `cycle_budget`.
             continue;
         }
         out.push(AncestorPath {
@@ -774,8 +923,15 @@ struct PendingDeclaration {
 
 struct Built {
     /// Every `model-complete.md`:81 refusal FR-154's per-node checks expose,
-    /// in node order, already deduplicated (a reference naming a refused
-    /// node is not reported again). Non-empty only when intake itself
+    /// in node order, then in FR-154's table order within one node
+    /// (`check_node`). `model-complete.md`:82 describes a reference naming
+    /// a refused node as not reported again as its own
+    /// `missing_declaration`/`missing-name`, but no code here performs that
+    /// cross-node dedup (H1 finding, PR #228 review): `check_node` checks
+    /// each node against `index`/`seen_keys` independently, with no view of
+    /// which other nodes already refused, so a reference naming a refused
+    /// node is reported exactly like any other dangling reference. Non-empty
+    /// only when intake itself
     /// refuses: `charge_all` reports these, once every `normalize.record`
     /// charge is admitted, and phase 2 onward never runs
     /// (`model-complete.md`:80: "Intake reports every such refusal in node
@@ -886,30 +1042,38 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 
 /// Every FR-154 per-node check for one already-key-validated node, in
 /// FR-154's own table order, the object id check first
-/// (`model-complete.md`:81). Returns the first failing check for this node,
-/// or `None` when the node admits — `validate_references` collects every
-/// node's own first failure rather than stopping at the first node that
-/// fails (`model-complete.md`:80: "Intake reports every such refusal in
-/// node order").
+/// (`model-complete.md`:81). Returns every failing check for this node, in
+/// that table order -- not only the first -- `model-complete.md`:80-82:
+/// "Intake reports every such refusal in node order... Within one node,
+/// every failing check reports in FR-154's table order." (H1 finding, PR
+/// #228 review; the previous single-`Option` shape stopped at this node's
+/// own first failing check, silently dropping every later one). The
+/// `seen_keys` collision check always runs, after every other check for
+/// this node, regardless of whether an earlier check on this same node
+/// already failed -- a node's own dangling references do not exempt it from
+/// also being reported as a duplicate key.
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
     index: &Index,
     seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
-) -> Option<ModelRefusal> {
+) -> Vec<ModelRefusal> {
     let key = record.key();
     // `model-complete.md`:81: within a node, the malformed-declaration
     // check is that node's own first check, ahead of any
     // dangling-reference or collision check for that same node -- an
     // empty `package`/`node` is schema `minLength`-invalid (FR-321,
     // out of domain) so it refuses before this node's own key is ever
-    // looked up in `index` or compared against `seen_keys`.
+    // looked up in `index` or compared against `seen_keys`, and no other
+    // check for this node can run: every later check assumes a
+    // well-formed key to look up or insert.
     if key.package.is_empty() || key.node.is_empty() {
-        return Some(ModelRefusal {
+        return vec![ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
             detail: format!("declaration key has an empty package or node: {key:?}"),
-        });
+        }];
     }
+    let mut refusals = Vec::new();
     match record {
         DomainPackageRecord::ObjectType(t) => {
             // `specific` is always this same record's own `t.key`,
@@ -920,7 +1084,7 @@ fn check_node<'a>(
             // `ModelRefusalCause` variant for it.
             for general in &t.supertypes {
                 if !index.types.contains(general) {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownGeneral {
                             supertype: t.key.clone(),
@@ -936,7 +1100,7 @@ fn check_node<'a>(
         }
         DomainPackageRecord::FieldMember(member) => {
             if !index.types.contains(&member.owner) {
-                return Some(ModelRefusal {
+                refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
                         member: member.key.clone(),
@@ -952,7 +1116,7 @@ fn check_node<'a>(
                 if !index.field_member_keys.contains(redefines)
                     && !index.operation_member_keys.contains(redefines)
                 {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownMember {
                             record: member.key.clone(),
@@ -969,7 +1133,7 @@ fn check_node<'a>(
                 if !index.field_member_keys.contains(subsetted)
                     && !index.operation_member_keys.contains(subsetted)
                 {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownMember {
                             record: member.key.clone(),
@@ -986,7 +1150,7 @@ fn check_node<'a>(
         DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
             if !index.types.contains(&op.owner) {
-                return Some(ModelRefusal {
+                refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
                         member: op.key.clone(),
@@ -1002,7 +1166,7 @@ fn check_node<'a>(
                 if !index.types.contains(&parameter.value_type)
                     && !index.known_scalars.contains(&parameter.value_type)
                 {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownValueType {
                             operation: op.key.clone(),
@@ -1022,7 +1186,7 @@ fn check_node<'a>(
                 if !index.types.contains(&result.value_type)
                     && !index.known_scalars.contains(&result.value_type)
                 {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownValueType {
                             operation: op.key.clone(),
@@ -1038,7 +1202,7 @@ fn check_node<'a>(
             }
             for field in &op.effect.modifies {
                 if !index.field_member_keys.contains(field) {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownFieldWrite {
                             operation: op.key.clone(),
@@ -1053,7 +1217,7 @@ fn check_node<'a>(
             }
             for target in op.effect.creates.iter().chain(&op.effect.deletes) {
                 if !index.types.contains(target) {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownEffectType {
                             operation: op.key.clone(),
@@ -1070,7 +1234,7 @@ fn check_node<'a>(
                 if !index.field_member_keys.contains(redefines)
                     && !index.operation_member_keys.contains(redefines)
                 {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownMember {
                             record: op.key.clone(),
@@ -1096,7 +1260,7 @@ fn check_node<'a>(
         DomainPackageRecord::Population(population) => {
             for type_name in &population.member_types {
                 if !index.types.contains(type_name) {
-                    return Some(ModelRefusal {
+                    refusals.push(ModelRefusal {
                         code: Code::MissingDeclaration,
                         cause: ModelRefusalCause::UnknownPopulationMemberType {
                             population: population.key.clone(),
@@ -1111,8 +1275,14 @@ fn check_node<'a>(
             }
         }
     }
+    // Always runs, even when an earlier check above already pushed a
+    // refusal for this node (H1 finding, PR #228 review): a node whose own
+    // reference checks already fail is not exempted from also being a
+    // duplicate key, and skipping this insert on an earlier failure left a
+    // later node with the same key believing it saw that key for the first
+    // time, silently losing `conflicting-binding` for the later node.
     if !seen_keys.insert(key) {
-        return Some(ModelRefusal {
+        refusals.push(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
             detail: format!(
@@ -1121,14 +1291,14 @@ fn check_node<'a>(
             ),
         });
     }
-    None
+    refusals
 }
 
 /// Every FR-154 refusal the domain package's own nodes expose, in node
 /// order (`model-complete.md`:73: "Nodes are read ascending by declaration
-/// key"), one refusal per failing node (`check_node`'s own doc: the first
-/// failing check for that node, in FR-154's table order). Never stops at
-/// the first failing node -- TC-195 N08's own two refusals, reported
+/// key"), then in FR-154's table order within that node (`check_node`'s own
+/// doc: every failing check for that node, not only the first). Never stops
+/// at the first failing node -- TC-195 N08's own two refusals, reported
 /// together in node order, are exactly this shape
 /// (`model-complete.md`:80). `domain_package` is caller-supplied, not
 /// validated on the way in except for this function's own empty-component
@@ -1159,9 +1329,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Vec<Mod
         std::collections::HashSet::new();
     let mut refusals = Vec::new();
     for record in records {
-        if let Some(refusal) = check_node(record, index, &mut seen_keys) {
-            refusals.push(refusal);
-        }
+        refusals.extend(check_node(record, index, &mut seen_keys));
     }
     refusals
 }
@@ -1233,12 +1401,7 @@ fn build(
     // every type in the loop below and deduplicated by edge set only after
     // the loop finishes (`model-complete.md`:292-295's "each cycle is
     // refused ... exactly once"; see the module docs).
-    let mut cycle_candidates: Vec<(
-        DeclarationKey,
-        Vec<DeclarationKey>,
-        ModelRefusal,
-        Vec<DeclarationKey>,
-    )> = Vec::new();
+    let mut cycle_candidates: Vec<CycleCandidate> = Vec::new();
 
     for type_key in &type_keys {
         phase2_facts.push(PendingFact {
@@ -1260,8 +1423,9 @@ fn build(
         // F10: the original two-loop shape recomputed this identical DFS
         // twice per type), and again for phase 4's own owner-path
         // bookkeeping just below (the same F10 lesson applied there too).
-        let budget = remaining_fact_budget(limits, facts_so_far);
-        let walk = ancestor_paths(type_key, &index, budget)?;
+        let fact_budget = remaining_fact_budget(limits, facts_so_far);
+        let cycle_budget = remaining_cycle_budget(limits, facts_so_far);
+        let walk = ancestor_paths(type_key, &index, fact_budget, cycle_budget)?;
         let paths = walk.paths;
         for ancestor in &paths {
             let inputs = ancestor.path.clone();
@@ -1292,12 +1456,12 @@ fn build(
                 cycle_check_len: Some(closing.path.len()),
                 closes_cycle: true,
             });
-            cycle_candidates.push((
-                type_key.clone(),
-                closing.path,
-                closing.refusal,
-                closing.edge_set,
-            ));
+            cycle_candidates.push(CycleCandidate {
+                type_key: type_key.clone(),
+                path: closing.path,
+                refusal: closing.refusal,
+                edge_set: closing.edge_set,
+            });
         }
 
         let preimage = EffectiveDeclarationPreimage {
@@ -1381,12 +1545,16 @@ fn build(
     // `sort_facts` orders their own `PendingFact` entries (type key, then
     // path) so `phase3_refusals`' own order matches the charge order
     // `charge_all` reports them in.
-    cycle_candidates.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    cycle_candidates.sort_by(|a, b| {
+        a.type_key
+            .cmp(&b.type_key)
+            .then_with(|| a.path.cmp(&b.path))
+    });
     let mut seen_edge_sets: HashSet<Vec<DeclarationKey>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
-    for (_, _, refusal, edge_set) in cycle_candidates {
-        if seen_edge_sets.insert(edge_set) {
-            phase3_refusals.push(refusal);
+    for candidate in cycle_candidates {
+        if seen_edge_sets.insert(candidate.edge_set) {
+            phase3_refusals.push(candidate.refusal);
         }
     }
 
@@ -1959,20 +2127,23 @@ fn apply_redefinitions(
                 // redefining member's own declaration key and the one
                 // contended target.
                 //
-                // `normalize.conflict-check` exposes this ambiguity
-                // (`value-accounting.md:456`), so `record_phase4_refusal`
-                // below ranks it `Phase4Rank::ConflictCheck(rank_effective_id,
-                // target_key)` — `:456`'s "ascending by effective member
-                // key" (`model-complete.md:206`: owner effective type
-                // identity, then original declaration key) — rather than
-                // this group's own producer-key `type_key` (QSL #195; see
-                // the module docs and `record_phase4_refusal`'s own doc).
-                // `rank_effective_id` is `most_derived[0].owner`'s own
-                // effective identity for the `redefinition-target` shape
-                // below (content-stable across every resolving type_key that
-                // re-derives it) and `type_key`'s own for the
-                // `derivation-conflict` shape (content that is genuinely
-                // per-`type_key`), computed just below.
+                // The `redefinition-target` shape below (`same_owner`) is
+                // exposed by `normalize.redefinition-check`
+                // (`value-accounting.md:492`), ranked ascending by
+                // redefining-member key, and charges *before* every
+                // `normalize.conflict-check` refusal — the same charge
+                // point and rank shape `record_phase4_refusal` already uses
+                // for the unreachable-target `redefinition-target` refusal
+                // below (M1 finding, PR #228 review). The genuine
+                // `derivation-conflict` shape (`!same_owner`) stays on
+                // `normalize.conflict-check` (`:493`), ranked
+                // `Phase4Rank::ConflictCheck(owner_effective_id, target_key)`
+                // — `:493`'s "ascending by effective member key"
+                // (`model-complete.md:206`: owner effective type identity,
+                // then original declaration key) — using this group's own
+                // resolving `type_key`'s effective identity, genuinely
+                // distinct per resolving type (QSL #195; see the module
+                // docs and `record_phase4_refusal`'s own doc).
                 let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
                 for edge in &edges {
                     let mut dominated_by_another = false;
@@ -2006,37 +2177,49 @@ fn apply_redefinitions(
                 // through it independently re-derives the identical
                 // candidate (the same reasoning as `redefinition_check_work`
                 // /the dedup below `apply_redefinitions`'s own per-type_key
-                // loop, QSL #195), so this candidate's own rank is tagged by
-                // `most_derived[0].owner`'s own effective identity, not
-                // `type_key`'s, keeping duplicate derivations collapsible.
-                let rank_effective_id = if same_owner {
-                    accounting
-                        .type_effective_ids
-                        .get(&most_derived[0].owner)
-                        .cloned()
-                        .expect(
-                            "build populates type_effective_ids for every type before phase 4 runs",
-                        )
-                } else {
-                    owner_effective_id.clone()
-                };
-                let candidate = if same_owner {
-                    let mut redefiners: Vec<String> = most_derived
+                // loop, QSL #195), so this candidate is ranked by a key
+                // drawn from its own redefining members -- content-stable
+                // across every resolving `type_key` -- not by any effective
+                // identity tied to `type_key`.
+                if same_owner {
+                    let mut redefiners: Vec<DeclarationKey> = most_derived
                         .iter()
-                        .map(|edge| edge.redefining.node.clone())
+                        .map(|edge| edge.redefining.clone())
                         .collect();
                     redefiners.sort();
-                    ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::RedefinitionTarget,
-                        detail: format!(
-                            "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                            most_derived[0].owner.node,
-                            most_derived.len(),
-                            redefiners.join(", "),
-                            target_key.node
-                        ),
-                    }
+                    // `value-accounting.md:492`'s "ascending by
+                    // redefining-member key" ranks this group by one of its
+                    // own redefining members' keys; the second-checked one
+                    // (ascending order) is used rather than the least, which
+                    // the unreachable-target `redefinition-target` shape
+                    // below already uses for its own rank (M1 finding, PR
+                    // #228 review) -- keeping the two `redefinition-target`
+                    // shapes distinguishable by rank when they tie on every
+                    // other component.
+                    let rank_key = redefiners
+                        .get(1)
+                        .cloned()
+                        .unwrap_or_else(|| redefiners[0].clone());
+                    let redefiner_names: Vec<&str> =
+                        redefiners.iter().map(|key| key.node.as_str()).collect();
+                    record_phase4_refusal(
+                        accounting,
+                        Phase4Rank::RedefinitionCheck(rank_key),
+                        ModelRefusal {
+                            code: Code::InvalidModelBinding,
+                            cause: ModelRefusalCause::RedefinitionTarget {
+                                redefiners: redefiners.clone(),
+                                target: target_key.clone(),
+                            },
+                            detail: format!(
+                                "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
+                                most_derived[0].owner.node,
+                                redefiners.len(),
+                                redefiner_names.join(", "),
+                                target_key.node
+                            ),
+                        },
+                    );
                 } else {
                     let edge_paths: Vec<String> = edges
                         .iter()
@@ -2048,27 +2231,29 @@ fn apply_redefinitions(
                             format!("[{}]", path.join(", "))
                         })
                         .collect();
-                    ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::DerivationConflict {
-                            type_: type_key.clone(),
-                            member: target_key.clone(),
-                            redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                    record_phase4_refusal(
+                        accounting,
+                        Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone()),
+                        ModelRefusal {
+                            code: Code::InvalidModelBinding,
+                            cause: ModelRefusalCause::DerivationConflict {
+                                type_: type_key.clone(),
+                                member: target_key.clone(),
+                                redefiners: edges
+                                    .iter()
+                                    .map(|edge| edge.redefining.clone())
+                                    .collect(),
+                            },
+                            detail: format!(
+                                "type {} has {} undominated redefinitions of {}: {}",
+                                type_key.node,
+                                edges.len(),
+                                target_key.node,
+                                edge_paths.join(" and ")
+                            ),
                         },
-                        detail: format!(
-                            "type {} has {} undominated redefinitions of {}: {}",
-                            type_key.node,
-                            edges.len(),
-                            target_key.node,
-                            edge_paths.join(" and ")
-                        ),
-                    }
-                };
-                record_phase4_refusal(
-                    accounting,
-                    Phase4Rank::ConflictCheck(rank_effective_id, target_key.clone()),
-                    candidate,
-                );
+                    );
+                }
             }
             winner
         };
@@ -2107,15 +2292,30 @@ fn apply_redefinitions(
                 .iter()
                 .min_by(|a, b| a.redefining.cmp(&b.redefining))
                 .expect("a target group always has at least one edge");
+            // `model-complete.md:298-300`: this refusal lists every
+            // redefining member that names the unreachable target, not only
+            // `least_edge` (M2 finding, PR #228 review) -- `least_edge`
+            // still decides the refusal's own rank (unchanged).
+            let mut redefiners: Vec<DeclarationKey> =
+                edges.iter().map(|edge| edge.redefining.clone()).collect();
+            redefiners.sort();
+            let redefiner_names: Vec<&str> =
+                redefiners.iter().map(|key| key.node.as_str()).collect();
             record_phase4_refusal(
                 accounting,
                 Phase4Rank::RedefinitionCheck(least_edge.redefining.clone()),
                 ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::RedefinitionTarget,
+                    cause: ModelRefusalCause::RedefinitionTarget {
+                        redefiners: redefiners.clone(),
+                        target: target_key.clone(),
+                    },
                     detail: format!(
-                        "{} redefines {}, which is not a member {} inherits",
-                        least_edge.redefining.node, target_key.node, least_edge.owner.node
+                        "{} redefine{} {}, which is not a member {} inherits",
+                        redefiner_names.join(", "),
+                        if redefiners.len() == 1 { "s" } else { "" },
+                        target_key.node,
+                        least_edge.owner.node
                     ),
                 },
             );
@@ -2265,7 +2465,7 @@ impl From<Incomplete> for ChargeAllDenial {
 
 fn charge_all(
     domain_package: &DomainPackage,
-    built: &Built,
+    built: &mut Built,
     meter: &mut Meter,
 ) -> Result<(), ChargeAllDenial> {
     // #141 F11: only the running position (`index + 1`) is charged, never a
@@ -2289,7 +2489,9 @@ fn charge_all(
     // QSL #199: every `normalize.record` charge above is admitted before
     // this is ever consulted -- `Built::intake_refusals`'s own doc.
     if !built.intake_refusals.is_empty() {
-        return Err(ChargeAllDenial::Refused(built.intake_refusals.clone()));
+        return Err(ChargeAllDenial::Refused(std::mem::take(
+            &mut built.intake_refusals,
+        )));
     }
 
     let mut fact_count: u64 = 0;
@@ -2331,7 +2533,9 @@ fn charge_all(
     // checking: no later stage runs or charges" -- phase 4's own charges
     // below never run once this is reported.
     if !built.phase3_refusals.is_empty() {
-        return Err(ChargeAllDenial::Refused(built.phase3_refusals.clone()));
+        return Err(ChargeAllDenial::Refused(std::mem::take(
+            &mut built.phase3_refusals,
+        )));
     }
 
     for work in &built.redefinition_check_work {
@@ -2368,7 +2572,9 @@ fn charge_all(
     // no later stage runs or charges" -- phase 5's own charges below never
     // run once these refusals are reported.
     if !built.phase4_refusals.is_empty() {
-        return Err(ChargeAllDenial::Refused(built.phase4_refusals.clone()));
+        return Err(ChargeAllDenial::Refused(std::mem::take(
+            &mut built.phase4_refusals,
+        )));
     }
 
     let mut decl_count: u64 = 0;
@@ -2423,16 +2629,23 @@ pub fn normalize_with_meter(
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
     let mut meter = Meter::new(limits);
-    let built = match build(domain_package, &limits) {
+    let mut built = match build(domain_package, &limits) {
         Ok(built) => built,
         // `validate_selection`'s own immediate refusal (see its own doc):
         // decided before any charge at all, so it is always the sole entry.
-        Err(refusal) => return (NormalizeOutcome::Refused(vec![refusal]), meter),
+        Err(refusal) => {
+            return (
+                NormalizeOutcome::Refused(Refusals::from_vec(vec![refusal])),
+                meter,
+            )
+        }
     };
-    let outcome = match charge_all(domain_package, &built, &mut meter) {
+    let outcome = match charge_all(domain_package, &mut built, &mut meter) {
         Ok(()) => NormalizeOutcome::Completed(built.view),
         Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
-        Err(ChargeAllDenial::Refused(refusal)) => NormalizeOutcome::Refused(refusal),
+        Err(ChargeAllDenial::Refused(refusal)) => {
+            NormalizeOutcome::Refused(Refusals::from_vec(refusal))
+        }
     };
     (outcome, meter)
 }
@@ -2443,19 +2656,24 @@ pub fn normalize_with_meter(
 /// runs out, so `build`'s own deferred refusal-vec fields (`intake_refusals`,
 /// `phase3_refusals`, `phase4_refusals` — see the module docs) are surfaced
 /// here directly rather than replayed through `charge_all`, checked in that
-/// same stage order; this convenience wrapper returns only the first refusal
-/// of whichever stage exposes one, not the full charge-ordered bundle
-/// [`NormalizeOutcome::Refused`] carries.
-pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, ModelRefusal> {
-    let built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)?;
-    if let Some(refusal) = built.intake_refusals.into_iter().next() {
-        return Err(refusal);
+/// same stage order; this convenience wrapper returns whichever stage's
+/// full refusal bundle is non-empty first, the same charge-ordered bundle
+/// [`NormalizeOutcome::Refused`] carries (L2 finding, PR #228 review: the
+/// previous single-`ModelRefusal` shape dropped every refusal after the
+/// first).
+pub fn object_universe(
+    domain_package: &DomainPackage,
+) -> Result<ObjectUniverse, Vec<ModelRefusal>> {
+    let built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
+        .map_err(|refusal| vec![refusal])?;
+    if !built.intake_refusals.is_empty() {
+        return Err(built.intake_refusals);
     }
-    if let Some(refusal) = built.phase3_refusals.into_iter().next() {
-        return Err(refusal);
+    if !built.phase3_refusals.is_empty() {
+        return Err(built.phase3_refusals);
     }
-    if let Some(refusal) = built.phase4_refusals.into_iter().next() {
-        return Err(refusal);
+    if !built.phase4_refusals.is_empty() {
+        return Err(built.phase4_refusals);
     }
     Ok(built.universe)
 }
