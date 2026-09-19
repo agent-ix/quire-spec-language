@@ -259,10 +259,28 @@ pub struct Refusals {
 }
 
 impl Refusals {
+    /// Builds this type directly from its own non-empty shape: a `first`
+    /// refusal a caller already has in hand, plus the `rest` in original
+    /// order. The only public production constructor (M2 finding, PR #228
+    /// round 2 review) -- unlike the previous sole `from_vec`, this cannot be
+    /// called with an empty collection at all, so there is nothing left to
+    /// panic over.
+    pub fn new(first: ModelRefusal, rest: Vec<ModelRefusal>) -> Self {
+        Self { first, rest }
+    }
+
     /// Splits a non-empty `Vec` into this type's own `first`/`rest` shape --
     /// the shape every crate-internal producer already builds. Panics on an
     /// empty `Vec`: every real producer already has at least one refusal in
-    /// hand (this type's own doc).
+    /// hand (this type's own doc). Test-only (M2 finding, PR #228 round 2
+    /// review): a fixture builds its expected refusals as a plain `Vec` far
+    /// more often than as a `first`/`rest` pair, and a test's own panic on an
+    /// empty fixture is a fixture bug worth failing loudly on, not a
+    /// production caller's concern -- production code builds a `Refusals`
+    /// through [`Self::new`] or [`TryFrom`] instead, neither of which can
+    /// panic. Follows [`DeclarationKey::fixture`]'s identical
+    /// `test`/`test-support` gate.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_vec(refusals: Vec<ModelRefusal>) -> Self {
         let mut iter = refusals.into_iter();
         let first = iter
@@ -283,6 +301,35 @@ impl Refusals {
     /// Every refusal, in original order.
     pub fn iter(&self) -> impl Iterator<Item = &ModelRefusal> {
         std::iter::once(&self.first).chain(self.rest.iter())
+    }
+
+    /// The first refusal by value, discarding the rest -- for a caller whose
+    /// own outcome shape (like FR-153 admission's `AdmissionOutcome::Refused`)
+    /// surfaces only one refusal (M2 finding, PR #228 round 2 review): a
+    /// guaranteed-present read with no `.expect()` of its own, since
+    /// `Refusals` is non-empty by construction.
+    pub fn into_first(self) -> ModelRefusal {
+        self.first
+    }
+}
+
+/// [`Refusals::new`]'s own empty-collection counterpart: `TryFrom<Vec<_>>`
+/// fails, rather than panics, on an empty `Vec` (M2 finding, PR #228 round 2
+/// review) -- for a caller that already holds a `Vec` and does not know,
+/// until it checks, whether it is empty.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EmptyRefusals;
+
+impl TryFrom<Vec<ModelRefusal>> for Refusals {
+    type Error = EmptyRefusals;
+
+    fn try_from(refusals: Vec<ModelRefusal>) -> Result<Self, EmptyRefusals> {
+        let mut iter = refusals.into_iter();
+        let first = iter.next().ok_or(EmptyRefusals)?;
+        Ok(Self {
+            first,
+            rest: iter.collect(),
+        })
     }
 }
 
@@ -929,7 +976,8 @@ struct Built {
     /// cross-node dedup (H1 finding, PR #228 review): `check_node` checks
     /// each node against `index`/`seen_keys` independently, with no view of
     /// which other nodes already refused, so a reference naming a refused
-    /// node is reported exactly like any other dangling reference. Non-empty
+    /// node is reported exactly like any other dangling reference.
+    /// Remaining work: #238. Non-empty
     /// only when intake itself
     /// refuses: `charge_all` reports these, once every `normalize.record`
     /// charge is admitted, and phase 2 onward never runs
@@ -2031,6 +2079,16 @@ fn apply_redefinitions(
                 .then_with(|| a.redefining.cmp(&b.redefining))
         });
 
+        let member_key = (type_key.clone(), target_key.clone());
+        // Checked before any dominance resolution (H1 finding, PR #228
+        // round 2 review): an unreachable target has no member for a
+        // redefinition to resolve *to*, so `resolve_redefinition_contest`'s
+        // own winner search and same-owner/diamond distinction never apply
+        // here -- every edge in this group is refused outright, grouped by
+        // its own owner (below), without ever asking which of them would
+        // have dominated the others.
+        let reachable = member_preimages.contains_key(&member_key);
+
         // `Option<usize>`, not a bare `usize`: an ambiguous group (no edge
         // dominates every other) has no winner at all, but still owes every
         // charge below and still derives both facts per edge
@@ -2040,7 +2098,9 @@ fn apply_redefinitions(
         // within a stage" (see the module docs), not by aborting this
         // function early. `None` hides every edge and the target itself:
         // harmless, since a build that ever sets `accounting.refusal`
-        // never returns `Completed` (see `charge_all`).
+        // never returns `Completed` (see `charge_all`). An unreachable
+        // target (`!reachable`, above) never reaches the hiding loop below
+        // at all -- it refuses and `continue`s instead.
         let winner_index: Option<usize> = if edges.len() < 2 {
             // A single redefiner has nothing to dominate: no ancestor
             // closure is computed at all, and no `normalize.conflict-check`
@@ -2059,7 +2119,11 @@ fn apply_redefinitions(
             // owns exactly as written, not once per *distinct* owner (the
             // `owner_ancestor_sets` lookup below is this rung's own
             // optimization of the *walk*, never a change to what is
-            // priced).
+            // priced). This charge fires whenever `c >= 2` regardless of
+            // `reachable` (unchanged, PR #228 round 2 review): the domain
+            // package still declared `c` redefinitions of this target, so
+            // phase 4 still prices resolving that contention even though an
+            // unreachable target's own answer is "none of them".
             let fact_total: u64 = edges
                 .iter()
                 .map(|edge| {
@@ -2076,139 +2140,118 @@ fn apply_redefinitions(
                 fact_total.saturating_mul(c.saturating_sub(1)),
             ));
 
-            // `owner_ancestor_sets` already holds every owner in the domain package's
-            // own proper-ancestor set (QSL #145: derived once, build-wide,
-            // from phase 3's own `type_paths` rather than a fresh,
-            // separately bounded walk here); `resolve_redefinition_contest`'s
-            // own winner search and undominated-owner fallback each compare
-            // every edge's owner against every other edge's owner, but
-            // TC-196 R07's own documented shape — several redefining members
-            // sharing one contending owner — means distinct owners are
-            // frequently far fewer than edges, and the same owner recurs
-            // across many types and targets within one build; both are plain
-            // `O(1)` set lookups against the already-built map.
-            //
-            // `resolve_redefinition_contest`'s own `Err` names one of two
-            // FR-272 causes (see its doc); the match below (M1 finding, PR
-            // #228 review) inspects that cause to rank a same-owner
-            // `RedefinitionTarget` on `normalize.redefinition-check` and a
-            // genuine `DerivationConflict` on `normalize.conflict-check`
-            // (`value-accounting.md:492`/`:493`) rather than ranking every
-            // ambiguity this loop finds at the same stage.
-            match resolve_redefinition_contest(
-                accounting.owner_ancestor_sets,
-                type_key,
-                &target_key,
-                &edges,
-            ) {
-                Ok(index) => Some(index),
-                Err(refusal) => {
-                    // `resolve_redefinition_contest` already distinguishes
-                    // TC-196 R07's two ambiguity shapes and builds the right
-                    // typed cause (`RedefinitionTarget` for a same-owner
-                    // ambiguity, `DerivationConflict` for a genuine diamond);
-                    // only the *rank* is this caller's own decision (M1
-                    // finding, PR #228 review). A same-owner
-                    // `RedefinitionTarget` charges at
-                    // `normalize.redefinition-check`
-                    // (`value-accounting.md:492`), ranked by the
-                    // second-checked (ascending) redefiner -- the least is
-                    // already used by the unreachable-target
-                    // `RedefinitionTarget` refusal below, so this keeps the
-                    // two shapes distinguishable by rank when every other
-                    // component ties. A genuine `DerivationConflict` stays on
-                    // `normalize.conflict-check` (`:493`), ranked by this
-                    // group's own resolving type's effective identity (QSL
-                    // #195).
-                    // `resolve_redefinition_contest` only ever constructs
-                    // these two causes in its `Err` (see its own doc); matched
-                    // by name rather than a wildcard so a future third cause
-                    // added there fails to compile here instead of silently
-                    // ranking as a `DerivationConflict`.
-                    let rank = match &refusal.cause {
-                        ModelRefusalCause::RedefinitionTarget { redefiners, .. } => {
-                            Phase4Rank::RedefinitionCheck(
-                                redefiners
-                                    .get(1)
-                                    .cloned()
-                                    .unwrap_or_else(|| redefiners[0].clone()),
-                            )
-                        }
-                        ModelRefusalCause::DerivationConflict { .. } => Phase4Rank::ConflictCheck(
-                            owner_effective_id.clone(),
-                            target_key.clone(),
-                        ),
-                        other => unreachable!(
-                            "resolve_redefinition_contest only ever returns RedefinitionTarget or DerivationConflict, got {other:?}"
-                        ),
-                    };
-                    record_phase4_refusal(accounting, rank, refusal);
-                    None
+            if !reachable {
+                None
+            } else {
+                // `owner_ancestor_sets` already holds every owner in the domain package's
+                // own proper-ancestor set (QSL #145: derived once, build-wide,
+                // from phase 3's own `type_paths` rather than a fresh,
+                // separately bounded walk here); `resolve_redefinition_contest`'s
+                // own winner search and undominated-owner fallback each compare
+                // every edge's owner against every other edge's owner, but
+                // TC-196 R07's own documented shape — several redefining members
+                // sharing one contending owner — means distinct owners are
+                // frequently far fewer than edges, and the same owner recurs
+                // across many types and targets within one build; both are plain
+                // `O(1)` set lookups against the already-built map.
+                //
+                // `resolve_redefinition_contest` now returns its own
+                // `Phase4Rank` bundled with its refusal (M1 finding, PR #228
+                // round 2 review): the two `Err` shapes it builds -- a
+                // same-owner `RedefinitionTarget` on
+                // `normalize.redefinition-check` and a genuine
+                // `DerivationConflict` on `normalize.conflict-check`
+                // (`value-accounting.md:492`/`:493`) -- are ranked at the one
+                // place that already knows which of them it built, so this
+                // match has nothing left to re-derive.
+                match resolve_redefinition_contest(
+                    accounting.owner_ancestor_sets,
+                    &owner_effective_id,
+                    type_key,
+                    &target_key,
+                    &edges,
+                ) {
+                    Ok(index) => Some(index),
+                    Err((rank, refusal)) => {
+                        record_phase4_refusal(accounting, rank, refusal);
+                        None
+                    }
                 }
             }
         };
 
-        let member_key = (type_key.clone(), target_key.clone());
-        if !member_preimages.contains_key(&member_key) {
+        if !reachable {
+            // `model-complete.md:298-300`: one `RedefinitionTarget` refusal
+            // per *owner* redefining this unreachable target (H1 + L2
+            // findings, PR #228 round 2 review), not one refusal spanning
+            // every owner in this target group -- grouping by target alone
+            // conflated distinct owners' own redefiners under the rank-only
+            // dedup elsewhere in this module
+            // (`phase4_refusal_candidates.dedup_by`), dropping some owners'
+            // refusals outright and misattributing others' redefiners to the
+            // wrong owner. Grouping by `(owner, target)` here keeps each
+            // owner's own claim distinct regardless of which type names it,
+            // and regardless of which other owners also redefine this same
+            // target.
+            //
             // `normalize.redefinition-check` exposes this refusal
             // (`value-accounting.md:455`), so `record_phase4_refusal` below
-            // ranks it by the least of this group's own redefining members'
+            // ranks it by the least of each owner's own redefining members'
             // own keys — `:455`'s own "ascending by the member's own key"
             // order (there is no separate redefinition-record key under
-            // QSpec's inline shape); every edge in this group shares the
-            // same unreachable target, so whichever of them sorts first is
-            // the one that order would check first. Collected into
-            // `accounting.refusals` rather than returned here (see the
-            // module docs), so every remaining type and target group is
-            // still resolved and every later phase-4 charge amount is still
-            // computed correctly.
+            // QSpec's inline shape). Collected into `accounting.refusals`
+            // rather than returned here (see the module docs), so every
+            // remaining type and target group is still resolved and every
+            // later phase-4 charge amount is still computed correctly.
             //
             // This exact member can also be reached, and fail the identical
             // check for the identical reason, at more than one `type_key`
-            // whenever a descendant of `least_edge.owner` also inherits it
-            // (both compute the same `least_edge.redefining`, so they rank
-            // identically) -- naming `least_edge.owner` rather than
-            // `type_key` keeps the reported refusal the same regardless of
-            // which of those tied candidates this pass happens to keep.
+            // whenever a descendant of an owner here also inherits it (both
+            // compute the same owner and redefiners, so they rank
+            // identically) -- naming the owner rather than `type_key` keeps
+            // the reported refusal the same regardless of which of those
+            // tied candidates this pass happens to keep.
             //
             // QSL #184: the spec's own name for this refusal is
             // `invalid_model_binding`/`redefinition-target` ("target is not
             // a member inherited by its owning type"), not
             // `dangling_reference`/`RedefinitionUnreachable` -- the target
             // key does resolve to a real declaration somewhere in the
-            // domain package (it is simply not one of `least_edge.owner`'s
-            // own effective members), so it is not a dangling reference.
-            let least_edge = edges
-                .iter()
-                .min_by(|a, b| a.redefining.cmp(&b.redefining))
-                .expect("a target group always has at least one edge");
-            // `model-complete.md:298-300`: this refusal lists every
-            // redefining member that names the unreachable target, not only
-            // `least_edge` (M2 finding, PR #228 review) -- `least_edge`
-            // still decides the refusal's own rank (unchanged).
-            let mut redefiners: Vec<DeclarationKey> =
-                edges.iter().map(|edge| edge.redefining.clone()).collect();
-            redefiners.sort();
-            let redefiner_names: Vec<&str> =
-                redefiners.iter().map(|key| key.node.as_str()).collect();
-            record_phase4_refusal(
-                accounting,
-                Phase4Rank::RedefinitionCheck(least_edge.redefining.clone()),
-                ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::RedefinitionTarget {
-                        redefiners: redefiners.clone(),
-                        target: target_key.clone(),
+            // domain package (it is simply not one of the owner's own
+            // effective members), so it is not a dangling reference.
+            let mut owners: Vec<DeclarationKey> =
+                edges.iter().map(|edge| edge.owner.clone()).collect();
+            owners.sort();
+            owners.dedup();
+            for owner in owners {
+                let mut redefiners: Vec<DeclarationKey> = edges
+                    .iter()
+                    .filter(|edge| edge.owner == owner)
+                    .map(|edge| edge.redefining.clone())
+                    .collect();
+                redefiners.sort();
+                let least = redefiners[0].clone();
+                let redefiner_names: Vec<&str> =
+                    redefiners.iter().map(|key| key.node.as_str()).collect();
+                record_phase4_refusal(
+                    accounting,
+                    Phase4Rank::RedefinitionCheck(least),
+                    ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::RedefinitionTarget {
+                            redefiners: redefiners.clone(),
+                            target: target_key.clone(),
+                        },
+                        detail: format!(
+                            "{} redefine{} {}, which is not a member {} inherits",
+                            redefiner_names.join(", "),
+                            if redefiners.len() == 1 { "s" } else { "" },
+                            target_key.node,
+                            owner.node
+                        ),
                     },
-                    detail: format!(
-                        "{} redefine{} {}, which is not a member {} inherits",
-                        redefiner_names.join(", "),
-                        if redefiners.len() == 1 { "s" } else { "" },
-                        target_key.node,
-                        least_edge.owner.node
-                    ),
-                },
-            );
+                );
+            }
             continue 'targets;
         }
 
@@ -2308,34 +2351,17 @@ fn apply_redefinitions(
             fact_total.saturating_mul(c.saturating_sub(1)),
         ));
 
-        if let Err(refusal) = resolve_redefinition_contest(
+        if let Err((rank, refusal)) = resolve_redefinition_contest(
             accounting.owner_ancestor_sets,
+            &owner_effective_id,
             type_key,
             &target_key,
             &edges,
         ) {
-            // Same rank choice as the field-edges loop above (M1 finding, PR
-            // #228 review): a same-owner `RedefinitionTarget` ranks at
-            // `normalize.redefinition-check`, a genuine `DerivationConflict`
-            // at `normalize.conflict-check` (QSL #195).
-            // Matched by name, not a wildcard -- see the field-edges loop's
-            // identical comment above.
-            let rank = match &refusal.cause {
-                ModelRefusalCause::RedefinitionTarget { redefiners, .. } => {
-                    Phase4Rank::RedefinitionCheck(
-                        redefiners
-                            .get(1)
-                            .cloned()
-                            .unwrap_or_else(|| redefiners[0].clone()),
-                    )
-                }
-                ModelRefusalCause::DerivationConflict { .. } => {
-                    Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone())
-                }
-                other => unreachable!(
-                    "resolve_redefinition_contest only ever returns RedefinitionTarget or DerivationConflict, got {other:?}"
-                ),
-            };
+            // `resolve_redefinition_contest` bundles its own `Phase4Rank`
+            // with its refusal (M1 finding, PR #228 round 2 review) -- see
+            // the field-edges loop's identical call above -- so there is no
+            // cause to re-match here.
             record_phase4_refusal(accounting, rank, refusal);
         }
     }
@@ -2396,12 +2422,21 @@ fn owner_dominates(
 /// same way; the operation-target loop does not pre-sort, and never reads
 /// `Ok(i)` (operation members have no winner bookkeeping of their own — see
 /// that loop's comment), so sorting only here, once, covers both callers.
+///
+/// `Err`'s own [`Phase4Rank`] travels with its refusal (MEDIUM finding, PR
+/// #228 round 2 review): both callers used to re-derive it from the returned
+/// cause with an identical `match`, one of them behind a wildcard arm that
+/// silently absorbed any cause this function does not actually return.
+/// Computing the rank here, the one place that already knows which of the
+/// two shapes it built, makes each caller's own match exhaustive over a
+/// `(Phase4Rank, ModelRefusal)` pair with nothing left to wildcard.
 fn resolve_redefinition_contest(
     owner_ancestor_sets: &HashMap<DeclarationKey, HashSet<DeclarationKey>>,
+    owner_effective_id: &EffectiveId,
     type_key: &DeclarationKey,
     target_key: &DeclarationKey,
     edges: &[RedefinitionEdge],
-) -> Result<usize, ModelRefusal> {
+) -> Result<usize, (Phase4Rank, ModelRefusal)> {
     let mut edges: Vec<&RedefinitionEdge> = edges.iter().collect();
     edges.sort_by(|a, b| {
         a.owner
@@ -2449,20 +2484,44 @@ fn resolve_redefinition_contest(
             .map(|edge| edge.redefining.clone())
             .collect();
         redefiner_keys.sort();
-        ModelRefusal {
-            code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::RedefinitionTarget {
-                redefiners: redefiner_keys,
-                target: target_key.clone(),
+        // `redefiner_keys.get(1)` is always `Some`, never the fallback a
+        // previous round's `.unwrap_or_else(|| redefiners[0].clone())`
+        // covered at both call sites (dead code, MEDIUM finding, PR #228
+        // round 2 review): `same_owner` is only reachable once the winner
+        // search above has already failed, and a finite poset with a unique
+        // maximal element also has a unique maximum (that element would
+        // dominate every other edge, so the winner search would have
+        // returned `Ok` instead) -- so `most_derived`, and therefore
+        // `redefiner_keys`, always has at least two elements here.
+        let rank_key = redefiner_keys
+            .get(1)
+            .cloned()
+            .expect("a same-owner ambiguity's most_derived set always has at least two elements");
+        // `value-accounting.md:492`'s "ascending by redefining-member key"
+        // ranks this group by one of its own redefining members' keys; the
+        // second-checked one (ascending order) is used rather than the
+        // least, which the unreachable-target `RedefinitionTarget` shape
+        // uses for its own rank -- keeping the two `redefinition-target`
+        // shapes distinguishable by rank when they tie on every other
+        // component.
+        let rank = Phase4Rank::RedefinitionCheck(rank_key);
+        (
+            rank,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::RedefinitionTarget {
+                    redefiners: redefiner_keys,
+                    target: target_key.clone(),
+                },
+                detail: format!(
+                    "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
+                    most_derived[0].owner.node,
+                    most_derived.len(),
+                    redefiners.join(", "),
+                    target_key.node
+                ),
             },
-            detail: format!(
-                "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                most_derived[0].owner.node,
-                most_derived.len(),
-                redefiners.join(", "),
-                target_key.node
-            ),
-        }
+        )
     } else {
         let edge_paths: Vec<String> = edges
             .iter()
@@ -2473,21 +2532,30 @@ fn resolve_redefinition_contest(
                 format!("[{}]", path.join(", "))
             })
             .collect();
-        ModelRefusal {
-            code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::DerivationConflict {
-                type_: type_key.clone(),
-                member: target_key.clone(),
-                redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+        // `:493`'s "ascending by effective member key"
+        // (`model-complete.md:206`: owner effective type identity, then
+        // original declaration key) -- this group's own resolving type's
+        // effective identity, genuinely distinct per resolving type (QSL
+        // #195).
+        let rank = Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone());
+        (
+            rank,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::DerivationConflict {
+                    type_: type_key.clone(),
+                    member: target_key.clone(),
+                    redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                },
+                detail: format!(
+                    "type {} has {} undominated redefinitions of {}: {}",
+                    type_key.node,
+                    edges.len(),
+                    target_key.node,
+                    edge_paths.join(" and ")
+                ),
             },
-            detail: format!(
-                "type {} has {} undominated redefinitions of {}: {}",
-                type_key.node,
-                edges.len(),
-                target_key.node,
-                edge_paths.join(" and ")
-            ),
-        }
+        )
     })
 }
 
@@ -2690,7 +2758,7 @@ pub fn normalize_with_meter(
         // decided before any charge at all, so it is always the sole entry.
         Err(refusal) => {
             return (
-                NormalizeOutcome::Refused(Refusals::from_vec(vec![refusal])),
+                NormalizeOutcome::Refused(Refusals::new(refusal, Vec::new())),
                 meter,
             )
         }
@@ -2698,9 +2766,11 @@ pub fn normalize_with_meter(
     let outcome = match charge_all(domain_package, &mut built, &mut meter) {
         Ok(()) => NormalizeOutcome::Completed(built.view),
         Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
-        Err(ChargeAllDenial::Refused(refusal)) => {
-            NormalizeOutcome::Refused(Refusals::from_vec(refusal))
-        }
+        Err(ChargeAllDenial::Refused(refusal)) => NormalizeOutcome::Refused(
+            refusal
+                .try_into()
+                .expect("charge_all's own Refused(refusal) is never an empty Vec"),
+        ),
     };
     (outcome, meter)
 }
@@ -2715,20 +2785,24 @@ pub fn normalize_with_meter(
 /// full refusal bundle is non-empty first, the same charge-ordered bundle
 /// [`NormalizeOutcome::Refused`] carries (L2 finding, PR #228 review: the
 /// previous single-`ModelRefusal` shape dropped every refusal after the
-/// first).
-pub fn object_universe(
-    domain_package: &DomainPackage,
-) -> Result<ObjectUniverse, Vec<ModelRefusal>> {
+/// first). Returns [`Refusals`] rather than a bare `Vec<ModelRefusal>` (M2
+/// finding, PR #228 round 2 review): every `Err` here already comes from a
+/// non-empty source (a single freshly built refusal, or one of `built`'s own
+/// non-empty-checked fields), so the type itself carries that guarantee
+/// forward to `object_universe`'s own callers.
+pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, Refusals> {
     let built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
-        .map_err(|refusal| vec![refusal])?;
-    if !built.intake_refusals.is_empty() {
-        return Err(built.intake_refusals);
-    }
-    if !built.phase3_refusals.is_empty() {
-        return Err(built.phase3_refusals);
-    }
-    if !built.phase4_refusals.is_empty() {
-        return Err(built.phase4_refusals);
+        .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
+    for refusals in [
+        built.intake_refusals,
+        built.phase3_refusals,
+        built.phase4_refusals,
+    ] {
+        if !refusals.is_empty() {
+            return Err(refusals
+                .try_into()
+                .expect("checked non-empty by the guard above"));
+        }
     }
     Ok(built.universe)
 }

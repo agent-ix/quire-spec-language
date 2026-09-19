@@ -1252,7 +1252,7 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
 /// `ModelNormalizationLimits::UNLIMITED`, `fixture_n06_conflict` refuses
 /// `derivation-conflict` (the test above); under a tight `derivation_facts`
 /// budget the outcome is `Incomplete` instead, at every point along the
-/// sweep, never that refusal or the `redefinition-unreachable` refusal a
+/// sweep, never that refusal or the `redefinition-target` refusal a
 /// still-tighter budget's truncated `D` would otherwise expose.
 ///
 /// Revert-probe: removing the `if !fact_budget_exceeded(...)` guard around
@@ -1285,7 +1285,7 @@ fn n06_conflict_under_a_tight_fact_budget_is_incomplete_not_a_phase4_refusal() {
             assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
         }
         other => panic!(
-            "expected Incomplete at normalize.fact, not a redefinition-unreachable refusal, got {other:?}"
+            "expected Incomplete at normalize.fact, not a redefinition-target refusal, got {other:?}"
         ),
     }
 }
@@ -4304,12 +4304,16 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
 /// total; at `work_units = 33` (N) the walk is one `normalize.cycle-check`
 /// charge short and the outcome is `Incomplete`, never a refusal built from
 /// a truncated walk; at `work_units = 34` (N+1) both closing cycles are
-/// found and reported. Revert-probe: reintroducing
-/// `out.len() >= fact_budget && closing_cycles.len() >= cycle_budget` as a
-/// plain `derivation_facts`-only cap here turns `work_units = 33` into a
-/// `derivation_facts`-limited `Incomplete` far below this boundary instead
-/// -- confirmed locally by temporarily reverting `remaining_cycle_budget`,
-/// then restored.
+/// found and reported. Revert-probe (L4 finding, PR #228 round 2 review:
+/// this text previously named the fixed code's own condition, not the old
+/// one it replaced): the pre-fix loop shared one combined budget for both
+/// counts, `if out.len() + closing_cycles.len() >= fact_budget { break; }`,
+/// with no separate `cycle_budget` parameter at all -- reintroducing that
+/// summed condition here turns `work_units = 33` into a
+/// `Refused(SpecializationCycle)` (both closing cycles found one
+/// `normalize.cycle-check` charge early, at the combined budget's own
+/// `derivation_facts = 9` cap) instead of the `Incomplete` this test
+/// asserts -- confirmed locally, then restored.
 #[trace("TC-196", "FR-151-AC-2", "FR-150-AC-8")]
 #[test]
 fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_facts() {
@@ -4461,20 +4465,18 @@ fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_wi
 }
 
 /// M2 finding, PR #228 review: `RedefinitionTarget`'s `redefiners` field
-/// names every redefining member, not only one of them.  `E` (no
+/// names every redefining member, not only one of them. `E` (no
 /// supertypes) declares `E.y` and `E.z`, both `redefines: A.x`; `E` does not
-/// inherit `A`, so `A.x` is unreachable from `E`. Both redefiners are also
-/// the same type's own two contending redefiners of one target with no
-/// dominance order between them (`owner_dominates` is a proper-ancestor
-/// relation, never reflexive, so `E`'s own two direct edges never dominate
-/// one another) -- the reachability check
-/// (`member_preimages`/`target_key`, unconditional after the dominance
-/// search) and the same-owner ambiguity check (M1, above) are independent
-/// and both fire for this input, each one already naming both `E.y` and
-/// `E.z` in its own `redefiners` field.
+/// inherit `A`, so `A.x` is unreachable from `E`. Both redefiners share the
+/// same owner (`E`), so this is exactly one `(owner, target)` group -- one
+/// `RedefinitionTarget` refusal listing both, not two (L2 ruling, PR #228
+/// round 2 review: an unreachable target's own reachability check is now
+/// the *only* check that runs for it -- `resolve_redefinition_contest`'s
+/// same-owner ambiguity check never runs for an unreachable group at all,
+/// so there is no second, independent refusal left to also fire).
 #[trace("TC-196", "FR-151-AC-2", "FR-150-AC-3")]
 #[test]
-fn m2_two_redefiners_of_an_unreachable_target_are_both_named() {
+fn m2_two_redefiners_of_an_unreachable_target_are_named_in_one_refusal() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.m2"),
         vec![
@@ -4485,34 +4487,79 @@ fn m2_two_redefiners_of_an_unreachable_target_are_both_named() {
             field_member_redefining("model.E.z", "model.E", "model.A", Some("model.A.x"), vec![]),
         ],
     );
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(refusal.len(), 2, "expected two refusals: {refusal:?}");
-            for one in refusal.iter() {
-                assert_eq!(
-                    one.code,
-                    quire_spec_language::diagnostic::Code::InvalidModelBinding
-                );
-                match &one.cause {
-                    ModelRefusalCause::RedefinitionTarget { redefiners, target } => {
-                        assert_eq!(
-                            redefiners,
-                            &vec![
-                                DeclarationKey::fixture("model.E.y"),
-                                DeclarationKey::fixture("model.E.z"),
-                            ],
-                            "must name both redefiners: {one:?}"
-                        );
-                        assert_eq!(target, &DeclarationKey::fixture("model.A.x"));
-                    }
-                    other => panic!("expected RedefinitionTarget, got {other:?}"),
-                }
-            }
-        }
-        other => {
-            panic!("expected Refused([RedefinitionTarget, RedefinitionTarget]), got {other:?}")
-        }
-    }
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
+            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: vec![
+                    DeclarationKey::fixture("model.E.y"),
+                    DeclarationKey::fixture("model.E.z"),
+                ],
+                target: DeclarationKey::fixture("model.A.x"),
+            },
+            detail: "model.E.y, model.E.z redefine model.A.x, which is not a member model.E \
+                      inherits"
+                .to_string(),
+        }]))
+    );
+}
+
+/// H1 finding, PR #228 round 2 review: the unreachable-target refusal groups
+/// by `(owner, target)`, not by `target` alone. `A` declares `A.x`; `B` (no
+/// supertypes) declares `B.z` redefining `A.x`; `D` inherits `B` (one
+/// inheritance line: `A`, `B`, `D`) and separately declares `D.w`, also
+/// redefining `A.x`. `D` does not inherit `A` (only `B`, and `B` has no
+/// supertypes of its own), so `A.x` is unreachable from `D` too, and `D`'s
+/// own phase-4 query sees *both* owners' edges (its own `D.w`, and `B.z`
+/// inherited along its one supertype edge) in a single target group --
+/// exactly the shape that grouping by `target` alone conflated. Grouped by
+/// `(owner, target)` instead, `D`'s query yields two refusals, `B.z`'s own
+/// and `D.w`'s own, each naming only its own owner's redefiner; `B.z`'s own
+/// refusal is also independently derived at `B`'s own query (`A.x` is
+/// unreachable from `B` on its own), so the two collapse to one by the
+/// domain-wide rank dedup below -- itself only correct because both queries
+/// now agree on `B.z`'s own owner. Renaming `B`/`D`/their members changes
+/// nothing about which group each redefiner lands in: grouping is by
+/// declaration key identity, not by name.
+#[trace("TC-196", "FR-151-AC-2", "FR-150-AC-3")]
+#[test]
+fn h1_two_owners_on_one_inheritance_line_redefining_an_unreachable_target_are_each_their_own_refusal(
+) {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.h1"),
+        vec![
+            object_type("model.A", vec![]),
+            field_member("model.A.x", "model.A", "model.A"),
+            object_type("model.B", vec![]),
+            field_member_redefining("model.B.z", "model.B", "model.A", Some("model.A.x"), vec![]),
+            object_type("model.D", vec!["model.B"]),
+            field_member_redefining("model.D.w", "model.D", "model.A", Some("model.A.x"), vec![]),
+        ],
+    );
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            ModelRefusal {
+                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                cause: ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![DeclarationKey::fixture("model.B.z")],
+                    target: DeclarationKey::fixture("model.A.x"),
+                },
+                detail: "model.B.z redefines model.A.x, which is not a member model.B inherits"
+                    .to_string(),
+            },
+            ModelRefusal {
+                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                cause: ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![DeclarationKey::fixture("model.D.w")],
+                    target: DeclarationKey::fixture("model.A.x"),
+                },
+                detail: "model.D.w redefines model.A.x, which is not a member model.D inherits"
+                    .to_string(),
+            },
+        ]))
+    );
 }
 
 /// TEST GAP (#193, PR #228 review): `n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit`
