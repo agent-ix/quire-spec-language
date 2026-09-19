@@ -128,3 +128,24 @@ New finding introduced by the revision:
 
 Round-2 verdict: ACCEPT WITH FINDINGS. No high finding remains. FND-010
 (medium) is new.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+- FND-010 stays resolved. QC-8 now lists the `ReplaySource` variant, the
+  `QualifiedName`, the #231 envelope members and the executor pin.
+- The capability vocabulary and wire spelling belong to QSpec #134, and #229
+  aligns to it. This matches the ruling chain and ADR-011 E3.
+- QC-18 and QC-19 are QSpec changes and are routed to TK-08.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-M2 | medium | The accepted AD-016 Packet row changes (`witness: Option<Witness>` → `source: ReplaySource`) with no AD-016 amendment in OQ-3, QC-7 or TK-10. | ADR-013 568, 806, 863, 885 · AD-016 Arrow 6, Replay ownership |
+| PR2-L4 | low | QC-15's widened list is beyond the text the owner accepted in OQ-3. | ADR-013 814, 863 |
+
+Round-3 verdict: CHANGES (see base.md).

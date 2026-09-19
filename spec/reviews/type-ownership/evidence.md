@@ -150,3 +150,26 @@ Round-2 verdict: ACCEPT WITH FINDINGS. All three round-1 `high` findings are
 closed, and no `high` finding is open. One new `medium` (FND-019) and three
 `low` findings remain. FND-019 should be fixed in O-25 or §7 before #231
 starts, because #231 waits on IR PR #139 being merged at a recorded sha.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+- The cited sibling text was checked at the current heads. Q209-5 matches
+  ADR-011 FB-05. Q209-8 cites `102c8bb`, which is an ancestor of 22fa948. The
+  pending-QC-14 note in ADR-011 E7 exists, and so does the E9 `ReplaySource`
+  rule. ADR-012 §13.2 Q1 to Q4 resolve.
+- The added ADR-010 §7.2 to §7.4 and §8 ticket dispositions cover every
+  ticket that round 1 listed.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-M2 | medium | `ReplaySource` changes the accepted AD-016 Packet row and arrow 6 output (`witness: Option<Witness>`), and no QC amends AD-016. ADR-011 E8 still uses the old field. | ADR-013 568, 806, 807, 863 · ADR-011@22fa948 236 |
+| PR2-L1 | low | Context pins the sibling ADRs at f781e32 and 43677c9. The delta cites text that exists only at 22fa948 and 10664aa. | ADR-013 60-61 |
+| PR2-L3 | low | Q209-2 cites ADR-011 §1 for `ResolvedSourcePackage`. ADR-011 §8 is the section that places it. | ADR-013 825 |
+
+Round-3 verdict: CHANGES (see base.md).
