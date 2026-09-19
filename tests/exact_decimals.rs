@@ -780,7 +780,7 @@ const IMPLEMENTED_ELSEWHERE_POINTS: [&str; 2] = ["binding.member", "binding.subs
 
 /// Every charge point genuinely unimplemented anywhere in this crate, in
 /// ascending order.
-const DEFERRED_POINTS: [&str; 22] = [
+const DEFERRED_POINTS: [&str; 21] = [
     "conformance.axis",
     "dispatch.candidate",
     "dispatch.dominance",
@@ -798,12 +798,24 @@ const DEFERRED_POINTS: [&str; 22] = [
     "normalize.hash",
     "normalize.record",
     "normalize.redefinition-check",
-    "normalize.unsupplied-item",
     "systems.allocation",
     "systems.connection-condition",
     "systems.kind",
     "systems.resolve",
 ];
+
+/// `sum.quantity` matches [`charge_point_codes`]'s `family.point` regex
+/// incidentally: the `## Collection sum schedule` prose names it, alongside
+/// `quire.op.collection.sum.decimal`, `sum.float32` and `sum.float64` (the
+/// four multi-dot/digit-bearing siblings the regex already excludes), as one
+/// of FR-322's checked-package sum-operator application identities, not a
+/// `crate::value::accounting::ChargePoint` code -- the schedule charges only
+/// the already-implemented `collection.visit`/`collection.result-retain`
+/// plus each family's own existing addition schedule. Excluded here rather
+/// than added to [`DEFERRED_POINTS`], because `is_deferred` would then need
+/// a `sum` entry in [`DEFERRED_FAMILIES`] that misrepresents it as tracked
+/// by some other charge-point enum, which it is not.
+const NON_CHARGE_POINT_MATCHES: [&str; 1] = ["sum.quantity"];
 
 /// The backticked `family.point` codes of `text`, in order of appearance.
 fn charge_point_codes(text: &str) -> Vec<String> {
@@ -866,6 +878,7 @@ fn every_vendored_charge_point_is_named_in_table_order() {
         .into_iter()
         .filter(|code| !named.contains(code))
         .filter(|code| !IMPLEMENTED_ELSEWHERE_POINTS.contains(&code.as_str()))
+        .filter(|code| !NON_CHARGE_POINT_MATCHES.contains(&code.as_str()))
         .collect();
     deferred.sort();
     deferred.dedup();

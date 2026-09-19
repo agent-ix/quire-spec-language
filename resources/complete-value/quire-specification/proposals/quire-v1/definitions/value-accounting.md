@@ -183,7 +183,20 @@ source `(c, s)` converted to `Rational[..]` charges `decimal.operands` on
 and `decimal_digits=max(digits(c),s+1)`; and `decimal.result-retain` with
 `integer_bits=maxparts` of the materialized reduced rational `c/10^s`,
 `value_occurrences=1` and `result_units += 1`. Every amount before retention is
-derived from operand sizes, and none of these conversions has a rounding step. Every other admitted equality conversion keeps the source
+derived from operand sizes, and none of these conversions has a rounding step.
+An explicit conversion of a `Rational[n1,n2;d1,d2]` source with `d2 > 1`, value
+reduced `n/d`, to `Decimal[c1,c2;s1,s2;m]` is decimal division of `(n, 0)` by
+`(d, 0)` into target scale `T = s2` with rounding mode `m`, whatever `d` is at
+run time. It charges the decimal division schedule: `decimal.operands` with
+`integer_bits=max(bits(n),bits(d))`, `decimal_digits=max(digits(n),digits(d))`
+and `value_occurrences=2`; `decimal.scale-expansion` with `scale_expansion=T`,
+`integer_bits=sbits(n,T)` and `decimal_digits=sdigits(n,T)`;
+`decimal.arithmetic` with `integer_bits=max(sbits(n,T),bits(d))` and
+`decimal_digits=max(sdigits(n,T),digits(d))` for the exact `N/D = (n × 10^T)/d`;
+`decimal.rounding` exactly when that division has a rounding step and `m` is not
+`exact`; and `decimal.result-retain` at scale `T`. Its divisor is never zero,
+strict `exact` at a rounding step is refused after `decimal.arithmetic`, and
+membership is decided before `decimal.result-retain`. Every other admitted equality conversion keeps the source
 magnitude and has no charge point. Record and tuple construction charges
 `composite.result-retain` after its last field or argument, and its field
 expressions and calls charge their own points. Integer `+`, `-`, `*` and unary
@@ -398,6 +411,29 @@ charge, decides the selected method's effective precondition (its own
 evaluation charges apply), and then charges `function.call` before binding the
 arguments.
 
+## Collection sum schedule
+
+`sum<N>(x in c: e)` (FR-145) charges, in order: one `collection.visit` and the
+summand's own charges for the first occurrence, which seeds the running total
+with no addition; then, for each later occurrence in visiting order, one
+`collection.visit`, its summand's charges and one addition charged by the
+family of `N`; then one `collection.result-retain` with `result_units += 1`. An
+empty source charges only that `collection.result-retain`.
+
+| Family of `N` | Charges of one addition |
+| --- | --- |
+| `Integer` or `Int[..]` | `integer-arithmetic.operands`, `integer-arithmetic.arithmetic`, the uncharged domain decision, then `integer-arithmetic.result-retain` |
+| `Rational[..]` | the `rational-arithmetic` schedule |
+| `Decimal[..]` | the decimal addition schedule, whose `decimal.rounding` step uses the `rounding` mode `N` pins |
+| quantity | the unit addition schedule, whose decimal or integer target rounding step uses the `rounding` mode `N` pins |
+| `Float32` or `Float64` | the IEEE addition schedule under the `rounding` mode `N` pins |
+
+The checked package records that mode on the `quire.op.collection.sum.decimal`,
+`sum.quantity`, `sum.float32` or `sum.float64` application (FR-322), and it must
+equal the mode `N`'s type pins; a disagreement is refused before evaluation and
+never resolved at a charge point. The domain decision after each addition and
+seed charges nothing.
+
 ## Population admission limits
 
 A request that binds a population binding carries `PopulationAdmissionLimitsV1`
@@ -406,18 +442,20 @@ field order. Omission is a refused request; zero is a real limit and never
 means unlimited. These counters are independent of `ScalarLimitsV1` and of
 `ModelNormalizationLimitsV1`. `population_members` is a high-water semantic
 size; `work_units` is cumulative. Binding admission first decides, without a
-charge and in this order, the FR-153 `modelIdentity` check, object closure and
-subtype closure; each is read from one document or bundle header member. It
-then charges:
+charge and in this order, the FR-153 model-selection check, object closure and
+subtype closure; each is read from the population declaration and the effective
+view. It then charges:
 
 | Charge point | Order | Exact counter amount |
 | --- | --- | --- |
-| kth `binding.member` | each member record of the population document, in document order, before its key is formed | `population_members=k`; `work_units += 1` |
-| each `binding.subset-value` | after the last `binding.member`: objects in canonical reference-key order, then each subsetting record reaching the object's most-specific type ascending by producer key, then each value of the subsetting feature in its value order, before that value is tested | no size-counter change; `work_units += max(1, n)`, where `n` is the number of values of the subsetted feature of that object, which the test scans |
+| kth `binding.member` | each runtime member record of the population binding, in input order, before its key is formed | `population_members=k`; `work_units += 1` |
+| each `binding.subset-value` | after the last `binding.member`: objects in canonical reference-key order, then each subsetting field reaching the object's most-specific type ascending by declaration key, then each value of the subsetting feature in its value order, before that value is tested | no size-counter change; `work_units += max(1, n)`, where `n` is the number of values of the subsetted feature of that object, which the test scans |
 
 After each `binding.member` charge, admission decides without a further charge,
-in this order, `foreign_reference`/`foreign-type` for a member type absent from
-the effective view, and then, against the members admitted before it, duplicate
+in this order, `foreign_reference`/`foreign-type` for a member type not covered
+by the population declaration's member types, then
+`invalid_runtime_input`/`abstract-instance` for an abstract most-specific type,
+and then, against the members admitted before it, duplicate
 collapse or `invalid_runtime_input`/`conflicting-identity`. After each
 `binding.subset-value` charge it decides
 `invalid_runtime_input`/`subsetting-violation` for that value. Admission stops at
@@ -431,35 +469,34 @@ limit object.
 ## Model normalization limits
 
 Checking a package that selects `quire.model.complete/v1` carries
-`ModelNormalizationLimitsV1` with exact `u64` limits for `producer_records`,
+`ModelNormalizationLimitsV1` with exact `u64` limits for `declaration_records`,
 `derivation_facts`, `effective_declarations`, `dispatch_candidates`,
 `hashed_bytes` and `work_units`, in that field order. Omission is a refused
 request; zero is a real limit and never means unlimited. These counters are
-independent of `ScalarLimitsV1`. `producer_records`, `derivation_facts`,
+independent of `ScalarLimitsV1`. `declaration_records`, `derivation_facts`,
 `effective_declarations` and `dispatch_candidates` are high-water semantic
 sizes; `hashed_bytes` and `work_units` are cumulative. Every row adds one work
 unit unless it states another addition.
 
-Checking runs these stages in order: decoding (`normalize.record` and, for
-producer interface `1.2.0`, `normalize.unsupplied-item`); normalization phases
+Checking runs these stages in order: intake (`normalize.record`) and the
+model feature rules; normalization phases
 2, 3 and 4, each a stage; canonicalization (phase 5); conformance; systems
 kind mapping, connection and allocation checks; source resolution, including
 static navigation; and dispatch linking.
 
 | Charge point | Order | Exact counter amount |
 | --- | --- | --- |
-| kth `normalize.record` | each decoded producer record (type export, member export, component, endpoint, relationship, generalization, subsetting or redefinition record; the bundle header is not a record), ascending producer key | `producer_records=k` |
-| each `normalize.unsupplied-item` | producer interface `1.2.0` only, after the last `normalize.record`: one before each refusal item of the `quire.model.complete/v1` producer interface `1.2.0` table, in that table's order | no size-counter change |
-| kth `normalize.fact` | each derivation fact before it is formed: phase 2, then phase 3, then phase 4, each ascending by (owner producer key, declaration producer key, inputs), where a type fact has no owner and sorts before every owned fact | `derivation_facts=k` |
-| each `normalize.cycle-check` | immediately before the `normalize.fact` of each phase 3 type fact, before testing whether the extended path's new general type already lies on the path | no size-counter change; `work_units += L` instead of one, where `L` is the number of generalization records in the extended path; a closing extension is charged even when its cycle's record set was already reported, and each cycle is reported once, at its first closing charge, as `quire.model.complete/v1` states |
-| each `normalize.redefinition-check` | phase 4, before its first `normalize.fact`: each redefinition record ascending by producer key, before testing that its target is a member inherited by its owning type and that no record checked before it names the same redefining feature with another target | no size-counter change; `work_units += m + r` instead of one, where `m` is the number of effective members of the owning type and `r` the number of redefinition records checked before it |
-| each `normalize.conflict-check` | phase 4, after its last `normalize.fact`: each (effective type, redefined member) reached by `c >= 2` redefinition records, ascending by effective member key, before its redefining owners are compared pairwise | no size-counter change; `work_units += Σ (c − 1) × f(o)` instead of one, summed over the `c` redefining owners `o`, where `f(o)` is the number of type derivation facts (qualify and inherit) of `o` that each proper-descendant test of `o` against another owner scans, one work unit per fact |
+| kth `normalize.record` | each declaration record that intake builds from a domain package IR node (object type, field, relationship, operation, clause, population, part, port, interface, connection or allocation), ascending declaration key, before the node is read | `declaration_records=k` |
+| kth `normalize.fact` | each derivation fact before it is formed: phase 2, then phase 3, then phase 4, each ascending by (owner declaration key, declaration key, inputs), where a type fact has no owner and sorts before every owned fact | `derivation_facts=k` |
+| each `normalize.cycle-check` | immediately before the `normalize.fact` of each phase 3 type fact, before testing whether the extended path's new general type already lies on the path | no size-counter change; `work_units += L` instead of one, where `L` is the number of supertype edges in the extended path; a closing extension is charged even when its cycle's edge set was already reported, and each cycle is reported once, at its first closing charge, as `quire.model.complete/v1` states |
+| each `normalize.redefinition-check` | phase 4, before its first `normalize.fact`: each redefining member ascending by declaration key, before testing that its target is a member inherited by its owning type and that no member of the same type checked before it redefines the same target | no size-counter change; `work_units += m + r` instead of one, where `m` is the number of effective members of the owning type and `r` the number of redefining members checked before it |
+| each `normalize.conflict-check` | phase 4, after its last `normalize.fact`: each (effective type, redefined member) reached by `c >= 2` redefining members, ascending by effective member key, before its redefining owners are compared pairwise | no size-counter change; `work_units += Σ (c − 1) × f(o)` instead of one, summed over the `c` redefining owners `o`, where `f(o)` is the number of type derivation facts (qualify and inherit) of `o` that each proper-descendant test of `o` against another owner scans, one work unit per fact |
 | kth `normalize.declaration` | each effective declaration before its identity is computed: effective types, then effective members, each ascending by effective member key | `effective_declarations=k` |
 | each `normalize.hash` | before a preimage is hashed: each effective declaration preimage immediately after that declaration's `normalize.declaration`, then each object universe preimage ascending by its first root type identity, then the effective view preimage | `hashed_bytes += b`, where `b` is the RFC 8785 JCS byte length of the preimage |
-| each `conformance.axis` | each FR-151 axis, redefinition records then subsetting records, each ascending by record producer key, axes in FR-151 order | no size-counter change; a type-conformance axis charges `work_units += f(x)` instead of one, where `x` is the type whose conformance is tested and `f(x)` the number of its type derivation facts (qualify and inherit) that the conformance walk scans, one work unit per fact, or one for a non-object type decided by the FR-149 equality-conversion table: the field value type axis and the subsetting type test use the redefining or subsetting feature's type, parameter type axis `i` uses the redefined parameter `i`'s type (so the parameter type axes together charge the sum of `f` over the parameters), and the result type axis uses the redefining result type, or one when either result is absent; for the operation effect axis, `work_units += max(1, t)` instead of one, where `t` sums, over each redefining effect entry in `fieldWrites`, `creates`, `deletes` order: for a field write, `n × (1 + r)`, with `n` the number of redefined `fieldWrites` entries it is compared against and `r` the number of redefinition records walked from the written field; for a create or delete, `f(x)` for every redefined `creates` (respectively `deletes`) grant it is tested against, with `f(x)` the number of type derivation facts of the created or deleted type `x` that the conformance test scans; every entry is compared with every grant |
-| each `systems.kind` | each component record, then each endpoint record, then each relationship record, each group ascending by producer key, before its FR-152 kind is mapped | no size-counter change |
-| each `systems.connection-condition` | each Connection ascending by producer key, then each of its three FR-152 conditions in table order, before that condition is checked | no size-counter change; the interface-type condition charges `work_units += f(x)` instead of one, where `x` is the flow-source port's interface type and `f(x)` the number of its type derivation facts scanned by the conformance walk (for `bidirectional`, the first end's interface type) |
-| each `systems.allocation` | each Allocation ascending by producer key, before its target is checked | no size-counter change |
+| each `conformance.axis` | each FR-151 axis, redefining members then subsetting fields, each ascending by declaration key, axes in FR-151 order | no size-counter change; a type-conformance axis charges `work_units += f(x)` instead of one, where `x` is the type whose conformance is tested and `f(x)` the number of its type derivation facts (qualify and inherit) that the conformance walk scans, one work unit per fact, or one for a non-object type decided by the FR-149 equality-conversion table: the field value type axis and the subsetting type test use the redefining or subsetting feature's type, parameter type axis `i` uses the redefined parameter `i`'s type (so the parameter type axes together charge the sum of `f` over the parameters), and the result type axis uses the redefining result type, or one when either result is absent; for the operation effect axis, `work_units += max(1, t)` instead of one, where `t` sums, over each redefining frame entry in `modifies`, `creates`, `deletes` order: for a field write, `n × (1 + r)`, with `n` the number of redefined `modifies` entries it is compared against and `r` the number of `redefines` links walked from the written field; for a create or delete, `f(x)` for every redefined `creates` (respectively `deletes`) grant it is tested against, with `f(x)` the number of type derivation facts of the created or deleted type `x` that the conformance test scans; every entry is compared with every grant |
+| each `systems.kind` | each interface, then each part, then each port, then each connection, then each allocation declaration, each group ascending by declaration key, before its FR-152 kind is mapped | no size-counter change |
+| each `systems.connection-condition` | each Connection ascending by declaration key, then each of its three FR-152 conditions in table order, before that condition is checked | no size-counter change; the interface-type condition charges `work_units += f(x)` instead of one, where `x` is the flow-source port's interface type and `f(x)` the number of its type derivation facts scanned by the conformance walk (for `bidirectional`, the first end's interface type) |
+| each `systems.allocation` | each Allocation ascending by declaration key, before its target is checked | no size-counter change |
 | each `systems.resolve` | in source order, each qualified-name segment after the model alias and each runtime `.name` navigation site, before it is resolved statically | no size-counter change |
 | each `dispatch.subtype` | per called effective operation in effective member order, each closed subtype ascending by effective type identity, before its applicable candidate set is formed | no size-counter change |
 | kth `dispatch.candidate` | after that subtype's `dispatch.subtype`, each family member that has a body ascending by effective member key, before its applicability test | `dispatch_candidates=k`; `work_units += f` instead of one, where `f` is the number of type derivation facts (qualify and inherit) of the subtype, one work unit per fact scanned by the conformance walk |
@@ -468,13 +505,13 @@ static navigation; and dispatch linking.
 Checking is exhaustive within a stage and under these limits. Each row is
 charged before the work it names runs, in the stated order, and every refusal
 that work exposes is reported, in charge order, when its stage ends; a
-refusal decided from a header member before a stage's first charge is reported
+refusal decided by an intake admission check before a stage's first charge is reported
 first. A stage that reports a refusal ends checking: no later stage runs or
 charges. Conformance therefore reports every failing axis of every record, and
 dispatch linking reports every no-applicable or ambiguous subtype of every
 called operation. A generalization cycle is exposed by the `normalize.cycle-check`
 of the closing extension, whose `normalize.fact` is not charged; exploration
-continues with the next extension, and a cycle whose record set was already
+continues with the next extension, and a cycle whose edge set was already
 reported is not reported again. Runtime evaluation, by contrast, stops at its
 first failure. The first unavailable charge ends checking with
 `incomplete { limit_kind, limit, consumed, next_charge, charge_point }`, where

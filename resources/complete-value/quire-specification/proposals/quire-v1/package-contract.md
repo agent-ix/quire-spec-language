@@ -6,8 +6,9 @@ and [FR-035](../../spec/functional/foundation/FR-035-bind-ecosystem-subjects.md)
 for the composed `1-draft` definition. Runtime/assessment portions retain their
 own tickets. This acceptance does not register a public wire format or
 canonicalizer, qualify an executable linked-package reader, adopt a clause
-profile, or replace D's model/configuration, F's observation or B's request/result
-contracts.
+profile, or replace the model intake of
+[AD-006](../../spec/assurance/AD-006-model-graph-state-contracts.md), F's
+observation or B's request/result contracts.
 
 ## Static package subject
 
@@ -25,17 +26,18 @@ independent declarations whose names and dependencies are established.
 | Sources | Exact authority, identity, revision and byte digest per unit; original source regions and clause/declaration identities. Two editable authorities for one clause refuse. |
 | Language | Exact language/edition and supplied definition artifact; no implementation-version default. |
 | Profiles | Each declaration's selected root definition name/revision/byte digest, exact required definition closure and the meaning owned by each dependency. |
-| Models | Compiled model document, permitted exports, authoritative declaration handles and exact manifest/lock/dependency closure under the selected producer contract. |
+| Models | Domain package imported by identity, version and `sha256-jcs` digest; its effective declaration keys and exact manifest/lock/dependency closure. |
 | Native dependencies | Resolved predicate, operation-contract and temporal-obligation references with their defining source, model and profile selections; typed anchors and capture requirements. |
 | Binding requirements | Typed roles, selected model/observation contracts and clock/scope premises described below. Concrete runtime instances are not inserted here. |
 
-The native `model` import digest continues to mean SHA-256 of the selected
-compiled model document's exact bytes. Manifest/lock digests, the producer's
-package fingerprint and source digests remain separate. Package identity/version
-and exports must match that document and its validated closure. A transitively
-reachable type is not thereby a directly imported export. D controls model
-closure, presence, units, relationships and configuration; A consumes its exact
-admitted view or refuses unsupported meaning. The old minimum-only ConfigVersion
+The native `model` import names a domain package by identity, version and
+`sha256-jcs` digest. The domain package is the semantic IR document lifted from the imported
+spec's artifacts. Manifest/lock digests, package fingerprints and source digests
+remain separate. The domain package identity and its declarations must match the
+supplied document and its validated closure. A transitively reachable type is
+not thereby a directly imported type. The spec's artifacts declare model closure,
+presence, units, relationships and configuration; QSL model intake checks them
+and refuses unsupported meaning. The minimum-only ConfigVersion
 domain and parent relationship remain admission controls, not implicit finite
 bounds or fields.
 
@@ -47,7 +49,7 @@ and incompatible requirements within one selected closure refuse. Installing a
 profile cannot grant operators. Declarations can select different compatible
 interfaces; a referenced predicate retains its own checked definition rather
 than acquiring caller permissions. This definition-dependency rule does not
-prohibit identity-bearing model graphs or redefine D's package dependency policy.
+prohibit identity-bearing model graphs or redefine the domain package dependency policy.
 
 Partial compilation retains every requested declaration's disposition and
 dependency cause. Only dependency-closed checked declarations reach a consumer;
@@ -78,19 +80,19 @@ even when an explicitly supplied clock satisfies both.
 
 | Role information | Required interpretation |
 | --- | --- |
-| Type and authority | Exact model declaration or selected producer interface; kind distinguishes value input, invocation, workflow/participant, relationship, population and clock/progress. Equal field shapes do not substitute for identity. |
+| Type and authority | Exact effective declaration key or selected binding contract; kind distinguishes value input, invocation, workflow/participant, relationship, population and clock/progress. Equal field shapes do not substitute for identity. |
 | Anchor | Current observation, exact invocation pre/post, temporal origin/activation, protocol occurrence, compensation registration or activation, as authored. |
 | Scope premises | Workflow/role/relationship endpoints, snapshot or window/membership contract, clock kind/unit/history and completeness authority where applicable. |
 | Dependencies | Prerequisite roles, supplied record correspondence and immutable captures. A clock, population and its progress record must describe the same declared scope. |
 
-Roles derive from checked native declarations and imported authoritative
-contracts. They introduce no field grammar, event schema or model store. The
+Roles derive from checked native declarations, imported domain package
+declarations and selected binding contracts. They introduce no field grammar, event schema or model store. The
 linker retains their contract selections; it does not infer an adapter from a
 binder's spelling. A semantic change to an imported binding contract requires a
 new static selection. Switching between admitted concrete bindings satisfying
 the same contract is an assessment input change.
 
-The runtime request maps each required role to one binding under D/F/B's selected
+The runtime request maps each required role to one binding under F/B's selected
 contracts. Repeated entries for the same role refuse, even when equal; one
 explicit concrete binding may serve several compatible roles. Missing or
 incompatible mappings refuse the affected request. Missing observations under a
@@ -117,55 +119,24 @@ apply equally to state, temporal and choreography declarations.
 | Stage | Required selections and checks | Inputs not required at this stage |
 | --- | --- | --- |
 | Source recognition | Explicit source inventory, original bytes, edition and lexical/parser limits | Model instances, runtime populations, snapshots, windows, observations and progress |
-| Resolution and type/profile admission | Exact model exports and definition closure; selected binding contracts; typed anchor, scope and clock roles; static configuration selections and producer/native correspondence consumed here | Concrete workflow instances, runtime membership, a future snapshot/window, progress/closure records or compensation observations |
-| Assessment binding | An admitted subject; exact consumed runtime configuration; matching concrete role bindings and producer/native correspondence; the finite population/snapshot/window and authority required by the selected assessment | Unrelated scope inputs and observations needed only by an unactivated obligation |
+| Resolution and type/profile admission | Exact domain package declarations and definition closure; selected binding contracts; typed anchor, scope and clock roles; static configuration selections consumed here | Concrete workflow instances, runtime membership, a future snapshot/window, progress/closure records or compensation observations |
+| Assessment binding | An admitted subject; exact consumed runtime configuration; matching concrete role bindings; the finite population/snapshot/window and authority required by the selected assessment | Unrelated scope inputs and observations needed only by an unactivated obligation |
 | Evaluation and result publication | The admitted inputs and exact decision support required by the selected B/E result rule, with relevant availability, progress and completeness retained separately | Complete surrounding execution or unrelated observations when the selected rule admits decisive truth without them |
 
-Absence of a required static definition/export refuses the dependent linking.
+Absence of a required static definition or domain declaration refuses the dependent linking.
 An unknown, conflicting or incompatible runtime selection refuses the dependent
 binding; unavailable observations under a valid selected binding remain explicit
 incomplete inputs. Static success does not waive those later prerequisites.
-Missing support cannot become a value. Conversely, a producer's incomplete-input
+Missing support cannot become a value. Conversely, an incomplete-input
 classification cannot erase a truth already justified by the evaluator's complete
 exact support; it remains visible on the affected coverage/completeness dimension.
 
 Which runtime scope is required follows the exact profile and role. A timestamped
 window and its authority do not substitute for event-position or fixed-sample
-inputs. The D/F/E observation-range contract supplies any permitted correspondence;
+inputs. The F/E observation-range contract supplies any permitted range mapping;
 this stage table does not invent one, require UTC for every clock, or infer a
 window from current time. Evaluators still require their own closure premises
 before publishing complete global success.
-
-### Producer and native identity correspondence
-
-When a selected producer interface identifies a model or profile by canonical
-object content, the consumer SHALL retain an explicit immutable correspondence
-to the native selection it supplies. It cannot use that producer digest in the
-native raw-byte digest position. The selected interface declares this logical
-correspondence; this contract does not invent its payload wire or canonicalizer.
-
-| Correspondence component | Required information and validation |
-| --- | --- |
-| Producer selection | Authoritative producer/interface selection, object kind and identity/revision, canonical digest, and the exact definition of that canonical content domain |
-| Native selection | Exact compiled-model artifact or native definition identity/revision and raw-byte SHA-256; permitted export/declaration handles and required definition closure where applicable |
-| Binding relation | The producer-declared relation supplying that native model/profile selection for the particular typed role; retain its exact source/configuration provenance and selected interpretation |
-
-The consumer checks both selections under their own digest contracts and checks
-the required object/declaration kind and relation against the selected producer's
-exports. An unsupported canonical domain refuses the dependent correspondence;
-ordinary JSON serialization, equal hash spelling or similar fields cannot fill
-it. The relation is an explicit producer contract, not a proof of semantic
-equivalence inferred from two hashes. Multiple declared relations may share an
-artifact or producer object, but each required role must resolve unambiguously.
-
-Removing a required relation, changing either selection while retaining the old
-relation, cross-binding a foreign export, or substituting one digest domain for
-another refuses the dependent binding. Presentation-only re-encoding may change
-raw bytes while preserving a canonical producer object: the raw native selection
-must then be changed explicitly and validated again. Correspondence consumed by
-static linking is retained with those selections; a runtime request must agree
-with it rather than silently replacing it. Full configuration provenance remains
-separate as described below.
 
 ### Retained configuration
 
@@ -180,8 +151,8 @@ The static subject is compared through the components above. Build provenance
 retains the full compile configuration and implementation; assessment provenance
 retains the full runtime configuration and inputs. Changing only a resource limit
 changes configuration and assessment input identity while preserving static
-meaning, consistent with D's proposed configuration requirements. Changing a
-selected model/profile or required binding meaning changes the static subject
+meaning. Changing a
+selected domain package, profile or required binding meaning changes the static subject
 as well. A projected configuration cannot stand in for the original input.
 
 Exact serialized bytes, static language subject and assessment inputs have
@@ -190,11 +161,11 @@ subject while changing raw bytes. Source-byte changes alter source correspondenc
 even if a typed-expression canonicalizer establishes equal expression meaning.
 Canonical identity is optional until its exact domain/version/algorithm is
 selected and qualified; structural comparison or ordinary JSON hashing cannot
-claim it. Existing ArtifactRef/SemanticRef, producer fingerprint and IR/JCS domains
+claim it. Existing ArtifactRef/SemanticRef, domain package `sha256-jcs` and IR domains
 retain their selected contracts. Definition digests cover exact supplied bytes;
 an artifact need not contain its own byte digest.
 
-## Admission examples and producer agreement
+## Admission examples
 
 Use a three-family order package with two typed per-observation inputs and a
 refund-clock role. Bind O1 and O2 through distinct workflow/relationship instances
@@ -203,12 +174,12 @@ O1's population must fail the scope check. Raising the run budget preserves the
 static subject; changing the temporal boundary profile requires a new linked
 subject. Unactivated compensation needs no fabricated refund record.
 [IT-010](../../spec/integration/IT-010-bind-linked-package-assessments.md) specifies
-the producer/consumer controls; none has executed yet.
+these controls; none has executed yet.
 
-The producer contract selected in the [observation contract](observation-contract.md)
-supplies presence, relationship, population and configuration meaning. Its
-static/runtime split, producer/native correspondence and exact decimal canonical
-domain agree with the consumer requirements above. The integrated observation
+The spec's artifacts declare presence, relationships, populations and
+configuration, and the domain package carries them. The
+[observation contract](observation-contract.md) keys runtime subjects on the
+resulting declaration keys. The integrated observation
 range correspondence covers event-position, fixed-sample and timestamp inputs,
 distinct record/member identities and half-open coverage versus inclusive
 deadlines. Decisive truth retains its exact support independently of unrelated
@@ -216,8 +187,6 @@ incompleteness.
 
 The FS05 reference/evolution rules are accepted; the remaining runtime and
 assessment rules stay in the [current shared draft](definitions/README.md).
-D's producer contract and plan in
-[FCD PR #97](https://github.com/agent-ix/filament-core-data/pull/97) retain their
-own acceptance and #93 dependency. Further draft successor definitions or
+Further draft successor definitions or
 checksum publication are not prerequisites. Historical accepted selections
 retain their original meaning.

@@ -16,19 +16,19 @@ const DEFINITIONS: &str =
     "resources/complete-value/quire-specification/proposals/quire-v1/definitions";
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
-/// `7d7943ab1482e091f6d126401ada38957c4a1ccf` with `git show`.
+/// `d227270fbeb28289df6abba7e94173118345c028` with `git show`.
 const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     (
         "spec/functional/expressions/FR-146-check-total-pure-functions.md",
-        "4d21ad026fdf637f9eea9ec9455c678a4e78a8d4f6b87fd9446e7cde31556d29",
+        "e376209a85a432f21e80fd51e27733d8805d8517e937f5f886e8c59bdce904cb",
     ),
     (
         "spec/functional/tooling/FR-307-package-reusable-semantic-libraries.md",
-        "d287d75f670ae46cbc6d2fbe895f13c5eb29a52af59b6569b0e2c1d03ea7f03a",
+        "84f612facceb6e261fadc7688f2556adbdcd2261f73755144f6d7ec4ccd5f275",
     ),
     (
         "spec/test-cases/TC-191-total-pure-function-checking.md",
-        "24441875a3ef17a4aa4ce4f86c901709d0cf1424b05c01392a3190f4e2ed3295",
+        "82f191f244a57163223a18963f76f4ddaf4c2d0ccfdc8fac401730efff3f076e",
     ),
     (
         "spec/test-cases/TC-227-reusable-semantic-library-resolution.md",
@@ -40,7 +40,7 @@ const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     ),
     (
         "spec/functional/expressions/FR-145-convert-and-query-collections.md",
-        "eb3b4c8ebad6ca616ba0fb166663f4163d55418294ba864b471f10b6f2c74c93",
+        "2b1b11e5d21e7130d71d42265026425ce86737016cbdb8f9bb36c8a2a185aba8",
     ),
     (
         "spec/test-cases/TC-189-collection-kind-algebra.md",
@@ -48,7 +48,7 @@ const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     ),
     (
         "spec/test-cases/TC-190-collection-query-and-conversion-algebra.md",
-        "080d2801ca78999a2b8437974efc3e0b00b9abd02482b065f5851a8b2659b3d8",
+        "3526dfb04642618e4246bd4dd749824ea927b286edb2851eeb4d359cff45a8cb",
     ),
     (
         "spec/functional/type-model/FR-143-evaluate-record-tuple-recursive-values.md",
@@ -60,11 +60,11 @@ const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     ),
     (
         "spec/test-cases/TC-194-complete-equality-matrix.md",
-        "e7a261755c7b7552bf3a5fc516c2c57dcbc8f20e321d9ad339cdf3549c7a3b48",
+        "01cc4561eb4f4ceb4d5c41d44b8017de9d5ef8e34b92fbd1793f5331c2fd628b",
     ),
     (
         "proposals/quire-v1/definitions/complete-value-lock.json",
-        "8892527d03064c1c1c06fbe7ec2ebaee0b5f33d0934c90af12ca02edb9580aef",
+        "121cfd61fb526d5bdaed56cd0fd2e5694d8be8488278a0b2d2daedad38d8093c",
     ),
     (
         "proposals/quire-v1/definitions/complete-value-selection-vectors.json",
@@ -72,7 +72,7 @@ const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     ),
     (
         "spec/test-cases/TC-185-exact-decimal-semantics.md",
-        "7000e35969abefab803c1ee1eaf170ff6729909c25492b22648eb7c21cbccbed",
+        "8e86ff873a83c8a9df26cccd98b26acfe6b6f1dfa1f8cdfec2506b97d2a3410b",
     ),
     (
         "spec/test-cases/TC-192-integer-division-profiles.md",
@@ -88,15 +88,15 @@ const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     ),
     (
         "proposals/checked-package-v2/node-identity-vectors.json",
-        "635717d735883c4f33440758376d4958e43340a801ac3b7be055d156f2096244",
+        "30451dcd72d0443e4827faaced2b864e7a96e891c29a5458eef389cd09e4b2de",
     ),
     (
         "proposals/checked-package-v2/node-identity-preimage.schema.json",
-        "978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501",
+        "204b67af22f3c6fb6e776c4d92683e44e7e11cf8b6d2184b5b895ac310941af6",
     ),
     (
         "proposals/checked-package-v2/fixtures/positive-nominal-identities.json",
-        "b6b1f81f33d6b8756f91ac3fefed74e8cb01b85892c4520a072952232e968a47",
+        "64b4c14caa10d4610b393d5e68aa6ef21bd44160996844711583177d19c69173",
     ),
     (
         "spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",
@@ -181,7 +181,7 @@ fn lock_admission_refuses_malformed_or_non_closed_locks() {
             "two selection slots",
         ),
         (
-            text.replacen("d70a50262b334c6b", "D70A50262B334C6B", 1),
+            text.replacen("4cf0b7ac51a3b941", "4CF0B7AC51A3B941", 1),
             "digest spelling",
         ),
     ];

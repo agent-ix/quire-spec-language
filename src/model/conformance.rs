@@ -668,17 +668,17 @@ pub fn check_operation_redefinition(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    for write in &redefining.effect.field_writes {
+    for write in &redefining.effect.modifies {
         let direct = redefined
             .effect
-            .field_writes
+            .modifies
             .iter()
             .any(|w| w.identity == write.identity);
         let via_redefinition = index.redefinitions.iter().any(|r| {
             r.redefining.identity == write.identity
                 && redefined
                     .effect
-                    .field_writes
+                    .modifies
                     .iter()
                     .any(|w| w.identity == r.redefined.identity)
         });
@@ -945,7 +945,7 @@ pub fn check_field_refinement_obligation(
     }
 
     let writer = index.operations.values().find(|operation| {
-        operation.effect.field_writes.iter().any(|field| {
+        operation.effect.modifies.iter().any(|field| {
             field.identity == record.redefined.identity
                 || field.identity == record.redefining.identity
         })
