@@ -257,7 +257,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
     assert_eq!(
         winner_redefine[0].inputs,
         vec![
-            DeclarationKey::fixture("model.redef.B.n"),
+            DeclarationKey::fixture("model.B.n"),
             DeclarationKey::fixture("model.A.n"),
         ]
     );
@@ -281,7 +281,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
     assert_eq!(
         hidden_redefine[0].inputs,
         vec![
-            DeclarationKey::fixture("model.redef.B.n"),
+            DeclarationKey::fixture("model.B.n"),
             DeclarationKey::fixture("model.A.n"),
         ]
     );
@@ -298,6 +298,42 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
         1,
         "B has exactly one visible effective member for this slot: B.n, never a second silently-surviving one"
     );
+}
+
+/// FR-154: "Two nodes share one identity" refuses
+/// `invalid_model_binding`/`conflicting-binding`. Retargets the pre-#131
+/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
+/// regression test: under the dropped `revision`/`digest` fields, two
+/// `FieldMember` records that once differed only in `revision` now share the
+/// exact same `DeclarationKey` and `normalize` must refuse before this
+/// module's own conformance check ever runs.
+#[trace("TC-196")]
+#[test]
+fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-conformance-conflict"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(5))),
+            field_member("model.B.y", "model.B", "model.A", mult(0, Some(3))),
+        ],
+    );
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingBinding {
+                    key: DeclarationKey::fixture("model.A.x"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
+        }
+    }
 }
 
 // AC-1 is `r01`'s own subject (`check_operation_redefinition` builds no
@@ -1124,6 +1160,95 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
     assert_eq!(
         check_operation_redefinition(&domain_package, &record, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible)
+    );
+}
+
+/// PR #177 review finding 1: the effect axis's `redefinition_reaches` call
+/// must compare `DeclarationKey`s by their full derived `PartialEq`
+/// (`package`, `node`), not `.node` alone -- a write naming `model.A.x` in
+/// package `other/pkg` does not reach a grant for `model.A.x` in package
+/// `test/orders`, even though both share the display node `model.A.x`.
+/// Before this PR the effect axis compared `.node`/`.identity` only, so this
+/// exact scenario wrongly admitted; every other fixture in this file uses
+/// `DeclarationKey::fixture`'s fixed `test/orders` package on both the write
+/// and the grant, so none of them can tell full-key equality apart from
+/// node-only comparison the way this one does. Retargets the pre-#131
+/// revision-differing regression test: under the dropped `revision`/
+/// `digest` fields, a `package`-differing key is now the only way to
+/// construct two `DeclarationKey`s that share a display node but are not
+/// equal.
+///
+/// Mutation used: in `check_operation_redefinition`'s effect closure,
+/// compared `redefined.effect.modifies.iter().any(|w| w.node ==
+/// candidate.node)` instead of `.contains(candidate)`. Every other test in
+/// this file stayed green; this one went from `Refused` to `Compatible`;
+/// reverted.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant_does_not_name() {
+    let write_in_another_package = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.A.x".to_owned(),
+    };
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.op-package"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.B.op"),
+                owner: DeclarationKey::fixture("model.B"),
+                parameters: vec![],
+                result: None,
+                effect: OperationEffect {
+                    modifies: vec![write_in_another_package.clone()],
+                    creates: Vec::new(),
+                    deletes: Vec::new(),
+                },
+                has_own_precondition: false,
+                own_postcondition_clauses: vec![],
+                has_body: true,
+            }),
+            redefinition(
+                "model.redef.B.op-A.op",
+                "model.B",
+                "model.B.op",
+                "model.A.op",
+            ),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: DeclarationKey::fixture("model.redef.B.op-A.op"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
+    };
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        check_operation_redefinition(&domain_package, &record, &mut meter),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "effect",
+            code: Code::IllTyped,
+            cause: ModelRefusalCause::EffectEscape {
+                field: write_in_another_package.clone(),
+            },
+            detail: format!(
+                "write {} is not covered by the redefined effect",
+                write_in_another_package.node
+            ),
+        }]))
     );
 }
 

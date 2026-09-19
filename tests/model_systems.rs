@@ -18,7 +18,9 @@ use quire_spec_language::model::domain_package::{
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
-use quire_spec_language::model::normalize::{ModelRefusal, ModelRefusalCause};
+use quire_spec_language::model::normalize::{
+    normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
     ConnectionCheckOutcome, ConnectionOutcome, Kind,
@@ -657,4 +659,51 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     )
     .expect_err("model.Sys.pump no longer resolves to any kind");
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
+}
+
+/// FR-154: "Two nodes share one identity" refuses
+/// `invalid_model_binding`/`conflicting-binding`. Retargets the pre-#131
+/// `f2_components_sharing_an_identity_but_differing_in_revision_both_survive`
+/// regression test: under the dropped `revision`/`digest` fields, two
+/// `Component` records that once differed only in `revision` now share the
+/// exact same `DeclarationKey`, and `normalize` -- which every real
+/// pipeline runs before `classify` ever sees a domain package -- must
+/// refuse before either component reaches `SystemsClassification`.
+#[trace("TC-197")]
+#[test]
+fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-systems-conflict"),
+        vec![
+            object_type("model.Pump", None),
+            DomainPackageRecord::Component(ComponentRecord {
+                key: DeclarationKey::fixture("model.Sys.pump"),
+                owning_type: DeclarationKey::fixture("model.Sys"),
+                value_type: DeclarationKey::fixture("model.Pump"),
+                multiplicity: one(),
+                has_part_signature: true,
+            }),
+            DomainPackageRecord::Component(ComponentRecord {
+                key: DeclarationKey::fixture("model.Sys.pump"),
+                owning_type: DeclarationKey::fixture("model.Sys"),
+                value_type: DeclarationKey::fixture("model.Pump"),
+                multiplicity: one(),
+                has_part_signature: false,
+            }),
+        ],
+    );
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingBinding {
+                    key: DeclarationKey::fixture("model.Sys.pump"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
+        }
+    }
 }

@@ -619,10 +619,10 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
         Outcome::Completed(value) => value,
         other => panic!("expected a completed collection, got {other:?}"),
     };
-    // #131's DeclarationKey reshape changed every declaration's JCS preimage
-    // bytes and hence its effective-id hash; A now sorts before B (was B
-    // before A), so canonical reference-key order is every A member then
-    // every B member.
+    // #131's DeclarationKey reshape and the #197 RULE_INHERIT/RULE_REDEFINE
+    // fact-input fix each changed every declaration's JCS preimage bytes and
+    // hence its effective-id hash; A now sorts before B (was B before A), so
+    // canonical reference-key order is every A member then every B member.
     let expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.a, "a2"),
@@ -1455,8 +1455,8 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         SCALAR_UNLIMITED,
         &ObjectEnvironment::default(),
     );
-    // #131's DeclarationKey reshape changed effective-id hashes; A now sorts
-    // before B.
+    // #131's DeclarationKey reshape and the #197 RULE_INHERIT/RULE_REDEFINE
+    // fact-input fix each changed effective-id hashes; A now sorts before B.
     let post_expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.b, "b1"),
