@@ -36,12 +36,11 @@ pub struct ObjectTypeRecord {
     /// is a real, valid interface with zero declared features; the
     /// distinction from `None` is the capability itself, not emptiness.
     pub interface_features: Option<Vec<DeclarationKey>>,
-    /// This type's declared `supertypes[]` (`model-complete.md`:155): every
-    /// entry names an object type of the package this type directly
-    /// generalizes to. An inline property of the object type itself, not a
-    /// separate record (QSpec's own shape; `model-complete.md`:155/159/160
-    /// and :270/271) -- there is no producer key of its own for one
-    /// generalization edge.
+    /// This type's declared `supertypes[]` (`model-complete.md`:155/159/160
+    /// and :270/271): every entry names an object type of the package this
+    /// type directly generalizes to. An inline property of the object type
+    /// itself -- there is no producer key of its own for one generalization
+    /// edge.
     pub supertypes: Vec<DeclarationKey>,
 }
 
@@ -60,12 +59,11 @@ pub struct FieldMemberRecord {
     /// This field's declared `subsets[]` (`model-complete.md`:161): every
     /// entry names a field of the owning type or of a supertype whose
     /// runtime values this field's are a subset of. An inline property of
-    /// the field itself (QSpec's own shape), never a separate record.
+    /// the field itself.
     pub subsets: Vec<DeclarationKey>,
     /// This field's declared `redefines` (`model-complete.md`:162): the
     /// inherited field or operation this member redefines, or `None` when
-    /// it declares no redefinition. An inline property of the field itself
-    /// (QSpec's own shape), never a separate record.
+    /// it declares no redefinition. An inline property of the field itself.
     pub redefines: Option<DeclarationKey>,
 }
 
@@ -194,8 +192,7 @@ pub struct OperationMemberRecord {
     pub has_body: bool,
     /// This operation's declared `redefines` (`model-complete.md`:162): the
     /// inherited operation this member redefines, or `None` when it
-    /// declares no redefinition. An inline property of the operation itself
-    /// (QSpec's own shape), never a separate record.
+    /// declares no redefinition. An inline property of the operation itself.
     pub redefines: Option<DeclarationKey>,
 }
 

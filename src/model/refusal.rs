@@ -102,21 +102,22 @@ pub enum ModelRefusalCause {
     SpecializationCycle {
         /// The ancestor that closes the cycle.
         ancestor: DeclarationKey,
-        /// The supertype record the cycle is discovered via.
+        /// The object type whose own `supertypes[]` entry the cycle is
+        /// discovered via.
         via: DeclarationKey,
     },
-    /// A field, operation, redefinition or subsetting record names an owner
-    /// that is not a declared object type.
+    /// A field or operation member names an owner that is not a declared
+    /// object type.
     UnknownOwner {
-        /// The record naming the owner.
+        /// The member naming the owner.
         member: DeclarationKey,
         /// The absent owner.
         owner: DeclarationKey,
     },
-    /// A supertype record names a general that is not a declared
-    /// object type.
+    /// An object type's own `supertypes[]` property names a general that is
+    /// not a declared object type.
     UnknownGeneral {
-        /// The supertype record.
+        /// The owning object type.
         supertype: DeclarationKey,
         /// The absent general.
         general: DeclarationKey,
@@ -146,10 +147,10 @@ pub enum ModelRefusalCause {
         /// The absent type.
         type_name: DeclarationKey,
     },
-    /// A redefinition or subsetting record names a member absent from its
-    /// owner.
+    /// A field or operation member's own `redefines` or `subsets` property
+    /// names a member absent from its owner.
     UnknownMember {
-        /// The redefinition or subsetting record.
+        /// The member declaring the `redefines`/`subsets` property.
         record: DeclarationKey,
         /// The absent member.
         member: DeclarationKey,
@@ -342,25 +343,25 @@ pub enum ModelRefusalCause {
         /// The target port.
         target: DeclarationKey,
     },
-    /// A conformance redefinition record names a redefining member absent
-    /// from the domain package.
+    /// `check_field_redefinition`'s `redefining_key` argument names a field
+    /// absent from the domain package.
     UnknownRedefining {
         /// The absent redefining member.
         member: DeclarationKey,
     },
-    /// A conformance redefinition record names a redefined member absent
-    /// from the domain package.
+    /// `check_field_redefinition`'s `redefined_key` argument names a field
+    /// absent from the domain package.
     UnknownRedefined {
         /// The absent redefined member.
         member: DeclarationKey,
     },
-    /// A conformance subsetting record names a subsetting member absent
+    /// `check_subsetting`'s `subsetting_key` argument names a field absent
     /// from the domain package.
     UnknownSubsetting {
         /// The absent subsetting member.
         member: DeclarationKey,
     },
-    /// A conformance subsetting record names a subsetted member absent
+    /// `check_subsetting`'s `subsetted_key` argument names a field absent
     /// from the domain package.
     UnknownSubsetted {
         /// The absent subsetted member.
