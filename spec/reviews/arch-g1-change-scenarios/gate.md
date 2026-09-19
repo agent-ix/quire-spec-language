@@ -19,8 +19,8 @@ relationships:
 
 This record walks the seven #212 change scenarios through ADR-011, ADR-012 and
 ADR-013 as merged on QSL `origin/main` 457a131, plus the changes this PR makes
-(below), including the #212 rulings of 2026-09-19 (issue #212: the round-1
-comments and the round-2 comment). Cross-repository inputs are QSpec
+(below), including the #212 rulings of 2026-09-19 (issue #212: the round-1,
+round-2 and round-3 comments). Cross-repository inputs are QSpec
 `origin/main` 1e8bb50 (FR-290, amended AD-016 from
 agent-ix/quire-specification#140) and Contract IR `origin/main` 65aa282.
 
@@ -117,6 +117,14 @@ rulings name is cited as remaining work in each cell.
   facade; SR-506 FND-005 terminology; SR-506 FND-006 closed as satisfied.
 - **#244 (FND-003).** ADR-013 O-27, QC-7 and QC-14 now describe AD-016 as
   amended by agent-ix/quire-specification#140 (ADR-013:645, 820, 827).
+- **#212 round-3 rulings.** SR-503 FND-008: the T-12 API-surface check
+  scans every crate that depends on `quire-exact`; #215 ships it as one
+  reusable tool, and RT and CG run it in their lint gates under
+  agent-ix/quire-contract-runtime#56 and agent-ix/quire-contract-codegen#89.
+  SR-503 FND-014: the #219 and #224 gate walks check that the #187 and #218
+  landing PRs change only their table's paths until #226 lands, and #226
+  enforces it after that; each `xtask string-edge` allow-list entry names the
+  user value it compares and selects no behaviour (ADR-012 §9, §12).
 - **Other review fixes.** Provenance and spans are keyed by occurrence key
   in E3, E4 and §10 row 8. O-07 and O-09 use the ruled identity wording.
   O-13 names TK-03 as agent-ix/quire-contract-runtime#56 and
@@ -130,7 +138,7 @@ rulings name is cited as remaining work in each cell.
 
 ### Scenario 1: exact scalar operator
 
-ADR-011 §10 row 1 (ADR-011:882); ADR-012 Consequences row 1 (ADR-012:955),
+ADR-011 §10 row 1 (ADR-011:882); ADR-012 Consequences row 1 (ADR-012:956),
 §3 `Value` row (ADR-012:280), §4.3 (ADR-012:356-378).
 
 | Field | Record |
@@ -139,7 +147,7 @@ ADR-011 §10 row 1 (ADR-011:882); ADR-012 Consequences row 1 (ADR-012:955),
 | Stages | S2 form (E2), S3 `Value` check (E3), S4 v2 arm (E4, C-03), E5 IR `Operator` (C-05, total `From`, no `_` arm), S6a kernel operation (E6), E7 CG render arm, then S6b. The seam probe runs at S2 and S3 (ADR-012 §5.1 S2 and S3, ADR-012:390-391). |
 | Capability | A nested operator records no kind (FR-057:159-162). Its clause records `value-validity` (FR-057:166). FR-290 and FR-057 are unchanged. The `Requirements` hook adds nothing. |
 | Failure | S3 refuses with `ill_typed`/`operator-ineligible` (ADR-012:280; catalog line 84). At S4 a missing v2 operation refuses `invalid_package`/`unknown-operation`. S6a outcomes are the kernel `Refused` or `Undefined` with their catalog codes, for example `undefined_expression`/`unproved-nonzero`, mapped category-preserving by C-08 (ADR-013:688; O-16, ADR-013:337). E7 settles a form that has no arm as `unsupported`, warned, with `unsupported_projection`/`unsupported-requested-capability` (FR-057:264). |
-| Version impact | The operation catalog grows in place while v2 is prerelease (ADR-012:763). No contract version bump. `quire-exact` gains one operation. |
+| Version impact | The operation catalog grows in place while v2 is prerelease (ADR-012:764). No contract version bump. `quire-exact` gains one operation. |
 | Tests and evidence | Arm-level unit test per stage. The QSpec operator vector through `quire-exact`, RT and QSL. The seam probe at S2 and S3. `cargo mutants` on the C-05 map. **Proof evidence under ADR-011 §2.3 rule 8 (ADR-011:135, #245).** The proof's expectation is the QSpec operator vector or a specification model that calls no `quire-exact` operation. A CG oracle arm that calls `quire-exact` is not independent (ADR-013 O-13). The shared-helper set is computed from the build as the functions reachable from both the expectation and the function under proof, for example the kernel `Value` decode and rational normalization that the agent-ix/quire-contract-runtime#57 harness shared through `decode`. It is checked in, and #219 compares it with the computed set (ADR-011:442). For each helper in the set, a run mutation of that helper fails the proof. A check inside the claimed module is discharged only when the backend reports it proved or SUCCESS; a backend with no per-check status counts one check per proved obligation. UNREACHABLE checks, and every status other than SUCCESS, are not counted as discharged. Each run mutation is checked in as evidence (the diff, the exact command and the failing check output), and a mutant that does not fail the proof fails the gate (ADR-011:426-440). One mutation control inside the operation's module turns the gate red (ADR-011:423-442). |
 | Tickets | #213 S-1 (`quire-exact`, X-1); #214 (thin `Value` arms); #217 (function-application exemplar); agent-ix/quire-contract-runtime#53 (§2.3 gate on RT `src/exact/`); agent-ix/quire-contract-runtime#55 (T-9 agreement retarget); agent-ix/quire-contract-codegen#88 (ADR-011 T-10 harness gate, its scope amended with the §2.3 rule-8 items: claimed modules, `unreached`, the proved-or-SUCCESS discharge floor, mutation control, the shared-helper list, a failing run mutation of each shared helper, and the checked-in run-mutation evidence); agent-ix/quire-contract-codegen#89 (TK-03). |
 
@@ -147,32 +155,32 @@ Verdict: PASS.
 
 ### Scenario 2: sum type and exhaustive `case`
 
-ADR-011 §10 row 2 (ADR-011:883); ADR-012 §12.1 (ADR-012:740-774).
+ADR-011 §10 row 2 (ADR-011:883); ADR-012 §12.1 (ADR-012:741-775).
 
 | Field | Record |
 |---|---|
 | Owners | QSL `SumCase` family: `forms::sum_case`, `check::sum_case` and `value::expression::sum_case`. The kernel `ValueType` gains a sum shape (ADR-013 O-14, ADR-013:311; C-26, ADR-013:706). agent-ix/quire-specification#115 owns the spelling, FR-143 and FR-146. IR owns the v2 decode arm. CG owns the `negotiate_*` arm. RT owns the variant op. |
-| Stages | S2 builder (E2), S3 family checker with exhaustiveness as its own obligation (E3), S4 v2 variant and case nodes (E4), S6a `case` evaluation (E6), E7 only when a backend supports it. The §12.1 "Seam forced" column forces S1, S3, S4 and S6 (ADR-012:747-767). |
+| Stages | S2 builder (E2), S3 family checker with exhaustiveness as its own obligation (E3), S4 v2 variant and case nodes (E4), S6a `case` evaluation (E6), E7 only when a backend supports it. The §12.1 "Seam forced" column forces S1, S3, S4 and S6 (ADR-012:748-768). |
 | Capability | A clause containing `case` records `value-validity` (FR-057:167). The exhaustiveness obligation records no kind, because language admission discharges it (FR-057:168; ADR-012 §7.2 step 1, ADR-012:535-539). No new FR-290 kind. |
-| Failure | S3 refuses non-exhaustive, unreachable-arm and wrong-variant causes. An unproved exhaustiveness obligation refuses `undefined_expression`/`unproved-exhaustiveness` (FR-057:168). The v2 reader refuses an unknown node kind with a named code (QC-19, ADR-013:832). IR and CG arms return `unsupported` with a catalog code until the harness exists (ADR-012:764-765). |
-| Version impact | v2 node-kind set revised in place, no bump (owner ruling, ADR-012:763). The kernel `ValueType` gains one shape. |
-| Tests and evidence | The ADR-012 §12.1 test list (ADR-012:769-773): arm tests, the non-exhaustive and unreachable-arm refusals, builder order, evaluation per variant, the agent-ix/quire-specification#115 vectors, a v2 round trip and one typed `unsupported` ledger case. The seam probe at S1 to S4. The #187 landing PR changes only the paths in the §12.1 table (ADR-012:735-738). |
+| Failure | S3 refuses non-exhaustive, unreachable-arm and wrong-variant causes. An unproved exhaustiveness obligation refuses `undefined_expression`/`unproved-exhaustiveness` (FR-057:168). The v2 reader refuses an unknown node kind with a named code (QC-19, ADR-013:832). IR and CG arms return `unsupported` with a catalog code until the harness exists (ADR-012:765-766). |
+| Version impact | v2 node-kind set revised in place, no bump (owner ruling, ADR-012:764). The kernel `ValueType` gains one shape. |
+| Tests and evidence | The ADR-012 §12.1 test list (ADR-012:770-774): arm tests, the non-exhaustive and unreachable-arm refusals, builder order, evaluation per variant, the agent-ix/quire-specification#115 vectors, a v2 round trip and one typed `unsupported` ledger case. The seam probe at S1 to S4. The #187 landing PR changes only the paths in the §12.1 table, checked by the #219 and #224 gate walks until #226 lands and by #226 after that (ADR-012:735-739). |
 | Tickets | #221 (design); #187 (implementation); agent-ix/quire-specification#115; #213 S-3 (C-26); agent-ix/quire-contract-ir#141 (v2 intake); agent-ix/quire-contract-codegen#86 (`negotiate_*` arms). |
 
 Verdict: PASS.
 
 ### Scenario 3: protocol clause with a frame or scoped anchor
 
-ADR-011 §10 row 4 (ADR-011:885); ADR-012 §12.2 (ADR-012:776-806).
+ADR-011 §10 row 4 (ADR-011:885); ADR-012 §12.2 (ADR-012:777-807).
 
 | Field | Record |
 |---|---|
 | Owners | QSL `ProtocolClause` family. The canonical clause kind lives in the `check` core (ADR-013 O-10, ADR-013:241; seam S5, ADR-012:393). IR owns `ClauseKind` and frame lowering (agent-ix/quire-contract-ir#109). RT owns the observation kind (C-06, ADR-013:686). CG owns the frame harness (agent-ix/quire-contract-codegen#49). QSpec owns FR-340 and the v2 spellings. |
-| Stages | S2 `FrameForm` and `ScopedAnchorForm`; S3 builder states `Anchored` and `Framed`; S4 v2 `state`/`frame` and anchor nodes; E5 IR `ClauseKind`; E7 frame obligation, which settles `unsupported` until agent-ix/quire-contract-ir#109 lands; S6a runtime frame check. S5 is forced in QSL, IR, RT and CG, with compile-forced arms in `TemporalTrace` and `Relation` (ADR-012:786). |
-| Capability | The frame obligation records `operation-contract`, an existing kind (FR-057:170; ADR-012:793). The scoped anchor records no claim of its own. The vocabulary is unchanged, so S7 is unchanged. |
-| Failure | S3 raises FR-340 frame-target, anchor-scope and clause-order causes. S6a refuses `frame_violation`/`unauthorized-change` (catalog line 94). E7 settles `unsupported`, warned, with `unsupported_projection`/`unsupported-requested-capability` while agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 are open (ADR-012:796). C-06 maps IR → RT totally or refuses with a typed cause. Emitting through `protocol_artifact` is FB-03 (ADR-011:475). |
+| Stages | S2 `FrameForm` and `ScopedAnchorForm`; S3 builder states `Anchored` and `Framed`; S4 v2 `state`/`frame` and anchor nodes; E5 IR `ClauseKind`; E7 frame obligation, which settles `unsupported` until agent-ix/quire-contract-ir#109 lands; S6a runtime frame check. S5 is forced in QSL, IR, RT and CG, with compile-forced arms in `TemporalTrace` and `Relation` (ADR-012:787). |
+| Capability | The frame obligation records `operation-contract`, an existing kind (FR-057:170; ADR-012:794). The scoped anchor records no claim of its own. The vocabulary is unchanged, so S7 is unchanged. |
+| Failure | S3 raises FR-340 frame-target, anchor-scope and clause-order causes. S6a refuses `frame_violation`/`unauthorized-change` (catalog line 94). E7 settles `unsupported`, warned, with `unsupported_projection`/`unsupported-requested-capability` while agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 are open (ADR-012:797). C-06 maps IR → RT totally or refuses with a typed cause. Emitting through `protocol_artifact` is FB-03 (ADR-011:475). |
 | Version impact | The v2 node-kind set is revised in place. `ClauseKind` gains `Frame` and `ScopedAnchor` in QSL, IR, RT and CG. No contract version bump. |
-| Tests and evidence | The ADR-012 §12.2 test list (ADR-012:799-804), including the S5 seam probe and the `operation-contract` backend-absence corpus case. C-06 RT test over every IR kind. The #218 landing PR changes only the paths in the §12.2 table. |
+| Tests and evidence | The ADR-012 §12.2 test list (ADR-012:800-805), including the S5 seam probe and the `operation-contract` backend-absence corpus case. C-06 RT test over every IR kind. The #218 landing PR changes only the paths in the §12.2 table, checked by the #219 and #224 gate walks until #226 lands and by #226 after that. |
 | Tickets | #223 (protocol, frame and relation design); #218 (frames); agent-ix/quire-contract-ir#109; agent-ix/quire-contract-codegen#49; agent-ix/quire-contract-runtime#56 (TK-03, C-06). |
 
 Verdict: PASS.
@@ -207,7 +215,7 @@ ADR-011 §10 row 6 (ADR-011:887); ADR-012 §1.1 and §7.2 (ADR-012:167-202,
 | Capability | The item keeps its one kind. The candidate is matched on kind alone, and the mode is compared in `negotiate_*` (ADR-012:181-183). |
 | Failure | With a finite bound available: `requires-bound` (FR-057:265). With none: `unsupported`, warned, with `unsupported_projection`/`unbounded-extent` (FR-057:266). With no extent classification: `invalid-request`, `invalid_capability`/`absent-extent` (FR-057:245-246). No stage narrows the domain (C-22, C-25, ADR-013:702, 705). No stage reports `proved` for an unbounded claim. |
 | Version impact | None. A supplied bound makes a new bounded request with its own identity (ADR-012:195-197). |
-| Tests and evidence | CG `negotiate_*` tests: `requires-bound` with a bound, `unsupported` without one, `supported` only for a bounded extent (ADR-012:958). The bound round trip from IR `KaniOutcome` to the FR-331 record. The C-25 CG tests (aligned to ADR-012 §1.1 in this PR). The IR `requires-bound` row (AD-016 scenario 4). |
+| Tests and evidence | CG `negotiate_*` tests: `requires-bound` with a bound, `unsupported` without one, `supported` only for a bounded extent (ADR-012:959). The bound round trip from IR `KaniOutcome` to the FR-331 record. The C-25 CG tests (aligned to ADR-012 §1.1 in this PR). The IR `requires-bound` row (AD-016 scenario 4). |
 | Tickets | #222 (predicate); agent-ix/quire-contract-codegen#86; agent-ix/quire-contract-ir#141; #189. |
 
 Verdict: PASS. Every outcome is typed whichever way #222 decides the
@@ -234,7 +242,7 @@ Verdict: PASS, on the MD-1 ruling.
 ### Scenario 7: backend added without syntax or checking authority
 
 ADR-011 §10 row 7 (ADR-011:888), FB-05 (ADR-011:477); ADR-012 §5.2
-(ADR-012:420-432), §7 (ADR-012:485-617), §12.3 (ADR-012:808-828); ADR-013
+(ADR-012:420-432), §7 (ADR-012:485-617), §12.3 (ADR-012:809-829); ADR-013
 T-7 (ADR-013:670), C-27 to C-29 (ADR-013:707-709).
 
 | Field | Record |
@@ -242,9 +250,9 @@ T-7 (ADR-013:670), C-27 to C-29 (ADR-013:707-709).
 | Owners | The backend repository owns its FR-331 provider manifest, runner and probe. QSL `route` (#185, layer R) converts the manifest into a `BackendDescriptor` (C-28) and writes candidate sets (C-29). CG owns one backend kind variant, its `negotiate_*` arm, which settles every disposition, and its generation arm (seam S9). The orchestrating driver crate (ADR-011 T-13, implemented by #248; #225 accepts its design) builds the registry value and passes each routed `BackendId` to CG generation (ADR-011:588, 1004). |
 | Stages | No QSL S0 to S4 change. Registration enters at the `route` candidate step after S4. E7 consumes S5 IR and the candidate sets, and CG `negotiate_*` settles every item. After E7 the `route` routing step reads the FR-331 dispositions as wire and returns a `BackendId` per `supported` item (ADR-011:305-317; ADR-012:543). Replay, if any, goes through E9 and the `replay` facade. A backend depends on no QSL API other than `replay` (FB-05). |
 | Capability | The backend advertises (kind, mode) pairs from the FR-290 vocabulary. It adds no kind. |
-| Failure | Registration refuses with `invalid_capability` and one of `duplicate-backend`, `unknown-kind`, `absent-kind` or `unknown-mode` (FR-057:214-218); a duplicate `BackendId` registration is refused and the existing registration stands (ADR-012:428). A request naming an unregistered backend settles `invalid-request`, `invalid_capability`/`unknown-backend` (FR-057:239). A second registrant for the same kind makes an unnamed request settle `invalid-request`, `invalid_capability`/`ambiguous-backend` (FR-057:242; ADR-012:822-828). Tool absence at probe settles FR-331 `unsupported` with `unsupported_projection`/`tool-unavailable` (FR-057:268). A registered `BackendId` with no CG kind: the orchestrating driver's conversion before negotiation refuses the run with `invalid_capability`/`unknown-backend`, naming each unconverted `BackendId` in bytewise order, as a command-level refusal that #225 renders (ADR-012:564, MD-2 ruling). FR-290's per-item row stays as CG's guard for requests formed outside the driver. |
+| Failure | Registration refuses with `invalid_capability` and one of `duplicate-backend`, `unknown-kind`, `absent-kind` or `unknown-mode` (FR-057:214-218); a duplicate `BackendId` registration is refused and the existing registration stands (ADR-012:428). A request naming an unregistered backend settles `invalid-request`, `invalid_capability`/`unknown-backend` (FR-057:239). A second registrant for the same kind makes an unnamed request settle `invalid-request`, `invalid_capability`/`ambiguous-backend` (FR-057:242; ADR-012:823-829). Tool absence at probe settles FR-331 `unsupported` with `unsupported_projection`/`tool-unavailable` (FR-057:268). A registered `BackendId` with no CG kind: the orchestrating driver's conversion before negotiation refuses the run with `invalid_capability`/`unknown-backend`, naming each unconverted `BackendId` in bytewise order, as a command-level refusal that #225 renders (ADR-012:564, MD-2 ruling). FR-290's per-item row stays as CG's guard for requests formed outside the driver. |
 | Version impact | None in QSL. The manifest is QSpec FR-331 data. |
-| Tests and evidence | The §12.3 touch set. A metamorphic test that the checked package has the same bytes with and without the new descriptor registered. The layer check that `check` and the family modules do not depend on `route` (ADR-012:960). The FB-05 direction and API-surface checks (T-12). The #185 and #217 end-to-end disposition test in CG, over the candidate-set wire and the v2 bytes as data at the pinned QSL revision, never calling `route`; QSL tests only `route`'s candidate-set output (ADR-012:458). |
+| Tests and evidence | The §12.3 touch set. A metamorphic test that the checked package has the same bytes with and without the new descriptor registered. The layer check that `check` and the family modules do not depend on `route` (ADR-012:961). The FB-05 direction and API-surface checks (T-12): #215 ships the API-surface check as one reusable tool that scans every crate that depends on `quire-exact`, and RT and CG run it in their lint gates (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89). The #185 and #217 end-to-end disposition test in CG, over the candidate-set wire and the v2 bytes as data at the pinned QSL revision, never calling `route`; QSL tests only `route`'s candidate-set output (ADR-012:458). |
 | Tickets | #185; agent-ix/quire-contract-codegen#86; #225; #248 (T-13); #226; QSpec FR-331 (agent-ix/quire-specification#134, closed). |
 
 Verdict: PASS, on the MD-2 ruling.
@@ -267,28 +275,31 @@ Verdict: PASS, on the MD-2 ruling.
 
 SR-504 FND-008 asks for bounded slices of the two largest cross-repository
 tickets. Each slice below is sized for one to three agent sessions and is
-filed as a sub-issue of its parent.
+filed as a sub-issue of its parent: IR-141-1 to IR-141-6 are
+agent-ix/quire-contract-ir#148 to agent-ix/quire-contract-ir#153, and CG-86-1 to
+CG-86-5 are agent-ix/quire-contract-codegen#91 to
+agent-ix/quire-contract-codegen#95.
 
 ### agent-ix/quire-contract-ir#141 (v2 reader decodes closed enums once)
 
-| Slice | Scope | Waits on |
-|---|---|---|
-| IR-141-1 | Name every closed vocabulary that crosses the v2 seam, and decode each into an enum in the reader, with an exhaustive `match` and no catch-all arm (asked items 1 and 4). | — |
-| IR-141-2 | Re-measure, then move the `src/kani/provenance.rs` and `src/kani/objects.rs` `as_str()` sites (15 at filing) onto the decoded enums. | IR-141-1 |
-| IR-141-3 | Move the `src/kani/abi.rs` and `src/kani/profile.rs` `as_str()` sites (12 at filing) onto the decoded enums. | IR-141-1 |
-| IR-141-4 | The string-edge scan in the lint gate, plus a test that fails when a wire string is matched after intake (asked item 3; ADR-012 §9). | IR-141-2, IR-141-3 |
-| IR-141-5 | v2 intake of value and expression nodes (ADR-011 T-5). | IR-141-1 |
-| IR-141-6 | v2 intake of temporal nodes, and removal of the IR root → QSL edge with a `cargo tree` check over normal and dev edges (ADR-011 M-6d, FB-05). | IR-141-5 |
+| Slice | Issue | Scope | Waits on |
+|---|---|---|---|
+| IR-141-1 | agent-ix/quire-contract-ir#148 | Name every closed vocabulary that crosses the v2 seam, and decode each into an enum in the reader, with an exhaustive `match` and no catch-all arm (asked items 1 and 4). | — |
+| IR-141-2 | agent-ix/quire-contract-ir#149 | Re-measure, then move the `src/kani/provenance.rs` and `src/kani/objects.rs` `as_str()` sites (15 at filing) onto the decoded enums. | IR-141-1 |
+| IR-141-3 | agent-ix/quire-contract-ir#150 | Move the `src/kani/abi.rs` and `src/kani/profile.rs` `as_str()` sites (12 at filing) onto the decoded enums. | IR-141-1 |
+| IR-141-4 | agent-ix/quire-contract-ir#151 | The string-edge scan in the lint gate, plus a test that fails when a wire string is matched after intake (asked item 3; ADR-012 §9). | IR-141-2, IR-141-3 |
+| IR-141-5 | agent-ix/quire-contract-ir#152 | v2 intake of value and expression nodes (ADR-011 T-5). | IR-141-1 |
+| IR-141-6 | agent-ix/quire-contract-ir#153 | v2 intake of temporal nodes, and removal of the IR root → QSL edge with a `cargo tree` check over normal and dev edges (ADR-011 M-6d, FB-05). | IR-141-5 |
 
 ### agent-ix/quire-contract-codegen#86 (`negotiate_*` is the only settlement point)
 
-| Slice | Scope | Waits on |
-|---|---|---|
-| CG-86-1 | The closed backend-kind enum, `negotiate_*` with one arm per variant and no catch-all, and the test that fails when a capability settles outside a `negotiate_*` arm (asked items 1 and 5; seam S9). | agent-ix/quire-specification#134 (merged) |
-| CG-86-2 | Settlement over the #185 candidate set and the claim extent, one of the four dispositions per item; the `requires-bound` extent-against-modes test and the multi-match `invalid-request` test (asked items 2 to 4; ADR-012 §1.1). | CG-86-1 |
-| CG-86-3 | The solver-absence fault-injection test: tool missing from `PATH` and a mismatched pin, replacing the IT-010 `expect` panic (asked item 6; ADR-012 §7.4). | CG-86-1 |
-| CG-86-4 | CG S6 matches on IR's decoded tag and form enums in place of string compares, and the string-edge scan in the lint gate (asked items 7 and 8). | IR-141-1 |
-| CG-86-5 | The #185 and #217 end-to-end disposition test over the candidate-set wire and the v2 bytes as data, at the pinned QSL revision, never calling `route` (ADR-012 §5.3). | CG-86-2, #185 |
+| Slice | Issue | Scope | Waits on |
+|---|---|---|---|
+| CG-86-1 | agent-ix/quire-contract-codegen#91 | The closed backend-kind enum, `negotiate_*` with one arm per variant and no catch-all, and the test that fails when a capability settles outside a `negotiate_*` arm (asked items 1 and 5; seam S9). | agent-ix/quire-specification#134 (merged) |
+| CG-86-2 | agent-ix/quire-contract-codegen#92 | Settlement over the #185 candidate set and the claim extent, one of the four dispositions per item; the `requires-bound` extent-against-modes test and the multi-match `invalid-request` test (asked items 2 to 4; ADR-012 §1.1). | CG-86-1 |
+| CG-86-3 | agent-ix/quire-contract-codegen#93 | The solver-absence fault-injection test: tool missing from `PATH` and a mismatched pin, replacing the IT-010 `expect` panic (asked item 6; ADR-012 §7.4). | CG-86-1 |
+| CG-86-4 | agent-ix/quire-contract-codegen#94 | CG S6 matches on IR's decoded tag and form enums in place of string compares, and the string-edge scan in the lint gate (asked items 7 and 8). | IR-141-1 |
+| CG-86-5 | agent-ix/quire-contract-codegen#95 | The #185 and #217 end-to-end disposition test over the candidate-set wire and the v2 bytes as data, at the pinned QSL revision, never calling `route` (ADR-012 §5.3). | CG-86-2, #185 |
 
 ## Missing decisions
 
