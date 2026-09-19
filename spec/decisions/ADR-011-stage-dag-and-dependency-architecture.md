@@ -9,6 +9,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/IT-010
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-012
+    type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: relates_to
 ---
 # ADR-011: QSL stage DAG and crate/module dependency architecture (ARCH-10)
 
