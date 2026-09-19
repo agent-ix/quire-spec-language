@@ -155,14 +155,27 @@
 //! record reaching a type — `model-complete.md:231`) are themselves
 //! derivation facts, exactly like phase 2's qualify facts and phase 3's
 //! inherit facts, and `value-accounting.md:453` prices every derivation
-//! fact as `normalize.fact` regardless of which phase formed it (QSL #169).
-//! `apply_redefinitions` already built these facts into the view before
-//! this fix; the fix (`build`'s `phase4_facts` field, replayed by
-//! `charge_all` between `normalize.redefinition-check` and
+//! fact as `normalize.fact` regardless of which phase formed it. `build`
+//! counts them in `phase4_fact_count`; `charge_all` charges that many
+//! `normalize.fact` charges between `normalize.redefinition-check` and
 //! `normalize.conflict-check`, matching `:455`'s "before its first
-//! `normalize.fact`" and `:456`'s "after its last `normalize.fact`") only
-//! adds the missing charge — the view, and every identity it produces, is
-//! unchanged.
+//! `normalize.fact`" and `:456`'s "after its last `normalize.fact`".
+//!
+//! A phase-4 refusal (`derivation-conflict` or `redefinition-target`: an
+//! owner ancestry with no unique dominant redefiner) is never returned by
+//! `build` itself. `value-accounting.md:481` states "checking is exhaustive
+//! within a stage," so phase 4's own charges — every
+//! `normalize.redefinition-check`, every phase-4 `normalize.fact`, every
+//! `normalize.conflict-check` — must all be admitted before the refusal
+//! they expose is reported. `build` stores the first such refusal it finds
+//! in `Built::phase4_refusal` and keeps resolving every remaining type and
+//! target group, so every later phase-4 charge amount is still computed
+//! correctly; `charge_all` charges through the last
+//! `normalize.conflict-check` and returns that refusal only once every
+//! phase-4 charge has been admitted. An earlier `Incomplete` still wins,
+//! matching `:482`'s "a stage that reports a refusal ends checking: no
+//! later stage runs or charges" — phase 5's own `normalize.declaration`/
+//! `normalize.hash` charges never run once this refusal is pending.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
@@ -664,30 +677,26 @@ struct Built {
     /// type reaching it) pair; replayed by
     /// `charge_all`.
     redefinition_check_work: Vec<u64>,
-    /// Every phase-4 redefine fact (`RULE_REDEFINE`) awaiting its own
-    /// `normalize.fact` charge (QSL #169): `quire.model.normalize.redefine/v1`
+    /// The count of phase-4 redefine facts (`RULE_REDEFINE`) awaiting their
+    /// own `normalize.fact` charge: `quire.model.normalize.redefine/v1`
     /// derives "one fact on (T, redefining feature) and one on (T, redefined
     /// feature)" per redefinition record reaching `T`
     /// (`model-complete.md:231`), for every record reaching `T`, contested
-    /// or not — `apply_redefinitions` already builds these two
-    /// [`Fact`]s into the redefining and target members' own
-    /// [`EffectiveDeclarationPreimage`] (the view is unchanged by this
-    /// field); this is that same pair, tagged for the *charge* replay
-    /// `phase2_facts`/`phase3_facts` already get. `value-accounting.md:453`
-    /// orders every derivation fact "phase 2, then phase 3, then phase 4,
-    /// each ascending by (owner producer key, declaration producer key,
-    /// inputs)" — the identical `sort_facts` ordering `phase2_facts`/
-    /// `phase3_facts` already replay under, reused verbatim rather than a
-    /// second sort rule. `charge_all` charges these between
-    /// `redefinition_check_work` and `conflict_check_work`.
-    /// `value-accounting.md:455` puts `normalize.redefinition-check`
-    /// "before its first `normalize.fact`" and `:456` puts
-    /// `normalize.conflict-check` "after its last `normalize.fact`" — so
-    /// this field's charges belong strictly between the other two, never
-    /// interleaved with them. Empty whenever phase 4's own resolution loop
-    /// did not run at all (a phase-2/3 fact budget already exhausted; see
-    /// the module docs), exactly like `conflict_check_work` in that case.
-    phase4_facts: Vec<PendingFact>,
+    /// or not — `apply_redefinitions` builds these two [`Fact`]s directly
+    /// into the redefining and target members' own
+    /// [`EffectiveDeclarationPreimage`]; this is only their count, charged
+    /// as that many `normalize.fact` charges (order is never observable —
+    /// each carries `LimitKind::DerivationFacts`'s own running total, not
+    /// per-fact data — so no per-fact record or sort is kept here).
+    /// `charge_all` charges these between `redefinition_check_work` and
+    /// `conflict_check_work`: `value-accounting.md:455` puts
+    /// `normalize.redefinition-check` "before its first `normalize.fact`"
+    /// and `:456` puts `normalize.conflict-check` "after its last
+    /// `normalize.fact`", so this field's charges belong strictly between
+    /// the other two. Zero whenever phase 4's own resolution loop did not
+    /// run at all (a phase-2/3 fact budget already exhausted; see the
+    /// module docs), exactly like `conflict_check_work` in that case.
+    phase4_fact_count: u64,
     /// Every phase-4 `normalize.conflict-check` charge's own exact
     /// `work_units` amount (`Σ (c − 1) × f(o)`, `value-accounting.md:456`),
     /// one entry per (effective type, redefined member) group with `c >= 2`
@@ -695,6 +704,13 @@ struct Built {
     /// redefiner needs no entry at all (`value-accounting.md:456`'s own
     /// `c >= 2` condition); replayed by `charge_all`.
     conflict_check_work: Vec<u64>,
+    /// The first `derivation-conflict`/`redefinition-target` refusal phase
+    /// 4 finds, held here rather than returned by `build` (see the module
+    /// docs): `apply_redefinitions` keeps resolving every remaining type
+    /// and target group after finding it, so every later phase-4 charge
+    /// amount above is still computed correctly, and `charge_all` reports
+    /// this refusal only once every phase-4 charge is admitted.
+    phase4_refusal: Option<ModelRefusal>,
 }
 
 /// Refuses a [`BundleRecord`] that names a type key absent from the bundle's
@@ -1142,12 +1158,14 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
     }
 
     let mut conflict_check_work: Vec<u64> = Vec::new();
-    let mut phase4_facts: Vec<PendingFact> = Vec::new();
+    let mut phase4_fact_count: u64 = 0;
+    let mut phase4_refusal: Option<ModelRefusal> = None;
     let mut accounting = Phase4Accounting {
         type_fact_counts: &type_fact_counts,
         owner_ancestor_sets: &owner_ancestor_sets,
         conflict_check_work: &mut conflict_check_work,
-        phase4_facts: &mut phase4_facts,
+        phase4_fact_count: &mut phase4_fact_count,
+        refusal: &mut phase4_refusal,
     };
     // A truncated phase-3 path set (a tight fact budget already exceeded by
     // the time every type's own phase 2/3 above has run) cannot resolve
@@ -1233,8 +1251,9 @@ fn build(bundle: &Bundle, limits: &ModelNormalizationLimits) -> Result<Built, Mo
         view,
         universe,
         redefinition_check_work,
-        phase4_facts,
+        phase4_fact_count,
         conflict_check_work,
+        phase4_refusal,
     })
 }
 
@@ -1251,11 +1270,11 @@ struct RedefinitionEdge {
 
 /// Every cross-type input and output `apply_redefinitions` needs beyond its
 /// own `type_key`'s local bookkeeping, grouped into one `&mut` borrow
-/// (rather than four separate parameters) so the function stays within
+/// (rather than five separate parameters) so the function stays within
 /// clippy's `too_many_arguments` ceiling. `type_fact_counts`/
 /// `owner_ancestor_sets` are build-wide, read-only lookups (`f(o)`,
 /// `value-accounting.md:456`, and each owner's own proper-ancestor set);
-/// `conflict_check_work` and `phase4_facts` (QSL #169) are build-wide
+/// `conflict_check_work`, `phase4_fact_count` and `refusal` are build-wide
 /// accumulators mutated across every `type_key`'s own call.
 /// `normalize.redefinition-check`'s own charge sequence — and the `m` it
 /// needs — is not built here at all: `build` computes it once, bundle-wide,
@@ -1264,12 +1283,18 @@ struct Phase4Accounting<'a> {
     type_fact_counts: &'a HashMap<ProducerKey, u64>,
     owner_ancestor_sets: &'a HashMap<ProducerKey, HashSet<ProducerKey>>,
     conflict_check_work: &'a mut Vec<u64>,
-    /// Every phase-4 redefine fact awaiting its own `normalize.fact` charge
-    /// (see [`Built::phase4_facts`]'s own doc) — field redefinition only,
-    /// exactly like `member_preimages`/`hidden`: an operation-member
-    /// redefinition edge never reaches [`Fact`] construction here at all
-    /// (see the module docs), so it contributes nothing to this list.
-    phase4_facts: &'a mut Vec<PendingFact>,
+    /// The running count of phase-4 redefine facts awaiting their own
+    /// `normalize.fact` charge (see [`Built::phase4_fact_count`]'s own
+    /// doc) — field redefinition only, exactly like `member_preimages`/
+    /// `hidden`: an operation-member redefinition edge never reaches
+    /// [`Fact`] construction here at all (see the module docs), so it
+    /// contributes nothing to this count.
+    phase4_fact_count: &'a mut u64,
+    /// The first `derivation-conflict`/`redefinition-target` refusal found
+    /// so far across every `type_key` this pass has resolved (see
+    /// [`Built::phase4_refusal`]'s own doc) — set at most once; a later
+    /// group's own ambiguity is not recorded once this is already `Some`.
+    refusal: &'a mut Option<ModelRefusal>,
 }
 
 /// Phase 4 (TC-195 N06): field redefinition only — operation-member
@@ -1398,7 +1423,17 @@ fn apply_redefinitions(
                 .then_with(|| a.record_key.cmp(&b.record_key))
         });
 
-        let winner_index = if edges.len() < 2 {
+        // `Option<usize>`, not a bare `usize`: an ambiguous group (no edge
+        // dominates every other) has no winner at all, but still owes every
+        // charge below and still derives both facts per edge
+        // (`model-complete.md:231`) -- the ambiguity is reported as a
+        // refusal (`accounting.refusal`, below) once phase 4's own charges
+        // finish, per `value-accounting.md:481`'s "checking is exhaustive
+        // within a stage" (see the module docs), not by aborting this
+        // function early. `None` hides every edge and the target itself:
+        // harmless, since a build that ever sets `accounting.refusal`
+        // never returns `Completed` (see `charge_all`).
+        let winner_index: Option<usize> = if edges.len() < 2 {
             // A single redefiner has nothing to dominate: no ancestor
             // closure is computed at all, and no `normalize.conflict-check`
             // charge either (`value-accounting.md:456`'s own `c >= 2`
@@ -1406,7 +1441,7 @@ fn apply_redefinitions(
             // `edges.len()` is what made a wide
             // (128+ direct generalizations) but uncontested bundle wrongly
             // refuse `conformance-depth`.
-            0
+            Some(0)
         } else {
             let c = length_amount(edges.len());
 
@@ -1465,7 +1500,7 @@ fn apply_redefinitions(
                 }
             }
 
-            let Some(winner_index) = winner else {
+            if winner.is_none() && accounting.refusal.is_none() {
                 // TC-196 R07's second shape: among the undominated edges, the
                 // most-derived owners (those no *other* edge's owner properly
                 // descends from) are all the identical owner — contending
@@ -1487,6 +1522,12 @@ fn apply_redefinitions(
                 // causes: this one refuses `redefinition-target`, naming every
                 // redefining member's own declaration key (never its
                 // redefinition record's key) and the one contended target.
+                //
+                // Recorded in `accounting.refusal` rather than returned here
+                // (see the module docs and `winner_index`'s own comment
+                // above): only the *first* ambiguity found is kept, so this
+                // whole branch is skipped once `accounting.refusal` is
+                // already `Some`.
                 let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
                 for edge in &edges {
                     let mut dominated_by_another = false;
@@ -1511,13 +1552,13 @@ fn apply_redefinitions(
                     && most_derived
                         .iter()
                         .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
-                if same_owner {
+                *accounting.refusal = Some(if same_owner {
                     let mut redefiners: Vec<String> = most_derived
                         .iter()
                         .map(|edge| edge.redefining.identity.clone())
                         .collect();
                     redefiners.sort();
-                    return Err(ModelRefusal {
+                    ModelRefusal {
                         code: Code::InvalidModelBinding,
                         cause: ModelRefusalCause::RedefinitionTarget,
                         detail: format!(
@@ -1527,36 +1568,36 @@ fn apply_redefinitions(
                             redefiners.join(", "),
                             target_key.identity
                         ),
-                    });
-                }
-
-                let edge_paths: Vec<String> = edges
-                    .iter()
-                    .map(|edge| {
-                        let mut path: Vec<String> =
-                            edge.path.iter().map(|key| key.identity.clone()).collect();
-                        path.push(edge.record_key.identity.clone());
-                        path.push(target_key.identity.clone());
-                        format!("[{}]", path.join(", "))
-                    })
-                    .collect();
-                return Err(ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::DerivationConflict {
-                        type_: type_key.clone(),
-                        member: target_key.clone(),
-                        redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
-                    },
-                    detail: format!(
-                        "type {} has {} undominated redefinitions of {}: {}",
-                        type_key.identity,
-                        edges.len(),
-                        target_key.identity,
-                        edge_paths.join(" and ")
-                    ),
+                    }
+                } else {
+                    let edge_paths: Vec<String> = edges
+                        .iter()
+                        .map(|edge| {
+                            let mut path: Vec<String> =
+                                edge.path.iter().map(|key| key.identity.clone()).collect();
+                            path.push(edge.record_key.identity.clone());
+                            path.push(target_key.identity.clone());
+                            format!("[{}]", path.join(", "))
+                        })
+                        .collect();
+                    ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: type_key.clone(),
+                            member: target_key.clone(),
+                            redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                        },
+                        detail: format!(
+                            "type {} has {} undominated redefinitions of {}: {}",
+                            type_key.identity,
+                            edges.len(),
+                            target_key.identity,
+                            edge_paths.join(" and ")
+                        ),
+                    }
                 });
-            };
-            winner_index
+            }
+            winner
         };
 
         let member_key = (type_key.clone(), target_key.clone());
@@ -1599,17 +1640,13 @@ fn apply_redefinitions(
                 rule: RULE_REDEFINE,
                 inputs: inputs.clone(),
             });
-            // QSL #169: the redefining feature's own fact, awaiting its
-            // `normalize.fact` charge alongside phase 2/3's (`Built::phase4_facts`'s
-            // own doc; `model-complete.md:231`'s "one fact on (T, redefining
+            // The redefining feature's own fact, awaiting its
+            // `normalize.fact` charge alongside phase 2/3's
+            // (`Built::phase4_fact_count`'s own doc;
+            // `model-complete.md:231`'s "one fact on (T, redefining
             // feature)").
-            accounting.phase4_facts.push(PendingFact {
-                owner_key: Some(type_key.clone()),
-                declared_key: edge.redefining.clone(),
-                inputs: inputs.clone(),
-                cycle_check_len: None,
-            });
-            if i != winner_index {
+            *accounting.phase4_fact_count += 1;
+            if winner_index != Some(i) {
                 hidden.insert(redefining_key);
             }
 
@@ -1620,19 +1657,14 @@ fn apply_redefinitions(
             target_entry.derivation.push(Fact {
                 ordinal,
                 rule: RULE_REDEFINE,
-                inputs: inputs.clone(),
+                inputs,
             });
-            // QSL #169: the redefined (target) feature's own fact —
+            // The redefined (target) feature's own fact —
             // `model-complete.md:231`'s "one ... on (T, redefined feature)"
             // — one entry per redefinition record reaching this target, not
-            // one per target: a `c >= 2` group appends one here for every
+            // one per target: a `c >= 2` group counts one here for every
             // contesting edge.
-            accounting.phase4_facts.push(PendingFact {
-                owner_key: Some(type_key.clone()),
-                declared_key: target_key.clone(),
-                inputs,
-                cycle_check_len: None,
-            });
+            *accounting.phase4_fact_count += 1;
         }
         hidden.insert(member_key);
     }
@@ -1716,7 +1748,23 @@ fn sort_facts(facts: &mut [PendingFact]) {
 
 /// Pass two: replay the exact `ModelNormalizationLimitsV1` charge sequence
 /// over an already-built [`Built`] result.
-fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), Incomplete> {
+/// `charge_all`'s own denial: an ordinary metered [`Incomplete`], or
+/// `built`'s own [`Built::phase4_refusal`] reported once every phase-4
+/// charge (through the last `normalize.conflict-check`) is admitted (see the
+/// module docs). `From<Incomplete>` lets `meter.charge(...)?` keep working
+/// unchanged throughout `charge_all`.
+enum ChargeAllDenial {
+    Incomplete(Incomplete),
+    Refused(ModelRefusal),
+}
+
+impl From<Incomplete> for ChargeAllDenial {
+    fn from(incomplete: Incomplete) -> Self {
+        ChargeAllDenial::Incomplete(incomplete)
+    }
+}
+
+fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), ChargeAllDenial> {
     // #141 F11: only the running position (`index + 1`) is charged, never a
     // key's value or its relative order, so collecting and sorting a
     // `Vec<ProducerKey>` just to throw the order away was dead work.
@@ -1755,18 +1803,17 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
         meter.charge(Charge::new(ChargePoint::NormalizeRedefinitionCheck).work(*work))?;
     }
 
-    // QSL #169: phase-4 redefine facts are derivation facts too
+    // Phase-4 redefine facts are derivation facts too
     // (`value-accounting.md:453`) and are charged as `normalize.fact` here,
     // continuing the same `fact_count`/`derivation_facts` sequence phase
     // 2/3 already ran -- strictly between `normalize.redefinition-check`
     // ("before its first `normalize.fact`", `:455`) and
     // `normalize.conflict-check` ("after its last `normalize.fact`",
-    // `:456`). See `Built::phase4_facts`'s own doc for why these carry no
-    // `normalize.cycle-check` (that charge is phase-3 type-level facts
-    // only).
-    let mut phase4_owned: Vec<PendingFact> = built.phase4_facts.clone();
-    sort_facts(&mut phase4_owned);
-    for _fact in &phase4_owned {
+    // `:456`). See `Built::phase4_fact_count`'s own doc for why these carry
+    // no `normalize.cycle-check` (that charge is phase-3 type-level facts
+    // only) and no per-fact record (order is never observable, only the
+    // running `derivation_facts` total).
+    for _ in 0..built.phase4_fact_count {
         fact_count += 1;
         meter.charge(
             Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
@@ -1775,6 +1822,18 @@ fn charge_all(bundle: &Bundle, built: &Built, meter: &mut Meter) -> Result<(), I
 
     for work in &built.conflict_check_work {
         meter.charge(Charge::new(ChargePoint::NormalizeConflictCheck).work(*work))?;
+    }
+
+    // `value-accounting.md:481`'s "checking is exhaustive within a stage":
+    // every phase-4 charge above (`normalize.redefinition-check`, every
+    // phase-4 `normalize.fact`, every `normalize.conflict-check`) is
+    // admitted before `built.phase4_refusal` (see the module docs) is
+    // reported -- an earlier `Incomplete` already returned via `?` above
+    // wins instead. `:482`'s "a stage that reports a refusal ends checking:
+    // no later stage runs or charges" -- phase 5's own charges below never
+    // run once this refusal is reported.
+    if let Some(refusal) = &built.phase4_refusal {
+        return Err(ChargeAllDenial::Refused(refusal.clone()));
     }
 
     let mut decl_count: u64 = 0;
@@ -2018,14 +2077,22 @@ pub fn normalize_with_meter(
     };
     let outcome = match charge_all(bundle, &built, &mut meter) {
         Ok(()) => NormalizeOutcome::Completed(built.view),
-        Err(incomplete) => NormalizeOutcome::Incomplete(incomplete),
+        Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
+        Err(ChargeAllDenial::Refused(refusal)) => NormalizeOutcome::Refused(refusal),
     };
     (outcome, meter)
 }
 
 /// The object universe `bundle` normalizes to, independent of `charge_all`'s
 /// bookkeeping (test and caller convenience; recomputes via [`build`], under
-/// [`ModelNormalizationLimits::UNLIMITED`]).
+/// [`ModelNormalizationLimits::UNLIMITED`]). Under `UNLIMITED` nothing ever
+/// runs out, so `build`'s own deferred `Built::phase4_refusal` (see the
+/// module docs) is surfaced here directly rather than replayed through
+/// `charge_all`.
 pub fn object_universe(bundle: &Bundle) -> Result<ObjectUniverse, ModelRefusal> {
-    build(bundle, &ModelNormalizationLimits::UNLIMITED).map(|built| built.universe)
+    let built = build(bundle, &ModelNormalizationLimits::UNLIMITED)?;
+    if let Some(refusal) = built.phase4_refusal {
+        return Err(refusal);
+    }
+    Ok(built.universe)
 }
