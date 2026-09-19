@@ -1098,3 +1098,74 @@ fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive()
         }
     }
 }
+
+/// QSL #171: `check_operation_redefinition`'s effect axis must walk a
+/// field's *full* redefinition chain, not just one hop, exactly like
+/// `redefinition_reaches` already does for the runtime frame check (QSL
+/// #168, `field_write_covered`). Types `A <- B <- C`; `model.B.x` redefines
+/// `model.A.x`, `model.C.x` redefines `model.B.x` -- per model-complete.md:56
+/// ("the redefining feature replaces the *one* inherited redefined
+/// feature"), there is no direct `model.C.x -> model.A.x` record, only the
+/// two-hop chain. `model.A.op` declares `fieldWrites: [model.A.x]`;
+/// `model.C.op` redefines it with `fieldWrites: [model.C.x]`. `model.C.x`
+/// reaches the `model.A.x` grant only through both hops, so this must admit
+/// `Compatible`, not refuse `EffectEscape`.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefinition_chain() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.redef.chain.op"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
+            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
+            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            operation(
+                "model.C.op",
+                "model.C",
+                vec![],
+                None,
+                vec!["model.C.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            redefinition(
+                "model.redef.C.op-A.op",
+                "model.C",
+                "model.C.op",
+                "model.A.op",
+            ),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.C.op-A.op"),
+        owner: ProducerKey::fixture("model.C"),
+        redefining: ProducerKey::fixture("model.C.op"),
+        redefined: ProducerKey::fixture("model.A.op"),
+    };
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    match check_operation_redefinition(&bundle, &record, &mut meter) {
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
+        other => panic!(
+            "expected Compatible -- model.C.x reaches the declared model.A.x grant through the \
+             two-hop chain model.C.x -> model.B.x -> model.A.x, got {other:?}"
+        ),
+    }
+}
