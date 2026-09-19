@@ -76,6 +76,52 @@ pub enum Accumulation {
     Reduce,
 }
 
+/// The clause a checked declaration is. FR-151's dispatch-call restriction
+/// (`quire.model.dispatch.single/v1`) gates a dispatched
+/// `receiver.member(args)` call on this context, not on syntax alone: it
+/// checks inside an invariant, precondition or postcondition, and is refused
+/// `ill_typed`/`operator-ineligible` inside a function or operation body
+/// (TC-196 D07).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ClauseKind {
+    /// A model invariant clause.
+    Invariant,
+    /// An operation's precondition clause.
+    Precondition,
+    /// An operation's postcondition clause.
+    Postcondition,
+    /// A function body, an operation body, or a `decreases` measure.
+    Body,
+}
+
+/// The [`ClauseKind`] a [`FunctionDeclaration::clause`] entry may declare.
+/// [`ClauseKind::Postcondition`] has no variant here: `pre(...)` legality
+/// belongs to `CheckedPackage::check_postcondition_expression`'s own
+/// `pre_anchor`/population wiring, which no `PackageDeclarations::functions`
+/// entry ever has, so the type itself rules the case out instead of a
+/// runtime check on an otherwise-valid `ClauseKind` value.
+///
+/// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DeclaredClauseKind {
+    /// A model invariant clause.
+    Invariant,
+    /// An operation's precondition clause.
+    Precondition,
+    /// A function body, an operation body, or a `decreases` measure.
+    Body,
+}
+
+impl From<DeclaredClauseKind> for ClauseKind {
+    fn from(kind: DeclaredClauseKind) -> Self {
+        match kind {
+            DeclaredClauseKind::Invariant => Self::Invariant,
+            DeclaredClauseKind::Precondition => Self::Precondition,
+            DeclaredClauseKind::Body => Self::Body,
+        }
+    }
+}
+
 /// One value expression.
 #[derive(Clone, Debug)]
 pub enum Expression {
@@ -243,6 +289,20 @@ pub enum Expression {
         /// The absence mode `m`.
         absence: AbsenceMode,
     },
+    /// `receiver.member(args)` (FR-151): a dispatched call, resolved at
+    /// check time to the receiver's static type's exposed effective
+    /// operation, and at link time to the receiver's most-specific runtime
+    /// type. Only checks inside an invariant, precondition or postcondition
+    /// clause (TC-196 D07); a call in a function or operation body is
+    /// `ill_typed`/`operator-ineligible`.
+    Dispatch {
+        /// `self`, a `deref(...)` result, or another `Reference<T>` value.
+        receiver: Box<Expression>,
+        /// The unqualified member name.
+        member: String,
+        /// Arguments in source order.
+        arguments: Vec<Expression>,
+    },
     /// `pre(e)` (FR-153): `e`, evaluated with every `allInstances`/`lookup`
     /// underneath it reading its population operand's invocation pre state
     /// instead of the ambient post state. A caller-side anchor operation,
@@ -306,12 +366,38 @@ impl Expression {
                 reference,
                 ..
             } => vec![population, reference],
+            Self::Dispatch {
+                receiver,
+                arguments,
+                ..
+            } => {
+                let mut children: Vec<&Expression> = vec![receiver];
+                children.extend(arguments);
+                children
+            }
         }
     }
 }
 
 /// `function name using V(parameters): result pure [decreases(measure)] {
 /// body }`.
+///
+/// Also used for a checked FR-151 dispatch candidate's own body or effective
+/// precondition, so both share the FR-146 call-graph and termination
+/// machinery: [`clause_kind`](Self::clause) then reads
+/// [`ClauseKind::Precondition`] instead of the default
+/// [`ClauseKind::Body`], since a dispatched call is admitted inside a
+/// precondition but not inside an operation body (TC-196 D06/D07/D08).
+///
+/// `clause_kind` and `callable_by_name` are crate-private: neither is a bare
+/// mutable field a caller can set independently of the other, and a
+/// synthesized FR-151 dispatch candidate body or precondition clause is
+/// never itself reachable through an ordinary named [`Expression::Call`]
+/// (TC-196 D07's own restriction would otherwise be reachable by calling a
+/// candidate directly instead of dispatching to it). Build one with
+/// [`Self::new`] (an ordinary named function, name-callable) or
+/// [`Self::clause`] (an invariant/precondition/postcondition clause, or a
+/// crate-internal synthesized dispatch candidate, never name-callable).
 #[derive(Clone, Debug)]
 pub struct FunctionDeclaration {
     /// The declared name.
@@ -324,4 +410,70 @@ pub struct FunctionDeclaration {
     pub measure: Option<Expression>,
     /// The body.
     pub body: Expression,
+    /// The clause this declaration's body is checked as. Every ordinary
+    /// named function is [`ClauseKind::Body`].
+    pub(crate) clause_kind: ClauseKind,
+    /// Whether an ordinary named [`Expression::Call`] elsewhere in the same
+    /// package may resolve to this declaration. `false` for every
+    /// crate-internal FR-151 synthesized function (TC-196 D07's bypass:
+    /// closing the clause-kind restriction off syntax alone still leaves a
+    /// candidate's body or precondition callable by plain name unless this
+    /// is also `false`).
+    pub(crate) callable_by_name: bool,
+}
+
+impl FunctionDeclaration {
+    /// An ordinary named function: a real, name-callable declaration checked
+    /// as [`ClauseKind::Body`].
+    pub fn new(
+        name: impl Into<String>,
+        parameters: Vec<(String, ValueType)>,
+        result: ValueType,
+        measure: Option<Expression>,
+        body: Expression,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            parameters,
+            result,
+            measure,
+            body,
+            clause_kind: ClauseKind::Body,
+            callable_by_name: true,
+        }
+    }
+
+    /// A declaration checked as `clause_kind`, never reachable through an
+    /// ordinary named [`Expression::Call`]: an invariant or precondition
+    /// clause, or (crate-internal) a synthesized FR-151 dispatch candidate
+    /// body or effective precondition. `clause_kind` is
+    /// [`DeclaredClauseKind`], not [`ClauseKind`]: admitting
+    /// `ClauseKind::Postcondition` here would let any caller assembling a
+    /// package hand an ordinary function `pre(...)` legality it never
+    /// earned — `pre(...)` is legal only behind a real postcondition's own
+    /// `pre_anchor`/population wiring
+    /// ([`CheckedPackage::check_postcondition_expression`], a standalone
+    /// expression check outside `PackageDeclarations::functions` entirely),
+    /// which no package function has — so `DeclaredClauseKind` leaves that
+    /// case unrepresentable rather than accepting it and refusing later.
+    ///
+    /// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
+    pub fn clause(
+        name: impl Into<String>,
+        parameters: Vec<(String, ValueType)>,
+        result: ValueType,
+        measure: Option<Expression>,
+        body: Expression,
+        clause_kind: DeclaredClauseKind,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            parameters,
+            result,
+            measure,
+            body,
+            clause_kind: clause_kind.into(),
+            callable_by_name: false,
+        }
+    }
 }
