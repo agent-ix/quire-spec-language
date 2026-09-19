@@ -91,7 +91,7 @@ use crate::model::accounting::Meter;
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, RedefinitionRecord};
+use crate::model::domain_package::{DomainPackage, DomainPackageRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{
@@ -263,14 +263,13 @@ fn declaration_order(domain_package: &DomainPackage) -> BTreeMap<DeclarationKey,
 }
 
 /// `candidate` together with every operation reaching it by any chain of
-/// [`RedefinitionRecord`]s, however many parents each step has (every
-/// matching record, not `.find()`'s first match alone): the
+/// members' own inline `redefines` property (`model-complete.md`:162): the
 /// full static FR-146 reachability set [`ancestor_closure`] needs for
 /// [`DispatchCandidate::precondition_clauses`]. Bounded breadth-first walk
 /// over an explicit queue, never native recursion; refuses at the depth
 /// bound instead of silently truncating the closure.
 fn ancestor_closure(
-    redefinitions: &[RedefinitionRecord],
+    redefinition_parents: &BTreeMap<DeclarationKey, DeclarationKey>,
     candidate: &DeclarationKey,
 ) -> Result<BTreeSet<DeclarationKey>, DispatchBridgeRefusal> {
     let mut closure = BTreeSet::new();
@@ -288,11 +287,8 @@ fn ancestor_closure(
         if depth > MAX_ANCESTOR_DEPTH {
             return Err(depth_exceeded(candidate));
         }
-        for redefinition in redefinitions
-            .iter()
-            .filter(|redefinition| redefinition.redefining == current)
-        {
-            pending.push_back((redefinition.redefined.clone(), depth + 1));
+        if let Some(parent) = redefinition_parents.get(&current) {
+            pending.push_back((parent.clone(), depth + 1));
         }
     }
     Ok(closure)
@@ -320,7 +316,7 @@ fn ancestor_closure(
 fn effective_terms(
     candidate: &DeclarationKey,
     clauses: &OperationClauses,
-    redefinitions: &[RedefinitionRecord],
+    redefinition_parents: &BTreeMap<DeclarationKey, DeclarationKey>,
     memo: &mut BTreeMap<DeclarationKey, Option<Vec<Expression>>>,
     depth: usize,
 ) -> Result<Option<Vec<Expression>>, DispatchBridgeRefusal> {
@@ -336,12 +332,8 @@ fn effective_terms(
     };
     let (candidate_parameters, _) = require_signature(clauses, candidate)?;
     let mut terms = vec![own_expression];
-    for redefinition in redefinitions
-        .iter()
-        .filter(|redefinition| &redefinition.redefining == candidate)
-    {
-        let parent = &redefinition.redefined;
-        match effective_terms(parent, clauses, redefinitions, memo, depth + 1)? {
+    if let Some(parent) = redefinition_parents.get(candidate) {
+        match effective_terms(parent, clauses, redefinition_parents, memo, depth + 1)? {
             None => {
                 memo.insert(candidate.clone(), None);
                 return Ok(None);
@@ -672,11 +664,14 @@ pub fn checked_dispatch_operation(
         other => return Err(DispatchBridgeRefusal::Unlinked(Box::new(other))),
     };
 
-    let redefinitions: Vec<RedefinitionRecord> = domain_package
+    let redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            DomainPackageRecord::Redefinition(redefinition) => Some(redefinition.clone()),
+            DomainPackageRecord::OperationMember(operation) => operation
+                .redefines
+                .clone()
+                .map(|redefined| (operation.key.clone(), redefined)),
             _ => None,
         })
         .collect();
@@ -860,7 +855,6 @@ mod tests {
         ancestor_closure, effective_terms, DispatchBridgeRefusal, OperationClauses,
         MAX_ANCESTOR_DEPTH,
     };
-    use crate::model::domain_package::RedefinitionRecord;
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
     use crate::value::{Expression, ValueType};
@@ -877,13 +871,8 @@ mod tests {
         let keys: Vec<DeclarationKey> = (0..=chain_length)
             .map(|index| DeclarationKey::fixture(format!("model.chain.op{index}")))
             .collect();
-        let redefinitions: Vec<RedefinitionRecord> = (1..keys.len())
-            .map(|index| RedefinitionRecord {
-                key: DeclarationKey::fixture(format!("model.chain.redef{index}")),
-                owner: keys[index].clone(),
-                redefining: keys[index].clone(),
-                redefined: keys[index - 1].clone(),
-            })
+        let redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = (1..keys.len())
+            .map(|index| (keys[index].clone(), keys[index - 1].clone()))
             .collect();
         let deepest = keys.last().unwrap();
 
@@ -908,55 +897,14 @@ mod tests {
         let shallow_keys: Vec<DeclarationKey> = (0..=shallow_chain)
             .map(|index| DeclarationKey::fixture(format!("model.shallow-chain.op{index}")))
             .collect();
-        let shallow_redefinitions: Vec<RedefinitionRecord> = (1..shallow_keys.len())
-            .map(|index| RedefinitionRecord {
-                key: DeclarationKey::fixture(format!("model.shallow-chain.redef{index}")),
-                owner: shallow_keys[index].clone(),
-                redefining: shallow_keys[index].clone(),
-                redefined: shallow_keys[index - 1].clone(),
-            })
+        let shallow_redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = (1..shallow_keys
+            .len())
+            .map(|index| (shallow_keys[index].clone(), shallow_keys[index - 1].clone()))
             .collect();
         let shallow_deepest = shallow_keys.last().unwrap();
         let closure = ancestor_closure(&shallow_redefinitions, shallow_deepest)
             .expect("a chain exactly at MAX_ANCESTOR_DEPTH must not be refused");
         assert_eq!(closure.len(), shallow_keys.len());
-    }
-
-    /// `ancestor_closure` tracks `depth` per queue entry (this
-    /// redefinition-chain step's own distance from `candidate`), not a
-    /// running count of every node the whole walk has visited: a candidate
-    /// with more direct parents than [`MAX_ANCESTOR_DEPTH`] — every one of
-    /// them one step away, none of them chained — must not be refused just
-    /// because the total node count crosses the bound. Reverting `depth` to
-    /// a shared visited-node counter would still pass
-    /// `ancestor_closure_refuses_past_the_depth_bound_instead_of_truncating`
-    /// (a straight chain visits exactly one node per depth step, so the two
-    /// metrics coincide there); this fan-out shape is the one that tells
-    /// them apart.
-    #[test]
-    fn ancestor_closure_does_not_refuse_a_wide_family_with_many_direct_parents() {
-        let candidate = DeclarationKey::fixture("model.fanout.candidate");
-        let parent_count = MAX_ANCESTOR_DEPTH + 2;
-        let parents: Vec<DeclarationKey> = (0..parent_count)
-            .map(|index| DeclarationKey::fixture(format!("model.fanout.parent{index}")))
-            .collect();
-        let redefinitions: Vec<RedefinitionRecord> = parents
-            .iter()
-            .map(|parent| RedefinitionRecord {
-                key: DeclarationKey::fixture(format!("model.fanout.redef-{}", parent.node)),
-                owner: candidate.clone(),
-                redefining: candidate.clone(),
-                redefined: parent.clone(),
-            })
-            .collect();
-
-        let closure = ancestor_closure(&redefinitions, &candidate).unwrap_or_else(|refusal| {
-            panic!(
-                "a one-hop walk to {parent_count} direct parents must not exhaust the \
-                 depth bound just because the total node count exceeds it, got {refusal:?}"
-            )
-        });
-        assert_eq!(closure.len(), parent_count + 1);
     }
 
     /// A family with more precondition-bearing members than
@@ -986,7 +934,7 @@ mod tests {
         let children: Vec<DeclarationKey> = (0..child_count)
             .map(|index| DeclarationKey::fixture(format!("model.wide.child{index}")))
             .collect();
-        let mut redefinitions = Vec::with_capacity(child_count);
+        let mut redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = BTreeMap::new();
         for child in &children {
             clauses
                 .parameters
@@ -995,12 +943,7 @@ mod tests {
             clauses
                 .own_precondition
                 .insert(child.clone(), Expression::Boolean(true));
-            redefinitions.push(RedefinitionRecord {
-                key: DeclarationKey::fixture(format!("model.wide.redef-{}", child.node)),
-                owner: child.clone(),
-                redefining: child.clone(),
-                redefined: root.clone(),
-            });
+            redefinitions.insert(child.clone(), root.clone());
         }
 
         let mut memo = BTreeMap::new();

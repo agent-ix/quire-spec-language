@@ -20,7 +20,7 @@ use quire_spec_language::model::checked_dispatch::{
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+    OperationMemberRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
@@ -1196,37 +1196,24 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
 
 // --- Bridge integration: crate::model::checked_dispatch -------------------
 
-fn object_type_record(identity: &str) -> DomainPackageRecord {
+fn object_type_record(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
         abstract_type: false,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
-fn supertype_record(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
-}
-
-fn redefinition_record(
+fn operation_record(
     identity: &str,
     owner: &str,
-    redefining: &str,
-    redefined: &str,
+    has_body: bool,
+    redefines: Option<&str>,
 ) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
-    })
-}
-
-fn operation_record(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -1236,6 +1223,7 @@ fn operation_record(identity: &str, owner: &str, has_body: bool) -> DomainPackag
         has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body,
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -1247,17 +1235,10 @@ fn bridge_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.dispatch-calls"),
         vec![
-            object_type_record("model.A"),
-            object_type_record("model.B"),
-            supertype_record("model.gen.B-A", "model.B", "model.A"),
-            operation_record("model.A.size", "model.A", true),
-            operation_record("model.B.size", "model.B", true),
-            redefinition_record(
-                "model.redef.B.size",
-                "model.B",
-                "model.B.size",
-                "model.A.size",
-            ),
+            object_type_record("model.A", vec![]),
+            object_type_record("model.B", vec!["model.A"]),
+            operation_record("model.A.size", "model.A", true, None),
+            operation_record("model.B.size", "model.B", true, Some("model.A.size")),
         ],
     )
 }

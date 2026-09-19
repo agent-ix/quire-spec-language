@@ -19,44 +19,34 @@ use quire_spec_language::model::dispatch::{
 };
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+    OperationMemberRecord,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
         abstract_type: false,
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
-}
-
-fn redefinition(
-    identity: &str,
-    owner: &str,
-    redefining: &str,
-    redefined: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
 /// A parameterless, resultless `size`-shaped operation with an empty effect
 /// frame, exactly as much signature as dispatch linking itself inspects.
-fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord {
+/// `redefines` is `Some(target)` when this operation declares
+/// `model-complete.md:162`'s inline `redefines` property (QSpec's own
+/// shape, not a separate redefinition record).
+fn operation(
+    identity: &str,
+    owner: &str,
+    has_body: bool,
+    redefines: Option<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -66,6 +56,7 @@ fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord
         has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body,
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -73,14 +64,10 @@ fn operation(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord
 /// `A`, `model.D` <= `B`, `D` <= `C`).
 fn fixture_g() -> Vec<DomainPackageRecord> {
     vec![
-        object_type("model.A"),
-        object_type("model.B"),
-        object_type("model.C"),
-        object_type("model.D"),
-        supertype("model.gen.B-A", "model.B", "model.A"),
-        supertype("model.gen.C-A", "model.C", "model.A"),
-        supertype("model.gen.D-B", "model.D", "model.B"),
-        supertype("model.gen.D-C", "model.D", "model.C"),
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
+        object_type("model.C", vec!["model.A"]),
+        object_type("model.D", vec!["model.B", "model.C"]),
     ]
 }
 
@@ -110,13 +97,12 @@ fn unlimited_meter() -> quire_spec_language::model::accounting::Meter {
 #[test]
 fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -185,13 +171,12 @@ fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
             }
         }
     }
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -246,13 +231,12 @@ fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -285,13 +269,12 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -325,27 +308,24 @@ fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
 #[test]
 fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(operation("model.C.size", "model.C", true));
-    records.push(operation("model.D.size", "model.D", false));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
-    records.push(redefinition(
-        "model.redef.C.size",
-        "model.C",
+    records.push(operation(
         "model.C.size",
-        "model.A.size",
+        "model.C",
+        true,
+        Some("model.A.size"),
     ));
-    records.push(redefinition(
-        "model.redef.D.size",
-        "model.D",
+    records.push(operation(
         "model.D.size",
-        "model.A.size",
+        "model.D",
+        false,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records.clone());
     let view = effective_view(&domain_package);
@@ -422,13 +402,12 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
 #[test]
 fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", false));
-    records.push(operation("model.B.size", "model.B", false));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", false, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        false,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -476,14 +455,13 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
 #[test]
 fn d04_registration_order_does_not_change_the_linked_table() {
     let mut records = fixture_g();
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
+    records.push(operation("model.A.size", "model.A", true, None));
     records.reverse();
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -517,13 +495,12 @@ fn d04_registration_order_does_not_change_the_linked_table() {
 #[test]
 fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge() {
     let mut records = fixture_g();
-    records.push(operation("model.A.size", "model.A", true));
-    records.push(operation("model.B.size", "model.B", true));
-    records.push(redefinition(
-        "model.redef.B.size",
-        "model.B",
+    records.push(operation("model.A.size", "model.A", true, None));
+    records.push(operation(
         "model.B.size",
-        "model.A.size",
+        "model.B",
+        true,
+        Some("model.A.size"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
@@ -558,9 +535,9 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.f2-dispatch-conflict"),
         vec![
-            object_type("model.A"),
-            operation("model.A.size", "model.A", true),
-            operation("model.A.size", "model.A", false),
+            object_type("model.A", vec![]),
+            operation("model.A.size", "model.A", true, None),
+            operation("model.A.size", "model.A", false, None),
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {

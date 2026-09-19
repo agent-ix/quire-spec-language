@@ -102,29 +102,22 @@ pub enum ModelRefusalCause {
     SpecializationCycle {
         /// The ancestor that closes the cycle.
         ancestor: DeclarationKey,
-        /// The supertype record the cycle is discovered via.
+        /// The object type whose own `supertypes[]` entry the cycle is
+        /// discovered via.
         via: DeclarationKey,
     },
-    /// A field, operation, redefinition or subsetting record names an owner
-    /// that is not a declared object type.
+    /// A field or operation member names an owner that is not a declared
+    /// object type.
     UnknownOwner {
-        /// The record naming the owner.
+        /// The member naming the owner.
         member: DeclarationKey,
         /// The absent owner.
         owner: DeclarationKey,
     },
-    /// A supertype record names a specific that is not a declared
-    /// object type.
-    UnknownSpecific {
-        /// The supertype record.
-        supertype: DeclarationKey,
-        /// The absent specific.
-        specific: DeclarationKey,
-    },
-    /// A supertype record names a general that is not a declared
-    /// object type.
+    /// An object type's own `supertypes[]` property names a general that is
+    /// not a declared object type.
     UnknownGeneral {
-        /// The supertype record.
+        /// The owning object type.
         supertype: DeclarationKey,
         /// The absent general.
         general: DeclarationKey,
@@ -154,10 +147,10 @@ pub enum ModelRefusalCause {
         /// The absent type.
         type_name: DeclarationKey,
     },
-    /// A redefinition or subsetting record names a member absent from its
-    /// owner.
+    /// A field or operation member's own `redefines` or `subsets` property
+    /// names a member absent from its owner.
     UnknownMember {
-        /// The redefinition or subsetting record.
+        /// The member declaring the `redefines`/`subsets` property.
         record: DeclarationKey,
         /// The absent member.
         member: DeclarationKey,
@@ -361,25 +354,25 @@ pub enum ModelRefusalCause {
         /// The target port.
         target: DeclarationKey,
     },
-    /// A conformance redefinition record names a redefining member absent
-    /// from the domain package.
+    /// `check_field_redefinition`'s `redefining_key` argument names a field
+    /// absent from the domain package.
     UnknownRedefining {
         /// The absent redefining member.
         member: DeclarationKey,
     },
-    /// A conformance redefinition record names a redefined member absent
-    /// from the domain package.
+    /// `check_field_redefinition`'s `redefined_key` argument names a field
+    /// absent from the domain package.
     UnknownRedefined {
         /// The absent redefined member.
         member: DeclarationKey,
     },
-    /// A conformance subsetting record names a subsetting member absent
+    /// `check_subsetting`'s `subsetting_key` argument names a field absent
     /// from the domain package.
     UnknownSubsetting {
         /// The absent subsetting member.
         member: DeclarationKey,
     },
-    /// A conformance subsetting record names a subsetted member absent
+    /// `check_subsetting`'s `subsetted_key` argument names a field absent
     /// from the domain package.
     UnknownSubsetted {
         /// The absent subsetted member.
@@ -478,8 +471,6 @@ pub enum ModelRefusalCause {
     SubsettingViolation {
         /// The object whose subsetting feature is violated.
         object: String,
-        /// The subsetting record.
-        record: DeclarationKey,
         /// The subsetting field.
         subsetting: DeclarationKey,
         /// The subsetted field.
@@ -574,7 +565,6 @@ impl ModelRefusalCause {
             Self::GeneralizationDepthExceeded { .. } => "generalization-depth-exceeded",
             Self::SpecializationCycle { .. } => "specialization-cycle",
             Self::UnknownOwner { .. } => "unknown-owner",
-            Self::UnknownSpecific { .. } => "unknown-specific",
             Self::UnknownGeneral { .. } => "unknown-general",
             Self::UnknownValueType { .. } => "unknown-value-type",
             Self::UnknownFieldWrite { .. } => "unknown-field-write",
@@ -691,7 +681,6 @@ mod tests {
             }
             ModelRefusalCause::SpecializationCycle { .. } => "specialization-cycle",
             ModelRefusalCause::UnknownOwner { .. } => "unknown-owner",
-            ModelRefusalCause::UnknownSpecific { .. } => "unknown-specific",
             ModelRefusalCause::UnknownGeneral { .. } => "unknown-general",
             ModelRefusalCause::UnknownValueType { .. } => "unknown-value-type",
             ModelRefusalCause::UnknownFieldWrite { .. } => "unknown-field-write",
@@ -771,10 +760,6 @@ mod tests {
             ModelRefusalCause::UnknownOwner {
                 member: key("p"),
                 owner: key("p"),
-            },
-            ModelRefusalCause::UnknownSpecific {
-                supertype: key("p"),
-                specific: key("p"),
             },
             ModelRefusalCause::UnknownGeneral {
                 supertype: key("p"),
@@ -921,7 +906,6 @@ mod tests {
             },
             ModelRefusalCause::SubsettingViolation {
                 object: String::new(),
-                record: key("p"),
                 subsetting: key("p"),
                 subsetted: key("p"),
             },

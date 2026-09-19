@@ -15,8 +15,7 @@ use quire_spec_language::model::conformance::{
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, PostconditionClause, RedefinitionRecord, ScalarTypeRecord, SubsettingRecord,
-    SupertypeRecord,
+    OperationResult, PostconditionClause, ScalarTypeRecord,
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
@@ -33,11 +32,15 @@ fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     }
 }
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
         abstract_type: false,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
@@ -47,19 +50,27 @@ fn field_member(
     value_type: &str,
     m: Multiplicity,
 ) -> DomainPackageRecord {
+    field_member_redefining(identity, owner, value_type, m, None, vec![])
+}
+
+/// `field_member`, plus this field's own inline `redefines`
+/// (`model-complete.md`:162) and `subsets` (`model-complete.md`:161)
+/// properties -- never a separate redefinition or subsetting record.
+fn field_member_redefining(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    m: Multiplicity,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         value_type: DeclarationKey::fixture(value_type),
         multiplicity: m,
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
+        subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -68,34 +79,6 @@ fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
         key: DeclarationKey::fixture(identity),
         lower,
         upper,
-    })
-}
-
-fn redefinition(
-    identity: &str,
-    owner: &str,
-    redefining: &str,
-    redefined: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
-    })
-}
-
-fn subsetting(
-    identity: &str,
-    owner: &str,
-    subsetting: &str,
-    subsetted: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Subsetting(SubsettingRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        subsetting: DeclarationKey::fixture(subsetting),
-        subsetted: DeclarationKey::fixture(subsetted),
     })
 }
 
@@ -109,6 +92,34 @@ fn operation(
     creates: Vec<&str>,
     deletes: Vec<&str>,
     own_postcondition_clauses: Vec<PostconditionClause>,
+) -> DomainPackageRecord {
+    operation_redefining(
+        identity,
+        owner,
+        parameters,
+        result,
+        modifies,
+        creates,
+        deletes,
+        own_postcondition_clauses,
+        None,
+    )
+}
+
+/// `operation`, plus this operation's own inline `redefines`
+/// (`model-complete.md`:162) property -- never a separate redefinition
+/// record.
+#[allow(clippy::too_many_arguments)]
+fn operation_redefining(
+    identity: &str,
+    owner: &str,
+    parameters: Vec<(&str, &str, Multiplicity)>,
+    result: Option<(&str, Multiplicity)>,
+    modifies: Vec<&str>,
+    creates: Vec<&str>,
+    deletes: Vec<&str>,
+    own_postcondition_clauses: Vec<PostconditionClause>,
+    redefines: Option<&str>,
 ) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: DeclarationKey::fixture(identity),
@@ -133,6 +144,7 @@ fn operation(
         has_own_precondition: false,
         own_postcondition_clauses,
         has_body: true,
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -142,9 +154,8 @@ fn operation(
 /// `{modifies: [model.A.x], creates: [model.A], deletes: []}`.
 fn fixture_h_base() -> Vec<DomainPackageRecord> {
     vec![
-        object_type("model.A"),
-        object_type("model.B"),
-        supertype("model.gen.B-A", "model.B", "model.A"),
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
         field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
         field_member("model.B.y", "model.B", "model.A", mult(0, Some(1))),
         operation(
@@ -212,23 +223,24 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.r01"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.n", "model.A", "model.A", mult(0, Some(5))),
-            field_member("model.B.n", "model.B", "model.A", mult(1, Some(3))),
-            redefinition("model.redef.B.n", "model.B", "model.B.n", "model.A.n"),
+            field_member_redefining(
+                "model.B.n",
+                "model.B",
+                "model.A",
+                mult(1, Some(3)),
+                Some("model.A.n"),
+                vec![],
+            ),
         ],
     );
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.n"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.n"),
-        redefined: DeclarationKey::fixture("model.A.n"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.B.n");
+    let redefined_key = DeclarationKey::fixture("model.A.n");
 
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_field_redefinition(&domain_package, &record, &mut meter) {
+    match check_field_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible ({{1,3}} conforms to {{0,5}}), got {other:?}"),
     }
@@ -314,8 +326,8 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.f2-conformance-conflict"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec![]),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(5))),
             field_member("model.B.y", "model.B", "model.A", mult(0, Some(3))),
@@ -344,27 +356,22 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r02_a_compatible_operation_redefinition_admits_every_axis() {
-    let domain_package = bundle_h(vec![
-        operation(
-            "model.B.op",
-            "model.B",
-            vec![("model.B.op.p1", "model.A", mult(0, Some(2)))],
-            Some(("model.B", mult(1, Some(1)))),
-            vec![],
-            vec!["model.B"],
-            vec![],
-            vec![],
-        ),
-        redefinition("model.redef.B.op", "model.B", "model.B.op", "model.A.op"),
-    ]);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.op"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let domain_package = bundle_h(vec![operation_redefining(
+        "model.B.op",
+        "model.B",
+        vec![("model.B.op.p1", "model.A", mult(0, Some(2)))],
+        Some(("model.B", mult(1, Some(1)))),
+        vec![],
+        vec!["model.B"],
+        vec![],
+        vec![],
+        Some("model.A.op"),
+    )]);
+    let redefining_key = DeclarationKey::fixture("model.B.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_operation_redefinition(&domain_package, &record, &mut meter) {
+    match check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter)
+    {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
@@ -373,27 +380,22 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
 #[trace("TC-196", "FR-151-AC-2", "FR-151-AC-4")]
 #[test]
 fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
-    let domain_package = bundle_h(vec![
-        operation(
-            "model.B.op",
-            "model.B",
-            vec![("model.B.op.p1", "model.B", mult(1, Some(1)))],
-            Some(("model.A", mult(0, Some(1)))),
-            vec!["model.B.y"],
-            vec![],
-            vec![],
-            vec![],
-        ),
-        redefinition("model.redef.B.op", "model.B", "model.B.op", "model.A.op"),
-    ]);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.op"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let domain_package = bundle_h(vec![operation_redefining(
+        "model.B.op",
+        "model.B",
+        vec![("model.B.op.p1", "model.B", mult(1, Some(1)))],
+        Some(("model.A", mult(0, Some(1)))),
+        vec!["model.B.y"],
+        vec![],
+        vec![],
+        vec![],
+        Some("model.A.op"),
+    )]);
+    let redefining_key = DeclarationKey::fixture("model.B.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_operation_redefinition(&domain_package, &record, &mut meter) {
+    match check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter)
+    {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             let causes: Vec<ModelRefusalCause> = failures.iter().map(|f| f.cause.clone()).collect();
             assert_eq!(causes.len(), 5);
@@ -435,27 +437,22 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
-    let domain_package = bundle_h(vec![
-        operation(
-            "model.B.op",
-            "model.B",
-            vec![],
-            Some(("model.B", mult(1, Some(1)))),
-            vec![],
-            vec!["model.B"],
-            vec![],
-            vec![],
-        ),
-        redefinition("model.redef.B.op", "model.B", "model.B.op", "model.A.op"),
-    ]);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.op"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let domain_package = bundle_h(vec![operation_redefining(
+        "model.B.op",
+        "model.B",
+        vec![],
+        Some(("model.B", mult(1, Some(1)))),
+        vec![],
+        vec!["model.B"],
+        vec![],
+        vec![],
+        Some("model.A.op"),
+    )]);
+    let redefining_key = DeclarationKey::fixture("model.B.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_operation_redefinition(&domain_package, &record, &mut meter) {
+    match check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter)
+    {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].cause, ModelRefusalCause::TypeMismatch);
@@ -470,27 +467,28 @@ fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
 fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     let records = |a_mult: Multiplicity, b_mult: Multiplicity| {
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.n", "model.A", "model.A", a_mult),
-            field_member("model.B.n", "model.B", "model.A", b_mult),
-            redefinition("model.redef.B.n", "model.B", "model.B.n", "model.A.n"),
+            field_member_redefining(
+                "model.B.n",
+                "model.B",
+                "model.A",
+                b_mult,
+                Some("model.A.n"),
+                vec![],
+            ),
         ]
     };
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.n"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.n"),
-        redefined: DeclarationKey::fixture("model.A.n"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.B.n");
+    let redefined_key = DeclarationKey::fixture("model.A.n");
 
     let narrowing = DomainPackage::new(
         DomainPackageRef::fixture("bundle.r05a"),
         records(mult(1, Some(3)), mult(0, Some(5))),
     );
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_field_redefinition(&narrowing, &record, &mut meter) {
+    match check_field_redefinition(&narrowing, &redefining_key, &redefined_key, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(
@@ -509,7 +507,7 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
         records(mult(0, Some(5)), mult(1, Some(3))),
     );
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_field_redefinition(&widening, &record, &mut meter) {
+    match check_field_redefinition(&widening, &redefining_key, &redefined_key, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
@@ -522,27 +520,28 @@ fn r06_subsetting_type_and_multiplicity_axes() {
         DomainPackage::new(
             DomainPackageRef::fixture("bundle.r06"),
             vec![
-                object_type("model.A"),
-                object_type("model.B"),
-                object_type("model.C"),
-                supertype("model.gen.B-A", "model.B", "model.A"),
+                object_type("model.A", vec![]),
+                object_type("model.B", vec!["model.A"]),
+                object_type("model.C", vec![]),
                 field_member("model.A.all", "model.A", "model.A", mult(0, Some(5))),
-                field_member("model.A.some", "model.A", some_type, some_mult),
-                subsetting("model.sub.some", "model.A", "model.A.some", "model.A.all"),
+                field_member_redefining(
+                    "model.A.some",
+                    "model.A",
+                    some_type,
+                    some_mult,
+                    None,
+                    vec!["model.A.all"],
+                ),
             ],
         )
     };
-    let record = SubsettingRecord {
-        key: DeclarationKey::fixture("model.sub.some"),
-        owner: DeclarationKey::fixture("model.A"),
-        subsetting: DeclarationKey::fixture("model.A.some"),
-        subsetted: DeclarationKey::fixture("model.A.all"),
-    };
+    let subsetting_key = DeclarationKey::fixture("model.A.some");
+    let subsetted_key = DeclarationKey::fixture("model.A.all");
 
     // (i) same type, wider multiplicity: multiplicity-narrowing.
     let domain_package = bundle_of("model.A", mult(0, Some(9)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_subsetting(&domain_package, &record, &mut meter) {
+    match check_subsetting(&domain_package, &subsetting_key, &subsetted_key, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(
@@ -559,7 +558,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     // (ii) unrelated type: subsetting-type.
     let domain_package = bundle_of("model.C", mult(0, Some(5)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_subsetting(&domain_package, &record, &mut meter) {
+    match check_subsetting(&domain_package, &subsetting_key, &subsetted_key, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(
@@ -576,82 +575,52 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     // (iii) conforming subtype, narrower multiplicity: admitted.
     let domain_package = bundle_of("model.B", mult(0, Some(3)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_subsetting(&domain_package, &record, &mut meter) {
+    match check_subsetting(&domain_package, &subsetting_key, &subsetted_key, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
 }
 
+// Only the "zero inherited targets" shape is directly testable through
+// `resolve_redefinition_target` under QSpec's inline `redefines` property
+// (`model-complete.md`:162): a field or operation member declares at most
+// one `redefines`, never several competing candidates. TC-196 R07's "two
+// distinct, both-legitimate inherited targets" shape is therefore
+// structurally unreachable here and is dropped rather than adapted.
 #[trace("TC-196", "FR-151-AC-2")]
 #[test]
-fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
+fn r07_zero_inherited_targets_refuses_redefinition_target() {
     // Zero inherited targets: B.z claims to redefine C.w, but B does not
     // conform to C.
     let zero = DomainPackage::new(
         DomainPackageRef::fixture("bundle.r07a"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec![]),
             field_member("model.C.w", "model.C", "model.A", mult(0, Some(1))),
-            field_member("model.B.z", "model.B", "model.A", mult(0, Some(1))),
-            redefinition("model.redef.z", "model.B", "model.B.z", "model.C.w"),
+            field_member_redefining(
+                "model.B.z",
+                "model.B",
+                "model.A",
+                mult(0, Some(1)),
+                Some("model.C.w"),
+                vec![],
+            ),
         ],
     );
-    match resolve_redefinition_target(
-        &zero,
-        &DeclarationKey::fixture("model.B"),
-        &DeclarationKey::fixture("model.B.z"),
-    ) {
-        Ok(RedefinitionTargetOutcome::Refused {
-            cause,
-            candidates,
-            valid_targets,
-        }) => {
+    match resolve_redefinition_target(&zero, &DeclarationKey::fixture("model.B.z")) {
+        Ok(RedefinitionTargetOutcome::Refused { cause, candidate }) => {
             assert_eq!(cause, ModelRefusalCause::RedefinitionTarget);
-            assert_eq!(candidates.len(), 1);
-            assert!(
-                valid_targets.is_empty(),
-                "zero-target shape must carry no valid targets, got {valid_targets:?}"
+            assert_eq!(
+                candidate,
+                Some((
+                    DeclarationKey::fixture("model.B.z"),
+                    DeclarationKey::fixture("model.C.w"),
+                ))
             );
         }
         other => panic!("expected Refused(zero targets), got {other:?}"),
-    }
-
-    // Two distinct, both-legitimate inherited targets: ambiguous.
-    let two = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.r07b"),
-        vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
-            field_member("model.A.x2", "model.A", "model.A", mult(0, Some(1))),
-            field_member("model.B.z", "model.B", "model.A", mult(0, Some(1))),
-            redefinition("model.redef.z1", "model.B", "model.B.z", "model.A.x"),
-            redefinition("model.redef.z2", "model.B", "model.B.z", "model.A.x2"),
-        ],
-    );
-    match resolve_redefinition_target(
-        &two,
-        &DeclarationKey::fixture("model.B"),
-        &DeclarationKey::fixture("model.B.z"),
-    ) {
-        Ok(RedefinitionTargetOutcome::Refused {
-            cause,
-            candidates,
-            valid_targets,
-        }) => {
-            assert_eq!(cause, ModelRefusalCause::RedefinitionTarget);
-            assert_eq!(candidates.len(), 2);
-            assert_eq!(
-                valid_targets.len(),
-                2,
-                "ambiguous shape must carry both valid targets, got {valid_targets:?}"
-            );
-        }
-        other => panic!("expected Refused(ambiguous), got {other:?}"),
     }
 }
 
@@ -671,9 +640,8 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
 /// `model.A.set()` with no result and effect writing `[model.A.x, model.A.c]`.
 fn r08_base() -> Vec<DomainPackageRecord> {
     vec![
-        object_type("model.A"),
-        object_type("model.B"),
-        supertype("model.gen.B-A", "model.B", "model.A"),
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
         scalar_type("model.Count", 0, 9),
         scalar_type("model.Small", 0, 5),
         field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
@@ -695,26 +663,18 @@ fn r08_base() -> Vec<DomainPackageRecord> {
 #[test]
 fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     let mut records = r08_base();
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.B.xb",
         "model.B",
         "model.A",
         mult(1, Some(1)),
-    ));
-    records.push(redefinition(
-        "model.redef.xb",
-        "model.B",
-        "model.B.xb",
-        "model.A.x",
+        Some("model.A.x"),
+        vec![],
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08a"), records);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.xb"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.xb"),
-        redefined: DeclarationKey::fixture("model.A.x"),
-    };
-    match check_field_refinement_obligation(&domain_package, &record) {
+    let redefining_key = DeclarationKey::fixture("model.B.xb");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
@@ -728,19 +688,15 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
 #[test]
 fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation() {
     let mut records = r08_base();
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.B.xb",
         "model.B",
         "model.A",
         mult(1, Some(1)),
+        Some("model.A.x"),
+        vec![],
     ));
-    records.push(redefinition(
-        "model.redef.xb",
-        "model.B",
-        "model.B.xb",
-        "model.A.x",
-    ));
-    records.push(operation(
+    records.push(operation_redefining(
         "model.B.set",
         "model.B",
         vec![],
@@ -751,21 +707,12 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         vec![PostconditionClause::Presence {
             field: DeclarationKey::fixture("model.B.xb"),
         }],
-    ));
-    records.push(redefinition(
-        "model.redef.set",
-        "model.B",
-        "model.B.set",
-        "model.A.set",
+        Some("model.A.set"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08b"), records);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.xb"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.xb"),
-        redefined: DeclarationKey::fixture("model.A.x"),
-    };
-    match check_field_refinement_obligation(&domain_package, &record) {
+    let redefining_key = DeclarationKey::fixture("model.B.xb");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
@@ -775,26 +722,18 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
 #[test]
 fn r08c_an_object_typed_narrowing_has_no_proof_form() {
     let mut records = r08_base();
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.B.xr",
         "model.B",
         "model.B",
         mult(0, Some(1)),
-    ));
-    records.push(redefinition(
-        "model.redef.xr",
-        "model.B",
-        "model.B.xr",
-        "model.A.x",
+        Some("model.A.x"),
+        vec![],
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08c"), records);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.xr"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.xr"),
-        redefined: DeclarationKey::fixture("model.A.x"),
-    };
-    match check_field_refinement_obligation(&domain_package, &record) {
+    let redefining_key = DeclarationKey::fixture("model.B.xr");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("no-proof-form"));
@@ -807,26 +746,18 @@ fn r08c_an_object_typed_narrowing_has_no_proof_form() {
 #[test]
 fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain() {
     let mut records = r08_base();
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.B.cs",
         "model.B",
         "model.Small",
         mult(1, Some(1)),
-    ));
-    records.push(redefinition(
-        "model.redef.cs",
-        "model.B",
-        "model.B.cs",
-        "model.A.c",
+        Some("model.A.c"),
+        vec![],
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08d"), records);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.cs"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.cs"),
-        redefined: DeclarationKey::fixture("model.A.c"),
-    };
-    match check_field_refinement_obligation(&domain_package, &record) {
+    let redefining_key = DeclarationKey::fixture("model.B.cs");
+    let redefined_key = DeclarationKey::fixture("model.A.c");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
@@ -838,28 +769,20 @@ fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain()
 #[trace("TC-196", "FR-151-AC-6")]
 #[test]
 fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.cs"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.cs"),
-        redefined: DeclarationKey::fixture("model.A.c"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.B.cs");
+    let redefined_key = DeclarationKey::fixture("model.A.c");
 
     let contained = |upper: i64| {
         let mut records = r08_base();
-        records.push(field_member(
+        records.push(field_member_redefining(
             "model.B.cs",
             "model.B",
             "model.Small",
             mult(1, Some(1)),
+            Some("model.A.c"),
+            vec![],
         ));
-        records.push(redefinition(
-            "model.redef.cs",
-            "model.B",
-            "model.B.cs",
-            "model.A.c",
-        ));
-        records.push(operation(
+        records.push(operation_redefining(
             "model.B.set",
             "model.B",
             vec![],
@@ -872,21 +795,16 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
                 operator: OrderingOperator::LessOrEqual,
                 literal: upper,
             }],
-        ));
-        records.push(redefinition(
-            "model.redef.set",
-            "model.B",
-            "model.B.set",
-            "model.A.set",
+            Some("model.A.set"),
         ));
         DomainPackage::new(DomainPackageRef::fixture("bundle.r08ef"), records)
     };
 
-    match check_field_refinement_obligation(&contained(5), &record) {
+    match check_field_refinement_obligation(&contained(5), &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible (e), got {other:?}"),
     }
-    match check_field_refinement_obligation(&contained(6), &record) {
+    match check_field_refinement_obligation(&contained(6), &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
@@ -904,19 +822,15 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
 #[test]
 fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligation() {
     let mut records = r08_base();
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.B.cs",
         "model.B",
         "model.Small",
         mult(1, Some(1)),
+        Some("model.A.c"),
+        vec![],
     ));
-    records.push(redefinition(
-        "model.redef.cs",
-        "model.B",
-        "model.B.cs",
-        "model.A.c",
-    ));
-    records.push(operation(
+    records.push(operation_redefining(
         "model.B.set",
         "model.B",
         vec![],
@@ -929,21 +843,12 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
             operator: OrderingOperator::GreaterOrEqual,
             literal: 0,
         }],
-    ));
-    records.push(redefinition(
-        "model.redef.set",
-        "model.B",
-        "model.B.set",
-        "model.A.set",
+        Some("model.A.set"),
     ));
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08g"), records);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.cs"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.cs"),
-        redefined: DeclarationKey::fixture("model.A.c"),
-    };
-    match check_field_refinement_obligation(&domain_package, &record) {
+    let redefining_key = DeclarationKey::fixture("model.B.cs");
+    let redefined_key = DeclarationKey::fixture("model.A.c");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
@@ -985,15 +890,20 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
         ("le-then-ge", vec![le_five, ge_zero]),
     ] {
         let records = vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             scalar_type("model.Count", -5, 9),
             scalar_type("model.Small", 0, 5),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
-            field_member("model.B.cs", "model.B", "model.Small", mult(1, Some(1))),
-            redefinition("model.redef.cs", "model.B", "model.B.cs", "model.A.c"),
+            field_member_redefining(
+                "model.B.cs",
+                "model.B",
+                "model.Small",
+                mult(1, Some(1)),
+                Some("model.A.c"),
+                vec![],
+            ),
             operation(
                 "model.A.set",
                 "model.A",
@@ -1004,7 +914,7 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
                 vec![],
                 vec![],
             ),
-            operation(
+            operation_redefining(
                 "model.B.set",
                 "model.B",
                 vec![],
@@ -1013,17 +923,13 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
                 vec![],
                 vec![],
                 clauses,
+                Some("model.A.set"),
             ),
-            redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
         ];
         let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08h"), records);
-        let record = RedefinitionRecord {
-            key: DeclarationKey::fixture("model.redef.cs"),
-            owner: DeclarationKey::fixture("model.B"),
-            redefining: DeclarationKey::fixture("model.B.cs"),
-            redefined: DeclarationKey::fixture("model.A.c"),
-        };
-        match check_field_refinement_obligation(&domain_package, &record) {
+        let redefining_key = DeclarationKey::fixture("model.B.cs");
+        let redefined_key = DeclarationKey::fixture("model.A.c");
+        match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
             Ok(ConformanceOutcome::Compatible) => {}
             other => panic!(
                 "expected Compatible regardless of clause order ({order}): the two \
@@ -1042,15 +948,20 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
 #[test]
 fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
     let records = vec![
-        object_type("model.A"),
-        object_type("model.B"),
-        supertype("model.gen.B-A", "model.B", "model.A"),
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
         scalar_type("model.Count", 9, 0), // malformed: lower > upper.
         scalar_type("model.Small", 0, 5),
         field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
         field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
-        field_member("model.B.cs", "model.B", "model.Small", mult(1, Some(1))),
-        redefinition("model.redef.cs", "model.B", "model.B.cs", "model.A.c"),
+        field_member_redefining(
+            "model.B.cs",
+            "model.B",
+            "model.Small",
+            mult(1, Some(1)),
+            Some("model.A.c"),
+            vec![],
+        ),
         operation(
             "model.A.set",
             "model.A",
@@ -1061,7 +972,7 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
             vec![],
             vec![],
         ),
-        operation(
+        operation_redefining(
             "model.B.set",
             "model.B",
             vec![],
@@ -1074,17 +985,13 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
                 operator: OrderingOperator::LessOrEqual,
                 literal: 5,
             }],
+            Some("model.A.set"),
         ),
-        redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
     ];
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08i"), records);
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.cs"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.cs"),
-        redefined: DeclarationKey::fixture("model.A.c"),
-    };
-    match check_field_refinement_obligation(&domain_package, &record) {
+    let redefining_key = DeclarationKey::fixture("model.B.cs");
+    let redefined_key = DeclarationKey::fixture("model.A.c");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
         Err(refusal) => {
             assert_eq!(refusal.code, Code::InvalidModelBinding);
             // FR-272's `invalid_model_binding` cause list is closed; there
@@ -1113,16 +1020,26 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.chain.op"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
-            field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
-            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
-            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
-            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            field_member_redefining(
+                "model.B.x",
+                "model.B",
+                "model.A",
+                mult(0, Some(1)),
+                Some("model.A.x"),
+                vec![],
+            ),
+            field_member_redefining(
+                "model.C.x",
+                "model.C",
+                "model.A",
+                mult(0, Some(1)),
+                Some("model.B.x"),
+                vec![],
+            ),
             operation(
                 "model.A.op",
                 "model.A",
@@ -1133,7 +1050,7 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
                 vec![],
                 vec![],
             ),
-            operation(
+            operation_redefining(
                 "model.C.op",
                 "model.C",
                 vec![],
@@ -1142,24 +1059,15 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
                 vec![],
                 vec![],
                 vec![],
-            ),
-            redefinition(
-                "model.redef.C.op-A.op",
-                "model.C",
-                "model.C.op",
-                "model.A.op",
+                Some("model.A.op"),
             ),
         ],
     );
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.C.op-A.op"),
-        owner: DeclarationKey::fixture("model.C"),
-        redefining: DeclarationKey::fixture("model.C.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.C.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&domain_package, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible)
     );
 }
@@ -1194,9 +1102,8 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.op-package"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             operation(
                 "model.A.op",
@@ -1221,24 +1128,15 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
                 has_own_precondition: false,
                 own_postcondition_clauses: vec![],
                 has_body: true,
+                redefines: Some(DeclarationKey::fixture("model.A.op")),
             }),
-            redefinition(
-                "model.redef.B.op-A.op",
-                "model.B",
-                "model.B.op",
-                "model.A.op",
-            ),
         ],
     );
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.op-A.op"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.B.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&domain_package, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "effect",
             code: Code::IllTyped,
@@ -1267,15 +1165,19 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.chain.no-grant"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
-            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
-            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            field_member_redefining(
+                "model.C.x",
+                "model.C",
+                "model.A",
+                mult(0, Some(1)),
+                Some("model.B.x"),
+                vec![],
+            ),
             operation(
                 "model.A.op",
                 "model.A",
@@ -1286,7 +1188,7 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
                 vec![],
                 vec![],
             ),
-            operation(
+            operation_redefining(
                 "model.C.op",
                 "model.C",
                 vec![],
@@ -1295,24 +1197,15 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
                 vec![],
                 vec![],
                 vec![],
-            ),
-            redefinition(
-                "model.redef.C.op-A.op",
-                "model.C",
-                "model.C.op",
-                "model.A.op",
+                Some("model.A.op"),
             ),
         ],
     );
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.C.op-A.op"),
-        owner: DeclarationKey::fixture("model.C"),
-        redefining: DeclarationKey::fixture("model.C.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.C.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&domain_package, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "effect",
             code: Code::IllTyped,
@@ -1344,16 +1237,26 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.cycle"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
-            field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
-            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
-            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
-            redefinition("model.redef.B.x-C.x", "model.B", "model.B.x", "model.C.x"),
+            field_member_redefining(
+                "model.B.x",
+                "model.B",
+                "model.A",
+                mult(0, Some(1)),
+                Some("model.C.x"),
+                vec![],
+            ),
+            field_member_redefining(
+                "model.C.x",
+                "model.C",
+                "model.A",
+                mult(0, Some(1)),
+                Some("model.B.x"),
+                vec![],
+            ),
             operation(
                 "model.A.op",
                 "model.A",
@@ -1364,7 +1267,7 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
                 vec![],
                 vec![],
             ),
-            operation(
+            operation_redefining(
                 "model.C.op",
                 "model.C",
                 vec![],
@@ -1373,24 +1276,15 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
                 vec![],
                 vec![],
                 vec![],
-            ),
-            redefinition(
-                "model.redef.C.op-A.op",
-                "model.C",
-                "model.C.op",
-                "model.A.op",
+                Some("model.A.op"),
             ),
         ],
     );
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.C.op-A.op"),
-        owner: DeclarationKey::fixture("model.C"),
-        redefining: DeclarationKey::fixture("model.C.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
+    let redefining_key = DeclarationKey::fixture("model.C.op");
+    let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&domain_package, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &redefining_key, &redefined_key, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "effect",
             code: Code::IllTyped,
