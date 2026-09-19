@@ -2,11 +2,9 @@
 
 The files below `quire-specification/` are unmodified bytes of
 [agent-ix/quire-specification](https://github.com/agent-ix/quire-specification)
-at merged revision `d227270fbeb28289df6abba7e94173118345c028` (QSL #159 re-vendors
-past QSpec PR #86, which renamed TC-196 R01's cycle listing to name types
-rather than generalization records and added R07's second contending-redefiner
-shape; the pin previously stood at `7d7943ab1482e091f6d126401ada38957c4a1ccf`,
-QSpec PR #75 amending QSpec #68 after PRs #73 and #74),
+at merged revision `d227270fbeb28289df6abba7e94173118345c028` (QSpec PR #86,
+which renamed TC-196 R01's cycle listing to name types rather than
+generalization records and added R07's second contending-redefiner shape),
 copied with `git show <revision>:<path>` at their repository-relative paths so
 the lock's relative `artifact_path` values resolve unchanged. QSL #118 /
 Plan-013 Task-048 consumes them; QSL #119 / Plan-013 Task-049 adds the
