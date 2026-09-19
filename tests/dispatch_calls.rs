@@ -14,15 +14,15 @@ use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, GeneralizationRecord, ModelSelection, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, RedefinitionRecord,
-};
 use quire_spec_language::model::checked_dispatch::{
     checked_dispatch_operation, DispatchRoot, OperationClauses,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::ProducerKey;
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+};
+use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
@@ -559,8 +559,8 @@ fn ab_bridge_clauses(
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> OperationClauses {
-    let a = ProducerKey::fixture("model.A.size");
-    let b = ProducerKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A.size");
+    let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
@@ -593,26 +593,32 @@ fn ab_bridge_declarations(
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> PackageDeclarations {
-    let bundle = bridge_bundle();
-    let view = bridge_view(&bundle);
+    let domain_package = bridge_bundle();
+    let view = bridge_view(&domain_package);
     let a_type = key("model.A");
     let b_type = key("model.B");
     let clauses = ab_bridge_clauses(a_type, pa, pb);
     let mut object_keys = BTreeMap::new();
-    object_keys.insert(ProducerKey::fixture("model.A"), a_type);
-    object_keys.insert(ProducerKey::fixture("model.B"), b_type);
+    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
+    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
-        key: ProducerKey::fixture("model.A.size"),
+        key: DeclarationKey::fixture("model.A.size"),
         receiver_type,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&bundle, &view, &root, &object_keys, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     let types = TypeEnvironment::new(
         [],
         [
@@ -1083,8 +1089,8 @@ fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
 fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_capture() {
     let a_type = key("model.A");
     let b_type = key("model.B");
-    let a = ProducerKey::fixture("model.A.size");
-    let b = ProducerKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A.size");
+    let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
     clauses.parameters.insert(
@@ -1119,11 +1125,11 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         .own_precondition
         .insert(b.clone(), Expression::Boolean(false));
 
-    let bundle = bridge_bundle();
-    let view = bridge_view(&bundle);
+    let domain_package = bridge_bundle();
+    let view = bridge_view(&domain_package);
     let mut object_keys = BTreeMap::new();
-    object_keys.insert(ProducerKey::fixture("model.A"), a_type);
-    object_keys.insert(ProducerKey::fixture("model.B"), b_type);
+    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
+    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
@@ -1131,11 +1137,17 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         receiver_type: b_type,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&bundle, &view, &root, &object_keys, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     declarations.types = TypeEnvironment::new(
         [],
         [
@@ -1184,18 +1196,18 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
 
 // --- Bridge integration: crate::model::checked_dispatch -------------------
 
-fn object_type_record(identity: &str) -> BundleRecord {
-    BundleRecord::ObjectType(ObjectTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn object_type_record(identity: &str) -> DomainPackageRecord {
+    DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: DeclarationKey::fixture(identity),
         interface_features: None,
     })
 }
 
-fn generalization_record(identity: &str, specific: &str, general: &str) -> BundleRecord {
-    BundleRecord::Generalization(GeneralizationRecord {
-        key: ProducerKey::fixture(identity),
-        specific: ProducerKey::fixture(specific),
-        general: ProducerKey::fixture(general),
+fn supertype_record(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Supertype(SupertypeRecord {
+        key: DeclarationKey::fixture(identity),
+        specific: DeclarationKey::fixture(specific),
+        general: DeclarationKey::fixture(general),
     })
 }
 
@@ -1204,19 +1216,19 @@ fn redefinition_record(
     owner: &str,
     redefining: &str,
     redefined: &str,
-) -> BundleRecord {
-    BundleRecord::Redefinition(RedefinitionRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        redefining: ProducerKey::fixture(redefining),
-        redefined: ProducerKey::fixture(redefined),
+) -> DomainPackageRecord {
+    DomainPackageRecord::Redefinition(RedefinitionRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        redefining: DeclarationKey::fixture(redefining),
+        redefined: DeclarationKey::fixture(redefined),
     })
 }
 
-fn operation_record(identity: &str, owner: &str, has_body: bool) -> BundleRecord {
-    BundleRecord::OperationMember(OperationMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
+fn operation_record(identity: &str, owner: &str, has_body: bool) -> DomainPackageRecord {
+    DomainPackageRecord::OperationMember(OperationMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
         parameters: Vec::new(),
         result: None,
         effect: OperationEffect::default(),
@@ -1230,13 +1242,13 @@ fn operation_record(identity: &str, owner: &str, has_body: bool) -> BundleRecord
 /// `B.size` redefines `A.size`. Mirrors `tests/model_dispatch.rs`'s D01
 /// fixture style, minus the diamond (only one redefinition edge is needed
 /// to prove the bridge links a real family end to end).
-fn bridge_bundle() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.dispatch-calls"),
+fn bridge_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.dispatch-calls"),
         vec![
             object_type_record("model.A"),
             object_type_record("model.B"),
-            generalization_record("model.gen.B-A", "model.B", "model.A"),
+            supertype_record("model.gen.B-A", "model.B", "model.A"),
             operation_record("model.A.size", "model.A", true),
             operation_record("model.B.size", "model.B", true),
             redefinition_record(
@@ -1249,16 +1261,16 @@ fn bridge_bundle() -> Bundle {
     )
 }
 
-fn bridge_view(bundle: &Bundle) -> EffectiveView {
-    match normalize(bundle, ModelNormalizationLimits::UNLIMITED) {
+fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
+    match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed effective view, got {other:?}"),
     }
 }
 
 fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
-    let a = ProducerKey::fixture("model.A.size");
-    let b = ProducerKey::fixture("model.B.size");
+    let a = DeclarationKey::fixture("model.A.size");
+    let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
@@ -1277,7 +1289,7 @@ fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
 
 /// End-to-end: `crate::model::checked_dispatch::checked_dispatch_operation`
 /// links `model.A.size`'s real two-candidate dispatch family (`model.A.size`
-/// and `model.B.size`, which redefines it) from a `Bundle`, types both
+/// and `model.B.size`, which redefines it) from a `DomainPackage`, types both
 /// candidates' bodies, and hands back a `PackageDeclarations` whose
 /// `.check()` succeeds and whose evaluator runs `self.size()` for an `A`
 /// receiver through the real bridge-built table.
@@ -1300,27 +1312,33 @@ fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
 #[trace("TC-196")]
 #[test]
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
-    let bundle = bridge_bundle();
-    let view = bridge_view(&bundle);
+    let domain_package = bridge_bundle();
+    let view = bridge_view(&domain_package);
     let a_type = key("model.A");
     let b_type = key("model.B");
     let clauses = bridge_clauses(a_type);
     let mut object_keys = BTreeMap::new();
-    object_keys.insert(ProducerKey::fixture("model.A"), a_type);
-    object_keys.insert(ProducerKey::fixture("model.B"), b_type);
+    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
+    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
-        key: ProducerKey::fixture("model.A.size"),
+        key: DeclarationKey::fixture("model.A.size"),
         receiver_type: a_type,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&bundle, &view, &root, &object_keys, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     // The bridge is pure and builds no `TypeEnvironment` of its own (see its
     // module docs): the caller declares the object types its own clauses'
     // parameter/result `ValueType`s name.

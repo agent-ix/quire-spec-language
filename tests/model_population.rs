@@ -17,12 +17,13 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
-    ObjectTypeRecord, OperationEffect, RedefinitionRecord, SubsettingRecord,
-};
 use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::key::{EffectiveId, ProducerKey, Revision};
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, RedefinitionRecord, SubsettingRecord,
+    SupertypeRecord,
+};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId, Revision};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     OfferedSelection,
@@ -55,18 +56,18 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn object_type(identity: &str) -> BundleRecord {
-    BundleRecord::ObjectType(ObjectTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn object_type(identity: &str) -> DomainPackageRecord {
+    DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: DeclarationKey::fixture(identity),
         interface_features: None,
     })
 }
 
-fn field_member(identity: &str, owner: &str, value_type: &str) -> BundleRecord {
-    BundleRecord::FieldMember(FieldMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        value_type: ProducerKey::fixture(value_type),
+fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageRecord {
+    DomainPackageRecord::FieldMember(FieldMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        value_type: DeclarationKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
     })
 }
@@ -77,11 +78,11 @@ fn field_member_mult(
     value_type: &str,
     lower: u64,
     upper: Option<u64>,
-) -> BundleRecord {
-    BundleRecord::FieldMember(FieldMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        value_type: ProducerKey::fixture(value_type),
+) -> DomainPackageRecord {
+    DomainPackageRecord::FieldMember(FieldMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        value_type: DeclarationKey::fixture(value_type),
         multiplicity: Multiplicity {
             lower,
             upper,
@@ -91,67 +92,116 @@ fn field_member_mult(
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord {
-    BundleRecord::Generalization(GeneralizationRecord {
-        key: ProducerKey::fixture(identity),
-        specific: ProducerKey::fixture(specific),
-        general: ProducerKey::fixture(general),
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Supertype(SupertypeRecord {
+        key: DeclarationKey::fixture(identity),
+        specific: DeclarationKey::fixture(specific),
+        general: DeclarationKey::fixture(general),
     })
 }
 
-fn subsetting(identity: &str, owner: &str, subsetting: &str, subsetted: &str) -> BundleRecord {
-    BundleRecord::Subsetting(SubsettingRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        subsetting: ProducerKey::fixture(subsetting),
-        subsetted: ProducerKey::fixture(subsetted),
+fn subsetting(
+    identity: &str,
+    owner: &str,
+    subsetting: &str,
+    subsetted: &str,
+) -> DomainPackageRecord {
+    DomainPackageRecord::Subsetting(SubsettingRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        subsetting: DeclarationKey::fixture(subsetting),
+        subsetted: DeclarationKey::fixture(subsetted),
     })
 }
 
-fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> BundleRecord {
-    BundleRecord::Redefinition(RedefinitionRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        redefining: ProducerKey::fixture(redefining),
-        redefined: ProducerKey::fixture(redefined),
+fn redefinition(
+    identity: &str,
+    owner: &str,
+    redefining: &str,
+    redefined: &str,
+) -> DomainPackageRecord {
+    DomainPackageRecord::Redefinition(RedefinitionRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        redefining: DeclarationKey::fixture(redefining),
+        redefined: DeclarationKey::fixture(redefined),
     })
 }
 
-/// TC-195 F1 (bundle `bundle.n01`), imported as `M` by TC-198: types `A`,
-/// `B`; field `A.x` of `A`; generalization `B -> A`.
-fn fixture_f1() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.n01"),
+/// A population declaration record naming `member_types`, at the given
+/// `extent`. `admit_binding` resolves this record from the admitting domain
+/// package's own `records` by key (FR-153's "Its declaration key must belong
+/// to the binding's ModelSelection") and reads only `extent` from it (object
+/// closure holds exactly when it is [`Extent::Closed`], FR-153:68); the
+/// foreign-type check below still reads the whole effective view, not
+/// `member_types`, so `member_types` here need not enumerate every type a
+/// fixture document actually uses.
+fn population_record(identity: &str, member_types: &[&str], extent: Extent) -> DomainPackageRecord {
+    DomainPackageRecord::Population(PopulationRecord {
+        key: DeclarationKey::fixture(identity),
+        member_types: member_types
+            .iter()
+            .map(|type_name| DeclarationKey::fixture(*type_name))
+            .collect(),
+        extent,
+    })
+}
+
+/// The identity of the closed population declaration backing every
+/// P1/P2-shaped fixture document in this file ([`fixture_f1`]'s own
+/// `Population` record).
+const P1_POPULATION: &str = "model.pop.p1";
+
+/// [`P1_POPULATION`]'s own declaration key, the argument every
+/// [`admit_binding`]/[`invocation_context`] call in this file passes.
+fn p1_population_key() -> DeclarationKey {
+    DeclarationKey::fixture(P1_POPULATION)
+}
+
+/// TC-195 F1 (domain package `bundle.n01`), imported as `M` by TC-198: types
+/// `A`, `B`; field `A.x` of `A`; generalization `B -> A`; plus its own FR-153
+/// population declaration [`P1_POPULATION`] (member types `A`, `B`), at the
+/// given `extent`.
+fn fixture_f1_with_extent(extent: Extent) -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n01"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
             field_member("model.A.x", "model.A", "model.A"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            population_record(P1_POPULATION, &["model.A", "model.B"], extent),
         ],
     )
 }
 
-/// A second, distinct bundle so its object universe genuinely differs from
+/// [`fixture_f1_with_extent`] at [`Extent::Closed`], the extent every test in
+/// this file other than `l02_unknown_closure_is_incomplete_not_refused` uses.
+fn fixture_f1() -> DomainPackage {
+    fixture_f1_with_extent(Extent::Closed)
+}
+
+/// A second, distinct domain package so its object universe genuinely differs from
 /// F1's (TC-198 L04's foreign-universe key).
-fn fixture_other_universe() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.n02"),
+fn fixture_other_universe() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n02"),
         vec![object_type("model.A")],
     )
 }
 
-/// A revision-only variant of [`fixture_f1`], for the view/bundle
+/// A revision-only variant of [`fixture_f1`], for the view/domain package
 /// correspondence test below: same `export.identity` and, since
-/// `ModelSelection::fixture` derives its digest from the identity string
+/// `DomainPackageRef::fixture` derives its digest from the identity string
 /// alone, the same `export.digest` too — only `export.revision` differs.
-fn fixture_f1_with_revision(revision: &str) -> Bundle {
-    let mut bundle = fixture_f1();
-    bundle.model_selection.export.revision = Revision::producer_object(revision);
-    bundle
+fn fixture_f1_with_revision(revision: &str) -> DomainPackage {
+    let mut domain_package = fixture_f1();
+    domain_package.model_selection.export.revision = Revision::producer_object(revision);
+    domain_package
 }
 
-fn view_of(bundle: &Bundle) -> EffectiveView {
-    match normalize(bundle, ModelNormalizationLimits::UNLIMITED) {
+fn view_of(domain_package: &DomainPackage) -> EffectiveView {
+    match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed effective view, got {other:?}"),
     }
@@ -159,7 +209,7 @@ fn view_of(bundle: &Bundle) -> EffectiveView {
 
 /// The effective identity of the type-level declaration named `identity`.
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
-    let original = ProducerKey::fixture(identity);
+    let original = DeclarationKey::fixture(identity);
     view.declarations
         .iter()
         .find(|entry| {
@@ -172,7 +222,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
 fn member(object: &str, type_identity: &str) -> PopulationMember {
     PopulationMember {
         object: object.to_owned(),
-        type_identity: ProducerKey::fixture(type_identity),
+        type_identity: DeclarationKey::fixture(type_identity),
         field_values: Vec::new(),
     }
 }
@@ -189,7 +239,7 @@ fn member_with_fields(
         field_values: fields
             .into_iter()
             .map(|(field, values)| MemberFieldValues {
-                field: ProducerKey::fixture(field),
+                field: DeclarationKey::fixture(field),
                 values: values.into_iter().map(str::to_owned).collect(),
             })
             .collect(),
@@ -200,7 +250,6 @@ fn member_with_fields(
 /// FCD FR-121 document **P1**: members `a1`/`a2` of `model.A`, `b1` of `model.B`.
 fn p1(model_identity: &str) -> PopulationDocument {
     PopulationDocument {
-        closed_world: true,
         model_identity: model_identity.to_owned(),
         members: vec![
             member("a1", "model.A"),
@@ -244,17 +293,18 @@ fn reference_key(
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
 fn l01_all_instances_selects_subtype_population_once() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -264,10 +314,11 @@ fn l01_all_instances_selects_subtype_population_once() {
     };
 
     let mut meter_a = Meter::new(SCALAR_UNLIMITED);
-    let selected_a = match all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter_a) {
-        AllInstancesOutcome::Completed(set) => set,
-        other => panic!("expected a completed M::A selection, got {other:?}"),
-    };
+    let selected_a =
+        match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter_a) {
+            AllInstancesOutcome::Completed(set) => set,
+            other => panic!("expected a completed M::A selection, got {other:?}"),
+        };
     let expected_a: BTreeSet<ReferenceKey> = [
         reference_key(&universe, &b, "b1"),
         reference_key(&universe, &a, "a1"),
@@ -287,7 +338,10 @@ fn l01_all_instances_selects_subtype_population_once() {
     );
     // Outputs clause: a typed reference to the queried type, bounded [0, 3]
     // (this binding's declared_maximum), never a bare unbounded set.
-    assert_eq!(selected_a.element_type(), &ProducerKey::fixture("model.A"));
+    assert_eq!(
+        selected_a.element_type(),
+        &DeclarationKey::fixture("model.A")
+    );
     assert_eq!(selected_a.bound().minimum(), 0);
     assert_eq!(selected_a.bound().maximum(), 3);
     assert_eq!(selected_a.len(), 3);
@@ -305,16 +359,20 @@ fn l01_all_instances_selects_subtype_population_once() {
     );
 
     let mut meter_b = Meter::new(SCALAR_UNLIMITED);
-    let selected_b = match all_instances(&binding, &ProducerKey::fixture("model.B"), &mut meter_b) {
-        AllInstancesOutcome::Completed(set) => set,
-        other => panic!("expected a completed M::B selection, got {other:?}"),
-    };
+    let selected_b =
+        match all_instances(&binding, &DeclarationKey::fixture("model.B"), &mut meter_b) {
+            AllInstancesOutcome::Completed(set) => set,
+            other => panic!("expected a completed M::B selection, got {other:?}"),
+        };
     let b1_via_b = reference_key(&universe, &b, "b1");
     assert_eq!(
         selected_b.members(),
         &[b1_via_b.clone()].into_iter().collect::<BTreeSet<_>>()
     );
-    assert_eq!(selected_b.element_type(), &ProducerKey::fixture("model.B"));
+    assert_eq!(
+        selected_b.element_type(),
+        &DeclarationKey::fixture("model.B")
+    );
     assert_eq!(selected_b.bound().maximum(), 3);
     assert_eq!(meter_b.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_b.consumed(LimitKind::ResultUnits), 2);
@@ -337,13 +395,14 @@ fn l01_all_instances_selects_subtype_population_once() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l01_all_instances_incomplete_at_result_retain() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -357,7 +416,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
         ..SCALAR_UNLIMITED
     };
     let mut meter = Meter::new(limits);
-    let outcome = all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter);
+    let outcome = all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter);
     let incomplete = match outcome {
         AllInstancesOutcome::Incomplete(incomplete) => incomplete,
         other => panic!("expected an incomplete result, got {other:?}"),
@@ -376,76 +435,79 @@ fn l01_all_instances_incomplete_at_result_retain() {
 /// admission's `incomplete_population` outcome, never a refusal, and never a
 /// binding.
 ///
-/// Mutation used: inverted `!document.closed_world` to `document.closed_world`
-/// in `admit_binding`, so the `closedWorld: false` document fell through
-/// instead of returning `UnknownClosure` — red as expected, reverted.
+/// Mutation used: inverted `population.extent != Extent::Closed` to
+/// `population.extent == Extent::Closed` in `admit_binding`, so the
+/// open-extent population fell through instead of returning
+/// `UnknownClosure` — red as expected, reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-2")]
 fn l02_unknown_closure_is_incomplete_not_refused() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let open_extent = fixture_f1_with_extent(Extent::Open);
+    let open_view = view_of(&open_extent);
 
-    let mut open_world = p1("bundle.n01");
-    open_world.closed_world = false;
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    match admit_binding(
-        &bundle,
-        &view,
-        &open_world,
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut admission,
-    ) {
-        AdmissionOutcome::UnknownClosure(refusal) => {
-            assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::IncompleteScope {
-                    selection: "bundle.n01".to_string(),
-                }
-            );
-        }
-        other => panic!("expected UnknownClosure(incomplete-scope), got {other:?}"),
-    }
+    assert_eq!(
+        admit_binding(
+            &open_extent,
+            &open_view,
+            &p1("bundle.n01"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut admission,
+        ),
+        AdmissionOutcome::UnknownClosure(ModelRefusal {
+            code: Code::IncompletePopulation,
+            cause: ModelRefusalCause::IncompleteScope {
+                selection: "bundle.n01".to_string(),
+            },
+            detail: "population model.pop.p1 for bundle.n01 does not declare extent: closed"
+                .to_string(),
+        })
+    );
     assert!(
         admission.admitted_charges().is_empty(),
         "no charge before a binding exists"
     );
 
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut open_subtypes = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    match admit_binding(
-        &bundle,
-        &view,
-        &p1("bundle.n01"),
-        GeneralizationClosure::Open,
-        Some(3),
-        &mut open_subtypes,
-    ) {
-        AdmissionOutcome::UnknownClosure(refusal) => {
-            assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::UnclosedSubtypes {
-                    selection: "bundle.n01".to_string(),
-                    type_name: Some(ProducerKey::fixture("model.A")),
-                }
-            );
-        }
-        other => panic!("expected UnknownClosure(unclosed-subtypes), got {other:?}"),
-    }
+    assert_eq!(
+        admit_binding(
+            &domain_package,
+            &view,
+            &p1("bundle.n01"),
+            &p1_population_key(),
+            GeneralizationClosure::Open,
+            Some(3),
+            &mut open_subtypes,
+        ),
+        AdmissionOutcome::UnknownClosure(ModelRefusal {
+            code: Code::IncompletePopulation,
+            cause: ModelRefusalCause::UnclosedSubtypes {
+                selection: "bundle.n01".to_string(),
+                type_name: Some(DeclarationKey::fixture("model.A")),
+            },
+            detail: "model selection bundle.n01 naming model.A does not have a closed \
+                     generalization graph"
+                .to_string(),
+        })
+    );
     assert!(open_subtypes.admitted_charges().is_empty());
 }
 
 fn admitted_binding(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
 ) -> PopulationBinding {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     match admit_binding(
-        bundle,
+        domain_package,
         view,
         document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -468,26 +530,26 @@ fn admitted_binding(
 /// `TypedReference::new(t.clone(), r.key.clone())` to
 /// `TypedReference::new(r.static_type.clone(), r.key.clone())`, swapping the
 /// queried type `M::A` for the reference key's own static type `M::B` — the
-/// `Completed(Some(TypedReference::new(ProducerKey::fixture("model.A"), ...)))`
+/// `Completed(Some(TypedReference::new(DeclarationKey::fixture("model.A"), ...)))`
 /// assertion went red as expected, reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
 fn l03_lookup_undefined_mode() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
 
     let rb = LookupKey {
-        static_type: ProducerKey::fixture("model.B"),
+        static_type: DeclarationKey::fixture("model.B"),
         key: reference_key(&universe, &b, "b1"),
     };
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
         &binding,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &rb,
         AbsenceMode::Undefined,
         &mut meter_present,
@@ -495,7 +557,7 @@ fn l03_lookup_undefined_mode() {
     assert_eq!(
         present,
         LookupOutcome::Completed(Some(TypedReference::new(
-            ProducerKey::fixture("model.A"),
+            DeclarationKey::fixture("model.A"),
             reference_key(&universe, &b, "b1")
         )))
     );
@@ -505,13 +567,13 @@ fn l03_lookup_undefined_mode() {
     // `rc` is bound to `q` (document P2), never admitted into `p`, so it is
     // absent from `p`'s binding.
     let rc = LookupKey {
-        static_type: ProducerKey::fixture("model.A"),
+        static_type: DeclarationKey::fixture("model.A"),
         key: reference_key(&universe, &a, "c9"),
     };
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
         &binding,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &rc,
         AbsenceMode::Undefined,
         &mut meter_absent,
@@ -535,21 +597,21 @@ fn l03_lookup_undefined_mode() {
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
 fn l03_lookup_empty_mode() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
 
     let rb = LookupKey {
-        static_type: ProducerKey::fixture("model.B"),
+        static_type: DeclarationKey::fixture("model.B"),
         key: reference_key(&universe, &b, "b1"),
     };
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
         &binding,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &rb,
         AbsenceMode::Empty,
         &mut meter_present,
@@ -557,7 +619,7 @@ fn l03_lookup_empty_mode() {
     assert_eq!(
         present,
         LookupOutcome::Completed(Some(TypedReference::new(
-            ProducerKey::fixture("model.A"),
+            DeclarationKey::fixture("model.A"),
             reference_key(&universe, &b, "b1")
         )))
     );
@@ -565,13 +627,13 @@ fn l03_lookup_empty_mode() {
     assert_eq!(meter_present.consumed(LimitKind::ResultUnits), 2);
 
     let rc = LookupKey {
-        static_type: ProducerKey::fixture("model.A"),
+        static_type: DeclarationKey::fixture("model.A"),
         key: reference_key(&universe, &a, "c9"),
     };
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
         &binding,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &rc,
         AbsenceMode::Empty,
         &mut meter_absent,
@@ -590,20 +652,20 @@ fn l03_lookup_empty_mode() {
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
 fn l03_lookup_refused_mode() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
 
     let rc = LookupKey {
-        static_type: ProducerKey::fixture("model.A"),
+        static_type: DeclarationKey::fixture("model.A"),
         key: reference_key(&universe, &a, "c9"),
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &rc,
         AbsenceMode::Refused,
         &mut meter,
@@ -633,20 +695,20 @@ fn l03_lookup_refused_mode() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l03_lookup_type_mismatch_before_any_charge() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
 
     let ra = LookupKey {
-        static_type: ProducerKey::fixture("model.A"),
+        static_type: DeclarationKey::fixture("model.A"),
         key: reference_key(&universe, &a, "a1"),
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
-        &ProducerKey::fixture("model.B"),
+        &DeclarationKey::fixture("model.B"),
         &ra,
         AbsenceMode::Empty,
         &mut meter,
@@ -675,23 +737,23 @@ fn l03_lookup_type_mismatch_before_any_charge() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l04_lookup_foreign_universe_refuses() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&bundle, &view, &p1("bundle.n01"));
+    let binding = admitted_binding(&domain_package, &view, &p1("bundle.n01"));
 
     let other = fixture_other_universe();
     let foreign_universe = object_universe(&other).unwrap().identity();
     assert_ne!(&foreign_universe, binding.universe());
 
     let rx = LookupKey {
-        static_type: ProducerKey::fixture("model.A"),
+        static_type: DeclarationKey::fixture("model.A"),
         key: reference_key(&foreign_universe, &a, "a1"),
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &rx,
         AbsenceMode::Empty,
         &mut meter,
@@ -724,16 +786,17 @@ fn l04_lookup_foreign_universe_refuses() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut document = p1("bundle.n01");
     document.members.push(member("a1", "model.B"));
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -776,16 +839,17 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
 #[test]
 #[trace("TC-198", "FR-153-AC-1")]
 fn l05_duplicate_collapses_and_recovers_l01() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut document = p1("bundle.n01");
     document.members.push(member("a1", "model.A"));
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -802,7 +866,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
     assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let selected = match all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter) {
+    let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
         AllInstancesOutcome::Completed(set) => set,
         other => panic!("expected a completed selection, got {other:?}"),
     };
@@ -822,16 +886,17 @@ fn l05_duplicate_collapses_and_recovers_l01() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l05_foreign_type_refuses() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut document = p1("bundle.n01");
     document.members.push(member("z1", "model.Z"));
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -843,7 +908,7 @@ fn l05_foreign_type_refuses() {
                 refusal.cause,
                 ModelRefusalCause::ForeignType {
                     member: "z1".to_string(),
-                    type_name: ProducerKey::fixture("model.Z"),
+                    type_name: DeclarationKey::fixture("model.Z"),
                 }
             );
         }
@@ -863,13 +928,14 @@ fn l05_foreign_type_refuses() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l06_cardinality_bound_and_incomplete() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(2),
         &mut admission,
@@ -879,7 +945,7 @@ fn l06_cardinality_bound_and_incomplete() {
     };
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
-    let outcome = all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter);
+    let outcome = all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter);
     match outcome {
         AllInstancesOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::CardinalityOutOfBound);
@@ -902,9 +968,10 @@ fn l06_cardinality_bound_and_incomplete() {
     };
     let mut meter_incomplete = Meter::new(limits);
     let bounded = match admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
@@ -914,7 +981,7 @@ fn l06_cardinality_bound_and_incomplete() {
     };
     let incomplete_outcome = all_instances(
         &bounded,
-        &ProducerKey::fixture("model.A"),
+        &DeclarationKey::fixture("model.A"),
         &mut meter_incomplete,
     );
     match incomplete_outcome {
@@ -930,38 +997,38 @@ fn l06_cardinality_bound_and_incomplete() {
 
 // Round-3 review finding (PR #148): the prior fix cycle's
 // `require_bundle_matches` compared `all_instances`/`lookup`'s separate
-// `bundle` argument against the binding's admitted `ModelSelection` header
+// `domain_package` argument against the binding's admitted `DomainPackageRef` header
 // (identity, revision, digest), rather than against the binding's own
 // admitted `records`. Nothing in this crate verifies `export.digest`
-// against a bundle's actual `records` anywhere, and the test-only
-// `ModelSelection::fixture` derives that digest from the identity string
-// alone — so a caller could present a bundle with the exact admitted header
-// but different `records` (e.g. F1 with its `B -> A` generalization record
+// against a domain package's actual `records` anywhere, and the test-only
+// `DomainPackageRef::fixture` derives that digest from the identity string
+// alone — so a caller could present a domain package with the exact admitted header
+// but different `records` (e.g. F1 with its `B -> A` supertype record
 // removed) and the header check would pass while `all_instances`/`lookup`
 // silently answered against the wrong content (`b1` dropping out of
 // `allInstances<M::A>(p)` instead of the query refusing).
 //
 // This is now unrepresentable, not merely refused: `all_instances` and
-// `lookup` no longer take a `bundle` argument at all (see the module docs'
-// "Binding/bundle correspondence"), so there is no way for a caller to
-// evaluate a query against anything other than the exact bundle
+// `lookup` no longer take a `domain_package` argument at all (see the module docs'
+// "Binding/domain package correspondence"), so there is no way for a caller to
+// evaluate a query against anything other than the exact domain package
 // `admit_binding` admitted. The prior fix cycle's `fixture_f1_with_
 // foreign_digest` fixture and its query-time test are deleted along with
 // `require_bundle_matches` itself, rather than adapted — there is no longer
-// a second bundle parameter for either one to exercise. The reachable
+// a second domain package parameter for either one to exercise. The reachable
 // sibling of this defect class — a `LookupKey` naming a foreign universe,
-// independent of which bundle is bound — stays covered by
+// independent of which domain package is bound — stays covered by
 // `l04_lookup_foreign_universe_refuses` above, whose `LookupKey.key.universe`
-// field a caller can still set to anything regardless of the bound bundle.
+// field a caller can still set to anything regardless of the bound domain package.
 
 /// TC-198's own admission-time `modelIdentity` check: a population document
-/// naming a `modelIdentity` other than the admitting bundle's own refuses
+/// naming a `modelIdentity` other than the admitting domain package's own refuses
 /// before any `binding.member` charge. Every other test in this file admits
 /// `p1("bundle.n01")` against `fixture_f1()`, whose own `modelIdentity` is
 /// also `bundle.n01`, so this path was untested.
 ///
 /// Mutation used: in `admit_binding`, changed the `modelIdentity` guard's
-/// condition from `document.model_identity != bundle.model_selection.export.
+/// condition from `document.model_identity != domain_package.model_selection.export.
 /// identity` to `false` (never fires), which let the mismatched document
 /// proceed to `AdmissionOutcome::Admitted` instead of refusing — the
 /// `Refused(foreign_reference/foreign-model-selection)` assertion went red
@@ -969,15 +1036,16 @@ fn l06_cardinality_bound_and_incomplete() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l05_foreign_model_selection_refuses_at_admission() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mismatched = p1("bundle.other");
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &mismatched,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -989,7 +1057,7 @@ fn l05_foreign_model_selection_refuses_at_admission() {
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
                     actual: OfferedSelection::Document("bundle.other".to_string()),
-                    expected: bundle.model_selection.clone(),
+                    expected: domain_package.model_selection.clone(),
                 }
             );
         }
@@ -1001,30 +1069,31 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 }
 
 /// Round-3 review finding (PR #148): `admit_binding` takes `view` and
-/// `bundle` separately and, before this test, never checked that they
+/// `domain_package` separately and, before this test, never checked that they
 /// correspond — the same mismatch class removed from `all_instances`/
 /// `lookup` themselves, just moved one level up. Pins the check with a
 /// revision-only divergence (same `export.identity` and `export.digest` as
-/// `fixture_f1()` — `ModelSelection::fixture` derives the digest from the
+/// `fixture_f1()` — `DomainPackageRef::fixture` derives the digest from the
 /// identity string alone, so an identity-only comparison would miss this)
-/// to prove the check compares the full `ModelSelection` header, not just
+/// to prove the check compares the full `DomainPackageRef` header, not just
 /// `export.identity`.
 ///
 /// Mutation used: narrowed the check from `view.model_selection !=
-/// bundle.model_selection` to `view.model_selection.export.identity !=
-/// bundle.model_selection.export.identity`, which let this revision-only
+/// domain_package.model_selection` to `view.model_selection.export.identity !=
+/// domain_package.model_selection.export.identity`, which let this revision-only
 /// mismatch admit instead of refusing — red as expected, reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
     let view = view_of(&fixture_f1_with_revision("1"));
-    let bundle = fixture_f1_with_revision("2");
+    let domain_package = fixture_f1_with_revision("2");
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1036,7 +1105,7 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
                     actual: OfferedSelection::View(view.model_selection.clone()),
-                    expected: bundle.model_selection.clone(),
+                    expected: domain_package.model_selection.clone(),
                 }
             );
         }
@@ -1044,6 +1113,122 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
             panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
         }
     }
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// #196 review finding 1, happy path: `admit_binding` resolves
+/// `p1_population_key()` against `fixture_f1()`'s own `Population` record
+/// and admits normally -- the by-key resolution this fix added does not
+/// itself change an already-passing admission.
+#[test]
+#[trace("TC-198", "FR-153-AC-1")]
+fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &domain_package,
+        &view,
+        &p1("bundle.n01"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    let AdmissionOutcome::Admitted(binding) = outcome else {
+        panic!("expected Admitted, got {outcome:?}");
+    };
+    assert_eq!(binding.declared_maximum(), Some(3));
+    assert_eq!(binding.members().len(), 3);
+    assert_eq!(
+        admission.admitted_charges().len(),
+        3,
+        "one binding.member charge per P1 member"
+    );
+}
+
+/// #196 review finding 1: extent is read from the `Population` record
+/// `admit_binding` itself resolves by key, never a value a caller states
+/// independently of it -- `admit_binding` takes only `population_key`, a
+/// `DeclarationKey`, so there is no parameter left through which a caller
+/// could claim `Closed` for a population the domain package itself declares
+/// `Open`.
+///
+/// Mutation used: in `admit_binding`, changed `population.extent !=
+/// Extent::Closed` to `false` (the resolved record's own extent never
+/// denies), which let the open-extent population admit instead of returning
+/// `UnknownClosure` -- red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
+    let open_extent = fixture_f1_with_extent(Extent::Open);
+    let view = view_of(&open_extent);
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    assert_eq!(
+        admit_binding(
+            &open_extent,
+            &view,
+            &p1("bundle.n01"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut admission,
+        ),
+        AdmissionOutcome::UnknownClosure(ModelRefusal {
+            code: Code::IncompletePopulation,
+            cause: ModelRefusalCause::IncompleteScope {
+                selection: "bundle.n01".to_string(),
+            },
+            detail: "population model.pop.p1 for bundle.n01 does not declare extent: closed"
+                .to_string(),
+        })
+    );
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// #196 review finding 1: a population key naming another domain package's
+/// `Population` declaration -- not one of the admitting `domain_package`'s
+/// own records -- refuses `foreign_reference`/`foreign-model-selection`
+/// rather than resolving against nothing or admitting with no population
+/// declaration behind it at all.
+///
+/// Mutation used: in `admit_binding`, changed the resolving `find_map`'s
+/// predicate from `population.key == *population_key` to `true` (matches
+/// whichever `Population` record is declared first, regardless of key),
+/// which let a foreign key resolve to `fixture_f1()`'s own `model.pop.p1`
+/// record instead of refusing -- red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn admission_refuses_a_population_key_from_another_domain_package() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let foreign_key = DeclarationKey::fixture("model.pop.g1");
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    assert_eq!(
+        admit_binding(
+            &domain_package,
+            &view,
+            &p1("bundle.n01"),
+            &foreign_key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut admission,
+        ),
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: OfferedSelection::Population(foreign_key.clone()),
+                expected: domain_package.model_selection.clone(),
+            },
+            detail: format!(
+                "population key {} names no Population declaration of domain package bundle.n01",
+                foreign_key.identity
+            ),
+        })
+    );
     assert!(admission.admitted_charges().is_empty());
 }
 
@@ -1063,17 +1248,18 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l02_population_members_limit_denies_the_third_member_charge() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let limits = PopulationAdmissionLimits {
         population_members: 2,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     let mut admission = AdmissionMeter::new(limits);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1115,17 +1301,18 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
 #[test]
 #[trace("TC-198", "FR-153-AC-3")]
 fn l02_work_units_limit_denies_the_third_member_charge() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let limits = PopulationAdmissionLimits {
         work_units: 2,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     let mut admission = AdmissionMeter::new(limits);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1174,14 +1361,15 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5")]
 fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &p1("bundle.n01"),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(5),
         &mut admission,
@@ -1193,10 +1381,11 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
     assert_eq!(binding.members().len(), 3);
 
     let mut meter_a = Meter::new(SCALAR_UNLIMITED);
-    let selected_a = match all_instances(&binding, &ProducerKey::fixture("model.A"), &mut meter_a) {
-        AllInstancesOutcome::Completed(set) => set,
-        other => panic!("expected a completed M::A selection, got {other:?}"),
-    };
+    let selected_a =
+        match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter_a) {
+            AllInstancesOutcome::Completed(set) => set,
+            other => panic!("expected a completed M::A selection, got {other:?}"),
+        };
     assert_eq!(selected_a.len(), 3);
     assert_eq!(selected_a.bound().minimum(), 0);
     assert_eq!(
@@ -1219,13 +1408,13 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
 /// are already covered by `model_conformance.rs`'s
 /// `r06_subsetting_type_and_multiplicity_axes`; this backs only the runtime
 /// `binding.subset-value` charge and refusal FR-151-AC-10 adds.
-fn r06_bundle() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.r06pop"),
+fn r06_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r06pop"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member_mult("model.A.all", "model.A", "model.A", 0, Some(5)),
             field_member_mult("model.A.some", "model.A", "model.B", 0, Some(3)),
             subsetting(
@@ -1234,6 +1423,7 @@ fn r06_bundle() -> Bundle {
                 "model.A.some",
                 "model.A.all",
             ),
+            population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
     )
 }
@@ -1241,10 +1431,9 @@ fn r06_bundle() -> Bundle {
 #[test]
 #[trace("TC-196", "FR-151-AC-10")]
 fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
-    let bundle = r06_bundle();
-    let view = view_of(&bundle);
+    let domain_package = r06_bundle();
+    let view = view_of(&domain_package);
     let document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.r06pop".to_owned(),
         members: vec![
             member_with_fields(
@@ -1259,9 +1448,10 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1273,9 +1463,9 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
                 refusal.cause,
                 ModelRefusalCause::SubsettingViolation {
                     object: "a1".to_owned(),
-                    record: ProducerKey::fixture("model.subset.some-all"),
-                    subsetting: ProducerKey::fixture("model.A.some"),
-                    subsetted: ProducerKey::fixture("model.A.all"),
+                    record: DeclarationKey::fixture("model.subset.some-all"),
+                    subsetting: DeclarationKey::fixture("model.A.some"),
+                    subsetted: DeclarationKey::fixture("model.A.all"),
                 }
             );
             assert!(refusal.detail.contains("a1"));
@@ -1317,10 +1507,9 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 #[test]
 #[trace("TC-196", "FR-151-AC-10")]
 fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
-    let bundle = r06_bundle();
-    let view = view_of(&bundle);
+    let domain_package = r06_bundle();
+    let view = view_of(&domain_package);
     let document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.r06pop".to_owned(),
         members: vec![
             member_with_fields(
@@ -1334,9 +1523,10 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1365,10 +1555,9 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
 #[test]
 #[trace("TC-196", "FR-151-AC-10")]
 fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
-    let bundle = r06_bundle();
-    let view = view_of(&bundle);
+    let domain_package = r06_bundle();
+    let view = view_of(&domain_package);
     let document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.r06pop".to_owned(),
         members: vec![
             member_with_fields(
@@ -1386,9 +1575,10 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &bundle,
+        &domain_package,
         &view,
         &document,
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1400,7 +1590,7 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
                 refusal.cause,
                 ModelRefusalCause::DuplicateMember {
                     object: "a1".to_owned(),
-                    field: ProducerKey::fixture("model.A.all"),
+                    field: DeclarationKey::fixture("model.A.all"),
                 }
             );
             assert!(refusal.detail.contains("a1"));
@@ -1421,7 +1611,6 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
 /// `a1`/`b1` survive unchanged.
 fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
     PopulationDocument {
-        closed_world: true,
         model_identity: model_identity.to_owned(),
         members: vec![member("a1", "model.A"), member("b1", "model.B")],
     }
@@ -1433,7 +1622,7 @@ fn deletes_a_effect() -> OperationEffect {
     OperationEffect {
         modifies: Vec::new(),
         creates: Vec::new(),
-        deletes: vec![ProducerKey::fixture("model.A")],
+        deletes: vec![DeclarationKey::fixture("model.A")],
     }
 }
 
@@ -1447,10 +1636,15 @@ fn empty_effect() -> OperationEffect {
     }
 }
 
-fn invocation_context<'a>(bundle: &'a Bundle, view: &'a EffectiveView) -> InvocationContext<'a> {
+fn invocation_context<'a>(
+    domain_package: &'a DomainPackage,
+    view: &'a EffectiveView,
+    population: &'a DeclarationKey,
+) -> InvocationContext<'a> {
     InvocationContext {
-        bundle,
+        domain_package,
         view,
+        population,
         subtype_closure: GeneralizationClosure::Closed,
         declared_maximum: Some(3),
     }
@@ -1475,9 +1669,9 @@ fn invocation_context<'a>(bundle: &'a Bundle, view: &'a EffectiveView) -> Invoca
 #[test]
 #[trace("TC-198", "FR-153-AC-7")]
 fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
-    let universe = object_universe(&bundle).unwrap().identity();
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
     let a = type_id(&view, "model.A");
     let effect = deletes_a_effect();
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -1489,7 +1683,7 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
         declared_deleted: &["a2".to_owned()],
     };
     let post = match admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
         &declared,
@@ -1509,7 +1703,7 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let a2_key = reference_key(&universe, &a, "a2");
     assert_eq!(
         pre.members().get(&a2_key),
-        Some(&ProducerKey::fixture("model.A"))
+        Some(&DeclarationKey::fixture("model.A"))
     );
     assert!(!post.members().contains_key(&a2_key));
 }
@@ -1521,8 +1715,8 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
 #[test]
 #[trace("TC-198", "FR-046-AC-3")]
 fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let effect = empty_effect();
     let declared = InvocationDelta {
         effect: &effect,
@@ -1533,7 +1727,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
         &declared,
@@ -1547,7 +1741,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
                 refusal.cause,
                 ModelRefusalCause::FrameDeleteOutsideGrant {
                     object: "a2".to_owned(),
-                    type_name: ProducerKey::fixture("model.A"),
+                    type_name: DeclarationKey::fixture("model.A"),
                 }
             );
             assert!(refusal.detail.contains("a2"));
@@ -1562,11 +1756,10 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
 #[test]
 #[trace("FR-046-AC-3")]
 fn invocation_refuses_a_create_outside_the_declared_frame() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let effect = empty_effect();
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![
             member("a1", "model.A"),
@@ -1584,7 +1777,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &post_document,
         &declared,
@@ -1598,7 +1791,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
                 refusal.cause,
                 ModelRefusalCause::FrameCreateOutsideGrant {
                     object: "a9".to_owned(),
-                    type_name: ProducerKey::fixture("model.A"),
+                    type_name: DeclarationKey::fixture("model.A"),
                 }
             );
             assert!(refusal.detail.contains("a9"));
@@ -1614,10 +1807,9 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
 #[test]
 #[trace("FR-046-AC-3")]
 fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admits() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![member_with_fields(
             "a1",
@@ -1626,7 +1818,6 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
         )],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![member_with_fields(
             "a1",
@@ -1644,7 +1835,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &undeclared_delta,
@@ -1658,7 +1849,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
                 refusal.cause,
                 ModelRefusalCause::FrameFieldWriteOutsideGrant {
                     object: "a1".to_owned(),
-                    field: ProducerKey::fixture("model.A.x"),
+                    field: DeclarationKey::fixture("model.A.x"),
                 }
             );
             assert!(refusal.detail.contains("a1"));
@@ -1668,7 +1859,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     }
 
     let declared_effect = OperationEffect {
-        modifies: vec![ProducerKey::fixture("model.A.x")],
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -1680,7 +1871,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1701,19 +1892,19 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
 // created/deleted under a supertype grant, and FR-046 delta agreement.
 // ---------------------------------------------------------------------------
 
-/// A dedicated bundle for the ordered/unordered field-comparison tests:
+/// A dedicated domain package for the ordered/unordered field-comparison tests:
 /// `model.A.ordered` (declared `ordered: true`, so pre/post comparison is
 /// exact-sequence) and `model.A.unordered` (declared `ordered: false`, so
 /// comparison is order-insensitive), both fields of `model.A`.
-fn ordering_bundle() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.ordering"),
+fn ordering_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.ordering"),
         vec![
             object_type("model.A"),
-            BundleRecord::FieldMember(FieldMemberRecord {
-                key: ProducerKey::fixture("model.A.ordered"),
-                owner: ProducerKey::fixture("model.A"),
-                value_type: ProducerKey::fixture("model.A"),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("model.A.ordered"),
+                owner: DeclarationKey::fixture("model.A"),
+                value_type: DeclarationKey::fixture("model.A"),
                 multiplicity: Multiplicity {
                     lower: 0,
                     upper: Some(5),
@@ -1721,10 +1912,10 @@ fn ordering_bundle() -> Bundle {
                     unique: true,
                 },
             }),
-            BundleRecord::FieldMember(FieldMemberRecord {
-                key: ProducerKey::fixture("model.A.unordered"),
-                owner: ProducerKey::fixture("model.A"),
-                value_type: ProducerKey::fixture("model.A"),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("model.A.unordered"),
+                owner: DeclarationKey::fixture("model.A"),
+                value_type: DeclarationKey::fixture("model.A"),
                 multiplicity: Multiplicity {
                     lower: 0,
                     upper: Some(5),
@@ -1732,6 +1923,7 @@ fn ordering_bundle() -> Bundle {
                     unique: true,
                 },
             }),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
     )
 }
@@ -1749,10 +1941,9 @@ fn ordering_bundle() -> Bundle {
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
-    let bundle = ordering_bundle();
-    let view = view_of(&bundle);
+    let domain_package = ordering_bundle();
+    let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.ordering".to_owned(),
         members: vec![member_with_fields(
             "a1",
@@ -1761,7 +1952,6 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
         )],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.ordering".to_owned(),
         members: vec![member_with_fields(
             "a1",
@@ -1778,7 +1968,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1806,10 +1996,9 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
-    let bundle = ordering_bundle();
-    let view = view_of(&bundle);
+    let domain_package = ordering_bundle();
+    let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.ordering".to_owned(),
         members: vec![member_with_fields(
             "a1",
@@ -1818,7 +2007,6 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
         )],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.ordering".to_owned(),
         members: vec![member_with_fields(
             "a1",
@@ -1835,7 +2023,7 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1849,7 +2037,7 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
                 refusal.cause,
                 ModelRefusalCause::FrameFieldWriteOutsideGrant {
                     object: "a1".to_owned(),
-                    field: ProducerKey::fixture("model.A.ordered"),
+                    field: DeclarationKey::fixture("model.A.ordered"),
                 }
             );
             assert!(refusal.detail.contains("model.A.ordered"));
@@ -1861,41 +2049,47 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     }
 }
 
-/// A dedicated bundle for item 7's redefinition-reaching field-write test:
+/// A dedicated domain package for item 7's redefinition-reaching field-write test:
 /// `model.B.x` redefines `model.A.x` (`B` a subtype of `A`).
-fn redefinition_bundle() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.redef"),
+fn redefinition_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member("model.A.x", "model.A", "model.A"),
             field_member("model.B.x", "model.B", "model.A"),
             redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
     )
 }
 
-/// A dedicated bundle for the review's own chained-redefinition test:
+/// A dedicated domain package for the review's own chained-redefinition test:
 /// `model.A <- model.B <- model.C`, with `model.B.x` redefining `model.A.x`
 /// and `model.C.x` redefining `model.B.x` -- no direct `model.C.x ->
 /// model.A.x` record exists, per model-complete.md:56 ("the redefining
 /// feature replaces the *one* inherited redefined feature").
-fn redefinition_chain_bundle() -> Bundle {
-    Bundle::new(
-        ModelSelection::fixture("bundle.redef.chain"),
+fn redefinition_chain_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.chain"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
             object_type("model.C"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
-            generalization("model.gen.C-B", "model.C", "model.B"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.C-B", "model.C", "model.B"),
             field_member("model.A.x", "model.A", "model.A"),
             field_member("model.B.x", "model.B", "model.A"),
             field_member("model.C.x", "model.C", "model.A"),
             redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
             redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            population_record(
+                P1_POPULATION,
+                &["model.A", "model.B", "model.C"],
+                Extent::Closed,
+            ),
         ],
     )
 }
@@ -1914,10 +2108,9 @@ fn redefinition_chain_bundle() -> Bundle {
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_redefinition() {
-    let bundle = redefinition_bundle();
-    let view = view_of(&bundle);
+    let domain_package = redefinition_bundle();
+    let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.redef".to_owned(),
         members: vec![member_with_fields(
             "b1",
@@ -1926,7 +2119,6 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
         )],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.redef".to_owned(),
         members: vec![member_with_fields(
             "b1",
@@ -1935,7 +2127,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
         )],
     };
     let effect = OperationEffect {
-        modifies: vec![ProducerKey::fixture("model.A.x")],
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -1947,7 +2139,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1979,10 +2171,9 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_redefinition_chain() {
-    let bundle = redefinition_chain_bundle();
-    let view = view_of(&bundle);
+    let domain_package = redefinition_chain_bundle();
+    let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.redef.chain".to_owned(),
         members: vec![member_with_fields(
             "c1",
@@ -1991,7 +2182,6 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
         )],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.redef.chain".to_owned(),
         members: vec![member_with_fields(
             "c1",
@@ -2000,7 +2190,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
         )],
     };
     let effect = OperationEffect {
-        modifies: vec![ProducerKey::fixture("model.A.x")],
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -2012,7 +2202,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2029,14 +2219,14 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
 }
 
 /// PR #177 review finding 1: `field_write_covered`'s `redefinition_reaches`
-/// call compares `ProducerKey`s by their full derived `PartialEq`
+/// call compares `DeclarationKey`s by their full derived `PartialEq`
 /// (`authority`, `identity`, `revision`, `digest`), not `.identity` alone --
 /// a write naming `model.A.x` at revision "2" does not reach a grant for
 /// `model.A.x` at revision "1", even though both share the display identity
 /// `model.A.x`. This behavior predates QSL #171 (`field_write_covered`
 /// already compared full keys; #171 only fixed how many hops the walk
 /// takes), but nothing in this file pinned it: every other field-write test
-/// here uses `ProducerKey::fixture`'s revision "1" on both the write and the
+/// here uses `DeclarationKey::fixture`'s revision "1" on both the write and the
 /// grant, so it cannot tell full-key equality apart from identity-only
 /// comparison.
 ///
@@ -2048,22 +2238,22 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name() {
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.redef.revision"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.revision"),
         vec![
             object_type("model.A"),
             field_member("model.A.x", "model.A", "model.A"),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
     );
-    let view = view_of(&bundle);
-    let mut write_at_revision_2 = ProducerKey::fixture("model.A.x");
+    let view = view_of(&domain_package);
+    let mut write_at_revision_2 = DeclarationKey::fixture("model.A.x");
     write_at_revision_2.revision.value = "2".to_owned();
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.redef.revision".to_owned(),
         members: vec![PopulationMember {
             object: "a1".to_owned(),
-            type_identity: ProducerKey::fixture("model.A"),
+            type_identity: DeclarationKey::fixture("model.A"),
             field_values: vec![MemberFieldValues {
                 field: write_at_revision_2.clone(),
                 values: vec!["a2".to_owned()],
@@ -2071,11 +2261,10 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
         }],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.redef.revision".to_owned(),
         members: vec![PopulationMember {
             object: "a1".to_owned(),
-            type_identity: ProducerKey::fixture("model.A"),
+            type_identity: DeclarationKey::fixture("model.A"),
             field_values: vec![MemberFieldValues {
                 field: write_at_revision_2.clone(),
                 values: vec!["a9".to_owned()],
@@ -2083,7 +2272,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
         }],
     };
     let effect = OperationEffect {
-        modifies: vec![ProducerKey::fixture("model.A.x")], // revision "1"
+        modifies: vec![DeclarationKey::fixture("model.A.x")], // revision "1"
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -2095,7 +2284,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2134,27 +2323,25 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let pre_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![member("a1", "model.A"), member("b1", "model.B")],
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![member("a1", "model.B"), member("b1", "model.B")],
     };
     let effect = OperationEffect {
         modifies: Vec::new(),
         creates: vec![
-            ProducerKey::fixture("model.A"),
-            ProducerKey::fixture("model.B"),
+            DeclarationKey::fixture("model.A"),
+            DeclarationKey::fixture("model.B"),
         ],
         deletes: vec![
-            ProducerKey::fixture("model.A"),
-            ProducerKey::fixture("model.B"),
+            DeclarationKey::fixture("model.A"),
+            DeclarationKey::fixture("model.B"),
         ],
     };
     let declared = InvocationDelta {
@@ -2165,7 +2352,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2179,8 +2366,8 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
                 refusal.cause,
                 ModelRefusalCause::FrameTypeChanged {
                     object: "a1".to_owned(),
-                    pre_type: ProducerKey::fixture("model.A"),
-                    post_type: ProducerKey::fixture("model.B"),
+                    pre_type: DeclarationKey::fixture("model.A"),
+                    post_type: DeclarationKey::fixture("model.B"),
                 }
             );
             assert!(refusal.detail.contains("a1"));
@@ -2200,11 +2387,10 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 #[test]
 #[trace("TC-198", "FR-046-AC-3")]
 fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let pre_document = p1("bundle.n01"); // a1, a2, b1
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![
             member("a1", "model.A"),
@@ -2214,8 +2400,8 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     };
     let effect = OperationEffect {
         modifies: Vec::new(),
-        creates: vec![ProducerKey::fixture("model.A")],
-        deletes: vec![ProducerKey::fixture("model.A")],
+        creates: vec![DeclarationKey::fixture("model.A")],
+        deletes: vec![DeclarationKey::fixture("model.A")],
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2225,7 +2411,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2260,15 +2446,14 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
 #[test]
 #[trace("FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let effect = OperationEffect {
         modifies: Vec::new(),
-        creates: vec![ProducerKey::fixture("model.A")],
+        creates: vec![DeclarationKey::fixture("model.A")],
         deletes: Vec::new(),
     };
     let post_document = PopulationDocument {
-        closed_world: true,
         model_identity: "bundle.n01".to_owned(),
         members: vec![
             member("a1", "model.A"),
@@ -2285,7 +2470,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &post_document,
         &declared,
@@ -2324,8 +2509,8 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
 #[test]
 #[trace("FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populations() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let effect = deletes_a_effect();
     let declared = InvocationDelta {
         effect: &effect,
@@ -2335,7 +2520,7 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
         &declared,
@@ -2382,12 +2567,12 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
 #[test]
 #[trace("FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_and_deleted() {
-    let bundle = fixture_f1();
-    let view = view_of(&bundle);
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let effect = OperationEffect {
         modifies: Vec::new(),
-        creates: vec![ProducerKey::fixture("model.A")],
-        deletes: vec![ProducerKey::fixture("model.A")],
+        creates: vec![DeclarationKey::fixture("model.A")],
+        deletes: vec![DeclarationKey::fixture("model.A")],
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2397,7 +2582,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&bundle, &view),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1("bundle.n01"),
         &declared,
