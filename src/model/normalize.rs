@@ -1961,12 +1961,18 @@ fn apply_redefinitions(
                 //
                 // `normalize.conflict-check` exposes this ambiguity
                 // (`value-accounting.md:456`), so `record_phase4_refusal`
-                // below ranks it `Phase4Rank::ConflictCheck(owner_effective_id,
+                // below ranks it `Phase4Rank::ConflictCheck(rank_effective_id,
                 // target_key)` — `:456`'s "ascending by effective member
                 // key" (`model-complete.md:206`: owner effective type
                 // identity, then original declaration key) — rather than
                 // this group's own producer-key `type_key` (QSL #195; see
                 // the module docs and `record_phase4_refusal`'s own doc).
+                // `rank_effective_id` is `most_derived[0].owner`'s own
+                // effective identity for the `redefinition-target` shape
+                // below (content-stable across every resolving type_key that
+                // re-derives it) and `type_key`'s own for the
+                // `derivation-conflict` shape (content that is genuinely
+                // per-`type_key`), computed just below.
                 let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
                 for edge in &edges {
                     let mut dominated_by_another = false;
@@ -1991,6 +1997,29 @@ fn apply_redefinitions(
                     && most_derived
                         .iter()
                         .all(|edge| edge.owner == most_derived[0].owner);
+                // Unlike the `derivation-conflict` candidate below, whose own
+                // detail names `type_key` and so is genuinely distinct per
+                // resolving type, this `redefinition-target` candidate's own
+                // detail names only `most_derived[0].owner` -- content that
+                // does not depend on `type_key` at all. Every descendant of
+                // `most_derived[0].owner` that also inherits `target_key`
+                // through it independently re-derives the identical
+                // candidate (the same reasoning as `redefinition_check_work`
+                // /the dedup below `apply_redefinitions`'s own per-type_key
+                // loop, QSL #195), so this candidate's own rank is tagged by
+                // `most_derived[0].owner`'s own effective identity, not
+                // `type_key`'s, keeping duplicate derivations collapsible.
+                let rank_effective_id = if same_owner {
+                    accounting
+                        .type_effective_ids
+                        .get(&most_derived[0].owner)
+                        .cloned()
+                        .expect(
+                            "build populates type_effective_ids for every type before phase 4 runs",
+                        )
+                } else {
+                    owner_effective_id.clone()
+                };
                 let candidate = if same_owner {
                     let mut redefiners: Vec<String> = most_derived
                         .iter()
@@ -2037,7 +2066,7 @@ fn apply_redefinitions(
                 };
                 record_phase4_refusal(
                     accounting,
-                    Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone()),
+                    Phase4Rank::ConflictCheck(rank_effective_id, target_key.clone()),
                     candidate,
                 );
             }
