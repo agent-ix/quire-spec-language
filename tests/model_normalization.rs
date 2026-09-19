@@ -215,6 +215,30 @@ fn fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant(
     )
 }
 
+/// `E` (`<- A`, so `A.x` IS an effective member of `E`) declares
+/// `redef.Ez` (`E`, `Z.w` redefines `A.x`) where the redefining member
+/// `Z.w` is owned by unrelated type `Z`, so `Z.w` is not itself an
+/// effective member of `E`. `Da` (`<- E`) inherits the identical record and
+/// fails the identical "redefining member not an effective member" check
+/// for the identical reason. `Da` sorts before `E` in `type_keys`'
+/// ascending identity order.
+fn fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant() -> Bundle {
+    Bundle::new(
+        ModelSelection::fixture("bundle.rank03"),
+        vec![
+            object_type("model.A"),
+            object_type("model.Z"),
+            object_type("model.E"),
+            object_type("model.Da"),
+            field_member("model.A.x", "model.A", "model.A"),
+            generalization("model.gen.E-A", "model.E", "model.A"),
+            generalization("model.gen.Da-E", "model.Da", "model.E"),
+            field_member("model.Z.w", "model.Z", "model.A"),
+            redefinition("model.redef.Ez", "model.E", "model.Z.w", "model.A.x"),
+        ],
+    )
+}
+
 /// A second, independently-built instance of the same ranking shape as
 /// `fixture_n06_conflict_with_unreachable_redefiner`: the
 /// `normalize.conflict-check`-stage owner sorts before the
@@ -2711,6 +2735,35 @@ fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_desce
                         owner: ProducerKey::fixture("model.E"),
                     },
                     detail: "redefinition target model.A.x is not an effective member of model.E"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused(RedefinitionUnreachable) naming E, got {other:?}"),
+    }
+}
+
+/// `E`'s own resolution and `Da`'s own resolution (`Da <- E`) both fail the
+/// identical "redefining member not an effective member" check for the
+/// identical record, so both rank identically -- `Da` sorts before `E`, but
+/// the refusal still names `E`, the record's own owning type, since the
+/// check always ranks and names the record's own owner, never the
+/// resolving `type_key`.
+#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[test]
+fn n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant() {
+    let bundle = fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant();
+    match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::DanglingReference,
+                    cause: ModelRefusalCause::RedefinitionUnreachable {
+                        member: ProducerKey::fixture("model.Z.w"),
+                        owner: ProducerKey::fixture("model.E"),
+                    },
+                    detail: "redefining member model.Z.w is not an effective member of model.E"
                         .to_string(),
                 }
             );

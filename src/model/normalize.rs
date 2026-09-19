@@ -1738,6 +1738,15 @@ fn apply_redefinitions(
                     // by this one edge's own `record_key`, since unlike the
                     // target check above this failure is specific to a
                     // single record, not shared by the whole group.
+                    //
+                    // This edge's `record_key` can likewise be reached, and
+                    // fail the identical check for the identical reason, at
+                    // more than one `type_key` whenever a descendant of
+                    // `edge.owner` also inherits it (both tie at the same
+                    // `record_key`) -- naming `edge.owner` rather than
+                    // `type_key` keeps the reported refusal the same
+                    // regardless of which of those tied candidates this pass
+                    // happens to keep, matching the target check above.
                     record_phase4_refusal(
                         accounting,
                         REDEFINITION_CHECK_STAGE,
@@ -1747,11 +1756,11 @@ fn apply_redefinitions(
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::RedefinitionUnreachable {
                                 member: edge.redefining.clone(),
-                                owner: type_key.clone(),
+                                owner: edge.owner.clone(),
                             },
                             detail: format!(
                                 "redefining member {} is not an effective member of {}",
-                                edge.redefining.identity, type_key.identity
+                                edge.redefining.identity, edge.owner.identity
                             ),
                         },
                     );
