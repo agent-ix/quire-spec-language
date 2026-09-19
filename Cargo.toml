@@ -36,11 +36,14 @@ unicode-normalization = "=0.1.25"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "cbbe4908e314b9cc5c7e1aaee87517218af3e632" }
 agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "cbbe4908e314b9cc5c7e1aaee87517218af3e632" }
+# `crate::model::intake::lift_document` calls FCD's `lift`, which always
+# writes its document to a required output path (FR-099); this is that
+# scratch directory, not test-only.
+tempfile = "=3.27.0"
 
 [dev-dependencies]
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
-tempfile = "=3.27.0"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
 quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
 quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
