@@ -917,7 +917,7 @@ pub fn check_field_refinement_obligation(
         ));
     };
 
-    let same_type = redefining.value_type.node == redefined.value_type.node;
+    let same_type = redefining.value_type == redefined.value_type;
     let raises_lower = redefining.multiplicity.lower > redefined.multiplicity.lower;
     let single_valued = redefining.multiplicity.upper.is_some_and(|u| u <= 1);
 
@@ -944,7 +944,7 @@ pub fn check_field_refinement_obligation(
             .effect
             .modifies
             .iter()
-            .any(|field| field.node == redefined_key.node || field.node == redefining_key.node)
+            .any(|field| field == redefined_key || field == redefining_key)
     });
     let Some(writer) = writer else {
         // No exposed operation writes this field: nothing to discharge.
@@ -956,13 +956,12 @@ pub fn check_field_refinement_obligation(
         let Some(target) = &operation.redefines else {
             continue;
         };
-        if target.node == writer.key.node && operation.owner.node == redefining.owner.node {
+        if target == &writer.key && operation.owner == redefining.owner {
             clauses.extend(operation.own_postcondition_clauses.iter());
         }
     }
-    let names_field = |key: &DeclarationKey| -> bool {
-        key.node == redefined_key.node || key.node == redefining_key.node
-    };
+    let names_field =
+        |key: &DeclarationKey| -> bool { key == redefined_key || key == redefining_key };
 
     // FR-146's own rule: a projection onto the field a narrowing redefinition
     // redefines carries the declared facts of the redefined PARENT member,

@@ -1294,3 +1294,321 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
         }]))
     );
 }
+
+/// Issue #182: `check_field_refinement_obligation`'s `same_type` short
+/// circuit compared `value_type.node` alone. A redefining field whose value
+/// type shares a display node with the redefined field's value type but
+/// lives in a different package is not the same type -- it must fall
+/// through to the field-domain obligation (an unestablished interval
+/// fact), not be waved through as "no narrowing at all". `model.B.xb`'s
+/// value type is `other/pkg`'s `model.Count` (bounds `[-3, 3]`), not
+/// `test/orders`'s `model.Count` (bounds `[0, 9]`) that `model.A.x`
+/// declares, even though both share the node `model.Count`.
+///
+/// Mutation used: reverted `same_type` to `redefining.value_type.node ==
+/// redefined.value_type.node`; this test went from `Refused` to
+/// `Compatible` (the early-return branch fired); every other test in this
+/// file stayed green; reverted.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_the_same_node() {
+    let redefining_value_type = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.Count".to_owned(),
+    };
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r13"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            scalar_type("model.Count", 0, 9),
+            DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: redefining_value_type.clone(),
+                lower: -3,
+                upper: 3,
+            }),
+            field_member("model.A.x", "model.A", "model.Count", mult(1, Some(1))),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("model.B.xb"),
+                owner: DeclarationKey::fixture("model.B"),
+                value_type: redefining_value_type,
+                multiplicity: mult(1, Some(1)),
+                subsets: vec![],
+                redefines: Some(DeclarationKey::fixture("model.A.x")),
+            }),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+        ],
+    );
+    let redefining_key = DeclarationKey::fixture("model.B.xb");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(
+                failures,
+                vec![AxisFailure {
+                    axis: "refinement",
+                    code: Code::UndefinedExpression,
+                    cause: ModelRefusalCause::UnprovedRefinement,
+                    detail:
+                        "no establishing interval fact for model.B.xb (obligation field-domain)"
+                            .to_owned(),
+                }]
+            );
+        }
+        other => panic!("expected Refused(field-domain), got {other:?}"),
+    }
+}
+
+/// Issue #182: the refinement obligation's writer search compared
+/// `DeclarationKey.node` alone, so an operation declared in an unrelated
+/// package -- one that happens to name a field with the same display node
+/// as the field actually under obligation -- could stand in for the domain
+/// package's real writer. `decoy.op` lives in package `other/pkg` and its
+/// own key sorts before `test/orders` in the operations index (`BTreeMap`
+/// order is `(package, node)`), so it is the *first* candidate `.find()`
+/// sees; it modifies a field whose node is `model.A.x` (a different
+/// package's field, not `test/orders`'s), and its one postcondition clause
+/// names `test/orders`'s actual `model.B.xb` verbatim (a full-key match,
+/// so `names_field` cannot be what excludes it -- only the writer search
+/// itself deciding `decoy.op` is not really `test/orders`'s writer can).
+/// Two packages naming the same node must not let that decoy stand in for
+/// the real writer: `test/orders`'s actual writer, `model.A.set`, states
+/// no postcondition at all, so the real answer stays
+/// `Refused(field-presence)`.
+///
+/// Mutation used: reverted the writer search's `field == redefined_key ||
+/// field == redefining_key` to `.node` comparison; this test wrongly
+/// picked `decoy.op` as the writer and went from `Refused` to
+/// `Compatible`; every other test in this file stayed green; reverted.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r14_field_refinement_writer_search_does_not_confuse_two_packages_declaring_the_same_node() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r14"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            scalar_type("model.Count", 0, 9),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
+            operation(
+                "model.A.set",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x", "model.A.c"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            field_member_redefining(
+                "model.B.xb",
+                "model.B",
+                "model.A",
+                mult(1, Some(1)),
+                Some("model.A.x"),
+                vec![],
+            ),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "decoy.op".to_owned(),
+                },
+                owner: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.A".to_owned(),
+                },
+                parameters: vec![],
+                result: None,
+                effect: OperationEffect {
+                    modifies: vec![DeclarationKey {
+                        package: "other/pkg".to_owned(),
+                        node: "model.A.x".to_owned(),
+                    }],
+                    creates: Vec::new(),
+                    deletes: Vec::new(),
+                },
+                has_own_precondition: false,
+                own_postcondition_clauses: vec![PostconditionClause::Presence {
+                    field: DeclarationKey::fixture("model.B.xb"),
+                }],
+                has_body: true,
+                redefines: None,
+            }),
+        ],
+    );
+    let redefining_key = DeclarationKey::fixture("model.B.xb");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(failures.len(), 1);
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
+            assert!(failures[0].detail.contains("field-presence"));
+        }
+        other => panic!("expected Refused(field-presence), got {other:?}"),
+    }
+}
+
+/// Issue #182: the refinement obligation's `names_field` filter compared
+/// `DeclarationKey.node` alone. `test/orders`'s real (and only) writer,
+/// `model.A.set`, is unambiguous here -- there is no decoy candidate for
+/// the writer search to confuse -- but its one postcondition clause names
+/// `other/pkg`'s `model.B.xb`, not `test/orders`'s: a different package's
+/// field that merely shares the redefining field's display node. That
+/// clause must not be read as establishing anything about `test/orders`'s
+/// `model.B.xb`, so the obligation stays undischarged and the real answer
+/// is `Refused(field-presence)`.
+///
+/// Mutation used: reverted `names_field` to `key.node == redefined_key.node
+/// || key.node == redefining_key.node`; this test wrongly treated the
+/// other-package clause as establishing presence and went from `Refused`
+/// to `Compatible`; every other test in this file stayed green; reverted.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r16_field_refinement_names_field_filter_does_not_confuse_two_packages_declaring_the_same_node() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r16"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            scalar_type("model.Count", 0, 9),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.A.set"),
+                owner: DeclarationKey::fixture("model.A"),
+                parameters: vec![],
+                result: None,
+                effect: OperationEffect {
+                    modifies: vec![
+                        DeclarationKey::fixture("model.A.x"),
+                        DeclarationKey::fixture("model.A.c"),
+                    ],
+                    creates: Vec::new(),
+                    deletes: Vec::new(),
+                },
+                has_own_precondition: false,
+                own_postcondition_clauses: vec![PostconditionClause::Presence {
+                    field: DeclarationKey {
+                        package: "other/pkg".to_owned(),
+                        node: "model.B.xb".to_owned(),
+                    },
+                }],
+                has_body: true,
+                redefines: None,
+            }),
+            field_member_redefining(
+                "model.B.xb",
+                "model.B",
+                "model.A",
+                mult(1, Some(1)),
+                Some("model.A.x"),
+                vec![],
+            ),
+        ],
+    );
+    let redefining_key = DeclarationKey::fixture("model.B.xb");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(failures.len(), 1);
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
+            assert!(failures[0].detail.contains("field-presence"));
+        }
+        other => panic!("expected Refused(field-presence), got {other:?}"),
+    }
+}
+
+/// Issue #182: the refinement obligation's redefinition-chain extension
+/// (folding a redefining operation's own postcondition into the writer's
+/// when that operation's `redefines` names the writer) compared
+/// `DeclarationKey.node` alone on both the `redefines` target and the
+/// owner. `decoy.set` lives in package `other/pkg`, names a `redefines`
+/// target whose node is `model.A.set` (the real writer's node, wrong
+/// package) and an owner whose node is `model.B` (the redefining field's
+/// owner's node, wrong package). Its postcondition clause names
+/// `test/orders`'s actual `model.B.xb` (a full-key match, so the
+/// `names_field` filter alone cannot exclude it) -- only comparing the
+/// `redefines` target and the owner by full key keeps this decoy out of
+/// the real writer's clause set. `test/orders`'s real writer,
+/// `model.A.set`, has no genuine redefiner in this fixture, so the
+/// obligation must stay `Refused(field-presence)`.
+///
+/// Mutation used: reverted the chain-extension comparison to `target.node
+/// == writer.key.node && operation.owner.node == redefining.owner.node`;
+/// this test wrongly folded the decoy's presence clause in and went from
+/// `Refused` to `Compatible`; every other test in this file stayed green;
+/// reverted.
+#[trace("TC-196", "FR-151-AC-6")]
+#[test]
+fn r15_field_refinement_chain_extension_does_not_confuse_two_packages_declaring_the_same_node() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r15"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            scalar_type("model.Count", 0, 9),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.A.c", "model.A", "model.Count", mult(1, Some(1))),
+            operation(
+                "model.A.set",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x", "model.A.c"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            field_member_redefining(
+                "model.B.xb",
+                "model.B",
+                "model.A",
+                mult(1, Some(1)),
+                Some("model.A.x"),
+                vec![],
+            ),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.B.set".to_owned(),
+                },
+                owner: DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.B".to_owned(),
+                },
+                parameters: vec![],
+                result: None,
+                effect: OperationEffect::default(),
+                has_own_precondition: false,
+                own_postcondition_clauses: vec![PostconditionClause::Presence {
+                    field: DeclarationKey::fixture("model.B.xb"),
+                }],
+                has_body: true,
+                redefines: Some(DeclarationKey {
+                    package: "other/pkg".to_owned(),
+                    node: "model.A.set".to_owned(),
+                }),
+            }),
+        ],
+    );
+    let redefining_key = DeclarationKey::fixture("model.B.xb");
+    let redefined_key = DeclarationKey::fixture("model.A.x");
+    match check_field_refinement_obligation(&domain_package, &redefining_key, &redefined_key) {
+        Ok(ConformanceOutcome::Refused(failures)) => {
+            assert_eq!(failures.len(), 1);
+            assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
+            assert!(failures[0].detail.contains("field-presence"));
+        }
+        other => panic!("expected Refused(field-presence), got {other:?}"),
+    }
+}
