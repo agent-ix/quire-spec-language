@@ -189,3 +189,25 @@ Ruling by Agent A (2026-09-19): RT holds no `NodeKey`. ADR-012 pin stays at
 | PR3-M1 | Fixed. RT and CG hold only `WireNodeId`s; only QSL (E4 and the layer-6 `replay` facade) converts one to a `NodeKey`. RT runs inside CG-generated harnesses built from IR wire data, and ADR-012 keys RT's function lookup by `WireNodeId`, an id lookup that keeps R-06. The S6a in-process sentence is removed. | O-04 |
 | PR3-N1 | Fixed. `FamilyRefusal::catalog_code()` yields the code and F `diagnostic` maps the code to category `refusal`; F never names `FamilyRefusal`. | O-16 |
 | R4-2 (ADR-011 reviewer) | Fixed. O-26 validation lists `DependencyIdentityMismatch` (`stale_dependency`): `replay` compiles each dependency's QC-1 source through S4 and refuses when the recomputed `package_id` differs from the proved package's record (QC-10). C-13 adds the executor test. This supersedes the round-3 "no change" row. ADR-012 pin moves to `0d4a15e`. | O-26, C-13, Context |
+
+## Round 5 (commit 1e58a68)
+
+Delta check of ed86124..1e58a68 against ADR-011 at a4ce336 and ADR-012 at
+e71986a.
+
+- PR3-M1 fixed. O-04 says RT and CG hold no `NodeKey`, and only QSL (E4 and
+  `replay`) converts a `WireNodeId`. ADR-012 keys RT's function lookup by
+  `WireNodeId` (§9) and says the same in §13.5.
+- PR3-N1 fixed. `FamilyRefusal::catalog_code()` yields the code, and F maps
+  the code to its category. ADR-012 §2 and §13.5 use the same wording.
+- `DependencyIdentityMismatch` (`stale_dependency`) in O-26 and C-13 matches
+  ADR-011 §4, E4 and E9, including the code.
+- O-26 request arguments are keyed by parameter `WireNodeId`, and `replay`
+  converts them. This is correct: it follows from O-04 (every wire id is a
+  `WireNodeId`), and it matches C-11 and ADR-011 E9. The earlier "keyed by
+  parameter node id" text was an ambiguity left over from before the fix.
+- The pins a4ce336 and e71986a resolve. The "Author fixes (round 4)" note
+  names `0d4a15e`, the parent of e71986a, which Context has since superseded.
+- `quire validate --strict --summary` reports 10/10 grammar-clean.
+
+Round-5 verdict: PASS. No new finding.
