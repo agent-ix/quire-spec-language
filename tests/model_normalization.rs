@@ -448,7 +448,7 @@ fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
-                ModelRefusal {
+                vec![ModelRefusal {
                     code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::DerivationConflict {
                         type_: DeclarationKey::fixture("model.D"),
@@ -468,7 +468,7 @@ fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_
                               [model.A, model.A.x3, model.Root.x] and \
                               [model.A, model.A.x2, model.Root.x]"
                         .to_string(),
-                }
+                }]
             );
         }
         other => panic!("expected Refused(derivation-conflict), got {other:?}"),
@@ -581,14 +581,14 @@ fn r07_a_same_node_owner_genuinely_dominated_across_packages_is_excluded_from_th
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
-                ModelRefusal {
+                vec![ModelRefusal {
                     code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::RedefinitionTarget,
                     detail: "model.Shared declares 2 redefining members \
                               (model.Shared.z1, model.Shared.z2) that all redefine \
                               model.Root.x, with no single valid target"
                         .to_string(),
-                }
+                }]
             );
         }
         other => {
