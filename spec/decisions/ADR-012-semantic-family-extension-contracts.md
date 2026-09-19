@@ -447,7 +447,9 @@ the table, independent of registration order.
   drift checks 1 (clause and tag wire strings total both ways) and 7 (every
   layer's `catalog_code()` total) are the evidence that the repositories agree.
 - **Mapping mutants.** AD-016's `cargo mutants` requirement covers the
-  conversions at S1 and S4 (`catalog_code()`) and S5–S9.
+  conversions at S1 and S4 (`catalog_code()`) and S5–S9, which are ADR-013
+  C-05, C-06, C-09, C-15 and C-20. A surviving `cargo mutants` mutant in any
+  of these mappings fails the gate. No mutant is allow-listed.
 - **Registry.** Under #185:
   - a property-based test that registries built from any permutation of the
     same descriptors are equal and give identical candidate sets;
@@ -490,7 +492,7 @@ Consequences of the separation:
 |---|---|---|
 | Family | `Requirements` of each checked node (§2) | each family |
 | Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), tool: pinned tool identity }`. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
-| Registry | a value built from descriptors, read by QSL `route` (ADR-011 layer R): `route` computes each item's candidate set before E7 and, after negotiation, routes each item settled `supported` to its backend | #185 |
+| Registry | a value built from descriptors, read by QSL `route` (ADR-011 layer R): `route` computes each item's candidate set before E7 and, after negotiation, returns the `BackendId` of each item settled `supported` | #185 |
 | Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; agent-ix/quire-contract-codegen#86) |
 
 `BackendDescriptor`, the candidate set and `Capability` cross repository
@@ -522,7 +524,7 @@ settles every disposition. No QSL library module depends on or calls CG
 For each requested item the steps run once, in this order, before any backend
 runs:
 
-1. **Candidates.** The #185 registry computes the candidate set from the
+1. **Candidates.** QSL `route` computes the candidate set from the
    item's `Requirements`, matching on capability kind alone. A backend
    matches when it advertises the item's one kind (FR-057). The mode is
    compared in step 3:

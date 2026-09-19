@@ -234,6 +234,22 @@ comment), and the #247 editorial alignments.
 - FND-011 is resolved (#247): the K row lists the QC-15 id types.
 - The orchestrating driver crate is ADR-011 T-13, implemented by #248; #225
   accepts its design.
-- FND-007 (#243), FND-008 (#240) and FND-009 (#213) stay Remaining work.
+- FND-007 is resolved (#212 round-2 ruling): the §6.1 `replay` row depends
+  on I3 under feature `quire-extraction`.
+- FND-008 (#240) and FND-009 (#213) stay Remaining work.
 
 Verdict after Round 4: ACCEPT WITH FINDINGS.
+
+## Round 6
+
+Dispositions after the #212 round-4 rulings, 2026-09-19 (issue #212, round-4
+comment).
+
+- FND-009 is resolved: the ADR-011 X-1 row names TK-03
+  (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89)
+  for RT and CG adoption of `quire-exact`, and T-9
+  (agent-ix/quire-contract-runtime#55) retargets RT `qsl-agreement` after
+  X-1 and TK-03. #213 S-1 extracts the crate and replaces the QSL kernel.
+- FND-008 is Remaining work: #240.
+
+Verdict after Round 6: ACCEPT WITH FINDINGS.
