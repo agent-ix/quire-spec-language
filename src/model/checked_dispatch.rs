@@ -900,9 +900,10 @@ mod tests {
             other => panic!("expected AncestorDepthExceeded, got {other:?}"),
         }
 
-        // One step short of the bound must still succeed and reach the full
-        // closure — the guard fires exactly at the bound, not before it.
-        let shallow_chain = MAX_ANCESTOR_DEPTH - 1;
+        // A chain reaching exactly the bound must still succeed and return
+        // the full closure — the guard (`depth > MAX_ANCESTOR_DEPTH`) fires
+        // strictly past the bound, never at it.
+        let shallow_chain = MAX_ANCESTOR_DEPTH;
         let shallow_keys: Vec<ProducerKey> = (0..=shallow_chain)
             .map(|index| ProducerKey::fixture(format!("model.shallow-chain.op{index}")))
             .collect();
@@ -963,11 +964,10 @@ mod tests {
     /// redefining the root and each declaring its own precondition, so every
     /// child's own walk is exactly one step deep. `memo` is shared across
     /// every top-level [`effective_terms`] call in this loop, mirroring
-    /// [`checked_dispatch_operation`]'s own loop; before this fix, `steps`
-    /// was shared the same way, so the far-side children were wrongly
-    /// refused once the *cumulative* count of distinct nodes visited across
-    /// every prior child exceeded the bound, even though no child ever
-    /// recursed past depth 1.
+    /// [`checked_dispatch_operation`]'s own loop, but each top-level call
+    /// starts `depth` fresh at `0`: `depth` tracks only the current call's
+    /// own recursion, so a far-side child is never charged for nodes a
+    /// sibling already visited.
     #[test]
     fn effective_terms_does_not_refuse_a_wide_family_with_a_shallow_chain() {
         let root = ProducerKey::fixture("model.wide.root");
