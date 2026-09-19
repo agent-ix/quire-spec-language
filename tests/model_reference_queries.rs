@@ -119,7 +119,7 @@ fn view_of(domain_package: &DomainPackage) -> EffectiveView {
 
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
     let original = DeclarationKey::fixture(identity);
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
@@ -1089,14 +1089,14 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// FR-153-AC-3: `lookup`'s own `type_conforms(S, T)` runs "before any
 /// charge" (TC-198 L03), so a malformed reference cannot skip it -- the
 /// checked static type `S` (`M::B`) must still conform to the queried `T`
-/// (`M::A`) for this probe to reach the bridge at all. Once it does, a
-/// 5-byte universe (never this model's own 32-byte
-/// `quire.model.object-universe/v1` digest) can never be bridged into a
-/// well-formed key at all, so
-/// `crate::value::model_query::evaluate_unresolvable_lookup` decides it
-/// directly, without ever calling the real
-/// `crate::model::population::lookup` or substituting a derived value: the
-/// same `type_conforms` check, the same single `lookup.key` charge, then
+/// (`M::A`) for this probe to reach `crate::model::population::lookup` at
+/// all. `crate::value::model_query::bridge_lookup_key` carries a 5-byte
+/// universe (never this model's own 32-byte
+/// `quire.model.object-universe/v1` digest) as its own raw bytes rather than
+/// bridging it into an `EffectiveId`, so `lookup` itself -- the single owner
+/// of the FR-153 lookup order, well-formed reference or not -- reaches this
+/// same outcome by its own raw-byte universe comparison: the same
+/// `type_conforms` check, the same single `lookup.key` charge, then
 /// `foreign-universe` -- reporting the 5 bytes actually supplied, not a
 /// fabricated complement.
 #[test]
@@ -1143,10 +1143,13 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
 /// A reference whose object-identity bytes are not valid UTF-8 can never
 /// name a real population member (every member's own identity is a JSON
 /// string, `crate::model::population::PopulationDocument`), so
-/// `crate::value::model_query::evaluate_unresolvable_lookup` decides absence
-/// directly -- `none` in `empty` mode -- without substituting a lossy-decoded
-/// string and delegating to the real `lookup`. This population happens to
-/// admit no member whose identity collides with that lossy decode; see
+/// `crate::value::model_query::bridge_lookup_key` carries the raw bytes
+/// unchanged, never a lossy-decoded string, and
+/// `crate::model::population::lookup` -- the same function a well-formed
+/// reference reaches -- decides absence directly, by its own
+/// `std::str::from_utf8` check: `none` in `empty` mode. This population
+/// happens to admit no member whose identity collides with that lossy
+/// decode; see
 /// [`lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member`]
 /// for the case where one does.
 #[test]
@@ -1199,7 +1202,8 @@ fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
 /// substitution let a producer-supplied malformed reference (these same two
 /// invalid bytes) be mistaken for that real member, wrongly returning
 /// "present" in all three absence modes. This population admits exactly that
-/// member; `evaluate_unresolvable_lookup` must now see the malformed
+/// member; `crate::model::population::lookup`'s own `std::str::from_utf8`
+/// check on the raw bytes (never a lossy decode) must now see the malformed
 /// reference as absent in all three modes, never present.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
@@ -1293,15 +1297,16 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
     }
 }
 
-/// PR #158 round-3 review finding (MEDIUM): `evaluate_unresolvable_lookup`'s
-/// `Unbridgeable::Identity` arm answered an absence outcome without first
-/// checking the malformed reference's own universe against the binding's,
-/// unlike the real `population::lookup` (FR-153 L04), which checks the
-/// universe immediately after `lookup.key` and before membership. A
-/// malformed (non-UTF-8) identity naming a universe that is not this
-/// binding's own must refuse `foreign_reference`/`foreign-universe`, exactly
-/// like a well-formed reference naming that same foreign universe, in every
-/// absence mode -- never fall through to that mode's absence outcome.
+/// PR #158 round-3 review finding (MEDIUM), still guarded now that
+/// `crate::model::population::lookup` is the single owner of the FR-153
+/// lookup order for every reference, well-formed or not (#166): a malformed
+/// (non-UTF-8) identity naming a universe that is not this binding's own
+/// must refuse `foreign_reference`/`foreign-universe`, exactly like a
+/// well-formed reference naming that same foreign universe, in every absence
+/// mode -- never fall through to that mode's absence outcome. `lookup`
+/// checks the universe (by raw bytes, see `LookupKey`'s own doc comment)
+/// immediately after `lookup.key` and before membership, for a malformed
+/// (non-UTF-8) identity exactly as for a well-formed one.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
 fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_absent() {
@@ -1349,6 +1354,155 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
             ),
         }
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+    }
+}
+
+/// #166: `crate::model::population::lookup` is now the FR-153 lookup order's
+/// one owner for every reference, well-formed or malformed alike (see
+/// `crate::value::model_query`'s own module docs, "Malformed references").
+/// This table proves well-formed-absent and malformed references are
+/// indistinguishable: a well-formed reference naming an object the binding
+/// never admitted, and a malformed reference that can never name one either
+/// (a non-UTF-8 identity, or a universe some length other than 32), reach
+/// byte-identical `Outcome<Value>`s and a byte-identical `Meter` at every
+/// combination this table drives -- three absence modes and three scalar
+/// budgets (unlimited; zero work units, denying before the first charge; one
+/// work unit, enough for `lookup.key` but not a second charge), against
+/// three reference-kind pairs: a malformed identity in the binding's own
+/// universe, a malformed identity in a foreign universe, and a malformed
+/// (5-byte) universe compared against that same well-formed foreign-universe
+/// reference. The evaluator boundary's own `ModelQueryRefusal`
+/// (`crate::value::outcome`) carries only a refusal's closed `code`/`cause`
+/// tags, never the model refusal's free-text `detail` that reports the
+/// caller's own bytes, so a direct `Outcome<Value>` comparison is exact
+/// here, not merely a same-shape comparison; `Meter` derives `PartialEq`, so
+/// one `assert_eq!` on the whole meter also covers every accounting field a
+/// narrower, field-by-field comparison could still miss.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
+fn lookup_expression_malformed_and_absent_well_formed_references_are_indistinguishable() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.a))),
+    ];
+
+    let zero_work_units = ScalarLimits {
+        work_units: 0,
+        ..SCALAR_UNLIMITED
+    };
+    let one_work_unit = ScalarLimits {
+        work_units: 1,
+        ..SCALAR_UNLIMITED
+    };
+    let budgets = [
+        ("unlimited", SCALAR_UNLIMITED),
+        ("zero work units", zero_work_units),
+        ("one work unit", one_work_unit),
+    ];
+
+    let own_universe = scenario.universe.as_bytes().to_vec();
+    // 32 repeats of 0x07: well-formed length, but not `scenario.universe`.
+    let foreign_universe = vec![0x07; 32];
+
+    let well_formed_own = ObjectReference::new(
+        UniverseIdentity::new(&own_universe).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(b"zz9-never-admitted").unwrap(),
+    );
+    let malformed_identity_own = ObjectReference::new(
+        UniverseIdentity::new(&own_universe).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
+    );
+    let well_formed_foreign = ObjectReference::new(
+        UniverseIdentity::new(&foreign_universe).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(b"zz9-never-admitted").unwrap(),
+    );
+    let malformed_identity_foreign = ObjectReference::new(
+        UniverseIdentity::new(&foreign_universe).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
+    );
+    // 5 bytes: never a well-formed universe (every real universe is exactly
+    // 32 bytes), compared against `well_formed_foreign` -- a well-formed but
+    // different universe -- rather than against `well_formed_own`, so only
+    // the universe axis varies between this pair.
+    let malformed_universe = ObjectReference::new(
+        UniverseIdentity::new(&[1, 2, 3, 4, 5]).unwrap(),
+        node_key(&scenario.a),
+        ObjectIdentity::new(b"zz9-never-admitted").unwrap(),
+    );
+
+    for (case_label, well_formed, other) in [
+        (
+            "own universe, malformed identity",
+            &well_formed_own,
+            &malformed_identity_own,
+        ),
+        (
+            "foreign universe, malformed identity",
+            &well_formed_foreign,
+            &malformed_identity_foreign,
+        ),
+        (
+            "foreign universe, malformed universe",
+            &well_formed_foreign,
+            &malformed_universe,
+        ),
+    ] {
+        let object_world = ObjectEnvironment::new(
+            &types(&scenario),
+            [(well_formed.clone(), vec![]), (other.clone(), vec![])],
+        )
+        .unwrap();
+
+        for absence in [
+            AbsenceMode::Undefined,
+            AbsenceMode::Refused,
+            AbsenceMode::Empty,
+        ] {
+            let expression = lookup(target.clone(), absence);
+            for (budget_label, limits) in budgets {
+                let (outcome_wf, meter_wf) = run(
+                    &package,
+                    &parameters,
+                    &expression,
+                    vec![
+                        Value::Population(Arc::new(scenario.binding.clone())),
+                        Value::Reference(well_formed.clone()),
+                    ],
+                    limits,
+                    &object_world,
+                );
+                let (outcome_other, meter_other) = run(
+                    &package,
+                    &parameters,
+                    &expression,
+                    vec![
+                        Value::Population(Arc::new(scenario.binding.clone())),
+                        Value::Reference(other.clone()),
+                    ],
+                    limits,
+                    &object_world,
+                );
+
+                assert_eq!(
+                    format!("{outcome_wf:?}"),
+                    format!("{outcome_other:?}"),
+                    "{case_label} / {absence:?} / {budget_label}: outcome diverged \
+                     between an absent well-formed reference and the other one"
+                );
+                assert_eq!(
+                    meter_wf, meter_other,
+                    "{case_label} / {absence:?} / {budget_label}: meter diverged \
+                     between an absent well-formed reference and the other one"
+                );
+            }
+        }
     }
 }
 

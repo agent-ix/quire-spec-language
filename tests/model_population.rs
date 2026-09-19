@@ -218,7 +218,7 @@ fn view_of(domain_package: &DomainPackage) -> EffectiveView {
 /// The effective identity of the type-level declaration named `identity`.
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
     let original = DeclarationKey::fixture(identity);
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
@@ -276,6 +276,26 @@ fn reference_key(
         universe: universe.clone(),
         type_identity: type_identity.clone(),
         object: object.to_owned(),
+    }
+}
+
+/// A [`LookupKey`] naming a well-formed (valid UTF-8) candidate member
+/// identity: `universe`'s own raw bytes (a `LookupKey`'s `universe` is
+/// compared to `binding`'s own by raw bytes, see `LookupKey`'s own doc
+/// comment), never a bridged `EffectiveId`; `object`'s own UTF-8 bytes,
+/// never a caller-asserted classification -- `lookup` itself decides
+/// well-formedness from these same bytes.
+fn lookup_key(
+    static_type: DeclarationKey,
+    universe: &EffectiveId,
+    type_identity: &EffectiveId,
+    object: &str,
+) -> LookupKey {
+    LookupKey {
+        static_type,
+        universe: universe.as_bytes().to_vec(),
+        type_identity: type_identity.clone(),
+        object: object.as_bytes().to_vec(),
     }
 }
 
@@ -550,10 +570,7 @@ fn l03_lookup_undefined_mode() {
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let rb = LookupKey {
-        static_type: DeclarationKey::fixture("model.B"),
-        key: reference_key(&universe, &b, "b1"),
-    };
+    let rb = lookup_key(DeclarationKey::fixture("model.B"), &universe, &b, "b1");
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
         &binding,
@@ -574,10 +591,7 @@ fn l03_lookup_undefined_mode() {
 
     // `rc` is bound to `q` (document P2), never admitted into `p`, so it is
     // absent from `p`'s binding.
-    let rc = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "c9"),
-    };
+    let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
         &binding,
@@ -612,10 +626,7 @@ fn l03_lookup_empty_mode() {
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let rb = LookupKey {
-        static_type: DeclarationKey::fixture("model.B"),
-        key: reference_key(&universe, &b, "b1"),
-    };
+    let rb = lookup_key(DeclarationKey::fixture("model.B"), &universe, &b, "b1");
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
         &binding,
@@ -634,10 +645,7 @@ fn l03_lookup_empty_mode() {
     assert_eq!(meter_present.consumed(LimitKind::WorkUnits), 2);
     assert_eq!(meter_present.consumed(LimitKind::ResultUnits), 2);
 
-    let rc = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "c9"),
-    };
+    let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
         &binding,
@@ -666,10 +674,7 @@ fn l03_lookup_refused_mode() {
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let rc = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "c9"),
-    };
+    let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
@@ -693,6 +698,88 @@ fn l03_lookup_refused_mode() {
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
 }
 
+/// `refused` mode's absence detail must report a malformed (non-UTF-8)
+/// identity as distinguishable from a well-formed identity string -- never
+/// `"c9 is not a member..."` prose that could be mistaken for a real,
+/// well-formed object identity that merely happens to contain
+/// non-printable characters. `lookup` reports it as `"identity bytes
+/// 0x<hex> (not UTF-8)"`, a shape no real member's own identity string
+/// (always valid UTF-8, `PopulationDocument`'s member records) can ever
+/// produce.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+
+    let malformed = LookupKey {
+        static_type: DeclarationKey::fixture("model.A"),
+        universe: universe.as_bytes().to_vec(),
+        type_identity: a.clone(),
+        object: vec![0xFF, 0xFE],
+    };
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = lookup(
+        &binding,
+        &DeclarationKey::fixture("model.A"),
+        &malformed,
+        AbsenceMode::Refused,
+        &mut meter,
+    );
+    assert_eq!(
+        outcome,
+        LookupOutcome::Refused(ModelRefusal {
+            code: Code::InvalidRuntimeInput,
+            cause: ModelRefusalCause::AbsentKey {
+                key: vec![0xFF, 0xFE],
+            },
+            detail: "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
+                .to_string(),
+        })
+    );
+}
+
+/// `LookupKey.object`'s raw bytes are the only input `lookup` uses to
+/// decide well-formedness -- there is no separate caller-asserted
+/// classification to get out of sync with them. A present member's
+/// identity, passed through as plain UTF-8 bytes (exactly how
+/// [`bridge_lookup_key`](quire_spec_language::value) and [`lookup_key`]
+/// both build it), is found.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+
+    let ra = LookupKey {
+        static_type: DeclarationKey::fixture("model.A"),
+        universe: universe.as_bytes().to_vec(),
+        type_identity: a.clone(),
+        object: b"a1".to_vec(),
+    };
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = lookup(
+        &binding,
+        &DeclarationKey::fixture("model.A"),
+        &ra,
+        AbsenceMode::Undefined,
+        &mut meter,
+    );
+    assert_eq!(
+        outcome,
+        LookupOutcome::Completed(Some(TypedReference::new(
+            DeclarationKey::fixture("model.A"),
+            reference_key(&universe, &a, "a1")
+        )))
+    );
+}
+
 /// TC-198 L03's final vector: `lookup<M::B>(p, ra)` refuses `ill_typed`/
 /// `type-mismatch` before any charge, because `M::A` does not conform to `M::B`.
 ///
@@ -709,10 +796,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let ra = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "a1"),
-    };
+    let ra = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "a1");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
@@ -754,10 +838,12 @@ fn l04_lookup_foreign_universe_refuses() {
     let foreign_universe = object_universe(&other).unwrap().identity();
     assert_ne!(&foreign_universe, binding.universe());
 
-    let rx = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&foreign_universe, &a, "a1"),
-    };
+    let rx = lookup_key(
+        DeclarationKey::fixture("model.A"),
+        &foreign_universe,
+        &a,
+        "a1",
+    );
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
@@ -1026,7 +1112,7 @@ fn l06_cardinality_bound_and_incomplete() {
 // a second domain package parameter for either one to exercise. The reachable
 // sibling of this defect class — a `LookupKey` naming a foreign universe,
 // independent of which domain package is bound — stays covered by
-// `l04_lookup_foreign_universe_refuses` above, whose `LookupKey.key.universe`
+// `l04_lookup_foreign_universe_refuses` above, whose `LookupKey.universe`
 // field a caller can still set to anything regardless of the bound domain package.
 
 /// TC-198's own admission-time `modelIdentity` check: a population document
@@ -1087,8 +1173,8 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 /// this) to prove the check compares the full `DomainPackageRef` header,
 /// not just `identity`.
 ///
-/// Mutation used: narrowed the check from `view.model_selection !=
-/// domain_package.model_selection` to `view.model_selection.identity !=
+/// Mutation used: narrowed the check from `view.model_selection() !=
+/// domain_package.model_selection` to `view.model_selection().identity !=
 /// domain_package.model_selection.identity`, which let this version-only
 /// mismatch admit instead of refusing — red as expected, reverted.
 #[test]
@@ -1113,7 +1199,7 @@ fn l05_view_from_a_different_bundle_version_refuses_at_admission() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
-                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    actual: OfferedSelection::View(view.model_selection().clone()),
                     expected: domain_package.model_selection.clone(),
                 }
             );
@@ -1153,7 +1239,7 @@ fn l05_view_from_a_domain_package_with_a_different_digest_refuses_at_admission()
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
-                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    actual: OfferedSelection::View(view.model_selection().clone()),
                     expected: domain_package.model_selection.clone(),
                 }
             );
