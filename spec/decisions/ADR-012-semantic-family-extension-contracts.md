@@ -778,8 +778,8 @@ arm.
 
 | Stage | Change | Seam forced |
 |---|---|---|
-| Descriptor | one `BackendDescriptor` (identity, advertised (capability kind, mode) pairs, pinned tool) in the backend's repository | none |
-| Registration | the orchestrating binary adds the descriptor to the registry value | none (§5.2 failures apply) |
+| Descriptor | the backend's FR-331 provider manifest, which is its `BackendDescriptor` (identity, advertised (capability kind, mode) pairs, pinned tool). It crosses as QSpec data, with no shared crate (ADR-013 T-7, §7.1) | none |
+| Registration | the backend registers its provider manifest: the orchestrating binary reads it, QSL `route` converts it into the `BackendDescriptor`, and the binary adds that to the registry value | none (§5.2 failures apply) |
 | CG | one backend kind variant, its `negotiate_*` arm and its generation arm | S9 |
 | Runner | the backend's runner and its availability probe (§7.4) | none |
 | Outcome | the backend outcome enum and its FR-331 map | S8 |
