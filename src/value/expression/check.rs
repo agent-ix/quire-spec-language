@@ -1652,11 +1652,13 @@ impl<'a> Typer<'a> {
     /// Unlike [`Self::check_as`], this never calls [`coerce`]: an ordinary
     /// call admits an `Integer`/`Int[..]` argument into a wider or
     /// differently-bounded `Int[..]` parameter, which a dispatch call must
-    /// not. This checker has no object-type generalization
-    /// data of its own (`TypeEnvironment` carries none), so a `Reference<T>`
-    /// argument is admitted only where `T` exactly matches the declared
-    /// parameter — the reflexive case of "upcast only," never a wider
-    /// admission than the spec allows.
+    /// not. A `Reference<T>` argument is admitted where `T` exactly matches
+    /// the declared parameter (reflexive), or where `T` is a proper subtype
+    /// of it in `self.scope.types`'s own admitted generalization graph (H1,
+    /// #204 round 1) -- the static upcast case FR-151 names, never a wider
+    /// admission than the spec allows. The upcast changes only this node's
+    /// own static/declared type at the binding site; the runtime
+    /// `ObjectReference` triple underneath is untouched.
     fn check_dispatch_argument(
         &mut self,
         expression: &Expression,
@@ -1704,9 +1706,18 @@ impl<'a> Typer<'a> {
                 ))
             }
             _ => {
-                let typed = self.infer(expression, Some(required), location)?;
+                let mut typed = self.infer(expression, Some(required), location)?;
                 if &typed.value_type == required {
                     Ok(typed)
+                } else if let (ValueType::Reference(actual), ValueType::Reference(expected)) =
+                    (&typed.value_type, required)
+                {
+                    if self.scope.types.conforms(*actual, *expected) {
+                        typed.value_type = required.clone();
+                        Ok(typed)
+                    } else {
+                        Err(mismatch(location))
+                    }
                 } else {
                     Err(mismatch(location))
                 }
