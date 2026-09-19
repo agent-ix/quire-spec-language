@@ -44,9 +44,7 @@ use std::collections::{HashMap, HashSet};
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
 use crate::model::conformance::{generals_by_specific, type_conforms};
-use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, OperationMemberRecord, RedefinitionRecord,
-};
+use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 
@@ -164,28 +162,20 @@ pub enum LinkCheckOutcome {
 
 struct DispatchIndex {
     operations: HashMap<DeclarationKey, OperationMemberRecord>,
-    redefinitions: Vec<RedefinitionRecord>,
-    generals_by_specific:
-        HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
+    generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
 }
 
 impl DispatchIndex {
     fn build(domain_package: &DomainPackage) -> Self {
         let mut operations = HashMap::new();
-        let mut redefinitions = Vec::new();
         for record in &domain_package.records {
             match record {
                 DomainPackageRecord::OperationMember(operation) => {
                     operations.insert(operation.key.clone(), operation.clone());
                 }
-                DomainPackageRecord::Redefinition(redefinition) => {
-                    redefinitions.push(redefinition.clone());
-                }
                 DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::FieldMember(_)
-                | DomainPackageRecord::Supertype(_)
                 | DomainPackageRecord::ScalarType(_)
-                | DomainPackageRecord::Subsetting(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
                 | DomainPackageRecord::Relationship(_)
@@ -194,16 +184,17 @@ impl DispatchIndex {
         }
         Self {
             operations,
-            redefinitions,
             generals_by_specific: generals_by_specific(domain_package),
         }
     }
 }
 
 /// The family of `original`: `original` itself together with every
-/// redefining operation reaching it, by any chain of redefinition records,
-/// sorted ascending by [`DeclarationKey`] for deterministic reporting.
-/// Bounded task stack, never native recursion, over caller-supplied records.
+/// redefining operation reaching it, by any chain of members' own inline
+/// `redefines` property (`model-complete.md`:162, QSpec's own shape, not a
+/// separate redefinition record), sorted ascending by [`DeclarationKey`] for
+/// deterministic reporting. Bounded task stack, never native recursion, over
+/// the domain package's own operation members.
 fn build_family(
     index: &DispatchIndex,
     original: &DeclarationKey,
@@ -227,10 +218,12 @@ fn build_family(
                 ),
             });
         }
-        for redefinition in &index.redefinitions {
-            if redefinition.redefined == target && visited.insert(redefinition.redefining.clone()) {
-                family.push(redefinition.redefining.clone());
-                frontier.push(redefinition.redefining.clone());
+        for operation in index.operations.values() {
+            if operation.redefines.as_ref() == Some(&target)
+                && visited.insert(operation.key.clone())
+            {
+                family.push(operation.key.clone());
+                frontier.push(operation.key.clone());
             }
         }
     }
@@ -241,10 +234,7 @@ fn build_family(
 /// Whether `p` (by its owner) strictly dominates `q`: `p`'s owner is a
 /// proper descendant of `q`'s owner.
 fn dominates(
-    generals_by_specific: &HashMap<
-        DeclarationKey,
-        Vec<crate::model::domain_package::SupertypeRecord>,
-    >,
+    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     p_owner: &DeclarationKey,
     q_owner: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {
