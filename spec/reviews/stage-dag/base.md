@@ -182,3 +182,40 @@ Applied in one pass under the #205 coordinator's rulings.
 | SR-468 FND-025 (low) | Fixed in sibling ADR (ADR-012). |
 | SR-472 FND-011 (low) | The skeleton spine (T-2) lands the layer-6 `replay` facade, and #214 widens it per family (§6.1, §6.2, ticket table, T-2). ADR-013 TK-01 is fixed separately to cite T-2. |
 | ADR-012 reviewer: relation arm and S1 wording | Questions §Family hooks: the ADR-012 seam S2 and S3 matches have one arm per family, and the seam S1 stage-participation table has one entry per family. At S6a a family that sits out returns `FamilyOutcome::Refused` (for `Relation`, `FamilyRefusal::FamilyNotNativelyEvaluable`, category `refusal`); `FamilyOutcome` and `FamilyRefusal` are listed in the §6.1 layer-3 `check` core, and the kernel `Refusal` stays kernel-only; at lowering and proof stages it returns `unsupported`. Matches ADR-012 §5.1 and ADR-013 O-16. |
+
+## Round 4 (HEAD 1666d02)
+
+Delta 38f811a..1666d02, checked against ADR-012 at eecf825 and ADR-013 at
+02a504f.
+
+### Round-4 fix check
+
+| Finding | Status |
+| --- | --- |
+| SR-467 FND-014, FND-015 | Resolved: §4 dependency binding, E4 and E9; E8 and E9 use `ReplaySource` (ADR-013 O-25, QC-20). |
+| SR-470 FND-017 | Resolved: T-12 parts (a) to (c) match ADR-013 O-04 and O-05 word for word. |
+| SR-468 FND-021 | Resolved: §1 I2 and §2.2 E3 match ADR-013 T-3. |
+| SR-468 FND-022 to FND-024 | Resolved in ADR-013: Q209-5 quotes the current FB-05, O-04 cites §1 S4 and E4/I2, IR #139 merged at 954c2f2. |
+| SR-468 FND-025 | Resolved in ADR-012 §12.3. |
+| SR-472 FND-011 | Resolved: T-2 lands `replay`, #214 widens it; ADR-013 TK-01 agrees. |
+| Relation arm, S1 wording | Resolved: matches ADR-012 §5.1 and §13.5 and ADR-013 O-16. |
+
+### Round-4 new findings
+
+- **R4-1 (medium).** E9 dependency binding has no reference value or view
+  source in `replay` (ADR-011 :251-253, :430). QC-1 provides source bytes
+  only, and ADR-013 O-26 says the request carries "nothing else", so `replay`
+  has no v2 bytes to build the E3 `ImportView` from and no recorded
+  dependency `package_id` to compare against. Fix: state that `replay` builds
+  each view by compiling the dependency's QC-1 source through S4 and
+  verifying the emitted bytes, and that the expected id is the one the proved
+  package records (QC-10), covered by the packet `package_id` check.
+- **R4-2 (low).** `DependencyIdentityMismatch` appears only in ADR-011. ADR-013
+  O-26 validation and the C-13 executor tests omit it, and no catalog code is
+  named (candidate: a `stale_dependency` code, as in O-26).
+- **R4-3 (low).** §2.3 E6 failure row lists kernel `Outcome` refusals only;
+  it omits `FamilyOutcome::Refused(FamilyRefusal)` now named in S6a and E6.
+
+### Round-4 verdict
+
+CHANGES: one medium (R4-1). R4-2 and R4-3 can land in the same revision.
