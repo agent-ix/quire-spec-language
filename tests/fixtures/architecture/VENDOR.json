@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "tree": "test-fixtures-architecture",
+  "sources": [
+    {
+      "kind": "fcd",
+      "repo": "https://github.com/agent-ix/filament-core-data",
+      "commit": "7dcb2f2c7466a770b2362561e70ed10a8f941c1f",
+      "source_prefix": "crates/extraction-frontend/fixtures/architecture",
+      "dest_prefix": "",
+      "files": [
+        {
+          "path": "PROVENANCE.json",
+          "sha256": "sha256:e7ecf4f31a77eea2ea4838e0eab95cee39feebce4a9fd8cf5f52e0d07ce1c1e1"
+        },
+        {
+          "path": "expected/diagnostics.json",
+          "sha256": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "path": "expected/provenance.json",
+          "sha256": "sha256:a87f61a0340355c1ce0cdcf4d8b3ec306dcd489c44978b94693c1cc172b10dac"
+        },
+        {
+          "path": "expected/semantic-ir.json",
+          "sha256": "sha256:b5444d687968e7b5844147acbca7ac74a2b4c749a47ad19d680bb3f5f6f37a1d"
+        },
+        {
+          "path": "expected/semantic-ir.json.fingerprint",
+          "sha256": "sha256:ff80bdb7775dbaac42d0f88fe2b102df3072981e472cf1f5d28fd4453847b1c2"
+        },
+        {
+          "path": "modules.json",
+          "sha256": "sha256:26be9538d007e16a6b4318ad3c22275feefc665ea1f8ec37496d5b6b17b045cf"
+        },
+        {
+          "path": "spec/model/Count.md",
+          "sha256": "sha256:cb31e645502a8bc6c2da227ffecef94ffa8817b5d429aa8471c008468a0936ff"
+        },
+        {
+          "path": "spec/model/Pump.md",
+          "sha256": "sha256:93f53c3c551c5352f8ae24e5170db3bb3d71816ed4a8c5aa3fce4352edd222e7"
+        },
+        {
+          "path": "spec/model/Sys.md",
+          "sha256": "sha256:70276ad599a412012a728fa4fe9f3204cb931a1195649ea4df1925c7c7d78c58"
+        },
+        {
+          "path": "spec/model/Tank.md",
+          "sha256": "sha256:b0af288d9cfb65eebfa72bfc5937a93b8cafd73020c0c726b809cdfefb83d426"
+        },
+        {
+          "path": "spec/spec.md",
+          "sha256": "sha256:d71e2fc188a39367f20e11b29c7f8cd534cd5b7072a037a1a013fd9c15c8f807"
+        },
+        {
+          "path": "spec/systems/Flow.md",
+          "sha256": "sha256:ec7ae79d63bb93d4a06bc1235ee1ad2de58e32d4a3b222b4609ad2b22b6c45b3"
+        },
+        {
+          "path": "spec/systems/Flow2.md",
+          "sha256": "sha256:4cd2edf69b0f6fffce50bbc52bd1830b6d5c93b01e54102c898f19078972cac3"
+        },
+        {
+          "path": "spec/systems/pipe.md",
+          "sha256": "sha256:06bb20285abe8bbce83fe4ca0eef77e0562e514b3093421bf7fcfa42b303ec96"
+        },
+        {
+          "path": "spec/systems/pump_alloc.md",
+          "sha256": "sha256:5acf29b703adaa9428205e525c6d9f6b2169d84929299496e2245c3247c1edfe"
+        },
+        {
+          "path": "spec/systems/pump_out.md",
+          "sha256": "sha256:c80f0c534453e8060203dd4a8d753a40cf948ff2517d19f7875ab832ae496136"
+        },
+        {
+          "path": "spec/systems/sys_pump.md",
+          "sha256": "sha256:70d3fe42c3310f1d4d5c9ce6b69d530822a85cb09c3138b5d64e6b233753a901"
+        },
+        {
+          "path": "spec/systems/sys_tank.md",
+          "sha256": "sha256:aaf61093ca3b4a954f023a416f0a8dedac12d8b697f84b325c2d772114b20def"
+        },
+        {
+          "path": "spec/systems/tank_in.md",
+          "sha256": "sha256:c22c8ed210bdca40d5f01ce5631cf24b8a765d075ee64c5cbfcdc9c7702c0040"
+        }
+      ]
+    }
+  ]
+}

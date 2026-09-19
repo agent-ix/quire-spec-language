@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL #138: re-vendor `resources/native-v1` and `resources/complete-value`
 //! from an explicit pinned commit, and check the vendored tree for drift.
+//! QSL #131 PR 3 extends the same mechanism to `tests/fixtures/architecture`
+//! and `tests/fixtures/modules`, vendored from `agent-ix/filament-core-data`
+//! (`Source::Fcd`) at the single commit `Cargo.toml` pins its
+//! `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` git deps to.
 //!
 //! `resources/native-v1` is a **historical selection**, not a mirror of any
 //! current source tree (see its README and
@@ -33,6 +37,9 @@ pub struct Sources<'a> {
     /// A local `agent-ix/quire-specification` clone, used for `Source::Qspec`.
     /// Required only when the manifest actually contains a `Qspec` source.
     pub qspec_clone: Option<&'a Path>,
+    /// A local `agent-ix/filament-core-data` clone, used for `Source::Fcd`.
+    /// Required only when the manifest actually contains an `Fcd` source.
+    pub fcd_clone: Option<&'a Path>,
 }
 
 impl Sources<'_> {
@@ -41,6 +48,11 @@ impl Sources<'_> {
             CommitOwner::SelfRepo => Ok(self.workspace_root),
             CommitOwner::Qspec => self.qspec_clone.ok_or_else(|| Error::MissingClone {
                 commit: commit.to_owned(),
+                flag: "--qspec-clone",
+            }),
+            CommitOwner::Fcd => self.fcd_clone.ok_or_else(|| Error::MissingClone {
+                commit: commit.to_owned(),
+                flag: "--fcd-clone",
             }),
         }
     }
@@ -50,6 +62,7 @@ impl Sources<'_> {
 enum CommitOwner {
     SelfRepo,
     Qspec,
+    Fcd,
 }
 
 /// Outcome of one `revendor` run over a single manifest.
@@ -124,9 +137,12 @@ pub fn revendor(
             } => {
                 revendor_pinned(
                     sources,
-                    CommitOwner::Qspec,
-                    commit,
-                    dest_prefix,
+                    PinnedSource {
+                        owner: CommitOwner::Qspec,
+                        commit,
+                        source_prefix: "",
+                        dest_prefix,
+                    },
                     files,
                     tree_root,
                     &mut report,
@@ -139,9 +155,32 @@ pub fn revendor(
             } => {
                 revendor_pinned(
                     sources,
-                    CommitOwner::SelfRepo,
-                    commit,
-                    dest_prefix,
+                    PinnedSource {
+                        owner: CommitOwner::SelfRepo,
+                        commit,
+                        source_prefix: "",
+                        dest_prefix,
+                    },
+                    files,
+                    tree_root,
+                    &mut report,
+                )?;
+            }
+            Source::Fcd {
+                commit,
+                source_prefix,
+                dest_prefix,
+                files,
+                ..
+            } => {
+                revendor_pinned(
+                    sources,
+                    PinnedSource {
+                        owner: CommitOwner::Fcd,
+                        commit,
+                        source_prefix,
+                        dest_prefix,
+                    },
                     files,
                     tree_root,
                     &mut report,
@@ -186,21 +225,32 @@ fn remove_files_the_manifest_no_longer_lists(
     Ok(())
 }
 
+/// One pinned source's own coordinates -- which repo owns `commit`, and the
+/// (possibly differing) read/write path prefixes -- grouped so
+/// [`revendor_pinned`] takes one struct rather than four flat parameters.
+struct PinnedSource<'a> {
+    owner: CommitOwner,
+    commit: &'a str,
+    /// Repo-relative read path (empty for `Qspec`/`SelfRepo`, whose own
+    /// paths already mirror their destinations).
+    source_prefix: &'a str,
+    dest_prefix: &'a str,
+}
+
 fn revendor_pinned(
     sources: &Sources<'_>,
-    owner: CommitOwner,
-    commit: &str,
-    dest_prefix: &str,
+    source: PinnedSource<'_>,
     files: &mut [PinnedFile],
     tree_root: &Path,
     report: &mut RevendorReport,
 ) -> Result<()> {
-    let repo = sources.repo_for(owner, commit)?;
-    git::require_commit(repo, commit)?;
+    let repo = sources.repo_for(source.owner, source.commit)?;
+    git::require_commit(repo, source.commit)?;
     for file in files.iter_mut() {
-        let bytes = git::show(repo, commit, &file.path)?;
+        let source_path = manifest::join_dest(source.source_prefix, &file.path);
+        let bytes = git::show(repo, source.commit, &source_path)?;
         let digest = digest_of(&bytes);
-        let dest = manifest::join_dest(dest_prefix, &file.path);
+        let dest = manifest::join_dest(source.dest_prefix, &file.path);
         let changed = fsutil::write_if_changed(tree_root, &dest, &bytes)?;
         file.sha256 = digest;
         if changed {

@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "tree": "test-fixtures-modules",
+  "sources": [
+    {
+      "kind": "fcd",
+      "repo": "https://github.com/agent-ix/filament-core-data",
+      "commit": "7dcb2f2c7466a770b2362561e70ed10a8f941c1f",
+      "source_prefix": "crates/extraction-frontend/fixtures/modules",
+      "dest_prefix": "",
+      "files": [
+        {
+          "path": "edge-vocabulary/PROVENANCE.json",
+          "sha256": "sha256:49c41afd09fb9e64f7b96fb04e868979523508cdf816273d5821fd49c0f3c480"
+        },
+        {
+          "path": "edge-vocabulary/manifest.yaml",
+          "sha256": "sha256:6b5ecc8acca58796540e74d43a021ae793f1ad9bde5bc2de8c0d59a02eb8ca30"
+        },
+        {
+          "path": "spec-objects-architecture/PROVENANCE.json",
+          "sha256": "sha256:d8ce9f1d7254d036b15a43374fcb719a8633fcc2ebe29ecb5fe9bfef64b2ec6d"
+        },
+        {
+          "path": "spec-objects-architecture/manifest.yaml",
+          "sha256": "sha256:af7141628be8b2c7cb60b24499d5210c73304f50edfac7e75124454bb19e4757"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Action.json",
+          "sha256": "sha256:991db18bb82f1cda13c67a5a54d9b3e1dca7f82d924db0ef76caea99346f7f49"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Allocation.json",
+          "sha256": "sha256:69627d8fd777c3aab9ad57fbde85667250b9a9fa483506e32c0ffc8adddc626c"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ApiEndpoint.json",
+          "sha256": "sha256:1c2bd1a9191d6a75a3d07959214ddcc6fd8e499713e2b327652a40ef987c4cd3"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/BinaryFormat.json",
+          "sha256": "sha256:559cc4d199f86015d3ba56fa81502241c43b6f87b76ddbf9685b0a0ea489562a"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/CompatibilityWindow.json",
+          "sha256": "sha256:168c3e8841532428c26a24784aa26cf9f402eb8749b2389496d0d6bdfe80e3c5"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ConflictPolicy.json",
+          "sha256": "sha256:e675e4d646cd136d227fcb62eabe55c47cb91b2dd8cacd57308a89089cfa0599"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Connection.json",
+          "sha256": "sha256:072acfc3afa7e48067b31febf390535b5c0c968fd3b9f0a8b038f4bfa514cd28"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ConnectionDirection.json",
+          "sha256": "sha256:d8035be297086bc09c7f09ea9717caafa2513263be5671e34c53112eeaf5e648"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ConnectionEnd.json",
+          "sha256": "sha256:4c9794f7a943def0c49464d381ca6ddd065710d4a4d8c4ef8e5accf6511e961d"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/DataSchema.json",
+          "sha256": "sha256:ef31619b12d13a10a9d4a56bab58c2eb5b4b6b72dcd0b45f180247071e5d6bc0"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/DeliveryPolicy.json",
+          "sha256": "sha256:3009d34ac20eafd27ac8131248818338a8702253879680b47de98fc5cb11ad00"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/DeliverySemantics.json",
+          "sha256": "sha256:a898ce62d9b30da9b568034f63ca7005bb627e10c718a0b4a2184322bb73fe61"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Endianness.json",
+          "sha256": "sha256:2a1b4754322440195ca5e52dba37f4ec5c1cb1facbac1d02ab21b42bf14de325"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ExceedResponse.json",
+          "sha256": "sha256:cfe228d0cb292fa64fbdbfa61e305217e091c88b3e02d917f2808cc27b0cf6a0"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ExtensionPoint.json",
+          "sha256": "sha256:a34c94f334fb5fa95bb9eeed9fb2ce82c65de15021a6494228c9cd48adaf6df5"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ExternalContract.json",
+          "sha256": "sha256:f811ba48510690d5b42258fcf671d8fe3b7f33080e75bf3a3ac4400ee8901927"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/GuaranteedOperation.json",
+          "sha256": "sha256:c9fa7b25b7af2a3454d1de9e5a6f6f2c7e6707ee9463eff76ddde68e19c046ad"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/HttpMethod.json",
+          "sha256": "sha256:140083af57358c8ffe7f2b73cb00e4e7208446c96948666352c31a2239eb3cb9"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/IdentityField.json",
+          "sha256": "sha256:393e36e102ca257fcbed2fb9e9cd0d4deaf3a32b726d481ff480f071948b7178"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Interface.json",
+          "sha256": "sha256:f9bb3844c23908de143c28035a9883795fe883e1bc4a0484e216ff6210f37c38"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/LayoutField.json",
+          "sha256": "sha256:83c2e5b81aaed0b0ddb15fc3cf35c699ccd1d5930d5336173625582f5f34b1a4"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/LayoutType.json",
+          "sha256": "sha256:91cf148d713da20f7ddb06563ec875d7d05a9a88acc46cb2ba14c4ccfeee955a"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/LimitScope.json",
+          "sha256": "sha256:2b79cb6a3a826594591cc3c5fe39210383b38e99a45b766ffcf9bd8f006982bb"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ObjectFrontmatter.json",
+          "sha256": "sha256:d047c10de9ab3323f1d58eaf38556e587b2060dd2ea81f30ae54a3e9dc3e04dc"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ObjectId.json",
+          "sha256": "sha256:edb9f3d2014e05f484515ae12e491bbb63dd8d85b823296596a2911c68718870"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/OrderingScope.json",
+          "sha256": "sha256:610f4326bd90b473bf7e9ebb29c14bc41fc2c2b93bed8e876f2a3bee54eb705f"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Part.json",
+          "sha256": "sha256:8b8403cff5472ac2a1a2df7b1a1e10f120eeda9c27dea6de23a99685d03d71aa"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Port.json",
+          "sha256": "sha256:7d3c4cd18acdf4858a9d891dc159fda08dca5e2f6b365decf1d5c8d90bb3de9e"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/PortDirection.json",
+          "sha256": "sha256:1ebdbb21866aed44e10c12e2bf148d9d4e38d7167d6c5863360487b77fd68acb"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Queue.json",
+          "sha256": "sha256:2b6fc6c54d395a7f2823624a86177d0a582dccff57e06a0bde227603a05a93e8"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/RateLimit.json",
+          "sha256": "sha256:027e12eebd0648312704073c4b13764b4816318c2bb3bd210f59b0ef8faf4e6c"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/RecordLayout.json",
+          "sha256": "sha256:82e39f63bf9233d430527a742526c0cb496204c3879226e3b6278496ccbfb216"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/RegistrationPolicy.json",
+          "sha256": "sha256:9d969106f8f63c41f6c0b76da9004565f16e16db476cfd71ea226087300bb03d"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/ReturningOperation.json",
+          "sha256": "sha256:21cb47465de381601b18366e073be44556dc7a8301e14f5b07f90913698cb600"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/RouteDecl.json",
+          "sha256": "sha256:18c3db6c0d42055988ce326eb8e3b66fc3f5bbeee232f8ee4c69b3d5a3346961"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/StabilityPolicy.json",
+          "sha256": "sha256:e5c6c733e00ac3e58ec80a4c7d54dc95adf7f91fb5d377d6791a5f79ec446c71"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/Threshold.json",
+          "sha256": "sha256:4414ff20375b500a705fa30573fdbc2d5914328f52d6e569a25da0fbce86d262"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/UiComponent.json",
+          "sha256": "sha256:4aad931ce3828f4b238cfa258b085f7b574d0b4d1238adc16e105cbad7aded4c"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/VersioningPolicy.json",
+          "sha256": "sha256:d56aa0de0aa7a763b4a14670ff912e126def89fb38ec9cc755783f617f3fbe79"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/VersioningScheme.json",
+          "sha256": "sha256:895a8ba5a760eaef8dcf4f3321a6ae4ae6ff3db55c9d0a398a2d18be984a09d0"
+        },
+        {
+          "path": "spec-objects-architecture/schemas/toolchain.json",
+          "sha256": "sha256:15e9cd4cc0e7302706334197b4aa1490a446a5491b5f407c580dacf27285b56c"
+        },
+        {
+          "path": "spec-objects-business/PROVENANCE.json",
+          "sha256": "sha256:3f861b2b50a223b82c6e054bcf1854d60c26637bdee2c2fba6824dd8eccadd70"
+        },
+        {
+          "path": "spec-objects-business/manifest.yaml",
+          "sha256": "sha256:a4437088244aa6693cb494637dd568387fead272eda7aec116c419fbd0f3b87c"
+        },
+        {
+          "path": "spec-objects-business/schemas/AggregateRoot.json",
+          "sha256": "sha256:381e15bce2598f01a6816ddebdc8fccd90de83925d8adfa46fb3e71def4a79fb"
+        },
+        {
+          "path": "spec-objects-business/schemas/Domain.json",
+          "sha256": "sha256:1b3b31c48e9b1a08a5c5c1efc129b66d0048ae1dd997bb934a05be1ff9a96c69"
+        },
+        {
+          "path": "spec-objects-business/schemas/Entity.json",
+          "sha256": "sha256:9ea5de6a19cc4800fcb2b32e0d33573125e997338d14d4d54b2c658ec28e904a"
+        },
+        {
+          "path": "spec-objects-business/schemas/Enumeration.json",
+          "sha256": "sha256:44f6850485348a57caffa7bfc386192bce94eaf2013887589b4254a8f39258a8"
+        },
+        {
+          "path": "spec-objects-business/schemas/Event.json",
+          "sha256": "sha256:1de329840d8b7b3a4368516f737c874c3e1faef1112b275b9ba1fdbc7424be54"
+        },
+        {
+          "path": "spec-objects-business/schemas/IdentityField.json",
+          "sha256": "sha256:edb97534429a255c3d489015c424dbe948cd302654a1c497241afeea33dab7a4"
+        },
+        {
+          "path": "spec-objects-business/schemas/NestedEntity.json",
+          "sha256": "sha256:85a5bc535a536a76f745a04a0d9a52fb602d81389b90078156d098bb0b4cbdd5"
+        },
+        {
+          "path": "spec-objects-business/schemas/ObjectFrontmatter.json",
+          "sha256": "sha256:4f8c3bb93da9d76b6a80fa3fa966b9528f00c2837975311c310f9a2e88c29581"
+        },
+        {
+          "path": "spec-objects-business/schemas/ObjectId.json",
+          "sha256": "sha256:d7a10ce88a4ed18bda2f8955f45c96f302dbb9971f2bbdb6f1ce380512ad750f"
+        },
+        {
+          "path": "spec-objects-business/schemas/OccurrenceField.json",
+          "sha256": "sha256:91a5574a637e90a61f4a098429aeb16365695ce93595d6a97f1eaf8369371336"
+        },
+        {
+          "path": "spec-objects-business/schemas/OccurrenceTypeRef.json",
+          "sha256": "sha256:b82eed3f15184b77feb7a760fd0c51536ee479d6c6fef347a02cd382d0d270d2"
+        },
+        {
+          "path": "spec-objects-business/schemas/Population.json",
+          "sha256": "sha256:15e619f44ef725fead7e65a903f4e2d2c32739d42524f4c4364a75c860e7cd4d"
+        },
+        {
+          "path": "spec-objects-business/schemas/PopulationMember.json",
+          "sha256": "sha256:b6dc3bf1e440fa50af17935919c104917f723bb7c1fb3e46b816d8c974b68d84"
+        },
+        {
+          "path": "spec-objects-business/schemas/Process.json",
+          "sha256": "sha256:cdda9ff5eeebae4d710a87901004037d10cb03c4e6ac07346e8953e4667f0072"
+        },
+        {
+          "path": "spec-objects-business/schemas/ProcessStep.json",
+          "sha256": "sha256:e2c3defd886671f151c1fa239633b7234b284ac4fcde0b09ac71ca744ee29014"
+        },
+        {
+          "path": "spec-objects-business/schemas/Repository.json",
+          "sha256": "sha256:773c125abf6215c11b4cb38a5878e55f838a6ac35ecb30245311fdba04240f21"
+        },
+        {
+          "path": "spec-objects-business/schemas/StateMachine.json",
+          "sha256": "sha256:0841ac99ad93fe95d669400067fa6767e0e4215435e27d2e3e19ba2e2e5f2762"
+        },
+        {
+          "path": "spec-objects-business/schemas/StepKind.json",
+          "sha256": "sha256:bcc54134085d8bde8d18f8705219332de2ccef4541fe6ce2d566c0025293b481"
+        },
+        {
+          "path": "spec-objects-business/schemas/Term.json",
+          "sha256": "sha256:b2a1a61fc7c849acd33935b299fe3d1547f6025971f9bf17a4da91d95d6d0a98"
+        },
+        {
+          "path": "spec-objects-business/schemas/Transition.json",
+          "sha256": "sha256:c1762c2856d0d7ea4f22584becdf714363b6ca7f88391ec20f7a2bd28f18ca2b"
+        },
+        {
+          "path": "spec-objects-business/schemas/ValueObject.json",
+          "sha256": "sha256:c79f9137e3e68ca62ea65bba0843e26ef19be3cb2140f500ef3753de160c9090"
+        },
+        {
+          "path": "spec-objects-business/schemas/toolchain.json",
+          "sha256": "sha256:e8a0c6522e9097a5b2cd5661d70f972153e589dbff5990a744e6e9eece604146"
+        }
+      ]
+    }
+  ]
+}

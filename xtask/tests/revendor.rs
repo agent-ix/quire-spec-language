@@ -255,6 +255,7 @@ fn revendor_refuses_to_silently_accept_drifted_external_bytes() {
     let sources = Sources {
         workspace_root: dir.path(),
         qspec_clone: None,
+        fcd_clone: None,
     };
     let error = revendor(&mut manifest, dir.path(), &sources).unwrap_err();
     assert!(matches!(error, xtask::Error::ExternalDrift { .. }));
@@ -290,6 +291,7 @@ fn revendor_removes_a_file_dropped_from_the_manifest() {
     let sources = Sources {
         workspace_root: dir.path(),
         qspec_clone: None,
+        fcd_clone: None,
     };
     let report = revendor(&mut manifest, dir.path(), &sources).unwrap();
     assert_eq!(report.removed, vec!["dropped.txt".to_owned()]);
@@ -330,6 +332,7 @@ fn revendor_is_idempotent_against_a_hermetic_git_repository() {
     let sources = Sources {
         workspace_root: source_repo.path(),
         qspec_clone: None,
+        fcd_clone: None,
     };
 
     let first = revendor(&mut manifest, dest.path(), &sources).unwrap();
@@ -394,6 +397,38 @@ fn revendor_refuses_a_qspec_source_with_no_clone_given() {
     let sources = Sources {
         workspace_root: &root,
         qspec_clone: None,
+        fcd_clone: None,
+    };
+    let error = revendor(&mut manifest, dir.path(), &sources).unwrap_err();
+    assert!(matches!(error, xtask::Error::MissingClone { .. }));
+}
+
+/// `revendor` refuses an fcd-kind source when no clone was given, rather than
+/// silently skipping it or reaching for the network.
+/// Tracing: TC-149.
+#[trace("TC-149", "NFR-011-AC-1")]
+#[test]
+fn revendor_refuses_an_fcd_source_with_no_clone_given() {
+    let root = workspace_root();
+    let dir = tempfile::tempdir().unwrap();
+    let mut manifest = Manifest {
+        schema_version: 1,
+        tree: "synthetic".into(),
+        sources: vec![Source::Fcd {
+            repo: "https://github.com/agent-ix/filament-core-data".into(),
+            commit: "7dcb2f2c7466a770b2362561e70ed10a8f941c1f".into(),
+            source_prefix: "crates/extraction-frontend/fixtures/architecture".into(),
+            dest_prefix: String::new(),
+            files: vec![PinnedFile {
+                path: "PROVENANCE.json".into(),
+                sha256: "sha256:".to_owned() + &"0".repeat(64),
+            }],
+        }],
+    };
+    let sources = Sources {
+        workspace_root: &root,
+        qspec_clone: None,
+        fcd_clone: None,
     };
     let error = revendor(&mut manifest, dir.path(), &sources).unwrap_err();
     assert!(matches!(error, xtask::Error::MissingClone { .. }));
@@ -406,6 +441,8 @@ fn revendor_refuses_a_qspec_source_with_no_clone_given() {
 /// how this repo's other externally dependent tests skip. Works on a
 /// disposable copy of each vendored tree, never on the checked-in
 /// `resources/` directly, so a failing assertion never leaves it dirty.
+/// Only the two qspec-sourced trees are exercised here; the two
+/// fcd-sourced trees have their own `FCD_CLONE_PATH`-gated counterpart below.
 /// Tracing: TC-151.
 #[trace("TC-151", "NFR-011-AC-3")]
 #[test]
@@ -416,7 +453,7 @@ fn revendor_is_idempotent_against_a_real_qspec_clone() {
     };
     let clone = PathBuf::from(clone);
     let root = workspace_root();
-    for tree in Tree::ALL {
+    for tree in [Tree::NativeV1, Tree::CompleteValue] {
         let manifest_path = tree.manifest_path(&root);
         let mut manifest = Manifest::load(&manifest_path).unwrap();
         let before: Vec<u8> = std::fs::read(&manifest_path).unwrap();
@@ -430,6 +467,57 @@ fn revendor_is_idempotent_against_a_real_qspec_clone() {
         let sources = Sources {
             workspace_root: &root,
             qspec_clone: Some(&clone),
+            fcd_clone: None,
+        };
+        let report = revendor(&mut manifest, &tree_copy, &sources).unwrap();
+        assert!(
+            report.is_noop(),
+            "{}: re-vendoring at the recorded pin wrote {:?} / removed {:?}",
+            tree.dir_name(),
+            report.written,
+            report.removed
+        );
+
+        let scratch_manifest_path = scratch.path().join("VENDOR.json");
+        manifest.save(&scratch_manifest_path).unwrap();
+        let after = std::fs::read(&scratch_manifest_path).unwrap();
+        assert_eq!(
+            before,
+            after,
+            "{}: manifest byte-changed on a no-op run",
+            tree.dir_name()
+        );
+    }
+}
+
+/// The `FCD_CLONE_PATH`-gated counterpart of
+/// `revendor_is_idempotent_against_a_real_qspec_clone`, for the two
+/// fcd-sourced trees `tests/fixtures/architecture` and
+/// `tests/fixtures/modules` (QSL #131 PR 3). Skips cleanly when the
+/// environment variable is absent.
+/// Tracing: TC-151.
+#[trace("TC-151", "NFR-011-AC-3")]
+#[test]
+fn revendor_is_idempotent_against_a_real_fcd_clone() {
+    let Ok(clone) = std::env::var("FCD_CLONE_PATH") else {
+        eprintln!("FCD_CLONE_PATH not set; skipping the real-clone idempotency check");
+        return;
+    };
+    let clone = PathBuf::from(clone);
+    let root = workspace_root();
+    for tree in [Tree::TestFixturesArchitecture, Tree::TestFixturesModules] {
+        let manifest_path = tree.manifest_path(&root);
+        let mut manifest = Manifest::load(&manifest_path).unwrap();
+        let before: Vec<u8> = std::fs::read(&manifest_path).unwrap();
+
+        let scratch = tempfile::tempdir().unwrap();
+        let tree_copy = scratch.path().join(tree.dir_name());
+        copy_dir_recursive(&tree.root(&root), &tree_copy);
+
+        let sources = Sources {
+            workspace_root: &root,
+            qspec_clone: None,
+            fcd_clone: Some(&clone),
         };
         let report = revendor(&mut manifest, &tree_copy, &sources).unwrap();
         assert!(
