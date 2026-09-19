@@ -135,9 +135,13 @@ pub enum LibraryCause {
     DefinitionCycle,
     /// A member value is invalid at its member path.
     InvalidValue,
-    /// An export name matches no nominal declaration in the package's
-    /// identity projection.
+    /// An export name matches no projection node's `declaration
+    /// .qualified_name`.
     UndeclaredExport,
+    /// A projection node's top-level `declaration.qualified_name` disagrees
+    /// with its nominal `qualified_declaration`, or is absent while a
+    /// nominal `qualified_declaration` is present.
+    DeclarationNominalMismatch,
 }
 
 impl LibraryCause {
@@ -153,6 +157,7 @@ impl LibraryCause {
             Self::DefinitionCycle => "definition-cycle",
             Self::InvalidValue => "invalid-value",
             Self::UndeclaredExport => "undeclared-export",
+            Self::DeclarationNominalMismatch => "declaration-nominal-mismatch",
         }
     }
 }
@@ -258,7 +263,11 @@ impl LibraryRefusal {
                 defect: PreimageDefect::AmbiguousDeclaration { .. },
                 ..
             } => Code::AmbiguousDeclaration,
-            Self::PackageIdMismatch { .. }
+            Self::InvalidPreimage {
+                defect: PreimageDefect::DeclarationNominalMismatch { .. },
+                ..
+            }
+            | Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
             | Self::InvalidQualifier { .. }
@@ -275,6 +284,10 @@ impl LibraryRefusal {
                 defect: PreimageDefect::AmbiguousDeclaration { .. },
                 ..
             } => LibraryCause::AmbiguousName,
+            Self::InvalidPreimage {
+                defect: PreimageDefect::DeclarationNominalMismatch { .. },
+                ..
+            } => LibraryCause::DeclarationNominalMismatch,
             Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
