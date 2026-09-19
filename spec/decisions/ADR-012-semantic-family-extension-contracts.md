@@ -670,8 +670,8 @@ The v2 reader refuses an unknown wire tag or node kind with a named code. Each
 edge function carries the marker attribute `#[string_edge]`, a tool attribute.
 An `xtask string-edge` scan over the QSL crates reports every string comparison
 or string `match` outside a marked function in non-test code, and runs in the
-lint gate. An allow-list in the scan names comparisons of user values that
-select no behaviour. #214 builds the attribute and the scan.
+lint gate. Each allow-list entry names the user value it compares and
+selects no behaviour. #214 builds the attribute and the scan.
 agent-ix/quire-contract-ir#141, agent-ix/quire-contract-codegen#86 and the RT
 ticket run the same scan in their repositories.
 
@@ -734,8 +734,9 @@ on #185. This record edits no issue; the owner applies the edges after #212
 
 Each table lists the full touch set. A row outside the table is a defect in
 this design and reopens #210 at #212. #212 checks each row by inspection
-against the #209 module map. The landing PRs of #187 and #218 are checked to
-change only paths inside the modules their table names.
+against the #209 module map. The landing PRs of #187 and #218 change only paths
+inside the modules their table names. The #219 and #224 gate walks check this
+until #226 lands, and #226 enforces it after that.
 
 ### 12.1 Add a sum type and an exhaustive `case`
 

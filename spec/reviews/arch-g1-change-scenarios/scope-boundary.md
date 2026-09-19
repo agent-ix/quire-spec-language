@@ -63,7 +63,7 @@ What does not hold:
 
 Verdict: **ACCEPT WITH FINDINGS.** No finding is blocking. None makes a
 scenario cell, a pass-condition verdict or a missing decision in SR-498
-wrong. FND-005 is the closest. SR-498 scenario 1 cites CG #88 as "T-10 harness
+wrong. FND-005 is the closest. SR-498 scenario 1 cites agent-ix/quire-contract-codegen#88 as "T-10 harness
 gate: claimed modules, `unreached`, mutation control", which is accurate for
 T-10 as written. The gap is that T-10 was not widened with the #245 rule.
 It can be fixed in this PR by the text in FND-005.
