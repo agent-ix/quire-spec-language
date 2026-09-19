@@ -6,10 +6,10 @@
 //! `quire.model.conformance.refinement/v1`).
 //!
 //! This module works directly against a caller-constructed
-//! [`crate::model::bundle::Bundle`], not [`crate::model::normalize`]'s
+//! [`crate::model::domain_package::DomainPackage`], not [`crate::model::normalize`]'s
 //! [`crate::model::normalize::EffectiveView`]: it builds its own
 //! [`crate::model::key::EffectiveDeclarationPreimage`]-shaped queries over
-//! the bundle's [`RedefinitionRecord`]/[`SubsettingRecord`]s, so field
+//! the domain package's [`RedefinitionRecord`]/[`SubsettingRecord`]s, so field
 //! redefinition (already exposed by `normalize`'s phase 4) and operation
 //! redefinition (out of scope there, see its module docs) are checked
 //! uniformly here.
@@ -25,7 +25,7 @@
 //!   `crate::model` has no FR-146 expression parser, so a postcondition
 //!   clause is not parsed from source: the caller states one accepted
 //!   single-relation guard form directly, as
-//!   [`crate::model::bundle::PostconditionClause`]. What a clause actually
+//!   [`crate::model::domain_package::PostconditionClause`]. What a clause actually
 //!   establishes is not caller-trusted, though — [`check_field_refinement_obligation`]
 //!   rebuilds the small typed guard tree each clause describes and runs it
 //!   through `crate::value`'s own FR-146 fact-derivation primitive
@@ -81,11 +81,11 @@ use std::ops::ControlFlow;
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
-use crate::model::bundle::{
-    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, Multiplicity,
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, Multiplicity,
     OperationMemberRecord, PostconditionClause, RedefinitionRecord, SubsettingRecord,
 };
-use crate::model::key::ProducerKey;
+use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::redefinition_reaches;
 use crate::value::{
@@ -141,37 +141,37 @@ pub enum ConformanceCheckOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RedefinitionTargetOutcome {
     /// Exactly one valid inherited target.
-    Resolved(ProducerKey),
+    Resolved(DeclarationKey),
     /// Zero or multiple valid inherited targets; every checked record and
-    /// its named target, in bundle order.
+    /// its named target, in domain package order.
     Refused {
         /// FR-151's cause tag: always [`ModelRefusalCause::RedefinitionTarget`]
         /// — TC-196 R07 reports both failure shapes under "the same refusal"
         /// (see the module docs).
         cause: ModelRefusalCause,
         /// The record/target pairs considered.
-        candidates: Vec<(ProducerKey, ProducerKey)>,
+        candidates: Vec<(DeclarationKey, DeclarationKey)>,
         /// The distinct valid (genuinely inherited) targets among
         /// `candidates`: empty for the "zero valid targets" shape, two or
         /// more for the "several distinct valid targets" shape — the
         /// distinction QSL #146 found collapsed into one cause with no way
         /// to tell the two shapes apart from the outcome alone.
-        valid_targets: Vec<ProducerKey>,
+        valid_targets: Vec<DeclarationKey>,
     },
 }
 
 struct ConformanceIndex {
-    generals_by_specific: HashMap<ProducerKey, Vec<GeneralizationRecord>>,
-    fields: HashMap<ProducerKey, FieldMemberRecord>,
+    generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    fields: HashMap<DeclarationKey, FieldMemberRecord>,
     /// A `BTreeMap`, not a `HashMap`: [`check_field_refinement_obligation`]
     /// scans `.values()` for the (assumed unique) writer of a field, and a
     /// `HashMap`'s `RandomState` iteration order made that scan
-    /// nondeterministic across runs of the same bundle (finding #3).
-    operations: BTreeMap<ProducerKey, OperationMemberRecord>,
-    scalars: HashMap<ProducerKey, (i64, i64)>,
+    /// nondeterministic across runs of the same domain package (finding #3).
+    operations: BTreeMap<DeclarationKey, OperationMemberRecord>,
+    scalars: HashMap<DeclarationKey, (i64, i64)>,
     /// Original member key -> its declaring type's key, for fields and
     /// operations alike.
-    member_owner: HashMap<ProducerKey, ProducerKey>,
+    member_owner: HashMap<DeclarationKey, DeclarationKey>,
     redefinitions: Vec<RedefinitionRecord>,
 }
 
@@ -179,16 +179,16 @@ struct ConformanceIndex {
 /// bounded conformance walk in `crate::model` (this module and
 /// [`crate::model::dispatch`]) needs. One builder, so the map's shape is a
 /// single fact rather than a duplicated field-by-field copy. Keyed on the
-/// full [`ProducerKey`], not the display identity alone (PR #140 F2): two
+/// full [`DeclarationKey`], not the display identity alone (PR #140 F2): two
 /// generalization records whose `specific` shares a display identity but
 /// differs in revision must both index their own distinct ancestor set,
 /// never silently overwrite one another.
 pub(super) fn generals_by_specific(
-    bundle: &Bundle,
-) -> HashMap<ProducerKey, Vec<GeneralizationRecord>> {
-    let mut generals_by_specific: HashMap<ProducerKey, Vec<GeneralizationRecord>> = HashMap::new();
-    for record in &bundle.records {
-        if let BundleRecord::Generalization(general) = record {
+    domain_package: &DomainPackage,
+) -> HashMap<DeclarationKey, Vec<SupertypeRecord>> {
+    let mut generals_by_specific: HashMap<DeclarationKey, Vec<SupertypeRecord>> = HashMap::new();
+    for record in &domain_package.records {
+        if let DomainPackageRecord::Supertype(general) = record {
             generals_by_specific
                 .entry(general.specific.clone())
                 .or_default()
@@ -199,36 +199,36 @@ pub(super) fn generals_by_specific(
 }
 
 impl ConformanceIndex {
-    fn build(bundle: &Bundle) -> Self {
-        let generals_by_specific = generals_by_specific(bundle);
+    fn build(domain_package: &DomainPackage) -> Self {
+        let generals_by_specific = generals_by_specific(domain_package);
         let mut fields = HashMap::new();
         let mut operations = BTreeMap::new();
         let mut scalars = HashMap::new();
         let mut member_owner = HashMap::new();
         let mut redefinitions = Vec::new();
-        for record in &bundle.records {
+        for record in &domain_package.records {
             match record {
-                BundleRecord::ObjectType(_) | BundleRecord::Generalization(_) => {}
-                BundleRecord::FieldMember(field) => {
+                DomainPackageRecord::ObjectType(_) | DomainPackageRecord::Supertype(_) => {}
+                DomainPackageRecord::FieldMember(field) => {
                     member_owner.insert(field.key.clone(), field.owner.clone());
                     fields.insert(field.key.clone(), field.clone());
                 }
-                BundleRecord::ScalarType(scalar) => {
+                DomainPackageRecord::ScalarType(scalar) => {
                     scalars.insert(scalar.key.clone(), (scalar.lower, scalar.upper));
                 }
-                BundleRecord::OperationMember(operation) => {
+                DomainPackageRecord::OperationMember(operation) => {
                     member_owner.insert(operation.key.clone(), operation.owner.clone());
                     operations.insert(operation.key.clone(), operation.clone());
                 }
-                BundleRecord::Redefinition(redefinition) => {
+                DomainPackageRecord::Redefinition(redefinition) => {
                     redefinitions.push(redefinition.clone());
                 }
-                BundleRecord::Subsetting(_) => {}
+                DomainPackageRecord::Subsetting(_) => {}
                 // FR-152 systems-model records are not conformance-checked
                 // by this module (crate::model::systems owns them).
-                BundleRecord::Component(_)
-                | BundleRecord::Endpoint(_)
-                | BundleRecord::Relationship(_) => {}
+                DomainPackageRecord::Component(_)
+                | DomainPackageRecord::Endpoint(_)
+                | DomainPackageRecord::Relationship(_) => {}
             }
         }
         Self {
@@ -266,13 +266,13 @@ impl ConformanceIndex {
 /// `label` is the refusal detail's own subject phrase (`"conformance check
 /// from"`).
 fn walk_ancestors<B>(
-    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
-    s: &ProducerKey,
+    generals_by_specific: &HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    s: &DeclarationKey,
     label: &str,
-    mut visit: impl FnMut(&ProducerKey, &ProducerKey) -> ControlFlow<B>,
+    mut visit: impl FnMut(&DeclarationKey, &DeclarationKey) -> ControlFlow<B>,
 ) -> Result<ControlFlow<B>, ModelRefusal> {
-    let mut stack: Vec<ProducerKey> = vec![s.clone()];
-    let mut visited: HashSet<ProducerKey> = HashSet::new();
+    let mut stack: Vec<DeclarationKey> = vec![s.clone()];
+    let mut visited: HashSet<DeclarationKey> = HashSet::new();
     let mut steps: usize = 0;
     while let Some(current) = stack.pop() {
         if !visited.insert(current.clone()) {
@@ -310,9 +310,9 @@ fn walk_ancestors<B>(
 /// applicability and dominance) reuse this one implementation rather than a
 /// second copy.
 pub(super) fn type_conforms(
-    generals_by_specific: &HashMap<ProducerKey, Vec<GeneralizationRecord>>,
-    s: &ProducerKey,
-    t: &ProducerKey,
+    generals_by_specific: &HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    s: &DeclarationKey,
+    t: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {
     if s == t {
         return Ok(true);
@@ -359,18 +359,18 @@ fn missing_member(cause: ModelRefusalCause, identity: &str, role: &str) -> Model
     ModelRefusal {
         code: Code::DanglingReference,
         cause,
-        detail: format!("{role} {identity} is not a declared member of the bundle"),
+        detail: format!("{role} {identity} is not a declared member of the domain package"),
     }
 }
 
 /// Checks a field redefinition's `value-type` and `multiplicity` axes
 /// (`quire.model.conformance.variance/v1`, `.../multiplicity/v1`).
 pub fn check_field_redefinition(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     record: &RedefinitionRecord,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
-    let index = ConformanceIndex::build(bundle);
+    let index = ConformanceIndex::build(domain_package);
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
@@ -444,11 +444,11 @@ pub fn check_field_redefinition(
 /// (`binding.subset-value`/`subsetting-violation`) is FR-153 territory, not
 /// this static check.
 pub fn check_subsetting(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     record: &SubsettingRecord,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
-    let index = ConformanceIndex::build(bundle);
+    let index = ConformanceIndex::build(domain_package);
     let Some(subsetting) = index.fields.get(&record.subsetting) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetting {
@@ -523,11 +523,11 @@ pub fn check_subsetting(
 /// axes. The precondition/postcondition axes never refuse (checked by
 /// construction, per the module docs) but are still charged.
 pub fn check_operation_redefinition(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     record: &RedefinitionRecord,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
-    let index = ConformanceIndex::build(bundle);
+    let index = ConformanceIndex::build(domain_package);
     let Some(redefining) = index.operations.get(&record.redefining) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
@@ -674,7 +674,7 @@ pub fn check_operation_redefinition(
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
     for write in &redefining.effect.modifies {
-        let covered = redefinition_reaches(&bundle.records, write, |candidate| {
+        let covered = redefinition_reaches(&domain_package.records, write, |candidate| {
             redefined.effect.modifies.contains(candidate)
         });
         if !covered {
@@ -774,9 +774,9 @@ fn self_field_node(value_type: ValueType) -> Node {
 /// declared facts of the *redefined* parent member, never the narrowing
 /// type — so callers seed this from `redefined`'s own declared scalar
 /// bounds, not `redefining`'s. `Some((lower, upper))` is the closed interval
-/// type, or a [`ModelRefusal`] when a bundle's `ScalarTypeRecord` is
+/// type, or a [`ModelRefusal`] when a domain package's `ScalarTypeRecord` is
 /// malformed (its own lower greater than its upper) — a real defect in
-/// caller-supplied bundle data, refused rather than panicked on.
+/// caller-supplied domain package data, refused rather than panicked on.
 fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefusal> {
     match domain {
         Some((lower, upper)) => {
@@ -894,10 +894,10 @@ fn format_interval(interval: &ProvedInterval) -> String {
 /// operation (own or inherited) that writes the redefined field. See the
 /// module docs for the [`PostconditionClause`] scope decision this rests on.
 pub fn check_field_refinement_obligation(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     record: &RedefinitionRecord,
 ) -> Result<ConformanceOutcome, ModelRefusal> {
-    let index = ConformanceIndex::build(bundle);
+    let index = ConformanceIndex::build(domain_package);
     let Some(redefining) = index.fields.get(&record.redefining) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefining {
@@ -960,7 +960,7 @@ pub fn check_field_refinement_obligation(
             }
         }
     }
-    let names_field = |key: &ProducerKey| -> bool {
+    let names_field = |key: &DeclarationKey| -> bool {
         key.identity == record.redefined.identity || key.identity == record.redefining.identity
     };
 
@@ -1075,13 +1075,13 @@ pub fn check_field_refinement_obligation(
 /// from `src/`'s pipeline (like its `conformance.rs` siblings); QSL #165
 /// composes it into the real pipeline's `conformance.axis` accounting.
 pub fn resolve_redefinition_target(
-    bundle: &Bundle,
-    owner: &ProducerKey,
-    redefining: &ProducerKey,
+    domain_package: &DomainPackage,
+    owner: &DeclarationKey,
+    redefining: &DeclarationKey,
 ) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
-    let index = ConformanceIndex::build(bundle);
-    let mut candidates: Vec<(ProducerKey, ProducerKey)> = Vec::new();
-    let mut valid: Vec<ProducerKey> = Vec::new();
+    let index = ConformanceIndex::build(domain_package);
+    let mut candidates: Vec<(DeclarationKey, DeclarationKey)> = Vec::new();
+    let mut valid: Vec<DeclarationKey> = Vec::new();
 
     for record in &index.redefinitions {
         if record.owner.identity != owner.identity
@@ -1101,7 +1101,7 @@ pub fn resolve_redefinition_target(
         }
     }
 
-    let mut distinct: Vec<ProducerKey> = Vec::new();
+    let mut distinct: Vec<DeclarationKey> = Vec::new();
     for target in &valid {
         if !distinct
             .iter()

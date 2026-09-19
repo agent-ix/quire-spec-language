@@ -7,8 +7,8 @@
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
-use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, FieldMemberRecord, GeneralizationRecord, ModelSelection, Multiplicity,
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, SupertypeRecord, DomainPackageRef, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
     OperationResult, PostconditionClause, RedefinitionRecord, ScalarTypeRecord, SubsettingRecord,
 };
@@ -17,7 +17,7 @@ use quire_spec_language::model::conformance::{
     check_subsetting, resolve_redefinition_target, AxisFailure, ConformanceCheckOutcome,
     ConformanceOutcome, RedefinitionTargetOutcome,
 };
-use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
+use quire_spec_language::model::key::{EffectiveId, DeclarationKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
@@ -32,53 +32,53 @@ fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     }
 }
 
-fn object_type(identity: &str) -> BundleRecord {
-    BundleRecord::ObjectType(ObjectTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn object_type(identity: &str) -> DomainPackageRecord {
+    DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: DeclarationKey::fixture(identity),
         interface_features: None,
     })
 }
 
-fn field_member(identity: &str, owner: &str, value_type: &str, m: Multiplicity) -> BundleRecord {
-    BundleRecord::FieldMember(FieldMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        value_type: ProducerKey::fixture(value_type),
+fn field_member(identity: &str, owner: &str, value_type: &str, m: Multiplicity) -> DomainPackageRecord {
+    DomainPackageRecord::FieldMember(FieldMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        value_type: DeclarationKey::fixture(value_type),
         multiplicity: m,
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord {
-    BundleRecord::Generalization(GeneralizationRecord {
-        key: ProducerKey::fixture(identity),
-        specific: ProducerKey::fixture(specific),
-        general: ProducerKey::fixture(general),
+fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Supertype(SupertypeRecord {
+        key: DeclarationKey::fixture(identity),
+        specific: DeclarationKey::fixture(specific),
+        general: DeclarationKey::fixture(general),
     })
 }
 
-fn scalar_type(identity: &str, lower: i64, upper: i64) -> BundleRecord {
-    BundleRecord::ScalarType(ScalarTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
+    DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: DeclarationKey::fixture(identity),
         lower,
         upper,
     })
 }
 
-fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> BundleRecord {
-    BundleRecord::Redefinition(RedefinitionRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        redefining: ProducerKey::fixture(redefining),
-        redefined: ProducerKey::fixture(redefined),
+fn redefinition(identity: &str, owner: &str, redefining: &str, redefined: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Redefinition(RedefinitionRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        redefining: DeclarationKey::fixture(redefining),
+        redefined: DeclarationKey::fixture(redefined),
     })
 }
 
-fn subsetting(identity: &str, owner: &str, subsetting: &str, subsetted: &str) -> BundleRecord {
-    BundleRecord::Subsetting(SubsettingRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        subsetting: ProducerKey::fixture(subsetting),
-        subsetted: ProducerKey::fixture(subsetted),
+fn subsetting(identity: &str, owner: &str, subsetting: &str, subsetted: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Subsetting(SubsettingRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        subsetting: DeclarationKey::fixture(subsetting),
+        subsetted: DeclarationKey::fixture(subsetted),
     })
 }
 
@@ -92,26 +92,26 @@ fn operation(
     creates: Vec<&str>,
     deletes: Vec<&str>,
     own_postcondition_clauses: Vec<PostconditionClause>,
-) -> BundleRecord {
-    BundleRecord::OperationMember(OperationMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
+) -> DomainPackageRecord {
+    DomainPackageRecord::OperationMember(OperationMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
         parameters: parameters
             .into_iter()
             .map(|(id, ty, m)| OperationParameterRecord {
-                key: ProducerKey::fixture(id),
-                value_type: ProducerKey::fixture(ty),
+                key: DeclarationKey::fixture(id),
+                value_type: DeclarationKey::fixture(ty),
                 multiplicity: m,
             })
             .collect(),
         result: result.map(|(ty, m)| OperationResult {
-            value_type: ProducerKey::fixture(ty),
+            value_type: DeclarationKey::fixture(ty),
             multiplicity: m,
         }),
         effect: OperationEffect {
-            modifies: modifies.into_iter().map(ProducerKey::fixture).collect(),
-            creates: creates.into_iter().map(ProducerKey::fixture).collect(),
-            deletes: deletes.into_iter().map(ProducerKey::fixture).collect(),
+            modifies: modifies.into_iter().map(DeclarationKey::fixture).collect(),
+            creates: creates.into_iter().map(DeclarationKey::fixture).collect(),
+            deletes: deletes.into_iter().map(DeclarationKey::fixture).collect(),
         },
         has_own_precondition: false,
         own_postcondition_clauses,
@@ -119,11 +119,11 @@ fn operation(
     })
 }
 
-/// H (bundle `bundle.h`): types `A`, `B` (`B` <= `A`); field `model.A.x`
+/// H (domain package `bundle.h`): types `A`, `B` (`B` <= `A`); field `model.A.x`
 /// typed `model.A` `{0,1}`; field `model.B.y` typed `model.A` `{0,1}`;
 /// operation `model.A.op(p1: model.A {0,1})`: `model.B {1,1}`, effect
 /// `{modifies: [model.A.x], creates: [model.A], deletes: []}`.
-fn fixture_h_base() -> Vec<BundleRecord> {
+fn fixture_h_base() -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A"),
         object_type("model.B"),
@@ -143,9 +143,9 @@ fn fixture_h_base() -> Vec<BundleRecord> {
     ]
 }
 
-fn bundle_h(mut records: Vec<BundleRecord>) -> Bundle {
+fn bundle_h(mut records: Vec<DomainPackageRecord>) -> DomainPackage {
     records.extend(fixture_h_base());
-    Bundle::new(ModelSelection::fixture("bundle.h"), records)
+    DomainPackage::new(DomainPackageRef::fixture("bundle.h"), records)
 }
 
 /// Finds the effective TYPE entry (no owner) declared with original identity
@@ -192,8 +192,8 @@ fn find_member<'a>(
 #[trace("TC-196", "FR-151-AC-1")]
 #[test]
 fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete_provenance() {
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.r01"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r01"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -204,19 +204,19 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
         ],
     );
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.B.n"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.n"),
-        redefined: ProducerKey::fixture("model.A.n"),
+        key: DeclarationKey::fixture("model.redef.B.n"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.n"),
+        redefined: DeclarationKey::fixture("model.A.n"),
     };
 
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_field_redefinition(&bundle, &record, &mut meter) {
+    match check_field_redefinition(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible ({{1,3}} conforms to {{0,5}}), got {other:?}"),
     }
 
-    let view = match normalize(&bundle, ModelNormalizationLimits::UNLIMITED) {
+    let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed view, got {other:?}"),
     };
@@ -241,8 +241,8 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
     assert_eq!(
         winner_redefine[0].inputs,
         vec![
-            ProducerKey::fixture("model.redef.B.n"),
-            ProducerKey::fixture("model.A.n"),
+            DeclarationKey::fixture("model.redef.B.n"),
+            DeclarationKey::fixture("model.A.n"),
         ]
     );
 
@@ -265,8 +265,8 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
     assert_eq!(
         hidden_redefine[0].inputs,
         vec![
-            ProducerKey::fixture("model.redef.B.n"),
-            ProducerKey::fixture("model.A.n"),
+            DeclarationKey::fixture("model.redef.B.n"),
+            DeclarationKey::fixture("model.A.n"),
         ]
     );
 
@@ -291,7 +291,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r02_a_compatible_operation_redefinition_admits_every_axis() {
-    let bundle = bundle_h(vec![
+    let domain_package = bundle_h(vec![
         operation(
             "model.B.op",
             "model.B",
@@ -305,13 +305,13 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
         redefinition("model.redef.B.op", "model.B", "model.B.op", "model.A.op"),
     ]);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.B.op"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.B.op"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_operation_redefinition(&bundle, &record, &mut meter) {
+    match check_operation_redefinition(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
@@ -320,7 +320,7 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
 #[trace("TC-196", "FR-151-AC-2", "FR-151-AC-4")]
 #[test]
 fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
-    let bundle = bundle_h(vec![
+    let domain_package = bundle_h(vec![
         operation(
             "model.B.op",
             "model.B",
@@ -334,13 +334,13 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
         redefinition("model.redef.B.op", "model.B", "model.B.op", "model.A.op"),
     ]);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.B.op"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.B.op"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_operation_redefinition(&bundle, &record, &mut meter) {
+    match check_operation_redefinition(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             let causes: Vec<ModelRefusalCause> = failures.iter().map(|f| f.cause.clone()).collect();
             assert_eq!(causes.len(), 5);
@@ -348,8 +348,8 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
                 causes[0],
                 ModelRefusalCause::VarianceParameter {
                     index: 1,
-                    declared: ProducerKey::fixture("model.A"),
-                    redefined: ProducerKey::fixture("model.B"),
+                    declared: DeclarationKey::fixture("model.A"),
+                    redefined: DeclarationKey::fixture("model.B"),
                 }
             );
             assert_eq!(
@@ -370,7 +370,7 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
             assert_eq!(
                 causes[4],
                 ModelRefusalCause::EffectEscape {
-                    field: ProducerKey::fixture("model.B.y"),
+                    field: DeclarationKey::fixture("model.B.y"),
                 }
             );
             assert!(failures.iter().all(|f| f.code == Code::IllTyped));
@@ -382,7 +382,7 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
-    let bundle = bundle_h(vec![
+    let domain_package = bundle_h(vec![
         operation(
             "model.B.op",
             "model.B",
@@ -396,13 +396,13 @@ fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
         redefinition("model.redef.B.op", "model.B", "model.B.op", "model.A.op"),
     ]);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.B.op"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.B.op"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_operation_redefinition(&bundle, &record, &mut meter) {
+    match check_operation_redefinition(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].cause, ModelRefusalCause::TypeMismatch);
@@ -426,14 +426,14 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
         ]
     };
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.B.n"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.n"),
-        redefined: ProducerKey::fixture("model.A.n"),
+        key: DeclarationKey::fixture("model.redef.B.n"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.n"),
+        redefined: DeclarationKey::fixture("model.A.n"),
     };
 
-    let narrowing = Bundle::new(
-        ModelSelection::fixture("bundle.r05a"),
+    let narrowing = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r05a"),
         records(mult(1, Some(3)), mult(0, Some(5))),
     );
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
@@ -451,8 +451,8 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
         other => panic!("expected Refused, got {other:?}"),
     }
 
-    let widening = Bundle::new(
-        ModelSelection::fixture("bundle.r05b"),
+    let widening = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r05b"),
         records(mult(0, Some(5)), mult(1, Some(3))),
     );
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
@@ -466,8 +466,8 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
 #[test]
 fn r06_subsetting_type_and_multiplicity_axes() {
     let bundle_of = |some_type: &str, some_mult: Multiplicity| {
-        Bundle::new(
-            ModelSelection::fixture("bundle.r06"),
+        DomainPackage::new(
+            DomainPackageRef::fixture("bundle.r06"),
             vec![
                 object_type("model.A"),
                 object_type("model.B"),
@@ -480,16 +480,16 @@ fn r06_subsetting_type_and_multiplicity_axes() {
         )
     };
     let record = SubsettingRecord {
-        key: ProducerKey::fixture("model.sub.some"),
-        owner: ProducerKey::fixture("model.A"),
-        subsetting: ProducerKey::fixture("model.A.some"),
-        subsetted: ProducerKey::fixture("model.A.all"),
+        key: DeclarationKey::fixture("model.sub.some"),
+        owner: DeclarationKey::fixture("model.A"),
+        subsetting: DeclarationKey::fixture("model.A.some"),
+        subsetted: DeclarationKey::fixture("model.A.all"),
     };
 
     // (i) same type, wider multiplicity: multiplicity-narrowing.
-    let bundle = bundle_of("model.A", mult(0, Some(9)));
+    let domain_package = bundle_of("model.A", mult(0, Some(9)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_subsetting(&bundle, &record, &mut meter) {
+    match check_subsetting(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(
@@ -504,16 +504,16 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     }
 
     // (ii) unrelated type: subsetting-type.
-    let bundle = bundle_of("model.C", mult(0, Some(5)));
+    let domain_package = bundle_of("model.C", mult(0, Some(5)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_subsetting(&bundle, &record, &mut meter) {
+    match check_subsetting(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(
                 failures[0].cause,
                 ModelRefusalCause::SubsettingType {
-                    subsetting: ProducerKey::fixture("model.C"),
-                    subsetted: ProducerKey::fixture("model.A"),
+                    subsetting: DeclarationKey::fixture("model.C"),
+                    subsetted: DeclarationKey::fixture("model.A"),
                 }
             );
         }
@@ -521,9 +521,9 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     }
 
     // (iii) conforming subtype, narrower multiplicity: admitted.
-    let bundle = bundle_of("model.B", mult(0, Some(3)));
+    let domain_package = bundle_of("model.B", mult(0, Some(3)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_subsetting(&bundle, &record, &mut meter) {
+    match check_subsetting(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
@@ -534,8 +534,8 @@ fn r06_subsetting_type_and_multiplicity_axes() {
 fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
     // Zero inherited targets: B.z claims to redefine C.w, but B does not
     // conform to C.
-    let zero = Bundle::new(
-        ModelSelection::fixture("bundle.r07a"),
+    let zero = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r07a"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -548,8 +548,8 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
     );
     match resolve_redefinition_target(
         &zero,
-        &ProducerKey::fixture("model.B"),
-        &ProducerKey::fixture("model.B.z"),
+        &DeclarationKey::fixture("model.B"),
+        &DeclarationKey::fixture("model.B.z"),
     ) {
         Ok(RedefinitionTargetOutcome::Refused {
             cause,
@@ -567,8 +567,8 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
     }
 
     // Two distinct, both-legitimate inherited targets: ambiguous.
-    let two = Bundle::new(
-        ModelSelection::fixture("bundle.r07b"),
+    let two = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.r07b"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -582,8 +582,8 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
     );
     match resolve_redefinition_target(
         &two,
-        &ProducerKey::fixture("model.B"),
-        &ProducerKey::fixture("model.B.z"),
+        &DeclarationKey::fixture("model.B"),
+        &DeclarationKey::fixture("model.B.z"),
     ) {
         Ok(RedefinitionTargetOutcome::Refused {
             cause,
@@ -616,7 +616,7 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
 /// `[0,9]` and `model.Small` `[0,5]`; field `model.A.x` typed `model.A`
 /// `{0,1}`; field `model.A.c` typed `model.Count` `{1,1}`; operation
 /// `model.A.set()` with no result and effect writing `[model.A.x, model.A.c]`.
-fn r08_base() -> Vec<BundleRecord> {
+fn r08_base() -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A"),
         object_type("model.B"),
@@ -654,14 +654,14 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
         "model.B.xb",
         "model.A.x",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08a"), records);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08a"), records);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.xb"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.xb"),
-        redefined: ProducerKey::fixture("model.A.x"),
+        key: DeclarationKey::fixture("model.redef.xb"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.xb"),
+        redefined: DeclarationKey::fixture("model.A.x"),
     };
-    match check_field_refinement_obligation(&bundle, &record) {
+    match check_field_refinement_obligation(&domain_package, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures.len(), 1);
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
@@ -696,7 +696,7 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         vec![],
         vec![],
         vec![PostconditionClause::Presence {
-            field: ProducerKey::fixture("model.B.xb"),
+            field: DeclarationKey::fixture("model.B.xb"),
         }],
     ));
     records.push(redefinition(
@@ -705,14 +705,14 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
         "model.B.set",
         "model.A.set",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08b"), records);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08b"), records);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.xb"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.xb"),
-        redefined: ProducerKey::fixture("model.A.x"),
+        key: DeclarationKey::fixture("model.redef.xb"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.xb"),
+        redefined: DeclarationKey::fixture("model.A.x"),
     };
-    match check_field_refinement_obligation(&bundle, &record) {
+    match check_field_refinement_obligation(&domain_package, &record) {
         Ok(ConformanceOutcome::Compatible) => {}
         other => panic!("expected Compatible, got {other:?}"),
     }
@@ -734,14 +734,14 @@ fn r08c_an_object_typed_narrowing_has_no_proof_form() {
         "model.B.xr",
         "model.A.x",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08c"), records);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08c"), records);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.xr"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.xr"),
-        redefined: ProducerKey::fixture("model.A.x"),
+        key: DeclarationKey::fixture("model.redef.xr"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.xr"),
+        redefined: DeclarationKey::fixture("model.A.x"),
     };
-    match check_field_refinement_obligation(&bundle, &record) {
+    match check_field_refinement_obligation(&domain_package, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("no-proof-form"));
@@ -766,14 +766,14 @@ fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain()
         "model.B.cs",
         "model.A.c",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08d"), records);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08d"), records);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.cs"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.cs"),
-        redefined: ProducerKey::fixture("model.A.c"),
+        key: DeclarationKey::fixture("model.redef.cs"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.cs"),
+        redefined: DeclarationKey::fixture("model.A.c"),
     };
-    match check_field_refinement_obligation(&bundle, &record) {
+    match check_field_refinement_obligation(&domain_package, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
@@ -786,10 +786,10 @@ fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain()
 #[test]
 fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.cs"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.cs"),
-        redefined: ProducerKey::fixture("model.A.c"),
+        key: DeclarationKey::fixture("model.redef.cs"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.cs"),
+        redefined: DeclarationKey::fixture("model.A.c"),
     };
 
     let contained = |upper: i64| {
@@ -815,7 +815,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             vec![],
             vec![],
             vec![PostconditionClause::Comparison {
-                field: ProducerKey::fixture("model.B.cs"),
+                field: DeclarationKey::fixture("model.B.cs"),
                 operator: OrderingOperator::LessOrEqual,
                 literal: upper,
             }],
@@ -826,7 +826,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
             "model.B.set",
             "model.A.set",
         ));
-        Bundle::new(ModelSelection::fixture("bundle.r08ef"), records)
+        DomainPackage::new(DomainPackageRef::fixture("bundle.r08ef"), records)
     };
 
     match check_field_refinement_obligation(&contained(5), &record) {
@@ -872,7 +872,7 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
         vec![],
         vec![],
         vec![PostconditionClause::Comparison {
-            field: ProducerKey::fixture("model.B.cs"),
+            field: DeclarationKey::fixture("model.B.cs"),
             operator: OrderingOperator::GreaterOrEqual,
             literal: 0,
         }],
@@ -883,14 +883,14 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
         "model.B.set",
         "model.A.set",
     ));
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08g"), records);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08g"), records);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.cs"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.cs"),
-        redefined: ProducerKey::fixture("model.A.c"),
+        key: DeclarationKey::fixture("model.redef.cs"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.cs"),
+        redefined: DeclarationKey::fixture("model.A.c"),
     };
-    match check_field_refinement_obligation(&bundle, &record) {
+    match check_field_refinement_obligation(&domain_package, &record) {
         Ok(ConformanceOutcome::Refused(failures)) => {
             assert_eq!(failures[0].cause, ModelRefusalCause::UnprovedRefinement);
             assert!(failures[0].detail.contains("field-domain"));
@@ -917,12 +917,12 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
 #[test]
 fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
     let ge_zero = PostconditionClause::Comparison {
-        field: ProducerKey::fixture("model.B.cs"),
+        field: DeclarationKey::fixture("model.B.cs"),
         operator: OrderingOperator::GreaterOrEqual,
         literal: 0,
     };
     let le_five = PostconditionClause::Comparison {
-        field: ProducerKey::fixture("model.B.cs"),
+        field: DeclarationKey::fixture("model.B.cs"),
         operator: OrderingOperator::LessOrEqual,
         literal: 5,
     };
@@ -963,14 +963,14 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
             ),
             redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
         ];
-        let bundle = Bundle::new(ModelSelection::fixture("bundle.r08h"), records);
+        let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08h"), records);
         let record = RedefinitionRecord {
-            key: ProducerKey::fixture("model.redef.cs"),
-            owner: ProducerKey::fixture("model.B"),
-            redefining: ProducerKey::fixture("model.B.cs"),
-            redefined: ProducerKey::fixture("model.A.c"),
+            key: DeclarationKey::fixture("model.redef.cs"),
+            owner: DeclarationKey::fixture("model.B"),
+            redefining: DeclarationKey::fixture("model.B.cs"),
+            redefined: DeclarationKey::fixture("model.A.c"),
         };
-        match check_field_refinement_obligation(&bundle, &record) {
+        match check_field_refinement_obligation(&domain_package, &record) {
             Ok(ConformanceOutcome::Compatible) => {}
             other => panic!(
                 "expected Compatible regardless of clause order ({order}): the two \
@@ -984,7 +984,7 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
 /// Review of PR #157 finding #3: a malformed `ScalarTypeRecord` (its own
 /// lower greater than its upper) must refuse when a narrowing
 /// redefinition's obligation check seeds a synthetic guard from it, never
-/// panic on this caller-supplied bundle data.
+/// panic on this caller-supplied domain package data.
 #[trace("TC-196", "FR-151-AC-6")]
 #[test]
 fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
@@ -1017,21 +1017,21 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
             vec![],
             vec![],
             vec![PostconditionClause::Comparison {
-                field: ProducerKey::fixture("model.B.cs"),
+                field: DeclarationKey::fixture("model.B.cs"),
                 operator: OrderingOperator::LessOrEqual,
                 literal: 5,
             }],
         ),
         redefinition("model.redef.set", "model.B", "model.B.set", "model.A.set"),
     ];
-    let bundle = Bundle::new(ModelSelection::fixture("bundle.r08i"), records);
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.r08i"), records);
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.cs"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.cs"),
-        redefined: ProducerKey::fixture("model.A.c"),
+        key: DeclarationKey::fixture("model.redef.cs"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.cs"),
+        redefined: DeclarationKey::fixture("model.A.c"),
     };
-    match check_field_refinement_obligation(&bundle, &record) {
+    match check_field_refinement_obligation(&domain_package, &record) {
         Err(refusal) => {
             assert_eq!(refusal.code, Code::InvalidModelBinding);
             // FR-272's `invalid_model_binding` cause list is closed; there
@@ -1053,18 +1053,18 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
 #[trace("TC-196")]
 #[test]
 fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let revision_1 = ProducerKey::fixture("model.A.x");
-    let mut revision_2 = ProducerKey::fixture("model.A.x");
+    let revision_1 = DeclarationKey::fixture("model.A.x");
+    let mut revision_2 = DeclarationKey::fixture("model.A.x");
     revision_2.revision.value = "2".to_owned();
 
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.y"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.y"),
+        key: DeclarationKey::fixture("model.redef.y"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.y"),
         redefined: revision_2.clone(),
     };
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.f2-conformance-revision"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-conformance-revision"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -1072,18 +1072,18 @@ fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive()
             // collapsed onto this record instead of `revision_2` (the
             // record.redefined actually names), the redefining {0,3} field
             // below would wrongly fail to narrow it.
-            BundleRecord::FieldMember(FieldMemberRecord {
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: revision_1,
-                owner: ProducerKey::fixture("model.A"),
-                value_type: ProducerKey::fixture("model.A"),
+                owner: DeclarationKey::fixture("model.A"),
+                value_type: DeclarationKey::fixture("model.A"),
                 multiplicity: mult(0, Some(1)),
             }),
             // revision "2": the actual redefinition target, a wider {0,5}
             // upper bound that the redefining field genuinely narrows.
-            BundleRecord::FieldMember(FieldMemberRecord {
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: revision_2,
-                owner: ProducerKey::fixture("model.A"),
-                value_type: ProducerKey::fixture("model.A"),
+                owner: DeclarationKey::fixture("model.A"),
+                value_type: DeclarationKey::fixture("model.A"),
                 multiplicity: mult(0, Some(5)),
             }),
             field_member("model.B.y", "model.B", "model.A", mult(0, Some(3))),
@@ -1091,7 +1091,7 @@ fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive()
     );
 
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_field_redefinition(&bundle, &record, &mut meter) {
+    match check_field_redefinition(&domain_package, &record, &mut meter) {
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
         other => {
             panic!("expected Compatible against revision \"2\"'s {{0,5}} bound, got {other:?}")
@@ -1113,8 +1113,8 @@ fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive()
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefinition_chain() {
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.redef.chain.op"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.chain.op"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -1155,26 +1155,26 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
         ],
     );
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.C.op-A.op"),
-        owner: ProducerKey::fixture("model.C"),
-        redefining: ProducerKey::fixture("model.C.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.C.op-A.op"),
+        owner: DeclarationKey::fixture("model.C"),
+        redefining: DeclarationKey::fixture("model.C.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&bundle, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &record, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible)
     );
 }
 
 /// PR #177 review finding 1: the effect axis's `redefinition_reaches` call
-/// must compare `ProducerKey`s by their full derived `PartialEq`
+/// must compare `DeclarationKey`s by their full derived `PartialEq`
 /// (`authority`, `identity`, `revision`, `digest`), not `.identity` alone --
 /// a write naming `model.A.x` at revision "2" does not reach a grant for
 /// `model.A.x` at revision "1", even though both share the display identity
 /// `model.A.x`. Before this PR the effect axis compared `.identity` only, so
 /// this exact scenario wrongly admitted; every other fixture in this file
-/// uses `ProducerKey::fixture`'s revision "1" on both the write and the
+/// uses `DeclarationKey::fixture`'s revision "1" on both the write and the
 /// grant, so none of them can tell full-key equality apart from
 /// identity-only comparison the way this one does.
 ///
@@ -1186,10 +1186,10 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name() {
-    let mut write_at_revision_2 = ProducerKey::fixture("model.A.x");
+    let mut write_at_revision_2 = DeclarationKey::fixture("model.A.x");
     write_at_revision_2.revision.value = "2".to_owned();
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.redef.op-revision"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.op-revision"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -1205,9 +1205,9 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_gran
                 vec![],
                 vec![],
             ),
-            BundleRecord::OperationMember(OperationMemberRecord {
-                key: ProducerKey::fixture("model.B.op"),
-                owner: ProducerKey::fixture("model.B"),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.B.op"),
+                owner: DeclarationKey::fixture("model.B"),
                 parameters: vec![],
                 result: None,
                 effect: OperationEffect {
@@ -1228,14 +1228,14 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_gran
         ],
     );
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.B.op-A.op"),
-        owner: ProducerKey::fixture("model.B"),
-        redefining: ProducerKey::fixture("model.B.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.B.op-A.op"),
+        owner: DeclarationKey::fixture("model.B"),
+        redefining: DeclarationKey::fixture("model.B.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&bundle, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &record, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "effect",
             code: Code::IllTyped,
@@ -1261,8 +1261,8 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_gran
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the_grant() {
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.redef.chain.no-grant"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.chain.no-grant"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -1302,19 +1302,19 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
         ],
     );
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.C.op-A.op"),
-        owner: ProducerKey::fixture("model.C"),
-        redefining: ProducerKey::fixture("model.C.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.C.op-A.op"),
+        owner: DeclarationKey::fixture("model.C"),
+        redefining: DeclarationKey::fixture("model.C.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&bundle, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &record, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "effect",
             code: Code::IllTyped,
             cause: ModelRefusalCause::EffectEscape {
-                field: ProducerKey::fixture("model.C.x"),
+                field: DeclarationKey::fixture("model.C.x"),
             },
             detail: "write model.C.x is not covered by the redefined effect".to_owned(),
         }]))
@@ -1338,8 +1338,8 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
 #[trace("TC-196", "FR-151-AC-4")]
 #[test]
 fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefinition_cycle() {
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.redef.cycle"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.cycle"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
@@ -1380,19 +1380,19 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
         ],
     );
     let record = RedefinitionRecord {
-        key: ProducerKey::fixture("model.redef.C.op-A.op"),
-        owner: ProducerKey::fixture("model.C"),
-        redefining: ProducerKey::fixture("model.C.op"),
-        redefined: ProducerKey::fixture("model.A.op"),
+        key: DeclarationKey::fixture("model.redef.C.op-A.op"),
+        owner: DeclarationKey::fixture("model.C"),
+        redefining: DeclarationKey::fixture("model.C.op"),
+        redefined: DeclarationKey::fixture("model.A.op"),
     };
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
-        check_operation_redefinition(&bundle, &record, &mut meter),
+        check_operation_redefinition(&domain_package, &record, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "effect",
             code: Code::IllTyped,
             cause: ModelRefusalCause::EffectEscape {
-                field: ProducerKey::fixture("model.C.x"),
+                field: DeclarationKey::fixture("model.C.x"),
             },
             detail: "write model.C.x is not covered by the redefined effect".to_owned(),
         }]))

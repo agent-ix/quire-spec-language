@@ -157,7 +157,7 @@ pub struct DispatchCandidate {
 /// (`value-accounting.md`: `c` is "the number of linked candidates of the
 /// called effective operation"). Built by the caller (the `crate::model`
 /// bridge) before checking, from `crate::model::dispatch::link_dispatch`'s
-/// own `ProducerKey`-keyed table translated into this package's own function
+/// own `DeclarationKey`-keyed table translated into this package's own function
 /// indices; the checker only threads it through unchanged.
 #[derive(Clone, Debug)]
 pub struct DispatchTable {
