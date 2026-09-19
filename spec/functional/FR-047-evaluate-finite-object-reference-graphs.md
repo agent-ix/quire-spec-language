@@ -16,6 +16,7 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-043, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-044, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-045, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/ADR-009, type: references }
 ---
 # FR-047: Evaluate finite typed object-reference graphs
 
@@ -58,7 +59,10 @@ inputs.
 Exact typed identity or Boolean results with the selected observation, or a
 typed incomplete, refused or resource-exhausted outcome with deterministic work
 usage. Reachability returns no path witness. No failed traversal exposes a
-partial Boolean or substitutes `false` for inability to decide.
+partial Boolean or substitutes `false` for inability to decide. What a future
+path witness would carry, if one is ever admitted, is an open question held by
+[ADR-009](../decisions/ADR-009-graph-path-witness-content.md); this
+requirement admits none today.
 
 ## Behavior
 
@@ -161,3 +165,6 @@ FR-043 supplies the selected graph meaning. Concrete object membership and
 closure are independently supplied runtime inputs. This retrospective cycle under
 [#66](https://github.com/agent-ix/quire-spec-language/issues/66) records that
 earlier graph code and tests preceded this compiler-owned requirement.
+[ADR-009](../decisions/ADR-009-graph-path-witness-content.md) holds, for
+owner ruling, the open question of what a graph path witness carries; it does
+not admit a witness and does not change this requirement's current scope.

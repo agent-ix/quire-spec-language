@@ -88,7 +88,7 @@ fn operation(
     owner: &str,
     parameters: Vec<(&str, &str, Multiplicity)>,
     result: Option<(&str, Multiplicity)>,
-    field_writes: Vec<&str>,
+    modifies: Vec<&str>,
     creates: Vec<&str>,
     deletes: Vec<&str>,
     own_postcondition_clauses: Vec<PostconditionClause>,
@@ -109,7 +109,7 @@ fn operation(
             multiplicity: m,
         }),
         effect: OperationEffect {
-            field_writes: field_writes.into_iter().map(ProducerKey::fixture).collect(),
+            modifies: modifies.into_iter().map(ProducerKey::fixture).collect(),
             creates: creates.into_iter().map(ProducerKey::fixture).collect(),
             deletes: deletes.into_iter().map(ProducerKey::fixture).collect(),
         },
@@ -122,7 +122,7 @@ fn operation(
 /// H (bundle `bundle.h`): types `A`, `B` (`B` <= `A`); field `model.A.x`
 /// typed `model.A` `{0,1}`; field `model.B.y` typed `model.A` `{0,1}`;
 /// operation `model.A.op(p1: model.A {0,1})`: `model.B {1,1}`, effect
-/// `{fieldWrites: [model.A.x], creates: [model.A], deletes: []}`.
+/// `{modifies: [model.A.x], creates: [model.A], deletes: []}`.
 fn fixture_h_base() -> Vec<BundleRecord> {
     vec![
         object_type("model.A"),
@@ -1106,8 +1106,8 @@ fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive()
 /// `model.A.x`, `model.C.x` redefines `model.B.x` -- per model-complete.md:56
 /// ("the redefining feature replaces the *one* inherited redefined
 /// feature"), there is no direct `model.C.x -> model.A.x` record, only the
-/// two-hop chain. `model.A.op` declares `fieldWrites: [model.A.x]`;
-/// `model.C.op` redefines it with `fieldWrites: [model.C.x]`. `model.C.x`
+/// two-hop chain. `model.A.op` declares `modifies: [model.A.x]`;
+/// `model.C.op` redefines it with `modifies: [model.C.x]`. `model.C.x`
 /// reaches the `model.A.x` grant only through both hops, so this must admit
 /// `Compatible`, not refuse `EffectEscape`.
 #[trace("TC-196", "FR-151-AC-4")]
@@ -1179,7 +1179,7 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
 /// identity-only comparison the way this one does.
 ///
 /// Mutation used: in `check_operation_redefinition`'s effect closure,
-/// compared `redefined.effect.field_writes.iter().any(|w| w.identity ==
+/// compared `redefined.effect.modifies.iter().any(|w| w.identity ==
 /// candidate.identity)` instead of `.contains(candidate)`. Every other test
 /// in this file stayed green; this one went from `Refused` to `Compatible`;
 /// reverted.
@@ -1211,7 +1211,7 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_gran
                 parameters: vec![],
                 result: None,
                 effect: OperationEffect {
-                    field_writes: vec![write_at_revision_2.clone()],
+                    modifies: vec![write_at_revision_2.clone()],
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
@@ -1255,7 +1255,7 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_gran
 /// (a write with no redefinition record at all -- zero hops): here
 /// `model.C.x` redefines `model.B.x` (one real hop), but `model.B.x`
 /// redefines nothing, so the walk takes its one hop, finds no further
-/// redefinition record and no match against `fieldWrites: [model.A.x]`, and
+/// redefinition record and no match against `modifies: [model.A.x]`, and
 /// refuses -- it must not, e.g., stop after zero hops and admit by mistake,
 /// or walk past the chain's actual end.
 #[trace("TC-196", "FR-151-AC-4")]

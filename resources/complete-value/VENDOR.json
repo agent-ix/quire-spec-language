@@ -5,44 +5,44 @@
     {
       "kind": "qspec",
       "repo": "https://github.com/agent-ix/quire-specification",
-      "commit": "7d7943ab1482e091f6d126401ada38957c4a1ccf",
+      "commit": "d227270fbeb28289df6abba7e94173118345c028",
       "dest_prefix": "quire-specification",
       "files": [
         {
           "path": "proposals/checked-package-v2/README.md",
-          "sha256": "sha256:e3f8ee30cf960df55be4bc0a57e9887a705cbf699900f7ec66e310c477d304db"
+          "sha256": "sha256:0ed233ac35d68c3395debc4bc3f69954b497a0156ddbe86c25fab4ac32e0877e"
         },
         {
           "path": "proposals/checked-package-v2/fixtures/positive-nominal-identities.json",
-          "sha256": "sha256:b6b1f81f33d6b8756f91ac3fefed74e8cb01b85892c4520a072952232e968a47"
+          "sha256": "sha256:64b4c14caa10d4610b393d5e68aa6ef21bd44160996844711583177d19c69173"
         },
         {
           "path": "proposals/checked-package-v2/model-effective-declaration-vectors.json",
-          "sha256": "sha256:a48857053ac2155c75f7f63fe3b5a5d7cebbadf83bc1beed397d3b13110b2bbd"
+          "sha256": "sha256:aaf9d7809c4f257319cec48e9cfb81c39aa75513f07eded718d2f975c854d19e"
         },
         {
           "path": "proposals/checked-package-v2/model-effective-declaration.schema.json",
-          "sha256": "sha256:38f1b5b247646c193a7e0c9c6e43f1ceb836e0a9f050e1cf80c7def3910dc1d2"
+          "sha256": "sha256:f6cf212f308adf6ef320cb4d63072198fb5ecfa6809d0f81d885183c9e9fc598"
         },
         {
           "path": "proposals/checked-package-v2/node-identity-preimage.schema.json",
-          "sha256": "sha256:978f63b9094189a4f480326658a9cc1c009239c5df770f0dc118b632e0b02501"
+          "sha256": "sha256:204b67af22f3c6fb6e776c4d92683e44e7e11cf8b6d2184b5b895ac310941af6"
         },
         {
           "path": "proposals/checked-package-v2/node-identity-vectors.json",
-          "sha256": "sha256:635717d735883c4f33440758376d4958e43340a801ac3b7be055d156f2096244"
+          "sha256": "sha256:30451dcd72d0443e4827faaced2b864e7a96e891c29a5458eef389cd09e4b2de"
         },
         {
           "path": "proposals/quire-v1/definitions/README.md",
-          "sha256": "sha256:757143d6210d3af600d98e6598b3d3809d3342350726251fd8bfb3a11b1fdf43"
+          "sha256": "sha256:6919f11f9e06f81e9d7da095969fe74f5292a387e7f948a7d31a2e70f605a172"
         },
         {
           "path": "proposals/quire-v1/definitions/complete-model-lock.json",
-          "sha256": "sha256:55f865ccd00de5f7cdb3be2858f53243d630248b2fa0c564ccae2be7647df3b9"
+          "sha256": "sha256:80e3132e3242496fc6308bd760f505243633e26d060240fb5bc0b7a71e7de952"
         },
         {
           "path": "proposals/quire-v1/definitions/complete-value-lock.json",
-          "sha256": "sha256:8892527d03064c1c1c06fbe7ec2ebaee0b5f33d0934c90af12ca02edb9580aef"
+          "sha256": "sha256:121cfd61fb526d5bdaed56cd0fd2e5694d8be8488278a0b2d2daedad38d8093c"
         },
         {
           "path": "proposals/quire-v1/definitions/complete-value-selection-vectors.json",
@@ -50,27 +50,27 @@
         },
         {
           "path": "proposals/quire-v1/definitions/edition.md",
-          "sha256": "sha256:d70a50262b334c6b762af45dd498752fcb5fae740b2b222aa2032d892a126bd2"
+          "sha256": "sha256:4cf0b7ac51a3b9417bc1c10a06b26d1e6a19d02fc549ef70ec627fab35bea625"
         },
         {
           "path": "proposals/quire-v1/definitions/model-complete-rules.json",
-          "sha256": "sha256:a369f976268b4c5b4d571f14813ff4e10a1783da13ed44a8fc0e49ddf790e4fe"
+          "sha256": "sha256:30a3b05bbfe8759fc2a939f68ee312cad2828fe6ed6d8a1a9be46f5449a8195c"
         },
         {
           "path": "proposals/quire-v1/definitions/model-complete.md",
-          "sha256": "sha256:f34f2fe37f0dc84bf2045a986b5bb4b80ad479781134c91a825c98473a275be6"
+          "sha256": "sha256:bfbfdfdccf9deda602b0f7acf48f4843b53a12518a19031250cbd1d8cb6548d9"
         },
         {
           "path": "proposals/quire-v1/definitions/native-diagnostics.md",
-          "sha256": "sha256:28a7de906d2dba95c0f3497613d174ddddd7f6eb00802627211d145b7bd82e46"
+          "sha256": "sha256:e894159c2b241b1cde4c75f0de031a515939a65800d53fd7209bd6369ca3b391"
         },
         {
           "path": "proposals/quire-v1/definitions/value-accounting.md",
-          "sha256": "sha256:aa00b46dc4c4f0b628ff159d2f686be7e8b48fdb9307e0c361019863a2f30bef"
+          "sha256": "sha256:1d8b15f8b0cb20bfb04841101e6dd09735cca06fe80e38652f48555a0c6871fa"
         },
         {
           "path": "proposals/quire-v1/definitions/value-complete-rules.json",
-          "sha256": "sha256:d005f1e42da3a5d4951c5da0d0d8740f7281ba412bcb67615450ed7437f1a414"
+          "sha256": "sha256:35759aa0d956564a7992ed9aa085d1df0884992fd75f2d59eb032f5bef13a389"
         },
         {
           "path": "proposals/quire-v1/definitions/value-complete.md",
@@ -110,11 +110,11 @@
         },
         {
           "path": "proposals/quire-v1/package-contract.md",
-          "sha256": "sha256:050dccec6e669da5013de4b0dee1206915ce1cba1ca1c416582f0f7f2a97eb82"
+          "sha256": "sha256:e1fc96174770947d3d6e48e045cd64c9b2a1cb9a8ec053e8109b5a7ddbf63b72"
         },
         {
           "path": "proposals/quire-v1/shared-grammar.md",
-          "sha256": "sha256:3247668c5cf6cfd7b3b7565db1bc515a268b98ba5c8b9df0bfa8eabc22dd910f"
+          "sha256": "sha256:ff3b0290d2f458085d0da4b3ce8120a0e8fbc6e24c28299fdf2968b4773213b6"
         },
         {
           "path": "spec/assurance/AD-005-complete-value-expression-system.md",
@@ -122,11 +122,11 @@
         },
         {
           "path": "spec/functional/expressions/FR-145-convert-and-query-collections.md",
-          "sha256": "sha256:eb3b4c8ebad6ca616ba0fb166663f4163d55418294ba864b471f10b6f2c74c93"
+          "sha256": "sha256:2b1b11e5d21e7130d71d42265026425ce86737016cbdb8f9bb36c8a2a185aba8"
         },
         {
           "path": "spec/functional/expressions/FR-146-check-total-pure-functions.md",
-          "sha256": "sha256:4d21ad026fdf637f9eea9ec9455c678a4e78a8d4f6b87fd9446e7cde31556d29"
+          "sha256": "sha256:e376209a85a432f21e80fd51e27733d8805d8517e937f5f886e8c59bdce904cb"
         },
         {
           "path": "spec/functional/expressions/FR-147-evaluate-integer-division-domains.md",
@@ -138,11 +138,11 @@
         },
         {
           "path": "spec/functional/tooling/FR-307-package-reusable-semantic-libraries.md",
-          "sha256": "sha256:d287d75f670ae46cbc6d2fbe895f13c5eb29a52af59b6569b0e2c1d03ea7f03a"
+          "sha256": "sha256:84f612facceb6e261fadc7688f2556adbdcd2261f73755144f6d7ec4ccd5f275"
         },
         {
           "path": "spec/functional/type-model/FR-140-evaluate-exact-decimals.md",
-          "sha256": "sha256:b9b079afa8e16e11c850937b60e7c887c71de51342a9eb083cee178bf8fd1e3e"
+          "sha256": "sha256:4d0dcb64423014f8f2a64fadd7216f4974626dcacf586fe6930da6a54aa51131"
         },
         {
           "path": "spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md",
@@ -162,27 +162,27 @@
         },
         {
           "path": "spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
-          "sha256": "sha256:a70f5aad5af665940099c4469eb99e1c35445f81f1558cc2cd42e5b4776b250e"
+          "sha256": "sha256:721d1624e8017d111147f1187d67b233634925142574068ae416fb73ece5b271"
         },
         {
           "path": "spec/functional/type-model/FR-150-preserve-model-normalization-provenance.md",
-          "sha256": "sha256:cf7c1e9b18f3caafb08ebd3247908ae97d1ab47b3518f0b5774af973d7948981"
+          "sha256": "sha256:4eccfe0682cd994c23f33004309bb8c0c4d4397751cf9a15f25859d69eac9f41"
         },
         {
           "path": "spec/functional/type-model/FR-151-resolve-conformance-redefinition-dispatch.md",
-          "sha256": "sha256:2c27dff24a220a27e63250cc0fa830fe221bbdfff4f21e9f72469a160e67bfe6"
+          "sha256": "sha256:84cd5a3cd9af095237ed736bdf045d77ae278418bf34fadfa63ddc3914720a10"
         },
         {
           "path": "spec/functional/type-model/FR-152-bind-systems-model-structures.md",
-          "sha256": "sha256:85a056c669ce8c732868ad6f8d7bf94ffd9d3c28383e8b8acc8f758e2c3218c0"
+          "sha256": "sha256:6be03f6764468013d78e6874e28f712110f7e714303b479edfb60478c90a5e7b"
         },
         {
           "path": "spec/functional/type-model/FR-153-query-closed-model-environments.md",
-          "sha256": "sha256:931deb7d7105d29de00849b9ebc74994b3d9ec9590397930128c1c231c1ecba5"
+          "sha256": "sha256:25b98e18e0c7cc3719cfb1994e275f2421a1f99522f073e92be414a0d0628c7f"
         },
         {
           "path": "spec/test-cases/TC-185-exact-decimal-semantics.md",
-          "sha256": "sha256:7000e35969abefab803c1ee1eaf170ff6729909c25492b22648eb7c21cbccbed"
+          "sha256": "sha256:8e86ff873a83c8a9df26cccd98b26acfe6b6f1dfa1f8cdfec2506b97d2a3410b"
         },
         {
           "path": "spec/test-cases/TC-186-text-and-enum-identity-semantics.md",
@@ -202,11 +202,11 @@
         },
         {
           "path": "spec/test-cases/TC-190-collection-query-and-conversion-algebra.md",
-          "sha256": "sha256:080d2801ca78999a2b8437974efc3e0b00b9abd02482b065f5851a8b2659b3d8"
+          "sha256": "sha256:3526dfb04642618e4246bd4dd749824ea927b286edb2851eeb4d359cff45a8cb"
         },
         {
           "path": "spec/test-cases/TC-191-total-pure-function-checking.md",
-          "sha256": "sha256:24441875a3ef17a4aa4ce4f86c901709d0cf1424b05c01392a3190f4e2ed3295"
+          "sha256": "sha256:82f191f244a57163223a18963f76f4ddaf4c2d0ccfdc8fac401730efff3f076e"
         },
         {
           "path": "spec/test-cases/TC-192-integer-division-profiles.md",
@@ -218,23 +218,23 @@
         },
         {
           "path": "spec/test-cases/TC-194-complete-equality-matrix.md",
-          "sha256": "sha256:e7a261755c7b7552bf3a5fc516c2c57dcbc8f20e321d9ad339cdf3549c7a3b48"
+          "sha256": "sha256:01cc4561eb4f4ceb4d5c41d44b8017de9d5ef8e34b92fbd1793f5331c2fd628b"
         },
         {
           "path": "spec/test-cases/TC-195-model-normalization-provenance.md",
-          "sha256": "sha256:d313fb27e48b535370c262ed6134b2b53862915d6ccb08433fd6a4716f60cf8f"
+          "sha256": "sha256:894c8bb767217d370dba4b1819d590b0ae012ab6e931c2f650979f264e303302"
         },
         {
           "path": "spec/test-cases/TC-196-conformance-redefinition-and-dispatch.md",
-          "sha256": "sha256:8167f29c2079aa5d4e5efe8030130f529d2d68e190babc6983b7ff1a56e1a599"
+          "sha256": "sha256:c19857af5f44080d7e27559d7db7059779aab1f9b9d6297922b935ece09add3a"
         },
         {
           "path": "spec/test-cases/TC-197-systems-model-typed-binding.md",
-          "sha256": "sha256:74a7905b1d987cab9e80950a85a3911a67dc2fc47fb6b33d85aee7e7648efe04"
+          "sha256": "sha256:51234ca8d0e49300015a5a9ead6fe5bb5d55e5ba897d97a0d0afd91c64d15755"
         },
         {
           "path": "spec/test-cases/TC-198-closed-model-lookup.md",
-          "sha256": "sha256:70537dc11d57e3e78b1ffb1e43c2a95d7dc72fb62cef849dc31646df0a989f6c"
+          "sha256": "sha256:c0281810c0357aed01af264d22edbe8edb7c21f4ec9bf9ed06592dfc0f8e81b2"
         },
         {
           "path": "spec/test-cases/TC-227-reusable-semantic-library-resolution.md",

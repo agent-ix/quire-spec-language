@@ -138,6 +138,16 @@ The derived artifact remains [FR-042](FR-042-publish-compiled-protocol-artifacts
 wire contract; evaluation does not reparse native source or appoint a second
 editable formal representation.
 
+Every value a predicate call or ordered query returns is a member of the one
+shared typed value domain that [FR-040](FR-040-check-composed-values.md)
+checks over admitted domain-package model declarations
+([FR-056](FR-056-admit-domain-package-model-declarations.md)). This
+requirement evaluates within that domain and does not define a second value
+system. A sum-type value, once some future requirement admits it into that
+domain, evaluates through the same predicate-call and ordered-query boundary
+this requirement already defines; it does not require a separate query
+semantics.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |

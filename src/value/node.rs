@@ -84,7 +84,7 @@ pub enum NodeOwner {
     Source(OwnerSubject),
     /// An exact DefinitionRef.
     Definition(OwnerSubject),
-    /// An exact ModelRef export.
+    /// An exact model-selected declaration.
     Model(ModelSubject),
 }
 
@@ -98,16 +98,14 @@ pub struct OwnerSubject {
     pub identity: String,
 }
 
-/// Authority, identity and export of a model owner.
+/// Identity and node of a model owner.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct ModelSubject {
-    /// Nonempty authority.
-    pub authority: String,
-    /// Nonempty identity.
+    /// The domain package identity.
     pub identity: String,
-    /// Nonempty export.
-    pub export: String,
+    /// The IR node identity.
+    pub node: String,
 }
 
 impl NodeOwner {
@@ -116,32 +114,36 @@ impl NodeOwner {
             Self::Source(subject) | Self::Definition(subject) => {
                 !subject.authority.is_empty() && !subject.identity.is_empty()
             }
-            Self::Model(subject) => {
-                !subject.authority.is_empty()
-                    && !subject.identity.is_empty()
-                    && !subject.export.is_empty()
-            }
+            Self::Model(subject) => !subject.identity.is_empty() && !subject.node.is_empty(),
         }
     }
 
     pub(crate) fn canonical(&self) -> CanonicalOwner<'_> {
-        let (kind, authority, identity, export) = match self {
-            Self::Source(subject) => ("source", &subject.authority, &subject.identity, None),
-            Self::Definition(subject) => {
-                ("definition", &subject.authority, &subject.identity, None)
-            }
+        let (kind, authority, identity, node) = match self {
+            Self::Source(subject) => (
+                "source",
+                Some(subject.authority.as_str()),
+                &subject.identity,
+                None,
+            ),
+            Self::Definition(subject) => (
+                "definition",
+                Some(subject.authority.as_str()),
+                &subject.identity,
+                None,
+            ),
             Self::Model(subject) => (
                 "model",
-                &subject.authority,
+                None,
                 &subject.identity,
-                Some(subject.export.as_str()),
+                Some(subject.node.as_str()),
             ),
         };
         CanonicalOwner {
             authority,
-            export,
             identity,
             kind,
+            node,
         }
     }
 }
@@ -263,11 +265,12 @@ impl RationalDocument {
 // as lowercase `\u00xx`, which is the JCS string serialization.
 #[derive(Serialize)]
 pub(crate) struct CanonicalOwner<'a> {
-    authority: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    export: Option<&'a str>,
+    authority: Option<&'a str>,
     identity: &'a str,
     kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node: Option<&'a str>,
 }
 
 #[derive(Serialize)]

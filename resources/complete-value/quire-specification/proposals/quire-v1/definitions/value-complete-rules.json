@@ -8,13 +8,13 @@
       "identity": "quire.rule.package-contract/v1",
       "revision": "1-draft.1",
       "path": "../package-contract.md",
-      "sha256": "050dccec6e669da5013de4b0dee1206915ce1cba1ca1c416582f0f7f2a97eb82"
+      "sha256": "e1fc96174770947d3d6e48e045cd64c9b2a1cb9a8ec053e8109b5a7ddbf63b72"
     },
     {
       "identity": "quire.rule.shared-grammar/v1",
       "revision": "1-draft.1",
       "path": "../shared-grammar.md",
-      "sha256": "3247668c5cf6cfd7b3b7565db1bc515a268b98ba5c8b9df0bfa8eabc22dd910f"
+      "sha256": "ff3b0290d2f458085d0da4b3ce8120a0e8fbc6e24c28299fdf2968b4773213b6"
     },
     {
       "identity": "quire.rule.ad-005/v1",
@@ -26,7 +26,7 @@
       "identity": "quire.rule.fr-140/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-140-evaluate-exact-decimals.md",
-      "sha256": "b9b079afa8e16e11c850937b60e7c887c71de51342a9eb083cee178bf8fd1e3e"
+      "sha256": "4d0dcb64423014f8f2a64fadd7216f4974626dcacf586fe6930da6a54aa51131"
     },
     {
       "identity": "quire.rule.fr-141/v1",
@@ -56,7 +56,7 @@
       "identity": "quire.rule.fr-149/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
-      "sha256": "a70f5aad5af665940099c4469eb99e1c35445f81f1558cc2cd42e5b4776b250e"
+      "sha256": "721d1624e8017d111147f1187d67b233634925142574068ae416fb73ece5b271"
     }
   ]
 }

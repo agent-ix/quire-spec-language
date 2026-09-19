@@ -8,7 +8,7 @@
       "identity": "quire.rule.ad-006/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/assurance/AD-006-model-graph-state-contracts.md",
-      "sha256": "77db42628712e8d296b490209f2fb7b95b700a3e36c08c19c38c212f86053455"
+      "sha256": "a84592ca2f863d42ddddd72dd3c798a237de9325e14208373189b7b2ff6248c8"
     },
     {
       "identity": "quire.rule.fr-043/v1",
@@ -32,48 +32,67 @@
       "identity": "quire.rule.fr-150/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-150-preserve-model-normalization-provenance.md",
-      "sha256": "cf7c1e9b18f3caafb08ebd3247908ae97d1ab47b3518f0b5774af973d7948981"
+      "sha256": "4eccfe0682cd994c23f33004309bb8c0c4d4397751cf9a15f25859d69eac9f41"
     },
     {
       "identity": "quire.rule.fr-151/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-151-resolve-conformance-redefinition-dispatch.md",
-      "sha256": "2c27dff24a220a27e63250cc0fa830fe221bbdfff4f21e9f72469a160e67bfe6"
+      "sha256": "84cd5a3cd9af095237ed736bdf045d77ae278418bf34fadfa63ddc3914720a10"
     },
     {
       "identity": "quire.rule.fr-152/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-152-bind-systems-model-structures.md",
-      "sha256": "85a056c669ce8c732868ad6f8d7bf94ffd9d3c28383e8b8acc8f758e2c3218c0"
+      "sha256": "6be03f6764468013d78e6874e28f712110f7e714303b479edfb60478c90a5e7b"
     },
     {
       "identity": "quire.rule.fr-153/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/functional/type-model/FR-153-query-closed-model-environments.md",
-      "sha256": "931deb7d7105d29de00849b9ebc74994b3d9ec9590397930128c1c231c1ecba5"
+      "sha256": "25b98e18e0c7cc3719cfb1994e275f2421a1f99522f073e92be414a0d0628c7f"
+    },
+    {
+      "identity": "quire.rule.fr-154/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/functional/type-model/FR-154-admit-domain-package-model.md",
+      "sha256": "8fb373ed2eabd5690c09644427fe71345cdeb7202d069c9f662fd3de0d40cb1a"
     },
     {
       "identity": "quire.rule.fr-204/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/objects/foundation/FR-204-declared-object-identity.md",
-      "sha256": "1396dc9b9ee4581fa64fa8f1c723b6fb22bafae6f245edda381225c6c1530a65"
+      "sha256": "f2b65e27a45d03ed473a5a1dd75eb67e08403aa07f86290da2d43cffff49a46c"
+    },
+    {
+      "identity": "quire.rule.fr-208/v1",
+      "revision": "1-draft.1",
+      "path": "../../../spec/objects/foundation/FR-208-quire-meaning-vocabulary.md",
+      "sha256": "01f2ca09cca39c56dc48a06138d4467cc33995ec3f5ec44df636ce1bd38251b0"
     },
     {
       "identity": "quire.rule.fr-321/v1",
       "revision": "1-draft.1",
       "path": "../../../spec/objects/interfaces/FR-321-model-selection-artifact.md",
-      "sha256": "c1f70577e5fe31ba9e21162dadf915c47e702dadace00f6f2a8333e723ce9250"
+      "sha256": "5d6ef080adcf51c79a62c5bd29ed49992ff544a471286ebbe4aa07eb68e3c789"
     },
     {
-      "identity": "quire.rule.interface-003/v1",
+      "identity": "quire.rule.interface_003/v1",
       "revision": "1-draft.1",
-      "path": "../../../spec/objects/interfaces/interface-003-model-selection.md",
-      "sha256": "fc64def954cd51cd38527ff9529c5807cc1512bdd2470f5301d928d5b767dc64"
+      "path": "../../../spec/objects/interfaces/interface_003-model-selection.md",
+      "sha256": "76335739a12a7ac5d1503c4fb5e2603ebf41af4ed318852cecf44b91c330df5a"
     }
   ],
   "normalization_rules": [
     {
-      "identity": "quire.model.normalize.decode/v1",
+      "identity": "quire.model.normalize.intake/v1",
+      "revision": "1-draft.1",
+      "stage": "normalization",
+      "phase": 1,
+      "defined_by": "model-complete.md"
+    },
+    {
+      "identity": "quire.model.features/v1",
       "revision": "1-draft.1",
       "stage": "normalization",
       "phase": 1,

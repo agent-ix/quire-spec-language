@@ -98,6 +98,33 @@ step and then checked for membership by value; a
 nonmember refuses with no value and is never re-rounded to a coarser scale,
 clamped or widened.
 
+An explicit conversion of a `Rational[n1,n2;d1,d2]` value with `d2 > 1`, reduced
+`n/d`, into `Decimal[c1,c2;s1,s2;m]` is exactly the division of `(n, 0)` by
+`(d, 0)` into target scale `T = s2` under mode `m`: `N = n × 10^T`, `D = d`, the
+same rounding step, `DecimalLoss` (whose exact value is `n/d`) and membership
+rule, and the accounting decimal division schedule. A rational source whose
+denominator bound is one converts exactly as the integer `n`. The rounding
+conversion is lossy, so FR-149 never admits it as an equality conversion. FR-149
+classifies it, and every decimal-to-decimal conversion to a smaller maximum
+scale, as a scale reduction (`quire.op.numeric.convert_rounding`), the only
+conversion that rounds. A conversion that changes only the admitted range, such
+as `Int[0,300]` into `Decimal[0,20000;2,2]`, is an FR-149 range narrowing
+(`quire.op.numeric.narrow`): its membership is an FR-146 obligation, and it
+never rounds or clamps.
+
+Decimal typing derives no default type. The operands of `+`, `-`, `*`, `/` and
+unary `-` and the result have one named `Decimal[..]` type, whose `smax` is the
+target scale; operands of distinct decimal types are
+`refused { code: ill_typed, cause: type-mismatch }` until an explicit
+`convert` selects one. A `decimal(c,s)` literal takes exactly its unique
+expected type: the other operand's static type when that operand is not a
+literal, a declared field, parameter, result or annotated type of its position,
+a `convert` target, or the unique expected type of the enclosing decimal
+operation, which that operation passes to its operands. A literal without one, such as `decimal(15,1) +
+decimal(225,2)` as an unannotated `let` right side or both operands of `=`, is
+`refused { code: ill_typed, cause: ambiguous-literal }`; no coefficient range,
+scale, rounding mode or target scale is inferred from the literal spellings.
+
 Under `quire.value.accounting/v1`, the evaluator charges the named decimal
 points and counters before a power-of-ten expansion, coefficient operation or
 result retention. The first unavailable charge returns incomplete accounting
@@ -119,6 +146,7 @@ make no later charge.
 | FR-140-AC-4 | The six rounding modes produce their declared result on positive and negative half-way values and `exact` refuses every nonzero discarded digit. | Test (TC-185) |
 | FR-140-AC-5 | Division by zero is undefined, while a value whose membership coefficient `c*` or membership scale `s*` is outside the target domain is refused; neither produces a value or uses a floating intermediate. A declaration with `lo > hi`, `smin > smax` or `smax > u32::MAX` refuses type checking with `ill_typed`. Membership charges nothing and is total up to scale `u32::MAX`. | Test (TC-185) |
 | FR-140-AC-6 | Exact-bound accounting succeeds and denial of a named next decimal charge returns incomplete without a value or an implementation-specific retry; zero-divisor, strict-`exact` and membership outcomes occur at their defined charge positions, and all-zero discarded digits make no `decimal.rounding` charge. | Test (TC-185) |
+| FR-140-AC-7 | A `Rational` to `Decimal` conversion follows the decimal division rule and schedule at target scale `smax`, decimal operands and result share one named type, and a `decimal(c,s)` literal without a unique expected type is `ill_typed` with cause `ambiguous-literal`. | Test (TC-185) |
 
 ## Dependencies
 
