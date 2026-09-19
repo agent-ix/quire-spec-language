@@ -22,9 +22,9 @@ disposition. These are compiler controls, not temporal-engine qualification.
    changed retained configuration. Then explicitly change a required profile or
    model selection and require a different static selection; stale dependencies
    must refuse rather than inherit the new meaning.
-3. Request one supported state operation and one recognized but unsupported
-   temporal projection. Inspect both clause/capability entries and the aggregate
-   disposition. Delete either entry in the consumer test input and require the
+3. Request two required pairs over different FR-057 capability kinds, one that
+   settles `supported` and one that settles `unsupported`. Inspect both
+   clause/capability entries and the aggregate disposition. Delete either entry in the consumer test input and require the
    requested-inventory check to fail.
 4. Return an unsupported family-checking result for one parsed declaration.
    Require its syntax to remain inspectable without presenting its body as checked
