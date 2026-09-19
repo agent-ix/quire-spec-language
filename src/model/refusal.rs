@@ -452,7 +452,7 @@ pub enum ModelRefusalCause {
         type_name: ProducerKey,
     },
     /// FR-046/FR-151: an invocation changes an object's most-specific type
-    /// between pre and post, which no `creates`/`deletes`/`fieldWrites`
+    /// between pre and post, which no `creates`/`deletes`/`modifies`
     /// grant may authorize. `Code::FrameViolation`/`unauthorized-change`.
     FrameTypeChanged {
         /// The object whose type changed.
@@ -472,7 +472,7 @@ pub enum ModelRefusalCause {
         type_name: ProducerKey,
     },
     /// FR-046/FR-151: an invocation changes a surviving object's field
-    /// outside its operation's declared `fieldWrites` frame.
+    /// outside its operation's declared `modifies` frame.
     /// `Code::FrameViolation`/`unauthorized-change`.
     FrameFieldWriteOutsideGrant {
         /// The object whose field changed.

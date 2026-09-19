@@ -38,7 +38,7 @@ not require a checksum refresh or another successor file.
 | `quire.observation.progress/v1` | `1-draft.3` (accepted by FS04) | [Observation progress](observation-progress.md) |
 | `quire.observation.range/v1` | `1-draft.1` (accepted by FS04) | [All-clock range correspondence](observation-range.md) |
 | `quire.package.composed/v1` | `1-draft.2` (accepted by FS05) | [Linked-package interpretation](package-reference.md) |
-| `quire.native.diagnostics/v1` | `1-draft.3` | [Diagnostic interpretation](native-diagnostics.md) |
+| `quire.native.diagnostics/v1` | `1-draft.4` | [Diagnostic interpretation](native-diagnostics.md) |
 | `quire.value.complete/v1` | `1-draft.1` | [Complete value root](value-complete.md) |
 | `quire.value.complete.rules/v1` | `1-draft.1` | [Exact complete-value rule closure](value-complete-rules.json) |
 | `quire.value.text.unicode-17.0.0/v1` | `1-draft.1` | [Unicode text profiles](value-text-unicode-17.md) |

@@ -1427,11 +1427,11 @@ fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
     }
 }
 
-/// TC-198 L07's own `model.A.remove` effect: `{fieldWrites: [], creates: [],
+/// TC-198 L07's own `model.A.remove` effect: `{modifies: [], creates: [],
 /// deletes: [model.A]}`.
 fn deletes_a_effect() -> OperationEffect {
     OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: Vec::new(),
         deletes: vec![ProducerKey::fixture("model.A")],
     }
@@ -1441,7 +1441,7 @@ fn deletes_a_effect() -> OperationEffect {
 /// field write it did not itself grant is unauthorized.
 fn empty_effect() -> OperationEffect {
     OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
     }
@@ -1608,7 +1608,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
 }
 
 /// A surviving member's field value changing pre to post refuses when the
-/// operation's effect does not declare that field a `fieldWrites` member,
+/// operation's effect does not declare that field a `modifies` member,
 /// and admits when it does -- both over the identical pre/post pair, so only
 /// the declared frame decides the outcome.
 #[test]
@@ -1668,7 +1668,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     }
 
     let declared_effect = OperationEffect {
-        field_writes: vec![ProducerKey::fixture("model.A.x")],
+        modifies: vec![ProducerKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -1689,9 +1689,9 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     );
     match outcome {
         AdmissionOutcome::Admitted(_) => {}
-        other => panic!(
-            "expected Admitted once model.A.x is a declared fieldWrites member, got {other:?}"
-        ),
+        other => {
+            panic!("expected Admitted once model.A.x is a declared modifies member, got {other:?}")
+        }
     }
 }
 
@@ -1740,7 +1740,7 @@ fn ordering_bundle() -> Bundle {
 /// not a write at all -- `enforce_frame` compares by the field's own
 /// declared collection kind (`Multiplicity::ordered`), never by `Vec`
 /// sequence, for a field declared unordered. `empty_effect()` (no declared
-/// `fieldWrites`) still admits, because there is no write to authorize.
+/// `modifies`) still admits, because there is no write to authorize.
 ///
 /// Mutation used: in `field_values_equal`, removed the `if
 /// field_ordered(...)` branch entirely (always comparing `pre == post` as
@@ -1797,7 +1797,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
 /// Item 6's other half: the identical reorder over the *ordered* sibling
 /// field is a write (an ordered field's declared sequence is exact, so a
 /// different order is a different sequence), and `empty_effect()` declares
-/// no `fieldWrites`, so it refuses.
+/// no `modifies`, so it refuses.
 ///
 /// Mutation used: in `field_ordered`, replaced the body with an
 /// unconditional `false` (treating every field, including this one's own
@@ -1900,7 +1900,7 @@ fn redefinition_chain_bundle() -> Bundle {
     )
 }
 
-/// Item 7: a field write is covered by `effect.field_writes` when it
+/// Item 7: a field write is covered by `effect.modifies` when it
 /// "reaches one through redefinition records" (FR-151's own effect-
 /// inclusion rule), not only by an exact key match. The operation declares
 /// only the redefined ancestor member, `model.A.x`; the population document
@@ -1935,7 +1935,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
         )],
     };
     let effect = OperationEffect {
-        field_writes: vec![ProducerKey::fixture("model.A.x")],
+        modifies: vec![ProducerKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -1967,7 +1967,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
 /// reaches `model.A.x` only through a *chain* (`model.C.x -> model.B.x ->
 /// model.A.x`, two hops, `redefinition_chain_bundle`'s own two records) --
 /// there is no direct `model.C.x -> model.A.x` record to satisfy a one-hop
-/// lookup, yet the write must still admit under `fieldWrites: [model.A.x]`,
+/// lookup, yet the write must still admit under `modifies: [model.A.x]`,
 /// since model-complete.md:56 makes this chain shape legal and ordinary.
 ///
 /// Mutation used: in `redefinition_reaches`, replaced the loop bound
@@ -2000,7 +2000,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
         )],
     };
     let effect = OperationEffect {
-        field_writes: vec![ProducerKey::fixture("model.A.x")],
+        modifies: vec![ProducerKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -2042,7 +2042,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
 ///
 /// Mutation used: in `field_write_covered`'s closure, compared
 /// `candidate.identity == write.identity` instead of full equality
-/// (`effect.field_writes.contains(candidate)`). This whole test file stayed
+/// (`effect.modifies.contains(candidate)`). This whole test file stayed
 /// green except this test, which went from `Refused` to `Admitted`;
 /// reverted.
 #[test]
@@ -2083,7 +2083,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
         }],
     };
     let effect = OperationEffect {
-        field_writes: vec![ProducerKey::fixture("model.A.x")], // revision "1"
+        modifies: vec![ProducerKey::fixture("model.A.x")], // revision "1"
         creates: Vec::new(),
         deletes: Vec::new(),
     };
@@ -2111,7 +2111,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
                 field: write_at_revision_2,
             },
             detail: "invocation changes object a1's field model.A.x, outside the operation's \
-                      declared fieldWrites frame"
+                      declared modifies frame"
                 .to_owned(),
         })
     );
@@ -2119,7 +2119,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
 
 /// Item 5: an object that changes its most-specific type between pre and
 /// post (`a1: model.A -> a1: model.B`) has no authorization path under any
-/// declared frame -- FR-151's effect vocabulary grants only `fieldWrites`/
+/// declared frame -- FR-151's effect vocabulary grants only `modifies`/
 /// `creates`/`deletes`, never a retype, and FR-143 binds the most-specific
 /// type into an object reference's own identity -- so it always refuses,
 /// even though `model.A`/`model.B` both appear in `creates`/`deletes` (which
@@ -2147,7 +2147,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
         members: vec![member("a1", "model.B"), member("b1", "model.B")],
     };
     let effect = OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: vec![
             ProducerKey::fixture("model.A"),
             ProducerKey::fixture("model.B"),
@@ -2213,7 +2213,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
         ],
     };
     let effect = OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: vec![ProducerKey::fixture("model.A")],
         deletes: vec![ProducerKey::fixture("model.A")],
     };
@@ -2263,7 +2263,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
     let bundle = fixture_f1();
     let view = view_of(&bundle);
     let effect = OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: vec![ProducerKey::fixture("model.A")],
         deletes: Vec::new(),
     };
@@ -2385,7 +2385,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     let bundle = fixture_f1();
     let view = view_of(&bundle);
     let effect = OperationEffect {
-        field_writes: Vec::new(),
+        modifies: Vec::new(),
         creates: vec![ProducerKey::fixture("model.A")],
         deletes: vec![ProducerKey::fixture("model.A")],
     };

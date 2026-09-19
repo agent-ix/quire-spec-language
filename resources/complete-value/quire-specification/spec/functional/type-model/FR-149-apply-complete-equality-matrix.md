@@ -72,6 +72,13 @@ checking returns `refused { code: ill_typed }`; it never produces Boolean
 `false`. Conversion creates a comparison value but
 does not rewrite the source value's declaration or object identity.
 
+The same holds for ordering. The grammar's `<`, `<=`, `>` and `>=` with a
+`Float32` or `Float64` operand select no IEEE predicate and are
+`refused { code: ill_typed, cause: operator-ineligible }` before any charge;
+no signaling or quiet IEEE comparison is selected. Floats are ordered only by
+the explicitly called FR-148 `quire::value::ieee::totalOrder` intrinsic
+(operation `quire.op.ieee.total_order`).
+
 ## Selected schedules
 
 The grammar's comparison operators `=` and `!=` select one schedule from the
@@ -134,6 +141,34 @@ admitted `Int[..]`-to-`Decimal[..]`, `Rational[..;d,1]`-to-`Decimal[..]` or
 schedule for that conversion, with `scale_expansion` and `integer_bits` sized
 from operand bit lengths. Every other admitted equality conversion keeps the source
 magnitude, has no charge point and produces only the comparison value.
+
+## Conversion classes
+
+Every explicit exact-numeric `convert<T>(e)` from static type `S` of `e`, inside
+or outside an equality, has exactly one class decided from declared bounds
+alone, first match wins, and the checked package records it as one
+`quire.checked-operation-catalog/v1` identity:
+
+| Class | When (`S` to `T`) | Operation | Meaning |
+| --- | --- | --- | --- |
+| exact | the equality conversion table above admits (`S`, `T`) | `quire.op.numeric.convert` | Every member of `S` is a member of `T`; no obligation, rounding or loss. |
+| scale reduction | `T` is `Decimal[..]` and `S` is a decimal of larger maximum scale, an unbounded `Decimal` or `Rational`, or a `Rational[..;d1,d2]` with `d2 > 1` | `quire.op.numeric.convert_rounding` | The FR-140 division or rescale into `T`'s target scale under the `rounding` mode `T` pins; the only class that rounds. |
+| rational narrowing | any other `Rational` to `Rational[n1,n2;d1,d2]` | `quire.op.rational.narrow` | A checked obligation that the normalized numerator lies in `[n1,n2]` and the denominator in `[d1,d2]` (FR-146 rational range obligation). |
+| range narrowing | any other conversion from `Integer` or `Int[..]`, from a decimal to a `Rational[..]` or `Decimal[..]`, from a bounded `Rational[..]` to an integer type or (with denominator bound 1) a `Decimal[..]`, or from a `Decimal[c1,c2;0,0;m]` to an integer type | `quire.op.numeric.narrow` | A checked obligation that the converted value is a member of `T` (FR-146 range obligation, `unproved-range`). |
+
+Every other exact-numeric pair has no conversion and is
+`refused { code: ill_typed, cause: operator-ineligible }`. Narrowing is never
+rounding: a narrowing obligation that is not proved refuses with
+`refused { code: undefined_expression, cause: unproved-range }`, and a value
+outside `T` is never rounded, clamped, wrapped or widened. Rounding happens only
+in a scale reduction, and only there does a `rounding` mode appear.
+
+A rational `/` whose operands are `Integer`, `Int[..]` or `Rational[..]` and
+whose expected type is `Rational[..]` is `quire.op.rational.div`: each integer
+operand is promoted exactly to `n/1` before the division, with no obligation,
+rounding or loss, and the quotient is exact. Integer `div` and `rem` remain
+FR-147 operations under their selected division law; no operand type or result
+expectation turns one into the other.
 
 ## Occurrence-pair plan
 
@@ -207,6 +242,7 @@ collection and object-reference rows of this requirement.
 | FR-149-AC-10 | Exactly the tabled equality conversions are admitted from declared bounds, every other conversion operand of `=` or `!=` is `ill_typed` before any charge even when the value fits, and admitted decimal and rational conversions charge their decimal schedule. | Test (TC-194) |
 | FR-149-AC-11 | Plan pair counts follow the structural-mismatch, keyed-rank and cardinality short-circuit rules exactly, every plan walk is charged by `equality.plan-form` before it happens, and a foreign-universe reference pair refuses after that charge and before `equality.plan`. | Test (TC-194) |
 | FR-149-AC-12 | Under `quire.model.complete/v1`, `Reference<Sub>` compares with `Reference<Super>` through the upcast row with no charge and unchanged identity, and a non-conforming reference pair is `ill_typed`. | Test (TC-198) |
+| FR-149-AC-13 | `<`, `<=`, `>` and `>=` with a `Float32` or `Float64` operand are `ill_typed` with cause `operator-ineligible` before any charge, while `totalOrder` orders the same operands. | Test (TC-194) |
 
 ## Dependencies
 

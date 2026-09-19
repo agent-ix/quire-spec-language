@@ -233,16 +233,28 @@ The [state contract](state-contract.md) specifies ordered queries, exact
 aggregation, numeric domains and operation-anchor correspondence. Type arguments
 after the reserved query names are type positions, not comparisons; the normal
 comparison grammar applies inside their argument expressions.
-Named imported model types are the authority for model-owned parameter domains.
-The complete-V1 additions below also admit explicitly declared native value
-types without permitting a second model authority.
+Domain types named from an imported domain package give model-owned parameter
+domains. The complete-V1 additions below also admit native `record`, `enum` and
+`tuple` declarations for value types that are not domain objects. A native
+declaration cannot declare a domain object.
 
 `using` selects a declared profile alias for every native declaration;
 there is no backend-derived default. Profile tuples include the definition name,
-revision and byte digest, not just a convenient version label. Model aliases
-resolve exact declared exports. A grammar parse does not prove those identities.
+revision and byte digest, not just a convenient version label. A grammar parse
+does not prove those identities.
+
+A `model` declaration imports one domain package. Its string names the domain
+package identity, `version` names its version, and `digest` is the
+`sha256-jcs` digest of the domain package: SHA-256 over the RFC 8785 canonical
+bytes of the semantic IR document lifted from the imported spec's artifacts
+([AD-006](../../spec/assurance/AD-006-model-graph-state-contracts.md)). The
+import is part of the package identity. Clauses name domain types by qualified
+name through the model alias, for example `Orders::Order` after
+`model Orders = "acme/orders" version "1" digest "…";`. A qualified name
+resolves to one effective declaration key (domain package identity, IR node
+identity, `sha256-jcs`). A name absent from the domain package refuses.
 The [package contract](package-contract.md) defines the closed source inventory,
-compiled-model byte digest, exact definition dependencies and typed binding roles.
+domain package import, exact definition dependencies and typed binding roles.
 The explicit compiler inventory supplies the edition definition matching the
 header; no installed-backend default completes an otherwise missing selection.
 
@@ -560,7 +572,7 @@ instants. Missing observations never become false extension.
 ### Input and activation scopes
 
 `over (sample: M::Sample)` declares the one typed valuation-input slot at each
-admitted instant. M::Sample is an existing model export, not a native schema.
+admitted instant. M::Sample is a domain type declared in the imported spec's artifacts, not a native schema.
 Its record may contain declared references, optional observations and finite
 population views. The F-owned binding supplies values and the exact subject,
 instant, snapshot/window membership and completeness they depend on; the
@@ -610,8 +622,8 @@ This preserves FR-034 without giving a predicate hidden temporal state.
 ### Source examples and distinguishing cases
 
 These are declaration fragments, not whole executable fixture files. Their
-enclosing unit must import exact model/profile definitions before admission.
-For this synthetic example M exports an explicitly bounded Amount 1..20,
+enclosing unit must import an exact domain package and profile definitions before admission.
+For this synthetic example the domain package M declares an explicitly bounded Amount 1..20,
 PaymentId, FailedFulfillment (charged Boolean, paymentId, amount) and RefundSample
 with an authored optional refund whose paymentId and amount use those same types.
 The optional channel has one declared absence meaning. S admits the shared
@@ -657,8 +669,8 @@ successful parsing of the fragment.
 
 Selected finite snapshot/window aggregate rules use the same common `filter`,
 `count` and `sum` expressions over explicitly bound model fields. The source
-requires the declared view; D/F supply its membership, window and completeness
-contract. These finite snapshot/window aggregate rules introduce no
+requires the declared view; the spec's artifacts declare its population and F
+supplies its membership, window and completeness contract. These finite snapshot/window aggregate rules introduce no
 `allInstances()` or implicit history query; the complete-V1
 `allInstances<T>(p)` form reads only an explicit population binding under
 FR-153.
@@ -700,8 +712,8 @@ remain Boolean-only. No callback, evaluation of source text or user-code escape
 is introduced by a protocol expression position.
 
 `node-ref` resolves protocol structure, not a model type or value. `model-name`
-resolves an imported declaration; role, relationship, payload and operation
-positions require different producer-owned declaration kinds. Equal spellings
+resolves a declaration in an imported domain package; role, relationship,
+payload and operation positions require different declaration kinds. Equal spellings
 cannot substitute one kind for another. Group/branch paths and bounded iteration
 occurrence identities retain the original node declaration and source span.
 The [surface contract](choreography-surface.md) states definite availability of
@@ -710,7 +722,7 @@ node values, imported temporal requirements and exact runtime binding roles.
 ## Outstanding integration
 
 Before accepting L1: reconcile the protocol examples with B's control contract,
-the complete keyword/type catalog and D/F's exact model/observation binding slots
+the complete keyword/type catalog, the domain package declarations and F's exact observation binding slots
 and anchors; supply exact profile definition artifacts; and run the selected
 baseline review. This document neither closes those requirements nor qualifies
 the current compiler against the new syntax.

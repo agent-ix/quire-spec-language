@@ -1116,6 +1116,7 @@ mod library_import {
         });
         if exports {
             node["nominal_identity_preimage"] = json!({"qualified_declaration": ["R"]});
+            node["declaration"] = json!({"qualified_name": ["R"]});
         }
         let value = json!({
             "definition_selections": [],
