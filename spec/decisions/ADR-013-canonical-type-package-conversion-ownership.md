@@ -9,6 +9,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-009
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-012
+    type: relates_to
 ---
 # ADR-013: Canonical type, package and conversion ownership (ARCH-12)
 
