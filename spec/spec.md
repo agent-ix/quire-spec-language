@@ -38,6 +38,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-012
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-048
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-049
@@ -51,6 +53,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-055
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-056
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-057
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
@@ -165,6 +169,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-007
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-007
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-013
     type: contains
 ---
 # Master Requirements Specification
@@ -386,6 +392,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-009](decisions/ADR-009-graph-path-witness-content.md) | ADR | Proposed; open question: what a graph path witness carries |
 | [ADR-010](decisions/ADR-010-observed-architecture-baseline.md) | ADR | Proposed; observed QSL and backend architecture baseline and Layer 1 decision items (#206) |
 | [ADR-011](decisions/ADR-011-stage-dag-and-dependency-architecture.md) | ADR | Proposed; QSL stage DAG, edge contracts, forbidden bypasses and crate/module dependency architecture (#209) |
+| [ADR-012](decisions/ADR-012-semantic-family-extension-contracts.md) | ADR | Proposed; semantic-family extension and dispatch contracts, capability selection mechanics and L1-D1 (#210) |
 | [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
 | [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Implemented exact admitted `/1` and `/2` composed-evaluation input and typed-outcome boundary; `/2` compensation expressions completed under #101 |
 | [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
@@ -395,4 +402,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131 |
+| [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies, #213/#185 implement |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
+| [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |

@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-057
+    type: depends_on
 ---
 # FR-036: Link composed packages without inventing runtime premises
 
@@ -92,9 +94,9 @@ If a package processing budget is exhausted, then the linker SHALL report resour
 
 The compiler SHALL retain each requested clause/capability pair when handing a linked subject to downstream processing.
 
-Each requested capability SHALL name exactly one member of the shared protocol claim-kind vocabulary `ix://agent-ix/quire-specification/FR-290` fixes: `global-conformance`, `monitorability`, `local-projection`, `refinement`, `realizability` and `composition`.
+The compiler SHALL retain a requested capability only when its label names exactly one capability kind that [FR-057](FR-057-admit-shared-capability-kinds.md) admits.
 
-If a downstream checker or backend cannot admit a requested form, then the compiler SHALL retain its typed unsupported disposition without converting the package to complete success.
+If a downstream family checker refuses a requested form, or quire-contract-codegen's `negotiate_*` settles a requested pair other than `supported`, then the compiler SHALL retain that typed disposition at the pair's request index without converting the package to complete success. The compiler reads no backend state itself (FR-057).
 
 Collect declarations before resolving forward references. Alias namespaces stay
 unit-local; native declaration names are package-wide. Predicate calls, temporal
@@ -134,7 +136,7 @@ a new wire format as an incidental implementation choice.
 | FR-036-AC-3 | Missing or conflicting definition closure, a declaration from a foreign domain package and `sha256-jcs`-versus-raw-byte digest substitutions refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114) |
 | FR-036-AC-4 | Binding roles with equal local spelling in two declarations retain different declaration-owned identities; nominally different types and current/activation/invocation anchors remain distinct across families. | Test (TC-114) |
 | FR-036-AC-5 | Changing runtime population/window/trace or backend leaves static meaning unchanged; changing a required semantic selection changes it. Resource-only configuration changes remain visible without becoming semantic changes. | Test (TC-115) |
-| FR-036-AC-6 | A supported state request and an unsupported independent temporal projection both remain in the request report; complete aggregate success is unavailable, and unsupported family bodies are never represented as checked. | Test (TC-115) |
+| FR-036-AC-6 | Two required requested pairs over different FR-057 capability kinds both remain in the request report in caller order; when either is not settled `supported`, complete aggregate success joined from the FR-331 accounting records on request index is unavailable, and a family body refused by its checker is never represented as checked. | Test (TC-115) |
 | FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
 | FR-036-AC-8 | Historical linked/package artifacts retain their identities and atomic refusals; a composed partial report cannot enter an old reader or runner by changing a profile label. | Test (TC-115) |
 | FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds; a same-shaped declaration from another domain package or a changed selected digest refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
@@ -191,21 +193,21 @@ family-check subjects, so an unsupported family body is never represented as
 checked. Assessment selections and backend support are retained as provenance and
 are never written back into the static subject.
 
-The requested claim vocabulary this requirement retains is
-[quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md)'s
-six-member closed set — `global-conformance`, `monitorability`,
-`local-projection`, `refinement`, `realizability` and `composition` — which
-`agent-ix/quire-specification#116` fixes as the shared claim-kind authority,
-and which FR-290's own vocabulary-authority section names
-`linking::composed::requests::Capability` as aligning to. Remaining work: #185
-delivers that vocabulary in `linking::composed::requests::Capability`, whose
-requested-capability report TC-115 exercises.
+The requested capability vocabulary, its version, its refusals and the split
+between admission, registration and negotiation are specified in
+[FR-057](FR-057-admit-shared-capability-kinds.md), aligned with
+[quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md).
+`linking::composed::requests::Capability` declares a four-member request
+vocabulary, and `requests::report` reads a caller-declared backend's support.
+Remaining work: #213 for FR-057's canonical `Capability` and backend-free
+admission; #185 for registration and routing; TC-115 over FR-057 kinds after
+both.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
 runtime requirements. TC-114 exercises common nominal types across state,
 temporal and protocol families and declaration-owned capture and instance
 identities over NativeModel exports; TC-148 and IT-012 bind native model
 references to admitted domain-package declarations (planned under #131); TC-115 keeps an
-explicit unsupported temporal projection beside an admitted state request. An admitted request is a
+`unsupported` `temporal-satisfaction` pair beside an admitted `operation-contract` pair. An admitted request is a
 handoff record, not a checked or executable clause; no result from this stage is
 a checked or executable package. The historical package path remains separate.
