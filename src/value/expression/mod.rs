@@ -43,8 +43,8 @@ pub use refusal::{
     WrongSnapshotCause,
 };
 pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
-    FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
+    FieldInitializer, FunctionDeclaration,
 };
 
 /// How a standalone expression is checked.
@@ -356,7 +356,7 @@ impl PackageDeclarations {
                         // dispatch-call restriction gates on the *body's*
                         // context, and a measure is its own, always-Body
                         // context regardless of what the body itself is
-                        // checked as (finding #172-6).
+                        // checked as.
                         let mut typer =
                             Typer::new(&scope, &signatures, limits, &mut nodes, ClauseKind::Body);
                         bind_parameters(&mut typer, &function.parameters, &at)?;

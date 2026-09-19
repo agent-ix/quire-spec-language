@@ -1652,7 +1652,7 @@ impl<'a> Typer<'a> {
     /// Unlike [`Self::check_as`], this never calls [`coerce`]: an ordinary
     /// call admits an `Integer`/`Int[..]` argument into a wider or
     /// differently-bounded `Int[..]` parameter, which a dispatch call must
-    /// not (finding #172-10). This checker has no object-type generalization
+    /// not. This checker has no object-type generalization
     /// data of its own (`TypeEnvironment` carries none), so a `Reference<T>`
     /// argument is admitted only where `T` exactly matches the declared
     /// parameter — the reflexive case of "upcast only," never a wider

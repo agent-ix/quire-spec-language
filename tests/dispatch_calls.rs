@@ -26,8 +26,8 @@ use quire_spec_language::model::key::ProducerKey;
 use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, Expression,
-    FunctionDeclaration, IllTypedCause, InputRefusal, Integer, IntegerInterval,
+    DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, Integer, IntegerInterval,
     InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey, ObjectEnvironment,
     ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
     PreconditionFailure, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
@@ -118,7 +118,7 @@ fn one_candidate_package(
         result.clone(),
         None,
         body_value,
-        ClauseKind::Body,
+        DeclaredClauseKind::Body,
     )];
     let precondition_index = precondition.map(|expression| {
         functions.push(FunctionDeclaration::clause(
@@ -127,7 +127,7 @@ fn one_candidate_package(
             ValueType::Boolean,
             None,
             expression,
-            ClauseKind::Precondition,
+            DeclaredClauseKind::Precondition,
         ));
         functions.len() - 1
     });
@@ -217,7 +217,7 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
 /// Integer pure { if r.size() >= 1 then 1 else 0 }` is refused
 /// `ill_typed`/`operator-ineligible` at `r.size()` — an ordinary named
 /// function admitted alongside the dispatch table, not a standalone
-/// clause expression (finding #172-9).
+/// clause expression.
 #[trace("TC-196")]
 #[test]
 fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
@@ -251,7 +251,7 @@ fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
 
 /// FR-151 (`quire.model.dispatch.single/v1`): a dispatch call argument is
 /// type-checked "with reference upcasts only" — never the `Integer`/`Int[..]`
-/// widening an ordinary call's argument admits (finding #172-10).
+/// widening an ordinary call's argument admits.
 #[trace("TC-196")]
 #[test]
 fn dispatch_argument_never_admits_integer_to_int_coercion() {
@@ -289,7 +289,7 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
     );
 }
 
-/// D07 (finding #172-6): a synthesized dispatch candidate body is never
+/// D07: a synthesized dispatch candidate body is never
 /// `callable_by_name` — an ordinary named `Call` targeting it by its
 /// internal name (`"candidate.body"`) is refused `missing-name`, the same
 /// as any other undeclared name, closing the bypass that would otherwise
@@ -349,23 +349,30 @@ fn checked_package_call_refuses_a_synthesized_dispatch_candidate_by_name() {
     );
 }
 
-/// L4(a): [`FunctionDeclaration::clause`] must never be able to produce
-/// [`ClauseKind::Postcondition`] — the only path that can actually stand
-/// behind a real postcondition is
-/// `CheckedPackage::check_postcondition_expression`, never a
-/// `PackageDeclarations::functions` entry.
+/// [`FunctionDeclaration::clause`] takes [`DeclaredClauseKind`], which has
+/// no `Postcondition` variant: the only path that can actually stand behind
+/// a real postcondition, `CheckedPackage::check_postcondition_expression`,
+/// remains fully reachable and unaffected by that narrowing — it is a
+/// standalone expression check outside `PackageDeclarations::functions`
+/// entirely, never routed through `FunctionDeclaration::clause` at all.
+#[trace("TC-196")]
 #[test]
-#[should_panic(expected = "ClauseKind::Postcondition")]
-fn function_declaration_clause_refuses_postcondition_kind() {
+fn check_postcondition_expression_still_admits_a_real_postcondition() {
     let receiver_type = key("model.dispatch-calls.Receiver");
-    let _ = FunctionDeclaration::clause(
-        "f",
-        vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-        ValueType::Boolean,
-        None,
-        Expression::Boolean(true),
-        ClauseKind::Postcondition,
-    );
+    let package = one_candidate_package(receiver_type, None, ValueType::Integer)
+        .check(CheckingLimits::default())
+        .unwrap();
+    let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
+    let checked = package
+        .check_postcondition_expression(
+            parameters,
+            &Expression::Boolean(true),
+            Some(&ValueType::Boolean),
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect("check_postcondition_expression must still admit an ordinary postcondition");
+    assert_eq!(checked.value_type(), &ValueType::Boolean);
 }
 
 /// FR-151: an out-of-range candidate body function index is refused
@@ -476,7 +483,7 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
         ValueType::Integer,
         None,
         Expression::Integer(Integer::from(1_i64)),
-        ClauseKind::Body,
+        DeclaredClauseKind::Body,
     );
     let refusals = package
         .check(CheckingLimits::default())
@@ -635,7 +642,7 @@ fn ab_bridge_package(
 /// most-specific redefining candidate — never `A.size`, the less-specific
 /// method `B.size` redefines. `B` declares no own precondition at all, and
 /// `A`'s own precondition is `false`: since the absent-precondition-is-true
-/// rule (finding #172-1) makes `B`'s effective precondition `true`
+/// rule makes `B`'s effective precondition `true`
 /// unconditionally (its own clause is absent, so no ancestor's precondition
 /// is even consulted), the call still completes with `B`'s own body value,
 /// proving both properties at once.
@@ -749,7 +756,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             ValueType::Integer,
             None,
             Expression::Integer(Integer::from(1_i64)),
-            ClauseKind::Body,
+            DeclaredClauseKind::Body,
         ),
         FunctionDeclaration::clause(
             "shared.precondition",
@@ -757,7 +764,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             ValueType::Boolean,
             None,
             Expression::Boolean(false),
-            ClauseKind::Precondition,
+            DeclaredClauseKind::Precondition,
         ),
     ];
     let table = DispatchTable::new(
