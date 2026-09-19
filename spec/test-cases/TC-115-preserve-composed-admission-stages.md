@@ -22,13 +22,18 @@ disposition. These are compiler controls, not temporal-engine qualification.
    changed retained configuration. Then explicitly change a required profile or
    model selection and require a different static selection; stale dependencies
    must refuse rather than inherit the new meaning.
-3. Request one supported state operation and one recognized but unsupported
-   temporal projection. Inspect both clause/capability entries and the aggregate
-   disposition. Delete either entry in the consumer test input and require the
-   requested-inventory check to fail.
-4. Return an unsupported family-checking result for one parsed declaration.
-   Require its syntax to remain inspectable without presenting its body as checked
-   or executable. A backend refusal must not rewrite source/profile selection.
+3. Request two required pairs, `operation-contract` and
+   `temporal-satisfaction`. Supply `negotiate_*` settlements as fixture records:
+   `operation-contract` settles `supported` and `temporal-satisfaction` settles
+   `unsupported` for an empty candidate set. Inspect both clause/capability
+   entries and the aggregate joined from the FR-331 accounting records on
+   request index. Delete either entry in the consumer test input and require
+   the requested-inventory check to fail.
+4. Have the family checker refuse one parsed declaration with
+   `unsupported_construct`/`declaration-form`. Require its syntax to remain
+   inspectable without presenting its body as checked or executable. Neither
+   that refusal nor an `unsupported` settlement rewrites source/profile
+   selection.
 5. Run historical package reading/rebinding controls unchanged. Attempt to submit
    a partial composed report through the historical reader/runner after replacing
    only its profile label.
@@ -37,6 +42,6 @@ disposition. These are compiler controls, not temporal-engine qualification.
 
 Static comparisons use the declared semantic components, not an invented
 canonical hash. Assessment and backend changes do not change those components.
-Every requested capability remains visible, and any required unsupported request
-prevents complete aggregate success. The historical runner refuses incompatible
+Both requested pairs remain visible at their request indices, and the required
+`unsupported` pair makes complete aggregate success unavailable. The historical runner refuses incompatible
 composed input; its accepted fixture bytes and identities remain unchanged.
