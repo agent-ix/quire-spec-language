@@ -244,9 +244,9 @@ impl ConformanceIndex {
 
 /// The one bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
 /// ceiling) proper-descendant DFS [`type_conforms`] needs. Previously also
-/// shared with a phase-4 dominance helper (`ancestor_closure`, QSL #145 /
-/// PR #144 review finding #4) that collected a full ancestor set rather
-/// than breaking on a target match; that helper is gone (QSL #145 — phase 4
+/// shared with a phase-4 dominance helper (`ancestor_closure`, QSL #145)
+/// that collected a full ancestor set rather than breaking on a target
+/// match; that helper is gone (QSL #145 — phase 4
 /// now derives each owner's ancestor set from `crate::model::normalize`'s
 /// own phase-3 paths instead of a second, separately bounded walk here),
 /// so `visit` only ever breaks or continues
