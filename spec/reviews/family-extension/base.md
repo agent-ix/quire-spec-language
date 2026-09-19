@@ -28,7 +28,7 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 - ID format: `ADR-012` matches `^[A-Z]{2,4}-[0-9]+$`. It was reserved for #210
   by the program coordinator. No `origin/*` branch or open PR in
   agent-ix/quire-spec-language used it at authoring time.
-- Local item ids: seams `S1` to `S8` (§5.1) are sequential and each is defined
+- Local item ids: seams `S1` to `S9` (§5.1) are sequential and each is defined
   once. Section numbers run §1 to §14 with no gaps.
 - Relationship targets: `ADR-010` resolves to
   `spec/decisions/ADR-010-observed-architecture-baseline.md`. QSpec `AD-016`,
@@ -55,7 +55,7 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The checklist rules for US, FR and TC quality and the six test-coverage rules do not apply, because the ADR carries no acceptance criteria. They are recorded as not applicable, not as passed. The ADR's obligations become testable through #213, #214 and #185, which own the FRs. | ADR-012 §14 |
-| FND-002 | low | Seam ids `S1` to `S8` are local to ADR-012. Other records must cite them as `ADR-012 S<n>` to stay unambiguous. Fix: state the citation form. | ADR-012 §5.1 |
+| FND-002 | low | Seam ids `S1` to `S9` are local to ADR-012. Other records must cite them as `ADR-012 S<n>` to stay unambiguous. Fix: state the citation form. | ADR-012 §5.1 |
 
 ## Round 2
 
@@ -71,3 +71,15 @@ and IR tickets are an owner question. Remaining low findings are recorded in
 each analysis file for #212.
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-001 | Accepted as stated: the ADR carries no acceptance criteria, and #213, #214 and #185 own the FRs that make its obligations testable (§14.1). |
+| FND-002 | Fixed: the Context citation rule reserves `ADR-012 S<n>` for this record's seams S1–S9 and `ADR-011 S<n>` for ADR-011 stages. |
+| Round 2 text | Superseded: the CG and IR tickets are numbered (Codegen #86, Contract IR #141), and the arrow-7 key is a typed `QualifiedName` with AD-016 arrow 7 kept, so no QSpec issue is needed (§8, §13.2 Q1). |

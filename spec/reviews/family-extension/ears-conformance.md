@@ -147,3 +147,19 @@ response. Round-1 verdict: ACCEPT WITH FINDINGS (FND-001 and FND-002 high).
 | FND-025 | low | Extent is per `Requirements` entry (§2), but §1.1 and §7.2 step 3 compare "the claim's extent" or "the item's extent", in the singular. They do not say which extent governs when entries differ. "Within an advertised mode" and "the form's own disposition" are also undefined for a bounded extent on a backend that advertises only unbounded mode. Fix: state that `negotiate_*` applies the §1.1 rules per entry and that the item settles the most restrictive result. Define "within" (bounded is within bounded and unbounded modes, unbounded only within unbounded). | ADR-012 §1.1, §2, §7.2 |
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Author closure (after the PR review)
+
+Every finding this record left open or partial has one closing line. "Fixed"
+names the ADR-012 section in the commit that carries this section. "Routed"
+names the owner that holds the remaining work.
+
+| ID | Closure |
+| --- | --- |
+| FND-010 | Fixed: §8's second rule lists refused, `requires-bound`, `unsupported` and `invalid-request`. |
+| FND-012 | Fixed: Decision 4 reads "At the open seam (backend registration), each §5.2 case yields its explicit outcome". |
+| FND-015 | Fixed: §4.3 states that building an argument, wrapping the result and `?` are not semantic logic, and that a branch, lookup or check is. |
+| FND-022 | Fixed: §1 states that everything a family module defines apart from the `check`-core types is private to that module. |
+| FND-023 | Fixed: §10 reads "PR #59 does not wait on #210". |
+| FND-024 | Fixed: §5.2 states that the CLI edge refuses an unknown name and forms no request. `negotiate_*` settles `invalid-request` for a request that reaches it. |
+| FND-025 | Fixed: §1.1 applies the rules per `Requirements` entry, settles the most restrictive result, and defines "within" (bounded within both modes, unbounded within unbounded only). |

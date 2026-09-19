@@ -54,7 +54,7 @@ Sibling tickets own adjacent decisions. This record cites them as "decided in
 | Ticket | Owns |
 |---|---|
 | #209 | stages, stage edges, the crate and module DAG, and where each hook's code lives (ADR-011) |
-| #211 | canonical types, identities, outcomes, refusals, provenance and version representations, and conversions (ADR-013, QSL PR #236 at bedfab9; its O-rows are cited as `ADR-013 O-nn`) |
+| #211 | canonical types, identities, outcomes, refusals, provenance and version representations, and conversions (ADR-013, QSL PR #236; its O-rows are cited as `ADR-013 O-nn`) |
 | #229 | the capability specification: the vocabulary (FR-290's kinds, as widened by QSpec #134), its identity, wire spelling and version rules, the absence policy, and how a family declares, a backend advertises and a request selects a capability. #229 consumes §6 and §7.1 of this record for the selection mechanics. |
 | #213 | the canonical Rust `Capability` value type and the shared outcome types |
 | #185 | the capability registry and routing; it alone implements them |
@@ -87,7 +87,7 @@ implementing tickets choose the final spelling within the rules stated here.
    family code.
 4. Adding a variant to a closed enum fails the build at every seam listed in
    §5.1. At the open seam (backend registration), each §5.2 case yields its
-   explicit outcome, never a first-wins or last-wins default.
+   explicit outcome, independent of registration order.
 5. Syntax admission, semantic admission, backend capability and runtime
    availability are four separate decisions with four owners (§6). None
    implies another.
@@ -95,7 +95,7 @@ implementing tickets choose the final spelling within the rules stated here.
    kinds. The registry is an explicit value, independent of registration
    order and of ambient state. CG `negotiate_*` settles every disposition,
    including `requires-bound` and `unsupported` (§7). Solver absence yields
-   the outcome decided in #229, never a hold and never a fallback.
+   the terminal result QSpec defines (ADR-013 QC-9) on the routed backend alone.
 7. The contract covers check, package, lower, execute or prove, witness and
    replay (§8), following AD-016's arrows.
 8. Strings select semantics only at a listed edge, through one total
@@ -111,7 +111,7 @@ implementing tickets choose the final spelling within the rules stated here.
 the forms it parses, the checked nodes it produces, the diagnostics it emits
 and the stage hooks it implements.
 
-| `FamilyKind` | Scope in #210 | Depends on families | Design input | Implementation owners |
+| `FamilyKind` | Scope in #210 | Reads checked types of (semantic order) | Design input | Implementation owners |
 |---|---|---|---|---|
 | `Value` | scalar and composite values, types, expressions, function application | none | none | #214 (function application), #120, #164, #170, #175 |
 | `StateModel` | state, model population, lookup, inheritance, dispatch | `Value` | #220 | #120, #121, #164 |
@@ -120,14 +120,27 @@ and the stage hooks it implements.
 | `ProtocolClause` | protocols, clauses, frames, scoped anchors | `Value`, `StateModel` | #223 | #218 |
 | `Relation` | refinement and model-to-implementation relations | `StateModel`, `ProtocolClause` | #223 | #191, #192, #198 |
 
-The "Depends on families" column is a DAG. A family reads another family's
-checked output only through that family's public checked types and the shared
-context (§2). No family calls another family's checking or lowering
-internals. Families are modules in the one QSL crate (ADR-011, #209), and the
-module dependencies follow this DAG, which keeps it acyclic.
+The "Reads checked types of" column is a semantic ordering, and it is a DAG.
+It is carried by types in the layer-3 `check` core, not by module imports.
+Families are modules in the one QSL crate, and each family module depends only
+on its layer's core and lower layers (ADR-011 §6.1). A checked type that one
+family produces and another family reads is defined in the `check` core. The
+producing family constructs it; the reading family matches on it. Everything
+else a family module defines is private to that module. These types move into
+the `check` core:
+
+| Checked type in the `check` core | Produced by | Read by |
+|---|---|---|
+| checked expression node (today `NodeKind`, `value::expression::ir`, moved by ADR-011 M-5) and checked type node | `Value` | every other family |
+| checked model element reference, population extent and dispatch target | `StateModel` | `TemporalTrace`, `ProtocolClause`, `Relation` |
+| canonical checked clause kind (S5) | `ProtocolClause` | `TemporalTrace`, `Relation`, the layer-4 `package` emitter |
+| checked operation header and checked clause subnodes (frame, scoped anchor, pre- and postcondition) | `ProtocolClause` | `TemporalTrace` (the FR-300 control-to-temporal mapping), `Relation` |
+
+The same rule holds in layer 2 `forms`, layer 4 `package` and layer 5
+`value::expression`: a family module depends on its layer's core only.
 
 `SumCase` has no edge to `StateModel`. Variant payload types resolve through
-the type environment in `CheckContext`, not through `StateModel` internals.
+the type environment in `CheckContext`, which lives in the `check` core.
 #187's prerequisite on #121 is therefore a sequencing edge, not a family edge.
 This record leaves that edge in place because L1-D1 concerns #185 only.
 
@@ -154,24 +167,30 @@ here, and #212 can check them from this record alone.
 
 - The family records each claim's declared extent, and any authored bound, as
   data in its `Requirements` (§2). This is recording, not a mode decision.
-  The mode a backend runs in is settled by CG `negotiate_*` (AD-016 arrow 4,
-  ADR-013 O-20).
+- AD-016's single predicate for boundedness is IR `requires-bound`. QSL's
+  recorded extent and bound are inputs to it. CG `negotiate_*` settles from
+  IR's result and the candidate's advertised modes (AD-016 arrow 4, ADR-013
+  O-20). Whether a backend advertises a mode beside each kind is QSpec #134's
+  (scope item 3).
 - Backends advertise (capability kind, mode) pairs. Candidates are matched on
-  capability kind alone (§7.2). `negotiate_*` compares the claim's extent with
-  the candidate's advertised modes:
-  - When the extent is within an advertised mode, it settles the form's own
-    disposition.
-  - When the extent is unbounded, the candidate advertises only bounded mode
-    and a finite bound is available, it settles `requires-bound`.
-  - When the extent is unbounded, the candidate advertises only bounded mode
-    and no finite bound is available, it settles `unsupported`, warned.
-  - It never settles `supported` for an unbounded extent on a bounded-only
-    backend.
-- An unbounded claim is never narrowed. A `requires-bound` item runs only
-  after the caller supplies a bound. That makes a new bounded request with its
-  own identity (AD-016 arrow 5).
+  capability kind alone (§7.2). `negotiate_*` settles:
+  - When IR does not report `requires-bound`, or the candidate advertises
+    unbounded mode, it settles the form's own disposition.
+  - When IR reports `requires-bound`, the candidate advertises only bounded
+    mode and a finite bound is available, it settles `requires-bound`.
+  - When IR reports `requires-bound`, the candidate advertises only bounded
+    mode and no finite bound is available, it settles `unsupported`, warned.
+  - `supported` for a bounded-only backend requires a bounded extent.
+- A bounded extent is within both modes. An unbounded extent is within
+  unbounded mode only.
+- `negotiate_*` applies these rules to each `Requirements` entry. The item
+  settles the most restrictive entry result, in the order `unsupported`,
+  `requires-bound`, `supported`.
+- An unbounded claim keeps its extent. A `requires-bound` item runs only after
+  the caller supplies a bound, which makes a new bounded request with its own
+  identity (AD-016 arrow 5).
 - A bounded result reports the bound it held over. The report travels from IR
-  `KaniOutcome` to the FR-331 accounting record and is never dropped.
+  `KaniOutcome` to the FR-331 accounting record and reaches it intact.
 
 #212 scenario 5 needs one input from #222: the "available finite bound"
 predicate. #222 may produce it in parallel with #212.
@@ -182,7 +201,7 @@ The shared contract is the minimum every family implements. It has six parts.
 
 | Part | Contract | Representation owner |
 |---|---|---|
-| Identity | Every checked node carries a stable identity, minted by QSL at check time as a function of the node's normalized content and its declaration path. It is never a counter, a display string or a collection position. | ADR-013 O-04 (DA-02); package identity O-02 |
+| Identity | Every checked node carries a stable identity, minted by QSL at check time as a function of the node's normalized content and its declaration path. It is derived from content and path alone, so it is independent of counters, display strings and collection positions. | ADR-013 O-04 (DA-02); package identity O-02 |
 | Provenance | Every checked node maps to its source span through a source map keyed by that identity. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
 | Requirements | A pure function of a checked node returns `Requirements`. Its entries are (capability kind, declared extent, authored bound). The capability set is non-empty by type. A claim that needs no backend capability yields no `Requirements` value. If such an item is requested for proof, it still reaches `negotiate_*` exactly once (§7.2). | kinds decided in #229, Rust type in #213; extent and bound decided in #222 |
@@ -205,7 +224,9 @@ trait FamilyContract {
 }
 
 trait ReferenceEvaluation: FamilyContract {
-    fn evaluate(checked: &Self::Checked, env: &mut EvalEnv) -> Outcome<Value>;
+    type Observed;          // kernel value, state observation or trace verdict
+    fn evaluate(checked: &Self::Checked, env: &mut EvalEnv)
+        -> Outcome<Self::Observed>;
 }
 ```
 
@@ -214,9 +235,12 @@ through closed enums (§5). Neither is an object-safe plug-in interface, and no
 code holds a `dyn` collection of families.
 
 `ReferenceEvaluation` is implemented by every family except `Relation`, whose
-gates run over compiled corpora. The S1 evaluation seam has an explicit
-`Relation` arm. That arm returns a typed `unsupported` refusal with a catalog
-code. It is not a stub that returns a fixed verdict.
+gates run over compiled corpora. The S1 evaluation seam (ADR-011 S6a) has an
+explicit `Relation` arm. That arm returns the kernel `Refused` with the named
+cause `FamilyNotNativelyEvaluable`, which is category `refusal` under ADR-013
+O-16. The rule is general: at an evaluation stage, a family that sits out the
+stage has a typed arm that returns `Refused` with a named cause. At a lowering
+or proof stage, the arm returns `unsupported` with a catalog code (§5.1).
 
 `package` is all-or-nothing. A family either emits every v2 node for the item
 or emits none and returns the refusal.
@@ -320,12 +344,23 @@ A central `match` over a closed form enum is a dispatch seam. It is legal
 when every arm makes exactly one call into the owning family and holds no
 semantic logic of its own.
 
+Building an arm's argument, wrapping its result in the seam's enum variant and
+propagating an error with `?` are not semantic logic. A branch, a lookup or a
+check in the arm is.
+
 The observed `infer_form` (`QSL:src/value/expression/check.rs:683-966`, about
 280 lines) is a seam that also holds semantic logic, for both `Value` and
 `StateModel` forms. #214 makes the function-application arms thin. The
 remaining `Value` arms move with #120, #164, #170 and #175. The `StateModel`
 arms (model lookup, population and dispatched call) move with #120, #121 and
-#164 under #220's mapping (§14).
+#164 under #220's mapping (§14). Of the arms at `check.rs:761-784`, `Present`
+and `Value` are option operations and stay in `Value`; `Deref` reads a model
+element reference and moves with the `StateModel` arms; `Pre` is legal only in
+an operation postcondition and moves to `ProtocolClause` with #218.
+
+The one `Expression` enum (S2) is defined in the `forms` core. Each variant's
+owning family is the family whose hook its arm calls, and that family adds and
+removes the variant.
 
 ## 5. Exhaustive extension behaviour
 
@@ -336,11 +371,11 @@ listed seam.
 
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
-| S1 | `FamilyKind` | check dispatch, package emission dispatch, requirement derivation, reference evaluation dispatch (explicit `Relation` arm), `catalog_code()` family prefix | QSL (#214) |
+| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage (explicit `Relation` evaluation arm returning `Refused(FamilyNotNativelyEvaluable)`). The calls into a family's `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
 | S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum | parser entry table; check seam | QSL, owning family |
 | S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
-| S5 | clause kind. Canonical: QSL's `value::expression` checked clause kind (ADR-013 O-10). The v2, IR and CG conversions are total; IR → RT is total with refusal. | QSL → IR conversion, IR → RT observation conversion, IR → CG obligation kind (AD-016 scenario 2) | QSL, IR, RT, CG |
+| S5 | clause kind. Canonical: the QSL checked clause kind in the layer-3 `check` core, where ADR-011 M-5 moves `value::expression::check` (ADR-013 O-10, as ruled by the coordinator). The layer-4 `package` emitter converts it to v2 and depends downward. The v2, IR and CG conversions are total; IR → RT is total with refusal. | QSL → IR conversion, IR → RT observation conversion, IR → CG obligation kind (AD-016 scenario 2) | QSL, IR, RT, CG |
 | S6 | IR checked-node tag and semantic-form enums, decoded at v2 intake | IR `lower` arm; CG `negotiate_*` arm; CG harness arm; RT op selection. No vocabulary is re-derived from a wire string after intake. | IR (Contract IR #141), CG, RT |
 | S7 | capability kind enum (#229 vocabulary, #213 type) | requirement derivation per family; registry advertisement check; CG `negotiate_*` capability arm | QSL (#213, #185), CG |
 | S8 | IR `KaniOutcomeKind` and any later backend outcome enum | outcome → FR-331 result map (AD-016 arrow 6) | IR |
@@ -355,7 +390,7 @@ These rules make the failure certain:
   `#[non_exhaustive]` enum must have a `_` arm, which would defeat the seam.
 - S9 is a settlement point by construction, not by coincidence. Today CG has
   one concrete function, `negotiate_kani_obligations`
-  (`CG:src/kani_obligations.rs:454`). Codegen #86 makes settlement a
+  (`CG:src/kani_obligations.rs:454` at CG `origin/main` on 2026-09-19). Codegen #86 makes settlement a
   `negotiate_*` arm over the closed S9 enum, with a test that fails when any
   capability is settled outside such an arm.
 - S6 has one rule past intake: no vocabulary is re-derived from a wire string.
@@ -369,8 +404,8 @@ These rules make the failure certain:
 ### 5.2 Open seam (explicit registry failure)
 
 The set of registered backends is open at run time. Backends register with the
-#185 registry, which fails explicitly in these cases and never by a first-wins
-or last-wins default.
+#185 registry, which fails explicitly in these cases, each with the outcome in the table,
+independent of registration order.
 
 | Case | Behaviour |
 |---|---|
@@ -383,12 +418,18 @@ or last-wins default.
 ### 5.3 Evidence
 
 - **Seam probe.** Each S1–S4 enum has a probe variant behind the cargo
-  feature `seam-probe`, which the normal build never enables. An `xtask
+  feature `seam-probe`, which only the probe build enables. An `xtask
   seam-probe` builds each affected crate with the feature and asserts that
   the set of rustc E0004 locations equals a checked-in list of seam functions,
   no more and no fewer. It runs in the full gate. #214 builds it for S1–S4.
-  The owners of S5–S9 build the same probe in their repositories when those
-  seams exist.
+  Every S1–S4 enum and every match site over it is in the one QSL crate (§1),
+  so one probe build reports them all. The seams that cross repositories are
+  probed where their enums are defined: S5 in QSL, IR, RT and CG with #218;
+  S6 by Contract IR #141; S7 by #185 for the registry arm and by Codegen #86
+  for the CG arm; S8 in IR with each backend outcome enum; S9 by Codegen #86.
+  AD-016's `make heads` drift checks 1 (clause and tag wire strings total both
+  ways) and 7 (every layer's `catalog_code()` total) are the evidence that the
+  repositories agree.
 - **Mapping mutants.** AD-016's `cargo mutants` requirement covers the
   conversions at S1 and S4 (`catalog_code()`) and S5–S9.
 - **Registry.** Under #185:
@@ -398,6 +439,10 @@ or last-wins default.
     that finds no `static`, `OnceLock` or `thread_local!` in the registry
     module;
   - one unit test per §5.2 row.
+- **Dispositions end to end.** An integration test in the test harness
+  downstream of CG (§14.2) runs the #185 exit corpus. It includes the
+  absent-capability case of §3 and asserts §7.3: `unsupported` with its
+  warning, no artifact, and one accounting record per `request_index`.
 
 ## 6. Four admissions
 
@@ -410,12 +455,12 @@ or last-wins default.
 
 Consequences of the separation:
 
-- The checker never reads the registry. A checked package is the same bytes
+- The checker's inputs exclude the registry. A checked package is the same bytes
   whatever backends are registered. This is AD-016's rule that QSL admission
   is language-only and negotiates nothing.
 - The checker records `Requirements` as data, in AD-016 arrow 1's
   `capability_report`. Recording a requirement grants nothing.
-- Registration never probes tools. One registry value gives the same
+- Registration records descriptors only; tool probing happens at run time (§7.4). One registry value gives the same
   candidates on machines with and without the tool.
 
 ## 7. Capability-based backend selection
@@ -425,7 +470,7 @@ Consequences of the separation:
 | Party | Declares | Owner |
 |---|---|---|
 | Family | `Requirements` of each checked node (§2) | each family |
-| Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), tool: pinned tool identity }`. `BackendId` is a typed identity, never a display string. | the backend's repository; registered in #185 |
+| Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), tool: pinned tool identity }`. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
 | Registry | a value built from descriptors; computes candidate sets and routes each `supported` item to its backend | #185 |
 | Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; Codegen #86) |
 
@@ -485,10 +530,13 @@ implements the backend. A backend outside CG (for example the quire-analyze
 implication backend, or a temporal backend for #188) contributes a descriptor,
 a CG `negotiate_*` arm, and its own generation and runner. CG maps the
 descriptor's `BackendId` to its closed backend kind through one total
-conversion; an unknown identity is `invalid-request`.
+conversion. Before any negotiation, the orchestrating binary passes every
+registered `BackendId` through that conversion once. When one has no CG kind,
+it refuses the run and names the identity, so a configuration error is not
+settled item by item as `invalid-request`.
 
-Selection computes candidates and settles nothing. The candidate set never
-depends on registration order, on display names or on ambient state. A routed
+Selection computes candidates, and `negotiate_*` settles. The candidate set is
+a function of the requirements and the registry's contents alone. A routed
 item is not re-routed later.
 
 The candidate set reaches CG as a typed argument of the negotiation request.
@@ -504,8 +552,8 @@ An absent capability is an item whose candidate set is empty.
   #213 and the catalog code from #229.
 - No backend is invoked, and no artifact is emitted for the item at any later
   stage.
-- The outcome is never a refusal of the language form, never a success and
-  never a hold.
+- The outcome is a terminal `unsupported` disposition of the request. The
+  language form stays admitted.
 - The accounting record joins it on `request_index`, like every other
   disposition. AD-016's completeness test on zero or two records applies.
 
@@ -519,17 +567,20 @@ routed.
   matches the descriptor's pinned tool identity (for Kani, the AD-016 tool
   pin).
 - A missing tool or a pin mismatch is a typed absence cause. One exhaustive
-  function maps it to the FR-331 result that #229 decides, with #222
-  confirming its boundedness reading. IR `KaniOutcomeKind::Unavailable` is
-  the observed carrier for Kani.
+  function maps it to the FR-331 result that QSpec owns (ADR-013 QC-9, filed
+  as TK-06); #229 cites that result. IR `KaniOutcomeKind::Unavailable` is the
+  observed carrier for Kani.
 - The result names the backend, the expected tool identity and the claim.
-- It is never a hold. There is no fallback to another backend and no
-  downgrade to a weaker mode.
+- The result is terminal for the item on the routed backend, in the mode
+  negotiation settled.
 - Evidence: a fault-injection test runs with the tool missing from `PATH` and
-  again with a mismatched pin. It asserts that the #229 outcome names the
+  again with a mismatched pin. It asserts that the QC-9 result names the
   backend, the tool identity and the claim, that no other candidate runs, and
   that no probe runs before routing. It replaces the `expect` panic in IT-010
   (ADR-010 §2.1) and belongs to Codegen #86 (§14.1).
+- A failure after the tool starts (crash, timeout, malformed output) is a
+  backend outcome. It maps through S8 to its FR-331 result, and §7.4 covers
+  only the probe before the run.
 
 ## 8. Stage coverage
 
@@ -542,7 +593,7 @@ The contract spans six stages. The arrow numbers are AD-016's.
 | Lower | 2, 3 | IR `lower` arm per (tag, form); RT op selection | IR, RT | S5, S6 | explicit `unsupported` arm with catalog code |
 | Execute or prove | 4, 5 | candidates and routing (#185, §7.2); CG `negotiate_*` and harness arm per IR form and backend kind; `evaluate` for native execution | #185, CG, QSL | S6, S7, S9 | every disposition from `negotiate_*` (§7.2, §7.3); solver absence after routing (§7.4) |
 | Witness | 6 | the family's witness binding schema, derived from the obligation identity's arguments; the payload is the FR-351 record unchanged | IR (packet and witness), CG (schema) | S8 | no packet without a counterexample; no placeholder witness |
-| Replay | 7 | the family's `evaluate` hook, reached through the QSL complete-V1 executor | CG reconstruction; QSL executor | S1, S3 | refused decode yields no verdict; disagreement is `inconclusive` with a typed cause |
+| Replay | 7 | the family's `evaluate` hook, reached through the QSL complete-V1 executor | CG reconstruction; QSL executor | S1, S3 | refused decode yields no verdict; disagreement is `inconclusive` with a typed cause; a `Relation` claim reaches the S1 `Relation` arm and is `Refused(FamilyNotNativelyEvaluable)`, category `refusal` |
 
 Two rules apply at every stage.
 
@@ -559,8 +610,8 @@ three outcome families of O-16. `check` refusals are the refusal category.
 `Outcome<T>`. Dispositions come from CG. Proof results come from IR's
 `KaniOutcomeKind` map. No family adds a category.
 
-The witness envelope and the replay request and result follow ADR-013 O-25
-and O-26 and are implemented in #231. The replay executor's key is a typed
+The witness envelope follows ADR-013 O-25, the replay request O-26 and the
+replay result O-27. #231 implements them. The replay executor's key is a typed
 `QualifiedName` (ADR-013 O-11, OQ-5 option 1, by owner ruling). It keeps
 AD-016 arrow 7: the executor resolves it against the recompiled package's
 declarations.
@@ -581,11 +632,14 @@ The edges are:
 - the protocol-artifact and state-input intake readers;
 - CLI argument parsing.
 
-An unknown wire tag is a typed refusal of the v2 reader, never a skipped node.
+The v2 reader refuses an unknown wire tag or node kind with a named code.
 Each edge function carries the marker attribute `#[string_edge]`, a tool
 attribute. An `xtask string-edge` scan over the QSL crates reports every string
-comparison or string `match` outside a marked function, and runs in the lint
-gate. #214 builds the attribute and the scan.
+comparison or string `match` outside a marked function in non-test code, and
+runs in the lint gate. An allow-list in the scan names comparisons of user
+values that select no behaviour. #214 builds the attribute and the scan.
+Contract IR #141, Codegen #86 and the RT ticket run the same scan in their
+repositories.
 
 | Site (ADR-010 §4.3, OBS-014, OBS-033) | OBS-014 site | Decision | Owner |
 |---|---|---|---|
@@ -595,12 +649,12 @@ gate. #214 builds the attribute and the scan.
 | `"quire.state.authority-adapter"` (`QSL:src/state/evaluation.rs:2781-2783`) | yes | typed adapter-kind enum decoded at intake | QSL `StateModel` |
 | `"clock:"` prefix (`QSL:src/temporal.rs:50`) | yes | a typed clock-role variant in the temporal form; the prefix is parsed once, at lexing | QSL `TemporalTrace` |
 | composed `Backend{identity: &str}` (`QSL:src/linking/composed/requests.rs:80`) | no | removed from the linker; candidates use `BackendId` in the #185 registry (§7) | #185 |
-| value call by function name `&str` (`QSL:src/value/expression/mod.rs:635`) | no | keyed by a typed `QualifiedName` (ADR-013 O-11, owner ruling on OQ-5), never a bare string | #214 |
+| value call by function name `&str` (`QSL:src/value/expression/mod.rs:635`) | no | keyed by a typed `QualifiedName` (ADR-013 O-11, owner ruling on OQ-5) | #214 |
 | `--target` (`QSL:src/lowering/target.rs:39-46`) | no | already an edge conversion: a total `FromStr` into the closed `ProjectionTarget` enum. Its three values are QSL lowering domains, not backends, and stay a closed QSL enum beside the registry. Backend choice is a separate CLI argument resolved to `BackendId` by registry lookup. | QSL lowering; #185 for the backend argument |
 | `CapabilityId(String)` (`QSL:src/complete/package.rs:690`) | no | replaced by the #213 capability type | #213 |
 | IR `CheckedNodeTag::from_wire`, `required_by(tag, form: &str)`, `DispatchIndex::resolve(&str)`, and the `as_str()` sites in IR `src/kani/` | no | wire strings decoded at v2 intake into closed tag and form enums; no vocabulary re-derived from a wire string after intake | Contract IR #141 |
 | CG `semantic_form == "call"`, `node_tag == "state" && semantic_form == "frame"` | no | CG matches on IR's enums (seam S6) | CG (Codegen #86) |
-| RT function lookup by name | no | keyed by checked declaration identity, as for QSL | RT |
+| RT function lookup by name | no | keyed by a typed `QualifiedName` (ADR-013 O-11), as for QSL | RT |
 
 The IR, CG and RT rows describe code in those repositories. This record
 states the contract; the change belongs to their own tickets (§14).
@@ -610,7 +664,7 @@ states the contract; the change belongs to their own tickets (§14).
 | Item | Decision |
 |---|---|
 | ADR-010 OBS-003 | The composed linker performs no backend negotiation. `requests::report` records requests as data and has no `Backend` parameter, no `UnsupportedCapability` disposition and no `UnsupportedFamily` disposition. Candidates and routing live only in the #185 registry, and dispositions only in CG `negotiate_*` (§7). #185 implements the removal unconditionally: four-kind compatibility is refused as unsupported (owner ruling on #229, recorded in QSpec #134). QSL FR-036 (line 97, AC-5, AC-6) and TC-115 change with it (§14). |
-| ADR-010 OBS-004 | `negotiate_integer_division`, `negotiate_ieee` and `IeeeBackendCapabilities` are RT capability predicates (AD-016 arrow 3). A CG `negotiate_*` arm may take them as inputs (arrow 4, WP7 open), but they are not settlement points and settle no disposition; today CG calls neither (Codegen #86). CG `negotiate_*` arms over S9 are the only settlement points. QSL has no copy of them; #185 removes the QSL copies, as ADR-010 §7 maps OBS-004. QSL value semantics keep their evaluation functions, which are not negotiation. |
+| ADR-010 OBS-004 | `negotiate_integer_division`, `negotiate_ieee` and `IeeeBackendCapabilities` are RT capability predicates (AD-016 arrow 3). A CG `negotiate_*` arm may take them as inputs (arrow 4, WP7 open), but they are not settlement points and settle no disposition; today CG calls neither (Codegen #86). CG `negotiate_*` arms over S9 are the only settlement points. The predicate list is decided by AD-016 WP7. QSL has no copy of them; #185 removes the QSL copies, as ADR-010 §7 maps OBS-004. QSL value semantics keep their evaluation functions, which are not negotiation. |
 | ADR-010 OBS-012 | "Capability" has one meaning: the requirement kind that semantic admission records as `capability_report` data (AD-016 arrow 1), from the #229 vocabulary. This is how this record reads AD-016's row "QSL `Capability` = language admission": the values are recorded during admission and decide nothing. The QSL four-variant request label enum is replaced by the #213 type. IR `CheckedCapability`, `CapabilityDisposition` and `OutputCapability`, and CG `ObligationDisposition`, are dispositions or output kinds. They stay layer-owned, with total conversions (AD-016 shared-type strategy). |
 | ADR-010 OBS-013 | The Kani backend is one `BackendDescriptor` in the #185 registry. Its implementation is CG (harness and its `negotiate_*` arm) plus IR (outcome), per AD-016. QSL owns the registry, not the backend. FR-290's wording "quire-spec-language's Kani backend" is corrected by QSpec #134 (scope item 5). |
 | ADR-010 OBS-014 | The five production string sites are the rows marked "yes" in §9. Each is typed at its intake edge. |
@@ -629,7 +683,7 @@ also waits on Codegen #86, which makes `negotiate_*` take the candidate set
 | Ticket | Waits on #185? | Waits instead on | Reason |
 |---|---|---|---|
 | #186 (A09) | No, relaxed | #231 | State `forall` witness on `native-run-result/2`, produced by the native reference runtime. No solver, no routing. The witness payload is the FR-351 record unchanged. |
-| #187 (A10) | No, relaxed | #212, #214 | Sum types and `case` are semantic admission and reference evaluation in `SumCase`. Exhaustiveness is a checker obligation with its own refusal, not a backend claim. It needs the S1–S4 seams from #214. Proof lowering of sum/case is later work. |
+| #187 (A10) | No, relaxed | #212, #213, #214, QSpec #115 | Sum types and `case` are semantic admission and reference evaluation in `SumCase`. Exhaustiveness is a checker obligation with its own refusal, not a backend claim. It needs the S1–S4 seams from #214. Proof lowering of sum/case is later work. |
 | #188 (A11) | Yes, kept | n/a | Its exit criterion "with no backend registered it settles `unsupported` with the warning" needs the empty candidate set from #185 and the CG `negotiate_*` change. Profile and facet work may start earlier; closure waits. Its boundedness is decided in #222. |
 | #189 (A12) | Yes, kept | n/a | Its exit criterion "a claim over an unbounded collection settles `unsupported` with the warning" needs a #185 candidate set and the §1.1 extent rule in CG `negotiate_*`. Declaration admission may start earlier; closure waits. Its bound semantics are decided in #222. |
 | #191 (A13) | No, relaxed | #212 | Corpus-differential `xtask` gate; no family hook, no solver, no routing. It shares QSpec #116 with #185 but does not consume #185. |
@@ -652,55 +706,69 @@ change only paths inside the modules their table names.
 ### 12.1 Add a sum type and an exhaustive `case`
 
 Normative input: QSpec #115 (spelling, FR-143 and FR-146 at `1-draft.4`).
-The capability kind of a sum/case proof claim is decided by #229 with QSpec #134 (scope item 2; §13.3 Q3). The table
-covers admission, evaluation and packaging, which need no capability kind.
+The capability kind of a sum/case proof claim is decided by #229 with QSpec
+#134 (scope item 2; §13.3 Q2). The table covers admission, evaluation and
+packaging, which need no capability kind.
 
-| Stage | Change | Seam forced |
-|---|---|---|
-| Canonical type | a sum type is a checked type node; the kernel `ValueType` gains a sum shape (ADR-013 O-14, DA-05) | type `match`es at S3 and S6 |
-| Parse | `SumCase` productions: variant declaration and `case` with arms; one leading-token kind and one entry in the parser entry table | S2 |
-| Form | `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { pattern, body }` typed subnodes | S2 |
-| Check | builder: scrutinee → each arm (pattern typed against the scrutinee's variants, independently) → `finish` runs the exhaustiveness obligation as its own check with its own cause | S1, S4 |
-| Diagnostics | codes for non-exhaustive, unreachable arm and wrong variant in the QSpec `native-diagnostics.md` catalog, then a QSL re-vendor | S4 |
-| Checked node | `Case` variant in the checked node enum | S3 |
-| Requirements | none; the existing `Value` requirements of the arm bodies apply | none |
-| Evaluate | `case` arm selection by variant identity | S3 |
-| Package | v2 emission arm for variant and case nodes | S1, S3 |
-| QSpec wire | variant and case node spelling in the checked-package/v2 schema (QSpec #115); a new v2 node kind is a v2 wire version change under ADR-013 O-22 | none in QSL |
-| IR | tag and form enum variants; an explicit `unsupported` lower arm until the IR form exists | S6 |
-| CG | explicit `negotiate_*` arm returning `unsupported` with a catalog code until a harness exists | S6 |
-| RT | variant value operation, when lowering lands | S6 |
-| Witness, replay | none while the item settles `unsupported`. When a harness exists: the variant witness binding schema, and replay through the `SumCase` `evaluate` arm | S8 |
+QSL paths are ADR-011 §6.1 target modules. Paths in other repositories are at
+their `origin/main` on 2026-09-19 and are cited as `RT:`, `CG:`, `IR:` and
+`QSpec:`.
+
+| Stage | Change | Module or path | Seam forced |
+|---|---|---|---|
+| Canonical type | a sum type is a checked type node; the kernel `ValueType` gains a sum shape (ADR-013 O-14, DA-05) | `quire-exact` `ValueType`; checked type node in the `check` core | type `match`es at S3 and S6 |
+| Kernel consumers | a sum arm in every exhaustive `match` over `ValueType` (ADR-013 O-13 consumers) | `RT:src/exact/composite.rs`, `RT:src/exact/equality.rs`; `CG:src/oracle.rs`, `CG:src/composite_equality.rs`, `CG:src/kani.rs`, `CG:src/bound_strategy/generation.rs`; `IR:crates/quire-contract-model/src/expression.rs`, `IR:crates/quire-contract-model/src/wire.rs`, `IR:src/kani/witness.rs` | compile-forced arms. Until its operation exists, an RT evaluation arm returns the kernel `Refused` with a named cause, and an IR or CG lowering or proof arm returns `unsupported` with a catalog code. |
+| Parse | `SumCase` productions: variant declaration and `case` with arms; one leading-token kind and one entry in the parser entry table | `token` (leading-token kind); `forms` core (entry table); `forms::sum_case` | S2 |
+| Form | `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { pattern, body }` typed subnodes | `forms::sum_case` | S2 |
+| Check | builder: scrutinee → each arm (pattern typed against the scrutinee's variants, independently) → `finish` runs the exhaustiveness obligation as its own check with its own cause | `check::sum_case`; `check` core dispatch arm | S1, S4 |
+| Diagnostics | codes for non-exhaustive, unreachable arm and wrong variant | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md`, re-vendored to `resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
+| Checked node | `Case` variant in the checked node enum | `check` core | S3 |
+| Requirements | none; the existing `Value` requirements of the arm bodies apply | none | none |
+| Evaluate | `case` arm selection by variant identity | `value::expression::sum_case` | S3 |
+| Package | v2 emission arm for variant and case nodes | `package` (v2 emitter, `SumCase` arm) | S1, S3 |
+| QSpec wire | variant and case node spelling (QSpec #115). v2 is prerelease: QSpec revises its node-kind set in place with no version bump, and a v2 reader refuses an unknown node kind explicitly with a named code (owner ruling) | `QSpec:proposals/checked-package-v2/schema.json` and its fixtures | none in QSL |
+| IR | tag and form enum variants decoded at v2 intake; an explicit `unsupported` lower arm until the IR form exists | `IR:crates/quire-contract-model/src/checked_package/v2/mod.rs`, `IR:crates/quire-contract-model/src/checked_package/v2/lower.rs` | S6 |
+| CG | explicit `negotiate_*` arm returning `unsupported` with a catalog code until a harness exists | `CG:src/kani_obligations.rs` | S6 |
+| RT | variant value operation, when lowering lands | `RT:src/exact/composite.rs` | S6 |
+| Witness, replay | none while the item settles `unsupported`. When a harness exists: the variant witness binding schema, and replay through the `SumCase` `evaluate` arm | `IR:src/kani/witness.rs`; `value::expression::sum_case` | S8 |
 
 Tests: arm-level unit tests; the non-exhaustive `case` refusal; the
 unreachable-arm refusal; builder diagnostic order; `case` evaluation on each
-variant; a v2 round trip; one typed `unsupported` ledger case downstream. No
-other family's module changes.
+variant; the QSpec #115 sum and `case` vectors (FR-143, FR-146); a v2 round
+trip; one typed `unsupported` ledger case downstream. The
+QSL modules changed are the ones in the table; every other family module is
+unchanged.
 
 ### 12.2 Add a scoped frame clause to a protocol operation
 
 Normative input: QSpec FR-340 (frame body) and QSpec #101 and #106. The
-Requirements row depends on the kind #229 with QSpec #134 (scope item 2) assigns (§13.3 Q3).
+Requirements row depends on the kind #229 with QSpec #134 (scope item 2)
+assigns (§13.3 Q2).
 
-| Stage | Change | Seam forced |
-|---|---|---|
-| Clause kind | add `Frame` and `ScopedAnchor` to the canonical `value::expression` checked clause kind (ADR-013 O-10), with the total v2, IR and CG conversions and the IR → RT conversion total with refusal | S5 in QSL, IR, RT and CG |
-| Parse | `ProtocolClause` productions for `frame` with `modifies`, `creates`, `deletes`, and for the scoped anchor | S2 |
-| Form | `FrameForm { modifies, creates, deletes }`, each a list of reference forms; `ScopedAnchorForm { scope, anchor }` | S2 |
-| Check | builder transitions into `Anchored` and `Framed` (§4.2): each anchor checked by its own scope function; each frame member resolved to node identities and checked against FR-340 eligibility on its own; `finish` checks that postcondition writes fall inside `modifies` | S1, S4 |
-| Diagnostics | FR-340 frame and anchor cause codes in the QSpec `native-diagnostics.md` catalog, then a QSL re-vendor | S4 |
-| Checked node | `Frame` and `ScopedAnchor` subnodes of the operation node | S3 |
-| Requirements | the frame obligation's capability kind, if #229 with QSpec #134 assigns one (§13.3 Q3); otherwise none | S7 only if a kind is added |
-| Evaluate | runtime frame check, `frame_violation`/`unauthorized-change` | S3 |
-| Package | v2 `state`/`frame` node (FR-340); a v2 wire version change under ADR-013 O-22 | S1, S3 |
-| IR, CG | explicit `unsupported` arms until IR #109 and CG #49 land (AD-016 "Frames and unbounded constructs") | S6 |
-| Witness, replay | none while the item settles `unsupported`. When IR #109 and CG #49 land: the frame witness binding schema and frame counterexample replay through the `ProtocolClause` `evaluate` arm (#218) | S8 |
+| Stage | Change | Module or path | Seam forced |
+|---|---|---|---|
+| Clause kind | add `Frame` and `ScopedAnchor` to the canonical checked clause kind (ADR-013 O-10), with the total v2, IR and CG conversions and the IR → RT conversion total with refusal | `check` core (QSL); `IR:crates/quire-contract-model/src/identity.rs` (`ClauseKind`); `RT:src/observation.rs`; `CG:src/kani_obligations.rs`, `CG:src/harness.rs` | S5 in QSL, IR, RT and CG |
+| Clause-kind matches in other families | a compile-forced arm for `Frame` and `ScopedAnchor` in the `TemporalTrace` control-to-temporal mapping and in the `Relation` premise match. Each arm maps the clause to no temporal event and no refinement premise, by hand. | `check::temporal_trace`, `check::relation` | S5 |
+| QSpec wire | v2 spellings of the `Frame` and `ScopedAnchor` clause kinds and of the scoped anchor node. v2 is prerelease: QSpec revises its node-kind set in place with no version bump, and a v2 reader refuses an unknown node kind explicitly with a named code (owner ruling) | `QSpec:proposals/checked-package-v2/schema.json` and its fixtures | none in QSL |
+| Parse | `ProtocolClause` productions for `frame` with `modifies`, `creates`, `deletes`, and for the scoped anchor | `token`; `forms` core; `forms::protocol_clause` | S2 |
+| Form | `FrameForm { modifies, creates, deletes }`, each a list of reference forms; `ScopedAnchorForm { scope, anchor }` | `forms::protocol_clause` | S2 |
+| Check | builder transitions into `Anchored` and `Framed` (§4.2): each anchor checked by its own scope function; each frame member resolved to node identities and checked against FR-340 eligibility on its own; `finish` checks that postcondition writes fall inside `modifies` | `check::protocol_clause` | S1, S4 |
+| Diagnostics | FR-340 frame and anchor cause codes | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md`, re-vendored to `resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
+| Checked node | `Frame` and `ScopedAnchor` checked clause subnodes of the operation node | `check` core | S3 |
+| Requirements | the frame obligation's capability kind, if #229 with QSpec #134 assigns one (§13.3 Q2); otherwise none. A new kind is a QSpec FR-290 edit under QSpec #134, settled before #212 judges scenario 3 | `check::protocol_clause` | S7 only if a kind is added |
+| Evaluate | runtime frame check, `frame_violation`/`unauthorized-change` | `value::expression::protocol_clause` | S3 |
+| Package | v2 `state`/`frame` node (FR-340) and the scoped anchor node | `package` (v2 emitter, `ProtocolClause` arm) | S1, S3, S5 |
+| IR, CG | explicit `unsupported` arms until Contract IR #109 and Codegen #49 land (AD-016 "Frames and unbounded constructs") | `IR:crates/quire-contract-model/src/checked_package/v2/lower.rs`; `CG:src/kani_obligations.rs` | S6 |
+| Witness, replay | none while the item settles `unsupported`. When Contract IR #109 and Codegen #49 land: the frame witness binding schema and frame counterexample replay through the `ProtocolClause` `evaluate` arm (#218) | `IR:src/kani/witness.rs`; `value::expression::protocol_clause` | S8 |
 
 Tests: frame member eligibility, one refusal per FR-340 cause; anchor scope
 refusal; out-of-order clause refusal from the builder; cross-clause write
-containment; runtime `frame_violation` evaluation; typed `unsupported` ledger
-test; the absent-capability corpus case when a kind is assigned. No `Value`,
-`SumCase` or `TemporalTrace` module changes.
+containment; runtime `frame_violation` evaluation; the S5 seam probe showing
+the `TemporalTrace` and `Relation` arms are forced; typed `unsupported` ledger
+test; the absent-capability corpus case when a kind is assigned. The clause
+kind lives in the `check` core, so no `Value` or `SumCase` module changes.
+`TemporalTrace` and `Relation` change only by their compile-forced clause-kind
+arm.
 
 ### 12.3 Add a backend
 
@@ -716,6 +784,14 @@ test; the absent-capability corpus case when a kind is assigned. No `Value`,
 No QSL parser, checker, family or checked-package change. This is #212
 scenario 7.
 
+Registration changes selection for requests that name no backend. Candidates
+match on capability kind alone (§7.2), so a second registrant for a kind makes
+every such request for that kind settle `invalid-request`, naming both. This
+holds when the two differ in mode: an unbounded-mode backend and a
+bounded-only backend for the same kind give `invalid-request` for an unbounded
+request that names neither. QSpec #134 records `invalid-request` with no
+preference order as the rule. #212 scenario 7 records this effect.
+
 ## 13. Questions for siblings and the owner
 
 ### 13.1 For #209 (answered by ADR-011, QSL PR #235)
@@ -729,23 +805,20 @@ scenario 7.
 
 ### 13.2 For #211 (answered by ADR-013, QSL PR #236)
 
-| Question | ADR-013 answer, adopted here |
-|---|---|
-| Replay executor key | a typed `QualifiedName` (O-11), by owner ruling on OQ-5; AD-016 arrow 7 is kept, so no QSpec amendment |
-| Canonical clause kind for S5 | QSL's `value::expression` checked clause kind (O-10); v2, IR and CG conversions total; IR → RT total with refusal |
-| Family refusal type | a per-family `Cause` enum with `catalog_code()`; the shared part is the kernel `Refusal` (O-17) |
-| Sum type | a checked type node; the kernel `ValueType` gains a sum shape; QSpec #115 spells it in v2 (O-14) |
-| `BackendId` on the wire | `backend{identity, manifest_digest}` in `quire.tool-manifest.jcs/v1` (O-19) |
-| Crate for `BackendDescriptor`, candidate set, `Capability` | none; they cross as QSpec data (T-7) |
+| Q | Question | ADR-013 answer, adopted here |
+|---|---|---|
+| Q1 | Replay executor key | a typed `QualifiedName` (O-11), by owner ruling on OQ-5; AD-016 arrow 7 is kept, so no QSpec amendment |
+| Q2 | Canonical clause kind for S5 | the QSL checked clause kind in the layer-3 `check` core (O-10, with the coordinator's ruling that it sits in `check`, not layer-5 `value::expression`); v2, IR and CG conversions total; IR → RT total with refusal |
+| Q3 | Family refusal type | a per-family `Cause` enum with `catalog_code()`; the shared part is the kernel `Refusal` (O-17) |
+| Q4 | Sum type | a checked type node; the kernel `ValueType` gains a sum shape; QSpec #115 spells it in v2 (O-14) |
+| Q4 | `BackendId` on the wire | `backend{identity, manifest_digest}` in `quire.tool-manifest.jcs/v1` (O-19) |
+| T-7 | Crate for `BackendDescriptor`, candidate set, `Capability` | none; they cross as QSpec data (T-7) |
 
 ### 13.3 For #229
 
-1. The outcome for solver absence (§7.4), its catalog code and its FR-331
-   result, confirmed with #222.
-2. Whether backends advertise a mode beside each capability kind (#229 with
-   QSpec #134, scope item 3). §7 needs (capability kind, mode)
-   advertisements; it does not need the mode inside the vocabulary.
-3. The frame obligation and the sum/case claim: which kinds, if any, do they
+1. The catalog code for solver absence (§7.4). Its FR-331 result is owned by
+   QSpec (ADR-013 QC-9, TK-06), and #229 cites it.
+2. The frame obligation and the sum/case claim: which kinds, if any, do they
    require (#229 with QSpec #134, scope item 2)? §12.1 and §12.2 are
    conditional on this answer, and it must be settled before #212 judges
    scenarios 2 and 3.
@@ -771,12 +844,12 @@ item 6, §7.2).
 
 | Question | Answer |
 |---|---|
-| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: every S1 dispatch seam has one arm per family and no `_` arm (§5.1). A family that does not take part in a stage has an explicit, hand-written arm returning a typed `unsupported` refusal with a catalog code; that is a refusal at run time, never a silent skip. |
+| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: every S1 dispatch seam has one arm per family and no `_` arm (§5.1). A family that sits out a stage has an explicit, hand-written arm. At ADR-011 S6a that arm returns the kernel `Refused` with a named cause (for `Relation`, `FamilyNotNativelyEvaluable`), category `refusal`. At lowering and proof stages it returns `unsupported` with a catalog code. |
 | ADR-011: what ADR-011 S3 records in `capability_report` | exactly one entry per checked item that has `Requirements`, keyed by the item's checked identity. Each entry holds the capability kinds (vocabulary per #229 and QSpec #134), the declared extent and the authored bound (#222). Nothing else: no backend, candidate or disposition, because ADR-011 S3 negotiates nothing (§2, §6). |
-| ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (Contract IR #141) and admits them there (#218 and #223 with IR #109). |
-| ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none, because it runs the family's `evaluate` hook and never selects a backend. |
+| ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (Contract IR #141) and admits them there (#218 and #223 with Contract IR #109). |
+| ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `unsupported`. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → kernel `Refused(FamilyNotNativelyEvaluable)` → `refusal`; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on
@@ -817,9 +890,14 @@ Requirements needed before implementation starts:
 - #186, #187, #191, #192, #198: replace the #185 edge with the §11 "Waits
   instead on" edges.
 - #185 (exit), #188, #189, #217: add Codegen #86 as a prerequisite.
-- #86: add the solver-absence fault-injection test and the CG S6 enum matches;
-  add Contract IR #141 and QSpec #134 as prerequisites. #141: add QSpec #134
-  as a prerequisite.
+- #188, #189: add Contract IR #109, which supplies the temporal IR form that
+  `negotiate_*` takes, as a prerequisite of closure.
+- #229: cite §6 and §7.1 of this record as the selection mechanics it
+  consumes.
+- #86: add the solver-absence fault-injection test, the CG S6 enum matches
+  and the string-edge scan; add Contract IR #141 and QSpec #134 as
+  prerequisites. #141: add the string-edge scan and QSpec #134 as a
+  prerequisite.
 - #212: add #229 and QSpec #134 as prerequisites. #212 judges scenarios 5
   and 7 on Codegen #86 and Contract IR #141 being open with this record's
   scope; their landing is an implementation exit, not a gate condition.
@@ -835,10 +913,12 @@ Requirements needed before implementation starts:
 
 | #212 scenario | Evidence |
 |---|---|
+| 1 exact scalar operator | §3 `Value` row (operator-ineligible cause) and §4.3 thin seam: one `Value` family arm per operator, the kernel operation in `quire-exact`, IR `Operator` and RT exact op arms; seam probe at S2 and S3 |
 | 2 sum type and case | §12.1 tests; seam probe at S1–S4 |
 | 3 frame clause | §12.2 tests; S5 seam probes in QSL, IR, RT and CG |
-| 5 unbounded proof request | CG `negotiate_*` tests: `requires-bound` with an available bound, `unsupported` (warned) without one, never `supported`; the bound round trip from IR `KaniOutcome` to the FR-331 record |
-| 7 new backend | §12.3 touch set; a metamorphic test that the checked package has the same bytes with and without the new descriptor registered |
+| 5 unbounded proof request | CG `negotiate_*` tests: `requires-bound` with an available bound, `unsupported` (warned) without one, `supported` only for a bounded extent; the bound round trip from IR `KaniOutcome` to the FR-331 record |
+| 6 nested counterexample replay | §8 Witness and Replay rows: the O-25 witness, O-26 request and O-27 result (#231); replay through the family `evaluate` hook keyed by `QualifiedName` |
+| 7 new backend | §12.3 touch set; a metamorphic test that the checked package has the same bytes with and without the new descriptor registered; the ADR-011 layer check that `check` and the family modules (layer 3) do not depend on `route` (layer R) |
 
 - A new family or form costs one family module plus compiler-forced arms. A
   new backend costs one descriptor plus one CG `negotiate_*` arm and its
@@ -863,8 +943,8 @@ Requirements needed before implementation starts:
   repository.** Rejected. Either adds a second negotiation point beside CG
   `negotiate_*`, which AD-016 and QSpec PR #133 forbid.
 - **Candidates matched on (capability kind, mode).** Rejected. An unbounded
-  claim would find no bounded-only backend, and `requires-bound` could never
-  be settled.
+  claim would find no bounded-only backend, so no path would settle
+  `requires-bound`.
 - **Selection inside the checker.** Rejected. It makes the checked package
   depend on installed backends and contradicts AD-016's language-only
   admission.
