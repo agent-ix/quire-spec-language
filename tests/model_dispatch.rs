@@ -30,7 +30,7 @@ fn object_type(identity: &str) -> DomainPackageRecord {
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(SupertypeRecord {
         key: DeclarationKey::fixture(identity),
         specific: DeclarationKey::fixture(specific),
@@ -75,10 +75,10 @@ fn fixture_g() -> Vec<DomainPackageRecord> {
         object_type("model.B"),
         object_type("model.C"),
         object_type("model.D"),
-        generalization("model.gen.B-A", "model.B", "model.A"),
-        generalization("model.gen.C-A", "model.C", "model.A"),
-        generalization("model.gen.D-B", "model.D", "model.B"),
-        generalization("model.gen.D-C", "model.D", "model.C"),
+        supertype("model.gen.B-A", "model.B", "model.A"),
+        supertype("model.gen.C-A", "model.C", "model.A"),
+        supertype("model.gen.D-B", "model.D", "model.B"),
+        supertype("model.gen.D-C", "model.D", "model.C"),
     ]
 }
 

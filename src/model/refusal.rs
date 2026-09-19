@@ -17,8 +17,8 @@ use std::collections::BTreeSet;
 use crate::model::domain_package::{DomainPackageRef, Multiplicity};
 use crate::model::key::{DeclarationKey, EffectiveId};
 
-/// The offered model selection at a `foreign-model-selection` refusal's two
-/// sites (#163 review finding: a revision-only mismatch must stay
+/// The offered model selection at a `foreign-model-selection` refusal's
+/// three sites (#163 review finding: a revision-only mismatch must stay
 /// distinguishable in the typed cause, not just in `detail`'s text).
 ///
 /// The effective-view site (`crate::model::population::admit_binding`'s
@@ -27,13 +27,19 @@ use crate::model::key::{DeclarationKey, EffectiveId};
 /// document site (the same function's `modelIdentity` check) has only the
 /// document's declared `modelIdentity` string — a `PopulationDocument`
 /// carries no full `DomainPackageRef` of its own — so it carries that string
-/// instead, never a substituted or partially-populated `DomainPackageRef`.
+/// instead, never a substituted or partially-populated `DomainPackageRef`. The
+/// population-declaration site (the same function's population-key
+/// resolution, FR-153's "Its declaration key must belong to the binding's
+/// ModelSelection") has only the caller-supplied population `DeclarationKey`,
+/// so it carries that.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OfferedSelection {
     /// The effective view's own model selection, in full.
     View(DomainPackageRef),
     /// The population document's declared `modelIdentity`.
     Document(String),
+    /// The caller-supplied population declaration key.
+    Population(DeclarationKey),
 }
 
 /// The closed FR-150/151/152/153/272 cause of a
@@ -96,7 +102,7 @@ pub enum ModelRefusalCause {
     SpecializationCycle {
         /// The ancestor that closes the cycle.
         ancestor: DeclarationKey,
-        /// The generalization record the cycle is discovered via.
+        /// The supertype record the cycle is discovered via.
         via: DeclarationKey,
     },
     /// A field, operation, redefinition or subsetting record names an owner
@@ -107,19 +113,19 @@ pub enum ModelRefusalCause {
         /// The absent owner.
         owner: DeclarationKey,
     },
-    /// A generalization record names a specific that is not a declared
+    /// A supertype record names a specific that is not a declared
     /// object type.
     UnknownSpecific {
-        /// The generalization record.
-        generalization: DeclarationKey,
+        /// The supertype record.
+        supertype: DeclarationKey,
         /// The absent specific.
         specific: DeclarationKey,
     },
-    /// A generalization record names a general that is not a declared
+    /// A supertype record names a general that is not a declared
     /// object type.
     UnknownGeneral {
-        /// The generalization record.
-        generalization: DeclarationKey,
+        /// The supertype record.
+        supertype: DeclarationKey,
         /// The absent general.
         general: DeclarationKey,
     },
@@ -275,6 +281,14 @@ pub enum ModelRefusalCause {
     ForeignType {
         /// The member.
         member: String,
+        /// The absent type.
+        type_name: DeclarationKey,
+    },
+    /// A population declaration's `member_types` names a type that is not a
+    /// declared object type (model-complete.md's "Populations" row).
+    UnknownPopulationMemberType {
+        /// The population declaration naming the member type.
+        population: DeclarationKey,
         /// The absent type.
         type_name: DeclarationKey,
     },
@@ -552,6 +566,7 @@ impl ModelRefusalCause {
             Self::IncompleteScope { .. } => "incomplete-scope",
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
             Self::ForeignType { .. } => "foreign-type",
+            Self::UnknownPopulationMemberType { .. } => "missing-name",
             Self::ConflictingIdentity { .. } => "conflicting-identity",
             Self::OperatorIneligible => "operator-ineligible",
             Self::AboveMaximum { .. } => "above-maximum",
@@ -665,6 +680,7 @@ mod tests {
             ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
             ModelRefusalCause::ForeignType { .. } => "foreign-type",
+            ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing-name",
             ModelRefusalCause::ConflictingIdentity { .. } => "conflicting-identity",
             ModelRefusalCause::OperatorIneligible => "operator-ineligible",
             ModelRefusalCause::AboveMaximum { .. } => "above-maximum",
@@ -718,11 +734,11 @@ mod tests {
                 owner: key("p"),
             },
             ModelRefusalCause::UnknownSpecific {
-                generalization: key("p"),
+                supertype: key("p"),
                 specific: key("p"),
             },
             ModelRefusalCause::UnknownGeneral {
-                generalization: key("p"),
+                supertype: key("p"),
                 general: key("p"),
             },
             ModelRefusalCause::UnknownValueType {
@@ -792,6 +808,10 @@ mod tests {
             },
             ModelRefusalCause::ForeignType {
                 member: String::new(),
+                type_name: key("p"),
+            },
+            ModelRefusalCause::UnknownPopulationMemberType {
+                population: key("p"),
                 type_name: key("p"),
             },
             ModelRefusalCause::ConflictingIdentity {

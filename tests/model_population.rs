@@ -92,7 +92,7 @@ fn field_member_mult(
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(SupertypeRecord {
         key: DeclarationKey::fixture(identity),
         specific: DeclarationKey::fixture(specific),
@@ -129,46 +129,56 @@ fn redefinition(
 }
 
 /// A population declaration record naming `member_types`, at the given
-/// `extent`. `admit_binding` reads only `extent` from this record (object
+/// `extent`. `admit_binding` resolves this record from the admitting domain
+/// package's own `records` by key (FR-153's "Its declaration key must belong
+/// to the binding's ModelSelection") and reads only `extent` from it (object
 /// closure holds exactly when it is [`Extent::Closed`], FR-153:68); the
 /// foreign-type check below still reads the whole effective view, not
 /// `member_types`, so `member_types` here need not enumerate every type a
 /// fixture document actually uses.
-fn population(identity: &str, member_types: &[&str], extent: Extent) -> PopulationRecord {
-    PopulationRecord {
+fn population_record(identity: &str, member_types: &[&str], extent: Extent) -> DomainPackageRecord {
+    DomainPackageRecord::Population(PopulationRecord {
         key: DeclarationKey::fixture(identity),
         member_types: member_types
             .iter()
             .map(|type_name| DeclarationKey::fixture(*type_name))
             .collect(),
         extent,
-    }
+    })
 }
 
-/// The closed population declaration backing every P1/P2-shaped fixture
-/// document in this file.
-fn p1_population() -> PopulationRecord {
-    population("model.pop.p1", &["model.A", "model.B"], Extent::Closed)
+/// The identity of the closed population declaration backing every
+/// P1/P2-shaped fixture document in this file ([`fixture_f1`]'s own
+/// `Population` record).
+const P1_POPULATION: &str = "model.pop.p1";
+
+/// [`P1_POPULATION`]'s own declaration key, the argument every
+/// [`admit_binding`]/[`invocation_context`] call in this file passes.
+fn p1_population_key() -> DeclarationKey {
+    DeclarationKey::fixture(P1_POPULATION)
 }
 
-/// [`p1_population`], with an open extent (FR-153's own unknown-closure
-/// case for object closure).
-fn open_population(identity: &str) -> PopulationRecord {
-    population(identity, &["model.A", "model.B"], Extent::Open)
-}
-
-/// TC-195 F1 (domain package `bundle.n01`), imported as `M` by TC-198: types `A`,
-/// `B`; field `A.x` of `A`; generalization `B -> A`.
-fn fixture_f1() -> DomainPackage {
+/// TC-195 F1 (domain package `bundle.n01`), imported as `M` by TC-198: types
+/// `A`, `B`; field `A.x` of `A`; generalization `B -> A`; plus its own FR-153
+/// population declaration [`P1_POPULATION`] (member types `A`, `B`), at the
+/// given `extent`.
+fn fixture_f1_with_extent(extent: Extent) -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n01"),
         vec![
             object_type("model.A"),
             object_type("model.B"),
             field_member("model.A.x", "model.A", "model.A"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            population_record(P1_POPULATION, &["model.A", "model.B"], extent),
         ],
     )
+}
+
+/// [`fixture_f1_with_extent`] at [`Extent::Closed`], the extent every test in
+/// this file other than `l02_unknown_closure_is_incomplete_not_refused` uses.
+fn fixture_f1() -> DomainPackage {
+    fixture_f1_with_extent(Extent::Closed)
 }
 
 /// A second, distinct domain package so its object universe genuinely differs from
@@ -294,7 +304,7 @@ fn l01_all_instances_selects_subtype_population_once() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -392,7 +402,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -432,57 +442,58 @@ fn l01_all_instances_incomplete_at_result_retain() {
 #[test]
 #[trace("TC-198", "FR-153-AC-2")]
 fn l02_unknown_closure_is_incomplete_not_refused() {
-    let domain_package = fixture_f1();
-    let view = view_of(&domain_package);
+    let open_extent = fixture_f1_with_extent(Extent::Open);
+    let open_view = view_of(&open_extent);
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    match admit_binding(
-        &domain_package,
-        &view,
-        &p1("bundle.n01"),
-        &open_population("model.pop.p1"),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut admission,
-    ) {
-        AdmissionOutcome::UnknownClosure(refusal) => {
-            assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::IncompleteScope {
-                    selection: "bundle.n01".to_string(),
-                }
-            );
-        }
-        other => panic!("expected UnknownClosure(incomplete-scope), got {other:?}"),
-    }
+    assert_eq!(
+        admit_binding(
+            &open_extent,
+            &open_view,
+            &p1("bundle.n01"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut admission,
+        ),
+        AdmissionOutcome::UnknownClosure(ModelRefusal {
+            code: Code::IncompletePopulation,
+            cause: ModelRefusalCause::IncompleteScope {
+                selection: "bundle.n01".to_string(),
+            },
+            detail: "population model.pop.p1 for bundle.n01 does not declare extent: closed"
+                .to_string(),
+        })
+    );
     assert!(
         admission.admitted_charges().is_empty(),
         "no charge before a binding exists"
     );
 
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
     let mut open_subtypes = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    match admit_binding(
-        &domain_package,
-        &view,
-        &p1("bundle.n01"),
-        &p1_population(),
-        GeneralizationClosure::Open,
-        Some(3),
-        &mut open_subtypes,
-    ) {
-        AdmissionOutcome::UnknownClosure(refusal) => {
-            assert_eq!(refusal.code, Code::IncompletePopulation);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::UnclosedSubtypes {
-                    selection: "bundle.n01".to_string(),
-                    type_name: Some(DeclarationKey::fixture("model.A")),
-                }
-            );
-        }
-        other => panic!("expected UnknownClosure(unclosed-subtypes), got {other:?}"),
-    }
+    assert_eq!(
+        admit_binding(
+            &domain_package,
+            &view,
+            &p1("bundle.n01"),
+            &p1_population_key(),
+            GeneralizationClosure::Open,
+            Some(3),
+            &mut open_subtypes,
+        ),
+        AdmissionOutcome::UnknownClosure(ModelRefusal {
+            code: Code::IncompletePopulation,
+            cause: ModelRefusalCause::UnclosedSubtypes {
+                selection: "bundle.n01".to_string(),
+                type_name: Some(DeclarationKey::fixture("model.A")),
+            },
+            detail: "model selection bundle.n01 naming model.A does not have a closed \
+                     generalization graph"
+                .to_string(),
+        })
+    );
     assert!(open_subtypes.admitted_charges().is_empty());
 }
 
@@ -496,7 +507,7 @@ fn admitted_binding(
         domain_package,
         view,
         document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -785,7 +796,7 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
         &domain_package,
         &view,
         &document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -838,7 +849,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         &domain_package,
         &view,
         &document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -885,7 +896,7 @@ fn l05_foreign_type_refuses() {
         &domain_package,
         &view,
         &document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -924,7 +935,7 @@ fn l06_cardinality_bound_and_incomplete() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(2),
         &mut admission,
@@ -960,7 +971,7 @@ fn l06_cardinality_bound_and_incomplete() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
@@ -1034,7 +1045,7 @@ fn l05_foreign_model_selection_refuses_at_admission() {
         &domain_package,
         &view,
         &mismatched,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1082,7 +1093,7 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1102,6 +1113,122 @@ fn l05_view_from_a_different_bundle_revision_refuses_at_admission() {
             panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
         }
     }
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// #196 review finding 1, happy path: `admit_binding` resolves
+/// `p1_population_key()` against `fixture_f1()`'s own `Population` record
+/// and admits normally -- the by-key resolution this fix added does not
+/// itself change an already-passing admission.
+#[test]
+#[trace("TC-198", "FR-153-AC-1")]
+fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let outcome = admit_binding(
+        &domain_package,
+        &view,
+        &p1("bundle.n01"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    );
+    let AdmissionOutcome::Admitted(binding) = outcome else {
+        panic!("expected Admitted, got {outcome:?}");
+    };
+    assert_eq!(binding.declared_maximum(), Some(3));
+    assert_eq!(binding.members().len(), 3);
+    assert_eq!(
+        admission.admitted_charges().len(),
+        3,
+        "one binding.member charge per P1 member"
+    );
+}
+
+/// #196 review finding 1: extent is read from the `Population` record
+/// `admit_binding` itself resolves by key, never a value a caller states
+/// independently of it -- `admit_binding` takes only `population_key`, a
+/// `DeclarationKey`, so there is no parameter left through which a caller
+/// could claim `Closed` for a population the domain package itself declares
+/// `Open`.
+///
+/// Mutation used: in `admit_binding`, changed `population.extent !=
+/// Extent::Closed` to `false` (the resolved record's own extent never
+/// denies), which let the open-extent population admit instead of returning
+/// `UnknownClosure` -- red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
+    let open_extent = fixture_f1_with_extent(Extent::Open);
+    let view = view_of(&open_extent);
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    assert_eq!(
+        admit_binding(
+            &open_extent,
+            &view,
+            &p1("bundle.n01"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut admission,
+        ),
+        AdmissionOutcome::UnknownClosure(ModelRefusal {
+            code: Code::IncompletePopulation,
+            cause: ModelRefusalCause::IncompleteScope {
+                selection: "bundle.n01".to_string(),
+            },
+            detail: "population model.pop.p1 for bundle.n01 does not declare extent: closed"
+                .to_string(),
+        })
+    );
+    assert!(admission.admitted_charges().is_empty());
+}
+
+/// #196 review finding 1: a population key naming another domain package's
+/// `Population` declaration -- not one of the admitting `domain_package`'s
+/// own records -- refuses `foreign_reference`/`foreign-model-selection`
+/// rather than resolving against nothing or admitting with no population
+/// declaration behind it at all.
+///
+/// Mutation used: in `admit_binding`, changed the resolving `find_map`'s
+/// predicate from `population.key == *population_key` to `true` (matches
+/// whichever `Population` record is declared first, regardless of key),
+/// which let a foreign key resolve to `fixture_f1()`'s own `model.pop.p1`
+/// record instead of refusing -- red as expected, reverted.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn admission_refuses_a_population_key_from_another_domain_package() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let foreign_key = DeclarationKey::fixture("model.pop.g1");
+
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    assert_eq!(
+        admit_binding(
+            &domain_package,
+            &view,
+            &p1("bundle.n01"),
+            &foreign_key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut admission,
+        ),
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: OfferedSelection::Population(foreign_key.clone()),
+                expected: domain_package.model_selection.clone(),
+            },
+            detail: format!(
+                "population key {} names no Population declaration of domain package bundle.n01",
+                foreign_key.identity
+            ),
+        })
+    );
     assert!(admission.admitted_charges().is_empty());
 }
 
@@ -1132,7 +1259,7 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1185,7 +1312,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1242,7 +1369,7 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
         &domain_package,
         &view,
         &p1("bundle.n01"),
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(5),
         &mut admission,
@@ -1287,7 +1414,7 @@ fn r06_bundle() -> DomainPackage {
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member_mult("model.A.all", "model.A", "model.A", 0, Some(5)),
             field_member_mult("model.A.some", "model.A", "model.B", 0, Some(3)),
             subsetting(
@@ -1296,6 +1423,7 @@ fn r06_bundle() -> DomainPackage {
                 "model.A.some",
                 "model.A.all",
             ),
+            population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
     )
 }
@@ -1323,7 +1451,7 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
         &domain_package,
         &view,
         &document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1398,7 +1526,7 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
         &domain_package,
         &view,
         &document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1450,7 +1578,7 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
         &domain_package,
         &view,
         &document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -1511,7 +1639,7 @@ fn empty_effect() -> OperationEffect {
 fn invocation_context<'a>(
     domain_package: &'a DomainPackage,
     view: &'a EffectiveView,
-    population: &'a PopulationRecord,
+    population: &'a DeclarationKey,
 ) -> InvocationContext<'a> {
     InvocationContext {
         domain_package,
@@ -1555,7 +1683,7 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
         declared_deleted: &["a2".to_owned()],
     };
     let post = match admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
         &declared,
@@ -1599,7 +1727,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
         &declared,
@@ -1649,7 +1777,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &post_document,
         &declared,
@@ -1707,7 +1835,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &undeclared_delta,
@@ -1743,7 +1871,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1795,6 +1923,7 @@ fn ordering_bundle() -> DomainPackage {
                     unique: true,
                 },
             }),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
     )
 }
@@ -1839,7 +1968,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1894,7 +2023,7 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -1928,10 +2057,11 @@ fn redefinition_bundle() -> DomainPackage {
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member("model.A.x", "model.A", "model.A"),
             field_member("model.B.x", "model.B", "model.A"),
             redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
     )
 }
@@ -1948,13 +2078,18 @@ fn redefinition_chain_bundle() -> DomainPackage {
             object_type("model.A"),
             object_type("model.B"),
             object_type("model.C"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
-            generalization("model.gen.C-B", "model.C", "model.B"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.C-B", "model.C", "model.B"),
             field_member("model.A.x", "model.A", "model.A"),
             field_member("model.B.x", "model.B", "model.A"),
             field_member("model.C.x", "model.C", "model.A"),
             redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
             redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            population_record(
+                P1_POPULATION,
+                &["model.A", "model.B", "model.C"],
+                Extent::Closed,
+            ),
         ],
     )
 }
@@ -2004,7 +2139,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2067,7 +2202,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2108,6 +2243,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
         vec![
             object_type("model.A"),
             field_member("model.A.x", "model.A", "model.A"),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
     );
     let view = view_of(&domain_package);
@@ -2148,7 +2284,7 @@ fn enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2216,7 +2352,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2275,7 +2411,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2334,7 +2470,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &post_document,
         &declared,
@@ -2384,7 +2520,7 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1_minus_a2("bundle.n01"),
         &declared,
@@ -2446,7 +2582,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population()),
+        invocation_context(&domain_package, &view, &p1_population_key()),
         &p1("bundle.n01"),
         &p1("bundle.n01"),
         &declared,

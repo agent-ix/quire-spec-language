@@ -1203,7 +1203,7 @@ fn object_type_record(identity: &str) -> DomainPackageRecord {
     })
 }
 
-fn generalization_record(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype_record(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(SupertypeRecord {
         key: DeclarationKey::fixture(identity),
         specific: DeclarationKey::fixture(specific),
@@ -1248,7 +1248,7 @@ fn bridge_bundle() -> DomainPackage {
         vec![
             object_type_record("model.A"),
             object_type_record("model.B"),
-            generalization_record("model.gen.B-A", "model.B", "model.A"),
+            supertype_record("model.gen.B-A", "model.B", "model.A"),
             operation_record("model.A.size", "model.A", true),
             operation_record("model.B.size", "model.B", true),
             redefinition_record(

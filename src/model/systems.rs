@@ -34,11 +34,11 @@
 //!   which this module would have to re-walk to reproduce exactly.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{HashMap, HashSet};
