@@ -54,7 +54,7 @@ fn field_member(
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(SupertypeRecord {
         key: DeclarationKey::fixture(identity),
         specific: DeclarationKey::fixture(specific),
@@ -143,7 +143,7 @@ fn fixture_h_base() -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A"),
         object_type("model.B"),
-        generalization("model.gen.B-A", "model.B", "model.A"),
+        supertype("model.gen.B-A", "model.B", "model.A"),
         field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
         field_member("model.B.y", "model.B", "model.A", mult(0, Some(1))),
         operation(
@@ -213,7 +213,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member("model.A.n", "model.A", "model.A", mult(0, Some(5))),
             field_member("model.B.n", "model.B", "model.A", mult(1, Some(3))),
             redefinition("model.redef.B.n", "model.B", "model.B.n", "model.A.n"),
@@ -435,7 +435,7 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member("model.A.n", "model.A", "model.A", a_mult),
             field_member("model.B.n", "model.B", "model.A", b_mult),
             redefinition("model.redef.B.n", "model.B", "model.B.n", "model.A.n"),
@@ -488,7 +488,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
                 object_type("model.A"),
                 object_type("model.B"),
                 object_type("model.C"),
-                generalization("model.gen.B-A", "model.B", "model.A"),
+                supertype("model.gen.B-A", "model.B", "model.A"),
                 field_member("model.A.all", "model.A", "model.A", mult(0, Some(5))),
                 field_member("model.A.some", "model.A", some_type, some_mult),
                 subsetting("model.sub.some", "model.A", "model.A.some", "model.A.all"),
@@ -556,7 +556,7 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
             object_type("model.A"),
             object_type("model.B"),
             object_type("model.C"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member("model.C.w", "model.C", "model.A", mult(0, Some(1))),
             field_member("model.B.z", "model.B", "model.A", mult(0, Some(1))),
             redefinition("model.redef.z", "model.B", "model.B.z", "model.C.w"),
@@ -588,7 +588,7 @@ fn r07_zero_or_multiple_inherited_targets_refuse_redefinition_target() {
         vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.A.x2", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.B.z", "model.B", "model.A", mult(0, Some(1))),
@@ -636,7 +636,7 @@ fn r08_base() -> Vec<DomainPackageRecord> {
     vec![
         object_type("model.A"),
         object_type("model.B"),
-        generalization("model.gen.B-A", "model.B", "model.A"),
+        supertype("model.gen.B-A", "model.B", "model.A"),
         scalar_type("model.Count", 0, 9),
         scalar_type("model.Small", 0, 5),
         field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
@@ -950,7 +950,7 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
         let records = vec![
             object_type("model.A"),
             object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
             scalar_type("model.Count", -5, 9),
             scalar_type("model.Small", 0, 5),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
@@ -1007,7 +1007,7 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
     let records = vec![
         object_type("model.A"),
         object_type("model.B"),
-        generalization("model.gen.B-A", "model.B", "model.A"),
+        supertype("model.gen.B-A", "model.B", "model.A"),
         scalar_type("model.Count", 9, 0), // malformed: lower > upper.
         scalar_type("model.Small", 0, 5),
         field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
@@ -1079,8 +1079,8 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
             object_type("model.A"),
             object_type("model.B"),
             object_type("model.C"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
-            generalization("model.gen.C-B", "model.C", "model.B"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.C-B", "model.C", "model.B"),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
             field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
@@ -1144,8 +1144,8 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
             object_type("model.A"),
             object_type("model.B"),
             object_type("model.C"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
-            generalization("model.gen.C-B", "model.C", "model.B"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.C-B", "model.C", "model.B"),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
             field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
@@ -1221,8 +1221,8 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
             object_type("model.A"),
             object_type("model.B"),
             object_type("model.C"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
-            generalization("model.gen.C-B", "model.C", "model.B"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.C-B", "model.C", "model.B"),
             field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
             field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
             field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),

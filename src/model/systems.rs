@@ -34,11 +34,11 @@
 //!   which this module would have to re-walk to reproduce exactly.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{HashMap, HashSet};
@@ -457,10 +457,7 @@ pub fn check_connection(
             cause: ModelRefusalCause::UnknownRelationship {
                 relationship: relationship_key.clone(),
             },
-            detail: format!(
-                "{} is not a declared relationship",
-                relationship_key.node
-            ),
+            detail: format!("{} is not a declared relationship", relationship_key.node),
         });
     };
     let Some(source_port) = end_port(classification, &relationship.source.type_identity) else {
@@ -643,10 +640,7 @@ pub fn check_allocation(
             cause: ModelRefusalCause::UnknownRelationship {
                 relationship: relationship_key.clone(),
             },
-            detail: format!(
-                "{} is not a declared relationship",
-                relationship_key.node
-            ),
+            detail: format!("{} is not a declared relationship", relationship_key.node),
         });
     };
     let target_kind = classification.actual_kind(&relationship.target.type_identity);

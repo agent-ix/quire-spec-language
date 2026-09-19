@@ -122,11 +122,11 @@
 //! data, not a new evaluation step.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -137,7 +137,7 @@ use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, OperationEffect,
-    PopulationRecord, SubsettingRecord, SupertypeRecord,
+    SubsettingRecord, SupertypeRecord,
 };
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{
@@ -407,8 +407,8 @@ pub struct PopulationMember {
 /// An FCD FR-121 population document: `{model_identity, members}`. The
 /// population's extent (FR-153, FR-208:50) is not part of this runtime
 /// document; it is declared once, statically, on the domain package's own
-/// [`PopulationRecord`], which [`admit_binding`] takes as a separate
-/// parameter.
+/// [`crate::model::domain_package::PopulationRecord`], which [`admit_binding`]
+/// resolves from `domain_package.records` by key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationDocument {
     /// The document's own declared `modelIdentity`, which must name the
@@ -572,14 +572,16 @@ pub enum AdmissionOutcome {
     Incomplete(AdmissionIncomplete),
 }
 
-/// Admits `document` against `domain_package`/`view`/`population` into a
+/// Admits `document` against `domain_package`/`view`/`population_key` into a
 /// [`PopulationBinding`], per FR-153's "Environment key and closure". Decides,
 /// without a charge and in order, `view`'s correspondence to `domain_package`,
-/// the `modelIdentity` check, object closure (`population.extent`) and
-/// subtype closure; then charges `binding.member` for
-/// each member record in document order, deciding foreign-type and then
-/// duplicate-collapse/conflicting-identity after each charge. Stops at the
-/// first refusal or denied charge.
+/// the `modelIdentity` check, `population_key`'s own resolution against
+/// `domain_package.records`, object closure (the resolved
+/// [`crate::model::domain_package::PopulationRecord::extent`]) and subtype
+/// closure; then charges
+/// `binding.member` for each member record in document order, deciding
+/// foreign-type and then duplicate-collapse/conflicting-identity after each
+/// charge. Stops at the first refusal or denied charge.
 ///
 /// `view` and `domain_package` are supplied separately (`view` is FR-150's own
 /// already-normalized, already-charged effective view of `domain_package`, computed
@@ -595,11 +597,22 @@ pub enum AdmissionOutcome {
 /// boundary this crate already trusts at that check (`identity`
 /// without content verification) — comparing the *full* header rather than
 /// only `identity` so a version-only divergence is caught too.
+///
+/// `population_key` is a key, not a caller-supplied
+/// [`crate::model::domain_package::PopulationRecord`]:
+/// FR-153's "Its declaration key must belong to the binding's ModelSelection"
+/// means the population's declared extent is a fact of `domain_package`
+/// itself, never a value the caller states independently of it. This
+/// function resolves the record from `domain_package.records` and refuses
+/// `foreign_reference`/`foreign-model-selection` when no `Population` record
+/// there carries that key, so a caller cannot claim an extent, or select some
+/// other package's population declaration, that `domain_package` did not
+/// itself declare.
 pub fn admit_binding(
     domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
-    population: &PopulationRecord,
+    population_key: &DeclarationKey,
     subtype_closure: GeneralizationClosure,
     declared_maximum: Option<u64>,
     meter: &mut AdmissionMeter,
@@ -630,6 +643,28 @@ pub fn admit_binding(
             ),
         });
     }
+    let Some(population) = domain_package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Population(population) if population.key == *population_key => {
+                Some(population)
+            }
+            _ => None,
+        })
+    else {
+        return AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignModelSelection {
+                actual: OfferedSelection::Population(population_key.clone()),
+                expected: domain_package.model_selection.clone(),
+            },
+            detail: format!(
+                "population key {} names no Population declaration of domain package {}",
+                population_key.node, domain_package.model_selection.identity
+            ),
+        });
+    };
     if population.extent != Extent::Closed {
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
@@ -866,8 +901,10 @@ pub struct InvocationContext<'a> {
     pub domain_package: &'a DomainPackage,
     /// The domain package's already-normalized, already-charged effective view.
     pub view: &'a EffectiveView,
-    /// The population role's own declaration record, carrying its extent.
-    pub population: &'a PopulationRecord,
+    /// The population role's own declaration key, resolved against
+    /// `domain_package.records` by each [`admit_binding`] call
+    /// ([`admit_binding`]'s own `population_key` doc).
+    pub population: &'a DeclarationKey,
     /// The model selection's subtype closure.
     pub subtype_closure: GeneralizationClosure,
     /// The population role's declared maximum, or `None`.
@@ -896,8 +933,9 @@ pub struct InvocationDelta<'a> {
 }
 
 /// Admits one operation invocation's pre and post [`PopulationDocument`]s
-/// against the same `domain_package`/`view`/`subtype_closure`/`declared_maximum`
-/// (the same population role, at the invocation's two instants), then
+/// against the same `domain_package`/`view`/`population`/`subtype_closure`/
+/// `declared_maximum` (the same population role, at the invocation's two
+/// instants), then
 /// enforces `declared.effect`'s FR-151 frame
 /// (`quire.model.conformance.effect/v1`) against the two bindings' created
 /// and deleted identities and their surviving members' declared field
@@ -1579,10 +1617,7 @@ pub fn lookup(
             return LookupOutcome::Refused(ModelRefusal {
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::TypeMismatch,
-                detail: format!(
-                    "{} does not conform to {}",
-                    r.static_type.node, t.node
-                ),
+                detail: format!("{} does not conform to {}", r.static_type.node, t.node),
             })
         }
         Err(refusal) => return LookupOutcome::Refused(refusal),

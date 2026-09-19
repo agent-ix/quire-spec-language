@@ -245,12 +245,12 @@ pub struct DispatchRoot {
     pub closure: GeneralizationClosure,
 }
 
-/// `bundle.records`'s own first-appearance index of every declared
-/// operation, keyed by its [`DeclarationKey`] (`bundle.rs`: `records` is "in
-/// the producer's declared order"). [`DeclarationKey`]'s own `Ord` sorts by
-/// `authority, identity, revision, digest`, unrelated to source order, so
-/// this — not a `BTreeSet<DeclarationKey>` iteration — is FR-151's "source
-/// declaration order" for the D08 call-graph edge listing.
+/// `domain_package.records`'s own first-appearance index of every declared
+/// operation, keyed by its [`DeclarationKey`] (`domain_package.rs`: `records`
+/// is "in the producer's declared order"). [`DeclarationKey`]'s own `Ord` sorts by
+/// `package, node`, unrelated to source order, so this — not a
+/// `BTreeSet<DeclarationKey>` iteration — is FR-151's "source declaration
+/// order" for the D08 call-graph edge listing.
 fn declaration_order(domain_package: &DomainPackage) -> BTreeMap<DeclarationKey, usize> {
     let mut order = BTreeMap::new();
     for (index, record) in domain_package.records.iter().enumerate() {

@@ -31,7 +31,7 @@ fn object_type(identity: &str) -> DomainPackageRecord {
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(SupertypeRecord {
         key: DeclarationKey::fixture(identity),
         specific: DeclarationKey::fixture(specific),
@@ -76,10 +76,10 @@ fn fixture_g() -> Vec<DomainPackageRecord> {
         object_type("model.B"),
         object_type("model.C"),
         object_type("model.D"),
-        generalization("model.gen.B-A", "model.B", "model.A"),
-        generalization("model.gen.C-A", "model.C", "model.A"),
-        generalization("model.gen.D-B", "model.D", "model.B"),
-        generalization("model.gen.D-C", "model.D", "model.C"),
+        supertype("model.gen.B-A", "model.B", "model.A"),
+        supertype("model.gen.C-A", "model.C", "model.A"),
+        supertype("model.gen.D-B", "model.D", "model.B"),
+        supertype("model.gen.D-C", "model.D", "model.C"),
     ]
 }
 
@@ -289,11 +289,8 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     assert_eq!(refusal.subtype.node, "model.D");
     assert_eq!(refusal.code, Code::AmbiguousDispatch);
     assert_eq!(refusal.cause, ModelRefusalCause::MultipleUndominated);
-    let mut candidate_names: Vec<&str> = refusal
-        .candidates
-        .iter()
-        .map(|c| c.node.as_str())
-        .collect();
+    let mut candidate_names: Vec<&str> =
+        refusal.candidates.iter().map(|c| c.node.as_str()).collect();
     candidate_names.sort_unstable();
     assert_eq!(
         candidate_names,
@@ -302,12 +299,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     let dominance_names: std::collections::HashSet<(String, String)> = refusal
         .dominance_pairs
         .iter()
-        .map(|pair| {
-            (
-                pair.dominant.node.clone(),
-                pair.dominated.node.clone(),
-            )
-        })
+        .map(|pair| (pair.dominant.node.clone(), pair.dominated.node.clone()))
         .collect();
     assert!(dominance_names.contains(&("model.B.size".to_owned(), "model.A.size".to_owned())));
     assert!(dominance_names.contains(&("model.C.size".to_owned(), "model.A.size".to_owned())));
@@ -376,10 +368,7 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
         panic!("expected an ambiguous outcome, got {outcome:?}");
     };
     assert_eq!(refusals.len(), 4);
-    let subtypes: Vec<&str> = refusals
-        .iter()
-        .map(|r| r.subtype.node.as_str())
-        .collect();
+    let subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
     // Subtype order follows the view's own ascending effective-identity
     // order, i.e. each type's computed hash -- #131's DeclarationKey reshape
     // (dropping `revision`/`digest` from its JSON shape) changed every
@@ -479,4 +468,3 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
     assert_eq!(unclosed.operation.node, "model.A.size");
     assert!(meter.admitted_charges().is_empty());
 }
-
