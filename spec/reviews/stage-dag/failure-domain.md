@@ -120,3 +120,22 @@ decides a #210 or #211 question. The owner questions are open by design and
 were not re-litigated. The ADR designs no compatibility layer: every §7.3 row
 has disposition "none", and the AD-016 path is kept as the contract, not as a
 shim.
+
+## Round 3 (HEAD 22fa948)
+
+Delta review f781e32 → 22fa948, with ADR-013 at 4152eb8. Round-2 FND-012
+(typestate privacy across layers 3 and 4) is resolved: the binding and both I2
+types are in layer-3 `library`, and the reader calls down. E9 now names its
+package source (recompile through `replay`), identity mismatch, the source
+digest check and the no-transcript case.
+
+### Round-3 new findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | medium | Nothing binds a source-compiled dependency to the verified view that E3 resolved against. E3 resolves names against an `ImportView` whose `package_id` is P. E4 links "each dependency's checked package compiled from its digest-addressed source", but no rule requires that package's recomputed `package_id` to equal P. Under ADR-013 O-04 and QC-18 a `NodeKey` is scoped by `name@version`, not by content. A `WireNodeId` lookup can therefore succeed against a different revision of the same `name@version`, and link a node other than the one E3 checked against, with no refusal. **Fix:** E4 (and `replay` at E9) refuses with a typed cause unless each compiled dependency's `package_id` equals the `package_id` of the verified view used at E3 and pinned in the lock or request. State where non-replay compilation gets dependency source bytes: the lock entry or a byte provision. | ADR-011:173, :185, :232 · ADR-013 O-04, T-2, QC-18 |
+| FND-015 | low | The packet carrier is named differently. ADR-011 uses `CounterexamplePacket{witness: Option<Witness>}` and "`witness: None`". ADR-013 O-25 uses `CounterexamplePacket.source: ReplaySource{Witness(Witness), Input(values)}`, and adds that an `Input` replay never counts as backend evidence. ADR-011 omits that rule. **Fix:** use the `ReplaySource` spelling and add the evidence rule. | ADR-011:236, :246-248 · ADR-013 O-25 |
+
+### Round-3 verdict
+
+CHANGES: FND-014 before #212. FND-015 can land in the same revision.

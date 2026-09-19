@@ -197,3 +197,19 @@ AD-016, #210 or #211.
 - **AD-016.** Read the Shared-type strategy row from `quire-specification`
   `origin/main` with `gh api`.
 - **GitHub, read-only `gh`:** the #215, #216, #219 and #226 bodies.
+
+## Round 3 (HEAD 22fa948)
+
+Delta review f781e32 → 22fa948, with ADR-013 at 4152eb8. FB-05 now has a
+checkable surface: T-12 adds an API-surface check that CG uses only the layer-6
+`replay` facade, beside the `cargo tree` direction check.
+
+### Round-3 new findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-017 | medium | ADR-013 names ADR-011 T-12 as the enforcer of two kernel minting rules. Only `check` may call the `NodeKey` constructor, and only `model` the `EffectiveId` constructor: "the ADR-011 T-12 API-surface check fails any other caller". ADR-011 T-12 and FB-05 scope that check to CG's use of the `replay` facade only. The QSL-internal constructor-caller rules have no named check. **Fix:** widen T-12, or put the rule in #226's drift gate and have ADR-013 cite that instead. | ADR-011:383, :865 · ADR-013 O-04, O-05 |
+
+### Round-3 verdict
+
+CHANGES: FND-017 needs one owner named before #212.

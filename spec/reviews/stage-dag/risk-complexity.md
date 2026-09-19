@@ -122,3 +122,15 @@ ACCEPT WITH FINDINGS. Open: 0 high, 3 medium (FND-006, FND-009, FND-010) and
 are FND-010 and M-6c sizing. FND-007 remains low. FND-009 and FND-010 are
 local text fixes to §7.1, §7.3 and §6.2, and neither needs an owner decision
 beyond Owner questions 1 and 2.
+
+## Round 3 (HEAD 22fa948)
+
+Delta review f781e32 → 22fa948. The X-1 schedule risk is now explicit: X-1 is
+#213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which may land now
+that IR #139 is merged (954c2f2). One effect of the delta is that compiling a
+package with dependencies now needs each dependency's source. SR-467 FND-014
+records the missing binding rule. No new findings in this analysis area.
+
+### Round-3 verdict
+
+ACCEPT WITH FINDINGS (no change from round 2).
