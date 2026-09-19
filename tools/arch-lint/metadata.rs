@@ -146,11 +146,13 @@ fn parse_edges(document: &Value) -> Result<Vec<Edge>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
     use serde_json::json;
 
     /// tc_arch_lint_metadata_001: a minimal synthetic `cargo metadata`
     /// document with an IR -> QSL normal edge is parsed into exactly that
     /// edge, matching ADR-011 OBS-029's real, currently observed shape.
+    #[trace("TC-156")]
     #[test]
     fn tc_arch_lint_metadata_001_parses_ir_to_qsl_edge() {
         let document = json!({
@@ -178,6 +180,7 @@ mod tests {
 
     /// tc_arch_lint_metadata_002: a dev-kind dependency edge is classified
     /// as `EdgeKind::Dev`.
+    #[trace("TC-156")]
     #[test]
     fn tc_arch_lint_metadata_002_classifies_dev_edge() {
         let document = json!({
@@ -203,6 +206,7 @@ mod tests {
 
     /// tc_arch_lint_metadata_003: a dependency on a crate outside the four
     /// ADR-011 repositories (for example `serde`) contributes no edge.
+    #[trace("TC-156")]
     #[test]
     fn tc_arch_lint_metadata_003_ignores_non_ecosystem_dependency() {
         let document = json!({
