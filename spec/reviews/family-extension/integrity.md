@@ -59,10 +59,11 @@ The other findings are medium or low:
 - work handed to #213 outside its scope;
 - stale or unprefixed citations.
 
-Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). Round 1 was REJECT
-because FND-001 contradicted AD-016 and PR #133. The revision resolves
-FND-001. FND-005 is partly open (the mode vocabulary owner), and three new low
-findings remain; see "Round 2".
+Verdict: ACCEPT WITH FINDINGS (round 3, delta 924f239..9045cd5). Round 1 was
+REJECT because FND-001 contradicted AD-016 and PR #133. Round 2 (8fb238b)
+resolved FND-001. Round 3 confirms the Codegen #86, Contract IR #141, QSpec
+#134 and ADR-011 alignment edits. It opens three medium findings (FND-019,
+FND-020, FND-021) and two low ones; see "Round 3".
 
 ## Findings
 
@@ -177,3 +178,80 @@ New findings:
 | FND-018 | low | ADR-011 and ADR-013 are cited by item (ADR-013 O-16, O-19, O-20, Q210-n) but neither is on this branch, and the frontmatter has no edge to them. The citations cannot be resolved from the repository at 8fb238b. Fix: add `relates_to` edges and links once ADR-011 and ADR-013 are on main, or name their branches and revisions in Context. | ADR-012 Context, §1.1, §8, §13.2, §13.5 |
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Round 3 (delta 924f239..9045cd5)
+
+Reviewed only the ADR-012 changes in 924f239 (coordinator wording fixes: S9
+through Codegen #86, S6 through Contract IR #141, QSpec #134 citations) and
+9045cd5 (alignment with ADR-011 at QSL PR #235 head e62a39f). The three tickets
+were read with `gh issue view` (Codegen #86, Contract IR #141 and QSpec #134,
+all open). ADR-011 was read at e62a39f in the `qsl-arch10` worktree. AD-016 was
+read at QSpec `main`.
+
+Checks on the four 924f239 fixes:
+
+- S9 is cited to Codegen #86 in §5.1 (table and rule), §7.1, §7.4, §9, §10
+  OBS-004 and OBS-033, §11, §14.1 and §14.2. `negotiate_kani_obligations` at
+  `src/kani_obligations.rs:454` matches #86's measured state.
+- S6 is cited to Contract IR #141 in §5.1, §9, §10 OBS-033, §13.5 and §14.1.
+  The "decoded once in the v2 reader" wording is gone from IR and CG text. The
+  remaining "decoded once at … intake" wording is in QSL rows of §9 only, where
+  it is correct.
+- No "to be opened" or "no numbers yet" text remains for CG or IR. §13.4 Q4 is
+  removed. Only the RT row of §14.1 keeps "to be opened" (SR-477 FND-019).
+- QSpec #134 is cited in the Context table, §7.3, §10 OBS-033 and DA-11, §13.4
+  Q1 and Q3, and §13.5. See FND-020 for the places that still omit it.
+
+Checks on the 9045cd5 alignment with ADR-011 at e62a39f:
+
+- The `route` module (layer R), placed after S4 and before E7, matches ADR-011
+  §2.1 and its "Answers to ADR-012 §13.1" item 1. The driver being a separate
+  crate downstream of CG and placed by #225 matches items 2 and §6.1 "driver".
+  "Families are modules in the one QSL crate" matches item 3.
+  "`CheckContext` in the `check` core" matches item 4.
+- ADR-011 records the L1-D1 edges as §11 states them. #188, #189, #217 and
+  #223 keep #185.
+- The rewritten §13.5 answers agree with ADR-011's three questions to #210.
+
+Prior open, partial or delta-affected findings:
+
+| ID | Prior status | Status | Note |
+| --- | --- | --- | --- |
+| FND-002 | resolved | resolved | Strengthened. §5.1 makes S9 closed and puts settlement in its arms by construction, with the #86 test that fails on settlement outside an arm. |
+| FND-004 | resolved | resolved, with residue in FND-020 | §13.4 Q1 now names QSpec #134 as the vocabulary widening. §12.2 and §13.3 Q3 still route the frame and sum/case kinds to #229 alone, although #134 scope item 2 owns them. |
+| FND-005 | partial | resolved | §13.5 Q210-2 (6b9a603, unchanged by the delta) says #222 decides the mode and extent vocabulary and asks #211 to amend ADR-013 O-20. |
+| FND-008 | resolved | resolved | The owner of the QSL `negotiate_*` removal moved from #214 to #185 in 6b9a603, following ADR-010 §7. The delta keeps §10 OBS-004, §14.1 and §14.2 consistent on #185. |
+| FND-016 | open (low) | resolved | §2 and §7.2 step 1 (6b9a603): an item with no `Requirements` still reaches `negotiate_*` exactly once. |
+| FND-017 | open (low) | resolved | §5.2 (6b9a603) splits the two paths. A CLI argument is refused at the edge and forms no request. A request that names an unknown identity settles `invalid-request`. |
+| FND-018 | open (low) | partial | §13.1 now names ADR-011 by QSL PR #235. ADR-013 still has no branch, PR or revision, and the frontmatter has no edge to either record. |
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-019 | medium | OBS-004 contradicts the AD-016 row it cites. The new text calls `negotiate_ieee` and `negotiate_integer_division` "RT-internal operation-eligibility predicates (AD-016 arrow 3)". AD-016's arrow 3 row says "RT exposes pure capability predicates (`negotiate_ieee`, `negotiate_integer_division`) … full predicate list consumed by arrow 4" (WP7 open). "Not settlement points" agrees with AD-016 and Codegen #86. "RT-internal" does not: it is a new name for an AD-016 term and denies the arrow 4 consumption that AD-016 leaves open. This repeats the pattern of round-1 FND-003. Codegen #86 says only that CG calls neither today and that they "should not be pulled in as arms without a separate decision". Fix: in §10 OBS-004, write "RT capability predicates (AD-016 arrow 3). A CG `negotiate_*` arm may take them as inputs (arrow 4, WP7), but they are not settlement points and settle no disposition. Today CG calls neither (Codegen #86)." Drop "RT-internal" and "operation-eligibility". | ADR-012 §10 OBS-004 · AD-016 arrow 3 capability point, WP7 · Codegen #86 "Measured state" |
+| FND-020 | medium | QSpec #134 is not cited where its scope decides the open question. The delta cites #134 for FR-290's kinds and the FR-331 field. It leaves these open against #229 or "an open QSpec issue". (a) §13.3 Q3 and the §12.2 Requirements row: the kinds for the frame obligation and the sum/case claim are #134 scope item 2. (b) §13.3 Q2: whether a backend advertises a mode is #134 item 3. (c) §13.3 Q5 and §10 OBS-013 say the FR-290 Kani wording "needs an open QSpec issue". #134 item 5 is that issue. (d) §13.4 Q2 asks the owner whether a preference order is wanted. #134 item 6 records `invalid-request` with no preference order as the rule. (e) §13.3 Q4 asks #229 about four-kind compatibility. #134's non-goals record the owner ruling on #229: refused as unsupported. So the record keeps questions open that the numbered ticket answers or owns, and it names two owners for each. Fix: cite QSpec #134 in (a) and (b), and route them "#229 with QSpec #134". In (c), replace "needs an open QSpec issue" with "QSpec #134 item 5". Close (d) and (e) as answered by #134 and the #229 owner ruling, and make OBS-003's removal unconditional. | ADR-012 §10 OBS-003, OBS-013, §12.2, §13.3 Q2–Q5, §13.4 Q2 · QSpec #134 Scope 2, 3, 5, 6, Non-goals |
+| FND-021 | medium | The 9045cd5 text mixes ADR-011 stage ids with ADR-012 seam ids, and both use bare `S<n>`. "after S4 and before E7" (§6 table, §7.1, §13.1) means ADR-011 stage S4 (package emission). In this record a bare S4 is seam S4 (family `Cause` enums, §5.1). The §13.5 row on per-stage hooks lists "S2 family form builder, S3 …, S4 `package`, S6a `evaluate`" (stages) and then "every S1 dispatch seam" (seam) in the same cell. The row on `capability_report` says "S3 negotiates nothing", which uses the stage id. ADR-011 requires other records to cite its ids as `ADR-011 S3`, `ADR-011 E5`, and ADR-012 line 70 reserves `ADR-012 S<n>` for its seams. As written, "after S4" names the wrong thing. Fix: prefix every ADR-011 stage and edge id with `ADR-011`: `ADR-011 S4`, `ADR-011 E7`, `ADR-011 S2`, `ADR-011 S3`, `ADR-011 S6a`. Keep bare `S<n>` for this record's seams. | ADR-012 Context (citation rule), §6 table, §7.1, §13.1, §13.5 · ADR-011 Decision item 11 (e62a39f) |
+| FND-022 | low | §5.1 introduces "Three rules make the failure certain" and now lists five bullets, after the S9 and S6 rules were added. Fix: "These rules make the failure certain", or move the S9 and S6 bullets under their own lead-in. | ADR-012 §5.1 |
+| FND-023 | low | Citation forms are inconsistent. The new text uses "Codegen #86" and "Contract IR #141". Existing text uses "CG #49" and "IR #109" for the same repositories. `CG:src/kani_obligations.rs:454` has no revision, while Context pins `QSL:` citations to de627b5. Fix: use one prefix per repository (`CG #86`, `IR #141`, or define the long forms once in Context). State the CG revision the line was measured at (`origin/main` per Codegen #86, with a SHA). | ADR-012 Context, §5.1, §7.1, §9, §10, §11, §14 |
+
+Round 3 verdict: ACCEPT WITH FINDINGS. All four 924f239 fixes are present and
+consistent with Codegen #86, Contract IR #141 and QSpec #134. The 9045cd5
+placements match ADR-011 at e62a39f. Three medium findings remain (FND-019
+OBS-004 against AD-016 arrow 3, FND-020 open questions that #134 answers, and
+FND-021 stage and seam id collision). None of them blocks the design, and each
+has a one-line fix.
+
+### Author response (after round 3)
+
+FND-019, FND-020, FND-021 and FND-022 are addressed in the ADR commit that
+follows 9045cd5:
+- OBS-004 uses AD-016's term (RT capability predicates, possible arm inputs
+  under WP7, not settlement points).
+- QSpec #134 is cited for the frame and sum/case kinds, mode advertisement and
+  the FR-290 Kani wording. The four-kind and preference-order questions are
+  closed as answered, and the OBS-003 removal is unconditional.
+- ADR-011 stage and edge ids carry the `ADR-011` prefix everywhere.
+- §5.1 reads "These rules".
+
+FND-023 (ticket naming style) is left as is.
