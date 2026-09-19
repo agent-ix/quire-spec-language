@@ -127,3 +127,19 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
   deletes the remainder.
 
 Verdict after Round 3: ACCEPT WITH FINDINGS.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-008 is resolved: SR-498 names bounded slices for
+  agent-ix/quire-contract-ir#141 (IR-141-1 to IR-141-6) and
+  agent-ix/quire-contract-codegen#86 (CG-86-1 to CG-86-5), each sized for one
+  to three agent sessions. They are filed as sub-issues of their parents.
+- FND-002 is Remaining work: agent-ix/quire-contract-codegen#87. #212 does
+  not wait on it.
+- FND-001 (#216), FND-004 (#219), FND-005 (#214) and FND-007 (#213) stay
+  Remaining work.
+
+Verdict after Round 4: ACCEPT WITH FINDINGS.

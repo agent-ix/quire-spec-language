@@ -148,3 +148,20 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
   record citation are fixed.
 
 Verdict after Round 3: ACCEPT.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-009 is restated: the outcome→verdict map is fixed by QSpec per O-16
+  category, and the request carries no map (ADR-011 E9, ADR-013 O-26,
+  QC-8).
+- FND-012 is refined by the round-2 ruling: the S1 to S4 stage limits travel
+  in the #231 replay request (ADR-013 O-26, QC-8), and the recompile runs
+  under them. Remaining work: agent-ix/quire-specification#141.
+- `CheckedPackage::call` admits arguments before evaluation. An
+  `InputRefusal` is an O-26 refusal that `replay` carries as a
+  `StageFailure::Refused` cause, never `inconclusive` (ADR-011 E9).
+
+Verdict after Round 4: ACCEPT.

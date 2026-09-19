@@ -138,3 +138,22 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
 - FND-001, FND-002, FND-007 and FND-008 were resolved in Round 2.
 
 Verdict after Round 3: ACCEPT WITH FINDINGS.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-003 is resolved (#247): the ADR-011 K row lists `EffectiveId`,
+  `UniverseId`, `ObjectId`, `UnitId`, `VariantId` and `MemberId` (QC-15).
+- FND-004 is resolved (#247): ADR-012 §2 and §13.2 Q3 name `RefusalRecord`
+  in F `diagnostic` as the shared part (O-17); the kernel `Refusal` carries
+  kernel causes only.
+- FND-006 is resolved (#212 round-2 ruling): the #231 envelopes live in the
+  layer-6 `replay` module and are part of its public API. CG reaches them
+  only through it (FB-05).
+- FND-009 is resolved (#247): ADR-011 §1 names the replay `QualifiedName`
+  lookup at E9 as the exception, as R-06 does.
+- FND-010 is resolved (#247): the S7 row and §10 row 9 name `ReplaySource`.
+
+Verdict after Round 4: ACCEPT.
