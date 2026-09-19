@@ -166,6 +166,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-007
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -396,3 +398,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131 |
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies, #213/#185 implement |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
+| [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
