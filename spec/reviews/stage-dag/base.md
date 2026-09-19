@@ -82,5 +82,26 @@ and where it is now resolved.
 | SR-470 FND-004, FND-009, FND-016 | Direction and lock checks become Owner question 9; census check moves to #219. |
 | SR-468 FND-010, FND-012, FND-016, FND-020 | M-5 after M-3; M-4 ticket in Owner question 6; native-linked-package/1 submodules in SEAM-1; #29, #133, #131, #132 in the ticket table; Terms names three producers. |
 
+Superseded by later revisions (eeabc76, 102c8bb, f781e32). The rows above
+record the round-2 state. The current ADR-011 text governs these rows:
+
+- SR-472 FND-009, SR-469 FND-015: there is no shared crate. Routing crosses
+  as data (ADR-013 T-7): provider manifests, the candidate-set wire and the
+  #229 wire spelling.
+- SR-470 FND-014, SR-468 FND-017: the per-type kernel cut is decided in
+  ADR-013 T-6 against the AD-016 Shared-type row as amended by QC-15.
+- SR-467 FND-012, FND-013, SR-468 FND-018: I2 yields `VerifiedPackage` and
+  `ImportView`, both defined in layer-3 `library`. The S4 closure carries
+  checked dependency packages compiled from source.
+- SR-468 FND-002, FND-009, SR-467 FND-003: the E9 executor key is a typed
+  `QualifiedName`, resolved by name lookup through the layer-6 `replay`
+  facade.
+- SR-471 FND-009, FND-010: M-6 is split by lane. `state` and `temporal` are
+  replaced in M-6c by family evaluators under `value::expression`. M-6d
+  lands with #218 and #223, and the skeleton spine is §1.1.
+- SR-470 FND-004, FND-009, FND-016 and SR-468 FND-010: the owner questions
+  became owner rulings and the "Tickets to open at #212" table (T-4, T-8,
+  T-12).
+
 Coordinator input folded into the same pass: the answers to ADR-012 §13.1,
 consistency with ADR-012 L1-D1 ticket edges, and "the #134 vocabulary".
