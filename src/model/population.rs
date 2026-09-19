@@ -429,8 +429,8 @@ pub struct PopulationDocument {
 /// only treats them as a candidate member identity when they are valid
 /// UTF-8 -- every real population member's own object identity is a JSON
 /// string (`PopulationDocument`'s member records), so bytes that are not
-/// valid UTF-8 can never equal one. This type carries no `Vec<u8>`-typed
-/// classification of its own (no public "this identity is malformed"
+/// valid UTF-8 can never equal one. This type carries no classification of
+/// its own (no public "this identity is malformed"
 /// constructor) precisely so a caller cannot assert a false classification
 /// for well-formed bytes and force a present member to read as absent, or
 /// the reverse. `type_identity` is always well-formed
