@@ -435,7 +435,7 @@ pub fn check_field_redefinition(
     }
 }
 
-/// Checks a subsetting record's `subsetting-type` and `multiplicity` axes
+/// Checks a subsetting pair's `subsetting-type` and `multiplicity` axes
 /// (same rule as field redefinition, different cause on the type axis).
 /// Runtime population-membership checking
 /// (`binding.subset-value`/`subsetting-violation`) is FR-153 territory, not

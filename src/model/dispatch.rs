@@ -48,8 +48,8 @@ use crate::model::domain_package::{DomainPackage, DomainPackageRecord, Operation
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 
-/// Bounds the family-closure walk `link_dispatch` performs over
-/// caller-supplied redefinition records: an explicit task stack, never
+/// Bounds the family-closure walk `link_dispatch` performs over operation
+/// members' own inline `redefines` edges: an explicit task stack, never
 /// native recursion, with a visited set and this depth ceiling as a typed
 /// `resource_exhausted` refusal.
 const MAX_DISPATCH_DEPTH: usize = 128;
@@ -191,10 +191,9 @@ impl DispatchIndex {
 
 /// The family of `original`: `original` itself together with every
 /// redefining operation reaching it, by any chain of members' own inline
-/// `redefines` property (`model-complete.md`:162, QSpec's own shape, not a
-/// separate redefinition record), sorted ascending by [`DeclarationKey`] for
-/// deterministic reporting. Bounded task stack, never native recursion, over
-/// the domain package's own operation members.
+/// `redefines` property (`model-complete.md`:162), sorted ascending by
+/// [`DeclarationKey`] for deterministic reporting. Bounded task stack, never
+/// native recursion, over the domain package's own operation members.
 fn build_family(
     index: &DispatchIndex,
     original: &DeclarationKey,

@@ -87,8 +87,8 @@
 //!   every created and deleted object identity's most-specific type must
 //!   conform to a declared `creates`/`deletes` grant, and every changed
 //!   field on a surviving object must be a declared `modifies` member
-//!   (directly, or reaching one through a redefinition record — FR-151's own
-//!   effect-inclusion rule). A field's declared collection kind
+//!   (directly, or reaching one through a member's own `redefines` property
+//!   — FR-151's own effect-inclusion rule). A field's declared collection kind
 //!   (`Multiplicity::ordered`) decides whether its pre/post values compare
 //!   by exact sequence or by order-insensitive multiset, so re-serializing
 //!   an unordered field in a different order is never itself a write. An
@@ -478,8 +478,9 @@ pub struct PopulationBinding {
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
-    /// `domain_package`'s supertype records, indexed by `specific`, computed
-    /// once here rather than by [`all_instances`]/[`lookup`] on every call.
+    /// `domain_package`'s declared `supertypes[]` generals, indexed by
+    /// specific, computed once here rather than by [`all_instances`]/[`lookup`]
+    /// on every call.
     /// `value-accounting.md`'s "Model and graph evaluation" paragraph
     /// already places the type-conformance decision this index serves
     /// outside any charge ("...selects the member, without a charge, exactly
@@ -793,9 +794,8 @@ pub fn admit_binding(
     }
 
     /// One subsetting edge derived from a field member's own inline
-    /// `subsets[]` property (`model-complete.md`:161, QSpec's own shape, not
-    /// a separate subsetting record): `owner` declares `subsetting`, whose
-    /// runtime values must be a subset of `subsetted`'s.
+    /// `subsets[]` property (`model-complete.md`:161): `owner` declares
+    /// `subsetting`, whose runtime values must be a subset of `subsetted`'s.
     struct SubsettingEdge<'a> {
         owner: &'a DeclarationKey,
         subsetting: &'a DeclarationKey,
@@ -1110,13 +1110,12 @@ fn field_values_equal(
 }
 
 /// Walks `field`'s redefinition chain (one member's own inline `redefines`
-/// hop at a time — `model-complete.md`:162, QSpec's own shape, not a
-/// separate redefinition record), returning `true` as soon as
+/// hop at a time — `model-complete.md`:162), returning `true` as soon as
 /// `admits` accepts `field` itself or some ancestor it reaches, `false` once
 /// the chain ends with no accepted link. model-complete.md:56: the
 /// redefining feature replaces "the *one* inherited redefined feature", so a
 /// chain -- `C.x` redefines `B.x`, `B.x` redefines `A.x`, with no direct
-/// `C.x -> A.x` record -- is legal and normal, not an edge case; a single
+/// `C.x -> A.x` edge -- is legal and normal, not an edge case; a single
 /// hop only ever reaches an immediate redefinition target, never a
 /// grandparent one. `redefinitionClosure: closed` (model-complete.md:64)
 /// means every redefinition edge in the model is *listed* here, not that
@@ -1168,9 +1167,9 @@ pub(super) fn redefinition_reaches(
 }
 
 /// Whether `field` (the field a runtime population document names on some
-/// member) is covered by `effect.modifies`, directly or because it
-/// "reaches one through redefinition records" -- FR-151's own effect-
-/// inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
+/// member) is covered by `effect.modifies`, directly or because it reaches
+/// one through a chain of members' own `redefines` properties -- FR-151's
+/// own effect-inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
 /// operation's own declared writes rather than to a redefining operation's
 /// writes against its redefined ancestor's. Walks the full chain
 /// ([`redefinition_reaches`]), not just one hop: `modifies: [model.A.x]`

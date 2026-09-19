@@ -443,10 +443,8 @@ impl Index {
                 DomainPackageRecord::ObjectType(t) => {
                     types.insert(t.key.clone());
                     // A type is `non_root` when its own `supertypes[]`
-                    // (`model-complete.md`:155, QSpec's own shape, not a
-                    // separate generalization record) is non-empty, i.e. it
-                    // is the `specific` end of at least one generalization
-                    // edge.
+                    // (`model-complete.md`:155) is non-empty, i.e. it is the
+                    // `specific` end of at least one generalization edge.
                     if !t.supertypes.is_empty() {
                         non_root.insert(t.key.clone());
                     }
@@ -777,9 +775,8 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
     // record before any dangling-reference check ran would report a *later*
     // node's duplicate key ahead of an *earlier* node's own dangling
     // reference, applying FR-154's table order globally instead of within
-    // each node -- the wrong axis. Under #131's flat `DeclarationKey`
-    // (`package`/`node` only), two records that would once have been
-    // distinguished by `revision`/`digest` now collide for real and must
+    // each node -- the wrong axis. `DeclarationKey` is `package`/`node`
+    // only, so two records sharing one key collide for real and must
     // refuse here, not silently let the later record replace or shadow the
     // earlier one in `Index`'s by-key maps/sets.
     let mut seen_keys: std::collections::HashSet<&DeclarationKey> =
@@ -1504,7 +1501,7 @@ fn apply_redefinitions(
     // Every redefining member reachable at `type_key`, gathered flat (not
     // yet grouped by target) and split by member kind, from each field's or
     // operation's own inline `redefines` property (`model-complete.md`:159/
-    // 160/270/271) rather than a separate redefinition record.
+    // 160/270/271).
     // `normalize.redefinition-check`'s own charge sequence does not come
     // from either list: it is `build`'s own domain-package-wide pass over every
     // redefining member, field and operation alike; `all_edges`
@@ -1683,8 +1680,8 @@ fn apply_redefinitions(
                 // A caller cannot resolve either shape by an arbitrary pick,
                 // but they are different ambiguities with different FR-272
                 // causes: this one refuses `redefinition-target`, naming every
-                // redefining member's own declaration key (never its
-                // redefinition record's key) and the one contended target.
+                // redefining member's own declaration key and the one
+                // contended target.
                 //
                 // `normalize.conflict-check` exposes this ambiguity
                 // (`value-accounting.md:456`), so `record_phase4_refusal`
