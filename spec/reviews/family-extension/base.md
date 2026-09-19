@@ -83,3 +83,45 @@ names the owner that holds the remaining work.
 | FND-001 | Accepted as stated: the ADR carries no acceptance criteria, and #213, #214 and #185 own the FRs that make its obligations testable (§14.1). |
 | FND-002 | Fixed: the Context citation rule reserves `ADR-012 S<n>` for this record's seams S1–S9 and `ADR-011 S<n>` for ADR-011 stages. |
 | Round 2 text | Superseded: the CG and IR tickets are numbered (Codegen #86, Contract IR #141), and the arrow-7 key is a typed `QualifiedName` with AD-016 arrow 7 kept, so no QSpec issue is needed (§8, §13.2 Q1). |
+
+## PR review (QSL PR #234)
+
+Single PR reviewer. Round 1 reviewed 43677c9, and round 2 reviewed the delta
+43677c9..10664aa. Sibling records were read at ADR-011 22fa948 (PR #235) and
+ADR-013 4152eb8 (PR #236). AD-016 was read at QSpec `origin/main`.
+`quire validate --strict --summary` on the ten changed files: 10/10
+grammar-clean, 0 findings.
+
+Round 1 findings (at 43677c9) and their status at 10664aa:
+
+| ID | Severity | Summary | Status at 10664aa |
+| --- | --- | --- | --- |
+| PR-M1 | medium | The §1 family DAG was carried by module imports, which contradicts ADR-011 §6.1 ("family modules never depend on each other"). | resolved: §1 moves shared checked types into the layer-3 `check` core, which matches ADR-011 22fa948 §6.1. |
+| PR-M2 | medium | The S5 clause kind sat in layer-5 `value::expression`, above the layer-4 emitter. | resolved: it is in the `check` core in §5.1 S5, §12.2 and §13.2 Q2, matching ADR-013 O-10 at 4152eb8. |
+| PR-M3 | medium | §12.2 changed a `Value` module but said no `Value` module changes, and it had no QSpec wire row. | resolved: a clause-kind row for `TemporalTrace` and `Relation`, a QSpec wire row, and the closing sentence are corrected. |
+| PR-M4 | medium | The §12 tables named no modules, and the kernel `ValueType` consumers were missing. | resolved: every row names a module or path. The RT, CG, IR and QSpec paths exist at `origin/main`. |
+| PR-M5 | medium | The `Relation` evaluate arm mapped to `unsupported`, which is not an O-16 evaluation outcome. | resolved: `Refused(FamilyNotNativelyEvaluable)`, category `refusal` (§2, §8, §13.5), matching ADR-013 O-16 and Q210-3. |
+| PR-M6 | medium | Review records had open findings, and nobody had reviewed 43677c9. | resolved: each record has an author-closure table, and this section records the review of 43677c9 and 10664aa. |
+| PR-L1 | low | Two owners were named for the solver-absence FR-331 result. | resolved: ADR-013 QC-9 (TK-06); #229 cites it. |
+| PR-L2 | low | §1.1 omitted AD-016's single IR `requires-bound` predicate. | resolved |
+| PR-L3 | low | The ADR-013 pin at bedfab9 was stale. | resolved: the pin is removed and the citation is by PR. |
+| PR-L4 | low | The replay result was cited as O-26. | resolved: O-27. |
+| PR-L5 | low | The §9 RT row said "as for QSL" after the QSL row changed. | resolved as text, but see PR-N2. |
+| PR-L6 | low | The OBS-004 predicate list had no decider. | resolved: AD-016 WP7, matching ADR-011 22fa948. |
+| PR-L7 | low | §13.4 Q2 asks the owner to confirm what QSpec #134 scope item 4 already says. | open: ADR-012:836-837. |
+| PR-L8 | low | ADR-013 cited §13.2 Q1–Q4, which had lost their labels. | resolved: the labels are restored and match ADR-013 4152eb8. |
+| PR-L9 | low | #187 did not wait on #213 or QSpec #115. | resolved |
+| PR-L10 | low | Unsupported alternatives were named outside Alternatives Considered. | partial: ADR-012:234 ("Neither is an object-safe plug-in interface"), :254 ("does not try productions in order") and :487 ("It is not a `static`, …") remain. |
+| PR-L11 | low | The SR-480 heading had no id, and SR-474 said S1–S8. | resolved |
+
+New findings from the delta or from a cross-record contradiction (round 2):
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR-N1 | medium | Capability vocabulary owner. ADR-012 names #229 as the owner of the vocabulary and wire spelling. ADR-013 4152eb8 (lines 30, 425, 441, 764, 854) and ADR-011 22fa948 (line 45) name QSpec #134 (FR-290) as owner, with #229 aligning QSL to it. Consequence: the DA-11 authority table assigns the vocabulary to two owners. Fix: vocabulary and wire spelling are QSpec #134's (FR-290); #229 specifies QSL's capability and aligns to it. | ADR-012:58, :64, :380, :413, :668, :672, :848 |
+| PR-N2 | medium | The §9 RT row keys RT's function lookup by a `QualifiedName`. ADR-013 R-06 allows exactly one name lookup after the check stage, the replay executor's (OQ-5). Consequence: a second post-check name resolution, which R-06 forbids. Fix: key the RT lookup by the checked declaration node id, or have ADR-013 amend R-06. | ADR-012:657; ADR-013 4152eb8:85 |
+| PR-N3 | medium | ADR-011 still says a family that sits out a stage returns "a typed `unsupported` refusal". That contradicts ADR-012 §2 and §13.5 and ADR-013 O-16 (`Refused(FamilyNotNativelyEvaluable)`, category `refusal`, at S6a). Consequence: #214 gets two rules for the `Relation` arm. The fix belongs in ADR-011. | ADR-011 22fa948:801-804 |
+| PR-N4 | low | §13.5 still says "every S1 dispatch seam has one arm per family". The delta's S1 row moved the hook calls to S2 and S3 arms. ADR-011:802 repeats the old text. | ADR-012:847 |
+| PR-N5 | low | The SR-476 FND-018 closure names its trigger (the merge of #235 and #236) but no owner. SR-477 FND-019 names both an owner (the RT owner) and a trigger (the owner files the ticket). | integrity.md:267 |
+
+PR review verdict at 10664aa: CHANGES (PR-N1, PR-N2, PR-N3).

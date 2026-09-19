@@ -158,3 +158,11 @@ names the owner that holds the remaining work.
 | FND-008 | Fixed: §12's lead-in names an inspection of each row against the #209 module map at #212, and a changed-paths check on the #187 and #218 landing PRs. Both §12 tables name exact modules or paths per row, including the RT and CG `ValueType` match sites. |
 | FND-009 | Fixed: §12.1 tests include the QSpec #115 sum and `case` vectors (FR-143, FR-146). |
 | FND-014 | Fixed: §9 scopes the `xtask string-edge` scan to non-test code with an allow-list for value comparisons. #214 owns it, and Contract IR #141, Codegen #86 and the RT ticket run it (§14.2). |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-001, FND-003, FND-004, FND-005, FND-007, FND-008, FND-009 and
+FND-014 are confirmed fixed. For FND-008, every §12.1 and §12.2 row names a
+module or path, and every RT, CG, IR and QSpec path exists at `origin/main`.
+No new evidence finding. The open PR findings are in SR-474.

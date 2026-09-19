@@ -270,3 +270,17 @@ names the owner that holds the remaining work.
 | FND-021 | Fixed: every ADR-011 stage and edge id carries the `ADR-011` prefix. |
 | FND-022 | Fixed: §5.1 reads "These rules make the failure certain". |
 | FND-023 | Fixed: every IR and CG ticket is cited as `Contract IR #n` or `Codegen #n`, and §5.1 states the CG revision of `kani_obligations.rs:454` (CG `origin/main` on 2026-09-19). |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa, and checked cross-record consistency with ADR-011 22fa948 and
+ADR-013 4152eb8. FND-019 to FND-023 are confirmed fixed. FND-018 is routed
+until PRs #235 and #236 merge; its closure names that trigger but no owner
+(SR-474 PR-N5). Three medium cross-record findings are open and recorded in
+SR-474 (PR review): PR-N1 (the capability vocabulary owner is #229 here but
+QSpec #134 in ADR-011 and ADR-013), PR-N2 (the RT name lookup against ADR-013
+R-06) and PR-N3 (ADR-011:801-804 still says `unsupported` for a family that
+sits out S6a).
+
+PR review verdict: CHANGES.
