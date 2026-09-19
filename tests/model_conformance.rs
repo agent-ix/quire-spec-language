@@ -14,8 +14,8 @@ use quire_spec_language::model::bundle::{
 };
 use quire_spec_language::model::conformance::{
     check_field_redefinition, check_field_refinement_obligation, check_operation_redefinition,
-    check_subsetting, resolve_redefinition_target, ConformanceCheckOutcome, ConformanceOutcome,
-    RedefinitionTargetOutcome,
+    check_subsetting, resolve_redefinition_target, AxisFailure, ConformanceCheckOutcome,
+    ConformanceOutcome, RedefinitionTargetOutcome,
 };
 use quire_spec_language::model::key::{EffectiveId, ProducerKey, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
@@ -1097,4 +1097,304 @@ fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive()
             panic!("expected Compatible against revision \"2\"'s {{0,5}} bound, got {other:?}")
         }
     }
+}
+
+/// QSL #171: `check_operation_redefinition`'s effect axis must walk a
+/// field's *full* redefinition chain, not just one hop, exactly like
+/// `redefinition_reaches` already does for the runtime frame check (QSL
+/// #168, `field_write_covered`). Types `A <- B <- C`; `model.B.x` redefines
+/// `model.A.x`, `model.C.x` redefines `model.B.x` -- per model-complete.md:56
+/// ("the redefining feature replaces the *one* inherited redefined
+/// feature"), there is no direct `model.C.x -> model.A.x` record, only the
+/// two-hop chain. `model.A.op` declares `modifies: [model.A.x]`;
+/// `model.C.op` redefines it with `modifies: [model.C.x]`. `model.C.x`
+/// reaches the `model.A.x` grant only through both hops, so this must admit
+/// `Compatible`, not refuse `EffectEscape`.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefinition_chain() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.redef.chain.op"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
+            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
+            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            operation(
+                "model.C.op",
+                "model.C",
+                vec![],
+                None,
+                vec!["model.C.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            redefinition(
+                "model.redef.C.op-A.op",
+                "model.C",
+                "model.C.op",
+                "model.A.op",
+            ),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.C.op-A.op"),
+        owner: ProducerKey::fixture("model.C"),
+        redefining: ProducerKey::fixture("model.C.op"),
+        redefined: ProducerKey::fixture("model.A.op"),
+    };
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        check_operation_redefinition(&bundle, &record, &mut meter),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible)
+    );
+}
+
+/// PR #177 review finding 1: the effect axis's `redefinition_reaches` call
+/// must compare `ProducerKey`s by their full derived `PartialEq`
+/// (`authority`, `identity`, `revision`, `digest`), not `.identity` alone --
+/// a write naming `model.A.x` at revision "2" does not reach a grant for
+/// `model.A.x` at revision "1", even though both share the display identity
+/// `model.A.x`. Before this PR the effect axis compared `.identity` only, so
+/// this exact scenario wrongly admitted; every other fixture in this file
+/// uses `ProducerKey::fixture`'s revision "1" on both the write and the
+/// grant, so none of them can tell full-key equality apart from
+/// identity-only comparison the way this one does.
+///
+/// Mutation used: in `check_operation_redefinition`'s effect closure,
+/// compared `redefined.effect.modifies.iter().any(|w| w.identity ==
+/// candidate.identity)` instead of `.contains(candidate)`. Every other test
+/// in this file stayed green; this one went from `Refused` to `Compatible`;
+/// reverted.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name() {
+    let mut write_at_revision_2 = ProducerKey::fixture("model.A.x");
+    write_at_revision_2.revision.value = "2".to_owned();
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.redef.op-revision"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            BundleRecord::OperationMember(OperationMemberRecord {
+                key: ProducerKey::fixture("model.B.op"),
+                owner: ProducerKey::fixture("model.B"),
+                parameters: vec![],
+                result: None,
+                effect: OperationEffect {
+                    modifies: vec![write_at_revision_2.clone()],
+                    creates: Vec::new(),
+                    deletes: Vec::new(),
+                },
+                has_own_precondition: false,
+                own_postcondition_clauses: vec![],
+                has_body: true,
+            }),
+            redefinition(
+                "model.redef.B.op-A.op",
+                "model.B",
+                "model.B.op",
+                "model.A.op",
+            ),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.B.op-A.op"),
+        owner: ProducerKey::fixture("model.B"),
+        redefining: ProducerKey::fixture("model.B.op"),
+        redefined: ProducerKey::fixture("model.A.op"),
+    };
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        check_operation_redefinition(&bundle, &record, &mut meter),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "effect",
+            code: Code::IllTyped,
+            cause: ModelRefusalCause::EffectEscape {
+                field: write_at_revision_2.clone(),
+            },
+            detail: format!(
+                "write {} is not covered by the redefined effect",
+                write_at_revision_2.identity
+            ),
+        }]))
+    );
+}
+
+/// PR #177 review finding 2a: a redefinition chain that never reaches the
+/// declared grant must still refuse. This is distinct from r03's coverage
+/// (a write with no redefinition record at all -- zero hops): here
+/// `model.C.x` redefines `model.B.x` (one real hop), but `model.B.x`
+/// redefines nothing, so the walk takes its one hop, finds no further
+/// redefinition record and no match against `modifies: [model.A.x]`, and
+/// refuses -- it must not, e.g., stop after zero hops and admit by mistake,
+/// or walk past the chain's actual end.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the_grant() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.redef.chain.no-grant"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
+            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
+            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            operation(
+                "model.C.op",
+                "model.C",
+                vec![],
+                None,
+                vec!["model.C.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            redefinition(
+                "model.redef.C.op-A.op",
+                "model.C",
+                "model.C.op",
+                "model.A.op",
+            ),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.C.op-A.op"),
+        owner: ProducerKey::fixture("model.C"),
+        redefining: ProducerKey::fixture("model.C.op"),
+        redefined: ProducerKey::fixture("model.A.op"),
+    };
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        check_operation_redefinition(&bundle, &record, &mut meter),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "effect",
+            code: Code::IllTyped,
+            cause: ModelRefusalCause::EffectEscape {
+                field: ProducerKey::fixture("model.C.x"),
+            },
+            detail: "write model.C.x is not covered by the redefined effect".to_owned(),
+        }]))
+    );
+}
+
+/// PR #177 review finding 2b: a redefinition cycle must terminate, not hang,
+/// and still refuse. `model.C.x` redefines `model.B.x`; `model.B.x`
+/// redefines `model.C.x` right back -- a malformed chain (never a real
+/// generalization-respecting redefinition, but nothing upstream of this
+/// walk rules it out). The walk from `model.C.x` never reaches `model.A.x`,
+/// and `redefinition_reaches`'s own `records.len()` bound stops it after
+/// finitely many hops rather than cycling `C.x -> B.x -> C.x -> ...`
+/// forever.
+///
+/// Mutation used: in `redefinition_reaches`, replaced `for _ in 0..=bound`
+/// with `loop` (no bound) -- hand-edited and restored, never committed. This
+/// test hung under that mutation (killed by a 15s external `timeout`,
+/// having produced no result) instead of failing fast; the source was
+/// restored to the bounded loop before this file was committed.
+#[trace("TC-196", "FR-151-AC-4")]
+#[test]
+fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefinition_cycle() {
+    let bundle = Bundle::new(
+        ModelSelection::fixture("bundle.redef.cycle"),
+        vec![
+            object_type("model.A"),
+            object_type("model.B"),
+            object_type("model.C"),
+            generalization("model.gen.B-A", "model.B", "model.A"),
+            generalization("model.gen.C-B", "model.C", "model.B"),
+            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
+            field_member("model.B.x", "model.B", "model.A", mult(0, Some(1))),
+            field_member("model.C.x", "model.C", "model.A", mult(0, Some(1))),
+            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            redefinition("model.redef.B.x-C.x", "model.B", "model.B.x", "model.C.x"),
+            operation(
+                "model.A.op",
+                "model.A",
+                vec![],
+                None,
+                vec!["model.A.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            operation(
+                "model.C.op",
+                "model.C",
+                vec![],
+                None,
+                vec!["model.C.x"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            redefinition(
+                "model.redef.C.op-A.op",
+                "model.C",
+                "model.C.op",
+                "model.A.op",
+            ),
+        ],
+    );
+    let record = RedefinitionRecord {
+        key: ProducerKey::fixture("model.redef.C.op-A.op"),
+        owner: ProducerKey::fixture("model.C"),
+        redefining: ProducerKey::fixture("model.C.op"),
+        redefined: ProducerKey::fixture("model.A.op"),
+    };
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    assert_eq!(
+        check_operation_redefinition(&bundle, &record, &mut meter),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "effect",
+            code: Code::IllTyped,
+            cause: ModelRefusalCause::EffectEscape {
+                field: ProducerKey::fixture("model.C.x"),
+            },
+            detail: "write model.C.x is not covered by the redefined effect".to_owned(),
+        }]))
+    );
 }
