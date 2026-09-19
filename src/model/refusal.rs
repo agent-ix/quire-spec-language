@@ -17,6 +17,24 @@ use std::collections::BTreeSet;
 use crate::model::domain_package::{DomainPackageRef, Multiplicity};
 use crate::model::key::{DeclarationKey, EffectiveId};
 
+/// A read node's source span (`model-complete.md`:85-89's own `{artifact,
+/// start, end}` shape names byte offsets into a named artifact). FCD's real
+/// wire (`origin.source`) carries neither an artifact id nor byte offsets:
+/// it carries `sourceIdentity` (an `ix://` identity, not QSpec's bare
+/// artifact id) and `startLine`/`startColumn` (one-based line/column
+/// counts, not byte offsets). [`crate::model::intake`] reads that real wire
+/// shape honestly rather than fabricating the byte offsets QSpec's own
+/// shape names but FCD's wire does not carry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceSpan {
+    /// FCD's `origin.source.sourceIdentity`.
+    pub artifact: String,
+    /// FCD's `origin.source.startLine` (one-based).
+    pub start_line: u64,
+    /// FCD's `origin.source.startColumn` (one-based).
+    pub start_column: u64,
+}
+
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// three sites (#163 review finding: a revision-only mismatch must stay
 /// distinguishable in the typed cause, not just in `detail`'s text).
@@ -424,6 +442,44 @@ pub enum ModelRefusalCause {
     /// one construction site's data is the domain's own numeric
     /// lower/upper bounds, not an identity/path/name.
     MalformedDeclaration,
+    /// FR-154's own intake malformed-declaration cause
+    /// (`model-complete.md`:74-83): a read IR node is not a well-formed
+    /// declaration under QSpec's own shape -- carrying the node's own
+    /// identity, its source artifact and its span, exactly as FR-154
+    /// requires a malformed-declaration refusal to carry. Kept distinct
+    /// from the unit [`Self::MalformedDeclaration`] above (#157's scalar-
+    /// domain-bounds case, whose one construction site has no identity of
+    /// its own): every [`crate::model::intake`] construction site shares
+    /// this one shape, so it carries it, sharing the same tag string via
+    /// [`Self::as_str`] rather than a second free-text-only cause.
+    IntakeMalformedDeclaration {
+        /// The node's own identity string, exactly as the wire supplied it
+        /// -- not a [`DeclarationKey`], since the identity itself may be
+        /// the very thing that is malformed (FCD #199 gap 2, the identity
+        /// form).
+        node: String,
+        /// The node's source artifact (`SourceSpan::artifact`), or `None`
+        /// when the node's origin is `generated` rather than `source`, or
+        /// is itself absent or malformed.
+        artifact: Option<String>,
+        /// The node's source span, or `None` under the same conditions as
+        /// `artifact`.
+        span: Option<SourceSpan>,
+    },
+    /// A type's resolved construct meaning, or a member capability, is real
+    /// under FR-208 but [`crate::model::intake`] has no reader for it yet
+    /// (model-complete.md's declaration-kinds table) -- distinct from
+    /// [`Self::IntakeMalformedDeclaration`]'s "not a real QSpec meaning at
+    /// all": this one names a legitimate declaration kind this reader does
+    /// not yet turn into a [`crate::model::domain_package::DomainPackageRecord`].
+    UnsupportedDeclarationForm {
+        /// The node's own identity.
+        node: String,
+        /// The unresolved but real capability: a construct meaning id
+        /// (e.g. `quire.meaning.model.record-value-type/v1`) or a short
+        /// label naming the unread member (e.g. `"operation.frame"`).
+        what: String,
+    },
     /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
     /// digest domain is not the one domain Intake accepts.
     DigestDomainMismatch {
@@ -607,7 +663,10 @@ impl ModelRefusalCause {
             Self::UnknownEndpoint { .. } => "unknown-endpoint",
             Self::UnsortedDerivation { .. } => "unsorted-derivation",
             Self::DuplicatePath { .. } => "duplicate-path",
-            Self::MalformedDeclaration => "malformed-declaration",
+            Self::MalformedDeclaration | Self::IntakeMalformedDeclaration { .. } => {
+                "malformed-declaration"
+            }
+            Self::UnsupportedDeclarationForm { .. } => "declaration-form",
             Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
@@ -635,7 +694,7 @@ impl std::fmt::Display for ModelRefusalCause {
 mod tests {
     use serde_json::Value;
 
-    use super::{ModelRefusalCause, OfferedSelection};
+    use super::{ModelRefusalCause, OfferedSelection, SourceSpan};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity};
     use crate::model::key::{digest_of, DeclarationKey};
 
@@ -723,7 +782,9 @@ mod tests {
             ModelRefusalCause::UnknownEndpoint { .. } => "unknown-endpoint",
             ModelRefusalCause::UnsortedDerivation { .. } => "unsorted-derivation",
             ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
-            ModelRefusalCause::MalformedDeclaration => "malformed-declaration",
+            ModelRefusalCause::MalformedDeclaration
+            | ModelRefusalCause::IntakeMalformedDeclaration { .. } => "malformed-declaration",
+            ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
             ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
@@ -884,6 +945,19 @@ mod tests {
                 later: 0,
             },
             ModelRefusalCause::MalformedDeclaration,
+            ModelRefusalCause::IntakeMalformedDeclaration {
+                node: String::new(),
+                artifact: Some(String::new()),
+                span: Some(SourceSpan {
+                    artifact: String::new(),
+                    start_line: 1,
+                    start_column: 1,
+                }),
+            },
+            ModelRefusalCause::UnsupportedDeclarationForm {
+                node: String::new(),
+                what: String::new(),
+            },
             ModelRefusalCause::DigestDomainMismatch {
                 expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
                 actual: String::new(),

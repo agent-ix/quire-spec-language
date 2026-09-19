@@ -189,6 +189,7 @@ impl DispatchIndex {
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
                 | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Allocation(_)
                 | DomainPackageRecord::Population(_) => {}
             }
         }
