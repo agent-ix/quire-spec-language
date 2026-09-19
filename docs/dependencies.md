@@ -53,9 +53,12 @@ dependency, along with `tests/producer_correspondence.rs`; nothing in this
 prerelease repo consumed that path, so it was deleted outright rather than
 bridged. Model intake reads Semantic IR 2.0.0 domain
 packages (FR-056) through the `agent-ix-extraction-frontend` and
-`agent-ix-semantic-ir` crates, both pinned to
-cbbe4908e314b9cc5c7e1aaee87517218af3e632 under their declared
-AGPL-3.0-or-later grant. `tempfile` moves from a qualification-only
+`agent-ix-semantic-ir` crates, both pinned (see their `Cargo.toml` `rev`, the
+single place this commit is recorded) under their declared
+AGPL-3.0-or-later grant; `tests/fixtures/architecture` and
+`tests/fixtures/modules` are vendored from the same repository at that same
+commit (`cargo xtask revendor --tree test-fixtures-architecture|test-fixtures-modules`,
+`tests/fixtures/{architecture,modules}/VENDOR.json`). `tempfile` moves from a qualification-only
 dependency to a production one: `agent-ix-extraction-frontend`'s `lift` entry
 always writes its document to a required output path, and intake supplies a
 scratch directory for it.

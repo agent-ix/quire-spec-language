@@ -68,10 +68,12 @@ pub enum Error {
         "commit {commit} is not present in {repo}; this command never fetches over the network"
     )]
     UnknownCommit { repo: PathBuf, commit: String },
-    #[error("no --qspec-clone was given; it is required to revendor pinned commit {commit}")]
-    MissingClone { commit: String },
+    #[error("no {flag} was given; it is required to revendor pinned commit {commit}")]
+    MissingClone { commit: String, flag: &'static str },
     #[error("revendor-check does not take --qspec-clone; it checks recorded digests offline")]
     CheckRefusesQspecClone,
+    #[error("revendor-check does not take --fcd-clone; it checks recorded digests offline")]
+    CheckRefusesFcdClone,
     #[error(
         "{dest}: on-disk sha256 {actual} does not match the manifest's recorded {expected}; \
          external sources are never fetched, so re-download and update the manifest by hand"
@@ -95,7 +97,9 @@ impl Error {
 
     pub fn code(&self) -> Code {
         match self {
-            Self::Usage(_) | Self::CheckRefusesQspecClone => Code::Usage,
+            Self::Usage(_) | Self::CheckRefusesQspecClone | Self::CheckRefusesFcdClone => {
+                Code::Usage
+            }
             Self::Io { .. } | Self::GitSpawn { .. } => Code::Io,
             Self::Manifest { .. } | Self::InvalidManifest { .. } => Code::Manifest,
             Self::Git { .. } | Self::UnknownCommit { .. } => Code::Git,
