@@ -13,17 +13,20 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
+use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::checked_dispatch::{
-    checked_dispatch_operation, DispatchRoot, OperationClauses,
+    checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
+    OperationEffect, OperationMemberRecord, OperationResult,
 };
 use quire_spec_language::model::key::DeclarationKey;
-use quire_spec_language::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
+use quire_spec_language::model::normalize::{
+    normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
+};
 use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
     DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
@@ -283,6 +286,152 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
             CheckingLimits::default(),
         )
         .expect_err("an unbounded Integer argument must not coerce into a dispatch operation's Int[..] parameter");
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
+/// H1 (#204 round 1), FR-151 (`quire.model.dispatch.single/v1`): a dispatch
+/// call argument admits a reference upcast -- an argument statically typed
+/// as a proper subtype of the declared parameter type is admitted, and the
+/// checked node's own static type narrows to the declared parameter type.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn dispatch_argument_admits_a_reference_upcast() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let super_type = key("model.dispatch-calls.Super");
+    let sub_type = key("model.dispatch-calls.Sub");
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.functions[0]
+        .parameters
+        .push(("arg".to_owned(), ValueType::Reference(super_type)));
+    package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type)];
+    package.types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(receiver_type, "Receiver", vec![]),
+            ObjectTypeDeclaration::new(super_type, "Super", vec![]),
+            ObjectTypeDeclaration::new(sub_type, "Sub", vec![]).with_supertypes(vec![super_type]),
+        ],
+    )
+    .unwrap();
+    let checked_package = package.check(CheckingLimits::default()).unwrap();
+    let parameters = vec![
+        ("self".to_owned(), ValueType::Reference(receiver_type)),
+        ("arg".to_owned(), ValueType::Reference(sub_type)),
+    ];
+    let call = Expression::Dispatch {
+        receiver: Box::new(Expression::Name("self".to_owned())),
+        member: "size".to_owned(),
+        arguments: vec![Expression::Name("arg".to_owned())],
+    };
+    let checked = checked_package
+        .check_clause_expression(
+            parameters,
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect("a proper subtype argument must be admitted as a static upcast");
+    assert_eq!(*checked.value_type(), ValueType::Integer);
+}
+
+/// H1 (#204 round 1), FR-151: the upcast admission is one-directional --
+/// passing an argument statically typed as a proper *supertype* of the
+/// declared parameter (the "downcast" direction) is refused
+/// `ill_typed`/`type-mismatch`, exactly as an unrelated type would be.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn dispatch_argument_refuses_a_reference_downcast() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let super_type = key("model.dispatch-calls.Super");
+    let sub_type = key("model.dispatch-calls.Sub");
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.functions[0]
+        .parameters
+        .push(("arg".to_owned(), ValueType::Reference(sub_type)));
+    package.dispatch_operations[0].parameters = vec![ValueType::Reference(sub_type)];
+    package.types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(receiver_type, "Receiver", vec![]),
+            ObjectTypeDeclaration::new(super_type, "Super", vec![]),
+            ObjectTypeDeclaration::new(sub_type, "Sub", vec![]).with_supertypes(vec![super_type]),
+        ],
+    )
+    .unwrap();
+    let checked_package = package.check(CheckingLimits::default()).unwrap();
+    let parameters = vec![
+        ("self".to_owned(), ValueType::Reference(receiver_type)),
+        ("arg".to_owned(), ValueType::Reference(super_type)),
+    ];
+    let call = Expression::Dispatch {
+        receiver: Box::new(Expression::Name("self".to_owned())),
+        member: "size".to_owned(),
+        arguments: vec![Expression::Name("arg".to_owned())],
+    };
+    let refusal = checked_package
+        .check_clause_expression(
+            parameters,
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect_err("a supertype argument must never be admitted where a subtype is required");
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
+/// H1 (#204 round 1), FR-151: an argument statically typed as a reference to
+/// an object type unrelated to the declared parameter (neither an ancestor
+/// nor a descendant) is refused `ill_typed`/`type-mismatch`.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn dispatch_argument_refuses_an_unrelated_reference_type() {
+    let receiver_type = key("model.dispatch-calls.Receiver");
+    let super_type = key("model.dispatch-calls.Super");
+    let unrelated_type = key("model.dispatch-calls.Unrelated");
+    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
+    package.functions[0]
+        .parameters
+        .push(("arg".to_owned(), ValueType::Reference(super_type)));
+    package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type)];
+    package.types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(receiver_type, "Receiver", vec![]),
+            ObjectTypeDeclaration::new(super_type, "Super", vec![]),
+            ObjectTypeDeclaration::new(unrelated_type, "Unrelated", vec![]),
+        ],
+    )
+    .unwrap();
+    let checked_package = package.check(CheckingLimits::default()).unwrap();
+    let parameters = vec![
+        ("self".to_owned(), ValueType::Reference(receiver_type)),
+        ("arg".to_owned(), ValueType::Reference(unrelated_type)),
+    ];
+    let call = Expression::Dispatch {
+        receiver: Box::new(Expression::Name("self".to_owned())),
+        member: "size".to_owned(),
+        arguments: vec![Expression::Name("arg".to_owned())],
+    };
+    let refusal = checked_package
+        .check_clause_expression(
+            parameters,
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect_err("an unrelated reference type must never be admitted");
     assert_eq!(
         refusal.cause,
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
@@ -562,7 +711,11 @@ fn ab_bridge_clauses(
     let a = DeclarationKey::fixture("model.A.size");
     let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
+    // Both members get a `member` entry (not only the family's original
+    // `a`): M5 (#204 round 1) roots a call through `B` at `b` itself, since
+    // `B`'s own effective member for "size" is `B.size`, not `A.size`.
     clauses.member.insert(a.clone(), "size".to_owned());
+    clauses.member.insert(b.clone(), "size".to_owned());
     for (operation, result) in [(&a, 1_i64), (&b, 2_i64)] {
         clauses.parameters.insert(
             operation.clone(),
@@ -585,8 +738,11 @@ fn ab_bridge_clauses(
 
 /// Links the `model.A`/`model.B` bridge fixture (see [`bridge_bundle`]) with
 /// the given `PA`/`PB` own-precondition clauses, for a call site whose
-/// static receiver type is `receiver_type` and whose root operation is
-/// `model.A.size` — unchecked, so a caller expecting the check itself to be
+/// static receiver type is `receiver_type`. The root operation is
+/// `receiver_type`'s own effective member for "size" -- `model.A.size` for
+/// `model.A` itself, `model.B.size` for `model.B`, since `B` redefines it
+/// (M5, #204 round 1: a redefiner is exposed only by its own root, never by
+/// its ancestor's) — unchecked, so a caller expecting the check itself to be
 /// refused (e.g. a D08 cycle) can inspect the refusals directly.
 fn ab_bridge_declarations(
     receiver_type: NodeKey,
@@ -603,9 +759,13 @@ fn ab_bridge_declarations(
     object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let root_key = if receiver_type == b_type {
+        DeclarationKey::fixture("model.B.size")
+    } else {
+        DeclarationKey::fixture("model.A.size")
+    };
     let root = DispatchRoot {
-        key: DeclarationKey::fixture("model.A.size"),
-        receiver_type,
+        key: root_key,
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
@@ -684,12 +844,15 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
         Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(2_i64)),
         other => panic!("expected a completed Integer(2) (B's own body), got {other:?}"),
     }
-    // `dispatch.select` sizes `value_occurrences` by the family's two
-    // distinct candidates; `function.call` then charges exactly one work
-    // unit for B's own body (never A's — A's body is never even
-    // considered, matching zero additional `function.call` charges).
-    assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 2);
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
+    // Rooted at `model.B.size` itself (M5, #204 round 1: `B` redefines
+    // `A.size`, so it is exposed only by its own root, never `A`'s), this
+    // table has `B.size` as its one and only candidate: `dispatch.select`
+    // sizes `value_occurrences` and its own work-unit charge by that one
+    // candidate; `function.call` then charges one further work unit for
+    // B's own body — A's body is never even built into this table's own
+    // `functions`, let alone charged.
+    assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 1);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
 }
 
 /// D06 (FR-151-AC-7/AC-8): an `A`-typed receiver with `A`'s own precondition
@@ -946,7 +1109,7 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
         }
         other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
     }
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
 }
 
 /// FR-151-AC-7: the same `B`-typed receiver with `A`'s own precondition
@@ -993,7 +1156,7 @@ fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
         Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(2_i64)),
         other => panic!("expected a completed Integer(2) (B's own body), got {other:?}"),
     }
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 4);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
 }
 
 /// `self.size() >= 0`: a precondition that dispatches back into the same
@@ -1093,6 +1256,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
     let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
+    clauses.member.insert(b.clone(), "size".to_owned());
     clauses.parameters.insert(
         a.clone(),
         vec![("a".to_owned(), ValueType::Reference(a_type))],
@@ -1133,8 +1297,11 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
-        key: a.clone(),
-        receiver_type: b_type,
+        // #204 round 1, M5: rooted at `b`, not the family's original `a` --
+        // `B`'s own effective member for "size" is `B.size`, and this test
+        // calls through a `B`-typed receiver, so only `B`'s own root exposes
+        // `DispatchOperation { receiver_type: b_type, .. }`.
+        key: b.clone(),
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
@@ -1207,6 +1374,16 @@ fn object_type_record(identity: &str, supertypes: Vec<&str>) -> DomainPackageRec
     })
 }
 
+/// #174: every fixture operation in this file is dispatched (checked
+/// through `checked_dispatch_operation`), so its model-layer record must
+/// itself be a query -- FR-151's own restriction, not merely a checker-layer
+/// convention -- a declared result and the default (empty) effect. The
+/// result's own value type is never consulted by `link_dispatch`/
+/// `checked_dispatch_operation` (only `OperationClauses`'s pre-translated
+/// checker `ValueType` is); `normalize`'s own phase-1 reference validation
+/// does require it to name a real declared type, so this reuses the
+/// operation's own `owner` key, always declared by every fixture bundle in
+/// this file.
 fn operation_record(
     identity: &str,
     owner: &str,
@@ -1217,7 +1394,15 @@ fn operation_record(
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         parameters: Vec::new(),
-        result: None,
+        result: Some(OperationResult {
+            value_type: DeclarationKey::fixture(owner),
+            multiplicity: Multiplicity {
+                lower: 1,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+        }),
         effect: OperationEffect::default(),
         has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
@@ -1306,7 +1491,6 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
 
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
-        receiver_type: a_type,
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
@@ -1375,4 +1559,320 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     // table (already covered by this file's `d06_*`/`d07_*`/`d08_*` tests
     // against a hand-built package).
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 2);
+}
+
+/// `model.A` (declares `size`), `model.C` (`<- model.A`, no operation record
+/// of its own at all -- inherits `size` unredefined).
+fn inherited_only_bridge_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.dispatch-calls-inherited"),
+        vec![
+            object_type_record("model.A", vec![]),
+            object_type_record("model.C", vec!["model.A"]),
+            operation_record("model.A.size", "model.A", true, None),
+        ],
+    )
+}
+
+fn inherited_only_clauses(receiver_type: NodeKey) -> OperationClauses {
+    let a = DeclarationKey::fixture("model.A.size");
+    let mut clauses = OperationClauses::default();
+    clauses.member.insert(a.clone(), "size".to_owned());
+    clauses.parameters.insert(
+        a.clone(),
+        vec![("self".to_owned(), ValueType::Reference(receiver_type))],
+    );
+    clauses.result.insert(a.clone(), ValueType::Integer);
+    clauses
+        .own_body
+        .insert(a, Expression::Integer(Integer::from(1_i64)));
+    clauses
+}
+
+/// #176: one `checked_dispatch_operation` call for `A.size`, rooted at `A`
+/// (`root.receiver_type = a_type`), exposes the dispatch through both `A`
+/// (the operation's own declared owner) and `C` (a conforming subtype that
+/// only inherits `size`, never redefines it) -- `link_dispatch`'s own table
+/// already links `C` to the identical candidate `A.size` (its own
+/// conformance-only linking never depended on redefinition), but before
+/// #176 only `root.receiver_type` itself ever reached
+/// `PackageDeclarations::dispatch_operations`, so a call whose receiver's
+/// declared static type was `C` refused `ineligible` even though `C`
+/// exposes `size` unambiguously. FR-151 (`quire.model.dispatch.single/v1`):
+/// "member-name resolves statically to exactly one exposed effective
+/// operation... of the receiver's static type `T`" -- `T` is not required to
+/// be the operation's own declared owner.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines() {
+    let domain_package = inherited_only_bridge_bundle();
+    let view = bridge_view(&domain_package);
+    let a_type = key("model.A");
+    let c_type = key("model.C");
+    let clauses = inherited_only_clauses(a_type);
+    let mut object_keys = BTreeMap::new();
+    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
+    object_keys.insert(DeclarationKey::fixture("model.C"), c_type);
+    let mut meter =
+        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+
+    let root = DispatchRoot {
+        key: DeclarationKey::fixture("model.A.size"),
+        closure: GeneralizationClosure::Closed,
+    };
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
+
+    let mut receiver_types: Vec<NodeKey> = declarations
+        .dispatch_operations
+        .iter()
+        .map(|operation| operation.receiver_type)
+        .collect();
+    receiver_types.sort();
+    let mut expected = vec![a_type, c_type];
+    expected.sort();
+    assert_eq!(
+        receiver_types, expected,
+        "the bridge must expose size through both A (its own declared \
+         owner) and C (a conforming subtype that only inherits it)"
+    );
+    assert!(
+        declarations
+            .dispatch_operations
+            .iter()
+            .all(|operation| operation.table == 0),
+        "every exposed static type shares the identical linked table"
+    );
+
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(a_type, "A", vec![]),
+            ObjectTypeDeclaration::new(c_type, "C", vec![]),
+        ],
+    )
+    .unwrap();
+    declarations.types = types;
+    let package = declarations.check(CheckingLimits::default()).unwrap();
+
+    // The real proof: a clause whose own `self` parameter is declared
+    // `Reference<C>` -- not `A`, the operation's own declared owner --
+    // still type-checks `self.size()` as a dispatch call.
+    let parameters = vec![("self".to_owned(), ValueType::Reference(c_type))];
+    package
+        .check_clause_expression(
+            parameters,
+            &dispatch_expression(),
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap_or_else(|refusal| {
+            panic!("a C-typed receiver must dispatch through the inherited A.size: {refusal:?}")
+        });
+}
+
+/// One declared object type `A` and one operation `A.size`, varied per test
+/// below by `result`/`effect` -- the minimal shape needed to reach #174's
+/// query-only check without any redefinition family to also link.
+fn not_a_query_bundle(result: Option<OperationResult>, effect: OperationEffect) -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.dispatch-calls-not-a-query"),
+        vec![
+            object_type_record("model.A", vec![]),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.A.size"),
+                owner: DeclarationKey::fixture("model.A"),
+                parameters: Vec::new(),
+                result,
+                effect,
+                has_own_precondition: false,
+                own_postcondition_clauses: Vec::new(),
+                has_body: true,
+                redefines: None,
+            }),
+        ],
+    )
+}
+
+/// Runs `checked_dispatch_operation` against `not_a_query_bundle`'s own
+/// `model.A.size` and returns the refusal it must produce.
+fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal {
+    let view = bridge_view(domain_package);
+    let a_type = key("model.A");
+    let clauses = inherited_only_clauses(a_type);
+    let mut object_keys = BTreeMap::new();
+    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
+    let mut meter =
+        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let root = DispatchRoot {
+        key: DeclarationKey::fixture("model.A.size"),
+        closure: GeneralizationClosure::Closed,
+    };
+    checked_dispatch_operation(
+        domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .expect_err("a non-query dispatch target must refuse, not link")
+}
+
+/// #174 (FR-151, `quire.model.dispatch.single/v1`): "Only query operations,
+/// whose result is present and whose effect set is empty, may be called."
+/// `model.A.size` declares no result at all -- refused `NotAQuery`, not
+/// silently admitted as a dispatch target.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn checked_dispatch_operation_refuses_a_dispatch_target_with_no_result() {
+    let domain_package = not_a_query_bundle(None, OperationEffect::default());
+    match not_a_query_refusal(&domain_package) {
+        DispatchBridgeRefusal::NotAQuery(refusal) => {
+            assert_eq!(refusal.code, Code::IllTyped);
+            assert_eq!(refusal.cause, ModelRefusalCause::OperatorIneligible);
+            assert!(
+                refusal.detail.contains("model.A.size"),
+                "detail must name the offending operation: {}",
+                refusal.detail
+            );
+        }
+        other => panic!("expected NotAQuery, got {other:?}"),
+    }
+}
+
+/// #174: `model.A.size` declares a result but a non-empty effect (it
+/// `creates` `model.A`) -- refused `NotAQuery` for the identical reason: FR-151
+/// admits only an operation whose effect set is empty as a dispatch target.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect() {
+    let domain_package = not_a_query_bundle(
+        Some(OperationResult {
+            value_type: DeclarationKey::fixture("model.A"),
+            multiplicity: Multiplicity {
+                lower: 1,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+        }),
+        OperationEffect {
+            modifies: Vec::new(),
+            creates: vec![DeclarationKey::fixture("model.A")],
+            deletes: Vec::new(),
+        },
+    );
+    match not_a_query_refusal(&domain_package) {
+        DispatchBridgeRefusal::NotAQuery(refusal) => {
+            assert_eq!(refusal.code, Code::IllTyped);
+            assert_eq!(refusal.cause, ModelRefusalCause::OperatorIneligible);
+            assert!(
+                refusal.detail.contains("model.A.size"),
+                "detail must name the offending operation: {}",
+                refusal.detail
+            );
+        }
+        other => panic!("expected NotAQuery, got {other:?}"),
+    }
+}
+
+/// #174 (FR-151, `quire.model.dispatch.single/v1`), H3 (#204 round 1): the
+/// query-only check runs against `root.key` first, then every other
+/// distinct candidate in plain `DeclarationKey` order -- never
+/// `domain_package.records`' own insertion order. `model.B.size` (which
+/// redefines `model.A.size`) is declared *before* `model.A.size` in this
+/// bundle's own `records`, and is itself also not a query; if the check
+/// still walked `ordered_candidates`' record-order sort (the pre-#204-
+/// round-1 shape), it would report `model.B.size` first. It must report
+/// `model.A.size` -- `root.key`, the statically resolved operation this
+/// whole call is about -- regardless.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.dispatch-calls-h3-root-first"),
+        vec![
+            object_type_record("model.A", vec![]),
+            object_type_record("model.B", vec!["model.A"]),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.B.size"),
+                owner: DeclarationKey::fixture("model.B"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                has_own_precondition: false,
+                own_postcondition_clauses: Vec::new(),
+                has_body: true,
+                redefines: Some(DeclarationKey::fixture("model.A.size")),
+            }),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.A.size"),
+                owner: DeclarationKey::fixture("model.A"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                has_own_precondition: false,
+                own_postcondition_clauses: Vec::new(),
+                has_body: true,
+                redefines: None,
+            }),
+        ],
+    );
+    let view = bridge_view(&domain_package);
+    let a_type = key("model.A");
+    let b_type = key("model.B");
+    let mut clauses = OperationClauses::default();
+    let a = DeclarationKey::fixture("model.A.size");
+    let b = DeclarationKey::fixture("model.B.size");
+    for (operation, receiver) in [(&a, a_type), (&b, b_type)] {
+        clauses.member.insert(operation.clone(), "size".to_owned());
+        clauses.parameters.insert(
+            operation.clone(),
+            vec![("self".to_owned(), ValueType::Reference(receiver))],
+        );
+        clauses
+            .own_body
+            .insert(operation.clone(), Expression::Integer(Integer::from(1_i64)));
+    }
+    let mut object_keys = BTreeMap::new();
+    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
+    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
+    let mut meter =
+        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let root = DispatchRoot {
+        key: a.clone(),
+        closure: GeneralizationClosure::Closed,
+    };
+    let refusal = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &object_keys,
+        &clauses,
+        &mut meter,
+    )
+    .expect_err("neither candidate declares a result: the family must refuse, not link");
+    match refusal {
+        DispatchBridgeRefusal::NotAQuery(refusal) => {
+            assert!(
+                refusal.detail.contains("model.A.size"),
+                "root.key (model.A.size) must be the one reported, not model.B.size \
+                 (declared first in domain_package.records): {}",
+                refusal.detail
+            );
+        }
+        other => panic!("expected NotAQuery, got {other:?}"),
+    }
 }

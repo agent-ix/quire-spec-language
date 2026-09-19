@@ -610,7 +610,13 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
     );
     match resolve_redefinition_target(&zero, &DeclarationKey::fixture("model.B.z")) {
         Ok(RedefinitionTargetOutcome::Refused { cause, candidate }) => {
-            assert_eq!(cause, ModelRefusalCause::RedefinitionTarget);
+            assert_eq!(
+                cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![DeclarationKey::fixture("model.B.z")],
+                    target: DeclarationKey::fixture("model.C.w"),
+                }
+            );
             assert_eq!(
                 candidate,
                 Some((

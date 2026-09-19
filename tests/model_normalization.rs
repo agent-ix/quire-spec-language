@@ -583,7 +583,19 @@ fn r07_a_same_node_owner_genuinely_dominated_across_packages_is_excluded_from_th
                 refusal,
                 ModelRefusal {
                     code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::RedefinitionTarget,
+                    cause: ModelRefusalCause::RedefinitionTarget {
+                        redefiners: vec![
+                            DeclarationKey {
+                                package: "other/pkg".to_owned(),
+                                node: "model.Shared.z1".to_owned(),
+                            },
+                            DeclarationKey {
+                                package: "other/pkg".to_owned(),
+                                node: "model.Shared.z2".to_owned(),
+                            },
+                        ],
+                        target: DeclarationKey::fixture("model.Root.x"),
+                    },
                     detail: "model.Shared declares 2 redefining members \
                               (model.Shared.z1, model.Shared.z2) that all redefine \
                               model.Root.x, with no single valid target"
@@ -1273,21 +1285,15 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
-            assert!(
-                refusal.detail.contains("model.B.z2"),
-                "detail must name B/z2's own declaration key: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.B.z") && !refusal.detail.contains("model.redef.z"),
-                "detail must name the redefining members' own keys: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.A.x"),
-                "detail must name the contended target: {}",
-                refusal.detail
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.B.z"),
+                        DeclarationKey::fixture("model.B.z2"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.x"),
+                }
             );
         }
         other => {
@@ -1315,21 +1321,18 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
                 refusal.code,
                 quire_spec_language::diagnostic::Code::InvalidModelBinding
             );
-            assert_eq!(refusal.cause, ModelRefusalCause::RedefinitionTarget);
-            assert!(
-                refusal.detail.contains("model.B.z") && refusal.detail.contains("model.B.z2"),
-                "detail must name both of B's own redefining members: {}",
-                refusal.detail
-            );
-            assert!(
-                !refusal.detail.contains("model.C.w"),
-                "C's already-dominated edge must take no part in the ambiguity: {}",
-                refusal.detail
-            );
-            assert!(
-                refusal.detail.contains("model.A.x"),
-                "detail must name the contended target: {}",
-                refusal.detail
+            // The typed `redefiners` list is exactly B's two edges -- C's
+            // already-dominated `C.w` edge, checked equal here, takes no
+            // part in the ambiguity.
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.B.z"),
+                        DeclarationKey::fixture("model.B.z2"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.x"),
+                }
             );
         }
         other => {
@@ -2813,10 +2816,16 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// `value-accounting.md:456` prices every `(effective type, redefined
 /// member)` reached by `c >= 2` redefinition records, and an operation
 /// member is a redefined member same as a field one — `apply_redefinitions`
-/// now charges a contested operation-redefinition group exactly like a
-/// contested field group, even though it still never resolves which
-/// operation redefiner wins (that stays `crate::model::conformance`'s job;
-/// see the module docs, and QSL #173 for the still-open detection gap).
+/// charges a contested operation-redefinition group exactly like a
+/// contested field group, and (#173) also resolves it with the identical
+/// dominance search fields use: `B.op2` and `B.op3` share the same owner
+/// `B`, so no edge dominates another and the group refuses
+/// `redefinition-target`, not `derivation-conflict` (that shape needs
+/// distinct, non-dominating owners; see
+/// `r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize`
+/// above for the field analog). Resolving an operation contest still builds
+/// no `EffectiveView` member entry (see the module docs): only the ambiguity
+/// check itself is shared with fields.
 ///
 /// Cross-checked by hand: `f(A) = 1` (`A`'s own qualify fact only), `f(B) =
 /// 2` (qualify plus its own inherit-`A` fact) — both types are otherwise
@@ -2824,12 +2833,10 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// `A.op` has `c = 2` edges, both owned by `B`, so `Σ (c − 1) × f(o) = (2 −
 /// 1) × (f(B) + f(B)) = 1 × (2 + 2) = 4`.
 ///
-/// Revert-probe: removing the operation-group charging loop in
-/// `apply_redefinitions` (which never touches `member_preimages`/`hidden`)
-/// drops the `NormalizeConflictCheck`
-/// count to `0` and the `work_units` floor below no longer denies at that
-/// charge point — confirmed by hand: removing the loop locally reproduces
-/// both failures, restoring it returns this test to green.
+/// Revert-probe: reverting `resolve_redefinition_contest`'s call site in the
+/// operation loop back to charge-only (dropping the `Err` branch's
+/// `record_phase4_refusal` call) turns this test's outcome back into
+/// `Completed`, confirmed locally, then restored.
 #[trace("TC-196", "FR-151-AC-2")]
 #[test]
 fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
@@ -2837,7 +2844,27 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    match &outcome {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.B.op2"),
+                        DeclarationKey::fixture("model.B.op3"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.op"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
     let admitted = meter.admitted_charges();
     assert_eq!(
         admitted
@@ -2845,22 +2872,26 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
             .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
             .count(),
         1,
-        "the contested operation-redefinition group is charged once, even \
-         though apply_redefinitions never resolves which operation \
-         redefiner wins"
+        "the contested operation-redefinition group is still charged once, \
+         exhaustively, before phase 4's own refusal is reported \
+         (value-accounting.md:481) -- B.op2 and B.op3 share the same owner, \
+         so #173's dominance search now also resolves this contest, and \
+         same-owner contention refuses redefinition-target"
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        26,
+        20,
         "5 normalize.record (A, B, A.op, B.op2, B.op3 -- Supertype/\
          Redefinition records are relationships, not declarations) + 2 \
          normalize.fact (A/B qualify) + 1 normalize.cycle-check + 1 \
          normalize.fact (B's own inherit-A path) + 2 \
          normalize.redefinition-check (m + r = 3 + 0, then 3 + 1) + 1 \
-         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * 4 = 4) + 2 \
-         normalize.declaration + 2 normalize.hash (per type declaration) + \
-         2 normalize.hash (universe/view) = 26; no member declarations at \
-         all, since operation members never enter member_preimages"
+         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * (2+2) = 4) = \
+         20; phase 4's own charges are exhaustive up to and including \
+         normalize.conflict-check (value-accounting.md:481), but the \
+         redefinition-target refusal that same-owner contest now reports \
+         (#173) ends checking there -- no normalize.declaration or \
+         normalize.hash charge ever runs (value-accounting.md:482)"
     );
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
@@ -2879,6 +2910,136 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     }
 }
 
+/// M2 (#204 round 1): the operation-member analog of
+/// `fixture_n06_conflict` -- a diamond (`D <- B, C`; `B <- A`; `C <- A`)
+/// where `B.op2` and `C.op3` both redefine `A.op` and neither dominates the
+/// other (distinct sibling owners, unlike
+/// `operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check`'s
+/// same-owner `B.op2`/`B.op3` shape above), and `D` (unlike
+/// `operation_redefinition_group_resolved_by_a_dominating_owner_completes`
+/// below) declares no `D.op4` of its own to dominate them. #173's dominance
+/// search resolves this the same way `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`
+/// resolves the field analog: no edge dominates, so it refuses
+/// `derivation-conflict`, naming the full typed payload.
+fn fixture_operation_diamond_conflict(reversed: bool) -> DomainPackage {
+    let mut records = vec![
+        object_type("model.A", vec![]),
+        object_type("model.B", vec!["model.A"]),
+        object_type("model.C", vec!["model.A"]),
+        object_type("model.D", vec!["model.B", "model.C"]),
+        operation_member("model.A.op", "model.A"),
+        operation_member_redefining("model.B.op2", "model.B", Some("model.A.op")),
+        operation_member_redefining("model.C.op3", "model.C", Some("model.A.op")),
+    ];
+    if reversed {
+        records.reverse();
+    }
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.op-diamond-conflict"),
+        records,
+    )
+}
+
+/// M1's own fix (#204 round 1) is exactly what this test needs: without it,
+/// `domain_package.records`' own (reversed) order would leak into
+/// `DerivationConflict`'s `redefiners` list, and this test's own second
+/// half (the reversed-order run) would see `[C.op3, B.op2]` instead of the
+/// sorted `[B.op2, C.op3]` both runs assert here.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
+    for reversed in [false, true] {
+        let domain_package = fixture_operation_diamond_conflict(reversed);
+        match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Refused(refusal) => {
+                assert_eq!(
+                    refusal.code,
+                    quire_spec_language::diagnostic::Code::InvalidModelBinding
+                );
+                assert_eq!(
+                    refusal.cause,
+                    ModelRefusalCause::DerivationConflict {
+                        type_: DeclarationKey::fixture("model.D"),
+                        member: DeclarationKey::fixture("model.A.op"),
+                        redefiners: vec![
+                            DeclarationKey::fixture("model.B.op2"),
+                            DeclarationKey::fixture("model.C.op3"),
+                        ],
+                    },
+                    "reversed={reversed}"
+                );
+            }
+            other => panic!(
+                "expected Refused(invalid_model_binding/derivation-conflict), reversed={reversed}, got {other:?}"
+            ),
+        }
+    }
+}
+
+/// The operation-member analog of `fixture_n06_resolved`: `B.op2` (owner
+/// `B <- A`) and `C.op3` (owner `C <- A`) both redefine `A.op` -- sibling
+/// owners, neither dominating the other -- but `D` (`<- B`, `<- C`) also
+/// declares `D.op4` redefining `A.op`, and `D` is a proper descendant of
+/// both `B` and `C`. #173's dominance search resolves this contest (`D.op4`
+/// dominates every other redefiner), so the group completes with no
+/// refusal -- the "a winner if one dominates" half of #173's rule, as
+/// opposed to the same-owner and diamond refusal cases exercised above and
+/// in `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`.
+/// Resolving an operation contest builds no `EffectiveView` member entry
+/// (see the module docs): there is nothing to assert about the view here,
+/// only that the ambiguity check itself does not refuse.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.op-redef-resolved"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+            object_type("model.D", vec!["model.B", "model.C"]),
+            operation_member("model.A.op", "model.A"),
+            operation_member_redefining("model.B.op2", "model.B", Some("model.A.op")),
+            operation_member_redefining("model.C.op3", "model.C", Some("model.A.op")),
+            operation_member_redefining("model.D.op4", "model.D", Some("model.A.op")),
+        ],
+    );
+
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    assert!(
+        matches!(outcome, NormalizeOutcome::Completed(_)),
+        "D.op4 dominates every other redefiner of A.op (B and C are both \
+         proper ancestors of D), so the contest resolves without a \
+         refusal: {outcome:?}"
+    );
+    // M3 (#204 round 1): a *resolved* contest still owes its
+    // `normalize.conflict-check` charge (`value-accounting.md:456`'s own
+    // `c >= 2` condition, independent of whether the contest resolves --
+    // `n06_wide_ancestry_with_two_contesting_redefiners_completes` is this
+    // same rule's field analog), which the prior version of this test never
+    // asserted.
+    let admitted = meter.admitted_charges();
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
+            .count(),
+        1,
+        "D's c=3 group (B.op2, C.op3, D.op4) is still charged once even though it resolves"
+    );
+    // Cross-checked by running the crate directly (outcome is `Completed`,
+    // so this is the exhaustive total through the final `normalize.hash`):
+    // 8 `normalize.record` (A, B, C, D, A.op, B.op2, C.op3, D.op4) + facts
+    // for every type's own qualify/inherit path (`f(A)=1, f(B)=f(C)=2,
+    // f(D)=4` under the diamond's own ancestor set `{A}`/`{A,B,C}`) + one
+    // `normalize.cycle-check` per generalization edge (B->A, C->A, D->B,
+    // D->C) + the `c=3` group's own `normalize.redefinition-check`/
+    // `normalize.conflict-check` charges + `normalize.declaration`/
+    // `normalize.hash` once the group resolves.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 65);
+}
+
 /// `value-accounting.md:456` prices every contested `(effective type,
 /// redefined member)` in one ascending pass "by effective member key" --
 /// field and operation targets
@@ -2892,9 +3053,11 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 ///   (`c >= 2` is the only condition, `value-accounting.md:456`). `c = 2`,
 ///   `Σ (c − 1) × f(o) = (2 − 1) × (f(B) + f(C)) = 1 × (2 + 3) = 5`.
 /// - Operation `A.a` is redefined by `C.a2` and `C.a3`, both owned by `C`.
-///   `apply_redefinitions` never resolves an operation contest (see the
-///   module docs), but still charges it: `c = 2`,
-///   `Σ (c − 1) × f(o) = (2 − 1) × (f(C) + f(C)) = 1 × (3 + 3) = 6`.
+///   `apply_redefinitions` charges this contest exactly like the field one,
+///   `c = 2`, `Σ (c − 1) × f(o) = (2 − 1) × (f(C) + f(C)) = 1 × (3 + 3) =
+///   6`, and (#173) also resolves it with the same dominance search: no
+///   edge dominates another (both share owner `C`), so it refuses
+///   `redefinition-target`.
 ///
 /// `model.A.a` sorts before `model.A.z` (identity bytes: `a` < `z`), so the
 /// merged-and-sorted order charges the operation group (`6`) before the
@@ -2903,7 +3066,9 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// (`6`), regardless of which target key sorts first.
 ///
 /// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this domain package completes at exactly `work_units = 89`
+/// unlimited, this domain package's phase 4 charges exhaustively up to and
+/// including the last `normalize.conflict-check`
+/// (value-accounting.md:481) at exactly `work_units = 69`
 /// (`normalize.record` charges its nine declaration records -- three
 /// object types, three fields and three operation members; `B`'s and `C`'s
 /// own `supertypes[]` entries and every member's own `redefines` property
@@ -2914,10 +3079,14 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 /// reaching `C`; the operation group's own two records contribute no facts
 /// at all, since operation members never enter `member_preimages` and get
 /// no `Fact` here, only a `normalize.conflict-check` charge -- see the
-/// module docs), and `work_units = 58` (`52 + 6`) is exactly enough to admit
-/// every charge up to and including these six phase-4 `normalize.fact`
-/// charges, denying at the first `normalize.conflict-check` -- the
-/// operation group's `6`, not the field group's `5`.
+/// module docs), then refuses `redefinition-target` there
+/// (value-accounting.md:482 ends checking at that stage's refusal): no
+/// `normalize.declaration` or `normalize.hash` charge ever runs, unlike
+/// before #173 resolved this contest. `work_units = 58` (`52 + 6`) is
+/// exactly enough to admit every charge up to and including the six
+/// phase-4 `normalize.fact` charges, denying at the first
+/// `normalize.conflict-check` -- the operation group's `6`, not the field
+/// group's `5`.
 ///
 /// Revert probe: reverting `apply_redefinitions` back to each loop pushing
 /// its own charge straight to `conflict_check_work` (the pre-fix shape)
@@ -2958,7 +3127,27 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    match &outcome {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::RedefinitionTarget {
+                    redefiners: vec![
+                        DeclarationKey::fixture("model.C.a2"),
+                        DeclarationKey::fixture("model.C.a3"),
+                    ],
+                    target: DeclarationKey::fixture("model.A.a"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/redefinition-target), got {other:?}")
+        }
+    }
     let admitted = meter.admitted_charges();
     assert_eq!(
         admitted
@@ -2966,12 +3155,21 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
             .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
             .count(),
         2,
-        "one contested group for A.z (field) and one for A.a (operation)"
+        "one contested group for A.z (field) and one for A.a (operation) -- \
+         both still charged exhaustively (value-accounting.md:481) even \
+         though the operation group (C.a2/C.a3, same owner C) now also \
+         refuses redefinition-target (#173); the field group resolves \
+         (C.z2 dominates B.z1) and stays unrefused"
     );
     // Includes the field redefinition group's own six phase-4 redefine
     // facts' `normalize.fact` charges (operation members derive no facts of
-    // their own -- see the module docs).
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 89);
+    // their own -- see the module docs). Phase 4's own charges are
+    // exhaustive up to and including the last normalize.conflict-check
+    // (value-accounting.md:481), but the operation group's
+    // redefinition-target refusal ends checking there (#173,
+    // value-accounting.md:482): no normalize.declaration or normalize.hash
+    // charge ever runs, unlike before #173 resolved this contest.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 69);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 58;
